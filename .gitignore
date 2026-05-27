@@ -1,0 +1,55 @@
+# macOS / editor noise
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local secrets and personal overrides
+.env
+.env.*
+!.env.example
+*.local
+*.user.toml
+*.pem
+*.key
+*.p12
+*.pfx
+.claude/.credentials.json
+.agents/.credentials.json
+.codex/
+
+# Logs and runtime files
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.nuxt/
+out/
+.turbo/
+.vite/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Large local source media
+audio_concept.m4a
