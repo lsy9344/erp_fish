@@ -58,9 +58,16 @@ export const authConfig = {
           return null;
         }
 
-        const isValidPassword = await verifyPassword(parsed.data.password, user.passwordHash);
+        const isValidPassword = await verifyPassword(
+          parsed.data.password,
+          user.passwordHash,
+        );
 
         if (!isValidPassword) {
+          return null;
+        }
+
+        if (!user.isActive) {
           return null;
         }
 

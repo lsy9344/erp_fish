@@ -24,6 +24,13 @@ const overviewItems = [
     title: "기준정보",
     description: "품목과 지점 기준을 관리할 공간입니다.",
     href: "/app/master-data/stores",
+    actionLabel: "지점 관리",
+  },
+  {
+    title: "사용자/권한",
+    description: "본사와 지점장 계정 접근 범위를 관리합니다.",
+    href: "/app/master-data/users",
+    actionLabel: "사용자/권한 관리",
   },
 ];
 
@@ -52,7 +59,7 @@ export default async function DashboardPage() {
             <CardContent>
               {item.href ? (
                 <Button asChild variant="outline">
-                  <Link href={item.href}>지점 관리</Link>
+                  <Link href={item.href}>{item.actionLabel}</Link>
                 </Button>
               ) : (
                 <p className="text-muted-foreground text-sm">

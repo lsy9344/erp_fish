@@ -60,6 +60,64 @@ export default async function globalSetup() {
     });
   }
 
+  const story14Users = await prisma.user.findMany({
+    where: {
+      email: {
+        startsWith: "story14-",
+      },
+    },
+    select: { id: true },
+  });
+  const story14UserIds = story14Users.map((user) => user.id);
+
+  if (story14UserIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: {
+        OR: [
+          {
+            targetType: "User",
+            targetId: {
+              in: story14UserIds,
+            },
+          },
+          {
+            actorId: {
+              in: story14UserIds,
+            },
+          },
+        ],
+      },
+    });
+    await prisma.userStoreAssignment.deleteMany({
+      where: {
+        userId: {
+          in: story14UserIds,
+        },
+      },
+    });
+    await prisma.session.deleteMany({
+      where: {
+        userId: {
+          in: story14UserIds,
+        },
+      },
+    });
+    await prisma.account.deleteMany({
+      where: {
+        userId: {
+          in: story14UserIds,
+        },
+      },
+    });
+    await prisma.user.deleteMany({
+      where: {
+        id: {
+          in: story14UserIds,
+        },
+      },
+    });
+  }
+
   await prisma.user.upsert({
     where: { email: "hq@example.com" },
     create: {
@@ -67,11 +125,13 @@ export default async function globalSetup() {
       name: "본사 관리자",
       role: UserRole.HEADQUARTERS,
       passwordHash,
+      isActive: true,
     },
     update: {
       name: "본사 관리자",
       role: UserRole.HEADQUARTERS,
       passwordHash,
+      isActive: true,
     },
   });
 
@@ -134,11 +194,13 @@ export default async function globalSetup() {
       name: "강남 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
     update: {
       name: "강남 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
   });
 
@@ -149,11 +211,13 @@ export default async function globalSetup() {
       name: "미배정 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
     update: {
       name: "미배정 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
   });
 
@@ -164,11 +228,13 @@ export default async function globalSetup() {
       name: "비활성 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
     update: {
       name: "비활성 지점장",
       role: UserRole.STORE_MANAGER,
       passwordHash,
+      isActive: true,
     },
   });
 

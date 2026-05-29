@@ -20,18 +20,25 @@ async function main() {
   const password = process.env.SEED_HQ_PASSWORD;
   const name = getSeedName();
   const allowProductionSeed = process.env.ALLOW_PRODUCTION_SEED === "true";
-  const allowPasswordRotation = process.env.ALLOW_SEED_PASSWORD_ROTATION === "true";
+  const allowPasswordRotation =
+    process.env.ALLOW_SEED_PASSWORD_ROTATION === "true";
 
   if (process.env.NODE_ENV === "production" && !allowProductionSeed) {
-    throw new Error("Set ALLOW_PRODUCTION_SEED=true before running the seed script in production.");
+    throw new Error(
+      "Set ALLOW_PRODUCTION_SEED=true before running the seed script in production.",
+    );
   }
 
   if (!email || !password) {
-    throw new Error("SEED_HQ_EMAIL and SEED_HQ_PASSWORD are required to seed the headquarters account.");
+    throw new Error(
+      "SEED_HQ_EMAIL and SEED_HQ_PASSWORD are required to seed the headquarters account.",
+    );
   }
 
   if (password.length < SEED_HQ_PASSWORD_MIN_LENGTH) {
-    throw new Error(`SEED_HQ_PASSWORD must be at least ${SEED_HQ_PASSWORD_MIN_LENGTH} characters.`);
+    throw new Error(
+      `SEED_HQ_PASSWORD must be at least ${SEED_HQ_PASSWORD_MIN_LENGTH} characters.`,
+    );
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -39,7 +46,9 @@ async function main() {
   });
 
   if (existingUser?.role && existingUser.role !== UserRole.HEADQUARTERS) {
-    throw new Error("SEED_HQ_EMAIL already belongs to a non-headquarters account.");
+    throw new Error(
+      "SEED_HQ_EMAIL already belongs to a non-headquarters account.",
+    );
   }
 
   const shouldWritePasswordHash =
@@ -55,6 +64,7 @@ async function main() {
       name,
       passwordHash,
       role: UserRole.HEADQUARTERS,
+      isActive: true,
     },
     update: {
       name,

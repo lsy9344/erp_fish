@@ -22,7 +22,16 @@ import {
 const navigationItems = [
   { label: "홈", href: "/app/dashboard", icon: HomeIcon },
   { label: "리포트", href: "/app/dashboard#reports", icon: TrendingUpIcon },
-  { label: "기준정보", href: "/app/master-data/stores", icon: SlidersHorizontalIcon },
+  {
+    label: "기준정보",
+    href: "/app/master-data/stores",
+    icon: SlidersHorizontalIcon,
+  },
+  {
+    label: "사용자/권한",
+    href: "/app/master-data/users",
+    icon: SlidersHorizontalIcon,
+  },
   { label: "설정", href: "/app/dashboard#settings", icon: SettingsIcon },
 ];
 
@@ -37,7 +46,9 @@ export function AppSidebar({ userName, userEmail }: AppSidebarProps) {
       <SidebarHeader>
         <div className="flex flex-col gap-0.5 px-2 py-1.5">
           <span className="truncate text-sm font-semibold">ERP Fish</span>
-          <span className="truncate text-xs text-muted-foreground">본사 업무</span>
+          <span className="text-muted-foreground truncate text-xs">
+            본사 업무
+          </span>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -62,7 +73,7 @@ export function AppSidebar({ userName, userEmail }: AppSidebarProps) {
       <SidebarFooter>
         <div className="flex flex-col gap-0.5 px-2 py-1.5 text-xs">
           <span className="truncate font-medium">{userName}</span>
-          <span className="truncate text-muted-foreground">{userEmail}</span>
+          <span className="text-muted-foreground truncate">{userEmail}</span>
         </div>
       </SidebarFooter>
     </Sidebar>

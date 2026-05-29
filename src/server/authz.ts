@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 
 import { UserRole } from "../../generated/prisma";
 import { auth } from "~/server/auth";
@@ -11,6 +12,7 @@ const userSelect = {
   email: true,
   image: true,
   role: true,
+  isActive: true,
 };
 
 const storeSelect = {
@@ -30,6 +32,7 @@ export function normalizeStoreIdParam(value: StoreIdParam) {
 }
 
 export async function getCurrentUser() {
+  noStore();
   const session = await auth();
 
   return session?.user ?? null;
@@ -55,6 +58,10 @@ export async function requireAppUser() {
     redirect("/login?callbackUrl=%2Fapp");
   }
 
+  if (!currentUser.isActive) {
+    redirect("/login?callbackUrl=%2Fapp");
+  }
+
   return currentUser;
 }
 
@@ -71,7 +78,7 @@ export async function requireHeadquartersUser() {
 export async function getAppHomePath() {
   const currentUser = await getCurrentUserRecord();
 
-  if (!currentUser) {
+  if (currentUser?.isActive !== true) {
     return appLoginPath;
   }
 

@@ -18,7 +18,11 @@ type LoginPageProps = {
 };
 
 function getSafeCallbackUrl(value: string | undefined) {
-  if (value?.startsWith("/") && !value.startsWith("//") && !value.startsWith("/login")) {
+  if (
+    value?.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.startsWith("/login")
+  ) {
     return value;
   }
 
@@ -31,11 +35,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const callbackUrl = getSafeCallbackUrl(params.callbackUrl);
 
   if (session?.user.id) {
-    redirect(await getAppHomePath());
+    const appHomePath = await getAppHomePath();
+
+    if (!appHomePath.startsWith("/login")) {
+      redirect(appHomePath);
+    }
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-background px-4 py-10">
+    <main className="bg-background flex min-h-svh items-center justify-center px-4 py-10">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>
