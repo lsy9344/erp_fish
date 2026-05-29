@@ -1,62 +1,121 @@
 import { redirect } from "next/navigation";
-import { CalendarDaysIcon } from "lucide-react";
 
-import { PageHeader } from "~/components/page-header";
 import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
+import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
+import { getActiveProductOptions } from "~/features/master-data/product-queries";
+import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
 import {
   getStoreManagerWorkspace,
   normalizeStoreIdParam,
   requireStoreAccess,
 } from "~/server/authz";
+import { getTodayStoreLedger } from "~/features/ledger/queries";
+import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
+import { ExpenseStepClient } from "~/features/ledger/components/expense-step-client";
+import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
+import { WorkStepClient } from "~/features/ledger/components/workstep-client";
 
 type StoreEntryPageProps = {
   searchParams: Promise<{
     storeId?: string | string[];
+    step?: string | string[];
   }>;
 };
 
-function formatToday() {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "full",
-    timeZone: "Asia/Seoul",
-  }).format(new Date());
+type StoreEntryStep = "sales" | "cost" | "purchase" | "work";
+type LedgerInputCodeOption = Awaited<
+  ReturnType<typeof getActiveLedgerInputCodeOptions>
+>[number];
+type ProductOption = Awaited<
+  ReturnType<typeof getActiveProductOptions>
+>[number];
+type PurchaseStandardOption = Awaited<
+  ReturnType<typeof getActivePurchaseStandardOptions>
+>[number];
+
+function normalizeStoreEntryStep(
+  value: string | string[] | undefined,
+): StoreEntryStep {
+  const step = Array.isArray(value) ? value[0] : value;
+
+  if (
+    step === "cost" ||
+    step === "purchase" ||
+    step === "work" ||
+    step === "sales"
+  ) {
+    return step;
+  }
+
+  return "sales";
 }
 
-function StoreEntryContent({ storeName }: { storeName: string }) {
-  return (
-    <>
-      <PageHeader
-        title="오늘 장부 시작"
-        description="오늘 지점 업무를 시작하기 전 상태를 확인합니다."
+type StoreEntryContentProps = {
+  storeName: string;
+  initialLedger: Awaited<ReturnType<typeof getTodayStoreLedger>>;
+  step: StoreEntryStep;
+  expenseCodeOptions: LedgerInputCodeOption[];
+  productOptions: ProductOption[];
+  purchaseStandardOptions: PurchaseStandardOption[];
+};
+
+function StoreEntryContent({
+  storeName,
+  initialLedger,
+  step,
+  expenseCodeOptions,
+  productOptions,
+  purchaseStandardOptions,
+}: StoreEntryContentProps) {
+  if (step === "cost") {
+    return (
+      <ExpenseStepClient
+        initialLedger={initialLedger}
+        expenseCodeOptions={expenseCodeOptions}
+        storeName={storeName}
+        currentStep={step}
       />
-      <section className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-lg border bg-card p-5 text-card-foreground">
-          <div className="flex items-start gap-3">
-            <CalendarDaysIcon className="mt-0.5 size-5 text-primary" aria-hidden="true" />
-            <div className="min-w-0">
-              <p className="text-sm text-muted-foreground">{formatToday()}</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-normal">{storeName}</h2>
-              <p className="mt-3 text-sm text-muted-foreground">
-                오늘 장부는 아직 시작 전입니다.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-lg border bg-card p-5 text-card-foreground">
-          <h2 className="text-base font-semibold">업무 진입</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            장부, 재고, 손실 입력 기능은 다음 스토리에서 저장 흐름과 연결됩니다.
-          </p>
-        </div>
-      </section>
-    </>
+    );
+  }
+
+  if (step === "purchase") {
+    return (
+      <PurchaseStepClient
+        initialLedger={initialLedger}
+        productOptions={productOptions}
+        purchaseStandardOptions={purchaseStandardOptions}
+        storeName={storeName}
+        currentStep={step}
+      />
+    );
+  }
+
+  if (step === "work") {
+    return (
+      <WorkStepClient
+        initialLedger={initialLedger}
+        storeName={storeName}
+        currentStep={step}
+      />
+    );
+  }
+
+  return (
+    <SalesPaymentStepClient
+      initialLedger={initialLedger}
+      storeName={storeName}
+      currentStep={step}
+    />
   );
 }
 
-export default async function StoreEntryPage({ searchParams }: StoreEntryPageProps) {
+export default async function StoreEntryPage({
+  searchParams,
+}: StoreEntryPageProps) {
   const params = await searchParams;
   const storeId = normalizeStoreIdParam(params.storeId);
+  const step = normalizeStoreEntryStep(params.step);
 
   if (params.storeId !== undefined && !storeId) {
     redirect("/app/unauthorized");
@@ -64,6 +123,13 @@ export default async function StoreEntryPage({ searchParams }: StoreEntryPagePro
 
   if (storeId) {
     const { user, store } = await requireStoreAccess(storeId);
+    const expenseCodeOptions =
+      await getActiveLedgerInputCodeOptions("EXPENSE_ITEM");
+    const [productOptions, purchaseStandardOptions] = await Promise.all([
+      getActiveProductOptions(),
+      getActivePurchaseStandardOptions(),
+    ]);
+    const initialLedger = await getTodayStoreLedger(store.id, user.id);
 
     return (
       <StoreManagerShell
@@ -71,7 +137,14 @@ export default async function StoreEntryPage({ searchParams }: StoreEntryPagePro
         storeName={store.name}
         storeId={store.id}
       >
-        <StoreEntryContent storeName={store.name} />
+        <StoreEntryContent
+          storeName={store.name}
+          initialLedger={initialLedger}
+          step={step}
+          expenseCodeOptions={expenseCodeOptions}
+          productOptions={productOptions}
+          purchaseStandardOptions={purchaseStandardOptions}
+        />
       </StoreManagerShell>
     );
   }
@@ -90,13 +163,30 @@ export default async function StoreEntryPage({ searchParams }: StoreEntryPagePro
     );
   }
 
+  const expenseCodeOptions =
+    await getActiveLedgerInputCodeOptions("EXPENSE_ITEM");
+  const [productOptions, purchaseStandardOptions] = await Promise.all([
+    getActiveProductOptions(),
+    getActivePurchaseStandardOptions(),
+  ]);
+
   return (
     <StoreManagerShell
       userName={workspace.user.name ?? "지점장"}
       storeName={workspace.store.name}
       storeId={workspace.store.id}
     >
-      <StoreEntryContent storeName={workspace.store.name} />
+      <StoreEntryContent
+        storeName={workspace.store.name}
+        initialLedger={await getTodayStoreLedger(
+          workspace.store.id,
+          workspace.user.id,
+        )}
+        step={step}
+        expenseCodeOptions={expenseCodeOptions}
+        productOptions={productOptions}
+        purchaseStandardOptions={purchaseStandardOptions}
+      />
     </StoreManagerShell>
   );
 }

@@ -13,8 +13,12 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  workers: 1,
   reporter: "list",
   globalSetup: "./tests/e2e/global-setup.ts",
+  expect: {
+    timeout: 15_000,
+  },
   use: {
     baseURL,
     trace: "on-first-retry",

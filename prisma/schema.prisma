@@ -20,6 +20,25 @@ enum UserRole {
   STORE_MANAGER
 }
 
+enum DailyLedgerStatus {
+  IN_PROGRESS
+  IN_REVIEW
+  HEADQUARTERS_CLOSED
+  HOLIDAY
+}
+
+enum LedgerInputCodeGroup {
+  PAYMENT_METHOD
+  EXPENSE_ITEM
+  LOSS_TYPE
+}
+
+enum InventoryCarryoverSource {
+  OPENING_SNAPSHOT
+  PREVIOUS_CLOSED_LEDGER
+  MANUAL
+}
+
 model Post {
   id        Int      @id @default(autoincrement())
   name      String
@@ -40,26 +59,31 @@ model Store {
   updatedAt   DateTime @updatedAt
   updatedById String?
 
-  assignments UserStoreAssignment[]
-  updatedBy   User?                 @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  assignments               UserStoreAssignment[]
+  updatedBy                 User?                      @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  dailyLedgers              DailyLedger[]
+  inventoryOpeningSnapshots InventoryOpeningSnapshot[]
 
   @@index([isActive])
   @@index([updatedById])
 }
 
 model Product {
-  id               String             @id @default(cuid())
+  id               String   @id @default(cuid())
   name             String
   category         String
   spec             String
   defaultUnitPrice Int
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
   updatedById      String?
 
-  updatedBy         User?              @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  purchaseStandards PurchaseStandard[]
+  updatedBy                 User?                      @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  purchaseStandards         PurchaseStandard[]
+  ledgerPurchaseItems       LedgerPurchaseItem[]
+  ledgerInventoryItems      LedgerInventoryItem[]
+  inventoryOpeningSnapshots InventoryOpeningSnapshot[]
 
   @@unique([name, category, spec])
   @@index([category])
@@ -77,10 +101,30 @@ model PurchaseStandard {
   updatedAt         DateTime @updatedAt
   updatedById       String?
 
-  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
-  updatedBy User?   @relation("PurchaseStandardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  updatedBy           User?                @relation("PurchaseStandardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  ledgerPurchaseItems LedgerPurchaseItem[]
 
   @@index([productId])
+  @@index([isActive])
+  @@index([updatedById])
+}
+
+model LedgerInputCode {
+  id           String               @id @default(cuid())
+  group        LedgerInputCodeGroup
+  name         String
+  displayOrder Int
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  updatedById  String?
+
+  updatedBy      User?           @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  ledgerExpenses LedgerExpense[]
+
+  @@unique([group, name])
+  @@index([group, displayOrder])
   @@index([isActive])
   @@index([updatedById])
 }
@@ -126,24 +170,33 @@ model Session {
 }
 
 model User {
-  id               String                @id @default(cuid())
-  name             String?
-  email            String?               @unique
-  emailVerified    DateTime?
-  image            String?
-  role             UserRole              @default(STORE_MANAGER)
-  passwordHash     String?
-  isActive         Boolean               @default(true)
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt @default(now())
-  accounts         Account[]
-  sessions         Session[]
-  posts            Post[]
-  storeAssignments UserStoreAssignment[]
-  updatedStores    Store[]               @relation("StoreUpdatedBy")
-  updatedProducts  Product[]             @relation("ProductUpdatedBy")
-  updatedPurchaseStandards PurchaseStandard[] @relation("PurchaseStandardUpdatedBy")
-  auditLogs        AuditLog[]            @relation("AuditActor")
+  id                          String                @id @default(cuid())
+  name                        String?
+  email                       String?               @unique
+  emailVerified               DateTime?
+  image                       String?
+  role                        UserRole              @default(STORE_MANAGER)
+  passwordHash                String?
+  isActive                    Boolean               @default(true)
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt @default(now())
+  accounts                    Account[]
+  sessions                    Session[]
+  posts                       Post[]
+  storeAssignments            UserStoreAssignment[]
+  updatedStores               Store[]               @relation("StoreUpdatedBy")
+  updatedProducts             Product[]             @relation("ProductUpdatedBy")
+  updatedPurchaseStandards    PurchaseStandard[]    @relation("PurchaseStandardUpdatedBy")
+  updatedLedgerInputCodes     LedgerInputCode[]     @relation("LedgerInputCodeUpdatedBy")
+  createdDailyLedgers         DailyLedger[]         @relation("LedgerCreatedBy")
+  updatedDailyLedgers         DailyLedger[]         @relation("LedgerUpdatedBy")
+  createdLedgerExpenses       LedgerExpense[]       @relation("LedgerExpenseCreatedBy")
+  updatedLedgerExpenses       LedgerExpense[]       @relation("LedgerExpenseUpdatedBy")
+  createdLedgerPurchaseItems  LedgerPurchaseItem[]  @relation("LedgerPurchaseItemCreatedBy")
+  updatedLedgerPurchaseItems  LedgerPurchaseItem[]  @relation("LedgerPurchaseItemUpdatedBy")
+  createdLedgerInventoryItems LedgerInventoryItem[] @relation("LedgerInventoryItemCreatedBy")
+  updatedLedgerInventoryItems LedgerInventoryItem[] @relation("LedgerInventoryItemUpdatedBy")
+  auditLogs                   AuditLog[]            @relation("AuditActor")
 }
 
 model AuditLog {
@@ -159,7 +212,139 @@ model AuditLog {
   actor User @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([actorId])
+  @@index([createdAt])
+  @@index([targetType, createdAt])
+  @@index([actorId, createdAt])
   @@index([targetType, targetId, createdAt])
+}
+
+model DailyLedger {
+  id                   String                @id @default(cuid())
+  storeId              String
+  closingDate          DateTime
+  status               DailyLedgerStatus     @default(IN_PROGRESS)
+  totalSalesAmount     Int                   @default(0)
+  cashAmount           Int                   @default(0)
+  cardAmount           Int                   @default(0)
+  otherPaymentAmount   Int                   @default(0)
+  workerCount          Int?
+  workMemo             String?
+  ledgerExpenses       LedgerExpense[]
+  ledgerPurchaseItems  LedgerPurchaseItem[]
+  ledgerInventoryItems LedgerInventoryItem[]
+  createdById          String
+  updatedById          String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  createdBy User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, closingDate], map: "dailyLedger_storeId_closingDate_key")
+  @@index([storeId, closingDate])
+  @@index([status])
+}
+
+model LedgerExpense {
+  id                String   @id @default(cuid())
+  dailyLedgerId     String
+  ledgerInputCodeId String
+  amount            Int
+  memo              String?
+  createdById       String
+  updatedById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  dailyLedger     DailyLedger     @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  ledgerInputCode LedgerInputCode @relation(fields: [ledgerInputCodeId], references: [id], onDelete: Restrict)
+  createdBy       User            @relation("LedgerExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy       User            @relation("LedgerExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([dailyLedgerId])
+  @@index([ledgerInputCodeId])
+}
+
+model LedgerPurchaseItem {
+  id                 String   @id @default(cuid())
+  dailyLedgerId      String
+  productId          String
+  purchaseStandardId String?
+  productName        String
+  productCategory    String
+  productSpec        String
+  unitPrice          Int
+  quantity           Int
+  amount             Int
+  referenceInfo      String?
+  createdById        String
+  updatedById        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  dailyLedger      DailyLedger       @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseStandard PurchaseStandard? @relation(fields: [purchaseStandardId], references: [id], onDelete: SetNull)
+  createdBy        User              @relation("LedgerPurchaseItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy        User              @relation("LedgerPurchaseItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([dailyLedgerId])
+  @@index([productId])
+  @@index([purchaseStandardId])
+}
+
+model LedgerInventoryItem {
+  id                String                   @id @default(cuid())
+  dailyLedgerId     String
+  productId         String
+  productName       String
+  productCategory   String
+  productSpec       String
+  unitPrice         Int
+  previousQuantity  Int
+  purchasedQuantity Int                      @default(0)
+  currentQuantity   Int?
+  quantity          Int?
+  inventoryAmount   Int?
+  isModified        Boolean                  @default(false)
+  carryoverSource   InventoryCarryoverSource @default(MANUAL)
+  carryoverLedgerId String?
+  createdById       String
+  updatedById       String
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("LedgerInventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User        @relation("LedgerInventoryItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([dailyLedgerId, productId], map: "ledgerInventoryItem_dailyLedgerId_productId_key")
+  @@index([dailyLedgerId])
+  @@index([productId])
+  @@index([carryoverLedgerId])
+}
+
+model InventoryOpeningSnapshot {
+  id              String   @id @default(cuid())
+  storeId         String
+  yearMonth       String
+  productId       String
+  productName     String
+  productCategory String
+  productSpec     String
+  unitPrice       Int
+  quantity        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, yearMonth, productId], map: "inventoryOpeningSnapshot_storeId_yearMonth_productId_key")
+  @@index([storeId, yearMonth])
+  @@index([productId])
 }
 
 model VerificationToken {

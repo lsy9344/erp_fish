@@ -1,4 +1,4 @@
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireAppUser, requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
 import { PRODUCT_CATEGORY_VALUES } from "./product-schemas";
 
@@ -109,7 +109,7 @@ export async function getProductsForHeadquarters(
 }
 
 export async function getActiveProductOptions() {
-  await requireHeadquartersUser();
+  await requireAppUser();
 
   return db.product.findMany({
     where: { isActive: true },

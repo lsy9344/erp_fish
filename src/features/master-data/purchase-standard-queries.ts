@@ -1,4 +1,4 @@
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireAppUser, requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
 import type { ProductCategory } from "./product-queries";
 
@@ -92,7 +92,7 @@ export async function getPurchaseStandardsForHeadquarters(
 }
 
 export async function getActivePurchaseStandardOptions() {
-  await requireHeadquartersUser();
+  await requireAppUser();
 
   return db.purchaseStandard.findMany({
     where: {

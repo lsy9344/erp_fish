@@ -118,6 +118,47 @@ export default async function globalSetup() {
     });
   }
 
+  const story24Products = await prisma.product.findMany({
+    where: {
+      name: {
+        startsWith: "스토리2-4",
+      },
+    },
+    select: { id: true },
+  });
+  const story24ProductIds = story24Products.map((product) => product.id);
+
+  if (story24ProductIds.length > 0) {
+    await prisma.inventoryOpeningSnapshot.deleteMany({
+      where: {
+        productId: {
+          in: story24ProductIds,
+        },
+      },
+    });
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: {
+        productId: {
+          in: story24ProductIds,
+        },
+      },
+    });
+    await prisma.purchaseStandard.deleteMany({
+      where: {
+        productId: {
+          in: story24ProductIds,
+        },
+      },
+    });
+    await prisma.product.deleteMany({
+      where: {
+        id: {
+          in: story24ProductIds,
+        },
+      },
+    });
+  }
+
   await prisma.user.upsert({
     where: { email: "hq@example.com" },
     create: {

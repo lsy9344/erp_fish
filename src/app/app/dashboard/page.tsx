@@ -39,10 +39,22 @@ const overviewItems = [
     actionLabel: "매입 기준 관리",
   },
   {
+    title: "코드 관리",
+    description: "결제수단, 비용 항목, 손실 유형 코드를 관리합니다.",
+    href: "/app/master-data/codes",
+    actionLabel: "코드 관리",
+  },
+  {
     title: "사용자/권한",
     description: "본사와 지점장 계정 접근 범위를 관리합니다.",
     href: "/app/master-data/users",
     actionLabel: "사용자/권한 관리",
+  },
+  {
+    title: "변경 이력",
+    description: "기준정보와 권한 변경 이력을 확인합니다.",
+    href: "/app/master-data/history",
+    actionLabel: "변경 이력 보기",
   },
 ];
 

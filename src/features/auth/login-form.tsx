@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Loader2Icon, LogInIcon } from "lucide-react";
 
@@ -20,7 +19,6 @@ type LoginFormProps = {
 };
 
 export function LoginForm({ callbackUrl }: LoginFormProps) {
-  const router = useRouter();
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
 
@@ -43,8 +41,7 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
         return;
       }
 
-      router.push(result.url ?? callbackUrl);
-      router.refresh();
+      window.location.assign(result.url ?? callbackUrl);
     } catch {
       setError("로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {

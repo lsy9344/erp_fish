@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 
-import {
-  NoActiveStoreMessage,
-  StorePreparationPanel,
-} from "~/components/store-manager-panels";
+import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
+import { InventoryStepClient } from "~/features/inventory/components/inventory-step-client";
+import { getInventoryStepData } from "~/features/inventory/queries";
 import {
   getStoreManagerWorkspace,
   normalizeStoreIdParam,
@@ -17,13 +16,14 @@ type InventoryEntryPageProps = {
   }>;
 };
 
-function InventoryContent({ storeName }: { storeName: string }) {
+type InventoryContentProps = {
+  storeName: string;
+  initialData: Awaited<ReturnType<typeof getInventoryStepData>>;
+};
+
+function InventoryContent({ storeName, initialData }: InventoryContentProps) {
   return (
-    <StorePreparationPanel
-      title="재고 입력 준비"
-      storeName={storeName}
-      description="오늘 재고 입력을 시작할 지점을 확인합니다."
-    />
+    <InventoryStepClient storeName={storeName} initialData={initialData} />
   );
 }
 
@@ -39,6 +39,7 @@ export default async function InventoryEntryPage({
 
   if (storeId) {
     const { user, store } = await requireStoreAccess(storeId);
+    const initialData = await getInventoryStepData(store.id, user.id);
 
     return (
       <StoreManagerShell
@@ -46,7 +47,7 @@ export default async function InventoryEntryPage({
         storeName={store.name}
         storeId={store.id}
       >
-        <InventoryContent storeName={store.name} />
+        <InventoryContent storeName={store.name} initialData={initialData} />
       </StoreManagerShell>
     );
   }
@@ -71,7 +72,13 @@ export default async function InventoryEntryPage({
       storeName={workspace.store.name}
       storeId={workspace.store.id}
     >
-      <InventoryContent storeName={workspace.store.name} />
+      <InventoryContent
+        storeName={workspace.store.name}
+        initialData={await getInventoryStepData(
+          workspace.store.id,
+          workspace.user.id,
+        )}
+      />
     </StoreManagerShell>
   );
 }

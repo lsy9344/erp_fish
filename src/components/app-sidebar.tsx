@@ -21,7 +21,11 @@ import {
 
 const navigationItems = [
   { label: "홈", href: "/app/dashboard", icon: HomeIcon },
-  { label: "리포트", href: "/app/dashboard#reports", icon: TrendingUpIcon },
+  {
+    label: "리포트",
+    href: "/app/master-data/history",
+    icon: TrendingUpIcon,
+  },
   {
     label: "기준정보",
     href: "/app/master-data/stores",
@@ -38,11 +42,25 @@ const navigationItems = [
     icon: SlidersHorizontalIcon,
   },
   {
+    label: "코드 관리",
+    href: "/app/master-data/codes",
+    icon: SlidersHorizontalIcon,
+  },
+  {
     label: "사용자/권한",
     href: "/app/master-data/users",
     icon: SlidersHorizontalIcon,
   },
-  { label: "설정", href: "/app/dashboard#settings", icon: SettingsIcon },
+  {
+    label: "변경 이력",
+    href: "/app/master-data/history",
+    icon: SlidersHorizontalIcon,
+  },
+  {
+    label: "설정",
+    href: "/app/master-data/users",
+    icon: SettingsIcon,
+  },
 ];
 
 type AppSidebarProps = {
