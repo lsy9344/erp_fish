@@ -47,6 +47,44 @@ model Store {
   @@index([updatedById])
 }
 
+model Product {
+  id               String             @id @default(cuid())
+  name             String
+  category         String
+  spec             String
+  defaultUnitPrice Int
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  updatedById      String?
+
+  updatedBy         User?              @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  purchaseStandards PurchaseStandard[]
+
+  @@unique([name, category, spec])
+  @@index([category])
+  @@index([isActive])
+  @@index([updatedById])
+}
+
+model PurchaseStandard {
+  id                String   @id @default(cuid())
+  productId         String
+  standardUnitPrice Int?
+  referenceInfo     String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  updatedById       String?
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  updatedBy User?   @relation("PurchaseStandardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([isActive])
+  @@index([updatedById])
+}
+
 model UserStoreAssignment {
   userId    String
   storeId   String
@@ -103,6 +141,8 @@ model User {
   posts            Post[]
   storeAssignments UserStoreAssignment[]
   updatedStores    Store[]               @relation("StoreUpdatedBy")
+  updatedProducts  Product[]             @relation("ProductUpdatedBy")
+  updatedPurchaseStandards PurchaseStandard[] @relation("PurchaseStandardUpdatedBy")
   auditLogs        AuditLog[]            @relation("AuditActor")
 }
 

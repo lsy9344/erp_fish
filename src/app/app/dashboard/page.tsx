@@ -27,6 +27,18 @@ const overviewItems = [
     actionLabel: "지점 관리",
   },
   {
+    title: "품목 마스터",
+    description: "장부 입력에서 사용할 품목 기준을 관리합니다.",
+    href: "/app/master-data/products",
+    actionLabel: "품목 마스터",
+  },
+  {
+    title: "매입 기준",
+    description: "품목별 기준 단가와 참조 정보를 관리합니다.",
+    href: "/app/master-data/purchase-standards",
+    actionLabel: "매입 기준 관리",
+  },
+  {
     title: "사용자/권한",
     description: "본사와 지점장 계정 접근 범위를 관리합니다.",
     href: "/app/master-data/users",

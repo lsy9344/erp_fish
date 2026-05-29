@@ -28,6 +28,16 @@ const navigationItems = [
     icon: SlidersHorizontalIcon,
   },
   {
+    label: "품목 마스터",
+    href: "/app/master-data/products",
+    icon: SlidersHorizontalIcon,
+  },
+  {
+    label: "매입 기준",
+    href: "/app/master-data/purchase-standards",
+    icon: SlidersHorizontalIcon,
+  },
+  {
     label: "사용자/권한",
     href: "/app/master-data/users",
     icon: SlidersHorizontalIcon,
