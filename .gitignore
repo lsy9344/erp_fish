@@ -29,9 +29,12 @@ logs/
 tmp/
 temp/
 .cache/
+.tmp/
 
 # Dependencies and build output
 node_modules/
+.pnp
+.pnp.js
 dist/
 build/
 coverage/
@@ -40,6 +43,17 @@ coverage/
 out/
 .turbo/
 .vite/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
+generated/
+test-results/
+playwright-report/
+
+# Local database files
+prisma/db.sqlite
+prisma/db.sqlite-journal
+db.sqlite
 
 # Python caches and virtual environments
 __pycache__/
