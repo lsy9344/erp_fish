@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 
-import {
-  NoActiveStoreMessage,
-  StorePreparationPanel,
-} from "~/components/store-manager-panels";
+import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
+import { LossStepClient } from "~/features/losses/components/loss-step-client";
+import { getLossStepData } from "~/features/losses/queries";
 import {
   getStoreManagerWorkspace,
   normalizeStoreIdParam,
@@ -17,14 +16,13 @@ type LossEntryPageProps = {
   }>;
 };
 
-function LossContent({ storeName }: { storeName: string }) {
-  return (
-    <StorePreparationPanel
-      title="손실 입력 준비"
-      storeName={storeName}
-      description="오늘 손실 입력을 시작할 지점을 확인합니다."
-    />
-  );
+type LossContentProps = {
+  storeName: string;
+  initialData: Awaited<ReturnType<typeof getLossStepData>>;
+};
+
+function LossContent({ storeName, initialData }: LossContentProps) {
+  return <LossStepClient storeName={storeName} initialData={initialData} />;
 }
 
 export default async function LossEntryPage({
@@ -39,6 +37,7 @@ export default async function LossEntryPage({
 
   if (storeId) {
     const { user, store } = await requireStoreAccess(storeId);
+    const initialData = await getLossStepData(store.id, user.id);
 
     return (
       <StoreManagerShell
@@ -46,7 +45,7 @@ export default async function LossEntryPage({
         storeName={store.name}
         storeId={store.id}
       >
-        <LossContent storeName={store.name} />
+        <LossContent storeName={store.name} initialData={initialData} />
       </StoreManagerShell>
     );
   }
@@ -71,7 +70,13 @@ export default async function LossEntryPage({
       storeName={workspace.store.name}
       storeId={workspace.store.id}
     >
-      <LossContent storeName={workspace.store.name} />
+      <LossContent
+        storeName={workspace.store.name}
+        initialData={await getLossStepData(
+          workspace.store.id,
+          workspace.user.id,
+        )}
+      />
     </StoreManagerShell>
   );
 }

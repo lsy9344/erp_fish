@@ -42,6 +42,7 @@ export const ledgerSelect = {
   id: true,
   storeId: true,
   closingDate: true,
+  updatedAt: true,
   status: true,
   totalSalesAmount: true,
   cashAmount: true,

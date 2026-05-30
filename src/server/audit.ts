@@ -7,6 +7,7 @@ type AuditLogInput = {
   actorId: string;
   before?: Prisma.InputJsonValue | null;
   after?: Prisma.InputJsonValue | null;
+  reason?: string | null;
 };
 
 export async function writeAuditLog(
@@ -21,6 +22,7 @@ export async function writeAuditLog(
       actorId: input.actorId,
       before: input.before ?? undefined,
       after: input.after ?? undefined,
+      reason: input.reason ?? undefined,
     },
   });
 }

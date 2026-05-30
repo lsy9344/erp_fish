@@ -15,7 +15,10 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { saveLedgerInventoryItems } from "~/features/inventory/actions";
+import {
+  saveLedgerInventoryAdjustment,
+  saveLedgerInventoryItems,
+} from "~/features/inventory/actions";
 import { type InventoryStepData } from "~/features/inventory/types";
 import { type FieldErrors } from "~/lib/action-result";
 
@@ -27,6 +30,7 @@ type InventoryStepClientProps = {
 type InventoryLineState = InventoryStepData["items"][number] & {
   currentQuantityInput: string;
   quantityInput: string;
+  adjustmentReasonInput: string;
 };
 
 const categories = ["냉동", "생물"] as const;
@@ -84,7 +88,37 @@ function toLineState(data: InventoryStepData): InventoryLineState[] {
     currentQuantityInput:
       item.currentQuantity === null ? "" : String(item.currentQuantity),
     quantityInput: item.quantity === null ? "" : String(item.quantity),
+    adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
+}
+
+function mergeAdjustedLineState(
+  data: InventoryStepData,
+  currentItems: InventoryLineState[],
+  adjustedProductId: string,
+) {
+  const currentByProductId = new Map(
+    currentItems.map((item) => [item.productId, item]),
+  );
+
+  return toLineState(data).map((item) => {
+    if (item.productId === adjustedProductId) {
+      return item;
+    }
+
+    const current = currentByProductId.get(item.productId);
+
+    if (!current) {
+      return item;
+    }
+
+    return {
+      ...item,
+      currentQuantityInput: current.currentQuantityInput,
+      quantityInput: current.quantityInput,
+      adjustmentReasonInput: current.adjustmentReasonInput,
+    };
+  });
 }
 
 function normalizeCategory(value: string): (typeof categories)[number] {
@@ -107,6 +141,7 @@ export function InventoryStepClient({
     {},
   );
   const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [data, setData] = useState(initialData);
   const [items, setItems] = useState(() => toLineState(initialData));
@@ -116,11 +151,19 @@ export function InventoryStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [adjustmentErrors, setAdjustmentErrors] = useState<
+    Record<string, string>
+  >({});
+  const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
+    string | null
+  >(null);
   const carryoverMessage =
     data.carryover.message ||
     (data.carryover.status === "manual"
       ? carryoverManualMessage
       : carryoverLoadedMessage);
+  const isClosed = data.status === "HEADQUARTERS_CLOSED";
+  const isAdjustmentSavePending = savingAdjustmentProductId !== null;
 
   useEffect(() => {
     setData(initialData);
@@ -154,10 +197,20 @@ export function InventoryStepClient({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (isClosed) {
+      setResultMessage(null);
+      setFormError(
+        "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
+      );
+      setAdjustmentErrors({});
+      return;
+    }
+
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
     setFieldErrors({});
+    setAdjustmentErrors({});
 
     try {
       const result = await saveLedgerInventoryItems({
@@ -179,6 +232,7 @@ export function InventoryStepClient({
 
       setData(result.data);
       setItems(toLineState(result.data));
+      setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
@@ -190,9 +244,7 @@ export function InventoryStepClient({
   function updateQuantity(productId: string, value: string) {
     setItems((current) =>
       current.map((item) =>
-        item.productId === productId
-          ? { ...item, quantityInput: value }
-          : item,
+        item.productId === productId ? { ...item, quantityInput: value } : item,
       ),
     );
   }
@@ -205,6 +257,137 @@ export function InventoryStepClient({
           : item,
       ),
     );
+  }
+
+  function updateAdjustmentReason(productId: string, value: string) {
+    setAdjustmentErrors((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+    setItems((current) =>
+      current.map((item) =>
+        item.productId === productId
+          ? { ...item, adjustmentReasonInput: value }
+          : item,
+      ),
+    );
+  }
+
+  function getSystemQuantity(item: InventoryLineState) {
+    const quantity =
+      item.previousQuantity + item.purchasedQuantity - item.lossQuantity;
+
+    return Number.isSafeInteger(quantity) &&
+      quantity >= 0 &&
+      quantity <= MAX_INVENTORY_INTEGER
+      ? quantity
+      : null;
+  }
+
+  function formatSignedQuantity(value: number) {
+    return value > 0 ? `+${value}` : String(value);
+  }
+
+  function isAdjustmentNeeded(item: InventoryLineState) {
+    const systemQuantity = getSystemQuantity(item);
+    const actualQuantity = parseQuantityInput(item.currentQuantityInput);
+
+    return (
+      systemQuantity !== null &&
+      actualQuantity !== null &&
+      actualQuantity !== systemQuantity
+    );
+  }
+
+  async function handleAdjustmentSave(item: InventoryLineState) {
+    const reason = item.adjustmentReasonInput.trim();
+
+    if (item.adjustment) {
+      setResultMessage(null);
+      setFormError("이미 조정 기록이 있습니다.");
+      return;
+    }
+
+    setResultMessage(null);
+    setFormError(null);
+    setFieldErrors({});
+    setAdjustmentErrors((current) => {
+      const next = { ...current };
+      delete next[item.productId];
+      return next;
+    });
+
+    if (!reason) {
+      setAdjustmentErrors((current) => ({
+        ...current,
+        [item.productId]: "조정 사유를 입력해 주세요.",
+      }));
+      window.setTimeout(() => {
+        reasonRefs.current[item.productId]?.focus();
+      }, 0);
+      return;
+    }
+
+    setSavingAdjustmentProductId(item.productId);
+
+    try {
+      const result = await saveLedgerInventoryAdjustment({
+        storeId: data.storeId,
+        productId: item.productId,
+        actualQuantity: item.currentQuantityInput,
+        reason,
+      });
+
+      if (!result.ok) {
+        const reasonError = result.error.fieldErrors?.reason?.[0];
+        const actualQuantityError =
+          result.error.fieldErrors?.actualQuantity?.[0];
+
+        if (reasonError) {
+          setAdjustmentErrors((current) => ({
+            ...current,
+            [item.productId]: reasonError,
+          }));
+          window.setTimeout(() => {
+            reasonRefs.current[item.productId]?.focus();
+          }, 0);
+        }
+
+        if (actualQuantityError) {
+          const globalIndex = items.findIndex(
+            (candidate) => candidate.productId === item.productId,
+          );
+
+          if (globalIndex >= 0) {
+            setFieldErrors((current) => ({
+              ...current,
+              [`items.${globalIndex}.currentQuantity`]: [actualQuantityError],
+            }));
+          }
+
+          setActiveCategory(normalizeCategory(item.productCategory));
+          window.setTimeout(() => {
+            currentQuantityRefs.current[item.productId]?.focus();
+          }, 0);
+        }
+
+        setFormError(result.error.message);
+        return;
+      }
+
+      setData(result.data);
+      setItems((current) =>
+        mergeAdjustedLineState(result.data, current, item.productId),
+      );
+      setFieldErrors({});
+      setAdjustmentErrors({});
+      setResultMessage("조정이 저장됐습니다.");
+    } catch {
+      setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSavingAdjustmentProductId(null);
+    }
   }
 
   function isLineModified(item: InventoryLineState) {
@@ -226,7 +409,7 @@ export function InventoryStepClient({
       return (
         <TableRow>
           <TableCell
-            colSpan={8}
+            colSpan={9}
             className="text-muted-foreground h-24 text-center"
           >
             표시할 품목이 없습니다.
@@ -244,14 +427,22 @@ export function InventoryStepClient({
       const amountQuantityError =
         fieldErrors[`items.${globalIndex}.quantity`]?.[0];
       const modified = isLineModified(item) || item.isModified;
+      const adjusted = Boolean(item.adjustment);
+      const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
       const amount = getInventoryAmount(item.quantityInput, item.unitPrice);
+      const systemQuantity = getSystemQuantity(item);
+      const reasonError = adjustmentErrors[item.productId];
+      const isSavingThisAdjustment =
+        savingAdjustmentProductId === item.productId;
 
       return (
         <TableRow
           key={item.productId}
-          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}`}
+          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 조정됨" : ""}`}
           className={
-            modified ? "border-l-primary bg-primary/5 border-l-4" : undefined
+            modified || adjusted
+              ? "border-l-primary bg-primary/5 border-l-4"
+              : undefined
           }
         >
           <TableCell className="min-w-44">
@@ -265,6 +456,17 @@ export function InventoryStepClient({
                   수정됨
                 </Badge>
               ) : null}
+              {adjustmentNeeded ? (
+                <Badge variant="secondary">조정 필요</Badge>
+              ) : null}
+              {adjusted ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-600 text-emerald-700 dark:text-emerald-300"
+                >
+                  조정됨
+                </Badge>
+              ) : null}
             </div>
           </TableCell>
           <TableCell className="min-w-24">{item.productSpec}</TableCell>
@@ -273,6 +475,14 @@ export function InventoryStepClient({
           </TableCell>
           <TableCell className="min-w-24 text-right tabular-nums">
             {item.purchasedQuantity}
+          </TableCell>
+          <TableCell className="min-w-24 text-right tabular-nums">
+            <div className="grid gap-1">
+              <span>{item.lossQuantity}</span>
+              <span className="text-muted-foreground text-xs">
+                {formatKrw(item.lossAmount)}
+              </span>
+            </div>
           </TableCell>
           <TableCell className="min-w-36">
             <Input
@@ -290,11 +500,9 @@ export function InventoryStepClient({
               autoComplete="off"
               value={item.currentQuantityInput}
               onChange={(event) =>
-                updateCurrentQuantity(
-                  item.productId,
-                  event.currentTarget.value,
-                )
+                updateCurrentQuantity(item.productId, event.currentTarget.value)
               }
+              disabled={isSaving || isClosed || isAdjustmentSavePending}
               className="min-h-11 min-w-24 tabular-nums"
             />
             {quantityError ? (
@@ -328,6 +536,7 @@ export function InventoryStepClient({
               onChange={(event) =>
                 updateQuantity(item.productId, event.currentTarget.value)
               }
+              disabled={isSaving || isClosed || isAdjustmentSavePending}
               className="min-h-11 min-w-24 tabular-nums"
             />
             {amountQuantityError ? (
@@ -341,7 +550,94 @@ export function InventoryStepClient({
             ) : null}
           </TableCell>
           <TableCell className="min-w-24">
-            {modified ? "수정됨" : "이월"}
+            <div className="flex min-w-64 flex-col gap-2">
+              <div className="flex flex-wrap gap-1">
+                <span>{modified ? "수정됨" : "이월"}</span>
+                {adjustmentNeeded ? <Badge>조정 필요</Badge> : null}
+                {adjusted ? <Badge variant="outline">조정됨</Badge> : null}
+              </div>
+
+              {isClosed ? (
+                <p className="text-muted-foreground text-xs">
+                  본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정
+                  기록을 사용해 주세요.
+                </p>
+              ) : null}
+
+              {adjusted && item.adjustment ? (
+                <div className="text-muted-foreground grid gap-1 text-xs">
+                  <p>
+                    조정 전{" "}
+                    <span className="tabular-nums">
+                      {item.adjustment.beforeQuantity} /{" "}
+                      {formatKrw(item.adjustment.beforeAmount)}
+                    </span>
+                  </p>
+                  <p>
+                    조정 후{" "}
+                    <span className="tabular-nums">
+                      {item.adjustment.afterQuantity} /{" "}
+                      {formatKrw(item.adjustment.afterAmount)}
+                    </span>
+                  </p>
+                  <p>
+                    차이{" "}
+                    <span className="tabular-nums">
+                      {formatSignedQuantity(item.adjustment.differenceQuantity)}{" "}
+                      / {formatKrw(item.adjustment.differenceAmount)}
+                    </span>
+                  </p>
+                  <p>사유 {item.adjustment.reason}</p>
+                </div>
+              ) : systemQuantity !== null ? (
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  조정 전 기준 {systemQuantity}
+                </p>
+              ) : null}
+
+              <Input
+                ref={(node) => {
+                  reasonRefs.current[item.productId] = node;
+                }}
+                aria-label={`${item.productName} 조정 사유`}
+                aria-invalid={Boolean(reasonError)}
+                aria-describedby={
+                  reasonError
+                    ? `inventory-adjustment-reason-${item.productId}-error`
+                    : undefined
+                }
+                autoComplete="off"
+                value={item.adjustmentReasonInput}
+                onChange={(event) =>
+                  updateAdjustmentReason(
+                    item.productId,
+                    event.currentTarget.value,
+                  )
+                }
+                disabled={isClosed || adjusted || isAdjustmentSavePending}
+                className="min-h-11 min-w-48"
+                placeholder="조정 사유"
+              />
+              {reasonError ? (
+                <p
+                  id={`inventory-adjustment-reason-${item.productId}-error`}
+                  role="alert"
+                  className="text-destructive text-xs"
+                >
+                  {reasonError}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                aria-label={`${item.productName} 조정 기록`}
+                onClick={() => handleAdjustmentSave(item)}
+                disabled={isClosed || adjusted || savingAdjustmentProductId !== null}
+                className="min-h-11"
+              >
+                {isSavingThisAdjustment ? "기록 중..." : "조정 기록"}
+              </Button>
+            </div>
           </TableCell>
         </TableRow>
       );
@@ -369,6 +665,16 @@ export function InventoryStepClient({
         <AlertDescription>{carryoverMessage}</AlertDescription>
       </Alert>
 
+      {isClosed ? (
+        <Alert variant="destructive">
+          <AlertTitle>본사 마감 장부</AlertTitle>
+          <AlertDescription>
+            본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정
+            기록을 사용해 주세요.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <form
         ref={formRef}
         onSubmit={handleSubmit}
@@ -377,9 +683,7 @@ export function InventoryStepClient({
       >
         <Tabs
           value={activeCategory}
-          onValueChange={(value) =>
-            setActiveCategory(normalizeCategory(value))
-          }
+          onValueChange={(value) => setActiveCategory(normalizeCategory(value))}
         >
           <TabsList className="min-h-11">
             {categories.map((category) => (
@@ -396,7 +700,7 @@ export function InventoryStepClient({
           {categories.map((category) => (
             <TabsContent key={category} value={category}>
               <div className="overflow-x-auto rounded-md border">
-                <Table aria-label="재고 품목" className="min-w-[960px]">
+                <Table aria-label="재고 품목" className="min-w-[1200px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead scope="col">품목</TableHead>
@@ -406,6 +710,9 @@ export function InventoryStepClient({
                       </TableHead>
                       <TableHead scope="col" className="text-right">
                         매입
+                      </TableHead>
+                      <TableHead scope="col" className="text-right">
+                        손실
                       </TableHead>
                       <TableHead scope="col">당일재고</TableHead>
                       <TableHead scope="col" className="text-right">
@@ -437,7 +744,11 @@ export function InventoryStepClient({
           </p>
         ) : null}
 
-        <Button type="submit" className="min-h-11" disabled={isSaving}>
+        <Button
+          type="submit"
+          className="min-h-11"
+          disabled={isSaving || isClosed}
+        >
           {isSaving ? "저장 중..." : "저장"}
         </Button>
       </form>

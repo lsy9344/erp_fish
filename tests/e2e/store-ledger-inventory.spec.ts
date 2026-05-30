@@ -60,6 +60,13 @@ async function cleanupStoryTwoFourData() {
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
   if (ledgerIds.length > 0) {
+    await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+
+    await prisma.ledgerInventoryAdjustment.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerInventoryItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });

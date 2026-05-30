@@ -13,12 +13,29 @@ export type InventoryStepLine = {
   previousQuantity: number;
   purchasedQuantity: number;
   purchaseAmount: number;
+  lossQuantity: number;
+  lossAmount: number;
   currentQuantity: number | null;
   quantity: number | null;
   inventoryAmount: number | null;
   carryoverSource: InventoryCarryoverSource;
   carryoverLedgerId: string | null;
   isModified: boolean;
+  adjustment: InventoryAdjustmentView | null;
+};
+
+export type InventoryAdjustmentView = {
+  id: string;
+  beforeQuantity: number;
+  beforeAmount: number;
+  afterQuantity: number;
+  afterAmount: number;
+  differenceQuantity: number;
+  differenceAmount: number;
+  reason: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type InventoryCarryoverState = {

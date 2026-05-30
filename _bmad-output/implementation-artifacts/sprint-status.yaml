@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-05-30T02:15:31+09:00
+# last_updated: 2026-05-30T10:41:36+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-05-30T02:15:31+09:00"
+last_updated: "2026-05-30T10:41:36+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -56,8 +56,8 @@ development_status:
   2-2-지점장이-비용과-근무-정보를-저장하고-기본-계산을-본다: done
   2-3-지점장이-매입-품목을-기준정보에서-선택해-입력한다: done
   2-4-지점장이-전일-이월-재고를-불러와-품목별-재고를-수정한다: done
-  2-5-지점장-또는-본사가-실제-재고-차이를-조정-사유와-함께-기록한다: backlog
-  2-6-지점장이-손실-폐기-떨이를-입력하고-재고-흐름에-반영한다: backlog
+  2-5-지점장-또는-본사가-실제-재고-차이를-조정-사유와-함께-기록한다: done
+  2-6-지점장이-손실-폐기-떨이를-입력하고-재고-흐름에-반영한다: done
   2-7-입력자가-검토-화면에서-계산값과-이상-후보를-확인한다: backlog
   2-8-입력자가-장부를-검토-대기로-제출한다: backlog
   epic-2-retrospective: optional

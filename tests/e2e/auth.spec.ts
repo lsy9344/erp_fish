@@ -149,9 +149,9 @@ test("지점장 업무 진입점은 장부 저장 기능 없이 준비 화면으
   await workspaceNav.getByRole("link", { name: "손실" }).click();
   await expect(page).toHaveURL(/\/app\/store-entry\/losses/);
   await expect(
-    page.getByRole("heading", { name: "손실 입력 준비" }),
+    page.getByRole("heading", { name: "손실/폐기/떨이 입력" }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "강남점" })).toBeVisible();
+  await expect(page.getByText(/강남점 · 영업일:/)).toBeVisible();
 });
 
 test("지점장 탭 이동은 선택한 배정 지점을 유지한다", async ({ page }) => {
@@ -174,6 +174,20 @@ test("지점장 탭 이동은 선택한 배정 지점을 유지한다", async ({
     /\/app\/store-entry\/inventory\?storeId=store-seocho/,
   );
   await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
+  await expect(page.getByText(/서초점 · 영업일:/)).toBeVisible();
+  await expect(page.getByText("강남점")).toHaveCount(0);
+
+  await page
+    .getByLabel("지점장 업무")
+    .getByRole("link", { name: "손실" })
+    .click();
+
+  await expect(page).toHaveURL(
+    /\/app\/store-entry\/losses\?storeId=store-seocho/,
+  );
+  await expect(
+    page.getByRole("heading", { name: "손실\/폐기\/떨이 입력" }),
+  ).toBeVisible();
   await expect(page.getByText(/서초점 · 영업일:/)).toBeVisible();
   await expect(page.getByText("강남점")).toHaveCount(0);
 });

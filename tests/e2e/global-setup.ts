@@ -129,6 +129,13 @@ export default async function globalSetup() {
   const story24ProductIds = story24Products.map((product) => product.id);
 
   if (story24ProductIds.length > 0) {
+    await prisma.ledgerLossItem.deleteMany({
+      where: {
+        productId: {
+          in: story24ProductIds,
+        },
+      },
+    });
     await prisma.inventoryOpeningSnapshot.deleteMany({
       where: {
         productId: {

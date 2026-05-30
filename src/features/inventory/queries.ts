@@ -26,8 +26,33 @@ const inventoryItemSelect = {
   carryoverLedgerId: true,
 } as const;
 
+const inventoryAdjustmentSelect = {
+  id: true,
+  dailyLedgerId: true,
+  productId: true,
+  beforeQuantity: true,
+  beforeAmount: true,
+  afterQuantity: true,
+  afterAmount: true,
+  differenceQuantity: true,
+  differenceAmount: true,
+  reason: true,
+  createdAt: true,
+  updatedAt: true,
+  createdBy: {
+    select: {
+      name: true,
+      email: true,
+    },
+  },
+} as const;
+
 type InventoryItemPayload = Prisma.LedgerInventoryItemGetPayload<{
   select: typeof inventoryItemSelect;
+}>;
+
+type InventoryAdjustmentPayload = Prisma.LedgerInventoryAdjustmentGetPayload<{
+  select: typeof inventoryAdjustmentSelect;
 }>;
 
 type PurchasePayload = {
@@ -41,6 +66,22 @@ type PurchasePayload = {
 };
 
 type PurchaseAggregate = {
+  quantity: number;
+  amount: number;
+  base: ProductInventoryBase;
+};
+
+type LossPayload = {
+  productId: string;
+  productName: string;
+  productCategory: string;
+  productSpec: string;
+  unitPrice: number;
+  quantity: number;
+  amount: number;
+};
+
+type LossAggregate = {
   quantity: number;
   amount: number;
   base: ProductInventoryBase;
@@ -68,9 +109,7 @@ function getYearMonth(date: Date) {
 function getMonthStart(date: Date) {
   const [year, month] = getYearMonth(date).split("-");
 
-  return new Date(
-    Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0),
-  );
+  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
 }
 
 function aggregatePurchases(purchases: PurchasePayload[]) {
@@ -104,9 +143,41 @@ function aggregatePurchases(purchases: PurchasePayload[]) {
   return aggregates;
 }
 
+function aggregateLosses(losses: LossPayload[]) {
+  const aggregates = new Map<string, LossAggregate>();
+
+  for (const loss of losses) {
+    const current = aggregates.get(loss.productId);
+
+    if (current) {
+      current.quantity += loss.quantity;
+      current.amount += loss.amount;
+      continue;
+    }
+
+    aggregates.set(loss.productId, {
+      quantity: loss.quantity,
+      amount: loss.amount,
+      base: {
+        productId: loss.productId,
+        productName: loss.productName,
+        productCategory: loss.productCategory,
+        productSpec: loss.productSpec,
+        unitPrice: loss.unitPrice,
+        previousQuantity: 0,
+        carryoverSource: InventoryCarryoverSource.MANUAL,
+        carryoverLedgerId: null,
+      },
+    });
+  }
+
+  return aggregates;
+}
+
 function toInventoryLine(
   base: ProductInventoryBase,
   purchasedQuantity: number,
+  loss: LossAggregate | undefined,
 ): InventoryStepLine {
   const currentQuantity = base.previousQuantity;
   const quantity = base.previousQuantity;
@@ -121,18 +192,43 @@ function toInventoryLine(
     previousQuantity: base.previousQuantity,
     purchasedQuantity,
     purchaseAmount: 0,
+    lossQuantity: loss?.quantity ?? 0,
+    lossAmount: loss?.amount ?? 0,
     currentQuantity,
     quantity,
     inventoryAmount: calculateInventoryAmount(quantity, base.unitPrice),
     carryoverSource: base.carryoverSource,
     carryoverLedgerId: base.carryoverLedgerId,
     isModified: false,
+    adjustment: null,
+  };
+}
+
+function toAdjustmentView(adjustment: InventoryAdjustmentPayload | undefined) {
+  if (!adjustment) {
+    return null;
+  }
+
+  return {
+    id: adjustment.id,
+    beforeQuantity: adjustment.beforeQuantity,
+    beforeAmount: adjustment.beforeAmount,
+    afterQuantity: adjustment.afterQuantity,
+    afterAmount: adjustment.afterAmount,
+    differenceQuantity: adjustment.differenceQuantity,
+    differenceAmount: adjustment.differenceAmount,
+    reason: adjustment.reason,
+    createdByName: adjustment.createdBy.name ?? adjustment.createdBy.email,
+    createdAt: adjustment.createdAt.toISOString(),
+    updatedAt: adjustment.updatedAt.toISOString(),
   };
 }
 
 function toExistingInventoryLine(
   item: InventoryItemPayload,
   purchase: PurchaseAggregate | undefined,
+  loss: LossAggregate | undefined,
+  adjustment: InventoryAdjustmentPayload | undefined,
 ): InventoryStepLine {
   return {
     id: item.id,
@@ -144,29 +240,36 @@ function toExistingInventoryLine(
     previousQuantity: item.previousQuantity,
     purchasedQuantity: purchase?.quantity ?? item.purchasedQuantity,
     purchaseAmount: purchase?.amount ?? 0,
+    lossQuantity: loss?.quantity ?? 0,
+    lossAmount: loss?.amount ?? 0,
     currentQuantity: item.currentQuantity,
     quantity: item.quantity,
     inventoryAmount: item.inventoryAmount,
     carryoverSource: item.carryoverSource,
     carryoverLedgerId: item.carryoverLedgerId,
     isModified: item.isModified,
+    adjustment: toAdjustmentView(adjustment),
   };
 }
 
 function withPurchaseAggregate(
   line: InventoryStepLine,
   purchase: PurchaseAggregate | undefined,
+  loss: LossAggregate | undefined,
 ): InventoryStepLine {
   return {
     ...line,
     purchasedQuantity: purchase?.quantity ?? line.purchasedQuantity,
     purchaseAmount: purchase?.amount ?? line.purchaseAmount,
+    lossQuantity: loss?.quantity ?? line.lossQuantity,
+    lossAmount: loss?.amount ?? line.lossAmount,
   };
 }
 
-function mergePurchaseOnlyBases(
+function mergeActivityBases(
   bases: ProductInventoryBase[],
   purchases: Map<string, PurchaseAggregate>,
+  losses: Map<string, LossAggregate>,
 ) {
   const knownProductIds = new Set(bases.map((base) => base.productId));
   const merged = [...bases];
@@ -174,6 +277,14 @@ function mergePurchaseOnlyBases(
   for (const [productId, purchase] of purchases) {
     if (!knownProductIds.has(productId)) {
       merged.push(purchase.base);
+      knownProductIds.add(productId);
+    }
+  }
+
+  for (const [productId, loss] of losses) {
+    if (!knownProductIds.has(productId)) {
+      merged.push(loss.base);
+      knownProductIds.add(productId);
     }
   }
 
@@ -182,23 +293,44 @@ function mergePurchaseOnlyBases(
 
 async function mergeExistingInventoryLines(
   tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
   existingItems: InventoryItemPayload[],
   purchases: Map<string, PurchaseAggregate>,
+  losses: Map<string, LossAggregate>,
 ) {
   const existingProductIds = new Set(
     existingItems.map((item) => item.productId),
   );
+  const adjustments = await tx.ledgerInventoryAdjustment.findMany({
+    where: {
+      dailyLedgerId,
+    },
+    select: inventoryAdjustmentSelect,
+  });
+  const adjustmentByProductId = new Map(
+    adjustments.map((adjustment) => [adjustment.productId, adjustment]),
+  );
   const lines = existingItems.map((item) =>
-    toExistingInventoryLine(item, purchases.get(item.productId)),
+    toExistingInventoryLine(
+      item,
+      purchases.get(item.productId),
+      losses.get(item.productId),
+      adjustmentByProductId.get(item.productId),
+    ),
   );
   const activeProductBases = await getActiveProductBases(tx);
 
-  for (const base of mergePurchaseOnlyBases(activeProductBases, purchases)) {
+  for (const base of mergeActivityBases(activeProductBases, purchases, losses)) {
     if (!existingProductIds.has(base.productId)) {
       lines.push(
         withPurchaseAggregate(
-          toInventoryLine(base, purchases.get(base.productId)?.quantity ?? 0),
+          toInventoryLine(
+            base,
+            purchases.get(base.productId)?.quantity ?? 0,
+            losses.get(base.productId),
+          ),
           purchases.get(base.productId),
+          losses.get(base.productId),
         ),
       );
     }
@@ -360,6 +492,20 @@ export async function getInventoryStepDataInTx(
 ): Promise<InventoryStepData> {
   const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
   const purchases = aggregatePurchases(ledger.ledgerPurchaseItems);
+  const losses = aggregateLosses(
+    await tx.ledgerLossItem.findMany({
+      where: { dailyLedgerId: ledger.id },
+      select: {
+        productId: true,
+        productName: true,
+        productCategory: true,
+        productSpec: true,
+        unitPrice: true,
+        quantity: true,
+        amount: true,
+      },
+    }),
+  );
   const existingItems = await tx.ledgerInventoryItem.findMany({
     where: {
       dailyLedgerId: ledger.id,
@@ -377,7 +523,13 @@ export async function getInventoryStepDataInTx(
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
       status: ledger.status,
-      items: await mergeExistingInventoryLines(tx, existingItems, purchases),
+      items: await mergeExistingInventoryLines(
+        tx,
+        ledger.id,
+        existingItems,
+        purchases,
+        losses,
+      ),
       carryover: {
         status:
           source === InventoryCarryoverSource.MANUAL ? "manual" : "loaded",
@@ -391,7 +543,7 @@ export async function getInventoryStepDataInTx(
   }
 
   const carryover = await getCarryoverBases(tx, storeId, getTodayKstMidnight());
-  const bases = mergePurchaseOnlyBases(carryover.bases, purchases);
+  const bases = mergeActivityBases(carryover.bases, purchases, losses);
 
   return {
     id: ledger.id,
@@ -400,8 +552,13 @@ export async function getInventoryStepDataInTx(
     status: ledger.status,
     items: bases.map((base) =>
       withPurchaseAggregate(
-        toInventoryLine(base, purchases.get(base.productId)?.quantity ?? 0),
+        toInventoryLine(
+          base,
+          purchases.get(base.productId)?.quantity ?? 0,
+          losses.get(base.productId),
+        ),
         purchases.get(base.productId),
+        losses.get(base.productId),
       ),
     ),
     carryover: {

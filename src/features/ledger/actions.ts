@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreAccess } from "~/server/authz";
 import { db } from "~/server/db";
@@ -356,6 +357,12 @@ export async function saveLedgerPurchases(
           }),
         });
       }
+
+      await reconcileLedgerInventoryAdjustments(
+        tx,
+        beforeLedger.id,
+        actor.user.id,
+      );
 
       const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
         where: { id: beforeLedger.id },
