@@ -2,11 +2,17 @@
 name: ERP Fish
 status: final
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-29
 mockups:
   - mockups/key-dashboard.html
   - mockups/key-inventory.html
   - mockups/key-closing-detail.html
+  - mockups/improved-key-dashboard.html
+  - mockups/improved-key-inventory.html
+  - mockups/improved-key-closing-detail.html
+  - mockups/v2-key-dashboard.html
+  - mockups/v2-key-inventory.html
+  - mockups/v2-key-closing-detail.html
 sources:
   - _bmad-output/planning-artifacts/briefs/brief-erp_fish-2026-05-28/brief.md
   - _bmad-output/planning-artifacts/briefs/brief-erp_fish-2026-05-28/addendum.md
@@ -36,6 +42,13 @@ sources:
 > - [`mockups/key-dashboard.html`](mockups/key-dashboard.html) — 관제판 (BranchRow, SignalChip, StatusBadge)
 > - [`mockups/key-inventory.html`](mockups/key-inventory.html) — 재고 입력 모바일 (InventoryRowEdit, StepForm)
 > - [`mockups/key-closing-detail.html`](mockups/key-closing-detail.html) — 장부 상세 Sheet (InventoryTable, CorrectionPanel, 마감/잠김 상태)
+> - [`mockups/improved-key-dashboard.html`](mockups/improved-key-dashboard.html) — **[개선안 v1]** 관제판 (실시간 검색, 컬럼 정렬, 호버 힌트, 0원 감쇄 및 필터링 기능 탑재)
+> - [`mockups/improved-key-inventory.html`](mockups/improved-key-inventory.html) — **[개선안 v1]** 재고 입력 모바일 (Sticky Header, 터치 타겟 규격 확장, 대화형 ⚠ 경고 툴팁)
+> - [`mockups/improved-key-closing-detail.html`](mockups/improved-key-closing-detail.html) — **[개선안 v1]** 장부 상세 Sheet (탭 에러 뱃지, 테이블 행 클릭-정정 패널 자동 바인딩 연동, 수정 요청 팝업 모달)
+> - [`mockups/v2-key-dashboard.html`](mockups/v2-key-dashboard.html) — **[사양서 동기화 완결 v2]** 관제판 최종안 (DESIGN.md 명세와 CSS 클래스 매핑 및 토큰 연동 완료)
+> - [`mockups/v2-key-inventory.html`](mockups/v2-key-inventory.html) — **[사양서 동기화 완결 v2]** 재고 입력 모바일 최종안 (모바일 전용 cell-input-mobile, warning-marker-mobile 및 add-row-mobile 토큰 반영 완료)
+> - [`mockups/v2-key-closing-detail.html`](mockups/v2-key-closing-detail.html) — **[사양서 동기화 완결 v2]** 장부 상세 Sheet 최종안 (tab-badge-warning / info 명칭 연계 및 CorrectionRequestModal 탑재 완료)
+
 
 ### 본사 사용자 IA
 
@@ -59,14 +72,13 @@ sources:
 | 오늘 장부 (홈) | 로그인 후 기본 / 하단 탭 `장부` | 당일 장부 단계형 입력 시작점 |
 | 재고 입력 | 장부 단계 진행 / 하단 탭 `재고` | 냉동·생물 품목별 재고 수정 |
 | 손실 입력 | 장부 단계 진행 / 하단 탭 `손실` | 폐기·떨이 품목·금액·사유 입력 |
-| 본사 코멘트 | 장부 상세 / 하단 탭 `코멘트` | 본사 검토 메모 확인 및 조치 응답 |
 | 과거 장부 | 홈 날짜 선택 | 지난 장부 조회 (마감 후 수정 불가) |
 
 ### 내비게이션 구조
 
 **데스크탑 (본사 / 지점장 PC):** 좌측 고정 사이드바 240px. `md`(768–1023px)에서 아이콘 전용 56px로 collapse. 항목: 홈(관제판 또는 오늘 장부), 리포트, 기준정보, 설정.
 
-**모바일·태블릿 (지점장 주 서피스):** 하단 탭 바 56px + safe-area-inset. 탭: `장부` / `재고` / `손실` / `코멘트`. 탭 이동은 현재 입력 단계를 유지한다.
+**모바일·태블릿 (지점장 주 서피스):** 하단 탭 바 56px + safe-area-inset. 탭: `장부` / `재고` / `손실`. 탭 이동은 현재 입력 단계를 유지한다.
 
 **모달 스택:** 1단계 이하. Dialog 위에 Dialog 금지. Sheet(슬라이드오버)는 장부 상세 진입에 사용할 수 있으며 Dialog와 중첩하지 않는다.
 
@@ -90,15 +102,16 @@ sources:
 
 | 컴포넌트 | 사용처 | 동작 규칙 |
 |---|---|---|
-| **관제판 행 (BranchRow)** | 관제판 | 행 전체 클릭 → 장부 상세로 이동(데스크탑: Sheet 또는 페이지, 모바일: 새 페이지). 이상 신호 있는 행은 `{DESIGN.md.dashboard-row.anomaly}` 처리. 지점명·상태 배지·이상 신호 칩·매출·이익률·마지막 수정자·마감 여부 표시. |
-| **품목 재고 테이블 (InventoryTable)** | 장부 상세 | 냉동/생물 탭 전환. 품목·규격·전일재고·매입·당일재고·재고금액·수량 컬럼. 수정된 행은 `{DESIGN.md.inventory-row-modified}` 강조. 신규 품목은 `{DESIGN.md.inventory-row-new}`. 숫자 컬럼 `tabular-nums`. 정렬: 기본 품목명 오름차순. |
+| **관제판 행 (BranchRow)** | 관제판 | 행 전체 클릭 → 장부 상세로 이동(데스크탑: Sheet 또는 페이지, 모바일: 새 페이지). 이상 신호 있는 행은 `{DESIGN.md.dashboard-row.anomaly}` 처리. 지명 실시간 검색 필터링 및 컬럼 단위 정렬(▲▼ 정렬 지시자 기반 소팅) 지원. 호버 시 상세보기 ↗ 플로팅 어포던스 힌트 노출. |
+| **품목 재고 테이블 (InventoryTable)** | 장부 상세 | 냉동/생물 탭 전환. 탭 옆에 미결 경고/수정 갯수 뱃지(`tab-badge-warning`/`tab-badge-info`) 표시로 현황 가시성 확보. 품목·규격·전일재고·매입·당일재고·재고금액·수량 컬럼 표시. 수정된 행은 `{DESIGN.md.inventory-row-modified}` 강조. |
 | **단계형 입력 폼 (StepForm)** | 지점장 장부 입력 | 7단계: 매출/결제 → 비용 → 매입 → 재고 → 손실/폐기 → 근무인원 → 검토/제출. 상단 Step Indicator. 단계 간 이동 자유(저장된 데이터 유지). 이전/다음 버튼 + 하단 탭 직접 이동. |
-| **재고 행 인라인 편집 (InventoryRowEdit)** | 재고 입력 | 전일 이월값 프리필. 탭/클릭으로 셀 편집 진입. 변경 즉시 `{DESIGN.md.inventory-row-modified}` 표시. 수량 0 입력 시 확인 프롬프트("품목을 제외하시겠어요?"). 신규 품목 추가는 행 하단 "품목 추가" 버튼. |
+| **재고 행 인라인 편집 (InventoryRowEdit)** | 재고 입력 | 전일 이월값 프리필. 모바일 터치 최적화 규격(`cell-input-mobile`, `add-row-mobile` 최소 44px 이상 터치 규격 확보). 변경 즉시 `{DESIGN.md.inventory-row-modified}` 표시. |
 | **이상 신호 칩 (SignalChip)** | 관제판 행, 장부 상세 헤더 | 아이콘(삼각 경고 또는 원) + 짧은 레이블. 경고 등급(amber), 심각 등급(red). 툴팁: 구체적 수치 표시. 복수 칩 허용. |
-| **마감 확인 다이얼로그 (ClosingDialog)** | 본사 장부 상세 | shadcn `Dialog`. 제목: "장부를 마감합니다". 안내: "마감 후 지점장은 원본을 수정할 수 없습니다. 정정이 필요하면 정정 기록을 추가할 수 있습니다." 버튼: 취소 / 마감 확정. |
-| **정정 기록 패널 (CorrectionPanel)** | 본사 마감된 장부 상세 | shadcn `Sheet`(하단 또는 우측). 원본값과 정정값 나란히 표시. 정정 사유 필수 입력. 정정 이력 타임라인 표시. |
+| **마감 확인 다이얼로그 (ClosingDialog)** | 본사 장부 상세 | shadcn `Dialog`. 제목: "장부를 마감합니다". 안내: "마감 후 지점장은 원본을 수정할 수 없습니다." 버튼: 취소 / 마감 확정. |
+| **정정 기록 패널 (CorrectionPanel)** | 본사 마감된 장부 상세 | 원본 잠금 시 품목 테이블의 각 행 클릭을 통해 정정 대상 품목명과 기존 수치 원본값이 자동으로 폼에 연동/바인딩 처리되며, 새 값 입력 필드로 포커스 이동. |
+| **수정 요청 모달 (CorrectionRequestModal)** | 본사 장부 상세 | `수정 요청` 클릭 시 알림 다이얼로그 노출, 사유를 작성하여 지점장 모바일 앱 푸시 전송. |
 | **장부 상태 배지 (StatusBadge)** | 관제판, 장부 상세 헤더 | 5종: 미입력·입력중·검토대기·본사마감·휴무. `{DESIGN.md.badge-*}` 스타일 적용. 항상 텍스트만, 아이콘 없음. |
-| **검토/제출 요약 (ReviewSummary)** | 장부 입력 마지막 단계 | 핵심 계산값(총매출·매출이익·이익률·영업이익·인당생산성·재고금액) 요약. 누락 항목·이상 신호 후보 목록. "제출" 버튼은 이상 후보 있어도 활성화—경고는 차단이 아닌 확인 목적. |
+| **검토/제출 요약 (ReviewSummary)** | 장부 입력 마지막 단계 | 핵심 계산값 요약. 누락 항목·이상 신호 후보 목록. "제출" 버튼은 이상 후보 있어도 활성화—경고는 차단이 아닌 확인 목적. |
 
 ## State Patterns
 
@@ -129,9 +142,11 @@ sources:
 - 단계 이동: 하단 "다음" 버튼 또는 하단 탭 탭.
 - 스와이프: v1에서 도입 없음. 뒤로 가기는 헤더 뒤로 버튼.
 - 숫자 입력 필드: `inputmode="numeric"` 또는 `"decimal"`. 키패드 자동 수치 모드.
+- **경고 메시지 확인:** 경고 마커(⚠) 터치 시 비정상 수치에 대한 상세 검증 가이드 툴팁 노출, 빈 화면 터치 시 자동 닫힘.
 
 **마우스 · 키보드 (데스크탑):**
 - 관제판 행: 클릭 → 장부 상세. 호버 시 행 강조(`bg-muted/50`).
+- 관제판 헤더: 클릭을 통한 각 지표 컬럼 데이터 정렬 지원.
 - 재고 테이블: 셀 클릭 → 인라인 편집. `Tab`으로 다음 편집 가능 셀 이동. `Enter`로 편집 확정.
 - 단계형 폼: `Tab`/`Shift+Tab` 필드 순서 이동. 버튼 엔터.
 - `Esc`: 열린 Dialog/Sheet 닫기, 인라인 편집 취소.
@@ -143,6 +158,7 @@ sources:
 - 드래그 재정렬 v1 없음.
 - 모달 2단계 이상 스택.
 - 브라우저 push 알림 v1 없음.
+- **테이블 헤더 스크롤 분리:** 모바일 재고 테이블은 스크롤 시 반드시 Sticky Header로 상단에 고정한다.
 
 ## Accessibility Floor
 
@@ -163,7 +179,7 @@ sources:
 |---|---|---|
 | `≥ lg` (1024px+) | 좌측 사이드바 240px 고정. 관제판 테이블 전체 컬럼 표시. 장부 상세 Sheet(우측 슬라이드오버) 또는 별도 페이지. | 본사 관리자 |
 | `md` (768–1023px) | 사이드바 아이콘 전용 56px. 관제판 일부 컬럼 숨김(마지막 수정자 등). 장부 상세 전체 페이지 이동. | 본사 · 지점장 태블릿 |
-| `< md` (390px+) | 사이드바 없음. 하단 탭 바 4개. 관제판 카드형 or 간소 테이블(지점명·상태·이상신호·매출). 재고 테이블 좌우 스크롤. | 지점장 모바일 |
+| `< md` (390px+) | 사이드바 없음. 하단 탭 바 3개. 관제판 카드형 or 간소 테이블(지점명·상태·이상신호·매출). 재고 테이블 좌우 스크롤. | 지점장 모바일 |
 
 **모바일 재고 테이블:** 30개 이상 행은 가상화(windowed list) 또는 50행 단위 페이지로 처리. 편집 중 키패드가 올라와도 현재 셀이 가려지지 않도록 스크롤 보정.
 

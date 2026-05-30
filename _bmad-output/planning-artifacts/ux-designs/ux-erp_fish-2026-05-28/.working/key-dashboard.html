@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>ERP Fish — 관제판 (Desktop)</title>
+<!--
+  Spine sections:
+  - EXPERIENCE.md: Information Architecture › 본사 사용자 IA (관제판)
+  - EXPERIENCE.md: Component Patterns › BranchRow, SignalChip, StatusBadge
+  - EXPERIENCE.md: State Patterns › 장부 상태, 이상 신호
+  - EXPERIENCE.md: Key Flows › Flow 1 steps 1-3
+  - DESIGN.md: Colors › primary, warning, signal-chip, dashboard-row
+  Canonical state: 아침 관제판 — 7개 지점, 이상 신호 있는 행 강조
+-->
+<style>
+  /* Tokens — Coastal SaaS Light */
+  :root {
+    --bg:          #f9fafb;
+    --surface:     #ffffff;
+    --border:      #e5e7eb;
+    --sidebar-bg:  #ffffff;
+    --primary:     #2563eb;
+    --primary-fg:  #ffffff;
+    --accent:      #0ea5e9;
+    --muted:       #f3f4f6;
+    --muted-fg:    #6b7280;
+    --fg:          #111827;
+    --fg-2:        #374151;
+    --fg-3:        #6b7280;
+    --danger:      #dc2626;
+    --danger-bg:   #fef2f2;
+    --danger-border:#fecaca;
+    --warning:     #d97706;
+    --warning-bg:  #fffbeb;
+    --warning-border:#fde68a;
+    --success:     #16a34a;
+    --success-bg:  #f0fdf4;
+    --radius-sm:   4px;
+    --radius-md:   6px;
+    --radius-full: 9999px;
+    --shadow-sm:   0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md:   0 4px 6px -1px rgba(0,0,0,0.07);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+                 "Noto Sans KR", sans-serif;
+    background: #e5e7eb;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 2rem;
+    font-size: 13px;
+  }
+
+  /* ── Browser Chrome ── */
+  .browser {
+    width: 1280px; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.2);
+  }
+  .browser-bar {
+    background: #f1f3f4; border-bottom: 1px solid #d1d5db;
+    padding: 10px 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .dot { width:12px; height:12px; border-radius:50%; }
+  .dot-r{background:#ef4444;} .dot-y{background:#f59e0b;} .dot-g{background:#22c55e;}
+  .url-bar {
+    flex:1; background:#fff; border:1px solid #d1d5db; border-radius:6px;
+    padding:4px 12px; font-size:12px; color:#374151; margin:0 12px;
+  }
+
+  /* ── App Shell ── */
+  .app { display: flex; height: 680px; background: var(--bg); }
+
+  /* Sidebar */
+  .sidebar {
+    width: 240px; flex-shrink: 0;
+    background: var(--sidebar-bg); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .sidebar-logo {
+    padding: 18px 20px 14px;
+    font-size: 15px; font-weight: 700; color: var(--primary);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo-icon {
+    width: 26px; height: 26px; background: var(--primary);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px;
+  }
+  .sidebar-section { padding: 10px 10px 4px; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: var(--radius-md); margin: 1px 8px;
+    font-size: 13px; color: var(--fg-2); cursor: pointer;
+    transition: background 0.1s;
+  }
+  .nav-item.active { background: var(--primary); color: #fff; font-weight: 600; }
+  .nav-item:not(.active):hover { background: var(--muted); }
+  .nav-icon { width: 16px; text-align: center; flex-shrink: 0; }
+  .sidebar-bottom {
+    margin-top: auto; padding: 12px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .avatar-info { flex: 1; }
+  .avatar-name { font-size: 12px; font-weight: 600; color: var(--fg); }
+  .avatar-role { font-size: 11px; color: var(--muted-fg); }
+
+  /* Main */
+  .main { flex: 1; overflow-y: auto; }
+  .main-header {
+    padding: 18px 28px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .page-title { font-size: 18px; font-weight: 700; color: var(--fg); }
+  .page-subtitle { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .date-nav {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 5px 10px; font-size: 12px; color: var(--fg-2); background: var(--surface);
+  }
+  .btn {
+    padding: 6px 14px; border-radius: var(--radius-md); font-size: 12px;
+    font-weight: 600; cursor: pointer; border: none;
+  }
+  .btn-primary { background: var(--primary); color: var(--primary-fg); }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--fg-2); }
+
+  /* Summary Cards */
+  .summary-row { display: flex; gap: 12px; padding: 18px 28px 0; }
+  .summary-card {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .summary-label { font-size: 11px; color: var(--muted-fg); font-weight: 500; margin-bottom: 4px; }
+  .summary-value { font-size: 22px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .summary-sub { font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
+  .summary-card.danger-card { border-color: var(--danger-border); background: var(--danger-bg); }
+  .summary-card.danger-card .summary-value { color: var(--danger); }
+
+  /* Table */
+  .table-wrap {
+    margin: 18px 28px 24px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm); overflow: hidden;
+  }
+  .table-toolbar {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .table-toolbar-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .filter-chips { display: flex; gap: 6px; }
+  .filter-chip {
+    padding: 3px 10px; border-radius: var(--radius-full); font-size: 11px;
+    font-weight: 500; border: 1px solid var(--border); cursor: pointer;
+    background: var(--surface); color: var(--fg-2);
+  }
+  .filter-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    padding: 9px 14px; text-align: left; font-size: 11px;
+    font-weight: 600; color: var(--muted-fg); letter-spacing: 0.04em;
+    text-transform: uppercase; border-bottom: 1px solid var(--border);
+    background: var(--muted);
+  }
+  thead th.num { text-align: right; }
+  tbody tr {
+    border-bottom: 1px solid var(--border); cursor: pointer;
+    transition: background 0.1s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #f9fafb; }
+  tbody tr.anomaly-critical {
+    background: var(--danger-bg);
+    border-left: 3px solid var(--danger);
+  }
+  tbody tr.anomaly-critical:hover { background: #fee2e2; }
+  tbody tr.anomaly-warning {
+    background: var(--warning-bg);
+    border-left: 3px solid var(--warning);
+  }
+  tbody tr.anomaly-warning:hover { background: #fef3c7; }
+  td { padding: 11px 14px; font-size: 12.5px; color: var(--fg-2); vertical-align: middle; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.branch-name { font-weight: 600; color: var(--fg); font-size: 13px; }
+  td.branch-name span { font-size: 11px; font-weight: 400; color: var(--muted-fg); margin-left: 4px; }
+
+  /* Badges */
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: var(--radius-full);
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-closed { background: #dcfce7; color: #15803d; }
+  .badge-review { background: #fef3c7; color: #92400e; }
+  .badge-draft  { background: #dbeafe; color: #1d4ed8; }
+  .badge-empty  { background: var(--muted); color: var(--muted-fg); }
+  .badge-holiday{ background: var(--muted); color: var(--muted-fg); font-style: italic; }
+
+  /* Signal Chips */
+  .signals { display: flex; flex-wrap: wrap; gap: 4px; }
+  .signal {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; border-radius: var(--radius-full); font-size: 10.5px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .signal-red   { background: #fee2e2; color: var(--danger); }
+  .signal-amber { background: #fef3c7; color: var(--warning); }
+  .signal-icon { font-size: 10px; }
+
+  .profit-up   { color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .profit-down { color: var(--danger);  font-weight: 600; font-variant-numeric: tabular-nums; }
+  .profit-mid  { color: var(--fg-2); font-variant-numeric: tabular-nums; }
+
+  .modified-by { font-size: 11px; color: var(--muted-fg); }
+</style>
+</head>
+<body>
+<div class="browser">
+  <!-- Browser chrome -->
+  <div class="browser-bar">
+    <div class="dot dot-r"></div>
+    <div class="dot dot-y"></div>
+    <div class="dot dot-g"></div>
+    <div class="url-bar">erp.fishco.internal / dashboard</div>
+  </div>
+
+  <div class="app">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">🐟</div>
+        ERP Fish
+      </div>
+      <div style="padding:8px 0">
+        <div class="sidebar-section">메인</div>
+        <div class="nav-item active">
+          <span class="nav-icon">⊞</span> 관제판
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">📊</span> 리포트
+        </div>
+        <div class="sidebar-section" style="margin-top:8px">관리</div>
+        <div class="nav-item">
+          <span class="nav-icon">⚙</span> 기준정보
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🔔</span> 이상 신호 기준
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">👥</span> 사용자 관리
+        </div>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="avatar">김</div>
+        <div class="avatar-info">
+          <div class="avatar-name">김관리자</div>
+          <div class="avatar-role">본사 관리자</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+      <div class="main-header">
+        <div>
+          <div class="page-title">관제판</div>
+          <div class="page-subtitle">전체 지점 일일 장부 현황 · 2026년 5월 28일 목요일</div>
+        </div>
+        <div class="header-actions">
+          <div class="date-nav">
+            ‹ &nbsp; 2026-05-28 &nbsp; ›
+          </div>
+          <button class="btn btn-outline" style="font-size:12px">어제</button>
+          <button class="btn btn-primary">오늘</button>
+        </div>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="summary-row">
+        <div class="summary-card">
+          <div class="summary-label">전체 지점</div>
+          <div class="summary-value">7</div>
+          <div class="summary-sub">영업일 기준</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">본사 마감 완료</div>
+          <div class="summary-value" style="color:var(--success)">3</div>
+          <div class="summary-sub">현대·못골·인헌</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">검토 대기</div>
+          <div class="summary-value" style="color:var(--warning)">2</div>
+          <div class="summary-sub">강서·안양</div>
+        </div>
+        <div class="summary-card danger-card">
+          <div class="summary-label">이상 신호 지점</div>
+          <div class="summary-value">2</div>
+          <div class="summary-sub">강서(2) · 구로(1)</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">미입력</div>
+          <div class="summary-value" style="color:var(--muted-fg)">2</div>
+          <div class="summary-sub">불광·구로</div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="table-wrap">
+        <div class="table-toolbar">
+          <div class="table-toolbar-title">지점별 장부 현황</div>
+          <div class="filter-chips">
+            <div class="filter-chip active">전체 (7)</div>
+            <div class="filter-chip">이상 신호 (2)</div>
+            <div class="filter-chip">미마감 (4)</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:130px">지점</th>
+              <th style="width:95px">장부 상태</th>
+              <th style="width:160px">이상 신호</th>
+              <th class="num" style="width:100px">매출</th>
+              <th class="num" style="width:72px">이익률</th>
+              <th class="num" style="width:85px">매출차액</th>
+              <th style="width:130px">마지막 수정</th>
+              <th style="width:80px">마감</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 현대 — 본사마감, 정상 -->
+            <tr>
+              <td class="branch-name">현대점</td>
+              <td><span class="badge badge-closed">본사마감</span></td>
+              <td><span style="color:var(--muted-fg);font-size:11px">—</span></td>
+              <td class="num">₩3,420만</td>
+              <td class="num profit-up">38.2%</td>
+              <td class="num" style="color:var(--muted-fg)">₩0</td>
+              <td class="modified-by">이스태프 · 08:14</td>
+              <td><span class="badge badge-closed" style="font-size:10px">마감</span></td>
+            </tr>
+
+            <!-- 강서 — 검토대기, 이상신호 2개 (critical) -->
+            <tr class="anomaly-critical">
+              <td class="branch-name">강서점 <span>↗ 클릭해 확인</span></td>
+              <td><span class="badge badge-review">검토대기</span></td>
+              <td>
+                <div class="signals">
+                  <span class="signal signal-red"><span class="signal-icon">▲</span>매출차액 ₩48K</span>
+                  <span class="signal signal-amber"><span class="signal-icon">▲</span>이익률 급락</span>
+                </div>
+              </td>
+              <td class="num">₩2,890만</td>
+              <td class="num profit-down">21.4%</td>
+              <td class="num" style="color:var(--danger);font-weight:600;font-variant-numeric:tabular-nums">₩48,000</td>
+              <td class="modified-by">강서지점장 · 07:52</td>
+              <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px">마감</button></td>
+            </tr>
+
+            <!-- 못골 — 본사마감, 정상 -->
+            <tr>
+              <td class="branch-name">못골점</td>
+              <td><span class="badge badge-closed">본사마감</span></td>
+              <td><span style="color:var(--muted-fg);font-size:11px">—</span></td>
+              <td class="num">₩2,140만</td>
+              <td class="num profit-mid">34.8%</td>
+              <td class="num" style="color:var(--muted-fg)">₩0</td>
+              <td class="modified-by">김관리자 · 07:41</td>
+              <td><span class="badge badge-closed" style="font-size:10px">마감</span></td>
+            </tr>
+
+            <!-- 불광 — 미입력 -->
+            <tr>
+              <td class="branch-name">불광점</td>
+              <td><span class="badge badge-empty">미입력</span></td>
+              <td><span style="color:var(--muted-fg);font-size:11px">—</span></td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="modified-by" style="color:var(--muted-fg)">미제출</td>
+              <td><span style="font-size:11px;color:var(--muted-fg)">대기중</span></td>
+            </tr>
+
+            <!-- 안양 — 검토대기, 이상신호 없음 -->
+            <tr>
+              <td class="branch-name">안양점</td>
+              <td><span class="badge badge-review">검토대기</span></td>
+              <td><span style="color:var(--muted-fg);font-size:11px">—</span></td>
+              <td class="num">₩1,980만</td>
+              <td class="num profit-mid">36.1%</td>
+              <td class="num" style="color:var(--muted-fg)">₩2,000</td>
+              <td class="modified-by">안양지점장 · 07:35</td>
+              <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px">마감</button></td>
+            </tr>
+
+            <!-- 인헌 — 본사마감 -->
+            <tr>
+              <td class="branch-name">인헌점</td>
+              <td><span class="badge badge-closed">본사마감</span></td>
+              <td><span style="color:var(--muted-fg);font-size:11px">—</span></td>
+              <td class="num">₩2,560만</td>
+              <td class="num profit-up">40.3%</td>
+              <td class="num" style="color:var(--muted-fg)">₩0</td>
+              <td class="modified-by">김관리자 · 07:58</td>
+              <td><span class="badge badge-closed" style="font-size:10px">마감</span></td>
+            </tr>
+
+            <!-- 구로 — 미입력, 이상신호(과재고) -->
+            <tr class="anomaly-warning">
+              <td class="branch-name">구로점</td>
+              <td><span class="badge badge-empty">미입력</span></td>
+              <td>
+                <div class="signals">
+                  <span class="signal signal-amber"><span class="signal-icon">▲</span>전일 재고 증가</span>
+                </div>
+              </td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="num" style="color:var(--muted-fg)">—</td>
+              <td class="modified-by" style="color:var(--muted-fg)">미제출</td>
+              <td><span style="font-size:11px;color:var(--muted-fg)">대기중</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div><!-- /table-wrap -->
+    </div><!-- /main -->
+  </div><!-- /app -->
+</div><!-- /browser -->
+</body>
+</html>

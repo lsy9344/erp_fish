@@ -3,7 +3,7 @@ name: ERP Fish
 description: 수산물 유통 소매 지점 내부 ERP. 7~8개 지점의 일일 장부 입력과 본사 관제를 웹으로 전환. shadcn/ui + Tailwind CSS 기반; 이 DESIGN.md는 브랜드 레이어 델타만 정의한다.
 status: final
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-29
 sources:
   - _bmad-output/planning-artifacts/briefs/brief-erp_fish-2026-05-28/brief.md
   - _bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md
@@ -106,6 +106,40 @@ components:
   step-indicator-pending:
     color: 'muted-foreground'
     icon: 'circle'
+  # 매출차액 표시 스타일 2종
+  diff-zero:
+    color: 'hsl(220 9% 70%)'
+    font-weight: 'normal'
+  diff-value:
+    color: 'destructive'
+    font-weight: 'bold'
+  # 재고 탭 내 경고/수정 뱃지
+  tab-badge-warning:
+    background: 'hsl(38 92% 50% / 0.08)'
+    foreground: 'hsl(38 92% 50%)'
+    border: '1px solid hsl(38 92% 50% / 0.2)'
+    radius: '{rounded.full}'
+  tab-badge-info:
+    background: '{colors.primary} / 0.08'
+    foreground: '{colors.primary}'
+    radius: '{rounded.full}'
+  # 모바일 재고 경고 마커
+  warning-marker-mobile:
+    background: 'destructive / 0.08'
+    foreground: 'destructive'
+    border: '1px solid destructive'
+    radius: '{rounded.full}'
+    size: '20px * 20px'
+  # 모바일 인라인 입력 필드 및 추가 버튼 (터치 가용 크기 44px 이상 확보용)
+  cell-input-mobile:
+    height: '32px'
+    border: '1px solid {colors.primary}'
+    background: '{colors.primary} / 0.04'
+    padding: '6px 8px'
+  add-row-mobile:
+    min-height: '44px'
+    border: '1px dashed {colors.primary} / 0.4'
+    radius: '{rounded.md}'
 ---
 
 ## Brand & Style
@@ -174,3 +208,5 @@ ERP Fish는 아래 shadcn 컴포넌트를 **변경 없이** 사용한다: `Butto
 | Warning(amber)은 매출차액·이익률 급락에, destructive(red)는 재고·손실 이상에 쓴다 | 두 등급을 혼용한다 |
 | 모바일 재고 행은 터치 타겟 최소 44px를 확보한다 | 데스크탑용 narrow 셀을 모바일에 그대로 쓴다 |
 | 배지는 pill 형태, 나머지는 `{rounded.md}` | 배지 외 요소에 pill을 적용한다 |
+| 모바일 재고 테이블 헤더는 스크롤 시 상단 고정(sticky)한다 | 테이블 헤더를 스크롤하여 화면 밖으로 사라지게 방치한다 |
+| 매출차액 ₩0은 흐리게 하고 차액 발생 시에만 붉은색 강하게 강조한다 | 모든 금액 차액 수치에 동일한 강조를 주어 대비 구분을 모호하게 한다 |

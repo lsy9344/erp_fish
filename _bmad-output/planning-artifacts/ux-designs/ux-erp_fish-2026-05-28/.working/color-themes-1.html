@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP Fish — Color Themes</title>
+<style>
+  /* ============================================================
+     SYSTEM
+  ============================================================ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+                 "Noto Sans KR", sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    padding: 2rem;
+    min-width: 900px;
+  }
+  h1 { font-size: 1.1rem; font-weight: 600; color: #fff; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 0.8rem; color: #888; margin-bottom: 2.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2.5rem; }
+
+  /* ============================================================
+     THEME CARD SHELL
+  ============================================================ */
+  .theme-card { border-radius: 12px; overflow: hidden; border: 1px solid #2a2a2a; }
+  .theme-label {
+    padding: 0.75rem 1rem;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .theme-label h2 { font-size: 0.9rem; font-weight: 700; color: #fff; }
+  .theme-label p  { font-size: 0.72rem; color: #888; margin-top: 0.15rem; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; }
+
+  /* ============================================================
+     TOKEN CHIPS
+  ============================================================ */
+  .tokens { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+  .chip {
+    display: flex; align-items: center; gap: 0.35rem;
+    font-size: 0.65rem; color: #999;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px; padding: 0.2rem 0.5rem;
+  }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ============================================================
+     MINI UI — DASHBOARD ROW
+  ============================================================ */
+  .mini-ui { border-radius: 8px; overflow: hidden; }
+  .ui-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.5rem 0.75rem; font-size: 0.65rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .ui-row {
+    display: grid; grid-template-columns: 1fr 80px 70px 70px 60px;
+    align-items: center; padding: 0.45rem 0.75rem;
+    font-size: 0.7rem; gap: 0.5rem;
+  }
+  .ui-row + .ui-row { border-top: 1px solid rgba(128,128,128,0.12); }
+  .badge {
+    display: inline-block; font-size: 0.58rem; font-weight: 600;
+    padding: 0.1rem 0.45rem; border-radius: 4px; white-space: nowrap;
+  }
+  .signal { display: flex; gap: 0.25rem; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .branch-name { font-weight: 600; font-size: 0.72rem; }
+  .num { font-size: 0.68rem; font-variant-numeric: tabular-nums; }
+  .ui-footer {
+    padding: 0.4rem 0.75rem; font-size: 0.6rem;
+    border-top: 1px solid rgba(128,128,128,0.12);
+  }
+  .mode-panel { padding: 1rem; }
+  .mode-title { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
+                text-transform: uppercase; color: #666; margin-bottom: 0.6rem; }
+
+  /* ============================================================
+     THEME 1 — OCEAN DEEP
+     Deep navy primary. Cyan accent. Professional, trustworthy.
+     Light: --bg #f8fafc / --surface #fff / --primary #0f4c75 / --accent #06b6d4
+     Dark:  --bg #060d18 / --surface #0d1b2e / --primary #38bdf8 / --accent #06b6d4
+  ============================================================ */
+  .t1-light .mode-panel { background: #f8fafc; }
+  .t1-light .mini-ui { background: #ffffff; border: 1px solid #e2e8f0; }
+  .t1-light .ui-header { background: #0f4c75; color: #fff; }
+  .t1-light .ui-row { color: #1e293b; }
+  .t1-light .badge-done  { background: #dcfce7; color: #166534; }
+  .t1-light .badge-wait  { background: #fef9c3; color: #854d0e; }
+  .t1-light .badge-none  { background: #f1f5f9; color: #64748b; }
+  .t1-light .dot-red     { background: #ef4444; }
+  .t1-light .dot-amber   { background: #f59e0b; }
+  .t1-light .num         { color: #334155; }
+  .t1-light .ui-footer   { background: #f1f5f9; color: #64748b; }
+
+  .t1-dark .mode-panel { background: #060d18; }
+  .t1-dark .mini-ui { background: #0d1b2e; border: 1px solid #1e3050; }
+  .t1-dark .ui-header { background: #0c2d4e; color: #38bdf8; }
+  .t1-dark .ui-row { color: #cbd5e1; }
+  .t1-dark .badge-done  { background: #14532d; color: #86efac; }
+  .t1-dark .badge-wait  { background: #78350f; color: #fcd34d; }
+  .t1-dark .badge-none  { background: #1e3050; color: #64748b; }
+  .t1-dark .dot-red     { background: #f87171; }
+  .t1-dark .dot-amber   { background: #fbbf24; }
+  .t1-dark .num         { color: #94a3b8; }
+  .t1-dark .ui-footer   { background: #0a1525; color: #475569; }
+
+  /* ============================================================
+     THEME 2 — COASTAL SAAS
+     Slate/gray base + sky-blue accent. Vercel/Linear feel.
+     Light: --bg #f9fafb / --surface #fff / --primary #2563eb / --accent #0ea5e9
+     Dark:  --bg #0a0a0a / --surface #111 / --primary #60a5fa / --accent #38bdf8
+  ============================================================ */
+  .t2-light .mode-panel { background: #f9fafb; }
+  .t2-light .mini-ui { background: #ffffff; border: 1px solid #e5e7eb; }
+  .t2-light .ui-header { background: #2563eb; color: #fff; }
+  .t2-light .ui-row { color: #111827; }
+  .t2-light .badge-done  { background: #d1fae5; color: #065f46; }
+  .t2-light .badge-wait  { background: #fef3c7; color: #92400e; }
+  .t2-light .badge-none  { background: #f3f4f6; color: #6b7280; }
+  .t2-light .dot-red     { background: #ef4444; }
+  .t2-light .dot-amber   { background: #f59e0b; }
+  .t2-light .num         { color: #374151; }
+  .t2-light .ui-footer   { background: #f3f4f6; color: #6b7280; }
+
+  .t2-dark .mode-panel { background: #0a0a0a; }
+  .t2-dark .mini-ui { background: #111111; border: 1px solid #222; }
+  .t2-dark .ui-header { background: #1a1a1a; color: #60a5fa; }
+  .t2-dark .ui-row { color: #d1d5db; }
+  .t2-dark .badge-done  { background: #052e16; color: #6ee7b7; }
+  .t2-dark .badge-wait  { background: #451a03; color: #fde68a; }
+  .t2-dark .badge-none  { background: #1f2937; color: #6b7280; }
+  .t2-dark .dot-red     { background: #f87171; }
+  .t2-dark .dot-amber   { background: #fbbf24; }
+  .t2-dark .num         { color: #9ca3af; }
+  .t2-dark .ui-footer   { background: #161616; color: #4b5563; }
+
+  /* ============================================================
+     THEME 3 — ZINC SAAS (shadcn native)
+     Neutral zinc + violet accent. Max readability, shadcn default feel.
+     Light: --bg #fafafa / --surface #fff / --primary #7c3aed / --border #e4e4e7
+     Dark:  --bg #09090b / --surface #18181b / --primary #a78bfa / --border #27272a
+  ============================================================ */
+  .t3-light .mode-panel { background: #fafafa; }
+  .t3-light .mini-ui { background: #ffffff; border: 1px solid #e4e4e7; }
+  .t3-light .ui-header { background: #7c3aed; color: #fff; }
+  .t3-light .ui-row { color: #09090b; }
+  .t3-light .badge-done  { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+  .t3-light .badge-wait  { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+  .t3-light .badge-none  { background: #f4f4f5; color: #71717a; border: 1px solid #e4e4e7; }
+  .t3-light .dot-red     { background: #dc2626; }
+  .t3-light .dot-amber   { background: #d97706; }
+  .t3-light .num         { color: #3f3f46; }
+  .t3-light .ui-footer   { background: #f4f4f5; color: #71717a; }
+
+  .t3-dark .mode-panel { background: #09090b; }
+  .t3-dark .mini-ui { background: #18181b; border: 1px solid #27272a; }
+  .t3-dark .ui-header { background: #27272a; color: #a78bfa; }
+  .t3-dark .ui-row { color: #e4e4e7; }
+  .t3-dark .badge-done  { background: #14532d; color: #86efac; }
+  .t3-dark .badge-wait  { background: #78350f; color: #fcd34d; }
+  .t3-dark .badge-none  { background: #27272a; color: #71717a; }
+  .t3-dark .dot-red     { background: #f87171; }
+  .t3-dark .dot-amber   { background: #fbbf24; }
+  .t3-dark .num         { color: #a1a1aa; }
+  .t3-dark .ui-footer   { background: #09090b; color: #52525b; }
+
+  /* ============================================================
+     THEME 4 — MARINE PRO
+     Dark teal primary + emerald accent. Seafood-specific identity.
+     Light: --bg #f0fdfa / --surface #fff / --primary #0f766e / --accent #10b981
+     Dark:  --bg #030a09 / --surface #0d1f1c / --primary #2dd4bf / --accent #34d399
+  ============================================================ */
+  .t4-light .mode-panel { background: #f0fdfa; }
+  .t4-light .mini-ui { background: #ffffff; border: 1px solid #ccfbf1; }
+  .t4-light .ui-header { background: #0f766e; color: #fff; }
+  .t4-light .ui-row { color: #134e4a; }
+  .t4-light .badge-done  { background: #d1fae5; color: #065f46; }
+  .t4-light .badge-wait  { background: #fef9c3; color: #854d0e; }
+  .t4-light .badge-none  { background: #f0fdfa; color: #5eead4; }
+  .t4-light .dot-red     { background: #ef4444; }
+  .t4-light .dot-amber   { background: #f59e0b; }
+  .t4-light .num         { color: #0f766e; }
+  .t4-light .ui-footer   { background: #ccfbf1; color: #0f766e; }
+
+  .t4-dark .mode-panel { background: #030a09; }
+  .t4-dark .mini-ui { background: #0d1f1c; border: 1px solid #164e3a; }
+  .t4-dark .ui-header { background: #0d2b26; color: #2dd4bf; }
+  .t4-dark .ui-row { color: #99f6e4; }
+  .t4-dark .badge-done  { background: #064e3b; color: #6ee7b7; }
+  .t4-dark .badge-wait  { background: #451a03; color: #fde68a; }
+  .t4-dark .badge-none  { background: #164e3a; color: #5eead4; }
+  .t4-dark .dot-red     { background: #f87171; }
+  .t4-dark .dot-amber   { background: #fbbf24; }
+  .t4-dark .num         { color: #5eead4; }
+  .t4-dark .ui-footer   { background: #0a1a16; color: #2dd4bf; }
+</style>
+</head>
+<body>
+
+<h1>ERP Fish — Color Themes</h1>
+<p class="subtitle">각 테마: 라이트(좌) / 다크(우). 관제판 행 미니 UI 포함. 선호 테마 번호를 알려주세요.</p>
+
+<div class="grid">
+
+  <!-- ===== THEME 1: OCEAN DEEP ===== -->
+  <div class="theme-card">
+    <div class="theme-label">
+      <h2>1. Ocean Deep</h2>
+      <p>딥 네이비 + 시안 — 신뢰감 있는 전문 업무 도구. 수산업 정체성 반영.</p>
+    </div>
+    <div class="modes">
+      <div class="t1-light">
+        <div class="mode-panel">
+          <div class="mode-title">Light</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#0f4c75"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#06b6d4"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#f8fafc"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#ffffff;border:1px solid #e2e8f0"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#ef4444"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#f59e0b"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#22c55e"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#166534">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#b91c1c">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+      <div class="t1-dark">
+        <div class="mode-panel">
+          <div class="mode-title">Dark</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#38bdf8"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#06b6d4"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#060d18"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#0d1b2e;border:1px solid #1e3050"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#f87171"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#fbbf24"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#86efac"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#86efac">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#f87171">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== THEME 2: COASTAL SAAS ===== -->
+  <div class="theme-card">
+    <div class="theme-label">
+      <h2>2. Coastal SaaS</h2>
+      <p>슬레이트 + 스카이 블루 — Vercel/Linear 계열. 개발자 친화 SaaS 표준.</p>
+    </div>
+    <div class="modes">
+      <div class="t2-light">
+        <div class="mode-panel">
+          <div class="mode-title">Light</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#2563eb"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#0ea5e9"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#f9fafb"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#ffffff;border:1px solid #e5e7eb"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#ef4444"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#f59e0b"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#22c55e"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#065f46">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#b91c1c">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+      <div class="t2-dark">
+        <div class="mode-panel">
+          <div class="mode-title">Dark</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#60a5fa"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#38bdf8"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#0a0a0a"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#111111;border:1px solid #222"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#f87171"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#fbbf24"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#6ee7b7"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#6ee7b7">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#f87171">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== THEME 3: ZINC SAAS ===== -->
+  <div class="theme-card">
+    <div class="theme-label">
+      <h2>3. Zinc SaaS</h2>
+      <p>shadcn 기본 Zinc + 바이올렛 — 최대 가독성, 데이터 밀도 대응 최강.</p>
+    </div>
+    <div class="modes">
+      <div class="t3-light">
+        <div class="mode-panel">
+          <div class="mode-title">Light</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#7c3aed"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#a78bfa"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#fafafa"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#ffffff;border:1px solid #e4e4e7"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#dc2626"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#d97706"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#16a34a"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#15803d">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#b91c1c">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+      <div class="t3-dark">
+        <div class="mode-panel">
+          <div class="mode-title">Dark</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#a78bfa"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#c4b5fd"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#09090b"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#18181b;border:1px solid #27272a"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#f87171"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#fbbf24"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#86efac"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#86efac">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#f87171">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== THEME 4: MARINE PRO ===== -->
+  <div class="theme-card">
+    <div class="theme-label">
+      <h2>4. Marine Pro</h2>
+      <p>딥 틸 + 에메랄드 — 수산업 특화 정체성. 차분하면서 생동감 있는 느낌.</p>
+    </div>
+    <div class="modes">
+      <div class="t4-light">
+        <div class="mode-panel">
+          <div class="mode-title">Light</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#0f766e"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#10b981"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#f0fdfa"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#ffffff;border:1px solid #ccfbf1"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#ef4444"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#f59e0b"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#10b981"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#065f46">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#b91c1c">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+      <div class="t4-dark">
+        <div class="mode-panel">
+          <div class="mode-title">Dark</div>
+          <div class="tokens">
+            <span class="chip"><span class="swatch" style="background:#2dd4bf"></span>Primary</span>
+            <span class="chip"><span class="swatch" style="background:#34d399"></span>Accent</span>
+            <span class="chip"><span class="swatch" style="background:#030a09"></span>BG</span>
+            <span class="chip"><span class="swatch" style="background:#0d1f1c;border:1px solid #164e3a"></span>Surface</span>
+            <span class="chip"><span class="swatch" style="background:#f87171"></span>Danger</span>
+            <span class="chip"><span class="swatch" style="background:#fbbf24"></span>Warning</span>
+            <span class="chip"><span class="swatch" style="background:#6ee7b7"></span>Success</span>
+          </div>
+          <div class="mini-ui">
+            <div class="ui-header">관제판 &nbsp;·&nbsp; 2026-05-28</div>
+            <div class="ui-row">
+              <span class="branch-name">현대점</span>
+              <span class="badge badge-done">본사마감</span>
+              <span class="signal"></span>
+              <span class="num">3,420만</span>
+              <span class="num" style="color:#6ee7b7">38.2%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">강서점</span>
+              <span class="badge badge-wait">검토대기</span>
+              <span class="signal"><span class="dot dot-red"></span><span class="dot dot-amber"></span></span>
+              <span class="num">2,890만</span>
+              <span class="num" style="color:#f87171">21.4%</span>
+            </div>
+            <div class="ui-row">
+              <span class="branch-name">불광점</span>
+              <span class="badge badge-none">미입력</span>
+              <span class="signal"></span>
+              <span class="num">—</span>
+              <span class="num">—</span>
+            </div>
+            <div class="ui-footer">7개 지점 중 3개 마감 완료</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<p style="margin-top:2rem;font-size:0.72rem;color:#555;">
+  각 테마의 hex 값은 &lt;style&gt; 주석에 문서화되어 있습니다. 선호 번호(1~4)를 알려주세요.
+</p>
+</body>
+</html>
