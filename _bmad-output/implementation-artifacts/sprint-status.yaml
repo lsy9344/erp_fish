@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-05-30T12:23:12+09:00
+# last_updated: 2026-05-31T23:26:12+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-05-30T12:23:12+09:00"
+last_updated: "2026-05-31T23:26:12+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -59,10 +59,10 @@ development_status:
   2-5-지점장-또는-본사가-실제-재고-차이를-조정-사유와-함께-기록한다: done
   2-6-지점장이-손실-폐기-떨이를-입력하고-재고-흐름에-반영한다: done
   2-7-입력자가-검토-화면에서-계산값과-이상-후보를-확인한다: done
-  2-8-입력자가-장부를-검토-대기로-제출한다: backlog
+  2-8-입력자가-장부를-검토-대기로-제출한다: done
   epic-2-retrospective: optional
-  epic-3: backlog
-  3-1-본사가-전체-지점-장부-상태를-관제판에서-본다: backlog
+  epic-3: in-progress
+  3-1-본사가-전체-지점-장부-상태를-관제판에서-본다: done
   3-2-본사가-이상-신호-기준값을-설정한다: backlog
   3-3-본사가-매출-이익률-매출차액-이상-신호를-본다: backlog
   3-4-본사가-재고-손실-이상-신호를-본다: backlog

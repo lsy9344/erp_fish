@@ -16,8 +16,9 @@ type LedgerReviewThresholds = {
   loss?: LossSignalThresholds;
 };
 
-// Story 3.2 will add configurable thresholds. Until then this review-only
-// placeholder marks any recorded loss as a candidate, not as an operating rule.
+// Story 3.2 stores operating thresholds for the dashboard. Story 3.4 will wire
+// them into loss/inventory signals; this review-only placeholder still marks
+// any recorded loss as a candidate, not as an operating rule.
 const reviewLossSignalThresholds: LossSignalThresholds = {
   quantity: 0,
   amount: 0,
@@ -235,6 +236,8 @@ export async function getLedgerReviewStepData(
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
       status: ledger.status,
+      submittedById: ledger.submittedById ?? null,
+      submittedAt: ledger.submittedAt?.toISOString() ?? null,
       summary,
       missingItems: getMissingItems({
         storeId,

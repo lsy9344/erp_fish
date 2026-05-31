@@ -155,6 +155,37 @@ async function seedLedger(data: {
   });
 }
 
+async function getLedgerSubmitAuditCount(ledgerId: string) {
+  return prisma.auditLog.count({
+    where: {
+      targetType: "DailyLedger",
+      targetId: ledgerId,
+      action: "ledger.review.submitted",
+    },
+  });
+}
+
+async function getLedgerSubmitAuditLogs(ledgerId: string) {
+  return prisma.auditLog.findMany({
+    where: {
+      targetType: "DailyLedger",
+      targetId: ledgerId,
+      action: "ledger.review.submitted",
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      action: true,
+      targetType: true,
+      targetId: true,
+      actorId: true,
+      before: true,
+      after: true,
+      createdAt: true,
+    },
+  });
+}
+
 async function cleanupStoryTwoSevenData() {
   const products = await prisma.product.findMany({
     where: { name: { startsWith: "스토리2-7" } },
@@ -175,6 +206,12 @@ async function cleanupStoryTwoSevenData() {
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
   if (ledgerIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: {
+        targetType: "DailyLedger",
+        targetId: { in: ledgerIds },
+      },
+    });
     await prisma.ledgerLossItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -195,15 +232,16 @@ async function cleanupStoryTwoSevenData() {
     });
   }
 
+  await prisma.inventoryOpeningSnapshot.deleteMany({
+    where: {
+      OR: [
+        { storeId: STORY_STORE_ID },
+        ...(productIds.length > 0 ? [{ productId: { in: productIds } }] : []),
+      ],
+    },
+  });
+
   if (productIds.length > 0) {
-    await prisma.inventoryOpeningSnapshot.deleteMany({
-      where: {
-        OR: [
-          { productId: { in: productIds } },
-          { storeId: STORY_STORE_ID },
-        ],
-      },
-    });
     await prisma.purchaseStandard.deleteMany({
       where: { productId: { in: productIds } },
     });
@@ -401,7 +439,6 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     .filter({ hasText: "입력 확인 항목" });
 
   await expect(page.getByText("계산 불가").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: /이동/ }).first()).toBeVisible();
   await expect(missingSection).toContainText("총매출/결제");
   await expect(missingSection).toContainText("비용");
   await expect(missingSection).toContainText("매입");
@@ -418,6 +455,33 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     "href",
     `/app/store-entry/inventory?storeId=${STORY_STORE_ID}`,
   );
+  await expect(
+    page.getByRole("link", { name: "총매출/결제 단계로 이동" }),
+  ).toHaveAttribute("href", new RegExp(`storeId=${STORY_STORE_ID}.*step=sales`));
+  await expect(
+    page.getByRole("link", { name: "비용 단계로 이동" }),
+  ).toHaveAttribute("href", new RegExp(`storeId=${STORY_STORE_ID}.*step=cost`));
+  await expect(
+    page.getByRole("link", { name: "매입 단계로 이동" }),
+  ).toHaveAttribute(
+    "href",
+    new RegExp(`storeId=${STORY_STORE_ID}.*step=purchase`),
+  );
+  await expect(
+    page.getByRole("link", { name: "재고 단계로 이동" }),
+  ).toHaveAttribute(
+    "href",
+    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}`,
+  );
+  await expect(
+    page.getByRole("link", { name: "손실/폐기 단계로 이동" }),
+  ).toHaveAttribute(
+    "href",
+    `/app/store-entry/losses?storeId=${STORY_STORE_ID}`,
+  );
+  await expect(
+    page.getByRole("link", { name: "근무인원 단계로 이동" }),
+  ).toHaveAttribute("href", new RegExp(`storeId=${STORY_STORE_ID}.*step=work`));
 
   const metricsBox = await page
     .locator("section")
@@ -432,4 +496,157 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
   expect(missingBox?.width).toBeLessThanOrEqual(390);
   expect(metricsBox?.height).toBeGreaterThan(0);
   expect(missingBox?.height).toBeGreaterThan(0);
+});
+
+test("검토 화면은 누락과 경고가 있어도 장부를 검토 대기로 제출하고 중복 제출을 막는다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const managerId = await getStoreManagerUserId();
+  const ledger = await seedLedger({
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 8_000,
+    workerCount: null,
+  });
+
+  await login(page);
+  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
+
+  const missingSection = page
+    .locator("section")
+    .filter({ hasText: "입력 확인 항목" });
+  const warningSection = page
+    .locator("section")
+    .filter({ hasText: "경고와 이상 후보" });
+
+  await expect(missingSection).toContainText("비용");
+  await expect(missingSection).toContainText("매입");
+  await expect(missingSection).toContainText("근무인원");
+  await expect(warningSection).toContainText("결제 합계 불일치");
+
+  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+
+  await expect(page.getByRole("status")).toContainText("장부를 제출했습니다.");
+  await expect(page.getByText("검토대기").first()).toBeVisible();
+  const submitSectionBox = await page
+    .getByRole("region", { name: "제출" })
+    .boundingBox();
+  const statusBox = await page.getByRole("status").boundingBox();
+
+  const submitted = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: {
+      status: true,
+      submittedById: true,
+      submittedAt: true,
+    },
+  });
+
+  expect(submitted.status).toBe("IN_REVIEW");
+  expect(submitted.submittedById).toBe(managerId);
+  expect(submitted.submittedAt).toBeTruthy();
+  const firstSubmittedAt = submitted.submittedAt;
+  const auditLogs = await getLedgerSubmitAuditLogs(ledger.id);
+
+  expect(auditLogs).toHaveLength(1);
+  expect(auditLogs[0]?.action).toBe("ledger.review.submitted");
+  expect(auditLogs[0]?.targetType).toBe("DailyLedger");
+  expect(auditLogs[0]?.targetId).toBe(ledger.id);
+  expect(auditLogs[0]?.actorId).toBe(managerId);
+  expect(auditLogs[0]?.createdAt).toBeInstanceOf(Date);
+  expect(auditLogs[0]?.before).toMatchObject({
+    status: "IN_PROGRESS",
+    submittedById: null,
+    submittedAt: null,
+  });
+  expect(auditLogs[0]?.after).toMatchObject({
+    status: "IN_REVIEW",
+    submittedById: managerId,
+  });
+  expect(
+    (auditLogs[0]?.after as { submittedAt?: unknown }).submittedAt,
+  ).toBeTruthy();
+
+  expect(submitSectionBox?.width).toBeLessThanOrEqual(390);
+  expect(statusBox?.width).toBeLessThanOrEqual(390);
+  expect(submitSectionBox?.height).toBeGreaterThan(0);
+  expect(statusBox?.height).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+
+  await expect(page.getByRole("status")).toContainText(
+    "이미 검토 대기 상태입니다.",
+  );
+  expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(1);
+  const duplicate = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: {
+      submittedById: true,
+      submittedAt: true,
+    },
+  });
+
+  expect(duplicate.submittedById).toBe(managerId);
+  expect(duplicate.submittedAt?.getTime()).toBe(firstSubmittedAt!.getTime());
+});
+
+test("검토 제출 실패 시 기존 상태를 유지하고 재시도할 수 있다", async ({
+  page,
+}) => {
+  const ledger = await seedLedger({
+    totalSalesAmount: 50_000,
+    cashAmount: 50_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 2,
+  });
+
+  await login(page);
+  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
+
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const nextAction = request.headers()["next-action"];
+
+    if (
+      request.method() === "POST" &&
+      (request.url().includes("/app/store-entry") ||
+        request.url().includes("/_next/action") ||
+        Boolean(nextAction))
+    ) {
+      await route.abort();
+      return;
+    }
+
+    await route.continue();
+  });
+
+  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+
+  await expect(
+    page.getByText("제출에 실패했습니다. 다시 시도해 주세요."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible();
+
+  const failed = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: {
+      status: true,
+      submittedById: true,
+      submittedAt: true,
+    },
+  });
+
+  expect(failed.status).toBe("IN_PROGRESS");
+  expect(failed.submittedById).toBeNull();
+  expect(failed.submittedAt).toBeNull();
+  expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(0);
+
+  await page.unroute("**/*");
+  await page.getByRole("button", { name: "다시 시도" }).click();
+
+  await expect(page.getByRole("status")).toContainText("장부를 제출했습니다.");
+  expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(1);
 });

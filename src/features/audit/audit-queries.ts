@@ -177,36 +177,64 @@ function targetKey(targetType: string, targetId: string) {
   return `${targetType}:${targetId}`;
 }
 
+function formatDailyLedgerTargetName(input: {
+  store: { name: string };
+  closingDate: Date;
+}) {
+  const date = new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
+    timeZone: "Asia/Seoul",
+  }).format(input.closingDate);
+
+  return `${input.store.name} ${date}`;
+}
+
 async function resolveTargetNames(logs: AuditLogWithActor[]) {
   const ids = groupTargetIds(logs);
-  const [stores, users, products, purchaseStandards, ledgerInputCodes] =
-    await Promise.all([
-      db.store.findMany({
-        where: { id: { in: [...(ids.get("Store") ?? [])] } },
-        select: { id: true, name: true },
-      }),
-      db.user.findMany({
-        where: { id: { in: [...(ids.get("User") ?? [])] } },
-        select: { id: true, name: true, email: true },
-      }),
-      db.product.findMany({
-        where: { id: { in: [...(ids.get("Product") ?? [])] } },
-        select: { id: true, name: true },
-      }),
-      db.purchaseStandard.findMany({
-        where: { id: { in: [...(ids.get("PurchaseStandard") ?? [])] } },
-        select: {
-          id: true,
-          product: {
-            select: { name: true },
-          },
+  const [
+    stores,
+    users,
+    products,
+    purchaseStandards,
+    ledgerInputCodes,
+    dailyLedgers,
+  ] = await Promise.all([
+    db.store.findMany({
+      where: { id: { in: [...(ids.get("Store") ?? [])] } },
+      select: { id: true, name: true },
+    }),
+    db.user.findMany({
+      where: { id: { in: [...(ids.get("User") ?? [])] } },
+      select: { id: true, name: true, email: true },
+    }),
+    db.product.findMany({
+      where: { id: { in: [...(ids.get("Product") ?? [])] } },
+      select: { id: true, name: true },
+    }),
+    db.purchaseStandard.findMany({
+      where: { id: { in: [...(ids.get("PurchaseStandard") ?? [])] } },
+      select: {
+        id: true,
+        product: {
+          select: { name: true },
         },
-      }),
-      db.ledgerInputCode.findMany({
-        where: { id: { in: [...(ids.get("LedgerInputCode") ?? [])] } },
-        select: { id: true, name: true },
-      }),
-    ]);
+      },
+    }),
+    db.ledgerInputCode.findMany({
+      where: { id: { in: [...(ids.get("LedgerInputCode") ?? [])] } },
+      select: { id: true, name: true },
+    }),
+    db.dailyLedger.findMany({
+      where: { id: { in: [...(ids.get("DailyLedger") ?? [])] } },
+      select: {
+        id: true,
+        closingDate: true,
+        store: {
+          select: { name: true },
+        },
+      },
+    }),
+  ]);
 
   const names = new Map<string, string>();
 
@@ -231,6 +259,13 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
 
   for (const code of ledgerInputCodes) {
     names.set(targetKey("LedgerInputCode", code.id), code.name);
+  }
+
+  for (const ledger of dailyLedgers) {
+    names.set(
+      targetKey("DailyLedger", ledger.id),
+      formatDailyLedgerTargetName(ledger),
+    );
   }
 
   return names;
@@ -303,8 +338,11 @@ export async function getAuditHistoryForHeadquarters(
   ]);
   const targetNames = await resolveTargetNames(logs);
   const items = logs
-    .filter((log): log is AuditLogWithActor & { targetType: AuditHistoryTargetType } =>
-      isAuditHistoryTargetType(log.targetType),
+    .filter(
+      (
+        log,
+      ): log is AuditLogWithActor & { targetType: AuditHistoryTargetType } =>
+        isAuditHistoryTargetType(log.targetType),
     )
     .map<AuditHistoryItem>((log) => ({
       id: log.id,

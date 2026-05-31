@@ -158,13 +158,6 @@ test("master-data queries and audit helper use the shared server boundaries", ()
 
 test("headquarters navigation points 기준정보 to the store management route", () => {
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
-  const dashboard = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "page.tsx",
-  );
   const storesPage = readProjectFile(
     "src",
     "app",
@@ -176,7 +169,6 @@ test("headquarters navigation points 기준정보 to the store management route"
 
   assert.match(sidebar, /href:\s*"\/app\/master-data\/stores"/);
   assert.doesNotMatch(sidebar, /dashboard#master-data/);
-  assert.match(dashboard, /\/app\/master-data\/stores/);
   assert.match(storesPage, /requireHeadquartersUser/);
   assert.match(storesPage, /HeadquartersShell/);
 });

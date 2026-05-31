@@ -1,0 +1,227 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
+import { Button } from "~/components/ui/button";
+import type { HqDashboardData, HqDashboardRow } from "../types.ts";
+import { DashboardSignalSummary } from "./dashboard-signal-summary.tsx";
+import { DashboardStatusBadge } from "./dashboard-status-badge.tsx";
+
+type HqDashboardTableProps = {
+  dashboard: HqDashboardData;
+};
+
+const krwFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+});
+const percentFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
+  if (dashboard.rows.length === 0) {
+    return (
+      <section
+        className="bg-background text-muted-foreground rounded-lg border p-6 text-sm"
+        aria-label="관제판 지점 목록"
+      >
+        활성 지점이 없습니다. 기준정보에서 지점을 먼저 등록해 주세요.
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3" aria-label="관제판 지점 목록">
+      <div className="bg-background hidden overflow-x-auto rounded-lg border md:block">
+        <Table className="min-w-[1120px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[180px]">지점</TableHead>
+              <TableHead>영업 상태</TableHead>
+              <TableHead>장부 상태</TableHead>
+              <TableHead className="text-right">매출</TableHead>
+              <TableHead className="text-right">매출 차이</TableHead>
+              <TableHead className="text-right">마진율</TableHead>
+              <TableHead>손실</TableHead>
+              <TableHead>신호</TableHead>
+              <TableHead>최종 수정</TableHead>
+              <TableHead>본사 마감</TableHead>
+              <TableHead>상세</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {dashboard.rows.map((row) => (
+              <TableRow
+                key={row.storeId}
+                data-testid={`hq-dashboard-row-${row.storeId}`}
+              >
+                <TableCell className="font-medium">{row.storeName}</TableCell>
+                <TableCell>{row.businessStatus.label}</TableCell>
+                <TableCell>
+                  <DashboardStatusBadge status={row.ledgerStatus} />
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatKrw(row.salesAmount.value)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatKrwMetric(row.salesDifference)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatPercentMetric(row.grossMarginRate)}
+                </TableCell>
+                <TableCell>{formatLoss(row)}</TableCell>
+                <TableCell>
+                  <DashboardSignalSummary signals={row.signals} />
+                </TableCell>
+                <TableCell>{formatLastModified(row)}</TableCell>
+                <TableCell>{formatHeadquartersClosed(row)}</TableCell>
+                <TableCell>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    aria-label={`${row.storeName} 상세 준비 중`}
+                  >
+                    상세 준비 중
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {dashboard.rows.map((row) => (
+          <article
+            key={row.storeId}
+            data-testid={`hq-dashboard-mobile-row-${row.storeId}`}
+            className="bg-background w-full rounded-lg border p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div
+                data-testid={`hq-dashboard-mobile-store-${row.storeId}`}
+                className="min-w-0 flex-1"
+              >
+                <h2 className="truncate text-base font-semibold tracking-normal">
+                  {row.storeName}
+                </h2>
+                <p className="text-muted-foreground break-words text-sm">
+                  {row.businessStatus.label} · {formatLastModified(row)}
+                </p>
+              </div>
+              <DashboardStatusBadge
+                status={row.ledgerStatus}
+                data-testid={`hq-dashboard-mobile-status-${row.storeId}`}
+                className="shrink-0"
+              />
+            </div>
+
+            <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+              <div>
+                <dt className="text-muted-foreground">매출</dt>
+                <dd className="font-medium">
+                  {formatKrw(row.salesAmount.value)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">손실</dt>
+                <dd className="font-medium">{formatLoss(row)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">매출 차이</dt>
+                <dd className="font-medium">
+                  {formatKrwMetric(row.salesDifference)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">마진율</dt>
+                <dd className="font-medium">
+                  {formatPercentMetric(row.grossMarginRate)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">본사 마감</dt>
+                <dd className="font-medium">{formatHeadquartersClosed(row)}</dd>
+              </div>
+            </dl>
+
+            <DashboardSignalSummary
+              signals={row.signals}
+              data-testid={`hq-dashboard-mobile-signal-${row.storeId}`}
+              className="mt-4"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled
+              aria-label={`${row.storeName} 상세 준비 중`}
+              className="mt-3"
+            >
+              상세 준비 중
+            </Button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatKrw(value: number | null) {
+  return value === null ? "-" : krwFormatter.format(value);
+}
+
+function formatKrwMetric(metric: HqDashboardRow["salesDifference"]) {
+  if (metric.value === null) {
+    return metric.unavailableReason ?? "-";
+  }
+
+  return krwFormatter.format(metric.value);
+}
+
+function formatPercentMetric(metric: HqDashboardRow["grossMarginRate"]) {
+  if (metric.value === null) {
+    return metric.unavailableReason ?? "-";
+  }
+
+  return percentFormatter.format(metric.value);
+}
+
+function formatLoss(row: HqDashboardRow) {
+  if (row.hasLoss === null) {
+    return "입력 전";
+  }
+
+  return row.hasLoss ? "손실 있음" : "없음";
+}
+
+function formatHeadquartersClosed(row: HqDashboardRow) {
+  return row.isHeadquartersClosed ? "마감" : "미마감";
+}
+
+function formatLastModified(row: HqDashboardRow) {
+  if (row.lastModifiedAt === null) {
+    return "입력 전";
+  }
+
+  const actor =
+    row.lastModifiedBy?.name ?? row.lastModifiedBy?.email ?? "수정자 없음";
+
+  return `${dateTimeFormatter.format(new Date(row.lastModifiedAt))} · ${actor}`;
+}

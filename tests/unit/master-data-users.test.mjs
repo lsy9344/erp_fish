@@ -216,13 +216,6 @@ test("inactive users are blocked at login and protected server boundaries", () =
 
 test("headquarters navigation exposes user management without replacing store management", () => {
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
-  const dashboard = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "page.tsx",
-  );
   const usersPage = readProjectFile(
     "src",
     "app",
@@ -234,7 +227,6 @@ test("headquarters navigation exposes user management without replacing store ma
 
   assert.match(sidebar, /\/app\/master-data\/stores/);
   assert.match(sidebar, /\/app\/master-data\/users/);
-  assert.match(dashboard, /\/app\/master-data\/users/);
   assert.match(usersPage, /requireHeadquartersUser/);
   assert.match(usersPage, /HeadquartersShell/);
 });

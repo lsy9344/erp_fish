@@ -50,6 +50,8 @@ export const ledgerSelect = {
   otherPaymentAmount: true,
   workerCount: true,
   workMemo: true,
+  submittedById: true,
+  submittedAt: true,
   ledgerExpenses: {
     select: ledgerExpenseSelect,
     orderBy: {
@@ -78,6 +80,8 @@ type LedgerAuditPayload = {
   cardAmount: number;
   otherPaymentAmount: number;
   workerCount: number | null;
+  submittedById: string | null;
+  submittedAt: string | null;
   expenseTotal: number;
   purchaseTotal: number;
   grossProfit: number;
@@ -94,6 +98,8 @@ type LedgerAuditInput = Pick<
   | "otherPaymentAmount"
   | "workerCount"
   | "workMemo"
+  | "submittedById"
+  | "submittedAt"
   | "ledgerExpenses"
   | "ledgerPurchaseItems"
 >;
@@ -128,6 +134,8 @@ export function toLedgerSalesStepData(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     status: ledger.status,
+    submittedById: ledger.submittedById ?? null,
+    submittedAt: ledger.submittedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,
@@ -227,6 +235,8 @@ export function toLedgerAuditPayload(
 
   return {
     status: ledger.status,
+    submittedById: ledger.submittedById ?? null,
+    submittedAt: ledger.submittedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,

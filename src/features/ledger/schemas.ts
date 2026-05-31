@@ -235,6 +235,12 @@ export const ledgerWorkInfoSchema = z.object({
 
 export type LedgerWorkInfoInput = z.infer<typeof ledgerWorkInfoSchema>;
 
+export const ledgerSubmitSchema = z.object({
+  storeId: salesPaymentStoreSchema,
+});
+
+export type LedgerSubmitInput = z.infer<typeof ledgerSubmitSchema>;
+
 export function toFieldErrors(error: z.ZodError) {
   const result: Record<string, string[]> = {};
 

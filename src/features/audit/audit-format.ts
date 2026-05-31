@@ -6,6 +6,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "Product",
   "PurchaseStandard",
   "LedgerInputCode",
+  "DailyLedger",
 ] as const;
 
 export type AuditHistoryTargetType =
@@ -19,6 +20,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "Product", label: "품목" },
   { value: "PurchaseStandard", label: "매입 기준" },
   { value: "LedgerInputCode", label: "코드" },
+  { value: "DailyLedger", label: "장부" },
 ] as const satisfies ReadonlyArray<{
   value: AuditHistoryTargetType;
   label: string;
@@ -52,6 +54,7 @@ const actionLabels: Record<string, string> = {
   "ledger_input_code.activated": "활성화",
   "ledger_input_code.deactivated": "비활성화",
   "ledger_input_code.reordered": "표시 순서 변경",
+  "ledger.review.submitted": "검토 대기 제출",
 };
 
 const snapshotNameKeys = [

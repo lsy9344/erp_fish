@@ -1,9 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRightIcon,
+  CheckCircle2Icon,
   CircleAlertIcon,
   InfoIcon,
+  RefreshCwIcon,
+  SendIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 
@@ -11,12 +15,17 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import type { LedgerReviewMetric } from "~/server/calculations/ledger";
+import { submitLedgerForReview } from "~/features/ledger/actions";
 import type { LedgerReviewStepData } from "~/features/ledger/review-types";
 
 type ReviewSummaryClientProps = {
   storeName: string;
   reviewData: LedgerReviewStepData;
 };
+
+type SubmitFeedback =
+  | { kind: "success"; message: string }
+  | { kind: "error"; message: string };
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
@@ -119,19 +128,75 @@ export function ReviewSummaryClient({
   storeName,
   reviewData,
 }: ReviewSummaryClientProps) {
-  const { summary } = reviewData;
+  const [currentReviewData, setCurrentReviewData] = useState(reviewData);
+  const [feedback, setFeedback] = useState<SubmitFeedback | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const previousReviewContextKey = useRef(
+    `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`,
+  );
+  const { summary } = currentReviewData;
+
+  useEffect(() => {
+    const nextReviewContextKey = `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`;
+
+    setCurrentReviewData(reviewData);
+
+    if (previousReviewContextKey.current !== nextReviewContextKey) {
+      setFeedback(null);
+      previousReviewContextKey.current = nextReviewContextKey;
+    }
+  }, [reviewData]);
+
+  async function handleSubmit() {
+    setIsSubmitting(true);
+    setFeedback(null);
+
+    try {
+      const result = await submitLedgerForReview({
+        storeId: currentReviewData.storeId,
+      });
+
+      if (result.ok) {
+        setCurrentReviewData((current) => ({
+          ...current,
+          status: result.data.ledger.status,
+          submittedById: result.data.ledger.submittedById,
+          submittedAt: result.data.ledger.submittedAt,
+        }));
+        setFeedback({
+          kind: "success",
+          message:
+            result.data.status === "already-in-review"
+              ? "이미 검토 대기 상태입니다."
+              : "장부를 제출했습니다.",
+        });
+        return;
+      }
+
+      setFeedback({ kind: "error", message: result.error.message });
+    } catch {
+      setFeedback({
+        kind: "error",
+        message: "제출에 실패했습니다. 다시 시도해 주세요.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
         <p className="text-muted-foreground text-sm">오늘 장부 검토</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          영업일: {formatClosingDate(reviewData.closingDate)} · 상태:{" "}
-          <span className="text-foreground font-medium">
-            {normalizeStatusLabel(reviewData.status)}
+        <div className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <span>
+            영업일: {formatClosingDate(currentReviewData.closingDate)}
           </span>
-        </p>
+          <Badge variant="secondary" className="break-words whitespace-normal">
+            상태 {normalizeStatusLabel(currentReviewData.status)}
+          </Badge>
+        </div>
       </header>
 
       <section
@@ -143,7 +208,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(reviewData.storeId, "sales")}
+              href={stepHref(currentReviewData.storeId, "sales")}
             >
               1단계: 매출/결제
             </a>
@@ -151,7 +216,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(reviewData.storeId, "cost")}
+              href={stepHref(currentReviewData.storeId, "cost")}
             >
               2단계: 비용
             </a>
@@ -159,7 +224,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(reviewData.storeId, "purchase")}
+              href={stepHref(currentReviewData.storeId, "purchase")}
             >
               3단계: 매입
             </a>
@@ -167,7 +232,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={`/app/store-entry/inventory?storeId=${reviewData.storeId}`}
+              href={`/app/store-entry/inventory?storeId=${currentReviewData.storeId}`}
             >
               4단계: 재고
             </a>
@@ -175,7 +240,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={`/app/store-entry/losses?storeId=${reviewData.storeId}`}
+              href={`/app/store-entry/losses?storeId=${currentReviewData.storeId}`}
             >
               5단계: 손실/폐기
             </a>
@@ -183,7 +248,7 @@ export function ReviewSummaryClient({
           <li>
             <a
               className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(reviewData.storeId, "work")}
+              href={stepHref(currentReviewData.storeId, "work")}
             >
               6단계: 근무인원
             </a>
@@ -192,7 +257,7 @@ export function ReviewSummaryClient({
             <a
               aria-current="step"
               className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-              href={stepHref(reviewData.storeId, "review")}
+              href={stepHref(currentReviewData.storeId, "review")}
             >
               7단계: 검토/제출
             </a>
@@ -223,7 +288,7 @@ export function ReviewSummaryClient({
         </div>
       </section>
 
-      {reviewData.missingItems.length > 0 ? (
+      {currentReviewData.missingItems.length > 0 ? (
         <section
           aria-labelledby="review-missing-heading"
           className="bg-card text-card-foreground rounded-lg border p-4"
@@ -232,7 +297,7 @@ export function ReviewSummaryClient({
             입력 확인 항목
           </h2>
           <div className="mt-3 flex flex-col gap-2">
-            {reviewData.missingItems.map((item) => (
+            {currentReviewData.missingItems.map((item) => (
               <Alert key={item.id} className="min-w-0">
                 {item.status === "missing" ? (
                   <CircleAlertIcon className="size-4" aria-hidden="true" />
@@ -257,7 +322,10 @@ export function ReviewSummaryClient({
                     size="sm"
                     className="mt-2 min-h-8"
                   >
-                    <a href={item.href}>
+                    <a
+                      href={item.href}
+                      aria-label={`${item.label} 단계로 이동`}
+                    >
                       <ArrowRightIcon aria-hidden="true" />
                       이동
                     </a>
@@ -277,7 +345,7 @@ export function ReviewSummaryClient({
           경고와 이상 후보
         </h2>
         <div className="mt-3 flex flex-col gap-2">
-          {reviewData.warnings.map((warning) => (
+          {currentReviewData.warnings.map((warning) => (
             <Alert key={warning.id} className="min-w-0 border-amber-500/40">
               <TriangleAlertIcon className="size-4" aria-hidden="true" />
               <AlertTitle className="break-words">{warning.label}</AlertTitle>
@@ -292,7 +360,7 @@ export function ReviewSummaryClient({
             </Alert>
           ))}
 
-          {reviewData.signals.map((signal) => (
+          {currentReviewData.signals.map((signal) => (
             <Alert key={signal.id} className="min-w-0 border-orange-500/40">
               <TriangleAlertIcon className="size-4" aria-hidden="true" />
               <AlertTitle className="break-words">{signal.label}</AlertTitle>
@@ -310,13 +378,73 @@ export function ReviewSummaryClient({
             </Alert>
           ))}
 
-          {reviewData.warnings.length === 0 &&
-          reviewData.signals.length === 0 ? (
+          {currentReviewData.warnings.length === 0 &&
+          currentReviewData.signals.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               현재 표시할 합계 불일치나 이상 후보가 없습니다.
             </p>
           ) : null}
         </div>
+      </section>
+
+      <section
+        aria-labelledby="review-submit-heading"
+        className="bg-card text-card-foreground rounded-lg border p-4"
+      >
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 id="review-submit-heading" className="text-base font-semibold">
+              제출
+            </h2>
+            <Badge
+              variant="outline"
+              className="mt-2 break-words whitespace-normal"
+            >
+              현재 상태 {normalizeStatusLabel(currentReviewData.status)}
+            </Badge>
+          </div>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="min-h-11 w-full sm:w-auto"
+          >
+            <SendIcon aria-hidden="true" />
+            {isSubmitting ? "제출 중..." : "검토 대기로 제출"}
+          </Button>
+        </div>
+
+        {feedback?.kind === "success" ? (
+          <Alert role="status" className="mt-3 min-w-0 border-emerald-500/40">
+            <CheckCircle2Icon className="size-4" aria-hidden="true" />
+            <AlertTitle className="break-words">{feedback.message}</AlertTitle>
+            <AlertDescription className="min-w-0">
+              <Badge variant="secondary" className="whitespace-normal">
+                {normalizeStatusLabel(currentReviewData.status)}
+              </Badge>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {feedback?.kind === "error" ? (
+          <Alert role="alert" className="border-destructive/50 mt-3 min-w-0">
+            <TriangleAlertIcon className="size-4" aria-hidden="true" />
+            <AlertTitle className="break-words">{feedback.message}</AlertTitle>
+            <AlertDescription className="min-w-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 min-h-8"
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+              >
+                <RefreshCwIcon aria-hidden="true" />
+                다시 시도
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </section>
     </div>
   );

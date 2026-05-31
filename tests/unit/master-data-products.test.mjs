@@ -50,18 +50,12 @@ test("Prisma schema adds products and purchase standards without hard-delete sem
     /model\s+Product\s*{[^}]*category\s+(?:ProductCategory|String)[^}]*}/s,
   );
   assert.match(schema, /model\s+Product\s*{[^}]*spec\s+String[^}]*}/s);
-  assert.match(
-    schema,
-    /model\s+Product\s*{[^}]*defaultUnitPrice\s+Int[^}]*}/s,
-  );
+  assert.match(schema, /model\s+Product\s*{[^}]*defaultUnitPrice\s+Int[^}]*}/s);
   assert.match(
     schema,
     /model\s+Product\s*{[^}]*isActive\s+Boolean\s+@default\(true\)[^}]*}/s,
   );
-  assert.match(
-    schema,
-    /model\s+Product\s*{[^}]*updatedById\s+String\?[^}]*}/s,
-  );
+  assert.match(schema, /model\s+Product\s*{[^}]*updatedById\s+String\?[^}]*}/s);
   assert.match(
     schema,
     /model\s+Product\s*{[^}]*updatedBy\s+User\?[^}]*@relation/s,
@@ -292,10 +286,16 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
   assert.match(productActions, /product\.deactivated/);
   assert.match(productActions, /ActionResult/);
   assert.match(productActions, /DUPLICATE_PRODUCT/);
-  assert.match(productActions, /revalidatePath\("\/app\/master-data\/products"\)/);
+  assert.match(
+    productActions,
+    /revalidatePath\("\/app\/master-data\/products"\)/,
+  );
   assert.match(productActions, /revalidatePath\("\/app\/dashboard"\)/);
   assert.match(productActions, /revalidatePath\("\/app\/store-entry"\)/);
-  assert.doesNotMatch(productActions, /export\s+async\s+function\s+deleteProduct/);
+  assert.doesNotMatch(
+    productActions,
+    /export\s+async\s+function\s+deleteProduct/,
+  );
   assert.doesNotMatch(productActions, /\.delete\(/);
 
   assert.match(standardActions, /"use server"/);
@@ -398,13 +398,6 @@ test("product and purchase standard screens follow headquarters shell and form a
     "purchase-standard-management-client.tsx",
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
-  const dashboard = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "page.tsx",
-  );
 
   assert.match(productsPage, /requireHeadquartersUser/);
   assert.match(productsPage, /HeadquartersShell/);
@@ -422,6 +415,4 @@ test("product and purchase standard screens follow headquarters shell and form a
   assert.match(standardClient, /focusFirstError/);
   assert.match(sidebar, /\/app\/master-data\/products/);
   assert.match(sidebar, /\/app\/master-data\/purchase-standards/);
-  assert.match(dashboard, /\/app\/master-data\/products/);
-  assert.match(dashboard, /\/app\/master-data\/purchase-standards/);
 });

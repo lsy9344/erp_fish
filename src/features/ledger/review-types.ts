@@ -29,8 +29,23 @@ export type LedgerReviewStepData = {
   storeId: string;
   closingDate: string;
   status: DailyLedgerStatus;
+  submittedById: string | null;
+  submittedAt: string | null;
   summary: LedgerReviewSummary;
   missingItems: LedgerReviewMissingItem[];
   warnings: LedgerReviewWarning[];
   signals: LedgerReviewSignal[];
+};
+
+export type LedgerSubmitForReviewResult = {
+  status: "submitted" | "already-in-review";
+  ledger: Pick<
+    LedgerReviewStepData,
+    | "id"
+    | "storeId"
+    | "closingDate"
+    | "status"
+    | "submittedById"
+    | "submittedAt"
+  >;
 };

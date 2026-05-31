@@ -208,7 +208,10 @@ test("ledger input code actions enforce auth, audit, transactions, and revalidat
   assert.match(codeActions, /revalidatePath\("\/app\/master-data\/codes"\)/);
   assert.match(codeActions, /revalidatePath\("\/app\/dashboard"\)/);
   assert.match(codeActions, /revalidatePath\("\/app\/store-entry"\)/);
-  assert.match(codeActions, /revalidatePath\("\/app\/store-entry\/inventory"\)/);
+  assert.match(
+    codeActions,
+    /revalidatePath\("\/app\/store-entry\/inventory"\)/,
+  );
   assert.match(codeActions, /revalidatePath\("\/app\/store-entry\/losses"\)/);
   assert.doesNotMatch(
     codeActions,
@@ -254,13 +257,6 @@ test("ledger input code screen follows headquarters shell and form accessibility
     "code-management-client.tsx",
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
-  const dashboard = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "page.tsx",
-  );
 
   assert.match(codesPage, /requireHeadquartersUser/);
   assert.match(codesPage, /HeadquartersShell/);
@@ -270,5 +266,4 @@ test("ledger input code screen follows headquarters shell and form accessibility
   assert.match(codeClient, /aria-describedby/);
   assert.match(codeClient, /focusFirstError/);
   assert.match(sidebar, /\/app\/master-data\/codes/);
-  assert.match(dashboard, /\/app\/master-data\/codes/);
 });

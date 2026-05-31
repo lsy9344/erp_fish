@@ -122,8 +122,8 @@ model LedgerInputCode {
   updatedAt    DateTime             @updatedAt
   updatedById  String?
 
-  updatedBy      User?           @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  ledgerExpenses LedgerExpense[]
+  updatedBy       User?            @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  ledgerExpenses  LedgerExpense[]
   ledgerLossItems LedgerLossItem[]
 
   @@unique([group, name])
@@ -193,6 +193,7 @@ model User {
   updatedLedgerInputCodes           LedgerInputCode[]           @relation("LedgerInputCodeUpdatedBy")
   createdDailyLedgers               DailyLedger[]               @relation("LedgerCreatedBy")
   updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
+  submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
   createdLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseCreatedBy")
   updatedLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseUpdatedBy")
   createdLedgerPurchaseItems        LedgerPurchaseItem[]        @relation("LedgerPurchaseItemCreatedBy")
@@ -226,6 +227,7 @@ model AuditLog {
   @@index([targetType, targetId, createdAt])
 }
 
+
 model DailyLedger {
   id                         String                      @id @default(cuid())
   storeId                    String
@@ -237,6 +239,8 @@ model DailyLedger {
   otherPaymentAmount         Int                         @default(0)
   workerCount                Int?
   workMemo                   String?
+  submittedById              String?
+  submittedAt                DateTime?
   ledgerExpenses             LedgerExpense[]
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
@@ -247,13 +251,15 @@ model DailyLedger {
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt
 
-  store     Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  createdBy User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  createdBy   User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  submittedBy User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
 
   @@unique([storeId, closingDate], map: "dailyLedger_storeId_closingDate_key")
   @@index([storeId, closingDate])
   @@index([status])
+  @@index([submittedById])
 }
 
 model LedgerExpense {

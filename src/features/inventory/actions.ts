@@ -85,7 +85,19 @@ export async function saveLedgerInventoryItems(
         actor.user.id,
       );
 
-      if (before.status !== "IN_PROGRESS") {
+      if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
+        throw new Error("Ledger is not editable");
+      }
+
+      const editableLedger = await tx.dailyLedger.updateMany({
+        where: {
+          id: before.id,
+          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+        },
+        data: { updatedById: actor.user.id },
+      });
+
+      if (editableLedger.count !== 1) {
         throw new Error("Ledger is not editable");
       }
 

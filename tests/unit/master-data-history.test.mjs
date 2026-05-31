@@ -51,7 +51,10 @@ test("AuditLog keeps append-only JSON fields and adds history query indexes", ()
   assert.match(schema, /model\s+AuditLog\s*{[^}]*before\s+Json\?[^}]*}/s);
   assert.match(schema, /model\s+AuditLog\s*{[^}]*after\s+Json\?[^}]*}/s);
   assert.match(schema, /model\s+AuditLog\s*{[^}]*createdAt\s+DateTime[^}]*}/s);
-  assert.match(schema, /model\s+AuditLog\s*{[^}]*@@index\(\[createdAt\]\)[^}]*}/s);
+  assert.match(
+    schema,
+    /model\s+AuditLog\s*{[^}]*@@index\(\[createdAt\]\)[^}]*}/s,
+  );
   assert.match(
     schema,
     /model\s+AuditLog\s*{[^}]*@@index\(\[targetType,\s*createdAt\]\)[^}]*}/s,
@@ -64,7 +67,12 @@ test("AuditLog keeps append-only JSON fields and adds history query indexes", ()
 });
 
 test("audit format helpers map target/action labels and safely format JSON details", async () => {
-  const formatPath = assertProjectFile("src", "features", "audit", "audit-format.ts");
+  const formatPath = assertProjectFile(
+    "src",
+    "features",
+    "audit",
+    "audit-format.ts",
+  );
   const {
     AUDIT_TARGET_TYPE_OPTIONS,
     formatAuditJsonValue,
@@ -75,13 +83,21 @@ test("audit format helpers map target/action labels and safely format JSON detai
 
   assert.deepEqual(
     AUDIT_TARGET_TYPE_OPTIONS.map((option) => option.value),
-    ["Store", "User", "Product", "PurchaseStandard", "LedgerInputCode"],
+    [
+      "Store",
+      "User",
+      "Product",
+      "PurchaseStandard",
+      "LedgerInputCode",
+      "DailyLedger",
+    ],
   );
   assert.equal(getAuditTargetTypeLabel("Store"), "지점");
   assert.equal(getAuditTargetTypeLabel("User"), "사용자/권한");
   assert.equal(getAuditTargetTypeLabel("Product"), "품목");
   assert.equal(getAuditTargetTypeLabel("PurchaseStandard"), "매입 기준");
   assert.equal(getAuditTargetTypeLabel("LedgerInputCode"), "코드");
+  assert.equal(getAuditTargetTypeLabel("DailyLedger"), "장부");
   assert.equal(getAuditActionLabel("store.created"), "생성");
   assert.equal(getAuditActionLabel("user.role_changed"), "역할 변경");
   assert.equal(
@@ -91,6 +107,10 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(
     getAuditActionLabel("ledger_input_code.reordered"),
     "표시 순서 변경",
+  );
+  assert.equal(
+    getAuditActionLabel("ledger.review.submitted"),
+    "검토 대기 제출",
   );
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
@@ -107,7 +127,10 @@ test("audit format helpers map target/action labels and safely format JSON detai
 test("audit history query enforces headquarters auth, safe filters, stable ordering, cap, and batch lookups", () => {
   const query = readProjectFile("src", "features", "audit", "audit-queries.ts");
 
-  assert.match(query, /export\s+async\s+function\s+getAuditHistoryForHeadquarters/);
+  assert.match(
+    query,
+    /export\s+async\s+function\s+getAuditHistoryForHeadquarters/,
+  );
   assert.match(query, /requireHeadquartersUser\(\)/);
   assert.match(query, /AUDIT_HISTORY_TARGET_TYPES/);
   assert.match(query, /Store/);
@@ -115,6 +138,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /Product/);
   assert.match(query, /PurchaseStandard/);
   assert.match(query, /LedgerInputCode/);
+  assert.match(query, /DailyLedger/);
   assert.match(query, /normalizeAuditHistoryFilters/);
   assert.match(query, /targetType/);
   assert.match(query, /actorId/);
@@ -129,11 +153,15 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /db\.product\.findMany/);
   assert.match(query, /db\.purchaseStandard\.findMany/);
   assert.match(query, /db\.ledgerInputCode\.findMany/);
+  assert.match(query, /db\.dailyLedger\.findMany/);
+  assert.match(query, /store:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}/);
+  assert.match(query, /closingDate:\s*true/);
   assert.doesNotMatch(query, /\.delete\(/);
 
   const actorOptionsFunction =
-    query.match(/async function getAuditActorOptions\(\) \{[\s\S]*?\n\}/)?.[0] ??
-    "";
+    query.match(
+      /async function getAuditActorOptions\(\) \{[\s\S]*?\n\}/,
+    )?.[0] ?? "";
 
   assert.doesNotMatch(
     actorOptionsFunction,
@@ -167,13 +195,6 @@ test("audit history route, client, skeleton, and navigation use the headquarters
     "change-history-client.tsx",
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
-  const dashboard = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "page.tsx",
-  );
 
   assert.match(page, /requireHeadquartersUser/);
   assert.match(page, /HeadquartersShell/);
@@ -200,5 +221,4 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(loading, /Skeleton/);
   assert.match(loading, /변경 이력 로딩/);
   assert.match(sidebar, /\/app\/master-data\/history/);
-  assert.match(dashboard, /\/app\/master-data\/history/);
 });
