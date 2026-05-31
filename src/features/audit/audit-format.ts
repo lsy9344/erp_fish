@@ -7,6 +7,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "PurchaseStandard",
   "LedgerInputCode",
   "DailyLedger",
+  "AnomalyThresholdSetting",
 ] as const;
 
 export type AuditHistoryTargetType =
@@ -21,6 +22,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "PurchaseStandard", label: "매입 기준" },
   { value: "LedgerInputCode", label: "코드" },
   { value: "DailyLedger", label: "장부" },
+  { value: "AnomalyThresholdSetting", label: "이상 신호 기준값" },
 ] as const satisfies ReadonlyArray<{
   value: AuditHistoryTargetType;
   label: string;
@@ -55,6 +57,7 @@ const actionLabels: Record<string, string> = {
   "ledger_input_code.deactivated": "비활성화",
   "ledger_input_code.reordered": "표시 순서 변경",
   "ledger.review.submitted": "검토 대기 제출",
+  "threshold.updated": "기준값 변경",
 };
 
 const snapshotNameKeys = [

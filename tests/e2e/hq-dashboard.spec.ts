@@ -174,8 +174,32 @@ async function seedStoryThreeOneData() {
   });
 
   await seedInventoryItem(progressLedger.id, product.id, actorId);
-  await seedInventoryItem(reviewLedger.id, product.id, actorId);
+  const reviewInventoryItem = await seedInventoryItem(
+    reviewLedger.id,
+    product.id,
+    actorId,
+  );
   await seedInventoryItem(closedLedger.id, product.id, actorId);
+  await prisma.ledgerInventoryAdjustment.create({
+    data: {
+      dailyLedgerId: reviewLedger.id,
+      productId: product.id,
+      ledgerInventoryItemId: reviewInventoryItem.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      beforeQuantity: 15,
+      beforeAmount: 15000,
+      afterQuantity: 3,
+      afterAmount: 3000,
+      differenceQuantity: -12,
+      differenceAmount: -12000,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
   await prisma.ledgerLossItem.create({
     data: {
       dailyLedgerId: reviewLedger.id,
@@ -186,10 +210,26 @@ async function seedStoryThreeOneData() {
       productSpec: product.spec,
       unitPrice: product.defaultUnitPrice,
       lossTypeName: lossCode.name,
-      quantity: 2,
-      amount: 2000,
+      quantity: 52,
+      amount: 52000,
       reason: STORY_MARKER,
       createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+}
+
+async function seedStoryThreeThreeThresholds() {
+  const actorId = await getHeadquartersUserId();
+
+  await prisma.anomalyThresholdSetting.create({
+    data: {
+      scope: "GLOBAL",
+      salesDropRateBps: 1250,
+      grossMarginDropBps: 350,
+      salesDifferenceAmount: 10000,
+      lossAmount: 50000,
+      inventoryDifferenceQuantity: 10,
       updatedById: actorId,
     },
   });
@@ -227,7 +267,7 @@ async function seedInventoryItem(
   productId: string,
   actorId: string,
 ) {
-  await prisma.ledgerInventoryItem.create({
+  return prisma.ledgerInventoryItem.create({
     data: {
       dailyLedgerId,
       productId,
@@ -248,6 +288,11 @@ async function seedInventoryItem(
 }
 
 async function cleanupStoryThreeOneData() {
+  await prisma.auditLog.deleteMany({
+    where: { targetType: "AnomalyThresholdSetting" },
+  });
+  await prisma.anomalyThresholdSetting.deleteMany();
+
   const ledgers = await prisma.dailyLedger.findMany({
     where: { storeId: { in: STORY_STORE_IDS } },
     select: { id: true },
@@ -367,6 +412,35 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   await expect(page.getByText("스토리3-1 비활성점")).toHaveCount(0);
 });
 
+test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 이동을 제공한다", async ({
+  page,
+}) => {
+  await seedStoryThreeThreeThresholds();
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today");
+
+  const reviewRow = getDesktopRow(page, STORE_IDS.review);
+  await expect(reviewRow).toContainText("매출 기준 확인");
+  await expect(reviewRow).toContainText("이익률 기준 확인");
+  await expect(reviewRow).toContainText("매출차액 기준 확인");
+  await expect(reviewRow).toContainText("재고 이상");
+  await expect(reviewRow).toContainText("손실 이상");
+  await expect(reviewRow).not.toContainText("기준값 저장됨");
+
+  await reviewRow.getByText("스토리3-1 검토대기점").click();
+  await expect(page).toHaveURL(/\/app\/ledgers\//);
+  await expect(
+    page.getByRole("heading", { name: "스토리3-1 검토대기점 장부 상세" }),
+  ).toBeVisible();
+  await expect(page.getByText("매출 기준 확인")).toBeVisible();
+  await expect(page.getByText("이익률 기준 확인")).toBeVisible();
+  await expect(page.getByText("매출차액 기준 확인")).toBeVisible();
+  await expect(page.getByText("재고 이상")).toBeVisible();
+  await expect(page.getByText(/12개/)).toBeVisible();
+  await expect(page.getByText("손실 이상")).toBeVisible();
+  await expect(page.getByText(/52,000원/)).toBeVisible();
+});
+
 test("지점장은 본사 관제판에 직접 접근할 수 없다", async ({ page }) => {
   await login(page, "manager@example.com");
   await page.goto("/app/dashboard");
@@ -376,6 +450,22 @@ test("지점장은 본사 관제판에 직접 접근할 수 없다", async ({ pa
     page.getByRole("heading", { name: "접근 권한이 없습니다." }),
   ).toBeVisible();
   await expect(page.getByText("스토리3-1 검토대기점")).toHaveCount(0);
+});
+
+test("지점장은 본사 장부 상세에 직접 접근할 수 없다", async ({ page }) => {
+  const reviewLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.review },
+    select: { id: true },
+  });
+
+  await login(page, "manager@example.com");
+  await page.goto(`/app/ledgers/${reviewLedger.id}`);
+
+  await expect(page).toHaveURL(/\/app\/unauthorized/);
+  await expect(
+    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
+  ).toBeVisible();
+  await expect(page.getByText("스토리3-1 검토대기점 장부 상세")).toHaveCount(0);
 });
 
 test("390px 모바일 관제판은 핵심 상태가 겹치지 않고 보인다", async ({

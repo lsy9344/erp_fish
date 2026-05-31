@@ -29,6 +29,34 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+function getTodayKstMidnight(inputDate = new Date()) {
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(inputDate)
+    .split("-");
+
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
+function getCurrentKstYearMonth() {
+  return getTodayKstMidnight().toISOString().slice(0, 7);
+}
+
+function getCurrentKstDayOfMonth() {
+  return getTodayKstMidnight().getUTCDate();
+}
+
+function getPreviousKstMidnight() {
+  const date = getTodayKstMidnight();
+  date.setUTCDate(date.getUTCDate() - 1);
+
+  return date;
+}
+
 async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
   const actorId = await getHeadquartersUserId();
   const suffix = randomUUID().slice(0, 8);
@@ -107,7 +135,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   await prisma.inventoryOpeningSnapshot.create({
     data: {
       storeId: STORY_STORE_ID,
-      yearMonth: "2026-05",
+      yearMonth: getCurrentKstYearMonth(),
       productId: product.id,
       productName: product.name,
       productCategory: product.category,
@@ -144,6 +172,11 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
 test("직전 본사 마감 장부의 당일재고를 이후 영업일 전일재고로 불러온다", async ({
   page,
 }) => {
+  test.skip(
+    getCurrentKstDayOfMonth() === 1,
+    "월 1일에는 같은 달의 이전 영업일 마감 장부가 존재할 수 없어 월초 스냅샷 케이스로 검증한다.",
+  );
+
   await login(page);
   const actorId = await getHeadquartersUserId();
   const product = await seedProduct("스토리2-4 전일 우럭", "생물", 8000);
@@ -151,7 +184,7 @@ test("직전 본사 마감 장부의 당일재고를 이후 영업일 전일재�
   const previousLedger = await prisma.dailyLedger.create({
     data: {
       storeId: STORY_STORE_ID,
-      closingDate: new Date("2026-05-28T00:00:00.000Z"),
+      closingDate: getPreviousKstMidnight(),
       status: "HEADQUARTERS_CLOSED",
       createdById: actorId,
       updatedById: actorId,

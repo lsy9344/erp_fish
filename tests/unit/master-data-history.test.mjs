@@ -90,6 +90,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "PurchaseStandard",
       "LedgerInputCode",
       "DailyLedger",
+      "AnomalyThresholdSetting",
     ],
   );
   assert.equal(getAuditTargetTypeLabel("Store"), "지점");
@@ -98,6 +99,10 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(getAuditTargetTypeLabel("PurchaseStandard"), "매입 기준");
   assert.equal(getAuditTargetTypeLabel("LedgerInputCode"), "코드");
   assert.equal(getAuditTargetTypeLabel("DailyLedger"), "장부");
+  assert.equal(
+    getAuditTargetTypeLabel("AnomalyThresholdSetting"),
+    "이상 신호 기준값",
+  );
   assert.equal(getAuditActionLabel("store.created"), "생성");
   assert.equal(getAuditActionLabel("user.role_changed"), "역할 변경");
   assert.equal(
@@ -112,6 +117,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
     getAuditActionLabel("ledger.review.submitted"),
     "검토 대기 제출",
   );
+  assert.equal(getAuditActionLabel("threshold.updated"), "기준값 변경");
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
   assert.match(
@@ -139,6 +145,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /PurchaseStandard/);
   assert.match(query, /LedgerInputCode/);
   assert.match(query, /DailyLedger/);
+  assert.match(query, /AnomalyThresholdSetting/);
   assert.match(query, /normalizeAuditHistoryFilters/);
   assert.match(query, /targetType/);
   assert.match(query, /actorId/);
@@ -154,6 +161,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /db\.purchaseStandard\.findMany/);
   assert.match(query, /db\.ledgerInputCode\.findMany/);
   assert.match(query, /db\.dailyLedger\.findMany/);
+  assert.match(query, /db\.anomalyThresholdSetting\.findMany/);
   assert.match(query, /store:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}/);
   assert.match(query, /closingDate:\s*true/);
   assert.doesNotMatch(query, /\.delete\(/);

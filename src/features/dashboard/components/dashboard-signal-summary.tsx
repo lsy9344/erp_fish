@@ -15,6 +15,7 @@ import type {
 type DashboardSignalSummaryProps = {
   signals: DashboardSignalSummaryType[];
   className?: string;
+  showDetails?: boolean;
   "data-testid"?: string;
 };
 
@@ -39,6 +40,7 @@ const severityStyle: Record<
 export function DashboardSignalSummary({
   signals,
   className,
+  showDetails = false,
   "data-testid": testId,
 }: DashboardSignalSummaryProps) {
   return (
@@ -55,10 +57,26 @@ export function DashboardSignalSummary({
             key={signal.id}
             variant="outline"
             title={signal.detail}
-            className={style.className}
+            className={cn(
+              style.className,
+              showDetails &&
+                "h-auto max-w-full items-start justify-start whitespace-normal py-1 text-left",
+            )}
           >
-            <Icon aria-hidden="true" />
-            {signal.label}
+            <Icon aria-hidden="true" className={showDetails ? "mt-0.5" : ""} />
+            <span
+              className={cn(
+                "min-w-0",
+                showDetails && "flex flex-col gap-0.5",
+              )}
+            >
+              <span>{signal.label}</span>
+              {showDetails && signal.detail ? (
+                <span className="break-words font-normal opacity-80">
+                  {signal.detail}
+                </span>
+              ) : null}
+            </span>
           </Badge>
         );
       })}

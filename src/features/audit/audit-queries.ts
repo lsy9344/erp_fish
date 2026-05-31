@@ -198,6 +198,7 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
     purchaseStandards,
     ledgerInputCodes,
     dailyLedgers,
+    anomalyThresholdSettings,
   ] = await Promise.all([
     db.store.findMany({
       where: { id: { in: [...(ids.get("Store") ?? [])] } },
@@ -234,6 +235,10 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
         },
       },
     }),
+    db.anomalyThresholdSetting.findMany({
+      where: { id: { in: [...(ids.get("AnomalyThresholdSetting") ?? [])] } },
+      select: { id: true },
+    }),
   ]);
 
   const names = new Map<string, string>();
@@ -265,6 +270,13 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
     names.set(
       targetKey("DailyLedger", ledger.id),
       formatDailyLedgerTargetName(ledger),
+    );
+  }
+
+  for (const setting of anomalyThresholdSettings) {
+    names.set(
+      targetKey("AnomalyThresholdSetting", setting.id),
+      "이상 신호 기준값",
     );
   }
 

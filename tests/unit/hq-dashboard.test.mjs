@@ -71,10 +71,46 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.doesNotMatch(pageSource, /overviewItems/);
   assert.match(tableSource, /본사 마감/);
   assert.match(tableSource, /overflow-x-auto/);
-  assert.match(tableSource, /aria-label=.*상세 준비 중/s);
+  assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
+  assert.doesNotMatch(tableSource, /disabled[\s\S]*상세 준비 중/);
   assert.match(tableSource, /break-words/);
+  assert.match(tableSource, /useRouter/);
+  assert.match(tableSource, /onKeyDown/);
+  assert.match(tableSource, /tabIndex/);
+  const detailPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+  assert.match(detailPageSource, /requireHeadquartersUser\(/);
+  assert.match(detailPageSource, /getHqLedgerDetail\(/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
+});
+
+test("HQ ledger detail shows anomaly signal details as visible text", () => {
+  const summarySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "dashboard-signal-summary.tsx",
+  );
+  const detailPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(summarySource, /showDetails/);
+  assert.match(summarySource, /signal\.detail/);
+  assert.match(detailPageSource, /showDetails/);
 });
 
 test("HQ dashboard query keeps 미입력 rows and avoids creating ledgers", () => {
@@ -93,11 +129,52 @@ test("HQ dashboard query keeps 미입력 rows and avoids creating ledgers", () =
   assert.match(querySource, /storeId:\s*\{\s*in:/s);
   assert.match(querySource, /closingDate/);
   assert.match(querySource, /calculateLedgerReviewSummary/);
-  assert.match(querySource, /_count:\s*\{\s*select:\s*\{\s*ledgerLossItems:\s*true/s);
-  assert.doesNotMatch(querySource, /ledgerInventoryItems/);
-  assert.doesNotMatch(querySource, /ledgerLossItems:\s*\{\s*select:/s);
+  assert.match(querySource, /evaluateRevenueAnomalySignals/);
+  assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
+  assert.match(querySource, /ledgerInventoryItems:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /previousQuantity:\s*true/);
+  assert.match(querySource, /purchasedQuantity:\s*true/);
+  assert.match(querySource, /currentQuantity:\s*true/);
+  assert.match(querySource, /unitPrice:\s*true/);
+  assert.match(querySource, /ledgerInventoryAdjustments:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /differenceQuantity:\s*true/);
+  assert.match(querySource, /differenceAmount:\s*true/);
+  assert.match(querySource, /ledgerLossItems:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /amount:\s*true/);
+  assert.match(querySource, /quantity:\s*true/);
+  assert.match(querySource, /productName:\s*true/);
+  assert.match(
+    querySource,
+    /_count:\s*\{\s*select:\s*\{\s*ledgerLossItems:\s*true/s,
+  );
+  assert.doesNotMatch(querySource, /ledgerInventoryItems:\s*true/);
+  assert.doesNotMatch(querySource, /ledgerInventoryAdjustments:\s*true/);
   assert.doesNotMatch(querySource, /getTodayStoreLedger(?:InTx)?\(/);
   assert.doesNotMatch(querySource, /export\s+async\s+function\s+(GET|POST)/);
+});
+
+test("HQ dashboard keeps anomaly math out of UI components", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.doesNotMatch(tableSource, /salesDropRateBps/);
+  assert.doesNotMatch(tableSource, /grossMarginDropBps/);
+  assert.doesNotMatch(tableSource, /salesDifferenceAmount/);
+  assert.doesNotMatch(tableSource, /lossAmount/);
+  assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
+  assert.doesNotMatch(tableSource, /baselineSales/);
+});
+
+test("HQ dashboard e2e setup clears story 3.2 threshold state before asserting pending signals", () => {
+  const specSource = readProjectFile("tests", "e2e", "hq-dashboard.spec.ts");
+
+  assert.match(specSource, /anomalyThresholdSetting\.deleteMany/);
+  assert.match(specSource, /targetType:\s*"AnomalyThresholdSetting"/);
 });
 
 test("HQ dashboard status and date helpers map story states", async () => {

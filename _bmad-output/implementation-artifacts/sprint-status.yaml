@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-05-31T23:26:12+09:00
+# last_updated: 2026-06-01T00:00:00+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-05-31T23:26:12+09:00"
+last_updated: "2026-06-01T00:00:00+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -63,9 +63,9 @@ development_status:
   epic-2-retrospective: optional
   epic-3: in-progress
   3-1-본사가-전체-지점-장부-상태를-관제판에서-본다: done
-  3-2-본사가-이상-신호-기준값을-설정한다: backlog
-  3-3-본사가-매출-이익률-매출차액-이상-신호를-본다: backlog
-  3-4-본사가-재고-손실-이상-신호를-본다: backlog
+  3-2-본사가-이상-신호-기준값을-설정한다: done
+  3-3-본사가-매출-이익률-매출차액-이상-신호를-본다: done
+  3-4-본사가-재고-손실-이상-신호를-본다: review
   3-5-본사가-회의-전에-문제-지점을-빠르게-추적한다: backlog
   epic-3-retrospective: optional
   epic-4: backlog

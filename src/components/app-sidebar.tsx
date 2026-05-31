@@ -42,6 +42,11 @@ const navigationItems = [
     icon: SlidersHorizontalIcon,
   },
   {
+    label: "이상 신호 기준값",
+    href: "/app/master-data/anomaly-thresholds",
+    icon: SlidersHorizontalIcon,
+  },
+  {
     label: "코드 관리",
     href: "/app/master-data/codes",
     icon: SlidersHorizontalIcon,

@@ -191,6 +191,7 @@ model User {
   updatedProducts                   Product[]                   @relation("ProductUpdatedBy")
   updatedPurchaseStandards          PurchaseStandard[]          @relation("PurchaseStandardUpdatedBy")
   updatedLedgerInputCodes           LedgerInputCode[]           @relation("LedgerInputCodeUpdatedBy")
+  updatedAnomalyThresholdSettings   AnomalyThresholdSetting[]   @relation("AnomalyThresholdSettingUpdatedBy")
   createdDailyLedgers               DailyLedger[]               @relation("LedgerCreatedBy")
   updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
   submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
@@ -227,6 +228,22 @@ model AuditLog {
   @@index([targetType, targetId, createdAt])
 }
 
+model AnomalyThresholdSetting {
+  id                          String   @id @default(cuid())
+  scope                       String   @unique @default("GLOBAL")
+  salesDropRateBps            Int
+  grossMarginDropBps          Int
+  salesDifferenceAmount       Int
+  lossAmount                  Int
+  inventoryDifferenceQuantity Int
+  updatedById                 String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  updatedBy User? @relation("AnomalyThresholdSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
+}
 
 model DailyLedger {
   id                         String                      @id @default(cuid())

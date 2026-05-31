@@ -1,3 +1,9 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { KeyboardEvent, MouseEvent } from "react";
+
 import {
   Table,
   TableBody,
@@ -7,6 +13,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import type { HqDashboardData, HqDashboardRow } from "../types.ts";
 import { DashboardSignalSummary } from "./dashboard-signal-summary.tsx";
 import { DashboardStatusBadge } from "./dashboard-status-badge.tsx";
@@ -33,6 +40,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 });
 
 export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
+  const router = useRouter();
+
   if (dashboard.rows.length === 0) {
     return (
       <section
@@ -43,6 +52,12 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
       </section>
     );
   }
+
+  const openLedgerDetail = (row: HqDashboardRow) => {
+    if (row.ledgerId) {
+      router.push(`/app/ledgers/${row.ledgerId}`);
+    }
+  };
 
   return (
     <section className="space-y-3" aria-label="관제판 지점 목록">
@@ -68,6 +83,8 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               <TableRow
                 key={row.storeId}
                 data-testid={`hq-dashboard-row-${row.storeId}`}
+                className={getRowClassName(row)}
+                {...getRowActivationProps(row, openLedgerDetail)}
               >
                 <TableCell className="font-medium">{row.storeName}</TableCell>
                 <TableCell>{row.businessStatus.label}</TableCell>
@@ -90,15 +107,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                 <TableCell>{formatLastModified(row)}</TableCell>
                 <TableCell>{formatHeadquartersClosed(row)}</TableCell>
                 <TableCell>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled
-                    aria-label={`${row.storeName} 상세 준비 중`}
-                  >
-                    상세 준비 중
-                  </Button>
+                  <DetailLink row={row} />
                 </TableCell>
               </TableRow>
             ))}
@@ -111,7 +120,11 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
           <article
             key={row.storeId}
             data-testid={`hq-dashboard-mobile-row-${row.storeId}`}
-            className="bg-background w-full rounded-lg border p-4"
+            className={cn(
+              "bg-background w-full rounded-lg border p-4",
+              getRowClassName(row),
+            )}
+            {...getRowActivationProps(row, openLedgerDetail)}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div
@@ -121,7 +134,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                 <h2 className="truncate text-base font-semibold tracking-normal">
                   {row.storeName}
                 </h2>
-                <p className="text-muted-foreground break-words text-sm">
+                <p className="text-muted-foreground text-sm break-words">
                   {row.businessStatus.label} · {formatLastModified(row)}
                 </p>
               </div>
@@ -166,21 +179,124 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               data-testid={`hq-dashboard-mobile-signal-${row.storeId}`}
               className="mt-4"
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              aria-label={`${row.storeName} 상세 준비 중`}
-              className="mt-3"
-            >
-              상세 준비 중
-            </Button>
+            <DetailLink row={row} className="mt-3" />
           </article>
         ))}
       </div>
     </section>
   );
+}
+
+function getRowActivationProps(
+  row: HqDashboardRow,
+  openLedgerDetail: (row: HqDashboardRow) => void,
+) {
+  if (!row.ledgerId) {
+    return {};
+  }
+
+  return {
+    role: "link" as const,
+    tabIndex: 0,
+    "aria-label": `${row.storeName} 장부 상세 보기`,
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (isInteractiveTarget(event.target, event.currentTarget)) {
+        return;
+      }
+
+      openLedgerDetail(row);
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (isInteractiveTarget(event.target, event.currentTarget)) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openLedgerDetail(row);
+      }
+    },
+  };
+}
+
+function isInteractiveTarget(
+  target: EventTarget | null,
+  currentTarget: HTMLElement,
+) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  const interactiveTarget = target.closest(
+    "a, button, input, select, textarea, [role='button'], [role='link']",
+  );
+
+  return Boolean(interactiveTarget && interactiveTarget !== currentTarget);
+}
+
+function DetailLink({
+  row,
+  className,
+}: {
+  row: HqDashboardRow;
+  className?: string;
+}) {
+  if (!row.ledgerId) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled
+        aria-label={`${row.storeName} 장부 입력 전`}
+        className={className}
+      >
+        입력 전
+      </Button>
+    );
+  }
+
+  return (
+    <Button asChild variant="outline" size="sm" className={className}>
+      <Link
+        href={`/app/ledgers/${row.ledgerId}`}
+        aria-label={`${row.storeName} 상세 보기`}
+      >
+        상세 보기
+      </Link>
+    </Button>
+  );
+}
+
+function getRowClassName(row: HqDashboardRow) {
+  const activationClassName = row.ledgerId
+    ? "cursor-pointer focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
+    : undefined;
+  const hasCriticalSignal = row.signals.some(
+    (signal) => signal.severity === "critical",
+  );
+  const hasWarningSignal = row.signals.some(
+    (signal) => signal.severity === "warning",
+  );
+  const hasInfoSignalsOnly =
+    row.signals.length > 0 && !hasCriticalSignal && !hasWarningSignal;
+
+  if (hasCriticalSignal) {
+    return cn(
+      activationClassName,
+      "border-l-2 border-destructive bg-destructive/5",
+    );
+  }
+
+  if (hasWarningSignal) {
+    return cn(activationClassName, "border-l-2 border-warning bg-warning/5");
+  }
+
+  if (hasInfoSignalsOnly) {
+    return cn(activationClassName, "border-l-2 border-border");
+  }
+
+  return activationClassName;
 }
 
 function formatKrw(value: number | null) {
