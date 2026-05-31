@@ -11,10 +11,12 @@ import {
   requireStoreAccess,
 } from "~/server/authz";
 import { getTodayStoreLedger } from "~/features/ledger/queries";
+import { getLedgerReviewStepData } from "~/features/ledger/review-queries";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { ExpenseStepClient } from "~/features/ledger/components/expense-step-client";
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
+import { ReviewSummaryClient } from "~/features/ledger/components/review-summary-client";
 
 type StoreEntryPageProps = {
   searchParams: Promise<{
@@ -23,7 +25,8 @@ type StoreEntryPageProps = {
   }>;
 };
 
-type StoreEntryStep = "sales" | "cost" | "purchase" | "work";
+type StoreEntryStep = "sales" | "cost" | "purchase" | "work" | "review";
+type LedgerReviewData = Awaited<ReturnType<typeof getLedgerReviewStepData>>;
 type LedgerInputCodeOption = Awaited<
   ReturnType<typeof getActiveLedgerInputCodeOptions>
 >[number];
@@ -43,6 +46,7 @@ function normalizeStoreEntryStep(
     step === "cost" ||
     step === "purchase" ||
     step === "work" ||
+    step === "review" ||
     step === "sales"
   ) {
     return step;
@@ -54,6 +58,7 @@ function normalizeStoreEntryStep(
 type StoreEntryContentProps = {
   storeName: string;
   initialLedger: Awaited<ReturnType<typeof getTodayStoreLedger>>;
+  reviewData: LedgerReviewData | null;
   step: StoreEntryStep;
   expenseCodeOptions: LedgerInputCodeOption[];
   productOptions: ProductOption[];
@@ -63,11 +68,22 @@ type StoreEntryContentProps = {
 function StoreEntryContent({
   storeName,
   initialLedger,
+  reviewData,
   step,
   expenseCodeOptions,
   productOptions,
   purchaseStandardOptions,
 }: StoreEntryContentProps) {
+  if (step === "review") {
+    if (!reviewData) {
+      throw new Error("Review data is required for the review step.");
+    }
+
+    return (
+      <ReviewSummaryClient storeName={storeName} reviewData={reviewData} />
+    );
+  }
+
   if (step === "cost") {
     return (
       <ExpenseStepClient
@@ -129,7 +145,12 @@ export default async function StoreEntryPage({
       getActiveProductOptions(),
       getActivePurchaseStandardOptions(),
     ]);
-    const initialLedger = await getTodayStoreLedger(store.id, user.id);
+    const [initialLedger, reviewData] = await Promise.all([
+      getTodayStoreLedger(store.id, user.id),
+      step === "review"
+        ? getLedgerReviewStepData(store.id, user.id)
+        : Promise.resolve(null),
+    ]);
 
     return (
       <StoreManagerShell
@@ -140,6 +161,7 @@ export default async function StoreEntryPage({
         <StoreEntryContent
           storeName={store.name}
           initialLedger={initialLedger}
+          reviewData={reviewData}
           step={step}
           expenseCodeOptions={expenseCodeOptions}
           productOptions={productOptions}
@@ -182,6 +204,14 @@ export default async function StoreEntryPage({
           workspace.store.id,
           workspace.user.id,
         )}
+        reviewData={
+          step === "review"
+            ? await getLedgerReviewStepData(
+                workspace.store.id,
+                workspace.user.id,
+              )
+            : null
+        }
         step={step}
         expenseCodeOptions={expenseCodeOptions}
         productOptions={productOptions}

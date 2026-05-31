@@ -63,7 +63,7 @@ function normalizeStatusLabel(status: LedgerSalesStepData["status"]) {
 
 function stepHref(
   storeId: string,
-  step: "sales" | "cost" | "purchase" | "work",
+  step: "sales" | "cost" | "purchase" | "work" | "review",
 ) {
   return `/app/store-entry?storeId=${storeId}&step=${step}`;
 }
@@ -260,8 +260,13 @@ export function SalesPaymentStepClient({
               6단계: 근무인원
             </a>
           </li>
-          <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-            7단계: 검토/제출
+          <li>
+            <a
+              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+              href={stepHref(ledger.storeId, "review")}
+            >
+              7단계: 검토/제출
+            </a>
           </li>
         </ol>
       </section>
