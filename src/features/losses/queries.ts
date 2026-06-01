@@ -5,6 +5,7 @@ import {
   summarizeLossItems,
   type LossSignalThresholds,
 } from "~/server/calculations/inventory";
+import { requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
 import { getTodayStoreLedgerInTx } from "~/features/ledger/queries";
 import { type LossStepData } from "./types";
@@ -28,13 +29,23 @@ const defaultLossSignalThresholds: LossSignalThresholds = {
   amount: 0,
 };
 
-export async function getLossStepDataInTx(
+const lossLedgerSelect = {
+  id: true,
+  storeId: true,
+  closingDate: true,
+  updatedAt: true,
+  status: true,
+} as const;
+
+type LossLedgerPayload = Prisma.DailyLedgerGetPayload<{
+  select: typeof lossLedgerSelect;
+}>;
+
+async function getLossStepDataForLedgerInTx(
   tx: Prisma.TransactionClient,
-  storeId: string,
-  actorId: string,
+  ledger: LossLedgerPayload,
   thresholds: LossSignalThresholds = defaultLossSignalThresholds,
 ): Promise<LossStepData> {
-  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
   const [productOptions, lossTypeOptions, lossItems] = await Promise.all([
     tx.product.findMany({
       where: { isActive: true },
@@ -78,9 +89,45 @@ export async function getLossStepDataInTx(
   };
 }
 
+export async function getLossStepDataInTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  actorId: string,
+  thresholds: LossSignalThresholds = defaultLossSignalThresholds,
+): Promise<LossStepData> {
+  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
+
+  return getLossStepDataForLedgerInTx(tx, ledger, thresholds);
+}
+
+export async function getLossStepDataByLedgerIdInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+  thresholds: LossSignalThresholds = defaultLossSignalThresholds,
+): Promise<LossStepData | null> {
+  const ledger = await tx.dailyLedger.findUnique({
+    where: { id: ledgerId },
+    select: lossLedgerSelect,
+  });
+
+  if (!ledger) {
+    return null;
+  }
+
+  return getLossStepDataForLedgerInTx(tx, ledger, thresholds);
+}
+
 export async function getLossStepData(
   storeId: string,
   actorId: string,
 ): Promise<LossStepData> {
   return db.$transaction((tx) => getLossStepDataInTx(tx, storeId, actorId));
+}
+
+export async function getLossStepDataByLedgerId(
+  ledgerId: string,
+): Promise<LossStepData | null> {
+  await requireHeadquartersUser();
+
+  return db.$transaction((tx) => getLossStepDataByLedgerIdInTx(tx, ledgerId));
 }

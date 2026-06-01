@@ -6,16 +6,23 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerWorkInfo } from "~/features/ledger/actions";
+import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
 } from "~/features/ledger/types";
-import type { FieldErrors } from "~/lib/action-result";
+import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 type WorkStepClientProps = {
   storeName: string;
   initialLedger: LedgerCostStepData;
   currentStep: "sales" | "cost" | "purchase" | "work";
+  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  showStepNavigation?: boolean;
+  ledgerLabel?: string;
 };
 
 function formatKrw(value: number) {
@@ -68,6 +75,9 @@ export function WorkStepClient({
   storeName,
   initialLedger,
   currentStep = "work",
+  saveAction = saveLedgerWorkInfo,
+  showStepNavigation = true,
+  ledgerLabel = "오늘 장부",
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const workerCountInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +92,10 @@ export function WorkStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+
+  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
+    setLedger((current) => ({ ...current, updatedAt }));
+  });
 
   useEffect(() => {
     setLedger(initialLedger);
@@ -110,6 +124,7 @@ export function WorkStepClient({
     setLedger(next);
     setWorkerCount(next.workerCount === null ? "" : String(next.workerCount));
     setWorkMemo(next.workMemo ?? "");
+    notifyLedgerUpdated(next.id, next.updatedAt);
     setResultMessage("저장됐습니다.");
   }
 
@@ -122,10 +137,12 @@ export function WorkStepClient({
     setFieldErrors({});
 
     try {
-      const result = await saveLedgerWorkInfo({
+      const result = await saveAction({
+        ledgerId: ledger.id,
+        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
-        workerCount,
-        workMemo,
+        workerCount: workerCountInputRef.current?.value ?? workerCount,
+        workMemo: workMemoInputRef.current?.value ?? workMemo,
       });
 
       if (!result.ok) {
@@ -157,11 +174,13 @@ export function WorkStepClient({
 
   const workerCountError = fieldErrors.workerCount?.[0];
   const workMemoError = fieldErrors.workMemo?.[0];
+  const isOriginalEditBlocked =
+    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
@@ -171,7 +190,8 @@ export function WorkStepClient({
         </p>
       </header>
 
-      <section
+      {showStepNavigation ? (
+        <section
         aria-label="근무인원 단계"
         className="bg-card text-card-foreground rounded-lg border p-4"
       >
@@ -225,7 +245,8 @@ export function WorkStepClient({
             </a>
           </li>
         </ol>
-      </section>
+        </section>
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <form
@@ -242,6 +263,7 @@ export function WorkStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={workerCount}
+              disabled={isSaving || isOriginalEditBlocked}
               onChange={(event) =>
                 setWorkerCount(sanitizeAmount(event.currentTarget.value))
               }
@@ -265,6 +287,7 @@ export function WorkStepClient({
               id="work-memo"
               maxLength={500}
               value={workMemo}
+              disabled={isSaving || isOriginalEditBlocked}
               onChange={(event) => setWorkMemo(event.currentTarget.value)}
               rows={3}
               className="min-h-11 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-sm"
@@ -315,7 +338,7 @@ export function WorkStepClient({
                 type="button"
                 variant="outline"
                 onClick={handleRetry}
-                disabled={isSaving}
+                disabled={isSaving || isOriginalEditBlocked}
                 className="min-h-11 w-full"
               >
                 다시 시도
@@ -323,7 +346,11 @@ export function WorkStepClient({
             </div>
           ) : null}
 
-          <Button type="submit" className="min-h-11" disabled={isSaving}>
+          <Button
+            type="submit"
+            className="min-h-11"
+            disabled={isSaving || isOriginalEditBlocked}
+          >
             {isSaving ? "저장 중..." : "저장"}
           </Button>
         </form>

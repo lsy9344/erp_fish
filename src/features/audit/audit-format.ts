@@ -57,6 +57,13 @@ const actionLabels: Record<string, string> = {
   "ledger_input_code.deactivated": "비활성화",
   "ledger_input_code.reordered": "표시 순서 변경",
   "ledger.review.submitted": "검토 대기 제출",
+  "ledger.hq.sales_payment.updated": "본사 매출/결제 수정",
+  "ledger.hq.expenses.saved": "본사 비용 수정",
+  "ledger.hq.purchases.saved": "본사 매입 수정",
+  "ledger.hq.inventory.saved": "본사 재고 수정",
+  "ledger.hq.inventory_adjustment.saved": "본사 재고 조정",
+  "ledger.hq.losses.saved": "본사 손실 수정",
+  "ledger.hq.work_info.saved": "본사 근무 정보 수정",
   "threshold.updated": "기준값 변경",
 };
 

@@ -7,9 +7,13 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
+import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
 import { saveLedgerLosses } from "~/features/losses/actions";
 import { type LossStepData } from "~/features/losses/types";
-import { type FieldErrors } from "~/lib/action-result";
+import { type ActionResult, type FieldErrors } from "~/lib/action-result";
 
 type LossLineState = {
   clientKey: string;
@@ -29,6 +33,8 @@ type LossLineState = {
 type LossStepClientProps = {
   storeName: string;
   initialData: LossStepData;
+  saveAction?: (input: unknown) => Promise<ActionResult<LossStepData>>;
+  ledgerLabel?: string;
 };
 
 function formatKrw(value: number) {
@@ -113,6 +119,8 @@ function parseNumber(value: string) {
 export function LossStepClient({
   storeName,
   initialData,
+  saveAction = saveLedgerLosses,
+  ledgerLabel = "오늘 장부",
 }: LossStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -127,6 +135,10 @@ export function LossStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  useLedgerUpdatedAtSync(data.id, (updatedAt) => {
+    setData((current) => ({ ...current, updatedAt }));
+  });
 
   useEffect(() => {
     setData(initialData);
@@ -223,16 +235,18 @@ export function LossStepClient({
     setFieldErrors({});
 
     try {
-      const result = await saveLedgerLosses({
+      const result = await saveAction({
+        ledgerId: data.id,
         storeId: data.storeId,
         ledgerUpdatedAt: data.updatedAt,
-        losses: items.map((item) => ({
+        losses: items.map((item, index) => ({
           id: item.id || undefined,
-          productId: item.productId,
-          ledgerInputCodeId: item.ledgerInputCodeId,
-          quantity: item.quantity,
-          amount: item.amount,
-          reason: item.reason,
+          productId: productRefs.current[index]?.value ?? item.productId,
+          ledgerInputCodeId:
+            lossTypeRefs.current[index]?.value ?? item.ledgerInputCodeId,
+          quantity: quantityRefs.current[index]?.value ?? item.quantity,
+          amount: amountRefs.current[index]?.value ?? item.amount,
+          reason: reasonRefs.current[index]?.value ?? item.reason,
         })),
       });
 
@@ -247,6 +261,7 @@ export function LossStepClient({
 
       setData(result.data);
       setItems(toLineState(result.data));
+      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setResultMessage("저장됐습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
@@ -271,14 +286,15 @@ export function LossStepClient({
     (sum, item) => sum + parseNumber(item.amount),
     0,
   );
-  const isClosed = data.status === "HEADQUARTERS_CLOSED";
+  const isOriginalEditBlocked =
+    data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">
           손실/폐기/떨이 입력
         </h1>
@@ -347,7 +363,7 @@ export function LossStepClient({
             type="button"
             variant="outline"
             onClick={addLine}
-            disabled={isSaving || isClosed || !hasOptions}
+            disabled={isSaving || isOriginalEditBlocked || !hasOptions}
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
@@ -396,7 +412,7 @@ export function LossStepClient({
                       type="button"
                       variant="outline"
                       onClick={() => removeLine(item.clientKey)}
-                      disabled={isSaving || isClosed}
+                      disabled={isSaving || isOriginalEditBlocked}
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
@@ -421,7 +437,7 @@ export function LossStepClient({
                             event.currentTarget.value,
                           )
                         }
-                        disabled={isSaving || isClosed}
+                        disabled={isSaving || isOriginalEditBlocked}
                         aria-invalid={Boolean(productError)}
                         aria-describedby={
                           productError
@@ -465,7 +481,7 @@ export function LossStepClient({
                             event.currentTarget.value,
                           )
                         }
-                        disabled={isSaving || isClosed}
+                        disabled={isSaving || isOriginalEditBlocked}
                         aria-invalid={Boolean(lossTypeError)}
                         aria-describedby={
                           lossTypeError
@@ -519,7 +535,7 @@ export function LossStepClient({
                             quantity: event.currentTarget.value,
                           })
                         }
-                        disabled={isSaving || isClosed}
+                        disabled={isSaving || isOriginalEditBlocked}
                         className="min-h-11 tabular-nums"
                         aria-invalid={Boolean(quantityError)}
                         aria-describedby={
@@ -554,7 +570,7 @@ export function LossStepClient({
                             amount: event.currentTarget.value,
                           })
                         }
-                        disabled={isSaving || isClosed}
+                        disabled={isSaving || isOriginalEditBlocked}
                         className="min-h-11 tabular-nums"
                         aria-invalid={Boolean(amountError)}
                         aria-describedby={
@@ -587,7 +603,7 @@ export function LossStepClient({
                           reason: event.currentTarget.value,
                         })
                       }
-                      disabled={isSaving || isClosed}
+                      disabled={isSaving || isOriginalEditBlocked}
                       className="min-h-11"
                       aria-invalid={Boolean(reasonError)}
                       aria-describedby={
@@ -639,7 +655,7 @@ export function LossStepClient({
         <Button
           type="submit"
           className="min-h-11"
-          disabled={isSaving || isClosed}
+          disabled={isSaving || isOriginalEditBlocked}
         >
           {isSaving ? "저장 중..." : "저장"}
         </Button>

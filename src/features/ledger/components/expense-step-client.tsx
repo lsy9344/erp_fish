@@ -7,11 +7,15 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerExpenses } from "~/features/ledger/actions";
+import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
 } from "~/features/ledger/types";
-import type { FieldErrors } from "~/lib/action-result";
+import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 type ExpenseCodeOption = {
   id: string;
@@ -31,6 +35,9 @@ type ExpenseStepClientProps = {
   initialLedger: LedgerCostStepData;
   expenseCodeOptions: ExpenseCodeOption[];
   currentStep: "sales" | "cost" | "purchase" | "work";
+  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  showStepNavigation?: boolean;
+  ledgerLabel?: string;
 };
 
 function formatKrw(value: number) {
@@ -111,6 +118,9 @@ export function ExpenseStepClient({
   initialLedger,
   expenseCodeOptions,
   currentStep = "cost",
+  saveAction = saveLedgerExpenses,
+  showStepNavigation = true,
+  ledgerLabel = "오늘 장부",
 }: ExpenseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const lineCodeRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -125,6 +135,10 @@ export function ExpenseStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+
+  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
+    setLedger((current) => ({ ...current, updatedAt }));
+  });
 
   useEffect(() => {
     setLedger(initialLedger);
@@ -155,6 +169,7 @@ export function ExpenseStepClient({
   function fillLedger(next: LedgerCostStepData) {
     setLedger(next);
     setExpenseItems(toExpenseLines(next.expenseItems));
+    notifyLedgerUpdated(next.id, next.updatedAt);
     setResultMessage("저장됐습니다.");
   }
 
@@ -172,12 +187,15 @@ export function ExpenseStepClient({
     setFieldErrors({});
 
     try {
-      const result = await saveLedgerExpenses({
+      const result = await saveAction({
+        ledgerId: ledger.id,
+        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
-        expenses: expenseItems.map((line) => ({
-          ledgerInputCodeId: line.ledgerInputCodeId,
-          amount: line.amount,
-          memo: line.memo,
+        expenses: expenseItems.map((line, index) => ({
+          ledgerInputCodeId:
+            lineCodeRefs.current[index]?.value ?? line.ledgerInputCodeId,
+          amount: lineAmountRefs.current[index]?.value ?? line.amount,
+          memo: lineMemoRefs.current[index]?.value ?? line.memo,
         })),
       });
 
@@ -237,11 +255,13 @@ export function ExpenseStepClient({
   const hasExpenseItems = expenseCodeOptions.length > 0;
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
+  const isOriginalEditBlocked =
+    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
@@ -251,7 +271,8 @@ export function ExpenseStepClient({
         </p>
       </header>
 
-      <section
+      {showStepNavigation ? (
+        <section
         aria-label="비용 단계"
         className="bg-card text-card-foreground rounded-lg border p-4"
       >
@@ -305,7 +326,8 @@ export function ExpenseStepClient({
             </a>
           </li>
         </ol>
-      </section>
+        </section>
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -314,7 +336,7 @@ export function ExpenseStepClient({
             type="button"
             variant="outline"
             onClick={addExpenseLine}
-            disabled={isFormSaving}
+            disabled={isFormSaving || isOriginalEditBlocked}
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
@@ -349,7 +371,7 @@ export function ExpenseStepClient({
                       type="button"
                       variant="outline"
                       onClick={() => removeExpenseLine(line.id)}
-                      disabled={isFormSaving}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
@@ -367,6 +389,7 @@ export function ExpenseStepClient({
                         lineCodeRefs.current[index] = node;
                       }}
                       value={line.ledgerInputCodeId}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
                           ledgerInputCodeId: event.currentTarget.value,
@@ -409,6 +432,7 @@ export function ExpenseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.amount}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
                           amount: sanitizeAmount(event.currentTarget.value),
@@ -445,6 +469,7 @@ export function ExpenseStepClient({
                       inputMode="text"
                       maxLength={500}
                       value={line.memo}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
                           memo: event.currentTarget.value,
@@ -514,7 +539,7 @@ export function ExpenseStepClient({
               type="button"
               variant="outline"
               onClick={handleRetry}
-              disabled={isFormSaving}
+              disabled={isFormSaving || isOriginalEditBlocked}
               className="min-h-11 w-full"
             >
               다시 시도
@@ -522,7 +547,11 @@ export function ExpenseStepClient({
           </div>
         ) : null}
 
-        <Button type="submit" className="min-h-11" disabled={isFormSaving}>
+        <Button
+          type="submit"
+          className="min-h-11"
+          disabled={isFormSaving || isOriginalEditBlocked}
+        >
           {isFormSaving ? "저장 중..." : "저장"}
         </Button>
       </form>

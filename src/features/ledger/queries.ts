@@ -8,6 +8,7 @@ import {
   calculateProductivity,
 } from "~/server/calculations/ledger";
 import { writeAuditLog } from "~/server/audit";
+import { requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
 import { type LedgerCostStepData, type LedgerSalesStepData } from "./types";
 
@@ -80,8 +81,11 @@ type LedgerAuditPayload = {
   cardAmount: number;
   otherPaymentAmount: number;
   workerCount: number | null;
+  workMemo: string | null;
   submittedById: string | null;
   submittedAt: string | null;
+  expenseItems: LedgerCostStepData["expenseItems"];
+  purchaseItems: LedgerCostStepData["purchaseItems"];
   expenseTotal: number;
   purchaseTotal: number;
   grossProfit: number;
@@ -133,6 +137,7 @@ export function toLedgerSalesStepData(
     id: ledger.id,
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
+    updatedAt: ledger.updatedAt.toISOString(),
     status: ledger.status,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
@@ -242,6 +247,9 @@ export function toLedgerAuditPayload(
     cardAmount: ledger.cardAmount,
     otherPaymentAmount: ledger.otherPaymentAmount,
     workerCount: ledger.workerCount ?? null,
+    workMemo: ledger.workMemo ?? null,
+    expenseItems: getLedgerExpenseItems(ledger),
+    purchaseItems: getLedgerPurchaseItems(ledger),
     expenseTotal,
     purchaseTotal,
     grossProfit,
@@ -347,4 +355,24 @@ export async function getTodayStoreLedgerInTx(
   const ledger = await getOrCreateTodayStoreLedgerInTx(tx, storeId, actorId);
 
   return ledger;
+}
+
+export async function getLedgerCostStepDataByIdInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+): Promise<LedgerCostStepData | null> {
+  const ledger = await tx.dailyLedger.findUnique({
+    where: { id: ledgerId },
+    select: ledgerSelect,
+  });
+
+  return ledger ? toLedgerCostStepData(ledger) : null;
+}
+
+export async function getLedgerCostStepDataById(
+  ledgerId: string,
+): Promise<LedgerCostStepData | null> {
+  await requireHeadquartersUser();
+
+  return db.$transaction((tx) => getLedgerCostStepDataByIdInTx(tx, ledgerId));
 }

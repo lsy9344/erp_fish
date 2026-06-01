@@ -1,0 +1,506 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { PrismaClient } from "../../generated/prisma/index.js";
+
+const prisma = new PrismaClient();
+const STORY_MARKER = "story-4-1-test";
+const STORE_ID = "store-story-4-1-edit";
+const CLOSED_STORE_ID = "store-story-4-1-closed";
+const PRODUCT_NAME = "스토리4-1 광어";
+const EXPENSE_CODE_NAME = "스토리4-1 비용";
+const LOSS_CODE_NAME = "스토리4-1 손실";
+
+test.beforeEach(async () => {
+  await cleanupStoryFourOneData();
+});
+
+test.afterAll(async () => {
+  await cleanupStoryFourOneData();
+  await prisma.$disconnect();
+});
+
+async function loginAsHq(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill("hq@example.com");
+  await page.getByLabel("비밀번호").fill("correct-password");
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/app\//);
+}
+
+async function replaceControlValue(control: Locator, value: string) {
+  await control.click();
+  await control.press("Control+A");
+  await control.pressSequentially(value);
+  await expect(control).toHaveValue(value);
+}
+
+async function clearControlValue(control: Locator) {
+  await control.click();
+  await control.press("Control+A");
+  await control.press("Backspace");
+  await expect(control).toHaveValue("");
+}
+
+async function getHeadquartersUserId() {
+  const user = await prisma.user.findUnique({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+
+  expect(user?.id).toBeTruthy();
+
+  return user!.id;
+}
+
+function getTodayKstMidnight(inputDate = new Date()) {
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(inputDate)
+    .split("-");
+
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
+async function seedEditableStoryData() {
+  const actorId = await getHeadquartersUserId();
+  const store = await prisma.store.create({
+    data: {
+      id: STORE_ID,
+      name: "스토리4-1 검토대기점",
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+  const product = await prisma.product.create({
+    data: {
+      name: PRODUCT_NAME,
+      category: "냉동",
+      spec: "1kg",
+      defaultUnitPrice: 1000,
+      updatedById: actorId,
+    },
+  });
+  const purchaseStandard = await prisma.purchaseStandard.create({
+    data: {
+      productId: product.id,
+      standardUnitPrice: 1000,
+      referenceInfo: STORY_MARKER,
+      updatedById: actorId,
+    },
+  });
+  const expenseCode = await prisma.ledgerInputCode.create({
+    data: {
+      group: "EXPENSE_ITEM",
+      name: EXPENSE_CODE_NAME,
+      displayOrder: 941,
+      updatedById: actorId,
+    },
+  });
+  const lossCode = await prisma.ledgerInputCode.create({
+    data: {
+      group: "LOSS_TYPE",
+      name: LOSS_CODE_NAME,
+      displayOrder: 942,
+      updatedById: actorId,
+    },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: getTodayKstMidnight(),
+      status: "IN_REVIEW",
+      totalSalesAmount: 10000,
+      cashAmount: 4000,
+      cardAmount: 6000,
+      otherPaymentAmount: 0,
+      workerCount: 2,
+      workMemo: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await prisma.ledgerExpense.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      ledgerInputCodeId: expenseCode.id,
+      amount: 1000,
+      memo: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      purchaseStandardId: purchaseStandard.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1000,
+      quantity: 1,
+      amount: 1000,
+      referenceInfo: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1000,
+      previousQuantity: 10,
+      purchasedQuantity: 1,
+      currentQuantity: 8,
+      quantity: 8,
+      inventoryAmount: 8000,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      ledgerInputCodeId: lossCode.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1000,
+      lossTypeName: lossCode.name,
+      quantity: 1,
+      amount: 1000,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  return { actorId, ledger, product };
+}
+
+async function seedClosedStoryData() {
+  const actorId = await getHeadquartersUserId();
+  const store = await prisma.store.create({
+    data: {
+      id: CLOSED_STORE_ID,
+      name: "스토리4-1 본사마감점",
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+
+  return prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: getTodayKstMidnight(),
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 10000,
+      cashAmount: 4000,
+      cardAmount: 6000,
+      otherPaymentAmount: 0,
+      workerCount: 2,
+      workMemo: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+}
+
+async function cleanupStoryFourOneData() {
+  const stores = [STORE_ID, CLOSED_STORE_ID];
+  const ledgers = await prisma.dailyLedger.findMany({
+    where: { storeId: { in: stores } },
+    select: { id: true },
+  });
+  const ledgerIds = ledgers.map((ledger) => ledger.id);
+  const products = await prisma.product.findMany({
+    where: { name: PRODUCT_NAME },
+    select: { id: true },
+  });
+  const productIds = products.map((product) => product.id);
+  const codes = await prisma.ledgerInputCode.findMany({
+    where: { name: { in: [EXPENSE_CODE_NAME, LOSS_CODE_NAME] } },
+    select: { id: true },
+  });
+  const codeIds = codes.map((code) => code.id);
+
+  if (ledgerIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+    });
+    await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerInventoryAdjustment.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerPurchaseItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerExpense.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.dailyLedger.deleteMany({
+      where: { id: { in: ledgerIds } },
+    });
+  }
+
+  if (productIds.length > 0) {
+    await prisma.purchaseStandard.deleteMany({
+      where: { productId: { in: productIds } },
+    });
+    await prisma.product.deleteMany({
+      where: { id: { in: productIds } },
+    });
+  }
+
+  if (codeIds.length > 0) {
+    await prisma.ledgerInputCode.deleteMany({
+      where: { id: { in: codeIds } },
+    });
+  }
+
+  await prisma.userStoreAssignment.deleteMany({
+    where: { storeId: { in: stores } },
+  });
+  await prisma.store.deleteMany({
+    where: { id: { in: stores } },
+  });
+}
+
+test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹션을 보완 저장한다", async ({
+  page,
+}) => {
+  const { actorId, ledger, product } = await seedEditableStoryData();
+
+  await loginAsHq(page);
+  await page.goto(
+    `/app/ledgers/${ledger.id}?date=today&sort=priority&filter=all`,
+  );
+  await expect(
+    page.getByRole("heading", { name: "스토리4-1 검토대기점 장부 상세" }),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "손실" }).click();
+  const lossPanel = page.getByRole("tabpanel").filter({ hasText: "손실 항목" });
+  await expect(lossPanel).toBeVisible();
+  await replaceControlValue(
+    lossPanel.getByLabel("사유/특이사항"),
+    "본사 손실 확인",
+  );
+  await lossPanel.getByRole("button", { name: "저장" }).click();
+  await expect(lossPanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerLossItem.findFirst({
+        where: { dailyLedgerId: ledger.id, productId: product.id },
+        select: { reason: true },
+      });
+
+      return current?.reason;
+    })
+    .toBe("본사 손실 확인");
+
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "총매출" });
+  await expect(salesPanel).toBeVisible();
+  await replaceControlValue(salesPanel.getByLabel("총매출"), "45000");
+  await replaceControlValue(salesPanel.getByLabel("현금"), "15000");
+  await replaceControlValue(salesPanel.getByLabel("카드"), "25000");
+  await replaceControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(salesPanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.dailyLedger.findUnique({
+        where: { id: ledger.id },
+        select: {
+          totalSalesAmount: true,
+          cashAmount: true,
+          cardAmount: true,
+          otherPaymentAmount: true,
+        },
+      });
+
+      return current;
+    })
+    .toEqual({
+      totalSalesAmount: 45000,
+      cashAmount: 15000,
+      cardAmount: 25000,
+      otherPaymentAmount: 5000,
+    });
+
+  await page.getByRole("tab", { name: "비용" }).click();
+  const expensePanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "비용 항목" });
+  await expect(expensePanel).toBeVisible();
+  await replaceControlValue(expensePanel.getByLabel("금액"), "3000");
+  await expensePanel.getByRole("button", { name: "저장" }).click();
+  await expect(expensePanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerExpense.findFirst({
+        where: { dailyLedgerId: ledger.id },
+        select: { amount: true },
+      });
+
+      return current?.amount;
+    })
+    .toBe(3000);
+
+  await page.getByRole("tab", { name: "매입" }).click();
+  const purchasePanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "매입 항목" });
+  await expect(purchasePanel).toBeVisible();
+  await replaceControlValue(purchasePanel.getByLabel("수량"), "3");
+  await purchasePanel.getByRole("button", { name: "저장" }).click();
+  await expect(purchasePanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerPurchaseItem.findFirst({
+        where: { dailyLedgerId: ledger.id, productId: product.id },
+        select: { quantity: true },
+      });
+
+      return current?.quantity;
+    })
+    .toBe(3);
+
+  await page.getByRole("tab", { name: "재고" }).click();
+  const inventoryPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "재고 입력" });
+  await expect(inventoryPanel).toBeVisible();
+  const inventoryInput = page.getByLabel(`${product.name} 당일재고`);
+  await expect(inventoryInput).toBeVisible();
+  await replaceControlValue(inventoryInput, "12");
+  await inventoryPanel.getByRole("button", { name: "저장" }).click();
+  await expect(inventoryPanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerInventoryItem.findFirst({
+        where: { dailyLedgerId: ledger.id, productId: product.id },
+        select: { currentQuantity: true },
+      });
+
+      return current?.currentQuantity;
+    })
+    .toBe(12);
+
+  await page.getByRole("tab", { name: "근무" }).click();
+  const workPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "근무인원" });
+  await expect(workPanel).toBeVisible();
+  await replaceControlValue(workPanel.getByLabel("근무인원"), "5");
+  await replaceControlValue(workPanel.getByLabel("특이사항 메모"), "본사 보완");
+  await workPanel.getByRole("button", { name: "저장" }).click();
+  await expect(workPanel.getByText("저장됐습니다.")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const current = await prisma.dailyLedger.findUnique({
+        where: { id: ledger.id },
+        select: { workerCount: true },
+      });
+
+      return current?.workerCount;
+    })
+    .toBe(5);
+
+  const savedLedger = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    include: {
+      ledgerExpenses: true,
+      ledgerPurchaseItems: true,
+      ledgerInventoryItems: true,
+      ledgerLossItems: true,
+    },
+  });
+  const auditActions = await prisma.auditLog.findMany({
+    where: { targetType: "DailyLedger", targetId: ledger.id },
+    select: { action: true, actorId: true, before: true, after: true },
+  });
+
+  expect(savedLedger.totalSalesAmount).toBe(45000);
+  expect(savedLedger.cashAmount).toBe(15000);
+  expect(savedLedger.cardAmount).toBe(25000);
+  expect(savedLedger.otherPaymentAmount).toBe(5000);
+  expect(savedLedger.workerCount).toBe(5);
+  expect(savedLedger.workMemo).toBe("본사 보완");
+  expect(savedLedger.updatedById).toBe(actorId);
+  expect(savedLedger.submittedById).toBeNull();
+  expect(savedLedger.submittedAt).toBeNull();
+  expect(savedLedger.ledgerExpenses[0]?.amount).toBe(3000);
+  expect(savedLedger.ledgerPurchaseItems[0]?.quantity).toBe(3);
+  expect(savedLedger.ledgerInventoryItems[0]?.currentQuantity).toBe(12);
+  expect(savedLedger.ledgerLossItems[0]?.reason).toBe("본사 손실 확인");
+  expect(auditActions.map((entry) => entry.action)).toEqual(
+    expect.arrayContaining([
+      "ledger.hq.sales_payment.updated",
+      "ledger.hq.expenses.saved",
+      "ledger.hq.purchases.saved",
+      "ledger.hq.inventory.saved",
+      "ledger.hq.losses.saved",
+      "ledger.hq.work_info.saved",
+    ]),
+  );
+  expect(auditActions.every((entry) => entry.actorId === actorId)).toBe(true);
+  expect(auditActions.every((entry) => entry.before && entry.after)).toBe(true);
+});
+
+test("본사 마감 장부 상세는 원본 입력 컨트롤을 비활성화하고 정정 안내를 보인다", async ({
+  page,
+}) => {
+  const ledger = await seedClosedStoryData();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+
+  await expect(page.getByText("본사 마감된 장부", { exact: true })).toBeVisible();
+  await expect(page.getByText(/정정 기록을 사용해 주세요/)).toBeVisible();
+  await expect(page.getByLabel("총매출")).toBeDisabled();
+
+  await page.getByRole("tab", { name: "근무" }).click();
+  await expect(page.getByLabel("근무인원")).toBeDisabled();
+});
+
+test("본사 상세 매출 폼은 한국어 검증 오류와 첫 오류 포커스를 제공한다", async ({
+  page,
+}) => {
+  const { ledger } = await seedEditableStoryData();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+
+  const salesPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "총매출" });
+  const totalSalesInput = salesPanel.getByLabel("총매출");
+
+  await expect(salesPanel).toBeVisible();
+  await clearControlValue(totalSalesInput);
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+
+  await expect(
+    salesPanel.getByText("총매출은 0원 이상의 정수여야 합니다."),
+  ).toBeVisible();
+  await expect(totalSalesInput).toBeFocused();
+});

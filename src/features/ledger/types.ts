@@ -11,6 +11,7 @@ export type LedgerSalesStepData = PaymentAmounts & {
   id: string;
   storeId: string;
   closingDate: string;
+  updatedAt: string;
   status: DailyLedgerStatus;
   submittedById: string | null;
   submittedAt: string | null;

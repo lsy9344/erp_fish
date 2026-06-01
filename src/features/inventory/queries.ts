@@ -4,9 +4,10 @@ import type { Prisma } from "../../../generated/prisma";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import {
-  getTodayKstMidnight,
+  ledgerSelect,
   getTodayStoreLedgerInTx,
 } from "~/features/ledger/queries";
+import { requireHeadquartersUser } from "~/server/authz";
 import { type InventoryStepData, type InventoryStepLine } from "./types";
 
 const inventoryItemSelect = {
@@ -54,6 +55,10 @@ type InventoryItemPayload = Prisma.LedgerInventoryItemGetPayload<{
 type InventoryAdjustmentPayload = Prisma.LedgerInventoryAdjustmentGetPayload<{
   select: typeof inventoryAdjustmentSelect;
 }>;
+
+type InventoryLedgerPayload = Awaited<
+  ReturnType<typeof getTodayStoreLedgerInTx>
+>;
 
 type PurchasePayload = {
   productId: string;
@@ -485,12 +490,10 @@ async function getActiveProductBases(tx: Prisma.TransactionClient) {
   }));
 }
 
-export async function getInventoryStepDataInTx(
+async function getInventoryStepDataForLedgerInTx(
   tx: Prisma.TransactionClient,
-  storeId: string,
-  actorId: string,
+  ledger: InventoryLedgerPayload,
 ): Promise<InventoryStepData> {
-  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
   const purchases = aggregatePurchases(ledger.ledgerPurchaseItems);
   const losses = aggregateLosses(
     await tx.ledgerLossItem.findMany({
@@ -522,6 +525,7 @@ export async function getInventoryStepDataInTx(
       id: ledger.id,
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
+      updatedAt: ledger.updatedAt.toISOString(),
       status: ledger.status,
       items: await mergeExistingInventoryLines(
         tx,
@@ -542,13 +546,18 @@ export async function getInventoryStepDataInTx(
     };
   }
 
-  const carryover = await getCarryoverBases(tx, storeId, getTodayKstMidnight());
+  const carryover = await getCarryoverBases(
+    tx,
+    ledger.storeId,
+    ledger.closingDate,
+  );
   const bases = mergeActivityBases(carryover.bases, purchases, losses);
 
   return {
     id: ledger.id,
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
+    updatedAt: ledger.updatedAt.toISOString(),
     status: ledger.status,
     items: bases.map((base) =>
       withPurchaseAggregate(
@@ -569,11 +578,47 @@ export async function getInventoryStepDataInTx(
   };
 }
 
+export async function getInventoryStepDataInTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  actorId: string,
+): Promise<InventoryStepData> {
+  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
+
+  return getInventoryStepDataForLedgerInTx(tx, ledger);
+}
+
+export async function getInventoryStepDataByLedgerIdInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+): Promise<InventoryStepData | null> {
+  const ledger = await tx.dailyLedger.findUnique({
+    where: { id: ledgerId },
+    select: ledgerSelect,
+  });
+
+  if (!ledger) {
+    return null;
+  }
+
+  return getInventoryStepDataForLedgerInTx(tx, ledger);
+}
+
 export async function getInventoryStepData(
   storeId: string,
   actorId: string,
 ): Promise<InventoryStepData> {
   return db.$transaction((tx) =>
     getInventoryStepDataInTx(tx, storeId, actorId),
+  );
+}
+
+export async function getInventoryStepDataByLedgerId(
+  ledgerId: string,
+): Promise<InventoryStepData | null> {
+  await requireHeadquartersUser();
+
+  return db.$transaction((tx) =>
+    getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
   );
 }

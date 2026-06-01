@@ -16,15 +16,26 @@ import {
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
+import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
 import { type InventoryStepData } from "~/features/inventory/types";
-import { type FieldErrors } from "~/lib/action-result";
+import { type ActionResult, type FieldErrors } from "~/lib/action-result";
 
 type InventoryStepClientProps = {
   storeName: string;
   initialData: InventoryStepData;
+  saveItemsAction?: (
+    input: unknown,
+  ) => Promise<ActionResult<InventoryStepData>>;
+  saveAdjustmentAction?: (
+    input: unknown,
+  ) => Promise<ActionResult<InventoryStepData>>;
+  ledgerLabel?: string;
 };
 
 type InventoryLineState = InventoryStepData["items"][number] & {
@@ -135,6 +146,9 @@ function formatClosingDate(value: string) {
 export function InventoryStepClient({
   storeName,
   initialData,
+  saveItemsAction = saveLedgerInventoryItems,
+  saveAdjustmentAction = saveLedgerInventoryAdjustment,
+  ledgerLabel = "오늘 장부",
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
@@ -157,12 +171,19 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
+
+  useLedgerUpdatedAtSync(data.id, (updatedAt) => {
+    setData((current) => ({ ...current, updatedAt }));
+  });
+
   const carryoverMessage =
     data.carryover.message ||
     (data.carryover.status === "manual"
       ? carryoverManualMessage
       : carryoverLoadedMessage);
-  const isClosed = data.status === "HEADQUARTERS_CLOSED";
+  const isOriginalEditBlocked =
+    data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
+  const isClosed = isOriginalEditBlocked;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
 
   useEffect(() => {
@@ -213,12 +234,17 @@ export function InventoryStepClient({
     setAdjustmentErrors({});
 
     try {
-      const result = await saveLedgerInventoryItems({
+      const result = await saveItemsAction({
+        ledgerId: data.id,
+        ledgerUpdatedAt: data.updatedAt,
         storeId: data.storeId,
         items: items.map((item) => ({
           productId: item.productId,
-          currentQuantity: item.currentQuantityInput,
-          quantity: item.quantityInput,
+          currentQuantity:
+            currentQuantityRefs.current[item.productId]?.value ??
+            item.currentQuantityInput,
+          quantity:
+            quantityRefs.current[item.productId]?.value ?? item.quantityInput,
         })),
       });
 
@@ -232,6 +258,7 @@ export function InventoryStepClient({
 
       setData(result.data);
       setItems(toLineState(result.data));
+      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
     } catch {
@@ -332,7 +359,9 @@ export function InventoryStepClient({
     setSavingAdjustmentProductId(item.productId);
 
     try {
-      const result = await saveLedgerInventoryAdjustment({
+      const result = await saveAdjustmentAction({
+        ledgerId: data.id,
+        ledgerUpdatedAt: data.updatedAt,
         storeId: data.storeId,
         productId: item.productId,
         actualQuantity: item.currentQuantityInput,
@@ -377,6 +406,7 @@ export function InventoryStepClient({
       }
 
       setData(result.data);
+      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setItems((current) =>
         mergeAdjustedLineState(result.data, current, item.productId),
       );
@@ -614,7 +644,9 @@ export function InventoryStepClient({
                     event.currentTarget.value,
                   )
                 }
-                disabled={isClosed || adjusted || isAdjustmentSavePending}
+                disabled={
+                  isClosed || adjusted || isAdjustmentSavePending
+                }
                 className="min-h-11 min-w-48"
                 placeholder="조정 사유"
               />
@@ -647,7 +679,7 @@ export function InventoryStepClient({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           {storeName} · 영업일: {formatClosingDate(data.closingDate)}
@@ -665,7 +697,7 @@ export function InventoryStepClient({
         <AlertDescription>{carryoverMessage}</AlertDescription>
       </Alert>
 
-      {isClosed ? (
+      {isOriginalEditBlocked ? (
         <Alert variant="destructive">
           <AlertTitle>본사 마감 장부</AlertTitle>
           <AlertDescription>

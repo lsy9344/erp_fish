@@ -6,11 +6,15 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
+import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
 } from "~/features/ledger/types";
-import type { FieldErrors } from "~/lib/action-result";
+import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
@@ -72,12 +76,18 @@ type SalesPaymentStepClientProps = {
   storeName: string;
   initialLedger: LedgerCostStepData;
   currentStep?: "sales" | "cost" | "purchase" | "work";
+  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  showStepNavigation?: boolean;
+  ledgerLabel?: string;
 };
 
 export function SalesPaymentStepClient({
   storeName,
   initialLedger,
   currentStep = "sales",
+  saveAction = saveLedgerSalesPayment,
+  showStepNavigation = true,
+  ledgerLabel = "오늘 장부",
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const totalSalesInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +114,10 @@ export function SalesPaymentStepClient({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
 
+  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
+    setLedger((current) => ({ ...current, updatedAt }));
+  });
+
   useEffect(() => {
     setIsHydrated(true);
   }, []);
@@ -119,6 +133,8 @@ export function SalesPaymentStepClient({
     otherPaymentAmountValue,
   );
   const hasPaymentDifference = paymentDifference !== 0;
+  const isOriginalEditBlocked =
+    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
 
   function fillLedger(data: LedgerCostStepData) {
     setLedger(data);
@@ -161,14 +177,17 @@ export function SalesPaymentStepClient({
 
     try {
       const payload = {
+        ledgerId: ledger.id,
+        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
-        totalSalesAmount,
-        cashAmount,
-        cardAmount,
-        otherPaymentAmount,
+        totalSalesAmount: totalSalesInputRef.current?.value ?? totalSalesAmount,
+        cashAmount: cashAmountInputRef.current?.value ?? cashAmount,
+        cardAmount: cardAmountInputRef.current?.value ?? cardAmount,
+        otherPaymentAmount:
+          otherPaymentInputRef.current?.value ?? otherPaymentAmount,
       };
 
-      const result = await saveLedgerSalesPayment(payload);
+      const result = await saveAction(payload);
 
       if (!result.ok) {
         const nextErrors = result.error.fieldErrors ?? {};
@@ -180,6 +199,7 @@ export function SalesPaymentStepClient({
       }
 
       fillLedger(result.data);
+      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setResultMessage("저장됐습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
@@ -205,7 +225,7 @@ export function SalesPaymentStepClient({
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
@@ -215,61 +235,63 @@ export function SalesPaymentStepClient({
         </p>
       </header>
 
-      <section
-        aria-label="매출/결제 단계"
-        className="bg-card text-card-foreground rounded-lg border p-4"
-      >
-        <p className="mb-3 text-sm font-medium">현재 단계</p>
-        <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-          <li>
-            <a
-              aria-current={currentStep === "sales" ? "step" : undefined}
-              className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-              href={stepHref(ledger.storeId, "sales")}
-            >
-              1단계: 매출/결제
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "cost")}
-            >
-              2단계: 비용
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "purchase")}
-            >
-              3단계: 매입
-            </a>
-          </li>
-          <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-            4단계: 재고
-          </li>
-          <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-            5단계: 손실/폐기
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "work")}
-            >
-              6단계: 근무인원
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "review")}
-            >
-              7단계: 검토/제출
-            </a>
-          </li>
-        </ol>
-      </section>
+      {showStepNavigation ? (
+        <section
+          aria-label="매출/결제 단계"
+          className="bg-card text-card-foreground rounded-lg border p-4"
+        >
+          <p className="mb-3 text-sm font-medium">현재 단계</p>
+          <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+            <li>
+              <a
+                aria-current={currentStep === "sales" ? "step" : undefined}
+                className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                href={stepHref(ledger.storeId, "sales")}
+              >
+                1단계: 매출/결제
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "cost")}
+              >
+                2단계: 비용
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "purchase")}
+              >
+                3단계: 매입
+              </a>
+            </li>
+            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
+              4단계: 재고
+            </li>
+            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
+              5단계: 손실/폐기
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "work")}
+              >
+                6단계: 근무인원
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "review")}
+              >
+                7단계: 검토/제출
+              </a>
+            </li>
+          </ol>
+        </section>
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <form
@@ -287,7 +309,7 @@ export function SalesPaymentStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={totalSalesAmount}
-              disabled={!isHydrated}
+              disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
                 setTotalSalesAmount(
                   sanitizeAmountInput(event.currentTarget.value),
@@ -323,7 +345,7 @@ export function SalesPaymentStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={cashAmount}
-              disabled={!isHydrated}
+              disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
                 setCashAmount(sanitizeAmountInput(event.currentTarget.value))
               }
@@ -353,7 +375,7 @@ export function SalesPaymentStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={cardAmount}
-              disabled={!isHydrated}
+              disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
                 setCardAmount(sanitizeAmountInput(event.currentTarget.value))
               }
@@ -385,7 +407,7 @@ export function SalesPaymentStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={otherPaymentAmount}
-              disabled={!isHydrated}
+              disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
                 setOtherPaymentAmount(
                   sanitizeAmountInput(event.currentTarget.value),
@@ -451,7 +473,7 @@ export function SalesPaymentStepClient({
                 type="button"
                 variant="outline"
                 onClick={handleRetry}
-                disabled={!isHydrated || isSaving}
+                disabled={!isHydrated || isSaving || isOriginalEditBlocked}
                 className="min-h-11 w-full"
               >
                 다시 시도
@@ -462,7 +484,7 @@ export function SalesPaymentStepClient({
           <Button
             type="submit"
             className="min-h-11"
-            disabled={!isHydrated || isSaving}
+            disabled={!isHydrated || isSaving || isOriginalEditBlocked}
           >
             {isSaving ? "저장 중..." : "저장"}
           </Button>

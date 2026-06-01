@@ -7,11 +7,15 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerPurchases } from "~/features/ledger/actions";
+import {
+  notifyLedgerUpdated,
+  useLedgerUpdatedAtSync,
+} from "~/features/ledger/components/ledger-updated-at-sync";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
 } from "~/features/ledger/types";
-import type { FieldErrors } from "~/lib/action-result";
+import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 type ProductOption = {
   id: string;
@@ -47,6 +51,9 @@ type PurchaseStepClientProps = {
   productOptions: ProductOption[];
   purchaseStandardOptions: PurchaseStandardOption[];
   currentStep: "sales" | "cost" | "purchase" | "work";
+  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  showStepNavigation?: boolean;
+  ledgerLabel?: string;
 };
 
 function formatKrw(value: number) {
@@ -143,6 +150,9 @@ export function PurchaseStepClient({
   productOptions,
   purchaseStandardOptions,
   currentStep = "purchase",
+  saveAction = saveLedgerPurchases,
+  showStepNavigation = true,
+  ledgerLabel = "오늘 장부",
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -158,6 +168,10 @@ export function PurchaseStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+
+  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
+    setLedger((current) => ({ ...current, updatedAt }));
+  });
 
   useEffect(() => {
     setLedger(initialLedger);
@@ -193,6 +207,7 @@ export function PurchaseStepClient({
   function fillLedger(next: LedgerCostStepData) {
     setLedger(next);
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
+    notifyLedgerUpdated(next.id, next.updatedAt);
     setResultMessage("저장됐습니다.");
   }
 
@@ -210,14 +225,17 @@ export function PurchaseStepClient({
     setFieldErrors({});
 
     try {
-      const result = await saveLedgerPurchases({
+      const result = await saveAction({
+        ledgerId: ledger.id,
+        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
-        purchases: purchaseItems.map((line) => ({
+        purchases: purchaseItems.map((line, index) => ({
           id: line.id,
-          productId: line.productId,
-          purchaseStandardId: line.purchaseStandardId,
-          unitPrice: line.unitPrice,
-          quantity: line.quantity,
+          productId: productRefs.current[index]?.value ?? line.productId,
+          purchaseStandardId:
+            standardRefs.current[index]?.value ?? line.purchaseStandardId,
+          unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
+          quantity: quantityRefs.current[index]?.value ?? line.quantity,
         })),
       });
 
@@ -323,11 +341,13 @@ export function PurchaseStepClient({
     selectableProductOptions.length > 0 && purchaseStandardOptions.length > 0;
   const isFormSaving = isSaving;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
+  const isOriginalEditBlocked =
+    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">오늘 장부</p>
+        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
@@ -337,7 +357,8 @@ export function PurchaseStepClient({
         </p>
       </header>
 
-      <section
+      {showStepNavigation ? (
+        <section
         aria-label="매입 단계"
         className="bg-card text-card-foreground rounded-lg border p-4"
       >
@@ -391,7 +412,8 @@ export function PurchaseStepClient({
             </a>
           </li>
         </ol>
-      </section>
+        </section>
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -400,7 +422,7 @@ export function PurchaseStepClient({
             type="button"
             variant="outline"
             onClick={addPurchaseLine}
-            disabled={isFormSaving || !hasOptions}
+            disabled={isFormSaving || isOriginalEditBlocked || !hasOptions}
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
@@ -448,7 +470,7 @@ export function PurchaseStepClient({
                       type="button"
                       variant="outline"
                       onClick={() => removePurchaseLine(line.id)}
-                      disabled={isFormSaving}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
@@ -466,6 +488,7 @@ export function PurchaseStepClient({
                         productRefs.current[index] = node;
                       }}
                       value={line.productId}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         applyProduct(line.id, event.currentTarget.value)
                       }
@@ -508,6 +531,7 @@ export function PurchaseStepClient({
                         standardRefs.current[index] = node;
                       }}
                       value={line.purchaseStandardId}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         applyStandard(line.id, event.currentTarget.value)
                       }
@@ -574,6 +598,7 @@ export function PurchaseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.unitPrice}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           unitPrice: event.currentTarget.value,
@@ -606,6 +631,7 @@ export function PurchaseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.quantity}
+                      disabled={isFormSaving || isOriginalEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           quantity: event.currentTarget.value,
@@ -680,7 +706,7 @@ export function PurchaseStepClient({
               type="button"
               variant="outline"
               onClick={handleRetry}
-              disabled={isFormSaving}
+              disabled={isFormSaving || isOriginalEditBlocked}
               className="min-h-11 w-full"
             >
               다시 시도
@@ -688,7 +714,11 @@ export function PurchaseStepClient({
           </div>
         ) : null}
 
-        <Button type="submit" className="min-h-11" disabled={isFormSaving}>
+        <Button
+          type="submit"
+          className="min-h-11"
+          disabled={isFormSaving || isOriginalEditBlocked}
+        >
           {isFormSaving ? "저장 중..." : "저장"}
         </Button>
       </form>

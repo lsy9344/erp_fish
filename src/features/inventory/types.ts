@@ -48,6 +48,7 @@ export type InventoryStepData = {
   id: string;
   storeId: string;
   closingDate: string;
+  updatedAt: string;
   status: DailyLedgerStatus;
   items: InventoryStepLine[];
   carryover: InventoryCarryoverState;
