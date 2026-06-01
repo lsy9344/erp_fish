@@ -1,8 +1,13 @@
 import type { DailyLedgerStatus } from "../../../generated/prisma";
 import {
+  applyCorrectionValuesToLedgerReviewInput,
+  calculateExpenseTotal,
   calculateLedgerReviewSummary,
+  type LedgerReviewCorrectionOverlayResult,
+  type LedgerReviewInventoryInput,
   type LedgerReviewMetric,
 } from "../../server/calculations/ledger.ts";
+import { calculateInventoryAmount } from "../../server/calculations/inventory.ts";
 import type {
   AnomalyThresholdSignalSettings,
   evaluateInventoryLossAnomalySignals as evaluateInventoryLossAnomalySignalsFunction,
@@ -11,13 +16,18 @@ import type {
 import type {
   DashboardBusinessStatus,
   DashboardDatePreset,
+  DashboardFilterMode,
   DashboardLedgerStatus,
+  DashboardSortMode,
   HqDashboardData,
+  HqDashboardPriority,
   HqDashboardRow,
   HqDashboardSummary,
 } from "./types.ts";
+import type { CorrectionAppliedValue } from "../corrections/types.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
+type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
 type EvaluateRevenueAnomalySignals =
   typeof evaluateRevenueAnomalySignalsFunction;
 type EvaluateInventoryLossAnomalySignals =
@@ -43,6 +53,8 @@ type DashboardLedgerRecord = {
     email: string | null;
   };
   ledgerInventoryItems: {
+    id: string;
+    productId: string;
     productName: string;
     previousQuantity: number;
     purchasedQuantity: number;
@@ -51,13 +63,22 @@ type DashboardLedgerRecord = {
     unitPrice: number;
     inventoryAmount: number | null;
   }[];
+  ledgerExpenses: {
+    id: string;
+    amount: number;
+  }[];
   ledgerInventoryAdjustments: {
+    ledgerInventoryItemId: string | null;
     productName: string;
+    beforeQuantity: number;
+    beforeAmount: number;
+    unitPrice: number;
     differenceQuantity: number;
     differenceAmount: number;
     reason: string;
   }[];
   ledgerLossItems: {
+    id: string;
     productId: string;
     productName: string;
     quantity: number;
@@ -70,6 +91,26 @@ type DashboardLedgerRecord = {
 
 export function getDashboardDatePreset(value: unknown): DashboardDatePreset {
   return value === "yesterday" ? "yesterday" : "today";
+}
+
+export function getDashboardSortMode(value: unknown): DashboardSortMode {
+  return value === "store-name" ? "store-name" : "priority";
+}
+
+export function getDashboardFilterMode(value: unknown): DashboardFilterMode {
+  return value === "needs-attention" ? "needs-attention" : "all";
+}
+
+export function getDashboardPath({
+  datePreset,
+  sortMode,
+  filterMode,
+}: {
+  datePreset: DashboardDatePreset;
+  sortMode: DashboardSortMode;
+  filterMode: DashboardFilterMode;
+}) {
+  return `/app/dashboard?date=${datePreset}&sort=${sortMode}&filter=${filterMode}`;
 }
 
 export function getDashboardDate(
@@ -128,17 +169,26 @@ export function mapDashboardBusinessStatus(
 
 export async function getHqDashboardRows({
   datePreset = "today",
+  sortMode = "priority",
+  filterMode = "all",
 }: {
   datePreset?: DashboardDatePreset;
+  sortMode?: DashboardSortMode;
+  filterMode?: DashboardFilterMode;
 } = {}): Promise<HqDashboardData> {
   const { requireHeadquartersUser } = await import("../../server/authz.ts");
   await requireHeadquartersUser();
 
   const preset = getDashboardDatePreset(datePreset);
+  const normalizedSortMode = getDashboardSortMode(sortMode);
+  const normalizedFilterMode = getDashboardFilterMode(filterMode);
   const closingDate = getDashboardDate(preset);
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("./threshold-queries.ts");
+  const { getLatestCorrectionValuesForLedgers } = await import(
+    "../corrections/queries.ts"
+  );
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [stores, thresholdSettings] = await Promise.all([
@@ -180,6 +230,8 @@ export async function getHqDashboardRows({
             },
             ledgerInventoryItems: {
               select: {
+                id: true,
+                productId: true,
                 productName: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
@@ -189,9 +241,19 @@ export async function getHqDashboardRows({
                 inventoryAmount: true,
               },
             },
+            ledgerExpenses: {
+              select: {
+                id: true,
+                amount: true,
+              },
+            },
             ledgerInventoryAdjustments: {
               select: {
+                ledgerInventoryItemId: true,
                 productName: true,
+                beforeQuantity: true,
+                beforeAmount: true,
+                unitPrice: true,
                 differenceQuantity: true,
                 differenceAmount: true,
                 reason: true,
@@ -199,6 +261,7 @@ export async function getHqDashboardRows({
             },
             ledgerLossItems: {
               select: {
+                id: true,
                 productId: true,
                 productName: true,
                 quantity: true,
@@ -212,10 +275,13 @@ export async function getHqDashboardRows({
             },
           },
         });
+  const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
+    ledgers.map((ledger) => ledger.id),
+  );
   const ledgerByStoreId = new Map<string, DashboardLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
-  const rows = stores.map((store) =>
+  const baseRows = stores.map((store) =>
     toDashboardRow(
       store,
       ledgerByStoreId.get(store.id) ?? null,
@@ -223,15 +289,122 @@ export async function getHqDashboardRows({
       thresholdSettings,
       evaluateRevenueAnomalySignals,
       evaluateInventoryLossAnomalySignals,
+      correctionValuesByLedgerId.get(ledgerByStoreId.get(store.id)?.id ?? ""),
     ),
   );
+  const allRows = applyDashboardPresentation(baseRows, {
+    sortMode: "store-name",
+    filterMode: "all",
+  });
+  const rows = applyDashboardPresentation(baseRows, {
+    sortMode: normalizedSortMode,
+    filterMode: normalizedFilterMode,
+  });
 
   return {
     datePreset: preset,
+    sortMode: normalizedSortMode,
+    filterMode: normalizedFilterMode,
     closingDate: closingDate.toISOString(),
     rows,
-    summary: summarizeDashboardRows(rows),
+    summary: summarizeDashboardRows(allRows),
   };
+}
+
+export function applyDashboardPresentation(
+  rows: HqDashboardRowWithoutPriority[],
+  {
+    sortMode,
+    filterMode,
+  }: {
+    sortMode: DashboardSortMode;
+    filterMode: DashboardFilterMode;
+  },
+): HqDashboardRow[] {
+  const rowsWithPriority = rows.map((row) => ({
+    ...row,
+    priority: getDashboardPriority(row),
+  }));
+  const filteredRows =
+    filterMode === "needs-attention"
+      ? rowsWithPriority.filter((row) => row.priority.rank < 90)
+      : rowsWithPriority;
+
+  return [...filteredRows].sort((left, right) => {
+    if (sortMode === "store-name") {
+      return compareDashboardRowsByStore(left, right);
+    }
+
+    return (
+      left.priority.rank - right.priority.rank ||
+      compareDashboardRowsByStore(left, right)
+    );
+  });
+}
+
+function getDashboardPriority(
+  row: HqDashboardRowWithoutPriority,
+): HqDashboardPriority {
+  const criticalSignals = row.signals.filter(
+    (signal) => signal.severity === "critical",
+  );
+  if (criticalSignals.length > 0) {
+    return {
+      rank: 10,
+      label: "심각 이상",
+      reasons: criticalSignals.map((signal) => signal.label),
+    };
+  }
+
+  const warningSignals = row.signals.filter(
+    (signal) => signal.severity === "warning",
+  );
+  if (warningSignals.length > 0) {
+    return {
+      rank: 20,
+      label: "경고 이상",
+      reasons: warningSignals.map((signal) => signal.label),
+    };
+  }
+
+  if (row.ledgerStatus.key === "IN_REVIEW") {
+    return { rank: 30, label: "검토대기", reasons: ["본사 검토 필요"] };
+  }
+
+  if (row.ledgerStatus.key === "IN_PROGRESS") {
+    return { rank: 40, label: "입력중", reasons: ["미마감"] };
+  }
+
+  if (row.ledgerStatus.key === "EMPTY") {
+    return { rank: 50, label: "미입력", reasons: ["장부 입력 전"] };
+  }
+
+  const infoSignals = row.signals.filter(
+    (signal) => signal.severity === "info",
+  );
+  if (infoSignals.length > 0) {
+    return {
+      rank: 60,
+      label: "확인 필요",
+      reasons: infoSignals.map((signal) => signal.label),
+    };
+  }
+
+  if (row.ledgerStatus.key === "HOLIDAY") {
+    return { rank: 100, label: "휴무", reasons: ["휴무일"] };
+  }
+
+  return { rank: 90, label: "정상", reasons: ["이상 신호 없음"] };
+}
+
+function compareDashboardRowsByStore(
+  left: Pick<HqDashboardRow, "storeName" | "storeId">,
+  right: Pick<HqDashboardRow, "storeName" | "storeId">,
+) {
+  return (
+    left.storeName.localeCompare(right.storeName, "ko-KR") ||
+    left.storeId.localeCompare(right.storeId)
+  );
 }
 
 function toDashboardRow(
@@ -241,7 +414,8 @@ function toDashboardRow(
   thresholdSettings: AnomalyThresholdSignalSettings | null,
   evaluateRevenueAnomalySignals: EvaluateRevenueAnomalySignals,
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals,
-): HqDashboardRow {
+  corrections?: Map<string, CorrectionAppliedValue>,
+): HqDashboardRowWithoutPriority {
   if (ledger === null) {
     const metrics = {
       totalSales: unavailable("계산 불가"),
@@ -263,6 +437,7 @@ function toDashboardRow(
       lastModifiedBy: null,
       lastModifiedAt: null,
       isHeadquartersClosed: false,
+      correctionState: emptyCorrectionState(),
       signals: getDashboardSignals({
         thresholdSettings,
         revenueCurrent: metrics,
@@ -277,15 +452,52 @@ function toDashboardRow(
     };
   }
 
-  const reviewSummary = calculateLedgerReviewSummary({
-    totalSalesAmount: ledger.totalSalesAmount,
-    cashAmount: ledger.cashAmount,
-    cardAmount: ledger.cardAmount,
-    otherPaymentAmount: ledger.otherPaymentAmount,
-    workerCount: ledger.workerCount,
-    expenseTotal: 0,
-    inventoryItems: ledger.ledgerInventoryItems,
+  const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: ledger.id,
+    reviewInput: {
+      totalSalesAmount: ledger.totalSalesAmount,
+      cashAmount: ledger.cashAmount,
+      cardAmount: ledger.cardAmount,
+      otherPaymentAmount: ledger.otherPaymentAmount,
+      workerCount: ledger.workerCount,
+      expenseTotal: calculateExpenseTotal(
+        ledger.ledgerExpenses.map((item) => item.amount),
+      ),
+      inventoryItems: ledger.ledgerInventoryItems,
+    },
+    expenseItems: ledger.ledgerExpenses,
+    lossItems: ledger.ledgerLossItems,
+    corrections: corrections?.values() ?? [],
   });
+  const correctionState = correctionOverlay.correctionState;
+  const hasLoss = hasCorrectedLoss(correctionOverlay.lossItems);
+  const reviewSummary = calculateLedgerReviewSummary(
+    correctionOverlay.reviewInput,
+  );
+  const signals =
+    ledger.status === "HOLIDAY"
+      ? []
+      : getDashboardSignals({
+          thresholdSettings,
+          revenueCurrent: {
+            totalSales: reviewSummary.totalSales,
+            grossMarginRate: reviewSummary.grossMarginRate,
+            salesDifference: reviewSummary.salesDifference,
+          },
+          inventoryLossCurrent: {
+            inventoryItems: toInventoryLossInventoryItems(
+              correctionOverlay.reviewInput.inventoryItems,
+            ),
+            inventoryAdjustments: toCorrectedInventoryAdjustments(
+              ledger.ledgerInventoryAdjustments,
+              correctionOverlay,
+            ),
+            lossItems: correctionOverlay.lossItems,
+          },
+          evaluateRevenueAnomalySignals,
+          evaluateInventoryLossAnomalySignals,
+          correctionState,
+        });
 
   return {
     storeId: store.id,
@@ -297,25 +509,12 @@ function toDashboardRow(
     salesAmount: reviewSummary.totalSales,
     grossMarginRate: reviewSummary.grossMarginRate,
     salesDifference: reviewSummary.salesDifference,
-    hasLoss: ledger._count.ledgerLossItems > 0,
+    hasLoss,
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
-    signals: getDashboardSignals({
-      thresholdSettings,
-      revenueCurrent: {
-        totalSales: reviewSummary.totalSales,
-        grossMarginRate: reviewSummary.grossMarginRate,
-        salesDifference: reviewSummary.salesDifference,
-      },
-      inventoryLossCurrent: {
-        inventoryItems: ledger.ledgerInventoryItems,
-        inventoryAdjustments: ledger.ledgerInventoryAdjustments,
-        lossItems: ledger.ledgerLossItems,
-      },
-      evaluateRevenueAnomalySignals,
-      evaluateInventoryLossAnomalySignals,
-    }),
+    correctionState,
+    signals,
   };
 }
 
@@ -326,6 +525,9 @@ export async function getHqLedgerDetail(ledgerId: string) {
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("./threshold-queries.ts");
+  const { getLatestCorrectionValuesForLedger } = await import(
+    "../corrections/queries.ts"
+  );
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [ledger, thresholdSettings] = await Promise.all([
@@ -355,6 +557,8 @@ export async function getHqLedgerDetail(ledgerId: string) {
         },
         ledgerInventoryItems: {
           select: {
+            id: true,
+            productId: true,
             productName: true,
             previousQuantity: true,
             purchasedQuantity: true,
@@ -364,9 +568,19 @@ export async function getHqLedgerDetail(ledgerId: string) {
             inventoryAmount: true,
           },
         },
+        ledgerExpenses: {
+          select: {
+            id: true,
+            amount: true,
+          },
+        },
         ledgerInventoryAdjustments: {
           select: {
+            ledgerInventoryItemId: true,
             productName: true,
+            beforeQuantity: true,
+            beforeAmount: true,
+            unitPrice: true,
             differenceQuantity: true,
             differenceAmount: true,
             reason: true,
@@ -374,6 +588,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
         },
         ledgerLossItems: {
           select: {
+            id: true,
             productId: true,
             productName: true,
             quantity: true,
@@ -394,15 +609,52 @@ export async function getHqLedgerDetail(ledgerId: string) {
     return null;
   }
 
-  const reviewSummary = calculateLedgerReviewSummary({
-    totalSalesAmount: ledger.totalSalesAmount,
-    cashAmount: ledger.cashAmount,
-    cardAmount: ledger.cardAmount,
-    otherPaymentAmount: ledger.otherPaymentAmount,
-    workerCount: ledger.workerCount,
-    expenseTotal: 0,
-    inventoryItems: ledger.ledgerInventoryItems,
+  const corrections = await getLatestCorrectionValuesForLedger(ledger.id);
+  const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: ledger.id,
+    reviewInput: {
+      totalSalesAmount: ledger.totalSalesAmount,
+      cashAmount: ledger.cashAmount,
+      cardAmount: ledger.cardAmount,
+      otherPaymentAmount: ledger.otherPaymentAmount,
+      workerCount: ledger.workerCount,
+      expenseTotal: calculateExpenseTotal(
+        ledger.ledgerExpenses.map((item) => item.amount),
+      ),
+      inventoryItems: ledger.ledgerInventoryItems,
+    },
+    expenseItems: ledger.ledgerExpenses,
+    lossItems: ledger.ledgerLossItems,
+    corrections: corrections?.values() ?? [],
   });
+  const correctionState = correctionOverlay.correctionState;
+  const correctedReviewSummary = calculateLedgerReviewSummary(
+    correctionOverlay.reviewInput,
+  );
+  const signals =
+    ledger.status === "HOLIDAY"
+      ? []
+      : getDashboardSignals({
+          thresholdSettings,
+          revenueCurrent: {
+            totalSales: correctedReviewSummary.totalSales,
+            grossMarginRate: correctedReviewSummary.grossMarginRate,
+            salesDifference: correctedReviewSummary.salesDifference,
+          },
+          inventoryLossCurrent: {
+            inventoryItems: toInventoryLossInventoryItems(
+              correctionOverlay.reviewInput.inventoryItems,
+            ),
+            inventoryAdjustments: toCorrectedInventoryAdjustments(
+              ledger.ledgerInventoryAdjustments,
+              correctionOverlay,
+            ),
+            lossItems: correctionOverlay.lossItems,
+          },
+          evaluateRevenueAnomalySignals,
+          evaluateInventoryLossAnomalySignals,
+          correctionState,
+        });
 
   return {
     ledgerId: ledger.id,
@@ -411,28 +663,15 @@ export async function getHqLedgerDetail(ledgerId: string) {
     closingDate: ledger.closingDate.toISOString(),
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
-    salesAmount: reviewSummary.totalSales,
-    grossMarginRate: reviewSummary.grossMarginRate,
-    salesDifference: reviewSummary.salesDifference,
-    hasLoss: ledger._count.ledgerLossItems > 0,
+    salesAmount: correctedReviewSummary.totalSales,
+    grossMarginRate: correctedReviewSummary.grossMarginRate,
+    salesDifference: correctedReviewSummary.salesDifference,
+    hasLoss: hasCorrectedLoss(correctionOverlay.lossItems),
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
-    signals: getDashboardSignals({
-      thresholdSettings,
-      revenueCurrent: {
-        totalSales: reviewSummary.totalSales,
-        grossMarginRate: reviewSummary.grossMarginRate,
-        salesDifference: reviewSummary.salesDifference,
-      },
-      inventoryLossCurrent: {
-        inventoryItems: ledger.ledgerInventoryItems,
-        inventoryAdjustments: ledger.ledgerInventoryAdjustments,
-        lossItems: ledger.ledgerLossItems,
-      },
-      evaluateRevenueAnomalySignals,
-      evaluateInventoryLossAnomalySignals,
-    }),
+    correctionState,
+    signals,
   };
 }
 
@@ -442,12 +681,14 @@ function getDashboardSignals({
   inventoryLossCurrent,
   evaluateRevenueAnomalySignals,
   evaluateInventoryLossAnomalySignals,
+  correctionState = emptyCorrectionState(),
 }: {
   thresholdSettings: AnomalyThresholdSignalSettings | null;
   revenueCurrent: Parameters<EvaluateRevenueAnomalySignals>[0]["current"];
   inventoryLossCurrent: Parameters<EvaluateInventoryLossAnomalySignals>[0]["current"];
   evaluateRevenueAnomalySignals: EvaluateRevenueAnomalySignals;
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
+  correctionState?: HqDashboardRow["correctionState"];
 }) {
   const revenueSignals = evaluateRevenueAnomalySignals({
     thresholds: thresholdSettings,
@@ -461,10 +702,89 @@ function getDashboardSignals({
       })
     : [];
 
-  return [...revenueSignals, ...inventoryLossSignals];
+  const correctionSignals = correctionState.hasUnappliedCorrections
+    ? [
+        {
+          id: "correction-review-required",
+          label: "정정 확인 필요",
+          severity: "info" as const,
+          detail:
+            "계산에 바로 반영할 수 없는 정정 기록이 있어 상세에서 확인이 필요합니다.",
+        },
+      ]
+    : [];
+
+  return [...revenueSignals, ...inventoryLossSignals, ...correctionSignals];
 }
 
-function summarizeDashboardRows(rows: HqDashboardRow[]): HqDashboardSummary {
+function toInventoryLossInventoryItems(
+  items: LedgerReviewInventoryInput[],
+) {
+  return items.map((item) => ({
+    productName: item.productName ?? "품목",
+    previousQuantity: item.previousQuantity,
+    purchasedQuantity: item.purchasedQuantity,
+    currentQuantity: item.currentQuantity,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+  }));
+}
+
+function toCorrectedInventoryAdjustments(
+  adjustments: DashboardLedgerRecord["ledgerInventoryAdjustments"],
+  correctionOverlay: LedgerReviewCorrectionOverlayResult,
+) {
+  if (correctionOverlay.appliedInventoryItemIds.size === 0) {
+    return adjustments;
+  }
+
+  const correctedItemsById = new Map(
+    correctionOverlay.reviewInput.inventoryItems
+      .filter((item) => item.id)
+      .map((item) => [item.id, item]),
+  );
+
+  return adjustments.map((adjustment) => {
+    if (
+      !adjustment.ledgerInventoryItemId ||
+      !correctionOverlay.appliedInventoryItemIds.has(
+        adjustment.ledgerInventoryItemId,
+      )
+    ) {
+      return adjustment;
+    }
+
+    const correctedItem = correctedItemsById.get(
+      adjustment.ledgerInventoryItemId,
+    );
+    const correctedQuantity =
+      correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null;
+    const correctedAmount = calculateInventoryAmount(
+      correctedQuantity,
+      correctedItem?.unitPrice ?? adjustment.unitPrice,
+    );
+
+    if (correctedQuantity === null || correctedAmount === null) {
+      return adjustment;
+    }
+
+    return {
+      ...adjustment,
+      differenceQuantity: correctedQuantity - adjustment.beforeQuantity,
+      differenceAmount: correctedAmount - adjustment.beforeAmount,
+    };
+  });
+}
+
+function hasCorrectedLoss(
+  lossItems: { quantity: number; amount: number }[],
+) {
+  return lossItems.some((item) => item.quantity > 0 || item.amount > 0);
+}
+
+export function summarizeDashboardRows(
+  rows: HqDashboardRow[],
+): HqDashboardSummary {
   return {
     totalStores: rows.length,
     closedCount: rows.filter((row) => row.isHeadquartersClosed).length,
@@ -481,5 +801,13 @@ function unavailable(
   return {
     value: null,
     unavailableReason,
+  };
+}
+
+function emptyCorrectionState(): HqDashboardRow["correctionState"] {
+  return {
+    appliedCorrectionCount: 0,
+    hasAppliedCorrections: false,
+    hasUnappliedCorrections: false,
   };
 }

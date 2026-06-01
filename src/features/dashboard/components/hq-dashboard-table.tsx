@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import type { HqDashboardData, HqDashboardRow } from "../types.ts";
@@ -41,6 +42,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 
 export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   const router = useRouter();
+  const hasNoActiveStores = dashboard.summary.totalStores === 0;
 
   if (dashboard.rows.length === 0) {
     return (
@@ -48,24 +50,27 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
         className="bg-background text-muted-foreground rounded-lg border p-6 text-sm"
         aria-label="관제판 지점 목록"
       >
-        활성 지점이 없습니다. 기준정보에서 지점을 먼저 등록해 주세요.
+        {hasNoActiveStores
+          ? "활성 지점이 없습니다. 기준정보에서 지점을 먼저 등록해 주세요."
+          : "조건에 맞는 지점이 없습니다. 필터를 전체로 바꾸면 모든 지점을 볼 수 있습니다."}
       </section>
     );
   }
 
   const openLedgerDetail = (row: HqDashboardRow) => {
     if (row.ledgerId) {
-      router.push(`/app/ledgers/${row.ledgerId}`);
+      router.push(getLedgerDetailHref(row, dashboard));
     }
   };
 
   return (
     <section className="space-y-3" aria-label="관제판 지점 목록">
       <div className="bg-background hidden overflow-x-auto rounded-lg border md:block">
-        <Table className="min-w-[1120px]">
+        <Table className="min-w-[1200px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">지점</TableHead>
+              <TableHead>확인 순서</TableHead>
               <TableHead>영업 상태</TableHead>
               <TableHead>장부 상태</TableHead>
               <TableHead className="text-right">매출</TableHead>
@@ -87,6 +92,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                 {...getRowActivationProps(row, openLedgerDetail)}
               >
                 <TableCell className="font-medium">{row.storeName}</TableCell>
+                <TableCell>
+                  <PriorityBadge row={row} />
+                </TableCell>
                 <TableCell>{row.businessStatus.label}</TableCell>
                 <TableCell>
                   <DashboardStatusBadge status={row.ledgerStatus} />
@@ -107,7 +115,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                 <TableCell>{formatLastModified(row)}</TableCell>
                 <TableCell>{formatHeadquartersClosed(row)}</TableCell>
                 <TableCell>
-                  <DetailLink row={row} />
+                  <DetailLink row={row} dashboard={dashboard} />
                 </TableCell>
               </TableRow>
             ))}
@@ -145,6 +153,8 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               />
             </div>
 
+            <PriorityBadge row={row} className="mt-3" />
+
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               <div>
                 <dt className="text-muted-foreground">매출</dt>
@@ -179,7 +189,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               data-testid={`hq-dashboard-mobile-signal-${row.storeId}`}
               className="mt-4"
             />
-            <DetailLink row={row} className="mt-3" />
+            <DetailLink row={row} dashboard={dashboard} className="mt-3" />
           </article>
         ))}
       </div>
@@ -236,9 +246,11 @@ function isInteractiveTarget(
 
 function DetailLink({
   row,
+  dashboard,
   className,
 }: {
   row: HqDashboardRow;
+  dashboard: HqDashboardData;
   className?: string;
 }) {
   if (!row.ledgerId) {
@@ -259,13 +271,39 @@ function DetailLink({
   return (
     <Button asChild variant="outline" size="sm" className={className}>
       <Link
-        href={`/app/ledgers/${row.ledgerId}`}
+        href={getLedgerDetailHref(row, dashboard)}
         aria-label={`${row.storeName} 상세 보기`}
       >
         상세 보기
       </Link>
     </Button>
   );
+}
+
+function PriorityBadge({
+  row,
+  className,
+}: {
+  row: HqDashboardRow;
+  className?: string;
+}) {
+  return (
+    <Badge
+      variant="outline"
+      title={row.priority.reasons.join(", ")}
+      className={cn("max-w-full whitespace-normal text-left", className)}
+    >
+      {row.priority.label}
+    </Badge>
+  );
+}
+
+function getLedgerDetailHref(row: HqDashboardRow, dashboard: HqDashboardData) {
+  if (!row.ledgerId) {
+    return "/app/dashboard";
+  }
+
+  return `/app/ledgers/${row.ledgerId}?date=${dashboard.datePreset}&sort=${dashboard.sortMode}&filter=${dashboard.filterMode}`;
 }
 
 function getRowClassName(row: HqDashboardRow) {

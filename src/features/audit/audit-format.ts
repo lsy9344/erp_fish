@@ -7,6 +7,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "PurchaseStandard",
   "LedgerInputCode",
   "DailyLedger",
+  "CorrectionRecord",
   "AnomalyThresholdSetting",
 ] as const;
 
@@ -22,6 +23,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "PurchaseStandard", label: "매입 기준" },
   { value: "LedgerInputCode", label: "코드" },
   { value: "DailyLedger", label: "장부" },
+  { value: "CorrectionRecord", label: "정정 기록" },
   { value: "AnomalyThresholdSetting", label: "이상 신호 기준값" },
 ] as const satisfies ReadonlyArray<{
   value: AuditHistoryTargetType;
@@ -60,6 +62,8 @@ const actionLabels: Record<string, string> = {
   "ledger.hq.sales_payment.updated": "본사 매출/결제 수정",
   "ledger.hq.expenses.saved": "본사 비용 수정",
   "ledger.hq.purchases.saved": "본사 매입 수정",
+  "ledger.hq.closed": "본사 마감",
+  "correction.created": "정정 기록 추가",
   "ledger.hq.inventory.saved": "본사 재고 수정",
   "ledger.hq.inventory_adjustment.saved": "본사 재고 조정",
   "ledger.hq.losses.saved": "본사 손실 수정",

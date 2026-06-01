@@ -36,9 +36,30 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+async function replaceControlValue(
+  control: ReturnType<Page["getByLabel"]>,
+  value: string,
+) {
+  await control.click();
+  await control.press("Control+A");
+  await control.pressSequentially(value);
+  await expect(control).toHaveValue(value);
+}
+
 async function getHeadquartersUserId() {
   const user = await prisma.user.findUnique({
     where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+
+  expect(user?.id).toBeTruthy();
+
+  return user!.id;
+}
+
+async function getManagerUserId() {
+  const user = await prisma.user.findUnique({
+    where: { email: "manager@example.com" },
     select: { id: true },
   });
 
@@ -62,6 +83,7 @@ function getTodayKstMidnight(inputDate = new Date()) {
 
 async function seedStoryThreeOneData() {
   const actorId = await getHeadquartersUserId();
+  const managerId = await getManagerUserId();
 
   await prisma.store.createMany({
     data: [
@@ -102,6 +124,12 @@ async function seedStoryThreeOneData() {
         updatedById: actorId,
       },
     ],
+  });
+  await prisma.userStoreAssignment.create({
+    data: {
+      userId: managerId,
+      storeId: STORE_IDS.closed,
+    },
   });
 
   const product = await prisma.product.create({
@@ -219,6 +247,47 @@ async function seedStoryThreeOneData() {
   });
 }
 
+async function createCorrectionRecord(input: {
+  dailyLedgerId: string;
+  targetType:
+    | "PAYMENT_FIELD"
+    | "INVENTORY_ROW"
+    | "LOSS_ROW";
+  targetId: string;
+  fieldKey: string;
+  label: string;
+  kind: "money" | "quantity";
+  originalValue: number;
+  correctedValue: number;
+  reason: string;
+}) {
+  const actorId = await getHeadquartersUserId();
+  const originalValue = {
+    kind: input.kind,
+    value: input.originalValue,
+    label: input.label,
+  };
+  const correctedValue = {
+    kind: input.kind,
+    value: input.correctedValue,
+    label: input.label,
+  };
+
+  return prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: input.dailyLedgerId,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      fieldKey: input.fieldKey,
+      originalValue,
+      previousAppliedValue: originalValue,
+      correctedValue,
+      reason: input.reason,
+      createdById: actorId,
+    },
+  });
+}
+
 async function seedStoryThreeThreeThresholds() {
   const actorId = await getHeadquartersUserId();
 
@@ -310,11 +379,25 @@ async function cleanupStoryThreeOneData() {
   const codeIds = codes.map((code) => code.id);
 
   if (ledgerIds.length > 0) {
+    const correctionRecords = await prisma.correctionRecord.findMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+      select: { id: true },
+    });
+    const correctionRecordIds = correctionRecords.map((record) => record.id);
+
     await prisma.auditLog.deleteMany({
       where: {
-        targetType: "DailyLedger",
-        targetId: { in: ledgerIds },
+        OR: [
+          { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+          {
+            targetType: "CorrectionRecord",
+            targetId: { in: correctionRecordIds },
+          },
+        ],
       },
+    });
+    await prisma.correctionRecord.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
     });
     await prisma.ledgerLossItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
@@ -417,9 +500,16 @@ test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 
 }) => {
   await seedStoryThreeThreeThresholds();
   await login(page, "hq@example.com");
-  await page.goto("/app/dashboard?date=today");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  await expect(page.getByRole("link", { name: "문제 우선순" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "전체" })).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="hq-dashboard-row-"]').first(),
+  ).toContainText("스토리3-1 검토대기점");
 
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
+  await expect(reviewRow).toContainText("심각 이상");
   await expect(reviewRow).toContainText("매출 기준 확인");
   await expect(reviewRow).toContainText("이익률 기준 확인");
   await expect(reviewRow).toContainText("매출차액 기준 확인");
@@ -427,8 +517,17 @@ test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 
   await expect(reviewRow).toContainText("손실 이상");
   await expect(reviewRow).not.toContainText("기준값 저장됨");
 
-  await reviewRow.getByText("스토리3-1 검토대기점").click();
-  await expect(page).toHaveURL(/\/app\/ledgers\//);
+  const holidayRow = getDesktopRow(page, STORE_IDS.holiday);
+  await expect(holidayRow).not.toContainText("재고 입력 필요");
+  await expect(holidayRow).not.toContainText("손실 입력 필요");
+  await expect(holidayRow).not.toContainText("재고 이상");
+  await expect(holidayRow).not.toContainText("손실 이상");
+
+  await reviewRow.focus();
+  await reviewRow.press("Enter");
+  await expect(page).toHaveURL(
+    /\/app\/ledgers\/.+\?date=today&sort=priority&filter=all/,
+  );
   await expect(
     page.getByRole("heading", { name: "스토리3-1 검토대기점 장부 상세" }),
   ).toBeVisible();
@@ -439,6 +538,146 @@ test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 
   await expect(page.getByText(/12개/)).toBeVisible();
   await expect(page.getByText("손실 이상")).toBeVisible();
   await expect(page.getByText(/52,000원/)).toBeVisible();
+
+  await page.getByRole("link", { name: "관제판으로 돌아가기" }).click();
+  await expect(page).toHaveURL(
+    /\/app\/dashboard\?date=today&sort=priority&filter=all/,
+  );
+
+  const rowAfterReturn = getDesktopRow(page, STORE_IDS.review);
+  await rowAfterReturn.focus();
+  await rowAfterReturn.press(" ");
+  await expect(page).toHaveURL(
+    /\/app\/ledgers\/.+\?date=today&sort=priority&filter=all/,
+  );
+});
+
+test("정정 저장 후 관제판 기본 매출은 정정 반영값으로 갱신된다", async ({
+  page,
+}) => {
+  const closedLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.closed },
+    select: { id: true },
+  });
+
+  await seedStoryThreeThreeThresholds();
+  await login(page, "hq@example.com");
+  await page.goto(`/app/ledgers/${closedLedger.id}`);
+
+  const correctionPanel = page
+    .getByRole("region")
+    .filter({ has: page.getByRole("heading", { name: "정정 기록" }) });
+
+  await expect(correctionPanel).toBeVisible();
+  await expect(correctionPanel.getByLabel("정정 대상")).toHaveValue("0");
+  await replaceControlValue(correctionPanel.getByLabel("정정값"), "45000");
+  await replaceControlValue(
+    correctionPanel.getByLabel("정정 사유"),
+    "관제판 정정 반영 확인",
+  );
+  await correctionPanel.getByRole("button", { name: "정정 기록 저장" }).click();
+  await expect(
+    correctionPanel.getByText("정정 기록이 저장됐습니다."),
+  ).toBeVisible();
+
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  const closedRow = getDesktopRow(page, STORE_IDS.closed);
+  await expect(closedRow).toContainText("₩45,000");
+  await expect(closedRow).not.toContainText("₩300,000");
+  await expect(closedRow).toContainText("매출 기준 확인");
+});
+
+test("정정 저장 후 관제판 이상 신호는 정정 반영값 기준으로 갱신된다", async ({
+  page,
+}) => {
+  const reviewLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.review },
+    select: {
+      id: true,
+      ledgerInventoryItems: {
+        select: {
+          id: true,
+          currentQuantity: true,
+        },
+        take: 1,
+      },
+      ledgerLossItems: {
+        select: {
+          id: true,
+          amount: true,
+        },
+        take: 1,
+      },
+    },
+  });
+  const inventoryItem = reviewLedger.ledgerInventoryItems[0]!;
+  const lossItem = reviewLedger.ledgerLossItems[0]!;
+
+  await seedStoryThreeThreeThresholds();
+  await createCorrectionRecord({
+    dailyLedgerId: reviewLedger.id,
+    targetType: "INVENTORY_ROW",
+    targetId: inventoryItem.id,
+    fieldKey: "currentQuantity",
+    label: "현재고",
+    kind: "quantity",
+    originalValue: inventoryItem.currentQuantity ?? 0,
+    correctedValue: 15,
+    reason: "관제판 재고 이상 신호 정정 반영 확인",
+  });
+  await createCorrectionRecord({
+    dailyLedgerId: reviewLedger.id,
+    targetType: "LOSS_ROW",
+    targetId: lossItem.id,
+    fieldKey: "amount",
+    label: "손실 금액",
+    kind: "money",
+    originalValue: lossItem.amount,
+    correctedValue: 0,
+    reason: "관제판 손실 이상 신호 정정 반영 확인",
+  });
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  const reviewRow = getDesktopRow(page, STORE_IDS.review);
+  await expect(reviewRow).not.toContainText("재고 이상");
+  await expect(reviewRow).not.toContainText("손실 이상");
+  await expect(reviewRow).toContainText("매출 기준 확인");
+});
+
+test("지점장은 마감 장부의 본사 정정 이력을 읽기 전용으로 본다", async ({
+  page,
+}) => {
+  const closedLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.closed },
+    select: {
+      id: true,
+      totalSalesAmount: true,
+    },
+  });
+
+  await createCorrectionRecord({
+    dailyLedgerId: closedLedger.id,
+    targetType: "PAYMENT_FIELD",
+    targetId: closedLedger.id,
+    fieldKey: "totalSalesAmount",
+    label: "총매출",
+    kind: "money",
+    originalValue: closedLedger.totalSalesAmount,
+    correctedValue: 45000,
+    reason: "지점장 읽기 전용 정정 이력 확인",
+  });
+  await login(page, "manager@example.com");
+  await page.goto(`/app/store-entry?storeId=${STORE_IDS.closed}`);
+
+  await expect(page.getByRole("heading", { name: "본사 정정 이력" })).toBeVisible();
+  await expect(page.getByText("지점장 읽기 전용 정정 이력 확인")).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "정정 반영값" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "정정 기록 저장" })).toHaveCount(0);
 });
 
 test("지점장은 본사 관제판에 직접 접근할 수 없다", async ({ page }) => {
@@ -490,6 +729,7 @@ test("390px 모바일 관제판은 핵심 상태가 겹치지 않고 보인다",
   await expect(storeName).toContainText("스토리3-1 검토대기점");
   await expect(status).toContainText("검토대기");
   await expect(signal).toContainText("기준값 설정 전");
+  await expect(row).toContainText("확인 필요");
 
   const rowBox = await row.boundingBox();
   expect(rowBox).toBeTruthy();

@@ -78,6 +78,24 @@ test("inventory/loss anomaly helper distinguishes missing thresholds, missing in
     ],
   );
 
+  const missingInventoryRows = evaluateInventoryLossAnomalySignals({
+    thresholds,
+    current: {
+      inventoryItems: [],
+      inventoryAdjustments: [],
+      lossItems: [],
+    },
+  });
+
+  assert.deepEqual(
+    missingInventoryRows.map((signal) => [
+      signal.id,
+      signal.label,
+      signal.severity,
+    ]),
+    [["inventory-input-required", "재고 입력 필요", "info"]],
+  );
+
   assert.deepEqual(
     evaluateInventoryLossAnomalySignals({
       thresholds,
@@ -138,6 +156,44 @@ test("inventory/loss anomaly helper emits critical signals with actual and thres
   assert.match(signals[1].detail, /광어/);
   assert.match(signals[1].detail, /52,000원/);
   assert.match(signals[1].detail, /기준 50,000원/);
+});
+
+test("inventory/loss anomaly helper requires values to exceed thresholds", async () => {
+  const anomalyPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "anomaly.ts",
+  );
+  const { evaluateInventoryLossAnomalySignals } = await import(
+    pathToFileURL(anomalyPath).href
+  );
+
+  assert.deepEqual(
+    evaluateInventoryLossAnomalySignals({
+      thresholds,
+      current: {
+        inventoryItems: [completeInventoryItem],
+        inventoryAdjustments: [
+          {
+            productName: "꽃게",
+            differenceQuantity: -10,
+            differenceAmount: -10000,
+            reason: "실사 차이",
+          },
+        ],
+        lossItems: [
+          {
+            productId: "product-flatfish",
+            productName: "광어",
+            quantity: 3,
+            amount: 50000,
+          },
+        ],
+      },
+    }),
+    [],
+  );
 });
 
 test("inventory/loss anomaly helper reports inventory calculation unavailable without silently replacing values with zero", async () => {

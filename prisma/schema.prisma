@@ -39,6 +39,16 @@ enum InventoryCarryoverSource {
   MANUAL
 }
 
+enum CorrectionTargetType {
+  LEDGER_FIELD
+  PAYMENT_FIELD
+  EXPENSE_ROW
+  PURCHASE_ROW
+  INVENTORY_ROW
+  LOSS_ROW
+  CALCULATED_METRIC
+}
+
 model Post {
   id        Int      @id @default(autoincrement())
   name      String
@@ -195,6 +205,7 @@ model User {
   createdDailyLedgers               DailyLedger[]               @relation("LedgerCreatedBy")
   updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
   submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
+  closedDailyLedgers                DailyLedger[]               @relation("LedgerClosedBy")
   createdLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseCreatedBy")
   updatedLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseUpdatedBy")
   createdLedgerPurchaseItems        LedgerPurchaseItem[]        @relation("LedgerPurchaseItemCreatedBy")
@@ -205,6 +216,7 @@ model User {
   updatedLedgerInventoryAdjustments LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentUpdatedBy")
   createdLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemCreatedBy")
   updatedLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemUpdatedBy")
+  createdCorrectionRecords          CorrectionRecord[]          @relation("CorrectionRecordCreatedBy")
   auditLogs                         AuditLog[]                  @relation("AuditActor")
 }
 
@@ -258,11 +270,14 @@ model DailyLedger {
   workMemo                   String?
   submittedById              String?
   submittedAt                DateTime?
+  closedById                 String?
+  closedAt                   DateTime?
   ledgerExpenses             LedgerExpense[]
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
+  correctionRecords          CorrectionRecord[]
   createdById                String
   updatedById                String
   createdAt                  DateTime                    @default(now())
@@ -272,11 +287,35 @@ model DailyLedger {
   createdBy   User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   submittedBy User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  closedBy    User? @relation("LedgerClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
 
   @@unique([storeId, closingDate], map: "dailyLedger_storeId_closingDate_key")
   @@index([storeId, closingDate])
   @@index([status])
   @@index([submittedById])
+  @@index([closedById])
+}
+
+model CorrectionRecord {
+  id                   String               @id @default(cuid())
+  dailyLedgerId        String
+  targetType           CorrectionTargetType
+  targetId             String
+  fieldKey             String
+  originalValue        Json
+  previousAppliedValue Json
+  correctedValue       Json
+  reason               String
+  createdById          String
+  createdAt            DateTime             @default(now())
+
+  dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("CorrectionRecordCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([dailyLedgerId])
+  @@index([createdById])
+  @@index([createdAt])
+  @@index([dailyLedgerId, targetType, targetId, fieldKey, createdAt])
 }
 
 model LedgerExpense {

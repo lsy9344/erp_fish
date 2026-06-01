@@ -90,6 +90,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "PurchaseStandard",
       "LedgerInputCode",
       "DailyLedger",
+      "CorrectionRecord",
       "AnomalyThresholdSetting",
     ],
   );
@@ -99,6 +100,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(getAuditTargetTypeLabel("PurchaseStandard"), "매입 기준");
   assert.equal(getAuditTargetTypeLabel("LedgerInputCode"), "코드");
   assert.equal(getAuditTargetTypeLabel("DailyLedger"), "장부");
+  assert.equal(getAuditTargetTypeLabel("CorrectionRecord"), "정정 기록");
   assert.equal(
     getAuditTargetTypeLabel("AnomalyThresholdSetting"),
     "이상 신호 기준값",
@@ -117,6 +119,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
     getAuditActionLabel("ledger.review.submitted"),
     "검토 대기 제출",
   );
+  assert.equal(getAuditActionLabel("correction.created"), "정정 기록 추가");
   assert.equal(getAuditActionLabel("threshold.updated"), "기준값 변경");
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
@@ -145,6 +148,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /PurchaseStandard/);
   assert.match(query, /LedgerInputCode/);
   assert.match(query, /DailyLedger/);
+  assert.match(query, /CorrectionRecord/);
   assert.match(query, /AnomalyThresholdSetting/);
   assert.match(query, /normalizeAuditHistoryFilters/);
   assert.match(query, /targetType/);
@@ -161,7 +165,9 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /db\.purchaseStandard\.findMany/);
   assert.match(query, /db\.ledgerInputCode\.findMany/);
   assert.match(query, /db\.dailyLedger\.findMany/);
+  assert.match(query, /db\.correctionRecord\.findMany/);
   assert.match(query, /db\.anomalyThresholdSetting\.findMany/);
+  assert.match(query, /targetKey\("CorrectionRecord"/);
   assert.match(query, /store:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}/);
   assert.match(query, /closingDate:\s*true/);
   assert.doesNotMatch(query, /\.delete\(/);

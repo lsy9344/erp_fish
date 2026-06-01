@@ -1,3 +1,7 @@
+import { calculateInventoryAmount } from "./inventory.ts";
+
+const MAX_CORRECTION_INTEGER = 2_147_483_647;
+
 export function calculatePaymentDifference(
   totalSalesAmount: number,
   cashAmount: number,
@@ -50,12 +54,28 @@ export type LedgerReviewMetric = {
 };
 
 export type LedgerReviewInventoryInput = {
+  id?: string;
+  productId?: string;
+  productName?: string;
   previousQuantity: number;
   purchasedQuantity: number;
   currentQuantity: number | null;
   quantity: number | null;
   unitPrice: number;
   inventoryAmount: number | null;
+};
+
+export type LedgerReviewExpenseInput = {
+  id?: string;
+  amount: number;
+};
+
+export type LedgerReviewLossInput = {
+  id?: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  amount: number;
 };
 
 export type LedgerReviewSummaryInput = {
@@ -66,6 +86,32 @@ export type LedgerReviewSummaryInput = {
   workerCount: number | null;
   expenseTotal: number;
   inventoryItems: LedgerReviewInventoryInput[];
+};
+
+export type LedgerReviewCorrectionValue = {
+  kind?: unknown;
+  value?: unknown;
+};
+
+export type LedgerReviewCorrection = {
+  targetType: string;
+  targetId: string;
+  fieldKey: string;
+  latestAppliedValue: unknown;
+};
+
+export type LedgerReviewCorrectionState = {
+  appliedCorrectionCount: number;
+  hasAppliedCorrections: boolean;
+  hasUnappliedCorrections: boolean;
+};
+
+export type LedgerReviewCorrectionOverlayResult = {
+  reviewInput: LedgerReviewSummaryInput;
+  expenseItems: LedgerReviewExpenseInput[];
+  lossItems: LedgerReviewLossInput[];
+  appliedInventoryItemIds: Set<string>;
+  correctionState: LedgerReviewCorrectionState;
 };
 
 export type LedgerReviewSummary = {
@@ -199,4 +245,264 @@ export function calculateLedgerReviewSummary({
     salesDifference: unavailable("계산 기준 확인 필요"),
   };
 }
-import { calculateInventoryAmount } from "./inventory.ts";
+
+export function applyCorrectionValuesToLedgerReviewInput({
+  ledgerId,
+  reviewInput,
+  expenseItems = [],
+  lossItems = [],
+  corrections,
+}: {
+  ledgerId: string;
+  reviewInput: LedgerReviewSummaryInput;
+  expenseItems?: LedgerReviewExpenseInput[];
+  lossItems?: LedgerReviewLossInput[];
+  corrections: Iterable<LedgerReviewCorrection>;
+}): LedgerReviewCorrectionOverlayResult {
+  const correctedReviewInput: LedgerReviewSummaryInput = {
+    ...reviewInput,
+    inventoryItems: reviewInput.inventoryItems.map((item) => ({ ...item })),
+  };
+  const correctedExpenseItems = expenseItems.map((item) => ({ ...item }));
+  const correctedLossItems = lossItems.map((item) => ({ ...item }));
+  const expenseById = new Map(
+    correctedExpenseItems
+      .filter((item) => item.id)
+      .map((item) => [item.id, item]),
+  );
+  const inventoryById = new Map(
+    correctedReviewInput.inventoryItems
+      .filter((item) => item.id)
+      .map((item) => [item.id, item]),
+  );
+  const lossById = new Map(
+    correctedLossItems.filter((item) => item.id).map((item) => [item.id, item]),
+  );
+  let appliedCorrectionCount = 0;
+  let hasUnappliedCorrections = false;
+  const appliedInventoryItemIds = new Set<string>();
+
+  for (const correction of corrections) {
+    const result = applySingleCorrection({
+      ledgerId,
+      correction,
+      reviewInput: correctedReviewInput,
+      expenseById,
+      inventoryById,
+      lossById,
+    });
+
+    if (result === "applied") {
+      appliedCorrectionCount += 1;
+      if (correction.targetType === "INVENTORY_ROW") {
+        appliedInventoryItemIds.add(correction.targetId);
+      }
+    } else {
+      hasUnappliedCorrections = true;
+    }
+  }
+
+  if (correctedExpenseItems.length > 0) {
+    correctedReviewInput.expenseTotal = calculateExpenseTotal(
+      correctedExpenseItems.map((item) => item.amount),
+    );
+  }
+
+  return {
+    reviewInput: correctedReviewInput,
+    expenseItems: correctedExpenseItems,
+    lossItems: correctedLossItems,
+    appliedInventoryItemIds,
+    correctionState: {
+      appliedCorrectionCount,
+      hasAppliedCorrections: appliedCorrectionCount > 0,
+      hasUnappliedCorrections,
+    },
+  };
+}
+
+function applySingleCorrection({
+  ledgerId,
+  correction,
+  reviewInput,
+  expenseById,
+  inventoryById,
+  lossById,
+}: {
+  ledgerId: string;
+  correction: LedgerReviewCorrection;
+  reviewInput: LedgerReviewSummaryInput;
+  expenseById: Map<string | undefined, LedgerReviewExpenseInput>;
+  inventoryById: Map<string | undefined, LedgerReviewInventoryInput>;
+  lossById: Map<string | undefined, LedgerReviewLossInput>;
+}) {
+  if (correction.targetType === "PAYMENT_FIELD") {
+    if (correction.targetId !== ledgerId) {
+      return "unapplied";
+    }
+
+    return applyPaymentCorrection(reviewInput, correction);
+  }
+
+  if (correction.targetType === "EXPENSE_ROW") {
+    const item = expenseById.get(correction.targetId);
+
+    if (!item || correction.fieldKey !== "amount") {
+      return "unapplied";
+    }
+
+    const value = getCorrectionNumber(correction.latestAppliedValue, "money");
+
+    if (value === null) {
+      return "unapplied";
+    }
+
+    item.amount = value;
+    return "applied";
+  }
+
+  if (correction.targetType === "LEDGER_FIELD") {
+    if (
+      correction.targetId !== ledgerId ||
+      correction.fieldKey !== "workerCount"
+    ) {
+      return "unapplied";
+    }
+
+    const value = getCorrectionNumber(correction.latestAppliedValue, "quantity");
+
+    if (value === null) {
+      return "unapplied";
+    }
+
+    reviewInput.workerCount = value;
+    return "applied";
+  }
+
+  if (correction.targetType === "INVENTORY_ROW") {
+    const item = inventoryById.get(correction.targetId);
+
+    if (!item) {
+      return "unapplied";
+    }
+
+    return applyInventoryCorrection(item, correction);
+  }
+
+  if (correction.targetType === "LOSS_ROW") {
+    const item = lossById.get(correction.targetId);
+
+    if (!item) {
+      return "unapplied";
+    }
+
+    return applyLossCorrection(item, correction);
+  }
+
+  return "unapplied";
+}
+
+function applyPaymentCorrection(
+  reviewInput: LedgerReviewSummaryInput,
+  correction: LedgerReviewCorrection,
+) {
+  const value = getCorrectionNumber(correction.latestAppliedValue, "money");
+
+  if (value === null) {
+    return "unapplied";
+  }
+
+  switch (correction.fieldKey) {
+    case "totalSalesAmount":
+      reviewInput.totalSalesAmount = value;
+      return "applied";
+    case "cashAmount":
+      reviewInput.cashAmount = value;
+      return "applied";
+    case "cardAmount":
+      reviewInput.cardAmount = value;
+      return "applied";
+    case "otherPaymentAmount":
+      reviewInput.otherPaymentAmount = value;
+      return "applied";
+    default:
+      return "unapplied";
+  }
+}
+
+function applyInventoryCorrection(
+  item: LedgerReviewInventoryInput,
+  correction: LedgerReviewCorrection,
+) {
+  switch (correction.fieldKey) {
+    case "currentQuantity":
+    case "quantity": {
+      const value = getCorrectionNumber(
+        correction.latestAppliedValue,
+        "quantity",
+      );
+
+      if (value === null) {
+        return "unapplied";
+      }
+
+      item.currentQuantity = value;
+      item.quantity = value;
+      return "applied";
+    }
+    default:
+      return "unapplied";
+  }
+}
+
+function applyLossCorrection(
+  item: LedgerReviewLossInput,
+  correction: LedgerReviewCorrection,
+) {
+  switch (correction.fieldKey) {
+    case "quantity": {
+      const value = getCorrectionNumber(
+        correction.latestAppliedValue,
+        "quantity",
+      );
+
+      if (value === null) {
+        return "unapplied";
+      }
+
+      item.quantity = value;
+      return "applied";
+    }
+    case "amount": {
+      const value = getCorrectionNumber(correction.latestAppliedValue, "money");
+
+      if (value === null) {
+        return "unapplied";
+      }
+
+      item.amount = value;
+      return "applied";
+    }
+    default:
+      return "unapplied";
+  }
+}
+
+function getCorrectionNumber(value: unknown, kind: "money" | "quantity") {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !("kind" in value) ||
+    !("value" in value) ||
+    value.kind !== kind ||
+    typeof value.value !== "number" ||
+    !Number.isSafeInteger(value.value) ||
+    value.value < 0 ||
+    value.value > MAX_CORRECTION_INTEGER
+  ) {
+    return null;
+  }
+
+  return value.value;
+}

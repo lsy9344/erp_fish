@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-06-01T11:21:55+09:00
+# last_updated: 2026-06-02T00:46:03+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-06-01T11:21:55+09:00"
+last_updated: "2026-06-02T00:46:03+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -69,14 +69,14 @@ development_status:
   3-5-본사가-회의-전에-문제-지점을-빠르게-추적한다: done
   epic-3-retrospective: optional
   epic-4: in-progress
-  4-1-본사가-검토-대기-장부를-보완하고-수정한다: review
-  4-2-본사가-장부를-마감하고-원본을-잠근다: backlog
-  4-3-본사가-마감된-장부에-정정-기록을-추가한다: backlog
-  4-4-본사가-원본값과-정정-반영값을-구분해-본다: backlog
-  4-5-관제판이-정정-반영값을-기본으로-사용한다: backlog
+  4-1-본사가-검토-대기-장부를-보완하고-수정한다: done
+  4-2-본사가-장부를-마감하고-원본을-잠근다: done
+  4-3-본사가-마감된-장부에-정정-기록을-추가한다: done
+  4-4-본사가-원본값과-정정-반영값을-구분해-본다: done
+  4-5-관제판이-정정-반영값을-기본으로-사용한다: done
   epic-4-retrospective: optional
-  epic-5: backlog
-  5-1-본사가-일별-아침-회의-리포트를-본다: backlog
+  epic-5: in-progress
+  5-1-본사가-일별-아침-회의-리포트를-본다: in-progress
   5-2-본사가-리포트-숫자의-근거와-정정-차이를-추적한다: backlog
   5-3-본사가-선택-기간의-지점별-실적을-비교한다: backlog
   5-4-본사가-월간-지점별-마감과-이상-현황을-본다: backlog

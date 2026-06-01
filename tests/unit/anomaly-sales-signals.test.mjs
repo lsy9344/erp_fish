@@ -144,6 +144,36 @@ test("revenue anomaly helper does not round below-threshold drops into warnings"
   assert.deepEqual(signals, []);
 });
 
+test("revenue anomaly helper requires values to exceed thresholds", async () => {
+  const anomalyPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "anomaly.ts",
+  );
+  const { evaluateRevenueAnomalySignals } = await import(
+    pathToFileURL(anomalyPath).href
+  );
+
+  const signals = evaluateRevenueAnomalySignals({
+    thresholds,
+    current: {
+      totalSales: metric(87500),
+      grossMarginRate: metric(0.385),
+      salesDifference: metric(10000),
+    },
+    comparison: {
+      policy: "manual-baseline",
+      baseline: {
+        totalSales: metric(100000),
+        grossMarginRate: metric(0.42),
+      },
+    },
+  });
+
+  assert.deepEqual(signals, []);
+});
+
 test("revenue anomaly helper emits warning chips with actual and threshold details", async () => {
   const anomalyPath = assertProjectFile(
     "src",

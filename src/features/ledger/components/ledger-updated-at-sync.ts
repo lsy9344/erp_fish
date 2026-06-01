@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 const LEDGER_UPDATED_EVENT = "erp-fish:ledger-updated";
+const latestLedgerUpdatedAt = new Map<string, string>();
 
 type LedgerUpdatedEventDetail = {
   ledgerId: string;
@@ -10,6 +11,8 @@ type LedgerUpdatedEventDetail = {
 };
 
 export function notifyLedgerUpdated(ledgerId: string, updatedAt: string) {
+  latestLedgerUpdatedAt.set(ledgerId, updatedAt);
+
   window.dispatchEvent(
     new CustomEvent<LedgerUpdatedEventDetail>(LEDGER_UPDATED_EVENT, {
       detail: { ledgerId, updatedAt },
@@ -22,6 +25,12 @@ export function useLedgerUpdatedAtSync(
   onUpdatedAt: (updatedAt: string) => void,
 ) {
   useEffect(() => {
+    const latestUpdatedAt = latestLedgerUpdatedAt.get(ledgerId);
+
+    if (latestUpdatedAt) {
+      onUpdatedAt(latestUpdatedAt);
+    }
+
     function handleLedgerUpdated(event: Event) {
       const detail = (event as CustomEvent<LedgerUpdatedEventDetail>).detail;
 

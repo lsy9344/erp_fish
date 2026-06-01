@@ -8,6 +8,7 @@ const desktopColumns = [
   "w-32",
   "w-20",
   "w-20",
+  "w-20",
   "w-24",
   "w-28",
   "w-20",
@@ -46,14 +47,14 @@ export default function DashboardLoading() {
 
       <section className="space-y-3" aria-label="관제판 지점 목록 불러오기">
         <div className="bg-background hidden overflow-x-auto rounded-lg border p-3 md:block">
-          <div className="min-w-[1120px] space-y-3">
-            <div className="grid grid-cols-11 gap-3 border-b pb-3">
+          <div className="min-w-[1200px] space-y-3">
+            <div className="grid grid-cols-12 gap-3 border-b pb-3">
               {desktopColumns.map((width, index) => (
                 <Skeleton key={`head-${index}`} className={`h-4 ${width}`} />
               ))}
             </div>
             {desktopRows.map((row) => (
-              <div key={row} className="grid grid-cols-11 items-center gap-3">
+              <div key={row} className="grid grid-cols-12 items-center gap-3">
                 {desktopColumns.map((width, index) => (
                   <Skeleton
                     key={`${row}-${index}`}

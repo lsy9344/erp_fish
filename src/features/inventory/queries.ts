@@ -325,7 +325,11 @@ async function mergeExistingInventoryLines(
   );
   const activeProductBases = await getActiveProductBases(tx);
 
-  for (const base of mergeActivityBases(activeProductBases, purchases, losses)) {
+  for (const base of mergeActivityBases(
+    activeProductBases,
+    purchases,
+    losses,
+  )) {
     if (!existingProductIds.has(base.productId)) {
       lines.push(
         withPurchaseAggregate(

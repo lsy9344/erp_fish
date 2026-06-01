@@ -12,6 +12,9 @@ import {
 } from "~/server/authz";
 import { getTodayStoreLedger } from "~/features/ledger/queries";
 import { getLedgerReviewStepData } from "~/features/ledger/review-queries";
+import { CorrectionReadonlySummary } from "~/features/corrections/components/correction-readonly-summary";
+import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
+import type { CorrectionRecordListItem } from "~/features/corrections/types";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { ExpenseStepClient } from "~/features/ledger/components/expense-step-client";
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
@@ -59,6 +62,7 @@ type StoreEntryContentProps = {
   storeName: string;
   initialLedger: Awaited<ReturnType<typeof getTodayStoreLedger>>;
   reviewData: LedgerReviewData | null;
+  correctionRecords: CorrectionRecordListItem[];
   step: StoreEntryStep;
   expenseCodeOptions: LedgerInputCodeOption[];
   productOptions: ProductOption[];
@@ -69,23 +73,24 @@ function StoreEntryContent({
   storeName,
   initialLedger,
   reviewData,
+  correctionRecords,
   step,
   expenseCodeOptions,
   productOptions,
   purchaseStandardOptions,
 }: StoreEntryContentProps) {
+  let content;
+
   if (step === "review") {
     if (!reviewData) {
       throw new Error("Review data is required for the review step.");
     }
 
-    return (
+    content = (
       <ReviewSummaryClient storeName={storeName} reviewData={reviewData} />
     );
-  }
-
-  if (step === "cost") {
-    return (
+  } else if (step === "cost") {
+    content = (
       <ExpenseStepClient
         initialLedger={initialLedger}
         expenseCodeOptions={expenseCodeOptions}
@@ -93,10 +98,8 @@ function StoreEntryContent({
         currentStep={step}
       />
     );
-  }
-
-  if (step === "purchase") {
-    return (
+  } else if (step === "purchase") {
+    content = (
       <PurchaseStepClient
         initialLedger={initialLedger}
         productOptions={productOptions}
@@ -105,11 +108,17 @@ function StoreEntryContent({
         currentStep={step}
       />
     );
-  }
-
-  if (step === "work") {
-    return (
+  } else if (step === "work") {
+    content = (
       <WorkStepClient
+        initialLedger={initialLedger}
+        storeName={storeName}
+        currentStep={step}
+      />
+    );
+  } else {
+    content = (
+      <SalesPaymentStepClient
         initialLedger={initialLedger}
         storeName={storeName}
         currentStep={step}
@@ -118,11 +127,12 @@ function StoreEntryContent({
   }
 
   return (
-    <SalesPaymentStepClient
-      initialLedger={initialLedger}
-      storeName={storeName}
-      currentStep={step}
-    />
+    <>
+      {initialLedger.status === "HEADQUARTERS_CLOSED" ? (
+        <CorrectionReadonlySummary records={correctionRecords} />
+      ) : null}
+      {content}
+    </>
   );
 }
 
@@ -151,6 +161,13 @@ export default async function StoreEntryPage({
         ? getLedgerReviewStepData(store.id, user.id)
         : Promise.resolve(null),
     ]);
+    const correctionRecords =
+      initialLedger.status === "HEADQUARTERS_CLOSED"
+        ? await getStoreReadableCorrectionRecordsForLedger(
+            initialLedger.id,
+            store.id,
+          )
+        : [];
 
     return (
       <StoreManagerShell
@@ -162,6 +179,7 @@ export default async function StoreEntryPage({
           storeName={store.name}
           initialLedger={initialLedger}
           reviewData={reviewData}
+          correctionRecords={correctionRecords}
           step={step}
           expenseCodeOptions={expenseCodeOptions}
           productOptions={productOptions}
@@ -191,6 +209,21 @@ export default async function StoreEntryPage({
     getActiveProductOptions(),
     getActivePurchaseStandardOptions(),
   ]);
+  const initialLedger = await getTodayStoreLedger(
+    workspace.store.id,
+    workspace.user.id,
+  );
+  const reviewData =
+    step === "review"
+      ? await getLedgerReviewStepData(workspace.store.id, workspace.user.id)
+      : null;
+  const correctionRecords =
+    initialLedger.status === "HEADQUARTERS_CLOSED"
+      ? await getStoreReadableCorrectionRecordsForLedger(
+          initialLedger.id,
+          workspace.store.id,
+        )
+      : [];
 
   return (
     <StoreManagerShell
@@ -200,18 +233,9 @@ export default async function StoreEntryPage({
     >
       <StoreEntryContent
         storeName={workspace.store.name}
-        initialLedger={await getTodayStoreLedger(
-          workspace.store.id,
-          workspace.user.id,
-        )}
-        reviewData={
-          step === "review"
-            ? await getLedgerReviewStepData(
-                workspace.store.id,
-                workspace.user.id,
-              )
-            : null
-        }
+        initialLedger={initialLedger}
+        reviewData={reviewData}
+        correctionRecords={correctionRecords}
         step={step}
         expenseCodeOptions={expenseCodeOptions}
         productOptions={productOptions}

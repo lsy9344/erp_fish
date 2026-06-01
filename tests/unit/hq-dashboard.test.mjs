@@ -89,6 +89,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(detailPageSource, /getHqLedgerDetail\(/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
+  assert.match(loadingSource, /grid-cols-12/);
 });
 
 test("HQ ledger detail shows anomaly signal details as visible text", () => {
@@ -137,6 +138,9 @@ test("HQ dashboard query keeps 미입력 rows and avoids creating ledgers", () =
   assert.match(querySource, /currentQuantity:\s*true/);
   assert.match(querySource, /unitPrice:\s*true/);
   assert.match(querySource, /ledgerInventoryAdjustments:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /ledgerExpenses:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /expenseTotal:\s*calculateExpenseTotal/);
+  assert.doesNotMatch(querySource, /expenseTotal:\s*0/);
   assert.match(querySource, /differenceQuantity:\s*true/);
   assert.match(querySource, /differenceAmount:\s*true/);
   assert.match(querySource, /ledgerLossItems:\s*\{\s*select:\s*\{/s);
@@ -151,6 +155,33 @@ test("HQ dashboard query keeps 미입력 rows and avoids creating ledgers", () =
   assert.doesNotMatch(querySource, /ledgerInventoryAdjustments:\s*true/);
   assert.doesNotMatch(querySource, /getTodayStoreLedger(?:InTx)?\(/);
   assert.doesNotMatch(querySource, /export\s+async\s+function\s+(GET|POST)/);
+});
+
+test("HQ dashboard query uses correction-applied server calculations by default", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const ledgerCalculationSource = readProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+
+  assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
+  assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(querySource, /correctionState/);
+  assert.match(querySource, /정정 확인 필요/);
+  assert.match(ledgerCalculationSource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(ledgerCalculationSource, /hasUnappliedCorrections/);
+  assert.match(ledgerCalculationSource, /PAYMENT_FIELD/);
+  assert.match(ledgerCalculationSource, /LOSS_ROW/);
+  assert.match(ledgerCalculationSource, /INVENTORY_ROW/);
+  assert.match(ledgerCalculationSource, /EXPENSE_ROW/);
+  assert.match(querySource, /toCorrectedInventoryAdjustments/);
 });
 
 test("HQ dashboard keeps anomaly math out of UI components", () => {
@@ -219,3 +250,201 @@ test("HQ dashboard status and date helpers map story states", async () => {
     label: "휴무",
   });
 });
+
+test("HQ dashboard priority presentation orders problem rows first", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const {
+    applyDashboardPresentation,
+    getDashboardFilterMode,
+    getDashboardSortMode,
+  } = await import(pathToFileURL(queryPath).href);
+  const rows = [
+    makeDashboardRow({
+      storeId: "normal",
+      storeName: "정상점",
+      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+      isHeadquartersClosed: true,
+    }),
+    makeDashboardRow({
+      storeId: "warning",
+      storeName: "경고점",
+      signals: [{ id: "sales", label: "매출 급락", severity: "warning" }],
+    }),
+    makeDashboardRow({
+      storeId: "critical",
+      storeName: "심각점",
+      signals: [{ id: "loss", label: "손실 이상", severity: "critical" }],
+    }),
+    makeDashboardRow({
+      storeId: "review",
+      storeName: "검토점",
+      ledgerStatus: { key: "IN_REVIEW", label: "검토대기" },
+    }),
+    makeDashboardRow({
+      storeId: "empty",
+      storeName: "미입력점",
+      ledgerStatus: { key: "EMPTY", label: "미입력" },
+      ledgerId: null,
+    }),
+  ];
+
+  assert.equal(getDashboardSortMode("bad-value"), "priority");
+  assert.equal(getDashboardFilterMode("bad-value"), "all");
+
+  const presented = applyDashboardPresentation(rows, {
+    sortMode: "priority",
+    filterMode: "all",
+  });
+  assert.deepEqual(
+    presented.map((row) => row.storeId),
+    ["critical", "warning", "review", "empty", "normal"],
+  );
+  assert.deepEqual(
+    presented.map((row) => row.priority.label),
+    ["심각 이상", "경고 이상", "검토대기", "미입력", "정상"],
+  );
+  assert.deepEqual(
+    applyDashboardPresentation(rows, {
+      sortMode: "priority",
+      filterMode: "needs-attention",
+    }).map((row) => row.storeId),
+    ["critical", "warning", "review", "empty"],
+  );
+});
+
+test("HQ dashboard summary stays based on all active stores when rows are filtered", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { applyDashboardPresentation, summarizeDashboardRows } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const rows = [
+    makeDashboardRow({
+      storeId: "normal",
+      storeName: "정상점",
+      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+      isHeadquartersClosed: true,
+    }),
+    makeDashboardRow({
+      storeId: "warning",
+      storeName: "경고점",
+      signals: [{ id: "sales", label: "매출 급락", severity: "warning" }],
+    }),
+    makeDashboardRow({
+      storeId: "empty",
+      storeName: "미입력점",
+      ledgerStatus: { key: "EMPTY", label: "미입력" },
+      ledgerId: null,
+    }),
+  ];
+
+  assert.equal(typeof summarizeDashboardRows, "function");
+
+  const allRows = applyDashboardPresentation(rows, {
+    sortMode: "priority",
+    filterMode: "all",
+  });
+  const filteredRows = applyDashboardPresentation(rows, {
+    sortMode: "priority",
+    filterMode: "needs-attention",
+  });
+
+  assert.deepEqual(
+    filteredRows.map((row) => row.storeId),
+    ["warning", "empty"],
+  );
+  assert.deepEqual(summarizeDashboardRows(allRows), {
+    totalStores: 3,
+    closedCount: 1,
+    reviewCount: 0,
+    emptyCount: 1,
+    lossCount: 0,
+  });
+});
+
+test("HQ dashboard distinguishes filtered-empty rows from no active stores", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.match(tableSource, /dashboard\.summary\.totalStores === 0/);
+  assert.match(tableSource, /조건에 맞는 지점이 없습니다/);
+});
+
+test("HQ dashboard preserves sort and filter state through detail links", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "dashboard",
+    "page.tsx",
+  );
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+  const detailPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(pageSource, /sort\?: string \| string\[\]/);
+  assert.match(pageSource, /filter\?: string \| string\[\]/);
+  assert.match(tableSource, /date=.*sort=.*filter=/s);
+  assert.match(detailPageSource, /searchParams/);
+  assert.match(detailPageSource, /getDashboardPath/);
+});
+
+test("store manager closed ledger view exposes read-only correction values and history", () => {
+  const storeEntrySource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "store-entry",
+    "page.tsx",
+  );
+
+  assert.match(storeEntrySource, /getStoreReadableCorrectionRecordsForLedger/);
+  assert.match(storeEntrySource, /CorrectionReadonlySummary/);
+  assert.match(storeEntrySource, /status === "HEADQUARTERS_CLOSED"/);
+});
+
+function makeDashboardRow(overrides = {}) {
+  return {
+    storeId: "store",
+    storeName: "지점",
+    ledgerId: "ledger",
+    closingDate: "2026-06-01T00:00:00.000Z",
+    businessStatus: { key: "OPEN", label: "영업일" },
+    ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+    salesAmount: { value: 1000 },
+    grossMarginRate: { value: 0.3 },
+    salesDifference: { value: 0 },
+    hasLoss: false,
+    lastModifiedBy: null,
+    lastModifiedAt: null,
+    isHeadquartersClosed: false,
+    signals: [],
+    ...overrides,
+  };
+}

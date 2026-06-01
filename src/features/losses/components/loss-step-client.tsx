@@ -65,7 +65,8 @@ function normalizeStatusLabel(status: LossStepData["status"]) {
 }
 
 function createClientKey() {
-  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+  return typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -357,308 +358,312 @@ export function LossStepClient({
         noValidate
       >
         <section className="bg-card text-card-foreground rounded-lg border p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-medium">손실 항목</p>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addLine}
-            disabled={isSaving || isOriginalEditBlocked || !hasOptions}
-            className="min-h-11 gap-2"
-          >
-            <PlusIcon data-icon="inline-start" />
-            항목 추가
-          </Button>
-        </div>
-
-        {!hasOptions ? (
-          <p className="text-destructive mb-3 text-sm">
-            선택 가능한 active 품목 또는 active 손실 유형이 없습니다.
-          </p>
-        ) : null}
-
-        {items.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            항목이 없습니다. 새 항목을 추가해 주세요.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {items.map((item, index) => {
-              const productError =
-                fieldErrors[`losses.${index}.productId`]?.[0];
-              const lossTypeError =
-                fieldErrors[`losses.${index}.ledgerInputCodeId`]?.[0];
-              const quantityError =
-                fieldErrors[`losses.${index}.quantity`]?.[0];
-              const amountError = fieldErrors[`losses.${index}.amount`]?.[0];
-              const reasonError = fieldErrors[`losses.${index}.reason`]?.[0];
-              const productActive = data.productOptions.some(
-                (option) => option.id === item.productId,
-              );
-              const lossTypeActive = data.lossTypeOptions.some(
-                (option) => option.id === item.ledgerInputCodeId,
-              );
-
-              return (
-                <div
-                  key={item.clientKey}
-                  className="grid gap-3 rounded-md border p-3"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-muted-foreground text-xs font-medium">
-                      항목 {index + 1}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => removeLine(item.clientKey)}
-                      disabled={isSaving || isOriginalEditBlocked}
-                      className="min-h-11 gap-2"
-                    >
-                      <Trash2Icon data-icon="inline-start" />
-                      삭제
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field data-invalid={Boolean(productError)}>
-                      <FieldLabel htmlFor={`loss-product-${item.clientKey}`}>
-                        품목
-                      </FieldLabel>
-                      <select
-                        id={`loss-product-${item.clientKey}`}
-                        ref={(node) => {
-                          productRefs.current[index] = node;
-                        }}
-                        value={item.productId}
-                        onChange={(event) =>
-                          applyProduct(
-                            item.clientKey,
-                            event.currentTarget.value,
-                          )
-                        }
-                        disabled={isSaving || isOriginalEditBlocked}
-                        aria-invalid={Boolean(productError)}
-                        aria-describedby={
-                          productError
-                            ? `loss-product-${item.clientKey}-error`
-                            : undefined
-                        }
-                        className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
-                      >
-                        <option value="">품목 선택</option>
-                        {!productActive && item.productId ? (
-                          <option value={item.productId}>
-                            {item.productName || item.productId}
-                          </option>
-                        ) : null}
-                        {data.productOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name} / {option.spec}
-                          </option>
-                        ))}
-                      </select>
-                      {productError ? (
-                        <FieldError id={`loss-product-${item.clientKey}-error`}>
-                          {productError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-
-                    <Field data-invalid={Boolean(lossTypeError)}>
-                      <FieldLabel htmlFor={`loss-type-${item.clientKey}`}>
-                        처리 유형
-                      </FieldLabel>
-                      <select
-                        id={`loss-type-${item.clientKey}`}
-                        ref={(node) => {
-                          lossTypeRefs.current[index] = node;
-                        }}
-                        value={item.ledgerInputCodeId}
-                        onChange={(event) =>
-                          applyLossType(
-                            item.clientKey,
-                            event.currentTarget.value,
-                          )
-                        }
-                        disabled={isSaving || isOriginalEditBlocked}
-                        aria-invalid={Boolean(lossTypeError)}
-                        aria-describedby={
-                          lossTypeError
-                            ? `loss-type-${item.clientKey}-error`
-                            : undefined
-                        }
-                        className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
-                      >
-                        <option value="">유형 선택</option>
-                        {!lossTypeActive && item.ledgerInputCodeId ? (
-                          <option value={item.ledgerInputCodeId}>
-                            {item.lossTypeName || item.ledgerInputCodeId}
-                          </option>
-                        ) : null}
-                        {data.lossTypeOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      {lossTypeError ? (
-                        <FieldError id={`loss-type-${item.clientKey}-error`}>
-                          {lossTypeError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-                  </div>
-
-                  <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
-                    품목명: {item.productName || "선택 전"} · 구분:{" "}
-                    {item.productCategory || "-"} · 규격:{" "}
-                    {item.productSpec || "-"} · 기준 단가:{" "}
-                    {formatKrw(item.unitPrice)}
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field data-invalid={Boolean(quantityError)}>
-                      <FieldLabel htmlFor={`loss-quantity-${item.clientKey}`}>
-                        수량
-                      </FieldLabel>
-                      <Input
-                        id={`loss-quantity-${item.clientKey}`}
-                        ref={(node) => {
-                          quantityRefs.current[index] = node;
-                        }}
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={item.quantity}
-                        onChange={(event) =>
-                          updateLine(item.clientKey, {
-                            quantity: event.currentTarget.value,
-                          })
-                        }
-                        disabled={isSaving || isOriginalEditBlocked}
-                        className="min-h-11 tabular-nums"
-                        aria-invalid={Boolean(quantityError)}
-                        aria-describedby={
-                          quantityError
-                            ? `loss-quantity-${item.clientKey}-error`
-                            : undefined
-                        }
-                      />
-                      {quantityError ? (
-                        <FieldError
-                          id={`loss-quantity-${item.clientKey}-error`}
-                        >
-                          {quantityError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-
-                    <Field data-invalid={Boolean(amountError)}>
-                      <FieldLabel htmlFor={`loss-amount-${item.clientKey}`}>
-                        금액
-                      </FieldLabel>
-                      <Input
-                        id={`loss-amount-${item.clientKey}`}
-                        ref={(node) => {
-                          amountRefs.current[index] = node;
-                        }}
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={item.amount}
-                        onChange={(event) =>
-                          updateLine(item.clientKey, {
-                            amount: event.currentTarget.value,
-                          })
-                        }
-                        disabled={isSaving || isOriginalEditBlocked}
-                        className="min-h-11 tabular-nums"
-                        aria-invalid={Boolean(amountError)}
-                        aria-describedby={
-                          amountError
-                            ? `loss-amount-${item.clientKey}-error`
-                            : undefined
-                        }
-                      />
-                      {amountError ? (
-                        <FieldError id={`loss-amount-${item.clientKey}-error`}>
-                          {amountError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-                  </div>
-
-                  <Field data-invalid={Boolean(reasonError)}>
-                    <FieldLabel htmlFor={`loss-reason-${item.clientKey}`}>
-                      사유/특이사항
-                    </FieldLabel>
-                    <Input
-                      id={`loss-reason-${item.clientKey}`}
-                      ref={(node) => {
-                        reasonRefs.current[index] = node;
-                      }}
-                      autoComplete="off"
-                      value={item.reason}
-                      onChange={(event) =>
-                        updateLine(item.clientKey, {
-                          reason: event.currentTarget.value,
-                        })
-                      }
-                      disabled={isSaving || isOriginalEditBlocked}
-                      className="min-h-11"
-                      aria-invalid={Boolean(reasonError)}
-                      aria-describedby={
-                        reasonError
-                          ? `loss-reason-${item.clientKey}-error`
-                          : undefined
-                      }
-                    />
-                    {reasonError ? (
-                      <FieldError id={`loss-reason-${item.clientKey}-error`}>
-                        {reasonError}
-                      </FieldError>
-                    ) : null}
-                  </Field>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        </section>
-
-        <div className="flex flex-col gap-2">
-        {resultMessage ? (
-          <p
-            className="text-sm text-emerald-700 dark:text-emerald-300"
-            role="status"
-          >
-            {resultMessage}
-          </p>
-        ) : null}
-
-        {formError ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-destructive text-sm" role="alert">
-              {formError}
-            </p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">손실 항목</p>
             <Button
               type="button"
               variant="outline"
-              onClick={handleRetry}
-              disabled={isSaving}
-              className="min-h-11 w-full"
+              onClick={addLine}
+              disabled={isSaving || isOriginalEditBlocked || !hasOptions}
+              className="min-h-11 gap-2"
             >
-              다시 시도
+              <PlusIcon data-icon="inline-start" />
+              항목 추가
             </Button>
           </div>
-        ) : null}
 
-        <Button
-          type="submit"
-          className="min-h-11"
-          disabled={isSaving || isOriginalEditBlocked}
-        >
-          {isSaving ? "저장 중..." : "저장"}
-        </Button>
+          {!hasOptions ? (
+            <p className="text-destructive mb-3 text-sm">
+              선택 가능한 active 품목 또는 active 손실 유형이 없습니다.
+            </p>
+          ) : null}
+
+          {items.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              항목이 없습니다. 새 항목을 추가해 주세요.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {items.map((item, index) => {
+                const productError =
+                  fieldErrors[`losses.${index}.productId`]?.[0];
+                const lossTypeError =
+                  fieldErrors[`losses.${index}.ledgerInputCodeId`]?.[0];
+                const quantityError =
+                  fieldErrors[`losses.${index}.quantity`]?.[0];
+                const amountError = fieldErrors[`losses.${index}.amount`]?.[0];
+                const reasonError = fieldErrors[`losses.${index}.reason`]?.[0];
+                const productActive = data.productOptions.some(
+                  (option) => option.id === item.productId,
+                );
+                const lossTypeActive = data.lossTypeOptions.some(
+                  (option) => option.id === item.ledgerInputCodeId,
+                );
+
+                return (
+                  <div
+                    key={item.clientKey}
+                    className="grid gap-3 rounded-md border p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-xs font-medium">
+                        항목 {index + 1}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => removeLine(item.clientKey)}
+                        disabled={isSaving || isOriginalEditBlocked}
+                        className="min-h-11 gap-2"
+                      >
+                        <Trash2Icon data-icon="inline-start" />
+                        삭제
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field data-invalid={Boolean(productError)}>
+                        <FieldLabel htmlFor={`loss-product-${item.clientKey}`}>
+                          품목
+                        </FieldLabel>
+                        <select
+                          id={`loss-product-${item.clientKey}`}
+                          ref={(node) => {
+                            productRefs.current[index] = node;
+                          }}
+                          value={item.productId}
+                          onChange={(event) =>
+                            applyProduct(
+                              item.clientKey,
+                              event.currentTarget.value,
+                            )
+                          }
+                          disabled={isSaving || isOriginalEditBlocked}
+                          aria-invalid={Boolean(productError)}
+                          aria-describedby={
+                            productError
+                              ? `loss-product-${item.clientKey}-error`
+                              : undefined
+                          }
+                          className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
+                        >
+                          <option value="">품목 선택</option>
+                          {!productActive && item.productId ? (
+                            <option value={item.productId}>
+                              {item.productName || item.productId}
+                            </option>
+                          ) : null}
+                          {data.productOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name} / {option.spec}
+                            </option>
+                          ))}
+                        </select>
+                        {productError ? (
+                          <FieldError
+                            id={`loss-product-${item.clientKey}-error`}
+                          >
+                            {productError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
+
+                      <Field data-invalid={Boolean(lossTypeError)}>
+                        <FieldLabel htmlFor={`loss-type-${item.clientKey}`}>
+                          처리 유형
+                        </FieldLabel>
+                        <select
+                          id={`loss-type-${item.clientKey}`}
+                          ref={(node) => {
+                            lossTypeRefs.current[index] = node;
+                          }}
+                          value={item.ledgerInputCodeId}
+                          onChange={(event) =>
+                            applyLossType(
+                              item.clientKey,
+                              event.currentTarget.value,
+                            )
+                          }
+                          disabled={isSaving || isOriginalEditBlocked}
+                          aria-invalid={Boolean(lossTypeError)}
+                          aria-describedby={
+                            lossTypeError
+                              ? `loss-type-${item.clientKey}-error`
+                              : undefined
+                          }
+                          className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
+                        >
+                          <option value="">유형 선택</option>
+                          {!lossTypeActive && item.ledgerInputCodeId ? (
+                            <option value={item.ledgerInputCodeId}>
+                              {item.lossTypeName || item.ledgerInputCodeId}
+                            </option>
+                          ) : null}
+                          {data.lossTypeOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                        {lossTypeError ? (
+                          <FieldError id={`loss-type-${item.clientKey}-error`}>
+                            {lossTypeError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
+                    </div>
+
+                    <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
+                      품목명: {item.productName || "선택 전"} · 구분:{" "}
+                      {item.productCategory || "-"} · 규격:{" "}
+                      {item.productSpec || "-"} · 기준 단가:{" "}
+                      {formatKrw(item.unitPrice)}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field data-invalid={Boolean(quantityError)}>
+                        <FieldLabel htmlFor={`loss-quantity-${item.clientKey}`}>
+                          수량
+                        </FieldLabel>
+                        <Input
+                          id={`loss-quantity-${item.clientKey}`}
+                          ref={(node) => {
+                            quantityRefs.current[index] = node;
+                          }}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={item.quantity}
+                          onChange={(event) =>
+                            updateLine(item.clientKey, {
+                              quantity: event.currentTarget.value,
+                            })
+                          }
+                          disabled={isSaving || isOriginalEditBlocked}
+                          className="min-h-11 tabular-nums"
+                          aria-invalid={Boolean(quantityError)}
+                          aria-describedby={
+                            quantityError
+                              ? `loss-quantity-${item.clientKey}-error`
+                              : undefined
+                          }
+                        />
+                        {quantityError ? (
+                          <FieldError
+                            id={`loss-quantity-${item.clientKey}-error`}
+                          >
+                            {quantityError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
+
+                      <Field data-invalid={Boolean(amountError)}>
+                        <FieldLabel htmlFor={`loss-amount-${item.clientKey}`}>
+                          금액
+                        </FieldLabel>
+                        <Input
+                          id={`loss-amount-${item.clientKey}`}
+                          ref={(node) => {
+                            amountRefs.current[index] = node;
+                          }}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={item.amount}
+                          onChange={(event) =>
+                            updateLine(item.clientKey, {
+                              amount: event.currentTarget.value,
+                            })
+                          }
+                          disabled={isSaving || isOriginalEditBlocked}
+                          className="min-h-11 tabular-nums"
+                          aria-invalid={Boolean(amountError)}
+                          aria-describedby={
+                            amountError
+                              ? `loss-amount-${item.clientKey}-error`
+                              : undefined
+                          }
+                        />
+                        {amountError ? (
+                          <FieldError
+                            id={`loss-amount-${item.clientKey}-error`}
+                          >
+                            {amountError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
+                    </div>
+
+                    <Field data-invalid={Boolean(reasonError)}>
+                      <FieldLabel htmlFor={`loss-reason-${item.clientKey}`}>
+                        사유/특이사항
+                      </FieldLabel>
+                      <Input
+                        id={`loss-reason-${item.clientKey}`}
+                        ref={(node) => {
+                          reasonRefs.current[index] = node;
+                        }}
+                        autoComplete="off"
+                        value={item.reason}
+                        onChange={(event) =>
+                          updateLine(item.clientKey, {
+                            reason: event.currentTarget.value,
+                          })
+                        }
+                        disabled={isSaving || isOriginalEditBlocked}
+                        className="min-h-11"
+                        aria-invalid={Boolean(reasonError)}
+                        aria-describedby={
+                          reasonError
+                            ? `loss-reason-${item.clientKey}-error`
+                            : undefined
+                        }
+                      />
+                      {reasonError ? (
+                        <FieldError id={`loss-reason-${item.clientKey}-error`}>
+                          {reasonError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <div className="flex flex-col gap-2">
+          {resultMessage ? (
+            <p
+              className="text-sm text-emerald-700 dark:text-emerald-300"
+              role="status"
+            >
+              {resultMessage}
+            </p>
+          ) : null}
+
+          {formError ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-destructive text-sm" role="alert">
+                {formError}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRetry}
+                disabled={isSaving}
+                className="min-h-11 w-full"
+              >
+                다시 시도
+              </Button>
+            </div>
+          ) : null}
+
+          <Button
+            type="submit"
+            className="min-h-11"
+            disabled={isSaving || isOriginalEditBlocked}
+          >
+            {isSaving ? "저장 중..." : "저장"}
+          </Button>
         </div>
       </form>
     </div>

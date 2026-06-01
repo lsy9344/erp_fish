@@ -50,16 +50,10 @@ function parseHqLedgerInput<T>(
   const parsedLedgerId = ledgerIdInputSchema.safeParse(input);
 
   if (!parsed.success || !parsedLedgerId.success) {
-    return actionError(
-      "VALIDATION_ERROR",
-      "입력값을 확인해 주세요.",
-      {
-        ...(!parsed.success ? toFieldErrors(parsed.error) : {}),
-        ...(!parsedLedgerId.success
-          ? toFieldErrors(parsedLedgerId.error)
-          : {}),
-      },
-    );
+    return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+      ...(!parsed.success ? toFieldErrors(parsed.error) : {}),
+      ...(!parsedLedgerId.success ? toFieldErrors(parsedLedgerId.error) : {}),
+    });
   }
 
   return actionOk({
@@ -322,9 +316,14 @@ export async function saveHqLedgerExpenses(
           );
         }
 
-        const updated = await updateEditableDailyLedgerInTx(tx, ledgerId, expectedUpdatedAt, {
-          updatedById: actor.user.id,
-        });
+        const updated = await updateEditableDailyLedgerInTx(
+          tx,
+          ledgerId,
+          expectedUpdatedAt,
+          {
+            updatedById: actor.user.id,
+          },
+        );
 
         if (!updated) {
           return conflictError();

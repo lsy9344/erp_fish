@@ -8,6 +8,17 @@ import { Button } from "~/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
+import { createCorrectionRecord } from "~/features/corrections/actions";
+import { CorrectionPanel } from "~/features/corrections/components/correction-panel";
+import {
+  buildCorrectionTargetKey,
+  getCorrectionRecordsForLedger,
+  getLatestCorrectionValueMap,
+} from "~/features/corrections/queries";
+import type {
+  CorrectionAppliedValue,
+  CorrectionTargetOption,
+} from "~/features/corrections/types";
 import {
   getDashboardDatePreset,
   getDashboardFilterMode,
@@ -15,6 +26,7 @@ import {
   getDashboardSortMode,
   getHqLedgerDetail,
 } from "~/features/dashboard/queries";
+import { HqLedgerCloseDialog } from "~/features/ledger/components/hq-ledger-close-dialog";
 import {
   saveHqLedgerExpenses,
   saveHqLedgerPurchases,
@@ -100,6 +112,7 @@ export default async function LedgerDetailPage({
     expenseCodeOptions,
     productOptions,
     purchaseStandardOptions,
+    correctionRecords,
   ] = await Promise.all([
     getHqLedgerDetail(ledgerId),
     getLedgerCostStepDataById(ledgerId),
@@ -108,6 +121,7 @@ export default async function LedgerDetailPage({
     getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
     getActiveProductOptions(),
     getActivePurchaseStandardOptions(),
+    getCorrectionRecordsForLedger(ledgerId),
   ]);
 
   if (!detail || !ledger || !inventoryData || !lossData) {
@@ -117,10 +131,21 @@ export default async function LedgerDetailPage({
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const lastModifiedBy =
-    detail.lastModifiedBy?.name ?? detail.lastModifiedBy?.email ?? "수정자 없음";
+    detail.lastModifiedBy?.name ??
+    detail.lastModifiedBy?.email ??
+    "수정자 없음";
   const lastModifiedAt = detail.lastModifiedAt
     ? dateTimeFormatter.format(new Date(detail.lastModifiedAt))
     : "수정 이력 없음";
+  const correctionTargetOptions = getCorrectionTargetOptions(ledger);
+  const latestCorrectionValues = getLatestCorrectionValueMap(correctionRecords);
+  const appliedCorrections = Array.from(latestCorrectionValues.values());
+  const totalSalesCorrection = getAppliedCorrection(latestCorrectionValues, {
+    dailyLedgerId: ledger.id,
+    targetType: "PAYMENT_FIELD",
+    targetId: ledger.id,
+    fieldKey: "totalSalesAmount",
+  });
 
   return (
     <HeadquartersShell
@@ -160,7 +185,11 @@ export default async function LedgerDetailPage({
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="장부 주요 숫자"
       >
-        <MetricCard label="매출" value={formatKrw(detail.salesAmount.value)} />
+        <MetricCard
+          label="매출"
+          value={formatKrw(detail.salesAmount.value)}
+          appliedCorrection={totalSalesCorrection}
+        />
         <MetricCard
           label="마진율"
           value={formatPercentMetric(detail.grossMarginRate)}
@@ -175,14 +204,76 @@ export default async function LedgerDetailPage({
         />
       </section>
 
+      {appliedCorrections.length > 0 ? (
+        <section
+          className="bg-background rounded-lg border p-4"
+          aria-labelledby="applied-corrections-title"
+        >
+          <div className="flex flex-col gap-1">
+            <h2
+              id="applied-corrections-title"
+              className="text-lg font-semibold"
+            >
+              현재 정정 반영값
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              최신 정정 기록을 기준으로 원본값과 정정 반영값을 구분해 표시합니다.
+            </p>
+          </div>
+          <dl className="mt-4 grid gap-3 md:grid-cols-2">
+            {appliedCorrections.map((correction) => (
+              <div
+                key={correction.key}
+                className="rounded-md border p-3"
+                aria-label={`${correction.targetLabel} 정정 반영값`}
+              >
+                <dt className="font-medium">{correction.targetLabel}</dt>
+                <dd className="mt-2 grid gap-1 text-sm">
+                  <span className="text-muted-foreground">
+                    원본:{" "}
+                    <span className="tabular-nums">
+                      {formatCorrectionValue(correction.originalValue)}
+                    </span>
+                  </span>
+                  <span>
+                    정정 반영:{" "}
+                    <span className="font-semibold tabular-nums">
+                      {formatCorrectionValue(correction.latestAppliedValue)}
+                    </span>
+                  </span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
       {isOriginalEditBlocked ? (
         <Alert variant="destructive">
           <AlertTitle>본사 마감된 장부</AlertTitle>
           <AlertDescription>
-            본사 마감된 장부와 휴무 장부는 원본 항목을 수정할 수 없습니다.
-            정정 기록을 사용해 주세요.
+            {
+              "본사 마감된 장부와 휴무 장부는 원본 항목을 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+            }
           </AlertDescription>
         </Alert>
+      ) : null}
+      {isOriginalEditBlocked ? null : (
+        <section className="rounded-lg border p-4">
+          <HqLedgerCloseDialog
+            ledgerId={ledger.id}
+            ledgerUpdatedAt={ledger.updatedAt}
+            status={ledger.status}
+          />
+        </section>
+      )}
+      {ledger.status === "HEADQUARTERS_CLOSED" ? (
+        <CorrectionPanel
+          ledgerId={ledger.id}
+          targetOptions={correctionTargetOptions}
+          records={correctionRecords}
+          createAction={createCorrectionRecord}
+        />
       ) : null}
 
       <Tabs defaultValue="sales" className="w-full">
@@ -209,6 +300,7 @@ export default async function LedgerDetailPage({
 
         <TabsContent value="sales" className="mt-3">
           <SalesPaymentStepClient
+            key={`sales-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
             storeName={detail.storeName}
             initialLedger={ledger}
             currentStep="sales"
@@ -219,6 +311,7 @@ export default async function LedgerDetailPage({
         </TabsContent>
         <TabsContent value="expenses" className="mt-3">
           <ExpenseStepClient
+            key={`expenses-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
             storeName={detail.storeName}
             initialLedger={ledger}
             expenseCodeOptions={expenseCodeOptions}
@@ -230,6 +323,7 @@ export default async function LedgerDetailPage({
         </TabsContent>
         <TabsContent value="purchases" className="mt-3">
           <PurchaseStepClient
+            key={`purchases-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
             storeName={detail.storeName}
             initialLedger={ledger}
             productOptions={productOptions}
@@ -242,6 +336,7 @@ export default async function LedgerDetailPage({
         </TabsContent>
         <TabsContent value="inventory" className="mt-3">
           <InventoryStepClient
+            key={`inventory-${inventoryData.id}-${inventoryData.status}-${inventoryData.updatedAt}`}
             storeName={detail.storeName}
             initialData={inventoryData}
             saveItemsAction={saveHqLedgerInventoryItems}
@@ -251,6 +346,7 @@ export default async function LedgerDetailPage({
         </TabsContent>
         <TabsContent value="losses" className="mt-3">
           <LossStepClient
+            key={`losses-${lossData.id}-${lossData.status}-${lossData.updatedAt}`}
             storeName={detail.storeName}
             initialData={lossData}
             saveAction={saveHqLedgerLosses}
@@ -259,6 +355,7 @@ export default async function LedgerDetailPage({
         </TabsContent>
         <TabsContent value="work" className="mt-3">
           <WorkStepClient
+            key={`work-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
             storeName={detail.storeName}
             initialLedger={ledger}
             currentStep="work"
@@ -272,13 +369,119 @@ export default async function LedgerDetailPage({
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function getCorrectionTargetOptions(
+  ledger: NonNullable<Awaited<ReturnType<typeof getLedgerCostStepDataById>>>,
+): CorrectionTargetOption[] {
+  return [
+    {
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "totalSalesAmount",
+      label: "총매출",
+      originalValue: {
+        kind: "money",
+        value: ledger.totalSalesAmount,
+        label: "총매출",
+      },
+    },
+    {
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "cashAmount",
+      label: "현금",
+      originalValue: { kind: "money", value: ledger.cashAmount, label: "현금" },
+    },
+    {
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "cardAmount",
+      label: "카드",
+      originalValue: { kind: "money", value: ledger.cardAmount, label: "카드" },
+    },
+    {
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "otherPaymentAmount",
+      label: "기타 결제수단",
+      originalValue: {
+        kind: "money",
+        value: ledger.otherPaymentAmount,
+        label: "기타 결제수단",
+      },
+    },
+    {
+      targetType: "LEDGER_FIELD",
+      targetId: ledger.id,
+      fieldKey: "workerCount",
+      label: "근무인원",
+      originalValue: {
+        kind: "quantity",
+        value: ledger.workerCount,
+        label: "근무인원",
+      },
+    },
+    ...ledger.expenseItems.map<CorrectionTargetOption>((item, index) => ({
+      targetType: "EXPENSE_ROW",
+      targetId: item.id,
+      fieldKey: "amount",
+      label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
+      originalValue: {
+        kind: "money",
+        value: item.amount,
+        label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
+      },
+    })),
+    ...ledger.purchaseItems.map<CorrectionTargetOption>((item, index) => ({
+      targetType: "PURCHASE_ROW",
+      targetId: item.id,
+      fieldKey: "amount",
+      label: `매입 ${index + 1} · ${item.productName} · 금액`,
+      originalValue: {
+        kind: "money",
+        value: item.amount,
+        label: `매입 ${index + 1} · ${item.productName} · 금액`,
+      },
+    })),
+  ];
+}
+
+function getAppliedCorrection(
+  values: Map<string, CorrectionAppliedValue>,
+  input: Parameters<typeof buildCorrectionTargetKey>[0],
+) {
+  return values.get(buildCorrectionTargetKey(input)) ?? null;
+}
+
+function MetricCard({
+  label,
+  value,
+  appliedCorrection,
+}: {
+  label: string;
+  value: string;
+  appliedCorrection?: CorrectionAppliedValue | null;
+}) {
+  const displayValue = appliedCorrection
+    ? formatCorrectionValue(appliedCorrection.latestAppliedValue)
+    : value;
+
   return (
     <div className="bg-background rounded-lg border p-4">
       <p className="text-muted-foreground text-sm">{label}</p>
       <p className="mt-2 text-xl font-semibold tracking-normal break-words tabular-nums">
-        {value}
+        {displayValue}
       </p>
+      {appliedCorrection ? (
+        <div className="mt-2 grid gap-1 text-xs">
+          <span className="text-muted-foreground">
+            원본:{" "}
+            <span className="tabular-nums">
+              {formatCorrectionValue(appliedCorrection.originalValue)}
+            </span>
+          </span>
+          <span className="font-medium">정정 반영</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -307,4 +510,26 @@ function formatPercentMetric(metric: {
   }
 
   return percentFormatter.format(metric.value);
+}
+
+function formatCorrectionValue(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "-";
+  }
+
+  const correctionValue = value as { kind?: unknown; value?: unknown };
+
+  if (typeof correctionValue.value === "number") {
+    if (correctionValue.kind === "money") {
+      return krwFormatter.format(correctionValue.value);
+    }
+
+    return String(correctionValue.value);
+  }
+
+  if (typeof correctionValue.value === "string") {
+    return correctionValue.value;
+  }
+
+  return "-";
 }

@@ -157,7 +157,11 @@ function evaluateInventoryDifferenceSignal(
   thresholds: AnomalyThresholdSignalSettings,
   current: InventoryLossAnomalyMetrics,
 ): AnomalySignalSummary[] {
-  if (current.inventoryItems === null || current.inventoryAdjustments === null) {
+  if (
+    current.inventoryItems === null ||
+    current.inventoryItems.length === 0 ||
+    current.inventoryAdjustments === null
+  ) {
     return [
       {
         id: "inventory-input-required",
@@ -201,7 +205,7 @@ function evaluateInventoryDifferenceSignal(
 
   if (
     !largestAdjustment ||
-    Math.abs(largestAdjustment.differenceQuantity) <
+    Math.abs(largestAdjustment.differenceQuantity) <=
       thresholds.inventoryDifferenceQuantity
   ) {
     return [];
@@ -244,7 +248,7 @@ function evaluateLossAmountSignal(
 
   const lossSummary = summarizeLossItems(current.lossItems);
 
-  if (lossSummary.totalAmount < thresholds.lossAmount) {
+  if (lossSummary.totalAmount <= thresholds.lossAmount) {
     return [];
   }
 
@@ -332,7 +336,7 @@ function evaluateSalesDropSignal(
 
   const dropBps = ((baselineSales - currentSales) / baselineSales) * 10000;
 
-  if (dropBps < thresholds.salesDropRateBps) {
+  if (dropBps <= thresholds.salesDropRateBps) {
     return [];
   }
 
@@ -394,7 +398,7 @@ function evaluateGrossMarginDropSignal(
 
   const dropBps = (baselineRate - currentRate) * 10000;
 
-  if (dropBps < thresholds.grossMarginDropBps) {
+  if (dropBps <= thresholds.grossMarginDropBps) {
     return [];
   }
 
@@ -434,7 +438,7 @@ function evaluateSalesDifferenceSignal(
 
   const absoluteDifference = Math.abs(salesDifference);
 
-  if (absoluteDifference < thresholds.salesDifferenceAmount) {
+  if (absoluteDifference <= thresholds.salesDifferenceAmount) {
     return [];
   }
 

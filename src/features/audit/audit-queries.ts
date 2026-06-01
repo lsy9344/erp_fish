@@ -198,6 +198,7 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
     purchaseStandards,
     ledgerInputCodes,
     dailyLedgers,
+    correctionRecords,
     anomalyThresholdSettings,
   ] = await Promise.all([
     db.store.findMany({
@@ -232,6 +233,22 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
         closingDate: true,
         store: {
           select: { name: true },
+        },
+      },
+    }),
+    db.correctionRecord.findMany({
+      where: { id: { in: [...(ids.get("CorrectionRecord") ?? [])] } },
+      select: {
+        id: true,
+        fieldKey: true,
+        targetType: true,
+        dailyLedger: {
+          select: {
+            closingDate: true,
+            store: {
+              select: { name: true },
+            },
+          },
         },
       },
     }),
@@ -270,6 +287,13 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
     names.set(
       targetKey("DailyLedger", ledger.id),
       formatDailyLedgerTargetName(ledger),
+    );
+  }
+
+  for (const correction of correctionRecords) {
+    names.set(
+      targetKey("CorrectionRecord", correction.id),
+      `${formatDailyLedgerTargetName(correction.dailyLedger)} ${correction.fieldKey}`,
     );
   }
 

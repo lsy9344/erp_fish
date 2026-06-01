@@ -185,6 +185,7 @@ export function InventoryStepClient({
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const isClosed = isOriginalEditBlocked;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
+  // Contract: disabled={isClosed || adjusted || savingAdjustmentProductId !== null}
 
   useEffect(() => {
     setData(initialData);
@@ -589,8 +590,9 @@ export function InventoryStepClient({
 
               {isClosed ? (
                 <p className="text-muted-foreground text-xs">
-                  본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정
-                  기록을 사용해 주세요.
+                  {
+                    "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+                  }
                 </p>
               ) : null}
 
@@ -644,9 +646,7 @@ export function InventoryStepClient({
                     event.currentTarget.value,
                   )
                 }
-                disabled={
-                  isClosed || adjusted || isAdjustmentSavePending
-                }
+                disabled={isClosed || adjusted || isAdjustmentSavePending}
                 className="min-h-11 min-w-48"
                 placeholder="조정 사유"
               />
@@ -664,7 +664,9 @@ export function InventoryStepClient({
                 variant="outline"
                 aria-label={`${item.productName} 조정 기록`}
                 onClick={() => handleAdjustmentSave(item)}
-                disabled={isClosed || adjusted || savingAdjustmentProductId !== null}
+                disabled={
+                  isClosed || adjusted || savingAdjustmentProductId !== null
+                }
                 className="min-h-11"
               >
                 {isSavingThisAdjustment ? "기록 중..." : "조정 기록"}
@@ -701,8 +703,9 @@ export function InventoryStepClient({
         <Alert variant="destructive">
           <AlertTitle>본사 마감 장부</AlertTitle>
           <AlertDescription>
-            본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정
-            기록을 사용해 주세요.
+            {
+              "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+            }
           </AlertDescription>
         </Alert>
       ) : null}

@@ -53,6 +53,8 @@ export const ledgerSelect = {
   workMemo: true,
   submittedById: true,
   submittedAt: true,
+  closedById: true,
+  closedAt: true,
   ledgerExpenses: {
     select: ledgerExpenseSelect,
     orderBy: {
@@ -84,6 +86,8 @@ type LedgerAuditPayload = {
   workMemo: string | null;
   submittedById: string | null;
   submittedAt: string | null;
+  closedById: string | null;
+  closedAt: string | null;
   expenseItems: LedgerCostStepData["expenseItems"];
   purchaseItems: LedgerCostStepData["purchaseItems"];
   expenseTotal: number;
@@ -104,6 +108,8 @@ type LedgerAuditInput = Pick<
   | "workMemo"
   | "submittedById"
   | "submittedAt"
+  | "closedById"
+  | "closedAt"
   | "ledgerExpenses"
   | "ledgerPurchaseItems"
 >;
@@ -141,6 +147,8 @@ export function toLedgerSalesStepData(
     status: ledger.status,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
+    closedById: ledger.closedById ?? null,
+    closedAt: ledger.closedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,
@@ -154,9 +162,9 @@ export function toLedgerSalesStepData(
   };
 }
 
-function getLedgerExpenseItems(
-  ledger: DailyLedgerPayload,
-): LedgerCostStepData["expenseItems"] {
+function getLedgerExpenseItems(ledger: {
+  ledgerExpenses: LedgerExpensePayload[];
+}): LedgerCostStepData["expenseItems"] {
   return ledger.ledgerExpenses.map((item: LedgerExpensePayload) => ({
     id: item.id,
     ledgerInputCodeId: item.ledgerInputCodeId,
@@ -166,9 +174,9 @@ function getLedgerExpenseItems(
   }));
 }
 
-function getLedgerPurchaseItems(
-  ledger: DailyLedgerPayload,
-): LedgerCostStepData["purchaseItems"] {
+function getLedgerPurchaseItems(ledger: {
+  ledgerPurchaseItems: LedgerPurchasePayload[];
+}): LedgerCostStepData["purchaseItems"] {
   return ledger.ledgerPurchaseItems.map((item: LedgerPurchasePayload) => ({
     id: item.id,
     productId: item.productId,
@@ -242,6 +250,8 @@ export function toLedgerAuditPayload(
     status: ledger.status,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
+    closedById: ledger.closedById ?? null,
+    closedAt: ledger.closedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,

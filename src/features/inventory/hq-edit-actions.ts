@@ -43,16 +43,10 @@ function parseHqInventoryInput<T>(
   const parsedLedgerId = ledgerIdInputSchema.safeParse(input);
 
   if (!parsed.success || !parsedLedgerId.success) {
-    return actionError(
-      "VALIDATION_ERROR",
-      "입력값을 확인해 주세요.",
-      {
-        ...(!parsed.success ? toFieldErrors(parsed.error) : {}),
-        ...(!parsedLedgerId.success
-          ? toFieldErrors(parsedLedgerId.error)
-          : {}),
-      },
-    );
+    return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+      ...(!parsed.success ? toFieldErrors(parsed.error) : {}),
+      ...(!parsedLedgerId.success ? toFieldErrors(parsedLedgerId.error) : {}),
+    });
   }
 
   return actionOk({
@@ -87,7 +81,9 @@ function conflictError(): ActionResult<never> {
   );
 }
 
-function notEditableError(status: InventoryStepData["status"]): ActionResult<never> {
+function notEditableError(
+  status: InventoryStepData["status"],
+): ActionResult<never> {
   if (status === "HEADQUARTERS_CLOSED") {
     return actionError(
       "LEDGER_CLOSED",

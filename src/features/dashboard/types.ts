@@ -3,6 +3,10 @@ import type { LedgerReviewMetric } from "../../server/calculations/ledger.ts";
 
 export type DashboardDatePreset = "today" | "yesterday";
 
+export type DashboardSortMode = "priority" | "store-name";
+
+export type DashboardFilterMode = "all" | "needs-attention";
+
 export type DashboardLedgerStatusKey = DailyLedgerStatus | "EMPTY";
 
 export type DashboardLedgerStatus = {
@@ -24,6 +28,26 @@ export type DashboardSignalSummary = {
   detail?: string;
 };
 
+export type DashboardCorrectionState = {
+  appliedCorrectionCount: number;
+  hasAppliedCorrections: boolean;
+  hasUnappliedCorrections: boolean;
+};
+
+export type HqDashboardPriority = {
+  rank: number;
+  label:
+    | "심각 이상"
+    | "경고 이상"
+    | "검토대기"
+    | "입력중"
+    | "미입력"
+    | "확인 필요"
+    | "정상"
+    | "휴무";
+  reasons: string[];
+};
+
 export type HqDashboardRow = {
   storeId: string;
   storeName: string;
@@ -41,7 +65,9 @@ export type HqDashboardRow = {
   } | null;
   lastModifiedAt: string | null;
   isHeadquartersClosed: boolean;
+  correctionState: DashboardCorrectionState;
   signals: DashboardSignalSummary[];
+  priority: HqDashboardPriority;
 };
 
 export type HqDashboardSummary = {
@@ -54,6 +80,8 @@ export type HqDashboardSummary = {
 
 export type HqDashboardData = {
   datePreset: DashboardDatePreset;
+  sortMode: DashboardSortMode;
+  filterMode: DashboardFilterMode;
   closingDate: string;
   rows: HqDashboardRow[];
   summary: HqDashboardSummary;

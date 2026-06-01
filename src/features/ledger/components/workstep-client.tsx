@@ -192,59 +192,59 @@ export function WorkStepClient({
 
       {showStepNavigation ? (
         <section
-        aria-label="근무인원 단계"
-        className="bg-card text-card-foreground rounded-lg border p-4"
-      >
-        <p className="mb-3 text-sm font-medium">현재 단계</p>
-        <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "sales")}
-            >
-              1단계: 매출/결제
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "cost")}
-            >
-              2단계: 비용
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "purchase")}
-            >
-              3단계: 매입
-            </a>
-          </li>
-          <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-            4단계: 재고
-          </li>
-          <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-            5단계: 손실/폐기
-          </li>
-          <li>
-            <a
-              aria-current={currentStep === "work" ? "step" : undefined}
-              className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-              href={stepHref(ledger.storeId, "work")}
-            >
-              6단계: 근무인원
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(ledger.storeId, "review")}
-            >
-              7단계: 검토/제출
-            </a>
-          </li>
-        </ol>
+          aria-label="근무인원 단계"
+          className="bg-card text-card-foreground rounded-lg border p-4"
+        >
+          <p className="mb-3 text-sm font-medium">현재 단계</p>
+          <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "sales")}
+              >
+                1단계: 매출/결제
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "cost")}
+              >
+                2단계: 비용
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "purchase")}
+              >
+                3단계: 매입
+              </a>
+            </li>
+            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
+              4단계: 재고
+            </li>
+            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
+              5단계: 손실/폐기
+            </li>
+            <li>
+              <a
+                aria-current={currentStep === "work" ? "step" : undefined}
+                className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                href={stepHref(ledger.storeId, "work")}
+              >
+                6단계: 근무인원
+              </a>
+            </li>
+            <li>
+              <a
+                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
+                href={stepHref(ledger.storeId, "review")}
+              >
+                7단계: 검토/제출
+              </a>
+            </li>
+          </ol>
         </section>
       ) : null}
 
