@@ -48,6 +48,7 @@ function revalidateHqLedgerPaths(ledgerId: string) {
   revalidatePath(`/app/ledgers/${ledgerId}`);
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 function revalidateHqLedgerPathsBestEffort(ledgerId: string) {

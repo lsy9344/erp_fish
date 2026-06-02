@@ -61,6 +61,9 @@ export default async function DailyMeetingReportPage({
             <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/comparison">기간 비교</Link>
             </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/monthly">월간</Link>
+            </Button>
           </div>
           <div
             className="flex flex-wrap items-center gap-2"

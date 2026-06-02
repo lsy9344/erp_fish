@@ -62,6 +62,7 @@ function revalidateHqInventoryPaths(ledgerId: string) {
   revalidatePath("/app/store-entry");
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 function mapHqActionError(): ActionResult<never> {

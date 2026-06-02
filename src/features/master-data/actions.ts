@@ -31,6 +31,7 @@ function revalidateStorePaths() {
   revalidatePath("/app/master-data/stores");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 function parseStoreInput(input: unknown): ActionResult<StoreFormInput> {

@@ -1,5 +1,8 @@
 import type {
+  DashboardBusinessStatus,
+  DashboardLedgerStatus,
   DashboardLedgerStatusKey,
+  DashboardSignalSummary,
   HqDashboardRow,
   HqDashboardSummary,
 } from "../dashboard/types.ts";
@@ -107,10 +110,68 @@ export type StoreComparisonReportRow = {
   averageSales: LedgerReviewMetric;
   inventoryToSalesRatio: LedgerReviewMetric;
   hasLoss: boolean | null;
+  hasUnappliedCorrections: boolean;
   metricEvidence: StoreComparisonReportMetricEvidenceMap;
 };
 
 export type StoreComparisonReportData = {
   range: StoreComparisonReportDateRange;
   rows: StoreComparisonReportRow[];
+};
+
+export type MonthlyClosingAnomalyReportMonthRange = {
+  monthInput: string;
+  startDate: Date;
+  endDate: Date;
+  startDateInput: string;
+  endDateInput: string;
+  errorMessage: string | null;
+  isFutureMonth: boolean;
+};
+
+export type MonthlyClosingAnomalyReportStoreOption = {
+  id: string;
+  name: string;
+};
+
+export type MonthlyClosingAnomalyStatusCounts = StoreComparisonStatusCounts;
+
+export type MonthlyClosingAnomalyDay = {
+  dateInput: string;
+  dateLabel: string;
+  storeId: string;
+  storeName: string;
+  ledgerId: string | null;
+  ledgerDetailHref: string | null;
+  businessStatus: DashboardBusinessStatus;
+  ledgerStatus: DashboardLedgerStatus;
+  hasUnappliedCorrections: boolean;
+  signals: DashboardSignalSummary[];
+  metricEvidence: DailyMeetingReportMetricEvidenceMap;
+};
+
+export type MonthlyAnomalyItem = {
+  id: string;
+  dateInput: string;
+  dateLabel: string;
+  storeId: string;
+  storeName: string;
+  ledgerId: string;
+  ledgerDetailHref: string;
+  label: string;
+  severity: DashboardSignalSummary["severity"];
+  detail: string | null;
+  correctionTimelineHref: string | null;
+  metricEvidence: DailyMeetingReportMetricEvidence | null;
+};
+
+export type MonthlyClosingAnomalyReportData = {
+  monthRange: MonthlyClosingAnomalyReportMonthRange;
+  stores: MonthlyClosingAnomalyReportStoreOption[];
+  selectedStoreId: string | null;
+  selectedStoreName: string | null;
+  statusCounts: MonthlyClosingAnomalyStatusCounts;
+  days: MonthlyClosingAnomalyDay[];
+  anomalyItems: MonthlyAnomalyItem[];
+  errorMessages: string[];
 };

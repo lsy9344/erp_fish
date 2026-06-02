@@ -239,6 +239,7 @@ function revalidateCorrectionPaths(ledgerId: string) {
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
   revalidatePath("/app/reports/comparison");
+  revalidatePath("/app/reports/monthly");
 }
 
 function revalidateCorrectionPathsBestEffort(ledgerId: string) {

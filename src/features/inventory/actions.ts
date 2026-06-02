@@ -65,6 +65,7 @@ function revalidateInventoryPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 export async function saveLedgerInventoryItems(

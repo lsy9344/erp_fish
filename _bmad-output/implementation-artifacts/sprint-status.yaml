@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-06-02T11:32:35+09:00
+# last_updated: 2026-06-02T14:06:23+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-06-02T11:32:35+09:00"
+last_updated: "2026-06-02T14:06:23+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -78,7 +78,7 @@ development_status:
   epic-5: in-progress
   5-1-본사가-일별-아침-회의-리포트를-본다: done
   5-2-본사가-리포트-숫자의-근거와-정정-차이를-추적한다: done
-  5-3-본사가-선택-기간의-지점별-실적을-비교한다: in-progress
-  5-4-본사가-월간-지점별-마감과-이상-현황을-본다: backlog
+  5-3-본사가-선택-기간의-지점별-실적을-비교한다: done
+  5-4-본사가-월간-지점별-마감과-이상-현황을-본다: done
   5-5-본사가-월간-손실-재고-흐름과-핵심-성과를-본다: backlog
   epic-5-retrospective: optional

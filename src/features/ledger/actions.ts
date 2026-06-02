@@ -48,6 +48,7 @@ function revalidateLedgerSalesPaths() {
   revalidatePath(ledgerSalesPath);
   revalidatePath(dashboardPath);
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 function revalidateLedgerSubmitPaths() {
@@ -56,6 +57,7 @@ function revalidateLedgerSubmitPaths() {
   revalidatePath("/app/store-entry/losses");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/monthly");
 }
 
 function parseLedgerSalesInput(

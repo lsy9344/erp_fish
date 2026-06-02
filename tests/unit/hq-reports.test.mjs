@@ -196,12 +196,7 @@ test("HQ store comparison report query reuses report calculation contracts", () 
     "reports",
     "queries.ts",
   );
-  const typeSource = readProjectFile(
-    "src",
-    "features",
-    "reports",
-    "types.ts",
-  );
+  const typeSource = readProjectFile("src", "features", "reports", "types.ts");
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -234,6 +229,145 @@ test("HQ store comparison report query reuses report calculation contracts", () 
   assert.match(actionSource, /revalidatePath\("\/app\/reports\/comparison"\)/);
 });
 
+test("HQ monthly closing anomaly report source files follow story 5.4 boundaries", () => {
+  assertProjectFile("src", "app", "app", "reports", "monthly", "page.tsx");
+  assertProjectFile("src", "app", "app", "reports", "monthly", "loading.tsx");
+  assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "monthly-closing-anomaly-report.tsx",
+  );
+
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "monthly",
+    "page.tsx",
+  );
+  const loadingSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "monthly",
+    "loading.tsx",
+  );
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "monthly-closing-anomaly-report.tsx",
+  );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const comparisonPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "comparison",
+    "page.tsx",
+  );
+
+  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /getHqMonthlyClosingAnomalyReport\(/);
+  assert.match(pageSource, /MonthlyClosingAnomalyReport/);
+  assert.match(pageSource, /월간 요약 리포트/);
+  assert.match(pageSource, /month/);
+  assert.match(pageSource, /storeId/);
+  assert.match(loadingSource, /Skeleton/);
+  assert.match(loadingSource, /md:block/);
+  assert.match(loadingSource, /md:hidden/);
+  assert.match(componentSource, /DashboardStatusBadge/);
+  assert.match(componentSource, /DashboardSignalSummary/);
+  assert.match(componentSource, /본사마감/);
+  assert.match(componentSource, /검토대기/);
+  assert.match(componentSource, /입력중/);
+  assert.match(componentSource, /미입력/);
+  assert.match(componentSource, /휴무/);
+  assert.match(componentSource, /주요 이상/);
+  assert.match(componentSource, /장부 상세/);
+  assert.match(componentSource, /item\.storeName/);
+  assert.match(
+    componentSource,
+    /DashboardSignalSummary\s+signals=\{\[\s*\{\s*id:\s*item\.id/s,
+  );
+  assert.match(componentSource, /data-testid=\{`hq-report-monthly-day-/);
+  assert.match(componentSource, /data-testid=\{`hq-report-monthly-anomaly-/);
+  assert.match(componentSource, /tabular-nums/);
+  assert.match(componentSource, /break-words/);
+  assert.doesNotMatch(componentSource, /evaluateRevenueAnomalySignals/);
+  assert.doesNotMatch(componentSource, /evaluateInventoryLossAnomalySignals/);
+  assert.match(dailyPageSource, /\/app\/reports\/monthly/);
+  assert.match(comparisonPageSource, /\/app\/reports\/monthly/);
+});
+
+test("HQ monthly closing anomaly report query reuses report calculation contracts", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const typeSource = readProjectFile("src", "features", "reports", "types.ts");
+  const revalidationFiles = [
+    ["src", "features", "dashboard", "threshold-actions.ts"],
+    ["src", "features", "ledger", "actions.ts"],
+    ["src", "features", "ledger", "hq-close-actions.ts"],
+    ["src", "features", "corrections", "actions.ts"],
+    ["src", "features", "ledger", "hq-edit-actions.ts"],
+    ["src", "features", "inventory", "actions.ts"],
+    ["src", "features", "inventory", "hq-edit-actions.ts"],
+    ["src", "features", "losses", "actions.ts"],
+    ["src", "features", "losses", "hq-edit-actions.ts"],
+    ["src", "features", "master-data", "actions.ts"],
+  ];
+
+  assert.match(
+    querySource,
+    /export\s+async\s+function\s+getHqMonthlyClosingAnomalyReport/,
+  );
+  assert.match(querySource, /getMonthlyClosingAnomalyReportMonthRange/);
+  assert.match(querySource, /getMonthlyClosingAnomalyReportPath/);
+  assert.match(querySource, /MONTH_QUERY_PATTERN/);
+  assert.match(querySource, /requireHeadquartersUser\(\)/);
+  assert.match(querySource, /store\.findMany\(/);
+  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /dailyLedger\.findMany\(/);
+  assert.match(querySource, /storeId/);
+  assert.match(querySource, /closingDate:\s*\{\s*gte:/s);
+  assert.match(querySource, /lte:/);
+  assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
+  assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(querySource, /calculateLedgerReviewSummary/);
+  assert.match(querySource, /evaluateRevenueAnomalySignals/);
+  assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
+  assert.match(querySource, /buildMonthlyClosingAnomalyReportForTest/);
+  assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
+  assert.match(typeSource, /export type MonthlyClosingAnomalyReportData/);
+  assert.match(typeSource, /export type MonthlyClosingAnomalyDay/);
+  assert.match(typeSource, /export type MonthlyAnomalyItem/);
+
+  for (const segments of revalidationFiles) {
+    assert.match(
+      readProjectFile(...segments),
+      /revalidatePath\("\/app\/reports\/monthly"\)/,
+      `${segments.join("/")} should revalidate monthly reports`,
+    );
+  }
+});
+
 test("ledger and master data writes revalidate daily reports", () => {
   const files = [
     ["src", "features", "ledger", "actions.ts"],
@@ -254,6 +388,252 @@ test("ledger and master data writes revalidate daily reports", () => {
       `${segments.join("/")} should revalidate daily reports`,
     );
   }
+});
+
+test("HQ monthly closing anomaly report month helper keeps KST URL state", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const {
+    getMonthlyClosingAnomalyReportMonthRange,
+    getMonthlyClosingAnomalyReportPath,
+  } = await import(pathToFileURL(queryPath).href);
+
+  const currentMonth = getMonthlyClosingAnomalyReportMonthRange(
+    "2026-06",
+    new Date("2026-06-14T16:00:00.000Z"),
+  );
+
+  assert.equal(currentMonth.monthInput, "2026-06");
+  assert.equal(currentMonth.startDateInput, "2026-06-01");
+  assert.equal(currentMonth.endDateInput, "2026-06-15");
+  assert.equal(currentMonth.errorMessage, null);
+  assert.equal(currentMonth.isFutureMonth, false);
+  assert.equal(
+    getMonthlyClosingAnomalyReportPath({
+      monthInput: currentMonth.monthInput,
+      storeId: "store-1",
+    }),
+    "/app/reports/monthly?month=2026-06&storeId=store-1",
+  );
+
+  const pastMonth = getMonthlyClosingAnomalyReportMonthRange(
+    "2026-05",
+    new Date("2026-06-14T16:00:00.000Z"),
+  );
+
+  assert.equal(pastMonth.startDateInput, "2026-05-01");
+  assert.equal(pastMonth.endDateInput, "2026-05-31");
+
+  const invalidMonth = getMonthlyClosingAnomalyReportMonthRange(
+    "2026-13",
+    new Date("2026-06-14T16:00:00.000Z"),
+  );
+
+  assert.equal(invalidMonth.monthInput, "2026-06");
+  assert.equal(invalidMonth.startDateInput, "2026-06-01");
+  assert.equal(invalidMonth.endDateInput, "2026-06-15");
+  assert.match(invalidMonth.errorMessage, /월/);
+
+  const futureMonth = getMonthlyClosingAnomalyReportMonthRange(
+    "2026-07",
+    new Date("2026-06-14T16:00:00.000Z"),
+  );
+
+  assert.equal(futureMonth.isFutureMonth, true);
+  assert.equal(futureMonth.startDateInput, "2026-07-01");
+  assert.equal(futureMonth.endDateInput, "2026-07-31");
+});
+
+test("HQ monthly closing anomaly report store fallback message requires active fallback", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+
+  assert.match(
+    querySource,
+    /normalizedStoreId\s*&&\s*!matchedStore\s*&&\s*selectedStore/s,
+  );
+});
+
+test("HQ monthly closing anomaly report builds day statuses and anomaly evidence", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const baseMetric = {
+    label: "매출",
+    kind: "money",
+    original: { value: 100000, kind: "money" },
+    applied: { value: 100000, kind: "money" },
+    isCorrected: false,
+    status: "original",
+    statusLabel: "원본",
+    unavailableReason: null,
+    ledgerDetailHref: "/app/ledgers/ledger-1",
+    correctionTimelineHref: null,
+  };
+  const correctedSalesDifference = {
+    ...baseMetric,
+    label: "매출 차이",
+    isCorrected: true,
+    status: "corrected",
+    statusLabel: "정정 반영",
+    correctionTimelineHref: "/app/ledgers/ledger-1#correction-timeline",
+  };
+  const correctedGrossMarginRate = {
+    ...baseMetric,
+    label: "이익률",
+    kind: "percent",
+    ledgerDetailHref: "/app/ledgers/ledger-5",
+    isCorrected: true,
+    status: "corrected",
+    statusLabel: "정정 반영",
+    correctionTimelineHref: "/app/ledgers/ledger-5#correction-timeline",
+  };
+  const metricEvidence = {
+    salesAmount: baseMetric,
+    grossMarginRate: { ...baseMetric, label: "이익률", kind: "percent" },
+    salesDifference: correctedSalesDifference,
+    loss: { ...baseMetric, label: "손실", kind: "boolean" },
+  };
+  const plainMetricEvidence = {
+    salesAmount: baseMetric,
+    grossMarginRate: { ...baseMetric, label: "이익률", kind: "percent" },
+    salesDifference: { ...baseMetric, label: "매출 차이" },
+    loss: { ...baseMetric, label: "손실", kind: "boolean" },
+  };
+  const inventorySignalMetricEvidence = {
+    salesAmount: {
+      ...baseMetric,
+      ledgerDetailHref: "/app/ledgers/ledger-5",
+    },
+    grossMarginRate: correctedGrossMarginRate,
+    salesDifference: {
+      ...baseMetric,
+      label: "매출 차이",
+      ledgerDetailHref: "/app/ledgers/ledger-5",
+    },
+    loss: {
+      ...baseMetric,
+      label: "손실",
+      kind: "boolean",
+      ledgerDetailHref: "/app/ledgers/ledger-5",
+    },
+  };
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: [
+      "2026-06-01",
+      "2026-06-02",
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-05",
+      "2026-06-06",
+    ],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [
+          {
+            id: "sales-difference",
+            label: "매출 차이 확인",
+            severity: "warning",
+            detail: "정정 반영 후에도 차이가 큽니다.",
+          },
+        ],
+        metricEvidence,
+        hasUnappliedCorrections: false,
+      },
+      {
+        dateInput: "2026-06-02",
+        ledgerId: "ledger-2",
+        status: "IN_REVIEW",
+        signals: [],
+        metricEvidence: plainMetricEvidence,
+        hasUnappliedCorrections: false,
+      },
+      {
+        dateInput: "2026-06-03",
+        ledgerId: "ledger-3",
+        status: "IN_PROGRESS",
+        signals: [],
+        metricEvidence: plainMetricEvidence,
+        hasUnappliedCorrections: false,
+      },
+      {
+        dateInput: "2026-06-04",
+        ledgerId: "ledger-4",
+        status: "HOLIDAY",
+        signals: [],
+        metricEvidence: plainMetricEvidence,
+        hasUnappliedCorrections: true,
+      },
+      {
+        dateInput: "2026-06-05",
+        ledgerId: "ledger-5",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [
+          {
+            id: "inventory-difference-exceeded",
+            label: "재고 이상",
+            severity: "critical",
+            detail: "재고 차이가 기준을 넘었습니다.",
+          },
+        ],
+        metricEvidence: inventorySignalMetricEvidence,
+        hasUnappliedCorrections: false,
+      },
+    ],
+  });
+
+  assert.equal(report.selectedStoreName, "테스트점");
+  assert.equal(report.statusCounts.closedCount, 2);
+  assert.equal(report.statusCounts.reviewCount, 1);
+  assert.equal(report.statusCounts.inProgressCount, 1);
+  assert.equal(report.statusCounts.holidayCount, 1);
+  assert.equal(report.statusCounts.missingDayCount, 1);
+  assert.equal(report.days.length, 6);
+  assert.equal(report.days[0].ledgerDetailHref, "/app/ledgers/ledger-1");
+  assert.equal(report.days[5].ledgerStatus.label, "미입력");
+  assert.equal(report.days[5].ledgerDetailHref, null);
+  assert.equal(report.anomalyItems.length, 3);
+  assert.equal(report.anomalyItems[0].dateInput, "2026-06-01");
+  assert.equal(report.anomalyItems[0].ledgerId, "ledger-1");
+  assert.equal(
+    report.anomalyItems[0].correctionTimelineHref,
+    "/app/ledgers/ledger-1#correction-timeline",
+  );
+  const inventoryItem = report.anomalyItems.find(
+    (item) => item.label === "재고 이상",
+  );
+  assert.ok(inventoryItem);
+  assert.equal(inventoryItem.metricEvidence, null);
+
+  const correctionItem = report.anomalyItems.find(
+    (item) => item.label === "이익률 정정 반영",
+  );
+  assert.ok(correctionItem);
+  assert.equal(correctionItem.ledgerId, "ledger-5");
+  assert.equal(
+    correctionItem.correctionTimelineHref,
+    "/app/ledgers/ledger-5#correction-timeline",
+  );
 });
 
 test("HQ daily meeting report date helpers normalize KST operating dates", async () => {
@@ -327,6 +707,17 @@ test("HQ store comparison report date range helper keeps valid URL state", async
   assert.equal(reversed.startDateInput, "2026-06-02");
   assert.equal(reversed.endDateInput, "2026-06-02");
   assert.match(reversed.errorMessage, /시작일/);
+
+  const missingEndDate = getStoreComparisonReportDateRange(
+    {
+      startDate: "2026-01-01",
+    },
+    new Date("2026-06-01T16:00:00.000Z"),
+  );
+
+  assert.equal(missingEndDate.startDateInput, "2026-05-27");
+  assert.equal(missingEndDate.endDateInput, "2026-06-02");
+  assert.match(missingEndDate.errorMessage, /기본 7일/);
 });
 
 test("HQ store comparison report aggregation distinguishes missing holiday zero and corrected values", async () => {
@@ -367,6 +758,10 @@ test("HQ store comparison report aggregation distinguishes missing holiday zero 
         hasLoss: false,
         hasUnappliedCorrections: false,
         appliedCorrectionCount: 1,
+        appliedCorrectionKeys: new Set([
+          "ledger-1:PAYMENT_FIELD:ledger-1:totalSalesAmount",
+        ]),
+        unappliedCorrectionKeys: new Set(),
       },
       {
         ledgerId: "ledger-2",
@@ -391,6 +786,8 @@ test("HQ store comparison report aggregation distinguishes missing holiday zero 
         hasLoss: true,
         hasUnappliedCorrections: false,
         appliedCorrectionCount: 0,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
       },
       {
         ledgerId: "ledger-3",
@@ -415,6 +812,10 @@ test("HQ store comparison report aggregation distinguishes missing holiday zero 
         hasLoss: false,
         hasUnappliedCorrections: true,
         appliedCorrectionCount: 0,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set([
+          "ledger-3:CALCULATED_METRIC:ledger-3:salesDifference",
+        ]),
       },
     ],
   });
@@ -434,7 +835,195 @@ test("HQ store comparison report aggregation distinguishes missing holiday zero 
   assert.equal(row.hasLoss, true);
   assert.equal(row.metricEvidence.salesAmount.isCorrected, true);
   assert.equal(row.metricEvidence.salesAmount.statusLabel, "정정 반영");
-  assert.equal(row.metricEvidence.inventoryToSalesRatio.statusLabel, "정정 확인 필요");
+  assert.equal(row.metricEvidence.averageInventory.isCorrected, false);
+  assert.equal(row.metricEvidence.averageInventory.statusLabel, "원본");
+  assert.equal(row.metricEvidence.inventoryToSalesRatio.isCorrected, true);
+  assert.equal(
+    row.metricEvidence.inventoryToSalesRatio.statusLabel,
+    "정정 반영",
+  );
+});
+
+test("HQ store comparison report date range metric evidence uses the affected ledger", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 2,
+    ledgerSummaries: [
+      {
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 100000 },
+          grossProfit: { value: 60000 },
+          grossMarginRate: { value: 0.6 },
+          operatingProfit: { value: 55000 },
+          productivity: { value: 100000 },
+          inventoryAmount: { value: 30000 },
+        },
+        applied: {
+          totalSales: { value: 100000 },
+          grossProfit: { value: 60000 },
+          grossMarginRate: { value: 0.6 },
+          operatingProfit: { value: 55000 },
+          productivity: { value: 100000 },
+          inventoryAmount: { value: 30000 },
+        },
+        workerCount: 1,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 0,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+      {
+        ledgerId: "ledger-2",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 200000 },
+          grossProfit: { value: 100000 },
+          grossMarginRate: { value: 0.5 },
+          operatingProfit: { value: 90000 },
+          productivity: { value: 100000 },
+          inventoryAmount: { value: 40000 },
+        },
+        applied: {
+          totalSales: { value: 250000 },
+          grossProfit: { value: 150000 },
+          grossMarginRate: { value: 0.6 },
+          operatingProfit: { value: 140000 },
+          productivity: { value: 125000 },
+          inventoryAmount: { value: 40000 },
+        },
+        workerCount: 2,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 1,
+        appliedCorrectionKeys: new Set([
+          "ledger-2:PAYMENT_FIELD:ledger-2:totalSalesAmount",
+        ]),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(row.metricEvidence.salesAmount.isCorrected, true);
+  assert.equal(
+    row.metricEvidence.salesAmount.correctionTimelineHref,
+    "/app/ledgers/ledger-2#correction-timeline",
+  );
+  assert.equal(row.metricEvidence.averageInventory.isCorrected, false);
+  assert.equal(row.metricEvidence.averageInventory.statusLabel, "원본");
+});
+
+test("HQ store comparison report keeps data-insufficient aggregate states", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 2,
+    ledgerSummaries: [
+      {
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 100000 },
+          grossProfit: { value: 60000 },
+          grossMarginRate: { value: 0.6 },
+          operatingProfit: { value: 50000 },
+          productivity: { value: 100000 },
+          inventoryAmount: { value: 30000 },
+        },
+        applied: {
+          totalSales: { value: 100000 },
+          grossProfit: { value: 60000 },
+          grossMarginRate: { value: 0.6 },
+          operatingProfit: { value: 50000 },
+          productivity: { value: 100000 },
+          inventoryAmount: { value: 30000 },
+        },
+        workerCount: 1,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 0,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+      {
+        ledgerId: "ledger-2",
+        status: "IN_PROGRESS",
+        original: {
+          totalSales: { value: 200000 },
+          grossProfit: { value: null, unavailableReason: "계산 불가" },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: null, unavailableReason: "계산 불가" },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        applied: {
+          totalSales: { value: 200000 },
+          grossProfit: { value: null, unavailableReason: "계산 불가" },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: null, unavailableReason: "계산 불가" },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        workerCount: null,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 0,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(row.salesAmount.value, 300000);
+  assert.equal(row.grossProfit.value, null);
+  assert.equal(row.operatingProfit.value, null);
+  assert.equal(row.productivity.value, null);
+  assert.equal(row.averageInventory.value, null);
+  assert.equal(row.inventoryToSalesRatio.value, null);
+  assert.equal(row.metricEvidence.grossProfit.statusLabel, "데이터 부족");
+});
+
+test("HQ store comparison report loss evidence matches missing-ledger rows", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 2,
+    ledgerSummaries: [],
+  });
+
+  assert.equal(row.hasLoss, null);
+  assert.equal(row.metricEvidence.loss.applied.value, null);
+  assert.equal(row.metricEvidence.loss.statusLabel, "미입력");
 });
 
 test("HQ daily meeting report metric evidence distinguishes correction and calculation states", async () => {

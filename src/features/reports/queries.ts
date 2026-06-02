@@ -34,6 +34,10 @@ import type {
   DailyMeetingReportMetricEvidenceInput,
   DailyMeetingReportMetricEvidenceMap,
   DailyMeetingReportRow,
+  MonthlyAnomalyItem,
+  MonthlyClosingAnomalyDay,
+  MonthlyClosingAnomalyReportData,
+  MonthlyClosingAnomalyReportMonthRange,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -41,6 +45,7 @@ import type {
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 const DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_QUERY_PATTERN = /^\d{4}-\d{2}$/;
 type EvaluateRevenueAnomalySignals =
   typeof evaluateRevenueAnomalySignalsFunction;
 type EvaluateInventoryLossAnomalySignals =
@@ -190,16 +195,22 @@ export function getStoreComparisonReportDateRange(
 
   defaultStartDate.setUTCDate(defaultStartDate.getUTCDate() - 6);
 
-  let startDate = isValidDateQuery(input.startDate)
-    ? getDailyMeetingReportDate(input.startDate)
-    : defaultStartDate;
-  const endDate = isValidDateQuery(input.endDate)
-    ? getDailyMeetingReportDate(input.endDate)
-    : defaultEndDate;
+  const startDateInput = input.startDate;
+  const endDateInput = input.endDate;
+  const hasStartDateInput = startDateInput !== undefined;
+  const hasEndDateInput = endDateInput !== undefined;
+  const hasAnyDateInput = hasStartDateInput || hasEndDateInput;
+  const isStartDateValid = isValidDateQuery(startDateInput);
+  const isEndDateValid = isValidDateQuery(endDateInput);
+  let startDate = defaultStartDate;
+  let endDate = defaultEndDate;
   let errorMessage: string | null = null;
 
-  if (!isValidDateQuery(input.startDate) || !isValidDateQuery(input.endDate)) {
+  if (hasAnyDateInput && (!isStartDateValid || !isEndDateValid)) {
     errorMessage = "기간을 확인해 주세요. 기본 7일 기간으로 조회합니다.";
+  } else if (isStartDateValid && isEndDateValid) {
+    startDate = getDailyMeetingReportDate(startDateInput);
+    endDate = getDailyMeetingReportDate(endDateInput);
   }
 
   if (startDate > endDate) {
@@ -219,13 +230,65 @@ export function getStoreComparisonReportDateRange(
 export function getStoreComparisonReportPath({
   startDateInput,
   endDateInput,
-}: Pick<
-  StoreComparisonReportDateRange,
-  "startDateInput" | "endDateInput"
->) {
+}: Pick<StoreComparisonReportDateRange, "startDateInput" | "endDateInput">) {
   return `/app/reports/comparison?startDate=${encodeURIComponent(
     startDateInput,
   )}&endDate=${encodeURIComponent(endDateInput)}`;
+}
+
+export function getMonthlyClosingAnomalyReportMonthRange(
+  month: unknown,
+  inputDate = new Date(),
+): MonthlyClosingAnomalyReportMonthRange {
+  const today = getDailyMeetingReportDate("today", inputDate);
+  const currentMonthInput = getDailyMeetingReportDateInput(today).slice(0, 7);
+  const hasMonthInput = month !== undefined && month !== null && month !== "";
+  const monthInput = isValidMonthQuery(month)
+    ? month
+    : currentMonthInput;
+  const year = Number(monthInput.slice(0, 4));
+  const monthNumber = Number(monthInput.slice(5, 7));
+  const startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const monthEndDate = new Date(Date.UTC(year, monthNumber, 0));
+  const currentMonthStartDate = new Date(
+    Date.UTC(
+      Number(currentMonthInput.slice(0, 4)),
+      Number(currentMonthInput.slice(5, 7)) - 1,
+      1,
+    ),
+  );
+  const isCurrentMonth = monthInput === currentMonthInput;
+  const isFutureMonth = startDate > currentMonthStartDate;
+  const endDate = isCurrentMonth ? new Date(today) : monthEndDate;
+
+  return {
+    monthInput,
+    startDate,
+    endDate,
+    startDateInput: getDailyMeetingReportDateInput(startDate),
+    endDateInput: getDailyMeetingReportDateInput(endDate),
+    errorMessage:
+      hasMonthInput && !isValidMonthQuery(month)
+        ? "조회 월을 확인해 주세요. 현재 월로 조회합니다."
+        : null,
+    isFutureMonth,
+  };
+}
+
+export function getMonthlyClosingAnomalyReportPath({
+  monthInput,
+  storeId,
+}: {
+  monthInput: string;
+  storeId?: string | null;
+}) {
+  const params = new URLSearchParams({ month: monthInput });
+
+  if (storeId) {
+    params.set("storeId", storeId);
+  }
+
+  return `/app/reports/monthly?${params.toString()}`;
 }
 
 export async function getHqDailyMeetingReport({
@@ -486,6 +549,517 @@ export async function getHqStoreComparisonReport({
   };
 }
 
+export async function getHqMonthlyClosingAnomalyReport({
+  month,
+  storeId,
+}: {
+  month?: unknown;
+  storeId?: unknown;
+} = {}): Promise<MonthlyClosingAnomalyReportData> {
+  const { requireHeadquartersUser } = await import("../../server/authz.ts");
+  await requireHeadquartersUser();
+
+  const monthRange = getMonthlyClosingAnomalyReportMonthRange(month);
+  const { db } = await import("../../server/db.ts");
+  const { getAnomalyThresholdSettingsForSignals } =
+    await import("../dashboard/threshold-queries.ts");
+  const { getLatestCorrectionValuesForLedgers } =
+    await import("../corrections/queries.ts");
+  const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
+    await import("../../server/calculations/anomaly.ts");
+  const [stores, thresholdSettings] = await Promise.all([
+    db.store.findMany({
+      where: { isActive: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    getAnomalyThresholdSettingsForSignals(),
+  ]);
+  const normalizedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const matchedStore = normalizedStoreId
+    ? stores.find((store) => store.id === normalizedStoreId)
+    : null;
+  const selectedStore = matchedStore ?? stores[0] ?? null;
+  const storeErrorMessage =
+    normalizedStoreId && !matchedStore && selectedStore
+      ? "조회 지점을 확인해 주세요. 첫 번째 활성 지점으로 조회합니다."
+      : null;
+  const errorMessages = [monthRange.errorMessage, storeErrorMessage].filter(
+    (message): message is string => Boolean(message),
+  );
+
+  if (!selectedStore) {
+    return buildEmptyMonthlyClosingAnomalyReport({
+      monthRange,
+      stores,
+      errorMessages,
+    });
+  }
+
+  const ledgers = await db.dailyLedger.findMany({
+    where: {
+      storeId: selectedStore.id,
+      closingDate: {
+        gte: monthRange.startDate,
+        lte: monthRange.endDate,
+      },
+    },
+    orderBy: [{ closingDate: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      storeId: true,
+      closingDate: true,
+      status: true,
+      totalSalesAmount: true,
+      cashAmount: true,
+      cardAmount: true,
+      otherPaymentAmount: true,
+      workerCount: true,
+      updatedAt: true,
+      updatedBy: {
+        select: {
+          name: true,
+          email: true,
+        },
+      },
+      ledgerInventoryItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          quantity: true,
+          unitPrice: true,
+          inventoryAmount: true,
+        },
+      },
+      ledgerExpenses: {
+        select: {
+          id: true,
+          amount: true,
+        },
+      },
+      ledgerInventoryAdjustments: {
+        select: {
+          ledgerInventoryItemId: true,
+          productId: true,
+          productName: true,
+          beforeQuantity: true,
+          beforeAmount: true,
+          afterQuantity: true,
+          afterAmount: true,
+          unitPrice: true,
+          differenceQuantity: true,
+          differenceAmount: true,
+          reason: true,
+        },
+      },
+      ledgerLossItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          quantity: true,
+          amount: true,
+        },
+      },
+    },
+  });
+  const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
+    ledgers.map((ledger) => ledger.id),
+  );
+  const ledgerSummaries = ledgers.map((ledger) => {
+    const row = toDailyMeetingReportRow({
+      store: selectedStore,
+      ledger,
+      closingDate: ledger.closingDate,
+      thresholdSettings,
+      evaluateRevenueAnomalySignals,
+      evaluateInventoryLossAnomalySignals,
+      corrections: correctionValuesByLedgerId.get(ledger.id),
+    });
+
+    return {
+      dateInput: getDailyMeetingReportDateInput(ledger.closingDate),
+      ledgerId: ledger.id,
+      status: ledger.status,
+      signals: row.signals,
+      metricEvidence: row.metricEvidence,
+      hasUnappliedCorrections: row.correctionState.hasUnappliedCorrections,
+    };
+  });
+
+  return buildMonthlyClosingAnomalyReportForTest({
+    store: selectedStore,
+    stores,
+    monthRange,
+    monthInput: monthRange.monthInput,
+    dateInputs: getMonthlyClosingAnomalyDateInputs(
+      monthRange,
+      ledgerSummaries.map((summary) => summary.dateInput),
+    ),
+    ledgerSummaries,
+    errorMessages,
+  });
+}
+
+type MonthlyClosingAnomalyLedgerSummaryForTest = {
+  dateInput: string;
+  ledgerId: string;
+  status: DailyLedgerStatus;
+  signals: DashboardSignalSummary[];
+  metricEvidence: DailyMeetingReportMetricEvidenceMap;
+  hasUnappliedCorrections: boolean;
+};
+
+export function buildMonthlyClosingAnomalyReportForTest({
+  store,
+  stores = [store],
+  monthRange,
+  monthInput,
+  dateInputs,
+  ledgerSummaries,
+  errorMessages = [],
+}: {
+  store: ReportStoreRecord;
+  stores?: ReportStoreRecord[];
+  monthRange?: MonthlyClosingAnomalyReportMonthRange;
+  monthInput: string;
+  dateInputs: string[];
+  ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[];
+  errorMessages?: string[];
+}): MonthlyClosingAnomalyReportData {
+  const ledgerSummaryByDateInput = new Map(
+    ledgerSummaries.map((summary) => [summary.dateInput, summary]),
+  );
+  const days = dateInputs.map((dateInput) => {
+    const summary = ledgerSummaryByDateInput.get(dateInput);
+
+    if (!summary) {
+      return buildMonthlyMissingDay({ store, dateInput });
+    }
+
+    return {
+      dateInput,
+      dateLabel: formatMonthlyDayLabel(dateInput),
+      storeId: store.id,
+      storeName: store.name,
+      ledgerId: summary.ledgerId,
+      ledgerDetailHref: `/app/ledgers/${summary.ledgerId}`,
+      businessStatus: mapDashboardBusinessStatus(summary.status),
+      ledgerStatus: mapDashboardLedgerStatus(summary.status),
+      hasUnappliedCorrections: summary.hasUnappliedCorrections,
+      signals: summary.signals,
+      metricEvidence: summary.metricEvidence,
+    };
+  });
+
+  return {
+    monthRange:
+      monthRange ??
+      buildMonthlyRangeFromDateInputs({
+        monthInput,
+        dateInputs,
+      }),
+    stores,
+    selectedStoreId: store.id,
+    selectedStoreName: store.name,
+    statusCounts: getMonthlyStatusCounts(days),
+    days,
+    anomalyItems: buildMonthlyAnomalyItems(days),
+    errorMessages,
+  };
+}
+
+function buildEmptyMonthlyClosingAnomalyReport({
+  monthRange,
+  stores,
+  errorMessages,
+}: {
+  monthRange: MonthlyClosingAnomalyReportMonthRange;
+  stores: ReportStoreRecord[];
+  errorMessages: string[];
+}): MonthlyClosingAnomalyReportData {
+  return {
+    monthRange,
+    stores,
+    selectedStoreId: null,
+    selectedStoreName: null,
+    statusCounts: {
+      missingDayCount: 0,
+      inProgressCount: 0,
+      reviewCount: 0,
+      closedCount: 0,
+      holidayCount: 0,
+    },
+    days: [],
+    anomalyItems: [],
+    errorMessages,
+  };
+}
+
+function buildMonthlyMissingDay({
+  store,
+  dateInput,
+}: {
+  store: ReportStoreRecord;
+  dateInput: string;
+}): MonthlyClosingAnomalyDay {
+  return {
+    dateInput,
+    dateLabel: formatMonthlyDayLabel(dateInput),
+    storeId: store.id,
+    storeName: store.name,
+    ledgerId: null,
+    ledgerDetailHref: null,
+    businessStatus: mapDashboardBusinessStatus(null),
+    ledgerStatus: mapDashboardLedgerStatus(null),
+    hasUnappliedCorrections: false,
+    signals: [],
+    metricEvidence: buildEmptyMonthlyMetricEvidence(),
+  };
+}
+
+function buildEmptyMonthlyMetricEvidence(): DailyMeetingReportMetricEvidenceMap {
+  const metric = unavailable("계산 불가");
+
+  return buildDailyMeetingReportMetricEvidenceMap({
+    ledgerId: null,
+    ledgerStatus: "EMPTY",
+    originalSummary: {
+      totalSales: metric,
+      grossMarginRate: metric,
+      salesDifference: metric,
+    },
+    appliedSummary: {
+      totalSales: metric,
+      grossMarginRate: metric,
+      salesDifference: metric,
+    },
+    originalHasLoss: null,
+    appliedHasLoss: null,
+    correctionState: {
+      appliedKeys: new Set(),
+      unappliedKeys: new Set(),
+    },
+  });
+}
+
+function buildMonthlyRangeFromDateInputs({
+  monthInput,
+  dateInputs,
+}: {
+  monthInput: string;
+  dateInputs: string[];
+}): MonthlyClosingAnomalyReportMonthRange {
+  const year = Number(monthInput.slice(0, 4));
+  const month = Number(monthInput.slice(5, 7));
+  const fallbackStartDate = new Date(Date.UTC(year, month - 1, 1));
+  const fallbackEndDate = new Date(Date.UTC(year, month, 0));
+  const firstDateInput = dateInputs[0];
+  const lastDateInput = dateInputs[dateInputs.length - 1];
+  const startDate = firstDateInput
+    ? getDailyMeetingReportDate(firstDateInput)
+    : fallbackStartDate;
+  const endDate = lastDateInput
+    ? getDailyMeetingReportDate(lastDateInput)
+    : fallbackEndDate;
+
+  return {
+    monthInput,
+    startDate,
+    endDate,
+    startDateInput: getDailyMeetingReportDateInput(startDate),
+    endDateInput: getDailyMeetingReportDateInput(endDate),
+    errorMessage: null,
+    isFutureMonth: false,
+  };
+}
+
+function getMonthlyStatusCounts(days: MonthlyClosingAnomalyDay[]) {
+  return {
+    missingDayCount: days.filter((day) => day.ledgerStatus.key === "EMPTY")
+      .length,
+    inProgressCount: days.filter(
+      (day) => day.ledgerStatus.key === "IN_PROGRESS",
+    ).length,
+    reviewCount: days.filter((day) => day.ledgerStatus.key === "IN_REVIEW")
+      .length,
+    closedCount: days.filter(
+      (day) => day.ledgerStatus.key === "HEADQUARTERS_CLOSED",
+    ).length,
+    holidayCount: days.filter((day) => day.ledgerStatus.key === "HOLIDAY")
+      .length,
+  };
+}
+
+function buildMonthlyAnomalyItems(
+  days: MonthlyClosingAnomalyDay[],
+): MonthlyAnomalyItem[] {
+  return days.flatMap((day) => {
+    const ledgerId = day.ledgerId;
+
+    if (!ledgerId) {
+      return [];
+    }
+
+    const signalItems = day.signals
+      .filter(shouldIncludeMonthlyAnomalySignal)
+      .map((signal) => {
+        const evidence = getMonthlyAnomalyMetricEvidence(
+          signal.id,
+          day.metricEvidence,
+        );
+
+        return {
+          id: `${day.dateInput}-${ledgerId}-${signal.id}`,
+          dateInput: day.dateInput,
+          dateLabel: day.dateLabel,
+          storeId: day.storeId,
+          storeName: day.storeName,
+          ledgerId,
+          ledgerDetailHref: `/app/ledgers/${ledgerId}`,
+          label: signal.label,
+          severity: signal.severity,
+          detail: signal.detail ?? null,
+          correctionTimelineHref:
+            evidence?.correctionTimelineHref ??
+            getFirstCorrectionTimelineHref(day.metricEvidence),
+          metricEvidence: evidence,
+        };
+      });
+
+    const correctionItems = buildMonthlyCorrectionAnomalyItems(day).filter(
+      (correctionItem) =>
+        !signalItems.some(
+          (signalItem) =>
+            signalItem.metricEvidence !== null &&
+            signalItem.metricEvidence === correctionItem.metricEvidence,
+        ),
+    );
+
+    return [...signalItems, ...correctionItems];
+  });
+}
+
+function shouldIncludeMonthlyAnomalySignal(signal: DashboardSignalSummary) {
+  return ![
+    "thresholds-pending",
+    "inventory-input-required",
+    "loss-input-required",
+  ].includes(signal.id);
+}
+
+function buildMonthlyCorrectionAnomalyItems(
+  day: MonthlyClosingAnomalyDay,
+): MonthlyAnomalyItem[] {
+  const ledgerId = day.ledgerId;
+
+  if (!ledgerId) {
+    return [];
+  }
+
+  return Object.values(day.metricEvidence)
+    .filter((evidence) => evidence.isCorrected || evidence.status === "needs-review")
+    .map((evidence, index) => ({
+      id: `${day.dateInput}-${ledgerId}-correction-${index}`,
+      dateInput: day.dateInput,
+      dateLabel: day.dateLabel,
+      storeId: day.storeId,
+      storeName: day.storeName,
+      ledgerId,
+      ledgerDetailHref: `/app/ledgers/${ledgerId}`,
+      label: `${evidence.label} ${evidence.statusLabel}`,
+      severity: "info",
+      detail: evidence.unavailableReason ?? "장부 상세에서 정정 근거를 확인해 주세요.",
+      correctionTimelineHref: evidence.correctionTimelineHref,
+      metricEvidence: evidence,
+    }));
+}
+
+function getMonthlyAnomalyMetricEvidence(
+  signalId: string,
+  metricEvidence: DailyMeetingReportMetricEvidenceMap,
+) {
+  if (signalId.startsWith("sales-drop")) {
+    return metricEvidence.salesAmount;
+  }
+
+  if (signalId.startsWith("gross-margin")) {
+    return metricEvidence.grossMarginRate;
+  }
+
+  if (signalId.startsWith("sales-difference")) {
+    return metricEvidence.salesDifference;
+  }
+
+  if (signalId.startsWith("loss")) {
+    return metricEvidence.loss;
+  }
+
+  if (signalId.startsWith("inventory")) {
+    return null;
+  }
+
+  if (signalId === "correction-review-required") {
+    return getFirstCorrectionMetricEvidence(metricEvidence);
+  }
+
+  return null;
+}
+
+function getFirstCorrectionMetricEvidence(
+  metricEvidence: DailyMeetingReportMetricEvidenceMap,
+) {
+  return (
+    Object.values(metricEvidence).find(
+      (evidence) =>
+        evidence.correctionTimelineHref !== null ||
+        evidence.isCorrected ||
+        evidence.status === "needs-review",
+    ) ?? null
+  );
+}
+
+function getFirstCorrectionTimelineHref(
+  metricEvidence: DailyMeetingReportMetricEvidenceMap,
+) {
+  return (
+    Object.values(metricEvidence).find(
+      (evidence) => evidence.correctionTimelineHref !== null,
+    )?.correctionTimelineHref ?? null
+  );
+}
+
+function getMonthlyClosingAnomalyDateInputs(
+  monthRange: MonthlyClosingAnomalyReportMonthRange,
+  ledgerDateInputs: string[],
+) {
+  if (monthRange.isFutureMonth) {
+    return [...new Set(ledgerDateInputs)].sort();
+  }
+
+  const dateInputs: string[] = [];
+  const cursor = new Date(monthRange.startDate);
+
+  while (cursor <= monthRange.endDate) {
+    dateInputs.push(getDailyMeetingReportDateInput(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return dateInputs;
+}
+
+function formatMonthlyDayLabel(dateInput: string) {
+  return `${Number(dateInput.slice(8, 10)).toLocaleString("ko-KR")}일`;
+}
+
 type StoreComparisonLedgerSummaryForTest = {
   ledgerId: string;
   status: DailyLedgerStatus;
@@ -507,10 +1081,13 @@ type StoreComparisonLedgerSummaryForTest = {
     | "productivity"
     | "inventoryAmount"
   >;
+  originalWorkerCount?: number | null;
   workerCount: number | null;
   hasLoss: boolean;
   hasUnappliedCorrections: boolean;
   appliedCorrectionCount: number;
+  appliedCorrectionKeys?: Set<string>;
+  unappliedCorrectionKeys?: Set<string>;
 };
 
 function toStoreComparisonLedgerSummary(
@@ -555,6 +1132,7 @@ function toStoreComparisonLedgerSummary(
     status: ledger.status,
     original,
     applied,
+    originalWorkerCount: ledger.workerCount,
     workerCount: correctionOverlay.reviewInput.workerCount,
     hasLoss: correctionOverlay.lossItems.some(
       (item) => item.quantity > 0 || item.amount > 0,
@@ -563,6 +1141,8 @@ function toStoreComparisonLedgerSummary(
       correctionOverlay.correctionState.hasUnappliedCorrections,
     appliedCorrectionCount:
       correctionOverlay.correctionState.appliedCorrectionCount,
+    appliedCorrectionKeys: correctionOverlay.appliedCorrectionKeys,
+    unappliedCorrectionKeys: correctionOverlay.unappliedCorrectionKeys,
   };
 }
 
@@ -586,13 +1166,6 @@ export function buildStoreComparisonReportRowForTest({
     businessSummaries,
     "applied",
   );
-  const appliedCorrectionCount = ledgerSummaries.reduce(
-    (sum, summary) => sum + summary.appliedCorrectionCount,
-    0,
-  );
-  const hasUnappliedCorrections = ledgerSummaries.some(
-    (summary) => summary.hasUnappliedCorrections,
-  );
   const statusCounts = {
     missingDayCount: Math.max(0, dateCount - ledgerSummaries.length),
     inProgressCount: ledgerSummaries.filter(
@@ -608,11 +1181,19 @@ export function buildStoreComparisonReportRowForTest({
       (summary) => summary.status === "HOLIDAY",
     ).length,
   };
-  const evidenceInput = {
-    ledgerId: getFirstLedgerId(ledgerSummaries),
-    ledgerStatus: "HEADQUARTERS_CLOSED" as const,
-    correctionCount: appliedCorrectionCount,
-  };
+  const evidenceLedgerStatus =
+    ledgerSummaries.length === 0
+      ? ("EMPTY" as const)
+      : ("HEADQUARTERS_CLOSED" as const);
+  const hasLoss =
+    ledgerSummaries.length === 0
+      ? null
+      : ledgerSummaries.some((summary) => summary.hasLoss);
+  const hasUnappliedCorrections = ledgerSummaries.some(
+    (summary) => summary.hasUnappliedCorrections,
+  );
+  const lossMetric =
+    hasLoss === null ? unavailable("계산 불가") : available(hasLoss ? 1 : 0);
 
   return {
     storeId: store.id,
@@ -626,88 +1207,211 @@ export function buildStoreComparisonReportRowForTest({
     averageInventory: appliedAggregates.averageInventory,
     averageSales: appliedAggregates.averageSales,
     inventoryToSalesRatio: appliedAggregates.inventoryToSalesRatio,
-    hasLoss:
-      ledgerSummaries.length === 0
-        ? null
-        : ledgerSummaries.some((summary) => summary.hasLoss),
+    hasLoss,
+    hasUnappliedCorrections,
     metricEvidence: {
-      salesAmount: buildDailyMeetingReportMetricEvidence({
+      salesAmount: buildStoreComparisonMetricEvidence({
         label: "매출",
         kind: "money",
         original: originalAggregates.salesAmount,
         applied: appliedAggregates.salesAmount,
-        hasUnappliedCorrections: false,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.salesAmount,
       }),
-      grossProfit: buildDailyMeetingReportMetricEvidence({
+      grossProfit: buildStoreComparisonMetricEvidence({
         label: "매출이익",
         kind: "money",
         original: originalAggregates.grossProfit,
         applied: appliedAggregates.grossProfit,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.grossProfit,
       }),
-      grossMarginRate: buildDailyMeetingReportMetricEvidence({
+      grossMarginRate: buildStoreComparisonMetricEvidence({
         label: "이익률",
         kind: "percent",
         original: originalAggregates.grossMarginRate,
         applied: appliedAggregates.grossMarginRate,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.grossMarginRate,
       }),
-      operatingProfit: buildDailyMeetingReportMetricEvidence({
+      operatingProfit: buildStoreComparisonMetricEvidence({
         label: "영업이익",
         kind: "money",
         original: originalAggregates.operatingProfit,
         applied: appliedAggregates.operatingProfit,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.operatingProfit,
       }),
-      productivity: buildDailyMeetingReportMetricEvidence({
+      productivity: buildStoreComparisonMetricEvidence({
         label: "인당생산성",
         kind: "money",
         original: originalAggregates.productivity,
         applied: appliedAggregates.productivity,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.productivity,
       }),
-      averageInventory: buildDailyMeetingReportMetricEvidence({
+      averageInventory: buildStoreComparisonMetricEvidence({
         label: "평균재고",
         kind: "money",
         original: originalAggregates.averageInventory,
         applied: appliedAggregates.averageInventory,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.averageInventory,
       }),
-      averageSales: buildDailyMeetingReportMetricEvidence({
+      averageSales: buildStoreComparisonMetricEvidence({
         label: "평균매출",
         kind: "money",
         original: originalAggregates.averageSales,
         applied: appliedAggregates.averageSales,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.averageSales,
       }),
-      inventoryToSalesRatio: buildDailyMeetingReportMetricEvidence({
+      inventoryToSalesRatio: buildStoreComparisonMetricEvidence({
         label: "재고비율",
         kind: "percent",
         original: originalAggregates.inventoryToSalesRatio,
         applied: appliedAggregates.inventoryToSalesRatio,
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.inventoryToSalesRatio,
       }),
-      loss: buildDailyMeetingReportMetricEvidence({
+      loss: buildStoreComparisonMetricEvidence({
         label: "손실",
         kind: "boolean",
-        original: {
-          value: ledgerSummaries.some((summary) => summary.hasLoss) ? 1 : 0,
-        },
-        applied: {
-          value: ledgerSummaries.some((summary) => summary.hasLoss) ? 1 : 0,
-        },
-        hasUnappliedCorrections,
-        ...evidenceInput,
+        original: lossMetric,
+        applied: lossMetric,
+        ledgerStatus: evidenceLedgerStatus,
+        ledgerSummaries,
+        matchers: comparisonMetricCorrectionMatchers.loss,
       }),
     },
+  };
+}
+
+type ComparisonMetricCorrectionMatcher = {
+  targetType: string;
+  fieldKey: string;
+};
+
+const inventoryCorrectionMatchers = [
+  { targetType: "INVENTORY_ROW", fieldKey: "currentQuantity" },
+  { targetType: "INVENTORY_ROW", fieldKey: "quantity" },
+  { targetType: "INVENTORY_ROW", fieldKey: "inventoryAmount" },
+] satisfies ComparisonMetricCorrectionMatcher[];
+
+const totalSalesCorrectionMatchers = [
+  { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+] satisfies ComparisonMetricCorrectionMatcher[];
+
+const comparisonMetricCorrectionMatchers = {
+  salesAmount: totalSalesCorrectionMatchers,
+  grossProfit: [
+    ...totalSalesCorrectionMatchers,
+    ...inventoryCorrectionMatchers,
+  ],
+  grossMarginRate: [
+    ...totalSalesCorrectionMatchers,
+    ...inventoryCorrectionMatchers,
+    { targetType: "CALCULATED_METRIC", fieldKey: "grossMarginRate" },
+  ],
+  operatingProfit: [
+    ...totalSalesCorrectionMatchers,
+    ...inventoryCorrectionMatchers,
+    { targetType: "EXPENSE_ROW", fieldKey: "amount" },
+  ],
+  productivity: [
+    ...totalSalesCorrectionMatchers,
+    { targetType: "LEDGER_FIELD", fieldKey: "workerCount" },
+  ],
+  averageInventory: inventoryCorrectionMatchers,
+  averageSales: totalSalesCorrectionMatchers,
+  inventoryToSalesRatio: [
+    ...totalSalesCorrectionMatchers,
+    ...inventoryCorrectionMatchers,
+  ],
+  loss: [
+    { targetType: "LOSS_ROW", fieldKey: "amount" },
+    { targetType: "LOSS_ROW", fieldKey: "quantity" },
+    { targetType: "CALCULATED_METRIC", fieldKey: "lossAmount" },
+  ],
+} satisfies Record<string, ComparisonMetricCorrectionMatcher[]>;
+
+function buildStoreComparisonMetricEvidence({
+  label,
+  kind,
+  original,
+  applied,
+  ledgerStatus,
+  ledgerSummaries,
+  matchers,
+}: {
+  label: string;
+  kind: DailyMeetingReportMetricEvidenceInput["kind"];
+  original: LedgerReviewMetric;
+  applied: LedgerReviewMetric;
+  ledgerStatus: DailyMeetingReportMetricEvidenceInput["ledgerStatus"];
+  ledgerSummaries: StoreComparisonLedgerSummaryForTest[];
+  matchers: ComparisonMetricCorrectionMatcher[];
+}) {
+  const correctionState = getStoreComparisonMetricCorrectionState(
+    ledgerSummaries,
+    matchers,
+  );
+
+  return buildDailyMeetingReportMetricEvidence({
+    label,
+    kind,
+    original,
+    applied,
+    ledgerId:
+      correctionState.ledgerIdWithCorrection ??
+      getFirstLedgerId(ledgerSummaries),
+    ledgerStatus,
+    correctionCount: correctionState.appliedCount,
+    hasUnappliedCorrections: correctionState.hasUnapplied,
+  });
+}
+
+function getStoreComparisonMetricCorrectionState(
+  ledgerSummaries: StoreComparisonLedgerSummaryForTest[],
+  matchers: ComparisonMetricCorrectionMatcher[],
+) {
+  let appliedCount = 0;
+  let hasUnapplied = false;
+  let ledgerIdWithCorrection: string | null = null;
+
+  for (const summary of ledgerSummaries) {
+    const appliedKeys = summary.appliedCorrectionKeys ?? new Set<string>();
+    const unappliedKeys = summary.unappliedCorrectionKeys ?? new Set<string>();
+    const matchingAppliedKeys = [...appliedKeys].filter((key) =>
+      matchesMetricCorrectionKey(key, matchers),
+    );
+    const hasMatchingUnappliedKey = [...unappliedKeys].some((key) =>
+      matchesMetricCorrectionKey(key, matchers),
+    );
+
+    appliedCount += matchingAppliedKeys.length;
+    hasUnapplied ||= hasMatchingUnappliedKey;
+
+    if (
+      ledgerIdWithCorrection === null &&
+      (matchingAppliedKeys.length > 0 || hasMatchingUnappliedKey)
+    ) {
+      ledgerIdWithCorrection = summary.ledgerId;
+    }
+  }
+
+  return {
+    appliedCount,
+    hasUnapplied,
+    ledgerIdWithCorrection,
   };
 }
 
@@ -715,31 +1419,35 @@ function aggregateStoreComparisonMetrics(
   ledgerSummaries: StoreComparisonLedgerSummaryForTest[],
   source: "original" | "applied",
 ) {
-  const salesValues = getMetricValues(ledgerSummaries, source, "totalSales");
-  const grossProfitValues = getMetricValues(
-    ledgerSummaries,
-    source,
-    "grossProfit",
-  );
-  const operatingProfitValues = getMetricValues(
+  const salesMetrics = getMetrics(ledgerSummaries, source, "totalSales");
+  const grossProfitMetrics = getMetrics(ledgerSummaries, source, "grossProfit");
+  const operatingProfitMetrics = getMetrics(
     ledgerSummaries,
     source,
     "operatingProfit",
   );
-  const inventoryValues = getMetricValues(
+  const inventoryMetrics = getMetrics(
     ledgerSummaries,
     source,
     "inventoryAmount",
   );
-  const salesAmount = sumMetric(salesValues);
-  const grossProfit = sumMetric(grossProfitValues);
-  const operatingProfit = sumMetric(operatingProfitValues);
+  const salesAmount = sumMetric(salesMetrics);
+  const grossProfit = sumMetric(grossProfitMetrics);
+  const operatingProfit = sumMetric(operatingProfitMetrics);
   const workerTotal = ledgerSummaries.reduce(
-    (sum, summary) => sum + (summary.workerCount ?? 0),
+    (sum, summary) => sum + (getWorkerCount(summary, source) ?? 0),
     0,
   );
-  const averageInventory = averageMetric(inventoryValues);
-  const averageSales = averageMetric(salesValues);
+  const hasSalesDayWithoutWorkers = ledgerSummaries.some((summary) => {
+    const sales = summary[source].totalSales.value;
+    const workerCount = getWorkerCount(summary, source);
+
+    return (
+      sales !== null && sales > 0 && (workerCount === null || workerCount <= 0)
+    );
+  });
+  const averageInventory = averageMetric(inventoryMetrics);
+  const averageSales = averageMetric(salesMetrics);
 
   return {
     salesAmount,
@@ -752,7 +1460,9 @@ function aggregateStoreComparisonMetrics(
         : unavailable("계산 불가"),
     operatingProfit,
     productivity:
-      salesAmount.value !== null && workerTotal > 0
+      salesAmount.value !== null &&
+      workerTotal > 0 &&
+      !hasSalesDayWithoutWorkers
         ? available(salesAmount.value / workerTotal)
         : unavailable("계산 불가"),
     averageInventory,
@@ -766,26 +1476,45 @@ function aggregateStoreComparisonMetrics(
   };
 }
 
-function getMetricValues(
+function getMetrics(
   ledgerSummaries: StoreComparisonLedgerSummaryForTest[],
   source: "original" | "applied",
   key: keyof StoreComparisonLedgerSummaryForTest["applied"],
 ) {
-  return ledgerSummaries
-    .map((summary) => summary[source][key].value)
-    .filter((value): value is number => value !== null);
+  return ledgerSummaries.map((summary) => summary[source][key]);
 }
 
-function sumMetric(values: number[]): LedgerReviewMetric {
-  return values.length === 0
+function sumMetric(metrics: LedgerReviewMetric[]): LedgerReviewMetric {
+  if (metrics.some((metric) => metric.value === null)) {
+    return unavailable("계산 불가");
+  }
+
+  const values = metrics.map((metric) => metric.value ?? 0);
+
+  return metrics.length === 0
     ? unavailable("계산 불가")
     : available(values.reduce((sum, value) => sum + value, 0));
 }
 
-function averageMetric(values: number[]): LedgerReviewMetric {
-  return values.length === 0
+function averageMetric(metrics: LedgerReviewMetric[]): LedgerReviewMetric {
+  if (metrics.some((metric) => metric.value === null)) {
+    return unavailable("계산 불가");
+  }
+
+  const values = metrics.map((metric) => metric.value ?? 0);
+
+  return metrics.length === 0
     ? unavailable("계산 불가")
     : available(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function getWorkerCount(
+  summary: StoreComparisonLedgerSummaryForTest,
+  source: "original" | "applied",
+) {
+  return source === "original"
+    ? (summary.originalWorkerCount ?? summary.workerCount)
+    : summary.workerCount;
 }
 
 function available(value: number): LedgerReviewMetric {
@@ -793,9 +1522,7 @@ function available(value: number): LedgerReviewMetric {
 }
 
 function getInclusiveDateCount(startDate: Date, endDate: Date) {
-  return (
-    Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
-  );
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
 }
 
 function getFirstLedgerId(summaries: StoreComparisonLedgerSummaryForTest[]) {
@@ -819,6 +1546,18 @@ function isValidDateQuery(value: unknown): value is string {
   const date = new Date(Date.UTC(year, month - 1, day));
 
   return date.toISOString().slice(0, 10) === value;
+}
+
+function isValidMonthQuery(value: unknown): value is string {
+  if (typeof value !== "string" || !MONTH_QUERY_PATTERN.test(value)) {
+    return false;
+  }
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const date = new Date(Date.UTC(year, month - 1, 1));
+
+  return month >= 1 && month <= 12 && date.toISOString().slice(0, 7) === value;
 }
 
 function toDailyMeetingReportRow({
@@ -1206,15 +1945,24 @@ function getMetricCorrectionState(
   },
   matchers: { targetType: string; fieldKey: string }[],
 ) {
-  const matches = (key: string) =>
-    matchers.some(({ targetType, fieldKey }) =>
-      key.includes(`:${targetType}:`) && key.endsWith(`:${fieldKey}`),
-    );
-
   return {
-    appliedCount: [...correctionState.appliedKeys].filter(matches).length,
-    hasUnapplied: [...correctionState.unappliedKeys].some(matches),
+    appliedCount: [...correctionState.appliedKeys].filter((key) =>
+      matchesMetricCorrectionKey(key, matchers),
+    ).length,
+    hasUnapplied: [...correctionState.unappliedKeys].some((key) =>
+      matchesMetricCorrectionKey(key, matchers),
+    ),
   };
+}
+
+function matchesMetricCorrectionKey(
+  key: string,
+  matchers: { targetType: string; fieldKey: string }[],
+) {
+  return matchers.some(
+    ({ targetType, fieldKey }) =>
+      key.includes(`:${targetType}:`) && key.endsWith(`:${fieldKey}`),
+  );
 }
 
 function getMetricStatus({
@@ -1372,10 +2120,9 @@ function toCorrectedInventoryAdjustments(
       return adjustment;
     }
 
-    const correctedQuantity =
-      shouldUseCorrectedInventory
-        ? (correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null)
-        : adjustment.afterQuantity;
+    const correctedQuantity = shouldUseCorrectedInventory
+      ? (correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null)
+      : adjustment.afterQuantity;
     const correctedAmount = calculateInventoryAmount(
       correctedQuantity,
       correctedItem?.unitPrice ?? adjustment.unitPrice,

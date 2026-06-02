@@ -56,6 +56,14 @@ function getTodayKstMidnight(inputDate = new Date()) {
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
 }
 
+function getTodayKstInput() {
+  return getTodayKstMidnight().toISOString().slice(0, 10);
+}
+
+function getCurrentMonthInput() {
+  return getTodayKstInput().slice(0, 7);
+}
+
 async function seedStoryFiveOneData() {
   const actorId = await getHeadquartersUserId();
 
@@ -358,7 +366,9 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   ).toBeVisible();
 
   await page.getByLabel("시작일").fill("2026-05-31");
-  await page.getByLabel("종료일").fill(getTodayKstMidnight().toISOString().slice(0, 10));
+  await page
+    .getByLabel("종료일")
+    .fill(getTodayKstMidnight().toISOString().slice(0, 10));
   await page.getByRole("button", { name: "조회" }).click();
 
   await expect(page).toHaveURL(/startDate=2026-05-31/);
@@ -386,6 +396,107 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   await expect(holidayRow).toContainText("정정 확인 필요");
 });
 
+test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 이상을 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/reports/daily?date=today");
+
+  await page.getByRole("link", { name: "월간" }).click();
+  await expect(page).toHaveURL(/\/app\/reports\/monthly/);
+  await expect(
+    page.getByRole("heading", { name: "월간 요약 리포트" }),
+  ).toBeVisible();
+
+  const currentMonth = getCurrentMonthInput();
+  const todayInput = getTodayKstInput();
+  const missingDayCount = Math.max(0, Number(todayInput.slice(8, 10)) - 1);
+
+  await expect(page.getByLabel("조회 월")).toHaveValue(currentMonth);
+  await page.getByLabel("지점").selectOption(STORE_IDS.closed);
+  await page.getByRole("button", { name: "조회" }).click();
+
+  await expect(page).toHaveURL(/\/app\/reports\/monthly/);
+  await expect(page).toHaveURL(new RegExp(`month=${currentMonth}`));
+  await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.closed}`));
+  await expect(page.getByLabel("지점")).toHaveValue(STORE_IDS.closed);
+  const statusSummary = page.getByLabel("월간 마감 상태 요약");
+  await expect(statusSummary).toContainText("본사마감");
+  await expect(statusSummary).toContainText("1일");
+  await expect(statusSummary).toContainText("미입력");
+  await expect(statusSummary).toContainText(`${missingDayCount}일`);
+
+  const todayRow = page.locator(
+    `[data-testid="hq-report-monthly-day-${todayInput}"]`,
+  );
+  await expect(todayRow).toContainText("본사마감");
+  await expect(todayRow).toContainText("정정 반영");
+  await expect(
+    todayRow.getByRole("link", { name: "장부 상세" }).first(),
+  ).toHaveAttribute("href", /\/app\/ledgers\//);
+
+  if (missingDayCount > 0) {
+    const missingRow = page.locator(
+      `[data-testid="hq-report-monthly-day-${currentMonth}-01"]`,
+    );
+    await expect(missingRow).toContainText("미입력");
+    await expect(missingRow).toContainText("입력 전");
+  }
+
+  const anomalyItem = page
+    .locator(`[data-testid^="hq-report-monthly-anomaly-${todayInput}-"]`)
+    .first();
+  await expect(anomalyItem).toContainText("정정 반영");
+  await expect(
+    anomalyItem.getByRole("link", { name: "정정 타임라인" }).first(),
+  ).toHaveAttribute("href", /\/app\/ledgers\/.+#correction-timeline/);
+});
+
+test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 안전한 기본값으로 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/reports/monthly?month=2026-13&storeId=missing-store");
+
+  await expect(
+    page.getByRole("heading", { name: "월간 요약 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByText(/조회 월을 확인/)).toBeVisible();
+  await expect(page.getByText(/조회 지점을 확인/)).toBeVisible();
+  await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+});
+
+test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목을 본다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await login(page, "hq@example.com");
+
+  const currentMonth = getCurrentMonthInput();
+  const todayInput = getTodayKstInput();
+
+  await page.goto(
+    `/app/reports/monthly?month=${currentMonth}&storeId=${STORE_IDS.closed}`,
+  );
+
+  await expect(
+    page.getByRole("heading", { name: "월간 요약 리포트" }),
+  ).toBeVisible();
+
+  const mobileDay = page.locator(
+    `[data-testid="hq-report-monthly-mobile-day-${todayInput}"]`,
+  );
+  await expect(mobileDay).toBeVisible();
+  await expect(mobileDay).toContainText("본사마감");
+  await expect(mobileDay).toContainText("정정 반영");
+
+  const anomalyItem = page
+    .locator(`[data-testid^="hq-report-monthly-anomaly-${todayInput}-"]`)
+    .first();
+  await expect(anomalyItem).toBeVisible();
+  await expect(anomalyItem).toContainText("정정 타임라인");
+});
+
 test("지점장은 일별 아침 회의 리포트에 접근할 수 없다", async ({ page }) => {
   await login(page, "manager@example.com");
   await page.goto("/app/reports/daily?date=today");
@@ -397,7 +508,18 @@ test("지점장은 일별 아침 회의 리포트에 접근할 수 없다", asyn
 
 test("지점장은 기간 비교 리포트에 접근할 수 없다", async ({ page }) => {
   await login(page, "manager@example.com");
-  await page.goto("/app/reports/comparison?startDate=2026-05-31&endDate=2026-06-02");
+  await page.goto(
+    "/app/reports/comparison?startDate=2026-05-31&endDate=2026-06-02",
+  );
+
+  await expect(
+    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
+  ).toBeVisible();
+});
+
+test("지점장은 월간 리포트에 접근할 수 없다", async ({ page }) => {
+  await login(page, "manager@example.com");
+  await page.goto("/app/reports/monthly");
 
   await expect(
     page.getByRole("heading", { name: "접근 권한이 없습니다." }),

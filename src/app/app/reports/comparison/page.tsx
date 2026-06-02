@@ -51,6 +51,9 @@ export default async function StoreComparisonReportPage({
                 기간 비교
               </Link>
             </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/monthly">월간</Link>
+            </Button>
           </div>
           <form
             action="/app/reports/comparison"
