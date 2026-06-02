@@ -11,6 +11,11 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import {
+  formatKrwInput,
+  parseKrwInputValue,
+  toRawKrwInputValue,
+} from "~/features/ledger/components/krw-input-format";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
@@ -40,20 +45,17 @@ type ExpenseStepClientProps = {
   ledgerLabel?: string;
 };
 
+const DEFAULT_EXPENSE_CODE_OPTION: ExpenseCodeOption = {
+  id: "__default_expense_other__",
+  name: "기타",
+};
+
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
-function sanitizeAmount(value: string) {
-  return value.replace(/[^\d]/g, "");
-}
-
 function parseAmount(value: string) {
-  if (!/^\d+$/.test(value.trim())) {
-    return 0;
-  }
-
-  return Number.parseInt(value, 10);
+  return parseKrwInputValue(value);
 }
 
 function getDraftExpenseTotal(lines: ExpenseLine[]) {
@@ -90,14 +92,14 @@ function stepHref(
   return `/app/store-entry?storeId=${storeId}&step=${step}`;
 }
 
-function createLineState(): ExpenseLine {
+function createLineState(option?: ExpenseCodeOption): ExpenseLine {
   return {
     id:
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    ledgerInputCodeId: "",
-    ledgerInputCodeName: "",
+    ledgerInputCodeId: option?.id ?? "",
+    ledgerInputCodeName: option?.name ?? "",
     amount: "",
     memo: "",
   };
@@ -108,9 +110,17 @@ function toExpenseLines(items: LedgerCostStepData["expenseItems"]) {
     id: item.id,
     ledgerInputCodeId: item.ledgerInputCodeId,
     ledgerInputCodeName: item.ledgerInputCodeName,
-    amount: String(item.amount),
+    amount: formatKrwInput(String(item.amount)),
     memo: item.memo ?? "",
   }));
+}
+
+function createFallbackExpenseLines(items: LedgerCostStepData["expenseItems"]) {
+  const lines = toExpenseLines(items);
+
+  return lines.length > 0
+    ? lines
+    : [createLineState(DEFAULT_EXPENSE_CODE_OPTION)];
 }
 
 export function ExpenseStepClient({
@@ -127,9 +137,15 @@ export function ExpenseStepClient({
   const lineAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
   const lineMemoRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const hasRegisteredExpenseCodeOptions = expenseCodeOptions.length > 0;
+  const expenseOptions = hasRegisteredExpenseCodeOptions
+    ? expenseCodeOptions
+    : [DEFAULT_EXPENSE_CODE_OPTION];
   const [ledger, setLedger] = useState(initialLedger);
   const [expenseItems, setExpenseItems] = useState(() =>
-    toExpenseLines(initialLedger.expenseItems),
+    hasRegisteredExpenseCodeOptions
+      ? toExpenseLines(initialLedger.expenseItems)
+      : createFallbackExpenseLines(initialLedger.expenseItems),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -142,8 +158,12 @@ export function ExpenseStepClient({
 
   useEffect(() => {
     setLedger(initialLedger);
-    setExpenseItems(toExpenseLines(initialLedger.expenseItems));
-  }, [initialLedger]);
+    setExpenseItems(
+      hasRegisteredExpenseCodeOptions
+        ? toExpenseLines(initialLedger.expenseItems)
+        : createFallbackExpenseLines(initialLedger.expenseItems),
+    );
+  }, [hasRegisteredExpenseCodeOptions, initialLedger]);
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
@@ -181,6 +201,12 @@ export function ExpenseStepClient({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!hasRegisteredExpenseCodeOptions) {
+      setFormError("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
+      setResultMessage(null);
+      return;
+    }
+
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
@@ -194,7 +220,9 @@ export function ExpenseStepClient({
         expenses: expenseItems.map((line, index) => ({
           ledgerInputCodeId:
             lineCodeRefs.current[index]?.value ?? line.ledgerInputCodeId,
-          amount: lineAmountRefs.current[index]?.value ?? line.amount,
+          amount: toRawKrwInputValue(
+            lineAmountRefs.current[index]?.value ?? line.amount,
+          ),
           memo: lineMemoRefs.current[index]?.value ?? line.memo,
         })),
       });
@@ -253,7 +281,6 @@ export function ExpenseStepClient({
     amount: fieldErrors[`expenses.${index}.amount`]?.[0],
     memo: fieldErrors[`expenses.${index}.memo`]?.[0],
   }));
-  const hasExpenseItems = expenseCodeOptions.length > 0;
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
   const isOriginalEditBlocked =
@@ -337,7 +364,11 @@ export function ExpenseStepClient({
             type="button"
             variant="outline"
             onClick={addExpenseLine}
-            disabled={isFormSaving || isOriginalEditBlocked}
+            disabled={
+              isFormSaving ||
+              isOriginalEditBlocked ||
+              !hasRegisteredExpenseCodeOptions
+            }
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
@@ -358,7 +389,7 @@ export function ExpenseStepClient({
               const lineCodeErrorId = `expense-code-${line.id}-error`;
               const lineAmountErrorId = `expense-amount-${line.id}-error`;
               const lineMemoErrorId = `expense-memo-${line.id}-error`;
-              const selectedCode = expenseCodeOptions.find(
+              const selectedCode = expenseOptions.find(
                 (option) => option.id === line.ledgerInputCodeId,
               );
 
@@ -372,7 +403,11 @@ export function ExpenseStepClient({
                       type="button"
                       variant="outline"
                       onClick={() => removeExpenseLine(line.id)}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={
+                        isFormSaving ||
+                        isOriginalEditBlocked ||
+                        !hasRegisteredExpenseCodeOptions
+                      }
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
@@ -390,7 +425,11 @@ export function ExpenseStepClient({
                         lineCodeRefs.current[index] = node;
                       }}
                       value={line.ledgerInputCodeId}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={
+                        isFormSaving ||
+                        isOriginalEditBlocked ||
+                        !hasRegisteredExpenseCodeOptions
+                      }
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
                           ledgerInputCodeId: event.currentTarget.value,
@@ -408,7 +447,7 @@ export function ExpenseStepClient({
                           {line.ledgerInputCodeName || line.ledgerInputCodeId}
                         </option>
                       ) : null}
-                      {expenseCodeOptions.map((option) => (
+                      {expenseOptions.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.name}
                         </option>
@@ -433,10 +472,14 @@ export function ExpenseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.amount}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={
+                        isFormSaving ||
+                        isOriginalEditBlocked ||
+                        !hasRegisteredExpenseCodeOptions
+                      }
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
-                          amount: sanitizeAmount(event.currentTarget.value),
+                          amount: formatKrwInput(event.currentTarget.value),
                         })
                       }
                       className="min-h-11 tabular-nums"
@@ -449,7 +492,7 @@ export function ExpenseStepClient({
                       id={`expense-amount-${line.id}-preview`}
                       className="text-muted-foreground mt-1 text-xs tabular-nums"
                     >
-                      표시: {formatKrw(Number(line.amount || 0))}
+                      표시: {formatKrw(parseKrwInputValue(line.amount))}
                     </p>
                     {lineAmountError ? (
                       <FieldError id={lineAmountErrorId}>
@@ -470,7 +513,11 @@ export function ExpenseStepClient({
                       inputMode="text"
                       maxLength={500}
                       value={line.memo}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={
+                        isFormSaving ||
+                        isOriginalEditBlocked ||
+                        !hasRegisteredExpenseCodeOptions
+                      }
                       onChange={(event) =>
                         updateExpenseLine(line.id, {
                           memo: event.currentTarget.value,
@@ -493,7 +540,7 @@ export function ExpenseStepClient({
           </div>
         )}
 
-        {!hasExpenseItems ? (
+        {!hasRegisteredExpenseCodeOptions ? (
           <p className="text-destructive mb-3 text-sm">
             비용 항목 코드가 없습니다. 본사에서 비용 항목 코드가 등록되어야
             합니다.
@@ -540,7 +587,11 @@ export function ExpenseStepClient({
               type="button"
               variant="outline"
               onClick={handleRetry}
-              disabled={isFormSaving || isOriginalEditBlocked}
+              disabled={
+                isFormSaving ||
+                isOriginalEditBlocked ||
+                !hasRegisteredExpenseCodeOptions
+              }
               className="min-h-11 w-full"
             >
               다시 시도
@@ -551,7 +602,11 @@ export function ExpenseStepClient({
         <Button
           type="submit"
           className="min-h-11"
-          disabled={isFormSaving || isOriginalEditBlocked}
+          disabled={
+            isFormSaving ||
+            isOriginalEditBlocked ||
+            !hasRegisteredExpenseCodeOptions
+          }
         >
           {isFormSaving ? "저장 중..." : "저장"}
         </Button>

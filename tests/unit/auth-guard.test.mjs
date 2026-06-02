@@ -92,3 +92,23 @@ test("store manager shell preserves selected storeId in tab links", () => {
     assert.match(route, /storeId={workspace\.store\.id}/);
   }
 });
+
+test("authenticated shells expose a logout button that signs out to login", () => {
+  const logoutButtonPath = path.join(root, "src", "components", "logout-button.tsx");
+
+  assert.ok(existsSync(logoutButtonPath), "src/components/logout-button.tsx should exist");
+
+  const logoutButton = readFileSync(logoutButtonPath, "utf8");
+  const appSidebar = readFileSync(path.join(root, "src", "components", "app-sidebar.tsx"), "utf8");
+  const storeShell = readFileSync(
+    path.join(root, "src", "components", "store-manager-shell.tsx"),
+    "utf8",
+  );
+
+  assert.match(logoutButton, /import\s+{\s*signOut\s*}\s+from\s+"~\/server\/auth"/);
+  assert.match(logoutButton, /"use server"/);
+  assert.match(logoutButton, /signOut\(\{\s*redirectTo:\s*"\/login"\s*}\)/s);
+  assert.match(logoutButton, /로그아웃/);
+  assert.match(appSidebar, /<LogoutButton\s*\/>/);
+  assert.match(storeShell, /<LogoutButton\s*\/>/);
+});

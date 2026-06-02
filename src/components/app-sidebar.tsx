@@ -18,6 +18,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "~/components/ui/sidebar";
+import { LogoutButton } from "~/components/logout-button";
 
 const navigationItems = [
   { label: "홈", href: "/app/dashboard", icon: HomeIcon },
@@ -104,9 +105,12 @@ export function AppSidebar({ userName, userEmail }: AppSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex flex-col gap-0.5 px-2 py-1.5 text-xs">
-          <span className="truncate font-medium">{userName}</span>
-          <span className="text-muted-foreground truncate">{userEmail}</span>
+        <div className="flex flex-col gap-2 px-2 py-1.5">
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span className="truncate font-medium">{userName}</span>
+            <span className="text-muted-foreground truncate">{userEmail}</span>
+          </div>
+          <LogoutButton />
         </div>
       </SidebarFooter>
     </Sidebar>

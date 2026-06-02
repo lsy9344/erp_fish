@@ -195,6 +195,22 @@ test("ledger cost/work data model, actions, and queries follow expected contract
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
 });
 
+test("expense step provides 기타 fallback and disables amount when no HQ expense codes exist", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "expense-step-client.tsx",
+  );
+
+  assert.match(source, /DEFAULT_EXPENSE_CODE_OPTION/);
+  assert.match(source, /name:\s*"기타"/);
+  assert.match(source, /expenseCodeOptions\.length > 0/);
+  assert.match(source, /disabled=\{[^}]*!hasRegisteredExpenseCodeOptions/s);
+  assert.match(source, /createFallbackExpenseLines/);
+});
+
 test("cost and work migration exists and defines required schema objects", () => {
   const migrationName = migrationDirNames().find((name) =>
     name.includes("add_ledger_expense_and_worker_fields"),

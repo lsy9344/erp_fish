@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { LogoutButton } from "~/components/logout-button";
 
 const storeNavItems = [
   {
@@ -70,6 +71,9 @@ export function StoreManagerShell({
               </Link>
             ))}
           </nav>
+          <div className="shrink-0">
+            <LogoutButton />
+          </div>
         </div>
       </header>
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-8">

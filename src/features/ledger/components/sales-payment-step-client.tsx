@@ -10,6 +10,11 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import {
+  formatKrwInput,
+  parseKrwInputValue,
+  toRawKrwInputValue,
+} from "~/features/ledger/components/krw-input-format";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
@@ -18,15 +23,6 @@ import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
-}
-
-function parseAmount(value: string) {
-  if (value.trim() === "") {
-    return 0;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function formatClosingDate(value: string) {
@@ -43,10 +39,6 @@ function calculatePaymentDifference(
   otherPaymentAmount: number,
 ) {
   return totalSalesAmount - (cashAmount + cardAmount + otherPaymentAmount);
-}
-
-function sanitizeAmountInput(value: string) {
-  return value.replace(/[^\d]/g, "");
 }
 
 function normalizeStatusLabel(status: LedgerSalesStepData["status"]) {
@@ -97,16 +89,16 @@ export function SalesPaymentStepClient({
 
   const [ledger, setLedger] = useState(initialLedger);
   const [totalSalesAmount, setTotalSalesAmount] = useState(
-    String(initialLedger.totalSalesAmount),
+    formatKrwInput(String(initialLedger.totalSalesAmount)),
   );
   const [cashAmount, setCashAmount] = useState(
-    String(initialLedger.cashAmount),
+    formatKrwInput(String(initialLedger.cashAmount)),
   );
   const [cardAmount, setCardAmount] = useState(
-    String(initialLedger.cardAmount),
+    formatKrwInput(String(initialLedger.cardAmount)),
   );
   const [otherPaymentAmount, setOtherPaymentAmount] = useState(
-    String(initialLedger.otherPaymentAmount),
+    formatKrwInput(String(initialLedger.otherPaymentAmount)),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -122,10 +114,10 @@ export function SalesPaymentStepClient({
     setIsHydrated(true);
   }, []);
 
-  const totalSalesAmountValue = parseAmount(totalSalesAmount);
-  const cashAmountValue = parseAmount(cashAmount);
-  const cardAmountValue = parseAmount(cardAmount);
-  const otherPaymentAmountValue = parseAmount(otherPaymentAmount);
+  const totalSalesAmountValue = parseKrwInputValue(totalSalesAmount);
+  const cashAmountValue = parseKrwInputValue(cashAmount);
+  const cardAmountValue = parseKrwInputValue(cardAmount);
+  const otherPaymentAmountValue = parseKrwInputValue(otherPaymentAmount);
   const paymentDifference = calculatePaymentDifference(
     totalSalesAmountValue,
     cashAmountValue,
@@ -138,10 +130,10 @@ export function SalesPaymentStepClient({
 
   function fillLedger(data: LedgerCostStepData) {
     setLedger(data);
-    setTotalSalesAmount(String(data.totalSalesAmount));
-    setCashAmount(String(data.cashAmount));
-    setCardAmount(String(data.cardAmount));
-    setOtherPaymentAmount(String(data.otherPaymentAmount));
+    setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
+    setCashAmount(formatKrwInput(String(data.cashAmount)));
+    setCardAmount(formatKrwInput(String(data.cardAmount)));
+    setOtherPaymentAmount(formatKrwInput(String(data.otherPaymentAmount)));
   }
 
   function focusFirstError(errors: FieldErrors) {
@@ -180,11 +172,19 @@ export function SalesPaymentStepClient({
         ledgerId: ledger.id,
         ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
-        totalSalesAmount: totalSalesInputRef.current?.value ?? totalSalesAmount,
-        cashAmount: cashAmountInputRef.current?.value ?? cashAmount,
-        cardAmount: cardAmountInputRef.current?.value ?? cardAmount,
+        totalSalesAmount: toRawKrwInputValue(
+          totalSalesInputRef.current?.value ?? totalSalesAmount,
+        ),
+        cashAmount: toRawKrwInputValue(
+          cashAmountInputRef.current?.value ?? cashAmount,
+        ),
+        cardAmount: toRawKrwInputValue(
+          cardAmountInputRef.current?.value ?? cardAmount,
+        ),
         otherPaymentAmount:
-          otherPaymentInputRef.current?.value ?? otherPaymentAmount,
+          toRawKrwInputValue(
+            otherPaymentInputRef.current?.value ?? otherPaymentAmount,
+          ),
       };
 
       const result = await saveAction(payload);
@@ -311,9 +311,7 @@ export function SalesPaymentStepClient({
               value={totalSalesAmount}
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
-                setTotalSalesAmount(
-                  sanitizeAmountInput(event.currentTarget.value),
-                )
+                setTotalSalesAmount(formatKrwInput(event.currentTarget.value))
               }
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(totalSalesError)}
@@ -347,7 +345,7 @@ export function SalesPaymentStepClient({
               value={cashAmount}
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
-                setCashAmount(sanitizeAmountInput(event.currentTarget.value))
+                setCashAmount(formatKrwInput(event.currentTarget.value))
               }
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(cashAmountError)}
@@ -377,7 +375,7 @@ export function SalesPaymentStepClient({
               value={cardAmount}
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
-                setCardAmount(sanitizeAmountInput(event.currentTarget.value))
+                setCardAmount(formatKrwInput(event.currentTarget.value))
               }
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(cardAmountError)}
@@ -410,7 +408,7 @@ export function SalesPaymentStepClient({
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
                 setOtherPaymentAmount(
-                  sanitizeAmountInput(event.currentTarget.value),
+                  formatKrwInput(event.currentTarget.value),
                 )
               }
               className="min-h-11 tabular-nums"
