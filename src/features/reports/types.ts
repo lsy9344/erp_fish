@@ -165,12 +165,97 @@ export type MonthlyAnomalyItem = {
   metricEvidence: DailyMeetingReportMetricEvidence | null;
 };
 
+export type MonthlyClosingKpiMetricEvidenceMap = {
+  salesAmount: DailyMeetingReportMetricEvidence;
+  grossProfit: DailyMeetingReportMetricEvidence;
+  grossMarginRate: DailyMeetingReportMetricEvidence;
+  operatingProfit: DailyMeetingReportMetricEvidence;
+  averageInventory: DailyMeetingReportMetricEvidence;
+  averageSales: DailyMeetingReportMetricEvidence;
+  inventoryToSalesRatio: DailyMeetingReportMetricEvidence;
+  lossTotal: DailyMeetingReportMetricEvidence;
+};
+
+export type MonthlyClosingKpiSummary = {
+  salesAmount: LedgerReviewMetric;
+  grossProfit: LedgerReviewMetric;
+  grossMarginRate: LedgerReviewMetric;
+  operatingProfit: LedgerReviewMetric;
+  lossTotal: LedgerReviewMetric;
+  averageInventory: LedgerReviewMetric;
+  averageSales: LedgerReviewMetric;
+  inventoryToSalesRatio: LedgerReviewMetric;
+  metricEvidence: MonthlyClosingKpiMetricEvidenceMap;
+};
+
+export type MonthlyLossTypeSummary = {
+  lossTypeName: string;
+  quantity: number;
+  amount: number;
+};
+
+export type MonthlyLossMetricEvidenceMap = {
+  totalAmount: DailyMeetingReportMetricEvidence;
+};
+
+export type MonthlyLossSummary = {
+  totalQuantity: number;
+  totalAmount: number;
+  hasRecordedLoss: boolean;
+  metricEvidence: MonthlyLossMetricEvidenceMap;
+  byType: MonthlyLossTypeSummary[];
+};
+
+export type MonthlyInventoryFlowMetricEvidenceMap = {
+  previousAmount: DailyMeetingReportMetricEvidence;
+  purchaseAmount: DailyMeetingReportMetricEvidence;
+  lossAmount: DailyMeetingReportMetricEvidence;
+  currentAmount: DailyMeetingReportMetricEvidence;
+  adjustmentDifferenceAmount: DailyMeetingReportMetricEvidence;
+};
+
+export type MonthlyInventoryFlowSummary = {
+  previousQuantity: LedgerReviewMetric;
+  previousAmount: LedgerReviewMetric;
+  purchaseQuantity: LedgerReviewMetric;
+  purchaseAmount: LedgerReviewMetric;
+  lossQuantity: LedgerReviewMetric;
+  lossAmount: LedgerReviewMetric;
+  currentQuantity: LedgerReviewMetric;
+  currentAmount: LedgerReviewMetric;
+  adjustmentDifferenceQuantity: LedgerReviewMetric;
+  adjustmentDifferenceAmount: LedgerReviewMetric;
+  metricEvidence: MonthlyInventoryFlowMetricEvidenceMap;
+};
+
+export type MonthlyTopRevenueItemSummary = {
+  status: "available" | "needs-review" | "data-insufficient";
+  statusLabel: string;
+  productName: string | null;
+  salesAmount: LedgerReviewMetric;
+  note: string;
+};
+
+export type MonthlyCalculationDay = {
+  dateInput: string;
+  dateLabel: string;
+  inclusion: "included" | "excluded";
+  reason: string;
+  ledgerStatusLabel: string;
+  ledgerDetailHref: string | null;
+};
+
 export type MonthlyClosingAnomalyReportData = {
   monthRange: MonthlyClosingAnomalyReportMonthRange;
   stores: MonthlyClosingAnomalyReportStoreOption[];
   selectedStoreId: string | null;
   selectedStoreName: string | null;
   statusCounts: MonthlyClosingAnomalyStatusCounts;
+  monthlyKpis: MonthlyClosingKpiSummary;
+  monthlyLossSummary: MonthlyLossSummary;
+  monthlyInventoryFlow: MonthlyInventoryFlowSummary;
+  topRevenueItem: MonthlyTopRevenueItemSummary;
+  calculationDays: MonthlyCalculationDay[];
   days: MonthlyClosingAnomalyDay[];
   anomalyItems: MonthlyAnomalyItem[];
   errorMessages: string[];

@@ -71,6 +71,63 @@ export default async function globalSetup() {
   const story14UserIds = story14Users.map((user) => user.id);
 
   if (story14UserIds.length > 0) {
+    const story14Ledgers = await prisma.dailyLedger.findMany({
+      where: {
+        OR: [
+          { createdById: { in: story14UserIds } },
+          { updatedById: { in: story14UserIds } },
+          { submittedById: { in: story14UserIds } },
+          { closedById: { in: story14UserIds } },
+        ],
+      },
+      select: { id: true },
+    });
+    const story14LedgerIds = story14Ledgers.map((ledger) => ledger.id);
+
+    if (story14LedgerIds.length > 0) {
+      const story14CorrectionRecords = await prisma.correctionRecord.findMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+        select: { id: true },
+      });
+      const story14CorrectionRecordIds = story14CorrectionRecords.map(
+        (record) => record.id,
+      );
+
+      await prisma.auditLog.deleteMany({
+        where: {
+          OR: [
+            { targetType: "DailyLedger", targetId: { in: story14LedgerIds } },
+            {
+              targetType: "CorrectionRecord",
+              targetId: { in: story14CorrectionRecordIds },
+            },
+            { actorId: { in: story14UserIds } },
+          ],
+        },
+      });
+      await prisma.correctionRecord.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.ledgerLossItem.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.ledgerInventoryAdjustment.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.ledgerInventoryItem.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.ledgerPurchaseItem.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.ledgerExpense.deleteMany({
+        where: { dailyLedgerId: { in: story14LedgerIds } },
+      });
+      await prisma.dailyLedger.deleteMany({
+        where: { id: { in: story14LedgerIds } },
+      });
+    }
+
     await prisma.auditLog.deleteMany({
       where: {
         OR: [

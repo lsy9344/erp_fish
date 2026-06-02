@@ -38,7 +38,7 @@ export default async function MonthlyClosingAnomalyReportPage({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="월간 요약 리포트"
-          description={`${report.monthRange.monthInput} ${selectedStoreLabel}의 마감 상태와 주요 이상 항목을 봅니다.`}
+          description={`${report.monthRange.monthInput} ${selectedStoreLabel}의 핵심 성과와 손실/재고 흐름, 마감 상태를 봅니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
           <div className="flex flex-wrap items-center gap-2">

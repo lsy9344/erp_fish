@@ -284,9 +284,12 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
   assert.match(pageSource, /getHqMonthlyClosingAnomalyReport\(/);
   assert.match(pageSource, /MonthlyClosingAnomalyReport/);
   assert.match(pageSource, /월간 요약 리포트/);
+  assert.match(pageSource, /핵심 성과와 손실\/재고 흐름/);
   assert.match(pageSource, /month/);
   assert.match(pageSource, /storeId/);
   assert.match(loadingSource, /Skeleton/);
+  assert.match(loadingSource, /월간 핵심 성과/);
+  assert.match(loadingSource, /손실\/재고 흐름/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
   assert.match(componentSource, /DashboardStatusBadge/);
@@ -297,6 +300,11 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
   assert.match(componentSource, /미입력/);
   assert.match(componentSource, /휴무/);
   assert.match(componentSource, /주요 이상/);
+  assert.match(componentSource, /월간 핵심 성과/);
+  assert.match(componentSource, /손실\/재고 흐름/);
+  assert.match(componentSource, /손실 유형별 요약/);
+  assert.match(componentSource, /최고매출품목/);
+  assert.match(componentSource, /계산 포함\/제외 일자/);
   assert.match(componentSource, /장부 상세/);
   assert.match(componentSource, /item\.storeName/);
   assert.match(
@@ -305,6 +313,12 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
   );
   assert.match(componentSource, /data-testid=\{`hq-report-monthly-day-/);
   assert.match(componentSource, /data-testid=\{`hq-report-monthly-anomaly-/);
+  assert.match(componentSource, /data-testid="hq-report-monthly-kpi-sales"/);
+  assert.match(componentSource, /data-testid="hq-report-monthly-loss-summary"/);
+  assert.match(
+    componentSource,
+    /data-testid="hq-report-monthly-inventory-flow"/,
+  );
   assert.match(componentSource, /tabular-nums/);
   assert.match(componentSource, /break-words/);
   assert.doesNotMatch(componentSource, /evaluateRevenueAnomalySignals/);
@@ -354,10 +368,19 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   assert.match(querySource, /evaluateRevenueAnomalySignals/);
   assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
   assert.match(querySource, /buildMonthlyClosingAnomalyReportForTest/);
+  assert.match(querySource, /toReportLedgerCalculationSummary/);
+  assert.match(querySource, /lossTypeName/);
+  assert.match(querySource, /buildMonthlyKpis/);
+  assert.match(querySource, /buildMonthlyInventoryFlow/);
+  assert.match(querySource, /buildMonthlyTopRevenueItemSummary/);
   assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
   assert.match(typeSource, /export type MonthlyClosingAnomalyReportData/);
   assert.match(typeSource, /export type MonthlyClosingAnomalyDay/);
   assert.match(typeSource, /export type MonthlyAnomalyItem/);
+  assert.match(typeSource, /export type MonthlyClosingKpiSummary/);
+  assert.match(typeSource, /export type MonthlyLossSummary/);
+  assert.match(typeSource, /export type MonthlyInventoryFlowSummary/);
+  assert.match(typeSource, /export type MonthlyCalculationDay/);
 
   for (const segments of revalidationFiles) {
     assert.match(
@@ -633,6 +656,546 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
   assert.equal(
     correctionItem.correctionTimelineHref,
     "/app/ledgers/ledger-5#correction-timeline",
+  );
+});
+
+test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow and calculation days", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const metric = (label, value, kind = "money", ledgerId = "ledger-1") => ({
+    label,
+    kind,
+    original: { value, kind },
+    applied: { value, kind },
+    isCorrected: false,
+    status: "original",
+    statusLabel: "원본",
+    unavailableReason: null,
+    ledgerDetailHref: `/app/ledgers/${ledgerId}`,
+    correctionTimelineHref: null,
+  });
+  const dailyMetricEvidence = (ledgerId) => ({
+    salesAmount: metric("매출", 100000, "money", ledgerId),
+    grossMarginRate: metric("이익률", 0.6, "percent", ledgerId),
+    salesDifference: metric("매출 차이", 0, "money", ledgerId),
+    loss: metric("손실", 0, "boolean", ledgerId),
+  });
+  const reviewMetrics = ({
+    totalSales,
+    grossProfit,
+    grossMarginRate,
+    operatingProfit,
+    inventoryAmount,
+  }) => ({
+    totalSales: { value: totalSales },
+    grossProfit: { value: grossProfit },
+    grossMarginRate: { value: grossMarginRate },
+    operatingProfit: { value: operatingProfit },
+    productivity: { value: 0 },
+    inventoryAmount: { value: inventoryAmount },
+  });
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: dailyMetricEvidence("ledger-1"),
+        hasUnappliedCorrections: false,
+        original: reviewMetrics({
+          totalSales: 100000,
+          grossProfit: 60000,
+          grossMarginRate: 0.6,
+          operatingProfit: 50000,
+          inventoryAmount: 30000,
+        }),
+        applied: reviewMetrics({
+          totalSales: 100000,
+          grossProfit: 60000,
+          grossMarginRate: 0.6,
+          operatingProfit: 50000,
+          inventoryAmount: 30000,
+        }),
+        workerCount: 2,
+        originalWorkerCount: 2,
+        lossItems: [
+          {
+            id: "loss-1",
+            productId: "product-1",
+            productName: "광어",
+            lossTypeName: "폐기",
+            quantity: 2,
+            amount: 10000,
+          },
+          {
+            id: "loss-2",
+            productId: "product-2",
+            productName: "우럭",
+            lossTypeName: "",
+            quantity: 1,
+            amount: 4000,
+          },
+        ],
+        inventoryItems: [
+          {
+            id: "inventory-1",
+            productId: "product-1",
+            productName: "광어",
+            previousQuantity: 10,
+            purchasedQuantity: 5,
+            currentQuantity: 12,
+            quantity: 12,
+            unitPrice: 1000,
+            inventoryAmount: null,
+          },
+        ],
+        inventoryAdjustments: [
+          { differenceQuantity: -1, differenceAmount: -1000 },
+        ],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+      {
+        dateInput: "2026-06-02",
+        ledgerId: "ledger-2",
+        status: "IN_REVIEW",
+        signals: [],
+        metricEvidence: dailyMetricEvidence("ledger-2"),
+        hasUnappliedCorrections: false,
+        original: reviewMetrics({
+          totalSales: 100000,
+          grossProfit: 60000,
+          grossMarginRate: 0.6,
+          operatingProfit: 50000,
+          inventoryAmount: 30000,
+        }),
+        applied: reviewMetrics({
+          totalSales: 120000,
+          grossProfit: 80000,
+          grossMarginRate: 2 / 3,
+          operatingProfit: 70000,
+          inventoryAmount: 40000,
+        }),
+        workerCount: 2,
+        originalWorkerCount: 2,
+        lossItems: [
+          {
+            id: "loss-3",
+            productId: "product-3",
+            productName: "연어",
+            lossTypeName: "떨이",
+            quantity: 1,
+            amount: 6000,
+          },
+        ],
+        originalInventoryItems: [
+          {
+            id: "inventory-2",
+            productId: "product-3",
+            productName: "연어",
+            previousQuantity: 20,
+            purchasedQuantity: 0,
+            currentQuantity: 8,
+            quantity: 8,
+            unitPrice: 2000,
+            inventoryAmount: null,
+          },
+        ],
+        inventoryItems: [
+          {
+            id: "inventory-2",
+            productId: "product-3",
+            productName: "연어",
+            previousQuantity: 20,
+            purchasedQuantity: 0,
+            currentQuantity: 10,
+            quantity: 10,
+            unitPrice: 2000,
+            inventoryAmount: null,
+          },
+        ],
+        inventoryAdjustments: [
+          { differenceQuantity: 2, differenceAmount: 4000 },
+        ],
+        appliedCorrectionKeys: new Set([
+          "ledger-2:PAYMENT_FIELD:ledger-2:totalSalesAmount",
+          "ledger-2:LOSS_ROW:loss-3:amount",
+          "ledger-2:INVENTORY_ROW:inventory-2:currentQuantity",
+        ]),
+        unappliedCorrectionKeys: new Set(),
+      },
+      {
+        dateInput: "2026-06-03",
+        ledgerId: "ledger-3",
+        status: "HOLIDAY",
+        signals: [],
+        metricEvidence: dailyMetricEvidence("ledger-3"),
+        hasUnappliedCorrections: false,
+        original: reviewMetrics({
+          totalSales: 999999,
+          grossProfit: 999999,
+          grossMarginRate: 1,
+          operatingProfit: 999999,
+          inventoryAmount: 999999,
+        }),
+        applied: reviewMetrics({
+          totalSales: 999999,
+          grossProfit: 999999,
+          grossMarginRate: 1,
+          operatingProfit: 999999,
+          inventoryAmount: 999999,
+        }),
+        workerCount: 0,
+        lossItems: [
+          {
+            id: "loss-holiday",
+            productId: "product-holiday",
+            productName: "휴무품목",
+            lossTypeName: "폐기",
+            quantity: 99,
+            amount: 999999,
+          },
+        ],
+        inventoryItems: [],
+        inventoryAdjustments: [],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(report.monthlyKpis.salesAmount.value, 220000);
+  assert.equal(report.monthlyKpis.grossProfit.value, 140000);
+  assert.equal(report.monthlyKpis.operatingProfit.value, 120000);
+  assert.equal(report.monthlyKpis.averageInventory.value, 35000);
+  assert.equal(report.monthlyKpis.averageSales.value, 110000);
+  assert.equal(
+    Math.round(report.monthlyKpis.grossMarginRate.value * 1000),
+    636,
+  );
+  assert.equal(
+    Math.round(report.monthlyKpis.inventoryToSalesRatio.value * 1000),
+    318,
+  );
+  assert.equal(
+    report.monthlyKpis.metricEvidence.salesAmount.correctionTimelineHref,
+    "/app/ledgers/ledger-2#correction-timeline",
+  );
+  assert.equal(report.monthlyLossSummary.totalQuantity, 4);
+  assert.equal(report.monthlyLossSummary.totalAmount, 20000);
+  assert.deepEqual(
+    report.monthlyLossSummary.byType.map((item) => [
+      item.lossTypeName,
+      item.quantity,
+      item.amount,
+    ]),
+    [
+      ["폐기", 2, 10000],
+      ["떨이", 1, 6000],
+      ["유형 미지정", 1, 4000],
+    ],
+  );
+  assert.equal(report.monthlyInventoryFlow.previousQuantity.value, 30);
+  assert.equal(report.monthlyInventoryFlow.previousAmount.value, 50000);
+  assert.equal(report.monthlyInventoryFlow.purchaseQuantity.value, 5);
+  assert.equal(report.monthlyInventoryFlow.purchaseAmount.value, 5000);
+  assert.equal(report.monthlyInventoryFlow.lossQuantity.value, 4);
+  assert.equal(report.monthlyInventoryFlow.lossAmount.value, 20000);
+  assert.equal(report.monthlyInventoryFlow.currentQuantity.value, 22);
+  assert.equal(report.monthlyInventoryFlow.currentAmount.value, 32000);
+  assert.equal(
+    report.monthlyInventoryFlow.adjustmentDifferenceQuantity.value,
+    1,
+  );
+  assert.equal(
+    report.monthlyInventoryFlow.adjustmentDifferenceAmount.value,
+    3000,
+  );
+  assert.equal(report.monthlyLossSummary.hasRecordedLoss, true);
+  assert.equal(
+    report.monthlyLossSummary.metricEvidence.totalAmount.correctionTimelineHref,
+    "/app/ledgers/ledger-2#correction-timeline",
+  );
+  assert.equal(
+    report.monthlyInventoryFlow.metricEvidence.currentAmount.ledgerDetailHref,
+    "/app/ledgers/ledger-2",
+  );
+  assert.equal(report.topRevenueItem.status, "needs-review");
+  assert.equal(report.topRevenueItem.statusLabel, "계산 기준 확인 필요");
+  assert.deepEqual(
+    report.calculationDays.map((day) => [
+      day.dateInput,
+      day.inclusion,
+      day.reason,
+    ]),
+    [
+      ["2026-06-01", "included", "장부 집계 포함"],
+      ["2026-06-02", "included", "장부 집계 포함"],
+      ["2026-06-03", "excluded", "휴무일"],
+      ["2026-06-04", "excluded", "미입력"],
+    ],
+  );
+});
+
+test("HQ monthly closing anomaly report keeps zero amount losses visible", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const metric = {
+    label: "손실",
+    kind: "boolean",
+    original: { value: 0, kind: "boolean" },
+    applied: { value: 0, kind: "boolean" },
+    isCorrected: false,
+    status: "zero",
+    statusLabel: "0",
+    unavailableReason: null,
+    ledgerDetailHref: "/app/ledgers/ledger-zero-loss",
+    correctionTimelineHref: null,
+  };
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-zero-loss",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {
+          salesAmount: metric,
+          grossMarginRate: metric,
+          salesDifference: metric,
+          loss: metric,
+        },
+        hasUnappliedCorrections: false,
+        original: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 1000 },
+          grossMarginRate: { value: 1 },
+          operatingProfit: { value: 1000 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: 1000 },
+        },
+        applied: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 1000 },
+          grossMarginRate: { value: 1 },
+          operatingProfit: { value: 1000 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: 1000 },
+        },
+        workerCount: 1,
+        lossItems: [
+          {
+            id: "loss-zero",
+            productId: "product-zero",
+            productName: "광어",
+            lossTypeName: "폐기",
+            quantity: 3,
+            amount: 0,
+          },
+        ],
+        inventoryItems: [],
+        inventoryAdjustments: [],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(report.monthlyLossSummary.totalQuantity, 3);
+  assert.equal(report.monthlyLossSummary.totalAmount, 0);
+  assert.equal(report.monthlyLossSummary.hasRecordedLoss, true);
+});
+
+test("HQ monthly closing anomaly report marks inventory flow unavailable instead of zeroing invalid quantities", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const metric = {
+    label: "매출",
+    kind: "money",
+    original: { value: 1000, kind: "money" },
+    applied: { value: 1000, kind: "money" },
+    isCorrected: false,
+    status: "original",
+    statusLabel: "원본",
+    unavailableReason: null,
+    ledgerDetailHref: "/app/ledgers/ledger-invalid-inventory",
+    correctionTimelineHref: null,
+  };
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-invalid-inventory",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {
+          salesAmount: metric,
+          grossMarginRate: metric,
+          salesDifference: metric,
+          loss: metric,
+        },
+        hasUnappliedCorrections: false,
+        original: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 1000 },
+          grossMarginRate: { value: 1 },
+          operatingProfit: { value: 1000 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        applied: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 1000 },
+          grossMarginRate: { value: 1 },
+          operatingProfit: { value: 1000 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        workerCount: 1,
+        lossItems: [],
+        inventoryItems: [
+          {
+            id: "inventory-invalid",
+            productId: "product-invalid",
+            productName: "광어",
+            previousQuantity: 10,
+            purchasedQuantity: 5,
+            currentQuantity: null,
+            quantity: null,
+            unitPrice: 1000,
+            inventoryAmount: null,
+          },
+        ],
+        inventoryAdjustments: [],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(report.monthlyInventoryFlow.currentQuantity.value, null);
+  assert.equal(
+    report.monthlyInventoryFlow.currentQuantity.unavailableReason,
+    "계산 불가",
+  );
+  assert.equal(report.monthlyInventoryFlow.currentAmount.value, null);
+  assert.equal(
+    report.monthlyInventoryFlow.currentAmount.unavailableReason,
+    "계산 불가",
+  );
+  assert.deepEqual(
+    report.calculationDays.map((day) => [
+      day.dateInput,
+      day.inclusion,
+      day.reason,
+    ]),
+    [["2026-06-01", "excluded", "재고 흐름 계산 불가"]],
+  );
+});
+
+test("HQ monthly closing anomaly report marks inventory ratio unavailable when average sales is zero", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const baseEvidence = {
+    label: "매출",
+    kind: "money",
+    original: { value: 0, kind: "money" },
+    applied: { value: 0, kind: "money" },
+    isCorrected: false,
+    status: "zero",
+    statusLabel: "0",
+    unavailableReason: null,
+    ledgerDetailHref: "/app/ledgers/ledger-zero",
+    correctionTimelineHref: null,
+  };
+  const metricEvidence = {
+    salesAmount: baseEvidence,
+    grossMarginRate: { ...baseEvidence, label: "이익률", kind: "percent" },
+    salesDifference: { ...baseEvidence, label: "매출 차이" },
+    loss: { ...baseEvidence, label: "손실", kind: "boolean" },
+  };
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-zero",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence,
+        hasUnappliedCorrections: false,
+        original: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: 0 },
+          inventoryAmount: { value: 10000 },
+        },
+        applied: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: 0 },
+          inventoryAmount: { value: 10000 },
+        },
+        workerCount: 1,
+        lossItems: [],
+        inventoryItems: [],
+        inventoryAdjustments: [],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(report.monthlyKpis.averageSales.value, 0);
+  assert.equal(report.monthlyKpis.inventoryToSalesRatio.value, null);
+  assert.equal(
+    report.monthlyKpis.inventoryToSalesRatio.unavailableReason,
+    "계산 불가",
   );
 });
 

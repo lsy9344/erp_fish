@@ -22,7 +22,7 @@ export default function MonthlyClosingAnomalyReportLoading() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="월간 요약 리포트"
-          description="선택 월의 지점별 마감과 이상 항목을 불러오는 중입니다."
+          description="선택 월의 핵심 성과와 손실/재고 흐름을 불러오는 중입니다."
         />
         <div className="flex flex-wrap items-end gap-2">
           <Skeleton className="h-9 w-36" />
@@ -30,6 +30,48 @@ export default function MonthlyClosingAnomalyReportLoading() {
           <Skeleton className="h-8 w-14" />
         </div>
       </div>
+
+      <section className="space-y-3" aria-label="월간 핵심 성과 불러오기">
+        <div className="flex items-center justify-between gap-3">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-6 w-24" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 8 }, (_, index) => (
+            <div
+              key={`kpi-${index}`}
+              className="bg-background rounded-lg border p-4"
+            >
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="mt-3 h-8 w-32" />
+              <Skeleton className="mt-2 h-3 w-20" />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3" aria-label="손실/재고 흐름 불러오기">
+        <Skeleton className="h-6 w-32" />
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div className="bg-background rounded-lg border p-4">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-3 h-5 w-40" />
+            <div className="mt-4 grid gap-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </div>
+          <div className="bg-background rounded-lg border p-4">
+            <Skeleton className="h-5 w-28" />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 5 }, (_, index) => (
+                <Skeleton key={`flow-${index}`} className="h-16 w-full" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"

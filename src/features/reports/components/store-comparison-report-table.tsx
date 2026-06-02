@@ -245,7 +245,7 @@ function StatusSummary({
     ["휴무", row.statusCounts.holidayCount],
   ].filter(([, count]) => Number(count) > 0);
 
-  if (items.length === 0) {
+  if (items.length === 0 && !row.hasUnappliedCorrections) {
     return <span className="text-muted-foreground text-sm">데이터 없음</span>;
   }
 
@@ -256,6 +256,9 @@ function StatusSummary({
           {label} {Number(count).toLocaleString("ko-KR")}일
         </Badge>
       ))}
+      {row.hasUnappliedCorrections ? (
+        <Badge variant="outline">정정 확인 필요</Badge>
+      ) : null}
     </div>
   );
 }

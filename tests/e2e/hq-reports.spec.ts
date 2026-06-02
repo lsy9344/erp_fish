@@ -11,6 +11,14 @@ const STORE_IDS = {
   holiday: "store-story-5-1-holiday",
 } as const;
 const STORY_STORE_IDS = Object.values(STORE_IDS);
+const PRODUCT_IDS = {
+  fish: "product-story-5-5-fish",
+} as const;
+const STORY_PRODUCT_IDS = Object.values(PRODUCT_IDS);
+const LOSS_CODE_IDS = {
+  waste: "loss-code-story-5-5-waste",
+} as const;
+const STORY_LOSS_CODE_IDS = Object.values(LOSS_CODE_IDS);
 const STORY_MARKER = "story-5-1-test";
 const HISTORICAL_REPORT_DATE = new Date(Date.UTC(2026, 4, 31));
 
@@ -67,6 +75,26 @@ function getCurrentMonthInput() {
 async function seedStoryFiveOneData() {
   const actorId = await getHeadquartersUserId();
 
+  await prisma.product.create({
+    data: {
+      id: PRODUCT_IDS.fish,
+      name: "스토리5-5 광어",
+      category: "선어",
+      spec: "1kg",
+      defaultUnitPrice: 10000,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerInputCode.create({
+    data: {
+      id: LOSS_CODE_IDS.waste,
+      group: "LOSS_TYPE",
+      name: "스토리5-5 폐기",
+      displayOrder: 955,
+      updatedById: actorId,
+    },
+  });
+
   await prisma.store.createMany({
     data: [
       {
@@ -110,6 +138,62 @@ async function seedStoryFiveOneData() {
     cardAmount: 0,
     otherPaymentAmount: 0,
     workerCount: 2,
+  });
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: closedLedger.id,
+      productId: PRODUCT_IDS.fish,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      previousQuantity: 10,
+      purchasedQuantity: 5,
+      currentQuantity: 12,
+      quantity: 12,
+      inventoryAmount: 120000,
+      isModified: true,
+      carryoverSource: "MANUAL",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerInventoryAdjustment.create({
+    data: {
+      dailyLedgerId: closedLedger.id,
+      productId: PRODUCT_IDS.fish,
+      ledgerInventoryItemId: inventoryItem.id,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      beforeQuantity: 14,
+      beforeAmount: 140000,
+      afterQuantity: 12,
+      afterAmount: 120000,
+      differenceQuantity: -2,
+      differenceAmount: -20000,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: closedLedger.id,
+      productId: PRODUCT_IDS.fish,
+      ledgerInputCodeId: LOSS_CODE_IDS.waste,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      lossTypeName: "스토리5-5 폐기",
+      quantity: 1,
+      amount: 10000,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
   });
   const holidayLedger = await seedLedger({
     actorId,
@@ -258,6 +342,12 @@ async function cleanupStoryFiveOneData() {
 
   await prisma.store.deleteMany({
     where: { id: { in: STORY_STORE_IDS } },
+  });
+  await prisma.ledgerInputCode.deleteMany({
+    where: { id: { in: STORY_LOSS_CODE_IDS } },
+  });
+  await prisma.product.deleteMany({
+    where: { id: { in: STORY_PRODUCT_IDS } },
   });
 }
 
@@ -420,6 +510,28 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   await expect(page).toHaveURL(new RegExp(`month=${currentMonth}`));
   await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.closed}`));
   await expect(page.getByLabel("지점")).toHaveValue(STORE_IDS.closed);
+  const kpiSummary = page.getByLabel("월간 핵심 성과");
+  await expect(kpiSummary).toContainText("월간 매출");
+  const kpiSales = page.getByTestId("hq-report-monthly-kpi-sales");
+  await expect(kpiSales).toContainText("₩45,000");
+  await expect(kpiSales).toContainText("정정 반영");
+
+  const lossSummary = page.getByTestId("hq-report-monthly-loss-summary");
+  await expect(lossSummary).toContainText("손실 유형별 요약");
+  await expect(lossSummary).toContainText("스토리5-5 폐기");
+  await expect(lossSummary).toContainText("₩10,000");
+
+  const inventoryFlow = page.getByTestId("hq-report-monthly-inventory-flow");
+  await expect(inventoryFlow).toContainText("전일재고");
+  await expect(inventoryFlow).toContainText("매입");
+  await expect(inventoryFlow).toContainText("당일재고");
+  await expect(inventoryFlow).toContainText("조정 차이");
+
+  await expect(page.getByLabel("최고매출품목")).toContainText(
+    "계산 기준 확인 필요",
+  );
+  await expect(page.getByLabel("계산 포함/제외 일자")).toContainText("포함");
+
   const statusSummary = page.getByLabel("월간 마감 상태 요약");
   await expect(statusSummary).toContainText("본사마감");
   await expect(statusSummary).toContainText("1일");
@@ -482,6 +594,14 @@ test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목�
   await expect(
     page.getByRole("heading", { name: "월간 요약 리포트" }),
   ).toBeVisible();
+  await expect(page.getByLabel("월간 핵심 성과")).toBeVisible();
+  await expect(page.getByTestId("hq-report-monthly-loss-summary")).toBeVisible();
+  await expect(
+    page.getByTestId("hq-report-monthly-inventory-flow"),
+  ).toBeVisible();
+  await expect(page.getByLabel("최고매출품목")).toContainText(
+    "계산 기준 확인 필요",
+  );
 
   const mobileDay = page.locator(
     `[data-testid="hq-report-monthly-mobile-day-${todayInput}"]`,
@@ -495,6 +615,14 @@ test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목�
     .first();
   await expect(anomalyItem).toBeVisible();
   await expect(anomalyItem).toContainText("정정 타임라인");
+
+  const viewportWidths = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
+    viewportWidths.clientWidth + 1,
+  );
 });
 
 test("지점장은 일별 아침 회의 리포트에 접근할 수 없다", async ({ page }) => {
@@ -519,7 +647,9 @@ test("지점장은 기간 비교 리포트에 접근할 수 없다", async ({ pa
 
 test("지점장은 월간 리포트에 접근할 수 없다", async ({ page }) => {
   await login(page, "manager@example.com");
-  await page.goto("/app/reports/monthly");
+  await page.goto(
+    `/app/reports/monthly?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
 
   await expect(
     page.getByRole("heading", { name: "접근 권한이 없습니다." }),

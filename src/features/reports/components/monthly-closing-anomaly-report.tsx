@@ -49,9 +49,236 @@ export function MonthlyClosingAnomalyReport({
 
   return (
     <section className="space-y-5" aria-label="월간 요약 리포트">
+      <MonthlyKpiSummary report={report} />
+      <LossInventoryFlowSummary report={report} />
+      <TopRevenueItemSummary report={report} />
       <StatusSummary report={report} />
+      <CalculationDaySummary report={report} />
       <DayStatusTable days={report.days} />
       <AnomalyList items={report.anomalyItems} />
+    </section>
+  );
+}
+
+function MonthlyKpiSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  const kpis = report.monthlyKpis;
+  const remainingItems = [
+    ["매출이익", kpis.metricEvidence.grossProfit],
+    ["이익률", kpis.metricEvidence.grossMarginRate],
+    ["영업이익", kpis.metricEvidence.operatingProfit],
+    ["손실 합계", kpis.metricEvidence.lossTotal],
+    ["평균재고", kpis.metricEvidence.averageInventory],
+    ["평균매출", kpis.metricEvidence.averageSales],
+    ["매출대비 재고비율", kpis.metricEvidence.inventoryToSalesRatio],
+  ] as const;
+
+  return (
+    <section className="space-y-3" aria-label="월간 핵심 성과">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-normal">
+          월간 핵심 성과
+        </h2>
+        {report.selectedStoreName ? (
+          <Badge variant="outline" className="max-w-full break-words">
+            {report.selectedStoreName}
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div
+          data-testid="hq-report-monthly-kpi-sales"
+          className="bg-background min-w-0 rounded-lg border p-4"
+        >
+          <p className="text-muted-foreground text-sm break-words">월간 매출</p>
+          <div className="mt-2 tabular-nums">
+            <MetricValueWithEvidence
+              evidence={kpis.metricEvidence.salesAmount}
+              align="left"
+            />
+          </div>
+        </div>
+        {remainingItems.map(([label, evidence]) => (
+          <div key={label} className="bg-background min-w-0 rounded-lg border p-4">
+            <p className="text-muted-foreground text-sm break-words">{label}</p>
+            <div className="mt-2 tabular-nums">
+              <MetricValueWithEvidence evidence={evidence} align="left" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LossInventoryFlowSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  const loss = report.monthlyLossSummary;
+  const flow = report.monthlyInventoryFlow;
+  const lossSignal =
+    loss.hasRecordedLoss
+      ? {
+          id: "monthly-loss-recorded",
+          label: "손실 기록 있음",
+          severity: "warning" as const,
+          detail: `${loss.totalQuantity.toLocaleString("ko-KR")}개 / ${krwFormatter.format(loss.totalAmount)}`,
+        }
+      : {
+          id: "monthly-loss-none",
+          label: "손실 기록 없음",
+          severity: "info" as const,
+          detail: "선택 월의 집계 대상 장부에 손실 금액이 없습니다.",
+        };
+
+  return (
+    <section className="space-y-3" aria-label="손실/재고 흐름">
+      <h2 className="text-lg font-semibold tracking-normal">
+        손실/재고 흐름
+      </h2>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <section
+          data-testid="hq-report-monthly-loss-summary"
+          className="bg-background min-w-0 space-y-4 rounded-lg border p-4"
+          aria-label="손실 유형별 요약"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="font-semibold tracking-normal">
+                손실 유형별 요약
+              </h3>
+              <p className="text-muted-foreground mt-1 text-sm break-words tabular-nums">
+                {loss.totalQuantity.toLocaleString("ko-KR")}개
+              </p>
+              <div className="mt-1 tabular-nums">
+                <MetricValueWithEvidence
+                  evidence={loss.metricEvidence.totalAmount}
+                  align="left"
+                />
+              </div>
+            </div>
+            <DashboardSignalSummary signals={[lossSignal]} showDetails />
+          </div>
+
+          {loss.byType.length === 0 ? (
+            <p className="text-muted-foreground text-sm break-words">
+              집계 대상 손실 항목이 없습니다.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[420px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>유형</TableHead>
+                    <TableHead className="text-right">수량</TableHead>
+                    <TableHead className="text-right">금액</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loss.byType.map((item) => (
+                    <TableRow key={item.lossTypeName}>
+                      <TableCell className="break-words">
+                        {item.lossTypeName}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {item.quantity.toLocaleString("ko-KR")}개
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {krwFormatter.format(item.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </section>
+
+        <section
+          data-testid="hq-report-monthly-inventory-flow"
+          className="bg-background min-w-0 space-y-4 rounded-lg border p-4"
+          aria-label="재고 흐름 요약"
+        >
+          <h3 className="font-semibold tracking-normal">재고 흐름 요약</h3>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <FlowMetric
+              label="전일재고"
+              quantity={flow.previousQuantity}
+              evidence={flow.metricEvidence.previousAmount}
+            />
+            <FlowMetric
+              label="매입"
+              quantity={flow.purchaseQuantity}
+              evidence={flow.metricEvidence.purchaseAmount}
+            />
+            <FlowMetric
+              label="손실"
+              quantity={flow.lossQuantity}
+              evidence={flow.metricEvidence.lossAmount}
+            />
+            <FlowMetric
+              label="당일재고"
+              quantity={flow.currentQuantity}
+              evidence={flow.metricEvidence.currentAmount}
+            />
+            <FlowMetric
+              label="조정 차이"
+              quantity={flow.adjustmentDifferenceQuantity}
+              evidence={flow.metricEvidence.adjustmentDifferenceAmount}
+              signed
+            />
+          </dl>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function TopRevenueItemSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  const topItem = report.topRevenueItem;
+
+  return (
+    <section
+      className="bg-background min-w-0 rounded-lg border p-4"
+      aria-label="최고매출품목"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-normal">
+            최고매출품목
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm break-words">
+            {topItem.note}
+          </p>
+        </div>
+        <Badge variant="outline" className="max-w-full break-words">
+          {topItem.statusLabel}
+        </Badge>
+      </div>
+      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <dt className="text-muted-foreground text-sm">품목</dt>
+          <dd className="font-medium break-words">
+            {topItem.productName ?? topItem.statusLabel}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-muted-foreground text-sm">매출액</dt>
+          <dd className="font-medium break-words tabular-nums">
+            {formatMetricValue(topItem.salesAmount, "money")}
+          </dd>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -78,6 +305,73 @@ function StatusSummary({ report }: { report: MonthlyClosingAnomalyReportData }) 
           </p>
         </div>
       ))}
+    </section>
+  );
+}
+
+function CalculationDaySummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  if (report.calculationDays.length === 0) {
+    return null;
+  }
+
+  const includedCount = report.calculationDays.filter(
+    (day) => day.inclusion === "included",
+  ).length;
+  const excludedCount = report.calculationDays.length - includedCount;
+
+  return (
+    <section className="space-y-3" aria-label="계산 포함/제외 일자">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-normal">
+          계산 포함/제외 일자
+        </h2>
+        <Badge variant="outline">
+          포함 {includedCount.toLocaleString("ko-KR")}일 · 제외{" "}
+          {excludedCount.toLocaleString("ko-KR")}일
+        </Badge>
+      </div>
+      <div className="bg-background overflow-x-auto rounded-lg border">
+        <Table className="min-w-[640px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>날짜</TableHead>
+              <TableHead>포함 여부</TableHead>
+              <TableHead>상태</TableHead>
+              <TableHead>사유</TableHead>
+              <TableHead>상세</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {report.calculationDays.map((day) => (
+              <TableRow key={day.dateInput}>
+                <TableCell className="font-medium tabular-nums">
+                  {day.dateLabel}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      day.inclusion === "included" ? "outline" : "secondary"
+                    }
+                  >
+                    {day.inclusion === "included" ? "포함" : "제외"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="break-words">
+                  {day.ledgerStatusLabel}
+                </TableCell>
+                <TableCell className="break-words">{day.reason}</TableCell>
+                <TableCell>
+                  <DetailLink href={day.ledgerDetailHref} compact />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </section>
   );
 }
@@ -377,6 +671,54 @@ function DetailLink({
       <Link href={href}>장부 상세</Link>
     </Button>
   );
+}
+
+function FlowMetric({
+  label,
+  quantity,
+  evidence,
+  signed = false,
+}: {
+  label: string;
+  quantity: MonthlyClosingAnomalyReportData["monthlyInventoryFlow"]["currentQuantity"];
+  evidence: DailyMeetingReportMetricEvidence;
+  signed?: boolean;
+}) {
+  return (
+    <div className="bg-muted/40 min-w-0 rounded-md p-3">
+      <dt className="text-muted-foreground text-sm break-words">{label}</dt>
+      <dd className="mt-1 font-medium break-words tabular-nums">
+        {formatQuantity(quantity, signed)}
+      </dd>
+      <dd className="text-muted-foreground text-sm break-words tabular-nums">
+        <MetricValueWithEvidence evidence={evidence} align="left" />
+      </dd>
+    </div>
+  );
+}
+
+function formatQuantity(
+  value: MonthlyClosingAnomalyReportData["monthlyInventoryFlow"]["currentQuantity"],
+  signed = false,
+) {
+  if (value.value === null) {
+    return value.unavailableReason ?? "계산 불가";
+  }
+
+  const prefix = signed && value.value > 0 ? "+" : "";
+
+  return `${prefix}${value.value.toLocaleString("ko-KR")}개`;
+}
+
+function formatMetricValue(
+  value: MonthlyClosingAnomalyReportData["topRevenueItem"]["salesAmount"],
+  kind: DailyMeetingReportMetricValue["kind"],
+) {
+  if (value.value === null) {
+    return value.unavailableReason ?? "계산 불가";
+  }
+
+  return formatEvidenceValue({ ...value, kind });
 }
 
 function formatEvidenceValue(value: DailyMeetingReportMetricValue) {
