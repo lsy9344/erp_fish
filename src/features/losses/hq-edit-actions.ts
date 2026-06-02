@@ -77,6 +77,7 @@ function revalidateHqLossPaths(ledgerId: string) {
   revalidatePath("/app/store-entry");
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/store-entry/losses");
+  revalidatePath("/app/reports/daily");
 }
 
 function mapHqActionError(): ActionResult<never> {

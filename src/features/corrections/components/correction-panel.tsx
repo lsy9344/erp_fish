@@ -136,6 +136,7 @@ export function CorrectionPanel({
 
   return (
     <section
+      id="correction-timeline"
       className="rounded-lg border p-4"
       aria-labelledby="correction-title"
     >

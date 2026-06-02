@@ -64,6 +64,7 @@ function mapStoreActionError(): ActionResult<never> {
 function revalidateInventoryPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 export async function saveLedgerInventoryItems(

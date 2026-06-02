@@ -27,6 +27,7 @@ export function CorrectionReadonlySummary({
 
   return (
     <section
+      id="correction-timeline"
       className="rounded-lg border p-4"
       aria-labelledby="readonly-corrections-title"
     >
@@ -35,7 +36,8 @@ export function CorrectionReadonlySummary({
           본사 정정 이력
         </h2>
         <p className="text-muted-foreground text-sm">
-          원본 값은 수정할 수 없으며, 최신 정정 반영값과 이력을 읽기 전용으로 확인합니다.
+          원본 값은 수정할 수 없으며, 최신 정정 반영값과 이력을 읽기 전용으로
+          확인합니다.
         </p>
       </div>
 
@@ -55,11 +57,15 @@ export function CorrectionReadonlySummary({
             {records.map((record) => (
               <TableRow key={record.id}>
                 <TableCell>{record.targetLabel}</TableCell>
-                <TableCell>{formatCorrectionValue(record.originalValue)}</TableCell>
+                <TableCell>
+                  {formatCorrectionValue(record.originalValue)}
+                </TableCell>
                 <TableCell>
                   {formatCorrectionValue(record.previousAppliedValue)}
                 </TableCell>
-                <TableCell>{formatCorrectionValue(record.correctedValue)}</TableCell>
+                <TableCell>
+                  {formatCorrectionValue(record.correctedValue)}
+                </TableCell>
                 <TableCell>{record.reason}</TableCell>
                 <TableCell>
                   {dateTimeFormatter.format(new Date(record.createdAt))} ·{" "}

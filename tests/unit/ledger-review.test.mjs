@@ -54,6 +54,8 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
         inventoryAmount: 8_000,
       },
     ],
+    inventoryAdjustments: [],
+    lossItems: [],
   });
 
   assert.deepEqual(summary.totalSales, { value: 100_000 });
@@ -64,10 +66,87 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
   assert.deepEqual(summary.productivity, { value: 25_000 });
   assert.deepEqual(summary.inventoryAmount, { value: 16_000 });
   assert.deepEqual(summary.paymentDifference, { value: 2_000 });
+  assert.deepEqual(summary.salesDifference, { value: 91_000 });
+});
+
+test("ledger review summary helper does not calculate sales difference without adjustment and loss context", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 100_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 2,
+    expenseTotal: 0,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+      },
+    ],
+  });
+
   assert.deepEqual(summary.salesDifference, {
     value: null,
     unavailableReason: "계산 기준 확인 필요",
   });
+});
+
+test("ledger review summary helper calculates sales difference with loss and inventory adjustment amounts", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 100_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 2,
+    expenseTotal: 0,
+    inventoryItems: [
+      {
+        previousQuantity: 20,
+        purchasedQuantity: 0,
+        currentQuantity: 10,
+        quantity: 10,
+        unitPrice: 5_000,
+        inventoryAmount: 50_000,
+      },
+    ],
+    inventoryAdjustments: [
+      {
+        differenceAmount: -10_000,
+      },
+    ],
+    lossItems: [
+      {
+        amount: 5_000,
+      },
+    ],
+  });
+
+  assert.deepEqual(summary.costOfGoodsSold, { value: 50_000 });
+  assert.deepEqual(summary.salesDifference, { value: 65_000 });
 });
 
 test("ledger review summary helper does not expose divide by zero or hidden inventory calculations", async () => {
@@ -167,6 +246,8 @@ test("ledger review summary helper requires saved inventory and uses one quantit
         inventoryAmount: 10_000,
       },
     ],
+    inventoryAdjustments: [],
+    lossItems: [],
   });
 
   assert.deepEqual(adjustedSummary.costOfGoodsSold, { value: 7_000 });

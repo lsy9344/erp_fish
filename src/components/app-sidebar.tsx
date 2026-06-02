@@ -23,7 +23,7 @@ const navigationItems = [
   { label: "홈", href: "/app/dashboard", icon: HomeIcon },
   {
     label: "리포트",
-    href: "/app/master-data/history",
+    href: "/app/reports/daily",
     icon: TrendingUpIcon,
   },
   {

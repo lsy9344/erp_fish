@@ -47,6 +47,7 @@ function parseCloseLedgerInput(
 function revalidateHqLedgerPaths(ledgerId: string) {
   revalidatePath(`/app/ledgers/${ledgerId}`);
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 function revalidateHqLedgerPathsBestEffort(ledgerId: string) {

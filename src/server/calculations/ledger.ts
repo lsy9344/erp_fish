@@ -78,6 +78,10 @@ export type LedgerReviewLossInput = {
   amount: number;
 };
 
+export type LedgerReviewInventoryAdjustmentInput = {
+  differenceAmount: number;
+};
+
 export type LedgerReviewSummaryInput = {
   totalSalesAmount: number;
   cashAmount: number;
@@ -86,6 +90,8 @@ export type LedgerReviewSummaryInput = {
   workerCount: number | null;
   expenseTotal: number;
   inventoryItems: LedgerReviewInventoryInput[];
+  inventoryAdjustments?: LedgerReviewInventoryAdjustmentInput[];
+  lossItems?: Pick<LedgerReviewLossInput, "amount">[];
 };
 
 export type LedgerReviewCorrectionValue = {
@@ -111,6 +117,9 @@ export type LedgerReviewCorrectionOverlayResult = {
   expenseItems: LedgerReviewExpenseInput[];
   lossItems: LedgerReviewLossInput[];
   appliedInventoryItemIds: Set<string>;
+  appliedLossProductIds: Set<string>;
+  appliedCorrectionKeys: Set<string>;
+  unappliedCorrectionKeys: Set<string>;
   correctionState: LedgerReviewCorrectionState;
 };
 
@@ -186,6 +195,45 @@ function calculateInventoryTotal(items: LedgerReviewInventoryInput[]) {
   return total;
 }
 
+function calculateLossTotal(
+  items: Pick<LedgerReviewLossInput, "amount">[] = [],
+) {
+  return items.reduce(
+    (sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0),
+    0,
+  );
+}
+
+function calculateInventoryAdjustmentTotal(
+  items: LedgerReviewInventoryAdjustmentInput[] = [],
+) {
+  return items.reduce(
+    (sum, item) =>
+      sum +
+      (Number.isFinite(item.differenceAmount) ? item.differenceAmount : 0),
+    0,
+  );
+}
+
+function calculateSalesDifference({
+  totalSalesAmount,
+  costOfGoodsSold,
+  inventoryAdjustments,
+  lossItems,
+}: {
+  totalSalesAmount: number;
+  costOfGoodsSold: number;
+  inventoryAdjustments: LedgerReviewInventoryAdjustmentInput[];
+  lossItems: Pick<LedgerReviewLossInput, "amount">[];
+}) {
+  const productSalesAmount =
+    costOfGoodsSold +
+    calculateInventoryAdjustmentTotal(inventoryAdjustments) -
+    calculateLossTotal(lossItems);
+
+  return totalSalesAmount - productSalesAmount;
+}
+
 export function calculateLedgerReviewSummary({
   totalSalesAmount,
   cashAmount,
@@ -194,9 +242,22 @@ export function calculateLedgerReviewSummary({
   workerCount,
   expenseTotal,
   inventoryItems,
+  inventoryAdjustments,
+  lossItems,
 }: LedgerReviewSummaryInput): LedgerReviewSummary {
   const costOfGoodsSold = calculateCostOfGoodsSold(inventoryItems);
   const inventoryAmount = calculateInventoryTotal(inventoryItems);
+  const hasSalesDifferenceContext =
+    inventoryAdjustments !== undefined && lossItems !== undefined;
+  const salesDifference =
+    costOfGoodsSold === null || !hasSalesDifferenceContext
+      ? null
+      : calculateSalesDifference({
+          totalSalesAmount,
+          costOfGoodsSold,
+          inventoryAdjustments,
+          lossItems,
+        });
   const grossProfit =
     costOfGoodsSold === null ? null : totalSalesAmount - costOfGoodsSold;
   const grossMarginRate =
@@ -242,7 +303,12 @@ export function calculateLedgerReviewSummary({
         otherPaymentAmount,
       ),
     ),
-    salesDifference: unavailable("계산 기준 확인 필요"),
+    salesDifference:
+      !hasSalesDifferenceContext
+        ? unavailable("계산 기준 확인 필요")
+        : salesDifference === null
+          ? unavailable("계산 불가")
+        : available(salesDifference),
   };
 }
 
@@ -281,8 +347,17 @@ export function applyCorrectionValuesToLedgerReviewInput({
   let appliedCorrectionCount = 0;
   let hasUnappliedCorrections = false;
   const appliedInventoryItemIds = new Set<string>();
+  const appliedLossProductIds = new Set<string>();
+  const appliedCorrectionKeys = new Set<string>();
+  const unappliedCorrectionKeys = new Set<string>();
 
   for (const correction of corrections) {
+    const correctionKey = [
+      ledgerId,
+      correction.targetType,
+      correction.targetId,
+      correction.fieldKey,
+    ].join(":");
     const result = applySingleCorrection({
       ledgerId,
       correction,
@@ -294,11 +369,23 @@ export function applyCorrectionValuesToLedgerReviewInput({
 
     if (result === "applied") {
       appliedCorrectionCount += 1;
+      appliedCorrectionKeys.add(correctionKey);
       if (correction.targetType === "INVENTORY_ROW") {
         appliedInventoryItemIds.add(correction.targetId);
       }
+      if (
+        correction.targetType === "LOSS_ROW" &&
+        correction.fieldKey === "quantity"
+      ) {
+        const lossItem = lossById.get(correction.targetId);
+
+        if (lossItem) {
+          appliedLossProductIds.add(lossItem.productId);
+        }
+      }
     } else {
       hasUnappliedCorrections = true;
+      unappliedCorrectionKeys.add(correctionKey);
     }
   }
 
@@ -313,6 +400,9 @@ export function applyCorrectionValuesToLedgerReviewInput({
     expenseItems: correctedExpenseItems,
     lossItems: correctedLossItems,
     appliedInventoryItemIds,
+    appliedLossProductIds,
+    appliedCorrectionKeys,
+    unappliedCorrectionKeys,
     correctionState: {
       appliedCorrectionCount,
       hasAppliedCorrections: appliedCorrectionCount > 0,
@@ -369,7 +459,10 @@ function applySingleCorrection({
       return "unapplied";
     }
 
-    const value = getCorrectionNumber(correction.latestAppliedValue, "quantity");
+    const value = getCorrectionNumber(
+      correction.latestAppliedValue,
+      "quantity",
+    );
 
     if (value === null) {
       return "unapplied";

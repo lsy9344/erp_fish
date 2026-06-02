@@ -59,6 +59,7 @@ function parseAnomalyThresholdInput(
 function revalidateAnomalyThresholdPaths() {
   revalidatePath("/app/master-data/anomaly-thresholds");
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 function isSameAnomalyThreshold(

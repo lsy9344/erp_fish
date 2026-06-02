@@ -7,7 +7,11 @@ import {
   type LedgerReviewInventoryInput,
   type LedgerReviewMetric,
 } from "../../server/calculations/ledger.ts";
-import { calculateInventoryAmount } from "../../server/calculations/inventory.ts";
+import {
+  calculateInventoryAdjustment,
+  calculateInventoryAmount,
+  calculateSystemInventoryQuantity,
+} from "../../server/calculations/inventory.ts";
 import type {
   AnomalyThresholdSignalSettings,
   evaluateInventoryLossAnomalySignals as evaluateInventoryLossAnomalySignalsFunction,
@@ -68,10 +72,13 @@ type DashboardLedgerRecord = {
     amount: number;
   }[];
   ledgerInventoryAdjustments: {
+    productId: string;
     ledgerInventoryItemId: string | null;
     productName: string;
     beforeQuantity: number;
     beforeAmount: number;
+    afterQuantity: number;
+    afterAmount: number;
     unitPrice: number;
     differenceQuantity: number;
     differenceAmount: number;
@@ -186,9 +193,8 @@ export async function getHqDashboardRows({
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("./threshold-queries.ts");
-  const { getLatestCorrectionValuesForLedgers } = await import(
-    "../corrections/queries.ts"
-  );
+  const { getLatestCorrectionValuesForLedgers } =
+    await import("../corrections/queries.ts");
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [stores, thresholdSettings] = await Promise.all([
@@ -249,10 +255,13 @@ export async function getHqDashboardRows({
             },
             ledgerInventoryAdjustments: {
               select: {
+                productId: true,
                 ledgerInventoryItemId: true,
                 productName: true,
                 beforeQuantity: true,
                 beforeAmount: true,
+                afterQuantity: true,
+                afterAmount: true,
                 unitPrice: true,
                 differenceQuantity: true,
                 differenceAmount: true,
@@ -471,9 +480,15 @@ function toDashboardRow(
   });
   const correctionState = correctionOverlay.correctionState;
   const hasLoss = hasCorrectedLoss(correctionOverlay.lossItems);
-  const reviewSummary = calculateLedgerReviewSummary(
-    correctionOverlay.reviewInput,
+  const inventoryAdjustments = toCorrectedInventoryAdjustments(
+    ledger.ledgerInventoryAdjustments,
+    correctionOverlay,
   );
+  const reviewSummary = calculateLedgerReviewSummary({
+    ...correctionOverlay.reviewInput,
+    inventoryAdjustments,
+    lossItems: correctionOverlay.lossItems,
+  });
   const signals =
     ledger.status === "HOLIDAY"
       ? []
@@ -488,10 +503,7 @@ function toDashboardRow(
             inventoryItems: toInventoryLossInventoryItems(
               correctionOverlay.reviewInput.inventoryItems,
             ),
-            inventoryAdjustments: toCorrectedInventoryAdjustments(
-              ledger.ledgerInventoryAdjustments,
-              correctionOverlay,
-            ),
+            inventoryAdjustments,
             lossItems: correctionOverlay.lossItems,
           },
           evaluateRevenueAnomalySignals,
@@ -525,9 +537,8 @@ export async function getHqLedgerDetail(ledgerId: string) {
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("./threshold-queries.ts");
-  const { getLatestCorrectionValuesForLedger } = await import(
-    "../corrections/queries.ts"
-  );
+  const { getLatestCorrectionValuesForLedger } =
+    await import("../corrections/queries.ts");
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [ledger, thresholdSettings] = await Promise.all([
@@ -576,10 +587,13 @@ export async function getHqLedgerDetail(ledgerId: string) {
         },
         ledgerInventoryAdjustments: {
           select: {
+            productId: true,
             ledgerInventoryItemId: true,
             productName: true,
             beforeQuantity: true,
             beforeAmount: true,
+            afterQuantity: true,
+            afterAmount: true,
             unitPrice: true,
             differenceQuantity: true,
             differenceAmount: true,
@@ -628,9 +642,15 @@ export async function getHqLedgerDetail(ledgerId: string) {
     corrections: corrections?.values() ?? [],
   });
   const correctionState = correctionOverlay.correctionState;
-  const correctedReviewSummary = calculateLedgerReviewSummary(
-    correctionOverlay.reviewInput,
+  const inventoryAdjustments = toCorrectedInventoryAdjustments(
+    ledger.ledgerInventoryAdjustments,
+    correctionOverlay,
   );
+  const correctedReviewSummary = calculateLedgerReviewSummary({
+    ...correctionOverlay.reviewInput,
+    inventoryAdjustments,
+    lossItems: correctionOverlay.lossItems,
+  });
   const signals =
     ledger.status === "HOLIDAY"
       ? []
@@ -645,10 +665,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
             inventoryItems: toInventoryLossInventoryItems(
               correctionOverlay.reviewInput.inventoryItems,
             ),
-            inventoryAdjustments: toCorrectedInventoryAdjustments(
-              ledger.ledgerInventoryAdjustments,
-              correctionOverlay,
-            ),
+            inventoryAdjustments,
             lossItems: correctionOverlay.lossItems,
           },
           evaluateRevenueAnomalySignals,
@@ -717,9 +734,7 @@ function getDashboardSignals({
   return [...revenueSignals, ...inventoryLossSignals, ...correctionSignals];
 }
 
-function toInventoryLossInventoryItems(
-  items: LedgerReviewInventoryInput[],
-) {
+function toInventoryLossInventoryItems(items: LedgerReviewInventoryInput[]) {
   return items.map((item) => ({
     productName: item.productName ?? "품목",
     previousQuantity: item.previousQuantity,
@@ -734,7 +749,10 @@ function toCorrectedInventoryAdjustments(
   adjustments: DashboardLedgerRecord["ledgerInventoryAdjustments"],
   correctionOverlay: LedgerReviewCorrectionOverlayResult,
 ) {
-  if (correctionOverlay.appliedInventoryItemIds.size === 0) {
+  if (
+    correctionOverlay.appliedInventoryItemIds.size === 0 &&
+    correctionOverlay.appliedLossProductIds.size === 0
+  ) {
     return adjustments;
   }
 
@@ -745,20 +763,32 @@ function toCorrectedInventoryAdjustments(
   );
 
   return adjustments.map((adjustment) => {
-    if (
-      !adjustment.ledgerInventoryItemId ||
-      !correctionOverlay.appliedInventoryItemIds.has(
+    const shouldUseCorrectedInventory =
+      adjustment.ledgerInventoryItemId !== null &&
+      correctionOverlay.appliedInventoryItemIds.has(
         adjustment.ledgerInventoryItemId,
-      )
-    ) {
+      );
+    const shouldUseCorrectedLoss = correctionOverlay.appliedLossProductIds.has(
+      adjustment.productId,
+    );
+
+    if (!shouldUseCorrectedInventory && !shouldUseCorrectedLoss) {
       return adjustment;
     }
 
     const correctedItem = correctedItemsById.get(
-      adjustment.ledgerInventoryItemId,
+      adjustment.ledgerInventoryItemId ?? "",
     );
+    const lossBasisItem = shouldUseCorrectedLoss ? correctedItem : null;
+
+    if (shouldUseCorrectedLoss && !lossBasisItem) {
+      return adjustment;
+    }
+
     const correctedQuantity =
-      correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null;
+      shouldUseCorrectedInventory
+        ? (correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null)
+        : adjustment.afterQuantity;
     const correctedAmount = calculateInventoryAmount(
       correctedQuantity,
       correctedItem?.unitPrice ?? adjustment.unitPrice,
@@ -768,17 +798,49 @@ function toCorrectedInventoryAdjustments(
       return adjustment;
     }
 
+    const correctedLossQuantity = correctionOverlay.lossItems
+      .filter((item) => item.productId === adjustment.productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const beforeQuantity = lossBasisItem
+      ? calculateSystemInventoryQuantity({
+          previousQuantity: lossBasisItem.previousQuantity,
+          purchasedQuantity: lossBasisItem.purchasedQuantity,
+          lossQuantity: correctedLossQuantity,
+        })
+      : adjustment.beforeQuantity;
+    const beforeAmount = calculateInventoryAmount(
+      beforeQuantity,
+      correctedItem?.unitPrice ?? adjustment.unitPrice,
+    );
+
+    if (beforeQuantity === null || beforeAmount === null) {
+      return adjustment;
+    }
+
+    const nextAdjustment = calculateInventoryAdjustment({
+      beforeQuantity,
+      beforeAmount,
+      afterQuantity: correctedQuantity,
+      unitPrice: correctedItem?.unitPrice ?? adjustment.unitPrice,
+    });
+
+    if (!nextAdjustment) {
+      return adjustment;
+    }
+
     return {
       ...adjustment,
-      differenceQuantity: correctedQuantity - adjustment.beforeQuantity,
-      differenceAmount: correctedAmount - adjustment.beforeAmount,
+      beforeQuantity: nextAdjustment.beforeQuantity,
+      beforeAmount: nextAdjustment.beforeAmount,
+      afterQuantity: nextAdjustment.afterQuantity,
+      afterAmount: nextAdjustment.afterAmount,
+      differenceQuantity: nextAdjustment.differenceQuantity,
+      differenceAmount: nextAdjustment.differenceAmount,
     };
   });
 }
 
-function hasCorrectedLoss(
-  lossItems: { quantity: number; amount: number }[],
-) {
+function hasCorrectedLoss(lossItems: { quantity: number; amount: number }[]) {
   return lossItems.some((item) => item.quantity > 0 || item.amount > 0);
 }
 

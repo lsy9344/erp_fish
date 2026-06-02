@@ -224,6 +224,10 @@ export async function getLedgerReviewStepData(
         unitPrice: item.unitPrice,
         inventoryAmount: item.inventoryAmount,
       })),
+      inventoryAdjustments: inventory.items
+        .map((item) => item.adjustment)
+        .filter((adjustment) => adjustment !== null),
+      lossItems: losses.lossItems,
     });
     const hasInventoryUnavailable = savedInventoryItems.some(
       (item) =>

@@ -30,6 +30,7 @@ const storeSelect = {
 function revalidateStorePaths() {
   revalidatePath("/app/master-data/stores");
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 function parseStoreInput(input: unknown): ActionResult<StoreFormInput> {

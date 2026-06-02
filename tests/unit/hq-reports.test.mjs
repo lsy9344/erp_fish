@@ -1,0 +1,584 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { test } from "node:test";
+
+const root = process.cwd();
+
+function assertProjectFile(...segments) {
+  const filePath = path.join(root, ...segments);
+
+  assert.ok(existsSync(filePath), `${segments.join("/")} should exist`);
+
+  return filePath;
+}
+
+function readProjectFile(...segments) {
+  return readFileSync(assertProjectFile(...segments), "utf8");
+}
+
+test("HQ daily meeting report source files follow story 5.1 boundaries", () => {
+  assertProjectFile("src", "features", "reports", "types.ts");
+  assertProjectFile("src", "features", "reports", "queries.ts");
+  assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "daily-meeting-report-table.tsx",
+  );
+  assertProjectFile("src", "app", "app", "reports", "daily", "page.tsx");
+  assertProjectFile("src", "app", "app", "reports", "daily", "loading.tsx");
+
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const loadingSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "loading.tsx",
+  );
+  const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
+
+  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /getHqDailyMeetingReport\(/);
+  assert.match(pageSource, /DailyMeetingReportTable/);
+  assert.match(pageSource, /아침 회의 리포트/);
+  assert.match(loadingSource, /Skeleton/);
+  assert.match(loadingSource, /md:block/);
+  assert.match(loadingSource, /md:hidden/);
+  assert.match(sidebarSource, /href:\s*"\/app\/reports\/daily"/);
+});
+
+test("HQ daily meeting report query reuses dashboard calculation contracts", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+
+  assert.match(
+    querySource,
+    /export\s+async\s+function\s+getHqDailyMeetingReport/,
+  );
+  assert.match(querySource, /requireHeadquartersUser\(\)/);
+  assert.match(querySource, /store\.findMany\(/);
+  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /dailyLedger\.findMany\(/);
+  assert.match(querySource, /storeId:\s*\{\s*in:/s);
+  assert.match(querySource, /closingDate/);
+  assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
+  assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(querySource, /calculateLedgerReviewSummary/);
+  assert.match(querySource, /evaluateRevenueAnomalySignals/);
+  assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
+  assert.match(querySource, /correction-review-required/);
+  assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
+  assert.doesNotMatch(querySource, /export\s+async\s+function\s+(GET|POST)/);
+});
+
+test("HQ daily meeting report UI reuses status and signal components without UI math", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "daily-meeting-report-table.tsx",
+  );
+
+  assert.match(tableSource, /DashboardStatusBadge/);
+  assert.match(tableSource, /DashboardSignalSummary/);
+  assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
+  assert.match(tableSource, /<details/);
+  assert.match(tableSource, /근거 보기/);
+  assert.match(tableSource, /원본/);
+  assert.match(tableSource, /정정 반영/);
+  assert.match(tableSource, /계산 불가 사유/);
+  assert.match(tableSource, /correctionTimelineHref/);
+  assert.match(tableSource, /row\.metricEvidence\.loss/);
+  assert.match(tableSource, /입력 전/);
+  assert.match(tableSource, /tabular-nums/);
+  assert.match(tableSource, /break-words/);
+  assert.doesNotMatch(tableSource, /salesDropRateBps/);
+  assert.doesNotMatch(tableSource, /grossMarginDropBps/);
+  assert.doesNotMatch(tableSource, /salesDifferenceAmount/);
+  assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
+});
+
+test("correction creation revalidates daily reports after correction values change", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "actions.ts",
+  );
+
+  assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
+});
+
+test("HQ store comparison report source files follow story 5.3 boundaries", () => {
+  assertProjectFile("src", "app", "app", "reports", "comparison", "page.tsx");
+  assertProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "comparison",
+    "loading.tsx",
+  );
+  assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "store-comparison-report-table.tsx",
+  );
+
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "comparison",
+    "page.tsx",
+  );
+  const loadingSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "comparison",
+    "loading.tsx",
+  );
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "store-comparison-report-table.tsx",
+  );
+
+  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /getHqStoreComparisonReport\(/);
+  assert.match(pageSource, /StoreComparisonReportTable/);
+  assert.match(pageSource, /기간 비교 리포트/);
+  assert.match(pageSource, /startDate/);
+  assert.match(pageSource, /endDate/);
+  assert.match(loadingSource, /Skeleton/);
+  assert.match(loadingSource, /md:block/);
+  assert.match(loadingSource, /md:hidden/);
+  assert.match(tableSource, /매출이익/);
+  assert.match(tableSource, /인당생산성/);
+  assert.match(tableSource, /평균재고/);
+  assert.match(tableSource, /평균매출/);
+  assert.match(tableSource, /재고비율/);
+  assert.match(tableSource, /상태/);
+  assert.match(tableSource, /근거 보기/);
+  assert.match(tableSource, /tabular-nums/);
+  assert.match(tableSource, /break-words/);
+  assert.doesNotMatch(tableSource, /calculateLedgerReviewSummary/);
+});
+
+test("HQ store comparison report query reuses report calculation contracts", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "types.ts",
+  );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "actions.ts",
+  );
+
+  assert.match(
+    querySource,
+    /export\s+async\s+function\s+getHqStoreComparisonReport/,
+  );
+  assert.match(querySource, /requireHeadquartersUser\(\)/);
+  assert.match(querySource, /store\.findMany\(/);
+  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /dailyLedger\.findMany\(/);
+  assert.match(querySource, /closingDate:\s*\{\s*gte:/s);
+  assert.match(querySource, /lte:/);
+  assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
+  assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(querySource, /calculateLedgerReviewSummary/);
+  assert.match(querySource, /missingDayCount/);
+  assert.match(querySource, /holidayCount/);
+  assert.match(querySource, /inProgressCount/);
+  assert.match(querySource, /reviewCount/);
+  assert.match(querySource, /closedCount/);
+  assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
+  assert.match(typeSource, /export type StoreComparisonReportData/);
+  assert.match(typeSource, /export type StoreComparisonReportRow/);
+  assert.match(typeSource, /metricEvidence/);
+  assert.match(actionSource, /revalidatePath\("\/app\/reports\/comparison"\)/);
+});
+
+test("ledger and master data writes revalidate daily reports", () => {
+  const files = [
+    ["src", "features", "ledger", "actions.ts"],
+    ["src", "features", "inventory", "actions.ts"],
+    ["src", "features", "losses", "actions.ts"],
+    ["src", "features", "ledger", "hq-edit-actions.ts"],
+    ["src", "features", "inventory", "hq-edit-actions.ts"],
+    ["src", "features", "losses", "hq-edit-actions.ts"],
+    ["src", "features", "ledger", "hq-close-actions.ts"],
+    ["src", "features", "master-data", "actions.ts"],
+    ["src", "features", "dashboard", "threshold-actions.ts"],
+  ];
+
+  for (const segments of files) {
+    assert.match(
+      readProjectFile(...segments),
+      /revalidatePath\("\/app\/reports\/daily"\)/,
+      `${segments.join("/")} should revalidate daily reports`,
+    );
+  }
+});
+
+test("HQ daily meeting report date helpers normalize KST operating dates", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const {
+    getDailyMeetingReportDate,
+    getDailyMeetingReportDateQuery,
+    getDailyMeetingReportDatePreset,
+  } = await import(pathToFileURL(queryPath).href);
+
+  assert.equal(getDailyMeetingReportDatePreset("yesterday"), "yesterday");
+  assert.equal(getDailyMeetingReportDatePreset("2026-05-31"), "custom");
+  assert.equal(getDailyMeetingReportDateQuery("2026-05-31"), "2026-05-31");
+  assert.equal(getDailyMeetingReportDateQuery("unknown"), "today");
+  assert.equal(
+    getDailyMeetingReportDate(
+      "today",
+      new Date("2026-06-01T16:00:00.000Z"),
+    ).toISOString(),
+    "2026-06-02T00:00:00.000Z",
+  );
+  assert.equal(
+    getDailyMeetingReportDate(
+      "yesterday",
+      new Date("2026-06-01T16:00:00.000Z"),
+    ).toISOString(),
+    "2026-06-01T00:00:00.000Z",
+  );
+  assert.equal(
+    getDailyMeetingReportDate(
+      "2026-05-31",
+      new Date("2026-06-01T16:00:00.000Z"),
+    ).toISOString(),
+    "2026-05-31T00:00:00.000Z",
+  );
+});
+
+test("HQ store comparison report date range helper keeps valid URL state", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { getStoreComparisonReportDateRange, getStoreComparisonReportPath } =
+    await import(pathToFileURL(queryPath).href);
+
+  const range = getStoreComparisonReportDateRange({
+    startDate: "2026-05-30",
+    endDate: "2026-06-02",
+  });
+
+  assert.equal(range.startDateInput, "2026-05-30");
+  assert.equal(range.endDateInput, "2026-06-02");
+  assert.equal(range.errorMessage, null);
+  assert.equal(
+    getStoreComparisonReportPath(range),
+    "/app/reports/comparison?startDate=2026-05-30&endDate=2026-06-02",
+  );
+
+  const reversed = getStoreComparisonReportDateRange({
+    startDate: "2026-06-03",
+    endDate: "2026-06-02",
+  });
+
+  assert.equal(reversed.startDateInput, "2026-06-02");
+  assert.equal(reversed.endDateInput, "2026-06-02");
+  assert.match(reversed.errorMessage, /시작일/);
+});
+
+test("HQ store comparison report aggregation distinguishes missing holiday zero and corrected values", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 4,
+    ledgerSummaries: [
+      {
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 300000 },
+          grossProfit: { value: 120000 },
+          grossMarginRate: { value: 0.4 },
+          operatingProfit: { value: 90000 },
+          productivity: { value: 150000 },
+          inventoryAmount: { value: 60000 },
+        },
+        applied: {
+          totalSales: { value: 450000 },
+          grossProfit: { value: 180000 },
+          grossMarginRate: { value: 0.4 },
+          operatingProfit: { value: 150000 },
+          productivity: { value: 225000 },
+          inventoryAmount: { value: 60000 },
+        },
+        workerCount: 2,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 1,
+      },
+      {
+        ledgerId: "ledger-2",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: 40000 },
+        },
+        applied: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: 40000 },
+        },
+        workerCount: 0,
+        hasLoss: true,
+        hasUnappliedCorrections: false,
+        appliedCorrectionCount: 0,
+      },
+      {
+        ledgerId: "ledger-3",
+        status: "HOLIDAY",
+        original: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        applied: {
+          totalSales: { value: 0 },
+          grossProfit: { value: 0 },
+          grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+          operatingProfit: { value: 0 },
+          productivity: { value: null, unavailableReason: "계산 불가" },
+          inventoryAmount: { value: null, unavailableReason: "계산 불가" },
+        },
+        workerCount: null,
+        hasLoss: false,
+        hasUnappliedCorrections: true,
+        appliedCorrectionCount: 0,
+      },
+    ],
+  });
+
+  assert.equal(row.storeName, "테스트점");
+  assert.equal(row.statusCounts.missingDayCount, 1);
+  assert.equal(row.statusCounts.closedCount, 2);
+  assert.equal(row.statusCounts.holidayCount, 1);
+  assert.equal(row.salesAmount.value, 450000);
+  assert.equal(row.grossProfit.value, 180000);
+  assert.equal(row.grossMarginRate.value, 0.4);
+  assert.equal(row.operatingProfit.value, 150000);
+  assert.equal(row.productivity.value, 225000);
+  assert.equal(row.averageInventory.value, 50000);
+  assert.equal(row.averageSales.value, 225000);
+  assert.equal(row.inventoryToSalesRatio.value, 50000 / 225000);
+  assert.equal(row.hasLoss, true);
+  assert.equal(row.metricEvidence.salesAmount.isCorrected, true);
+  assert.equal(row.metricEvidence.salesAmount.statusLabel, "정정 반영");
+  assert.equal(row.metricEvidence.inventoryToSalesRatio.statusLabel, "정정 확인 필요");
+});
+
+test("HQ daily meeting report metric evidence distinguishes correction and calculation states", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildDailyMeetingReportMetricEvidence } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const corrected = buildDailyMeetingReportMetricEvidence({
+    label: "매출",
+    kind: "money",
+    ledgerId: "ledger-1",
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+    original: { value: 300000 },
+    applied: { value: 45000 },
+    correctionCount: 2,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(corrected.status, "corrected");
+  assert.equal(corrected.isCorrected, true);
+  assert.equal(corrected.original.value, 300000);
+  assert.equal(corrected.applied.value, 45000);
+  assert.equal(
+    corrected.correctionTimelineHref,
+    "/app/ledgers/ledger-1#correction-timeline",
+  );
+  assert.equal(corrected.ledgerDetailHref, "/app/ledgers/ledger-1");
+
+  const zero = buildDailyMeetingReportMetricEvidence({
+    label: "매출",
+    kind: "money",
+    ledgerId: "ledger-2",
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+    original: { value: 0 },
+    applied: { value: 0 },
+    correctionCount: 0,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(zero.status, "zero");
+  assert.equal(zero.statusLabel, "0");
+  assert.equal(zero.isCorrected, false);
+
+  const empty = buildDailyMeetingReportMetricEvidence({
+    label: "매출",
+    kind: "money",
+    ledgerId: null,
+    ledgerStatus: "EMPTY",
+    original: { value: null, unavailableReason: "계산 불가" },
+    applied: { value: null, unavailableReason: "계산 불가" },
+    correctionCount: 0,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(empty.status, "empty");
+  assert.equal(empty.statusLabel, "미입력");
+  assert.equal(empty.ledgerDetailHref, null);
+
+  const holiday = buildDailyMeetingReportMetricEvidence({
+    label: "매출",
+    kind: "money",
+    ledgerId: "ledger-3",
+    ledgerStatus: "HOLIDAY",
+    original: { value: 0 },
+    applied: { value: 0 },
+    correctionCount: 0,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(holiday.status, "holiday");
+  assert.equal(holiday.statusLabel, "휴무");
+
+  const insufficient = buildDailyMeetingReportMetricEvidence({
+    label: "이익률",
+    kind: "percent",
+    ledgerId: "ledger-4",
+    ledgerStatus: "IN_PROGRESS",
+    original: { value: null, unavailableReason: "계산 불가" },
+    applied: { value: null, unavailableReason: "계산 불가" },
+    correctionCount: 0,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(insufficient.status, "data-insufficient");
+  assert.equal(insufficient.statusLabel, "데이터 부족");
+});
+
+test("HQ daily meeting report metric evidence scopes correction states to the metric", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildDailyMeetingReportMetricEvidence } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const sameValueCorrection = buildDailyMeetingReportMetricEvidence({
+    label: "매출",
+    kind: "money",
+    ledgerId: "ledger-1",
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+    original: { value: 300000 },
+    applied: { value: 300000 },
+    correctionCount: 1,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(sameValueCorrection.isCorrected, true);
+  assert.equal(sameValueCorrection.status, "corrected");
+  assert.equal(sameValueCorrection.statusLabel, "정정 반영");
+
+  const unavailableToValueCorrection = buildDailyMeetingReportMetricEvidence({
+    label: "이익률",
+    kind: "percent",
+    ledgerId: "ledger-2",
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+    original: { value: null, unavailableReason: "계산 불가" },
+    applied: { value: 0.25 },
+    correctionCount: 1,
+    hasUnappliedCorrections: false,
+  });
+
+  assert.equal(unavailableToValueCorrection.isCorrected, true);
+  assert.equal(unavailableToValueCorrection.status, "corrected");
+
+  const holidayNeedsReview = buildDailyMeetingReportMetricEvidence({
+    label: "매출 차이",
+    kind: "money",
+    ledgerId: "ledger-3",
+    ledgerStatus: "HOLIDAY",
+    original: { value: 0 },
+    applied: { value: 0 },
+    correctionCount: 0,
+    hasUnappliedCorrections: true,
+  });
+
+  assert.equal(holidayNeedsReview.status, "needs-review");
+  assert.equal(holidayNeedsReview.statusLabel, "정정 확인 필요");
+});

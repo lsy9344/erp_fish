@@ -237,6 +237,8 @@ async function lockCorrectionTargetInTx(
 function revalidateCorrectionPaths(ledgerId: string) {
   revalidatePath(`/app/ledgers/${ledgerId}`);
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
 }
 
 function revalidateCorrectionPathsBestEffort(ledgerId: string) {

@@ -47,6 +47,7 @@ const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
 function revalidateLedgerSalesPaths() {
   revalidatePath(ledgerSalesPath);
   revalidatePath(dashboardPath);
+  revalidatePath("/app/reports/daily");
 }
 
 function revalidateLedgerSubmitPaths() {
@@ -54,6 +55,7 @@ function revalidateLedgerSubmitPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/store-entry/losses");
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 function parseLedgerSalesInput(

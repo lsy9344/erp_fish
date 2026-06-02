@@ -45,6 +45,7 @@ function revalidateLossPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/store-entry");
   revalidatePath("/app/dashboard");
+  revalidatePath("/app/reports/daily");
 }
 
 type ActiveProduct = {

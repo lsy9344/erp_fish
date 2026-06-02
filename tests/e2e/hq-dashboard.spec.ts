@@ -249,10 +249,7 @@ async function seedStoryThreeOneData() {
 
 async function createCorrectionRecord(input: {
   dailyLedgerId: string;
-  targetType:
-    | "PAYMENT_FIELD"
-    | "INVENTORY_ROW"
-    | "LOSS_ROW";
+  targetType: "PAYMENT_FIELD" | "INVENTORY_ROW" | "LOSS_ROW";
   targetId: string;
   fieldKey: string;
   label: string;
@@ -491,7 +488,7 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
   await expect(reviewRow).toContainText("손실 있음");
   await expect(reviewRow).toContainText("기준값 설정 전");
-  await expect(reviewRow).toContainText("계산 기준 확인 필요");
+  await expect(reviewRow).toContainText("₩256,000");
   await expect(page.getByText("스토리3-1 비활성점")).toHaveCount(0);
 });
 
@@ -512,7 +509,7 @@ test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 
   await expect(reviewRow).toContainText("심각 이상");
   await expect(reviewRow).toContainText("매출 기준 확인");
   await expect(reviewRow).toContainText("이익률 기준 확인");
-  await expect(reviewRow).toContainText("매출차액 기준 확인");
+  await expect(reviewRow).toContainText("매출차액 초과");
   await expect(reviewRow).toContainText("재고 이상");
   await expect(reviewRow).toContainText("손실 이상");
   await expect(reviewRow).not.toContainText("기준값 저장됨");
@@ -533,7 +530,7 @@ test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 
   ).toBeVisible();
   await expect(page.getByText("매출 기준 확인")).toBeVisible();
   await expect(page.getByText("이익률 기준 확인")).toBeVisible();
-  await expect(page.getByText("매출차액 기준 확인")).toBeVisible();
+  await expect(page.getByText("매출차액 초과")).toBeVisible();
   await expect(page.getByText("재고 이상")).toBeVisible();
   await expect(page.getByText(/12개/)).toBeVisible();
   await expect(page.getByText("손실 이상")).toBeVisible();
@@ -672,12 +669,16 @@ test("지점장은 마감 장부의 본사 정정 이력을 읽기 전용으로 
   await login(page, "manager@example.com");
   await page.goto(`/app/store-entry?storeId=${STORE_IDS.closed}`);
 
-  await expect(page.getByRole("heading", { name: "본사 정정 이력" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "본사 정정 이력" }),
+  ).toBeVisible();
   await expect(page.getByText("지점장 읽기 전용 정정 이력 확인")).toBeVisible();
   await expect(
     page.getByRole("columnheader", { name: "정정 반영값" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "정정 기록 저장" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "정정 기록 저장" }),
+  ).toHaveCount(0);
 });
 
 test("지점장은 본사 관제판에 직접 접근할 수 없다", async ({ page }) => {
@@ -729,7 +730,7 @@ test("390px 모바일 관제판은 핵심 상태가 겹치지 않고 보인다",
   await expect(storeName).toContainText("스토리3-1 검토대기점");
   await expect(status).toContainText("검토대기");
   await expect(signal).toContainText("기준값 설정 전");
-  await expect(row).toContainText("확인 필요");
+  await expect(row).toContainText("₩256,000");
 
   const rowBox = await row.boundingBox();
   expect(rowBox).toBeTruthy();

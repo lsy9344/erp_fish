@@ -91,17 +91,68 @@ test("ledger review correction overlay applies latest payment, inventory, and lo
   assert.equal(result.reviewInput.totalSalesAmount, 120000);
   assert.equal(result.reviewInput.inventoryItems[0].currentQuantity, 6);
   assert.equal(result.lossItems[0].amount, 60000);
+  assert.deepEqual([...result.appliedInventoryItemIds], ["inventory-1"]);
+  assert.deepEqual([...result.appliedLossProductIds], []);
   assert.deepEqual(result.correctionState, {
     appliedCorrectionCount: 3,
     hasAppliedCorrections: true,
     hasUnappliedCorrections: false,
   });
 
-  const summary = calculateLedgerReviewSummary(result.reviewInput);
+  const summary = calculateLedgerReviewSummary({
+    ...result.reviewInput,
+    inventoryAdjustments: [],
+    lossItems: result.lossItems,
+  });
 
   assert.equal(summary.totalSales.value, 120000);
   assert.equal(summary.costOfGoodsSold.value, 9000);
   assert.equal(summary.grossProfit.value, 111000);
+});
+
+test("ledger review correction overlay exposes loss quantity product ids for adjustment recalculation", async () => {
+  const ledgerPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(ledgerPath).href
+  );
+
+  const result = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100000,
+      cashAmount: 40000,
+      cardAmount: 50000,
+      otherPaymentAmount: 10000,
+      workerCount: 4,
+      expenseTotal: 0,
+      inventoryItems: [],
+    },
+    lossItems: [
+      {
+        id: "loss-1",
+        productId: "product-1",
+        productName: "광어",
+        quantity: 1,
+        amount: 10000,
+      },
+    ],
+    corrections: [
+      {
+        targetType: "LOSS_ROW",
+        targetId: "loss-1",
+        fieldKey: "quantity",
+        latestAppliedValue: quantity(3),
+      },
+    ],
+  });
+
+  assert.equal(result.lossItems[0].quantity, 3);
+  assert.deepEqual([...result.appliedLossProductIds], ["product-1"]);
 });
 
 test("ledger review correction overlay marks unsupported calculated metric corrections for review", async () => {
@@ -242,7 +293,14 @@ test("ledger review correction overlay makes legacy quantity corrections affect 
 
   assert.equal(result.reviewInput.inventoryItems[0].currentQuantity, 6);
   assert.equal(result.reviewInput.inventoryItems[0].quantity, 6);
-  assert.equal(calculateLedgerReviewSummary(result.reviewInput).costOfGoodsSold.value, 9000);
+  assert.equal(
+    calculateLedgerReviewSummary({
+      ...result.reviewInput,
+      inventoryAdjustments: [],
+      lossItems: [],
+    }).costOfGoodsSold.value,
+    9000,
+  );
   assert.equal(result.correctionState.hasUnappliedCorrections, false);
 });
 
@@ -292,7 +350,14 @@ test("ledger review correction overlay applies expense amount corrections to ope
   });
 
   assert.equal(result.reviewInput.expenseTotal, 12000);
-  assert.equal(calculateLedgerReviewSummary(result.reviewInput).operatingProfit.value, 78000);
+  assert.equal(
+    calculateLedgerReviewSummary({
+      ...result.reviewInput,
+      inventoryAdjustments: [],
+      lossItems: [],
+    }).operatingProfit.value,
+    78000,
+  );
   assert.deepEqual(result.correctionState, {
     appliedCorrectionCount: 1,
     hasAppliedCorrections: true,
