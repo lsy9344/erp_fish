@@ -472,7 +472,7 @@ export function InventoryStepClient({
           aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 조정됨" : ""}`}
           className={
             modified || adjusted
-              ? "border-l-primary bg-primary/5 border-l-4"
+              ? "border-primary bg-primary/5 border-l-4"
               : undefined
           }
         >
@@ -680,7 +680,7 @@ export function InventoryStepClient({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-      <header className="bg-card text-card-foreground rounded-lg border p-4">
+      <header className="bg-card text-card-foreground rounded-lg border p-4 shadow-sm">
         <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
         <p className="text-muted-foreground mt-1 text-sm">
@@ -720,7 +720,10 @@ export function InventoryStepClient({
           value={activeCategory}
           onValueChange={(value) => setActiveCategory(normalizeCategory(value))}
         >
-          <TabsList className="min-h-11">
+          <TabsList
+            variant="line"
+            className="min-h-11 w-full justify-start border-b bg-transparent"
+          >
             {categories.map((category) => (
               <TabsTrigger
                 key={category}
@@ -734,9 +737,9 @@ export function InventoryStepClient({
 
           {categories.map((category) => (
             <TabsContent key={category} value={category}>
-              <div className="overflow-x-auto rounded-md border">
+              <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
                 <Table aria-label="재고 품목" className="min-w-[1200px]">
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10">
                     <TableRow>
                       <TableHead scope="col">품목</TableHead>
                       <TableHead scope="col">규격</TableHead>
@@ -779,13 +782,15 @@ export function InventoryStepClient({
           </p>
         ) : null}
 
-        <Button
-          type="submit"
-          className="min-h-11"
-          disabled={isSaving || isClosed}
-        >
-          {isSaving ? "저장 중..." : "저장"}
-        </Button>
+        <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+          <Button
+            type="submit"
+            className="min-h-11 w-full md:w-auto"
+            disabled={isSaving || isClosed}
+          >
+            {isSaving ? "저장 중..." : "저장"}
+          </Button>
+        </div>
       </form>
     </div>
   );

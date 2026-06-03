@@ -25,15 +25,15 @@ const severityStyle: Record<
 > = {
   info: {
     icon: InfoIcon,
-    className: "border-slate-200 bg-slate-50 text-slate-700",
+    className: "border-primary/20 bg-primary/10 text-primary",
   },
   warning: {
     icon: TriangleAlertIcon,
-    className: "border-amber-200 bg-amber-50 text-amber-800",
+    className: "border-warning/25 bg-warning/15 text-warning",
   },
   critical: {
     icon: CircleAlertIcon,
-    className: "border-red-200 bg-red-50 text-red-800",
+    className: "border-destructive/25 bg-destructive/10 text-destructive",
   },
 };
 
@@ -60,19 +60,16 @@ export function DashboardSignalSummary({
             className={cn(
               style.className,
               showDetails &&
-                "h-auto max-w-full items-start justify-start whitespace-normal py-1 text-left",
+                "h-auto max-w-full items-start justify-start py-1 text-left whitespace-normal",
             )}
           >
             <Icon aria-hidden="true" className={showDetails ? "mt-0.5" : ""} />
             <span
-              className={cn(
-                "min-w-0",
-                showDetails && "flex flex-col gap-0.5",
-              )}
+              className={cn("min-w-0", showDetails && "flex flex-col gap-0.5")}
             >
               <span>{signal.label}</span>
               {showDetails && signal.detail ? (
-                <span className="break-words font-normal opacity-80">
+                <span className="font-normal break-words opacity-80">
                   {signal.detail}
                 </span>
               ) : null}

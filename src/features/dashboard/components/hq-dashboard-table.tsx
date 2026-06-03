@@ -47,7 +47,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   if (dashboard.rows.length === 0) {
     return (
       <section
-        className="bg-background text-muted-foreground rounded-lg border p-6 text-sm"
+        className="bg-card text-muted-foreground rounded-lg border p-6 text-sm shadow-sm"
         aria-label="관제판 지점 목록"
       >
         {hasNoActiveStores
@@ -64,8 +64,8 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   };
 
   return (
-    <section className="space-y-3" aria-label="관제판 지점 목록">
-      <div className="bg-background hidden overflow-x-auto rounded-lg border md:block">
+    <section className="flex flex-col gap-3" aria-label="관제판 지점 목록">
+      <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
         <Table className="min-w-[1200px]">
           <TableHeader>
             <TableRow>
@@ -129,7 +129,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
             key={row.storeId}
             data-testid={`hq-dashboard-mobile-row-${row.storeId}`}
             className={cn(
-              "bg-background w-full rounded-lg border p-4",
+              "bg-card w-full rounded-lg border p-4 shadow-sm",
               getRowClassName(row),
             )}
             {...getRowActivationProps(row, openLedgerDetail)}
@@ -291,7 +291,7 @@ function PriorityBadge({
     <Badge
       variant="outline"
       title={row.priority.reasons.join(", ")}
-      className={cn("max-w-full whitespace-normal text-left", className)}
+      className={cn("max-w-full text-left whitespace-normal", className)}
     >
       {row.priority.label}
     </Badge>
@@ -322,16 +322,16 @@ function getRowClassName(row: HqDashboardRow) {
   if (hasCriticalSignal) {
     return cn(
       activationClassName,
-      "border-l-2 border-destructive bg-destructive/5",
+      "border-l-4 border-destructive bg-destructive/5",
     );
   }
 
   if (hasWarningSignal) {
-    return cn(activationClassName, "border-l-2 border-warning bg-warning/5");
+    return cn(activationClassName, "border-l-4 border-warning bg-warning/10");
   }
 
   if (hasInfoSignalsOnly) {
-    return cn(activationClassName, "border-l-2 border-border");
+    return cn(activationClassName, "border-l-4 border-primary/30 bg-primary/5");
   }
 
   return activationClassName;

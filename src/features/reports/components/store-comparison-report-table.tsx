@@ -36,7 +36,7 @@ export function StoreComparisonReportTable({
 }: StoreComparisonReportTableProps) {
   if (report.rows.length === 0) {
     return (
-      <section className="bg-background text-muted-foreground rounded-lg border p-6 text-sm">
+      <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm shadow-sm">
         표시할 지점 데이터가 없습니다. 기준정보에서 활성 지점을 먼저 확인해
         주세요.
       </section>
@@ -44,8 +44,11 @@ export function StoreComparisonReportTable({
   }
 
   return (
-    <section className="space-y-3" aria-label="기간 비교 리포트 지점 목록">
-      <div className="bg-background hidden overflow-x-auto rounded-lg border md:block">
+    <section
+      className="flex flex-col gap-3"
+      aria-label="기간 비교 리포트 지점 목록"
+    >
+      <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
         <Table className="min-w-[1280px]">
           <TableHeader>
             <TableRow>
@@ -122,7 +125,7 @@ export function StoreComparisonReportTable({
           <article
             key={row.storeId}
             data-testid={`hq-report-comparison-mobile-row-${row.storeId}`}
-            className="bg-background rounded-lg border p-4"
+            className="bg-card rounded-lg border p-4 shadow-sm"
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0 flex-1">

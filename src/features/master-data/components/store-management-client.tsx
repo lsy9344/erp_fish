@@ -241,7 +241,7 @@ export function StoreManagementClient({
         </Button>
       </div>
 
-      <div className="rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>

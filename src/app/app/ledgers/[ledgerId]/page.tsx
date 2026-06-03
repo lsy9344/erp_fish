@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
@@ -146,6 +147,9 @@ export default async function LedgerDetailPage({
     targetId: ledger.id,
     fieldKey: "totalSalesAmount",
   });
+  const totalSalesDisplay = totalSalesCorrection
+    ? formatCorrectionValue(totalSalesCorrection.latestAppliedValue)
+    : formatKrw(detail.salesAmount.value);
 
   return (
     <HeadquartersShell
@@ -164,7 +168,7 @@ export default async function LedgerDetailPage({
         </Button>
       </div>
 
-      <section className="bg-background rounded-lg border p-4">
+      <section className="bg-card rounded-lg border p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <DashboardStatusBadge status={detail.ledgerStatus} />
           <span className="text-muted-foreground text-sm">
@@ -185,11 +189,19 @@ export default async function LedgerDetailPage({
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="장부 주요 숫자"
       >
-        <MetricCard
-          label="매출"
-          value={formatKrw(detail.salesAmount.value)}
-          appliedCorrection={totalSalesCorrection}
-        />
+        <MetricCard label="매출" value={totalSalesDisplay}>
+          {totalSalesCorrection ? (
+            <div className="grid gap-1 text-xs">
+              <span className="text-muted-foreground">
+                원본:{" "}
+                <span className="tabular-nums">
+                  {formatCorrectionValue(totalSalesCorrection.originalValue)}
+                </span>
+              </span>
+              <span className="font-medium">정정 반영</span>
+            </div>
+          ) : null}
+        </MetricCard>
         <MetricCard
           label="마진율"
           value={formatPercentMetric(detail.grossMarginRate)}
@@ -206,7 +218,7 @@ export default async function LedgerDetailPage({
 
       {appliedCorrections.length > 0 ? (
         <section
-          className="bg-background rounded-lg border p-4"
+          className="bg-card rounded-lg border p-4 shadow-sm"
           aria-labelledby="applied-corrections-title"
         >
           <div className="flex flex-col gap-1">
@@ -217,14 +229,15 @@ export default async function LedgerDetailPage({
               현재 정정 반영값
             </h2>
             <p className="text-muted-foreground text-sm">
-              최신 정정 기록을 기준으로 원본값과 정정 반영값을 구분해 표시합니다.
+              최신 정정 기록을 기준으로 원본값과 정정 반영값을 구분해
+              표시합니다.
             </p>
           </div>
           <dl className="mt-4 grid gap-3 md:grid-cols-2">
             {appliedCorrections.map((correction) => (
               <div
                 key={correction.key}
-                className="rounded-md border p-3"
+                className="bg-card rounded-md border p-3"
                 aria-label={`${correction.targetLabel} 정정 반영값`}
               >
                 <dt className="font-medium">{correction.targetLabel}</dt>
@@ -259,7 +272,7 @@ export default async function LedgerDetailPage({
         </Alert>
       ) : null}
       {isOriginalEditBlocked ? null : (
-        <section className="rounded-lg border p-4">
+        <section className="bg-card rounded-lg border p-4 shadow-sm">
           <HqLedgerCloseDialog
             ledgerId={ledger.id}
             ledgerUpdatedAt={ledger.updatedAt}
@@ -277,7 +290,10 @@ export default async function LedgerDetailPage({
       ) : null}
 
       <Tabs defaultValue="sales" className="w-full">
-        <TabsList className="min-h-11 w-full flex-wrap justify-start">
+        <TabsList
+          variant="line"
+          className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
+        >
           <TabsTrigger value="sales" className="min-h-9 px-3">
             매출/결제
           </TabsTrigger>
@@ -450,40 +466,6 @@ function getAppliedCorrection(
   input: Parameters<typeof buildCorrectionTargetKey>[0],
 ) {
   return values.get(buildCorrectionTargetKey(input)) ?? null;
-}
-
-function MetricCard({
-  label,
-  value,
-  appliedCorrection,
-}: {
-  label: string;
-  value: string;
-  appliedCorrection?: CorrectionAppliedValue | null;
-}) {
-  const displayValue = appliedCorrection
-    ? formatCorrectionValue(appliedCorrection.latestAppliedValue)
-    : value;
-
-  return (
-    <div className="bg-background rounded-lg border p-4">
-      <p className="text-muted-foreground text-sm">{label}</p>
-      <p className="mt-2 text-xl font-semibold tracking-normal break-words tabular-nums">
-        {displayValue}
-      </p>
-      {appliedCorrection ? (
-        <div className="mt-2 grid gap-1 text-xs">
-          <span className="text-muted-foreground">
-            원본:{" "}
-            <span className="tabular-nums">
-              {formatCorrectionValue(appliedCorrection.originalValue)}
-            </span>
-          </span>
-          <span className="font-medium">정정 반영</span>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function formatKrw(value: number | null) {

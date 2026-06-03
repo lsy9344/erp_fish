@@ -189,7 +189,7 @@ export function ChangeHistoryClient({
         </Button>
       </form>
 
-      <div className="rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -256,13 +256,13 @@ export function ChangeHistoryClient({
             <div className="grid gap-4 lg:grid-cols-2">
               <section className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold">변경 전</h3>
-                <pre className="bg-muted max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm">
+                <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
                   {selectedHistory.beforeText}
                 </pre>
               </section>
               <section className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold">변경 후</h3>
-                <pre className="bg-muted max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md p-3 text-sm">
+                <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
                   {selectedHistory.afterText}
                 </pre>
               </section>

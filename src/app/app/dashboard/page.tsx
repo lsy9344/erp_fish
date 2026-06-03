@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { HqDashboardTable } from "~/features/dashboard/components/hq-dashboard-table";
 import {
@@ -42,11 +43,31 @@ export default async function DashboardPage({
   });
   const dateLabel = dashboard.datePreset === "today" ? "오늘" : "어제";
   const summaryItems = [
-    { label: "활성 지점", value: dashboard.summary.totalStores },
-    { label: "검토 대기", value: dashboard.summary.reviewCount },
-    { label: "본사마감", value: dashboard.summary.closedCount },
-    { label: "미입력", value: dashboard.summary.emptyCount },
-    { label: "손실 있음", value: dashboard.summary.lossCount },
+    {
+      label: "활성 지점",
+      value: dashboard.summary.totalStores,
+      variant: "default" as const,
+    },
+    {
+      label: "검토 대기",
+      value: dashboard.summary.reviewCount,
+      variant: "warning" as const,
+    },
+    {
+      label: "본사마감",
+      value: dashboard.summary.closedCount,
+      variant: "success" as const,
+    },
+    {
+      label: "미입력",
+      value: dashboard.summary.emptyCount,
+      variant: "muted" as const,
+    },
+    {
+      label: "손실 있음",
+      value: dashboard.summary.lossCount,
+      variant: "danger" as const,
+    },
   ];
 
   return (
@@ -107,7 +128,9 @@ export default async function DashboardPage({
           >
             <Button
               asChild
-              variant={dashboard.sortMode === "priority" ? "default" : "outline"}
+              variant={
+                dashboard.sortMode === "priority" ? "default" : "outline"
+              }
             >
               <Link
                 href={getDashboardPath({
@@ -195,12 +218,12 @@ export default async function DashboardPage({
         aria-label="관제판 요약"
       >
         {summaryItems.map((item) => (
-          <div key={item.label} className="bg-background rounded-lg border p-4">
-            <p className="text-muted-foreground text-sm">{item.label}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-normal">
-              {item.value.toLocaleString("ko-KR")}
-            </p>
-          </div>
+          <MetricCard
+            key={item.label}
+            label={item.label}
+            value={item.value.toLocaleString("ko-KR")}
+            variant={item.variant}
+          />
         ))}
       </section>
 

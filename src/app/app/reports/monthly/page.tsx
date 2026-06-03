@@ -86,7 +86,7 @@ export default async function MonthlyClosingAnomalyReportPage({
                 id="storeId"
                 name="storeId"
                 defaultValue={report.selectedStoreId ?? ""}
-                className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 min-w-40 rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="border-input bg-card ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 min-w-40 rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {report.stores.length === 0 ? (
                   <option value="">활성 지점 없음</option>

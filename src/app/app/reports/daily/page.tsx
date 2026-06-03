@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { Input } from "~/components/ui/input";
+import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { DailyMeetingReportTable } from "~/features/reports/components/daily-meeting-report-table";
 import {
@@ -34,11 +35,31 @@ export default async function DailyMeetingReportPage({
         ? "어제"
         : report.dateInput;
   const summaryItems = [
-    { label: "활성 지점", value: report.summary.totalStores },
-    { label: "본사마감", value: report.summary.closedCount },
-    { label: "검토 대기", value: report.summary.reviewCount },
-    { label: "미입력", value: report.summary.emptyCount },
-    { label: "손실 있음", value: report.summary.lossCount },
+    {
+      label: "활성 지점",
+      value: report.summary.totalStores,
+      variant: "default" as const,
+    },
+    {
+      label: "본사마감",
+      value: report.summary.closedCount,
+      variant: "success" as const,
+    },
+    {
+      label: "검토 대기",
+      value: report.summary.reviewCount,
+      variant: "warning" as const,
+    },
+    {
+      label: "미입력",
+      value: report.summary.emptyCount,
+      variant: "muted" as const,
+    },
+    {
+      label: "손실 있음",
+      value: report.summary.lossCount,
+      variant: "danger" as const,
+    },
   ];
 
   return (
@@ -122,12 +143,12 @@ export default async function DailyMeetingReportPage({
         aria-label="아침 회의 리포트 요약"
       >
         {summaryItems.map((item) => (
-          <div key={item.label} className="bg-background rounded-lg border p-4">
-            <p className="text-muted-foreground text-sm">{item.label}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-normal">
-              {item.value.toLocaleString("ko-KR")}
-            </p>
-          </div>
+          <MetricCard
+            key={item.label}
+            label={item.label}
+            value={item.value.toLocaleString("ko-KR")}
+            variant={item.variant}
+          />
         ))}
       </section>
 

@@ -366,7 +366,7 @@ export function CodeManagementClient({
         ))}
       </div>
 
-      <div className="rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>

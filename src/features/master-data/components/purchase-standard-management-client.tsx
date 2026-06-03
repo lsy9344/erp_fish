@@ -281,7 +281,7 @@ export function PurchaseStandardManagementClient({
         </Button>
       </div>
 
-      <div className="rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -316,7 +316,9 @@ export function PurchaseStandardManagementClient({
                   </TableCell>
                   <TableCell>{standard.referenceInfo ?? "-"}</TableCell>
                   <TableCell>
-                    <Badge variant={standard.isActive ? "secondary" : "outline"}>
+                    <Badge
+                      variant={standard.isActive ? "secondary" : "outline"}
+                    >
                       {standard.isActive
                         ? statusLabels.active
                         : statusLabels.inactive}
@@ -465,7 +467,9 @@ export function PurchaseStandardManagementClient({
                 ref={referenceInputRef}
                 id="purchase-standard-reference"
                 value={referenceInfo}
-                onChange={(event) => setReferenceInfo(event.currentTarget.value)}
+                onChange={(event) =>
+                  setReferenceInfo(event.currentTarget.value)
+                }
                 aria-invalid={Boolean(referenceError)}
                 aria-describedby={
                   referenceError

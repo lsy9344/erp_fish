@@ -192,14 +192,22 @@ export function ProductManagementClient({
       ? (value as ProductCategory)
       : "all";
 
-    pushFilters({ q: filters.q, category: nextCategory, status: filters.status });
+    pushFilters({
+      q: filters.q,
+      category: nextCategory,
+      status: filters.status,
+    });
   }
 
   async function handleStatusFilterChange(value: string) {
     const nextStatus =
       value === "active" || value === "inactive" ? value : "all";
 
-    pushFilters({ q: filters.q, category: filters.category, status: nextStatus });
+    pushFilters({
+      q: filters.q,
+      category: filters.category,
+      status: nextStatus,
+    });
   }
 
   async function handleDialogSubmit(event: FormEvent<HTMLFormElement>) {
@@ -344,7 +352,7 @@ export function ProductManagementClient({
         </Button>
       </div>
 
-      <div className="rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>

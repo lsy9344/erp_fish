@@ -40,7 +40,7 @@ export function MonthlyClosingAnomalyReport({
 }: MonthlyClosingAnomalyReportProps) {
   if (!report.selectedStoreId) {
     return (
-      <section className="bg-background text-muted-foreground rounded-lg border p-6 text-sm break-words">
+      <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm">
         표시할 지점 데이터가 없습니다. 기준정보에서 활성 지점을 먼저 확인해
         주세요.
       </section>
@@ -92,7 +92,7 @@ function MonthlyKpiSummary({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div
           data-testid="hq-report-monthly-kpi-sales"
-          className="bg-background min-w-0 rounded-lg border p-4"
+          className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
         >
           <p className="text-muted-foreground text-sm break-words">월간 매출</p>
           <div className="mt-2 tabular-nums">
@@ -103,7 +103,10 @@ function MonthlyKpiSummary({
           </div>
         </div>
         {remainingItems.map(([label, evidence]) => (
-          <div key={label} className="bg-background min-w-0 rounded-lg border p-4">
+          <div
+            key={label}
+            className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
+          >
             <p className="text-muted-foreground text-sm break-words">{label}</p>
             <div className="mt-2 tabular-nums">
               <MetricValueWithEvidence evidence={evidence} align="left" />
@@ -122,30 +125,27 @@ function LossInventoryFlowSummary({
 }) {
   const loss = report.monthlyLossSummary;
   const flow = report.monthlyInventoryFlow;
-  const lossSignal =
-    loss.hasRecordedLoss
-      ? {
-          id: "monthly-loss-recorded",
-          label: "손실 기록 있음",
-          severity: "warning" as const,
-          detail: `${loss.totalQuantity.toLocaleString("ko-KR")}개 / ${krwFormatter.format(loss.totalAmount)}`,
-        }
-      : {
-          id: "monthly-loss-none",
-          label: "손실 기록 없음",
-          severity: "info" as const,
-          detail: "선택 월의 집계 대상 장부에 손실 금액이 없습니다.",
-        };
+  const lossSignal = loss.hasRecordedLoss
+    ? {
+        id: "monthly-loss-recorded",
+        label: "손실 기록 있음",
+        severity: "warning" as const,
+        detail: `${loss.totalQuantity.toLocaleString("ko-KR")}개 / ${krwFormatter.format(loss.totalAmount)}`,
+      }
+    : {
+        id: "monthly-loss-none",
+        label: "손실 기록 없음",
+        severity: "info" as const,
+        detail: "선택 월의 집계 대상 장부에 손실 금액이 없습니다.",
+      };
 
   return (
     <section className="space-y-3" aria-label="손실/재고 흐름">
-      <h2 className="text-lg font-semibold tracking-normal">
-        손실/재고 흐름
-      </h2>
+      <h2 className="text-lg font-semibold tracking-normal">손실/재고 흐름</h2>
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <section
           data-testid="hq-report-monthly-loss-summary"
-          className="bg-background min-w-0 space-y-4 rounded-lg border p-4"
+          className="bg-card min-w-0 space-y-4 rounded-lg border p-4 shadow-sm"
           aria-label="손실 유형별 요약"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -202,7 +202,7 @@ function LossInventoryFlowSummary({
 
         <section
           data-testid="hq-report-monthly-inventory-flow"
-          className="bg-background min-w-0 space-y-4 rounded-lg border p-4"
+          className="bg-card min-w-0 space-y-4 rounded-lg border p-4 shadow-sm"
           aria-label="재고 흐름 요약"
         >
           <h3 className="font-semibold tracking-normal">재고 흐름 요약</h3>
@@ -249,7 +249,7 @@ function TopRevenueItemSummary({
 
   return (
     <section
-      className="bg-background min-w-0 rounded-lg border p-4"
+      className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
       aria-label="최고매출품목"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -283,7 +283,11 @@ function TopRevenueItemSummary({
   );
 }
 
-function StatusSummary({ report }: { report: MonthlyClosingAnomalyReportData }) {
+function StatusSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
   const items = [
     ["본사마감", report.statusCounts.closedCount],
     ["검토대기", report.statusCounts.reviewCount],
@@ -298,7 +302,7 @@ function StatusSummary({ report }: { report: MonthlyClosingAnomalyReportData }) 
       aria-label="월간 마감 상태 요약"
     >
       {items.map(([label, count]) => (
-        <div key={label} className="bg-background rounded-lg border p-4">
+        <div key={label} className="bg-card rounded-lg border p-4 shadow-sm">
           <p className="text-muted-foreground text-sm">{label}</p>
           <p className="mt-2 text-2xl font-semibold tracking-normal tabular-nums">
             {Number(count).toLocaleString("ko-KR")}일
@@ -334,7 +338,7 @@ function CalculationDaySummary({
           {excludedCount.toLocaleString("ko-KR")}일
         </Badge>
       </div>
-      <div className="bg-background overflow-x-auto rounded-lg border">
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table className="min-w-[640px]">
           <TableHeader>
             <TableRow>
@@ -380,7 +384,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
   if (days.length === 0) {
     return (
       <section
-        className="bg-background text-muted-foreground rounded-lg border p-6 text-sm break-words"
+        className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm"
         aria-label="월간 일자별 마감 현황"
       >
         선택한 월에 표시할 날짜나 장부가 없습니다.
@@ -390,7 +394,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
 
   return (
     <section className="space-y-3" aria-label="월간 일자별 마감 현황">
-      <div className="bg-background hidden overflow-x-auto rounded-lg border md:block">
+      <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
         <Table className="min-w-[1120px]">
           <TableHeader>
             <TableRow>
@@ -442,7 +446,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
           <article
             key={day.dateInput}
             data-testid={`hq-report-monthly-mobile-day-${day.dateInput}`}
-            className="bg-background rounded-lg border p-4"
+            className="bg-card rounded-lg border p-4 shadow-sm"
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -460,7 +464,10 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-              <MobileMetric label="매출" evidence={day.metricEvidence.salesAmount} />
+              <MobileMetric
+                label="매출"
+                evidence={day.metricEvidence.salesAmount}
+              />
               <MobileMetric
                 label="이익률"
                 evidence={day.metricEvidence.grossMarginRate}
@@ -494,7 +501,7 @@ function AnomalyList({ items }: { items: MonthlyAnomalyItem[] }) {
       </div>
 
       {items.length === 0 ? (
-        <div className="bg-background text-muted-foreground rounded-lg border p-6 text-sm break-words">
+        <div className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm">
           주요 이상 항목이 없습니다.
         </div>
       ) : (
@@ -503,7 +510,7 @@ function AnomalyList({ items }: { items: MonthlyAnomalyItem[] }) {
             <article
               key={item.id}
               data-testid={`hq-report-monthly-anomaly-${item.dateInput}-${item.ledgerId}-${index}`}
-              className="bg-background rounded-lg border p-4"
+              className="bg-card rounded-lg border p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -551,7 +558,11 @@ function AnomalyList({ items }: { items: MonthlyAnomalyItem[] }) {
   );
 }
 
-function MetricCell({ evidence }: { evidence: DailyMeetingReportMetricEvidence }) {
+function MetricCell({
+  evidence,
+}: {
+  evidence: DailyMeetingReportMetricEvidence;
+}) {
   return (
     <TableCell className="text-right tabular-nums">
       <MetricValueWithEvidence evidence={evidence} />

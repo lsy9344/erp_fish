@@ -1,9 +1,5 @@
 import Link from "next/link";
-import {
-  BookOpenIcon,
-  PackageIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { BookOpenIcon, PackageIcon, TriangleAlertIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { LogoutButton } from "~/components/logout-button";
@@ -50,21 +46,26 @@ export function StoreManagerShell({
   children,
 }: StoreManagerShellProps) {
   return (
-    <div className="min-h-svh bg-background">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-4 px-4">
+    <div className="bg-background min-h-svh">
+      <header className="bg-card/95 sticky top-0 z-30 border-b backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-4 px-4">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">ERP Fish</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="text-primary truncate text-sm font-semibold">
+              ERP Fish
+            </p>
+            <p className="text-muted-foreground truncate text-xs">
               {storeName ? `${storeName} · ${userName}` : userName}
             </p>
           </div>
-          <nav className="hidden items-center gap-1 md:flex" aria-label="지점장 업무">
+          <nav
+            className="hidden items-center gap-1 md:flex"
+            aria-label="지점장 업무"
+          >
             {storeNavItems.map((item) => (
               <Link
                 key={item.label}
                 href={getStoreScopedHref(item.href, storeId)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="text-muted-foreground hover:bg-primary/10 hover:text-primary inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium"
               >
                 <item.icon className="size-4" aria-hidden="true" />
                 {item.label}
@@ -80,7 +81,7 @@ export function StoreManagerShell({
         {children}
       </main>
       <nav
-        className="fixed inset-x-0 bottom-0 z-50 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(15_23_42/0.08)] md:hidden"
         aria-label="지점장 하단 업무"
       >
         <div className="grid min-h-14 grid-cols-3">
@@ -90,7 +91,7 @@ export function StoreManagerShell({
               href={getStoreScopedHref(item.href, storeId)}
               className={cn(
                 "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium",
-                "text-muted-foreground hover:bg-muted hover:text-foreground",
+                "text-muted-foreground hover:bg-primary/10 hover:text-primary",
               )}
             >
               <item.icon className="size-5" aria-hidden="true" />
