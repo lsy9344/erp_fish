@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CheckCircle2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
@@ -15,6 +17,12 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -40,7 +48,6 @@ type InventoryStepClientProps = {
 
 type InventoryLineState = InventoryStepData["items"][number] & {
   currentQuantityInput: string;
-  quantityInput: string;
   adjustmentReasonInput: string;
 };
 
@@ -98,7 +105,6 @@ function toLineState(data: InventoryStepData): InventoryLineState[] {
     ...item,
     currentQuantityInput:
       item.currentQuantity === null ? "" : String(item.currentQuantity),
-    quantityInput: item.quantity === null ? "" : String(item.quantity),
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
 }
@@ -126,7 +132,6 @@ function mergeAdjustedLineState(
     return {
       ...item,
       currentQuantityInput: current.currentQuantityInput,
-      quantityInput: current.quantityInput,
       adjustmentReasonInput: current.adjustmentReasonInput,
     };
   });
@@ -154,7 +159,6 @@ export function InventoryStepClient({
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
-  const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [data, setData] = useState(initialData);
@@ -184,6 +188,7 @@ export function InventoryStepClient({
   const isOriginalEditBlocked =
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const isClosed = isOriginalEditBlocked;
+  const nextStepHref = `/app/store-entry/losses?storeId=${data.storeId}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || adjusted || savingAdjustmentProductId !== null}
 
@@ -208,7 +213,7 @@ export function InventoryStepClient({
         if (errors[`items.${index}.quantity`]?.length) {
           setActiveCategory(normalizeCategory(item.productCategory));
           window.setTimeout(() => {
-            quantityRefs.current[item.productId]?.focus();
+            currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
           return;
         }
@@ -221,10 +226,11 @@ export function InventoryStepClient({
 
     if (isClosed) {
       setResultMessage(null);
-      setFormError(
-        "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-      );
+      const message =
+        "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+      setFormError(message);
       setAdjustmentErrors({});
+      toast.error(message);
       return;
     }
 
@@ -245,7 +251,8 @@ export function InventoryStepClient({
             currentQuantityRefs.current[item.productId]?.value ??
             item.currentQuantityInput,
           quantity:
-            quantityRefs.current[item.productId]?.value ?? item.quantityInput,
+            currentQuantityRefs.current[item.productId]?.value ??
+            item.currentQuantityInput,
         })),
       });
 
@@ -254,6 +261,7 @@ export function InventoryStepClient({
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
         focusFirstError(nextErrors);
+        toast.error(result.error.message);
         return;
       }
 
@@ -262,26 +270,28 @@ export function InventoryStepClient({
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
+      toast.success("재고 정보를 저장했습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  function updateQuantity(productId: string, value: string) {
-    setItems((current) =>
-      current.map((item) =>
-        item.productId === productId ? { ...item, quantityInput: value } : item,
-      ),
-    );
+  function normalizeNumericInput(value: string) {
+    if (value === "" || value === "0") return value;
+    // 숫자만 있는 경우 선행 0 제거 (예: "01" → "1", "007" → "7")
+    if (/^\d+$/.test(value)) return String(Number(value));
+    return value;
   }
 
   function updateCurrentQuantity(productId: string, value: string) {
+    const normalized = normalizeNumericInput(value);
     setItems((current) =>
       current.map((item) =>
         item.productId === productId
-          ? { ...item, currentQuantityInput: value }
+          ? { ...item, currentQuantityInput: normalized }
           : item,
       ),
     );
@@ -334,6 +344,7 @@ export function InventoryStepClient({
     if (item.adjustment) {
       setResultMessage(null);
       setFormError("이미 조정 기록이 있습니다.");
+      toast.error("이미 조정 기록이 있습니다.");
       return;
     }
 
@@ -403,6 +414,7 @@ export function InventoryStepClient({
         }
 
         setFormError(result.error.message);
+        toast.error(result.error.message);
         return;
       }
 
@@ -414,8 +426,10 @@ export function InventoryStepClient({
       setFieldErrors({});
       setAdjustmentErrors({});
       setResultMessage("조정이 저장됐습니다.");
+      toast.success("재고 조정을 저장했습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setSavingAdjustmentProductId(null);
     }
@@ -423,11 +437,116 @@ export function InventoryStepClient({
 
   function isLineModified(item: InventoryLineState) {
     const currentQuantity = parseQuantityInput(item.currentQuantityInput);
-    const quantity = parseQuantityInput(item.quantityInput);
 
     return (
-      (currentQuantity !== null && currentQuantity !== item.previousQuantity) ||
-      (quantity !== null && quantity !== item.previousQuantity)
+      currentQuantity !== null && currentQuantity !== item.previousQuantity
+    );
+  }
+
+  function formatQuantity(value: number | null) {
+    if (value === null) {
+      return "계산 불가";
+    }
+
+    return `${new Intl.NumberFormat("ko-KR").format(value)}개`;
+  }
+
+  function getQuantityDifference(item: InventoryLineState) {
+    const systemQuantity = getSystemQuantity(item);
+    const actualQuantity = parseQuantityInput(item.currentQuantityInput);
+
+    if (systemQuantity === null || actualQuantity === null) {
+      return null;
+    }
+
+    return actualQuantity - systemQuantity;
+  }
+
+  function formatDifference(value: number | null) {
+    if (value === null) {
+      return "계산 불가";
+    }
+
+    return `${formatSignedQuantity(value)}개`;
+  }
+
+  function getSourceBadges(item: InventoryLineState) {
+    const badges: {
+      label: string;
+      detail: string;
+      className?: string;
+    }[] = [];
+
+    if (item.carryoverSource === "PREVIOUS_CLOSED_LEDGER") {
+      badges.push({
+        label: "전일 이월",
+        detail: `최근 본사 마감 장부의 재고가 넘어온 품목입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
+        className:
+          "border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300",
+      });
+    } else if (item.carryoverSource === "OPENING_SNAPSHOT") {
+      badges.push({
+        label: "월초 이월",
+        detail: `월초 재고 스냅샷에서 넘어온 품목입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
+        className:
+          "border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300",
+      });
+    } else {
+      badges.push({
+        label: "등록 품목",
+        detail:
+          "전일 재고 자동 이월이 불가하거나 기준 재고가 없어, 활성 품목 목록에서 표시된 항목입니다.",
+        className:
+          "border-slate-500 text-slate-700 dark:border-slate-400 dark:text-slate-300",
+      });
+    }
+
+    if (item.purchasedQuantity > 0) {
+      badges.push({
+        label: "오늘 매입",
+        detail: `3단계 매입에 저장된 수량입니다. 매입 ${formatQuantity(item.purchasedQuantity)}.`,
+        className:
+          "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
+      });
+    }
+
+    if (item.lossQuantity > 0) {
+      badges.push({
+        label: "오늘 손실",
+        detail: `손실/폐기 입력에 저장된 수량입니다. 손실 ${formatQuantity(item.lossQuantity)}, 금액 ${formatKrw(item.lossAmount)}.`,
+        className:
+          "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
+      });
+    }
+
+    return badges;
+  }
+
+  function renderBadgeWithTooltip({
+    label,
+    detail,
+    className,
+  }: {
+    label: string;
+    detail: string;
+    className?: string;
+  }) {
+    return (
+      <Tooltip key={`${label}-${detail}`}>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex outline-none">
+            <Badge
+              variant="outline"
+              className={`text-[10px] ${className ?? ""}`}
+            >
+              {label}
+            </Badge>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-64 leading-relaxed">
+          {detail}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
@@ -440,7 +559,7 @@ export function InventoryStepClient({
       return (
         <TableRow>
           <TableCell
-            colSpan={9}
+            colSpan={10}
             className="text-muted-foreground h-24 text-center"
           >
             표시할 품목이 없습니다.
@@ -455,16 +574,19 @@ export function InventoryStepClient({
       );
       const quantityError =
         fieldErrors[`items.${globalIndex}.currentQuantity`]?.[0];
-      const amountQuantityError =
-        fieldErrors[`items.${globalIndex}.quantity`]?.[0];
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
-      const amount = getInventoryAmount(item.quantityInput, item.unitPrice);
+      const amount = getInventoryAmount(
+        item.currentQuantityInput,
+        item.unitPrice,
+      );
       const systemQuantity = getSystemQuantity(item);
+      const quantityDifference = getQuantityDifference(item);
       const reasonError = adjustmentErrors[item.productId];
       const isSavingThisAdjustment =
         savingAdjustmentProductId === item.productId;
+      const sourceBadges = getSourceBadges(item);
 
       return (
         <TableRow
@@ -476,46 +598,59 @@ export function InventoryStepClient({
               : undefined
           }
         >
-          <TableCell className="min-w-44">
+          <TableCell className="w-40">
             <div className="flex flex-col gap-1">
               <span className="font-medium">{item.productName}</span>
-              {modified ? (
-                <Badge
-                  variant="outline"
-                  className="border-primary text-primary"
-                >
-                  수정됨
-                </Badge>
-              ) : null}
-              {adjustmentNeeded ? (
-                <Badge variant="secondary">조정 필요</Badge>
-              ) : null}
-              {adjusted ? (
-                <Badge
-                  variant="outline"
-                  className="border-emerald-600 text-emerald-700 dark:text-emerald-300"
-                >
-                  조정됨
-                </Badge>
-              ) : null}
+              <div className="flex flex-wrap gap-1">
+                {modified ? (
+                  <Badge
+                    variant="outline"
+                    className="border-primary text-primary text-[10px]"
+                  >
+                    수정됨
+                  </Badge>
+                ) : null}
+                {adjustmentNeeded
+                  ? renderBadgeWithTooltip({
+                      label: "조정 필요",
+                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 차이 사유를 남겨 주세요.`,
+                      className:
+                        "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
+                    })
+                  : null}
+                {adjusted
+                  ? renderBadgeWithTooltip({
+                      label: "조정됨",
+                      detail: item.adjustment
+                        ? `조정 사유가 저장됐습니다. 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개, ${formatKrw(item.adjustment.differenceAmount)}.`
+                        : "조정 사유가 저장됐습니다.",
+                      className:
+                        "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
+                    })
+                  : null}
+                {sourceBadges.map(renderBadgeWithTooltip)}
+              </div>
             </div>
           </TableCell>
-          <TableCell className="min-w-24">{item.productSpec}</TableCell>
-          <TableCell className="min-w-24 text-right tabular-nums">
+          <TableCell className="w-20 text-sm">{item.productSpec}</TableCell>
+          <TableCell className="w-16 text-right tabular-nums">
             {item.previousQuantity}
           </TableCell>
-          <TableCell className="min-w-24 text-right tabular-nums">
+          <TableCell className="w-16 text-right tabular-nums">
             {item.purchasedQuantity}
           </TableCell>
-          <TableCell className="min-w-24 text-right tabular-nums">
-            <div className="grid gap-1">
+          <TableCell className="w-20 text-right tabular-nums">
+            <div className="grid gap-0.5">
               <span>{item.lossQuantity}</span>
               <span className="text-muted-foreground text-xs">
                 {formatKrw(item.lossAmount)}
               </span>
             </div>
           </TableCell>
-          <TableCell className="min-w-36">
+          <TableCell className="w-20 text-right tabular-nums">
+            {formatQuantity(systemQuantity)}
+          </TableCell>
+          <TableCell className="w-28">
             <Input
               ref={(node) => {
                 currentQuantityRefs.current[item.productId] = node;
@@ -534,7 +669,7 @@ export function InventoryStepClient({
                 updateCurrentQuantity(item.productId, event.currentTarget.value)
               }
               disabled={isSaving || isClosed || isAdjustmentSavePending}
-              className="min-h-11 min-w-24 tabular-nums"
+              className="h-8 tabular-nums"
             />
             {quantityError ? (
               <p
@@ -546,132 +681,101 @@ export function InventoryStepClient({
               </p>
             ) : null}
           </TableCell>
-          <TableCell className="min-w-32 text-right tabular-nums">
+          <TableCell className="w-28 text-right tabular-nums">
+            <span
+              className={
+                quantityDifference === null || quantityDifference === 0
+                  ? undefined
+                  : "text-destructive font-medium"
+              }
+            >
+              {formatDifference(quantityDifference)}
+            </span>
+          </TableCell>
+          <TableCell className="w-28 text-right tabular-nums">
             {formatKrw(amount)}
           </TableCell>
-          <TableCell className="min-w-24">
-            <Input
-              ref={(node) => {
-                quantityRefs.current[item.productId] = node;
-              }}
-              aria-label={`${item.productName} 수량`}
-              aria-invalid={Boolean(amountQuantityError)}
-              aria-describedby={
-                amountQuantityError
-                  ? `inventory-amount-quantity-${item.productId}-error`
-                  : undefined
-              }
-              inputMode="numeric"
-              autoComplete="off"
-              value={item.quantityInput}
-              onChange={(event) =>
-                updateQuantity(item.productId, event.currentTarget.value)
-              }
-              disabled={isSaving || isClosed || isAdjustmentSavePending}
-              className="min-h-11 min-w-24 tabular-nums"
-            />
-            {amountQuantityError ? (
-              <p
-                id={`inventory-amount-quantity-${item.productId}-error`}
-                role="alert"
-                className="text-destructive mt-1 text-xs"
-              >
-                {amountQuantityError}
-              </p>
-            ) : null}
-          </TableCell>
-          <TableCell className="min-w-24">
-            <div className="flex min-w-64 flex-col gap-2">
-              <div className="flex flex-wrap gap-1">
-                <span>{modified ? "수정됨" : "이월"}</span>
-                {adjustmentNeeded ? <Badge>조정 필요</Badge> : null}
-                {adjusted ? <Badge variant="outline">조정됨</Badge> : null}
+          <TableCell className="w-56">
+            {adjusted && item.adjustment ? (
+              <div className="text-muted-foreground grid gap-0.5 text-xs">
+                <p>
+                  조정 전{" "}
+                  <span className="tabular-nums">
+                    {item.adjustment.beforeQuantity} /{" "}
+                    {formatKrw(item.adjustment.beforeAmount)}
+                  </span>
+                </p>
+                <p>
+                  조정 후{" "}
+                  <span className="tabular-nums">
+                    {item.adjustment.afterQuantity} /{" "}
+                    {formatKrw(item.adjustment.afterAmount)}
+                  </span>
+                </p>
+                <p>
+                  차이{" "}
+                  <span className="tabular-nums">
+                    {formatSignedQuantity(item.adjustment.differenceQuantity)} /{" "}
+                    {formatKrw(item.adjustment.differenceAmount)}
+                  </span>
+                </p>
+                <p>사유: {item.adjustment.reason}</p>
               </div>
-
-              {isClosed ? (
-                <p className="text-muted-foreground text-xs">
-                  {
-                    "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-                  }
-                </p>
-              ) : null}
-
-              {adjusted && item.adjustment ? (
-                <div className="text-muted-foreground grid gap-1 text-xs">
-                  <p>
-                    조정 전{" "}
-                    <span className="tabular-nums">
-                      {item.adjustment.beforeQuantity} /{" "}
-                      {formatKrw(item.adjustment.beforeAmount)}
-                    </span>
-                  </p>
-                  <p>
-                    조정 후{" "}
-                    <span className="tabular-nums">
-                      {item.adjustment.afterQuantity} /{" "}
-                      {formatKrw(item.adjustment.afterAmount)}
-                    </span>
-                  </p>
-                  <p>
-                    차이{" "}
-                    <span className="tabular-nums">
-                      {formatSignedQuantity(item.adjustment.differenceQuantity)}{" "}
-                      / {formatKrw(item.adjustment.differenceAmount)}
-                    </span>
-                  </p>
-                  <p>사유 {item.adjustment.reason}</p>
+            ) : isClosed ? (
+              <p className="text-muted-foreground text-xs">정정 기록 사용</p>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    ref={(node) => {
+                      reasonRefs.current[item.productId] = node;
+                    }}
+                    aria-label={`${item.productName} 조정 사유`}
+                    aria-invalid={Boolean(reasonError)}
+                    aria-describedby={
+                      reasonError
+                        ? `inventory-adjustment-reason-${item.productId}-error`
+                        : undefined
+                    }
+                    autoComplete="off"
+                    value={item.adjustmentReasonInput}
+                    onChange={(event) =>
+                      updateAdjustmentReason(
+                        item.productId,
+                        event.currentTarget.value,
+                      )
+                    }
+                    disabled={adjusted || isAdjustmentSavePending}
+                    className="h-8 min-w-0 flex-1"
+                    placeholder="조정 사유"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`${item.productName} 조정 기록`}
+                    onClick={() => handleAdjustmentSave(item)}
+                    disabled={adjusted || savingAdjustmentProductId !== null}
+                    className="h-8 shrink-0 px-2 text-xs"
+                  >
+                    {isSavingThisAdjustment ? "기록 중" : "조정"}
+                  </Button>
                 </div>
-              ) : systemQuantity !== null ? (
-                <p className="text-muted-foreground text-xs tabular-nums">
-                  조정 전 기준 {systemQuantity}
-                </p>
-              ) : null}
-
-              <Input
-                ref={(node) => {
-                  reasonRefs.current[item.productId] = node;
-                }}
-                aria-label={`${item.productName} 조정 사유`}
-                aria-invalid={Boolean(reasonError)}
-                aria-describedby={
-                  reasonError
-                    ? `inventory-adjustment-reason-${item.productId}-error`
-                    : undefined
-                }
-                autoComplete="off"
-                value={item.adjustmentReasonInput}
-                onChange={(event) =>
-                  updateAdjustmentReason(
-                    item.productId,
-                    event.currentTarget.value,
-                  )
-                }
-                disabled={isClosed || adjusted || isAdjustmentSavePending}
-                className="min-h-11 min-w-48"
-                placeholder="조정 사유"
-              />
-              {reasonError ? (
-                <p
-                  id={`inventory-adjustment-reason-${item.productId}-error`}
-                  role="alert"
-                  className="text-destructive text-xs"
-                >
-                  {reasonError}
-                </p>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                aria-label={`${item.productName} 조정 기록`}
-                onClick={() => handleAdjustmentSave(item)}
-                disabled={
-                  isClosed || adjusted || savingAdjustmentProductId !== null
-                }
-                className="min-h-11"
-              >
-                {isSavingThisAdjustment ? "기록 중..." : "조정 기록"}
-              </Button>
-            </div>
+                {reasonError ? (
+                  <p
+                    id={`inventory-adjustment-reason-${item.productId}-error`}
+                    role="alert"
+                    className="text-destructive text-xs"
+                  >
+                    {reasonError}
+                  </p>
+                ) : systemQuantity !== null ? (
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    기준 {systemQuantity}
+                  </p>
+                ) : null}
+              </div>
+            )}
           </TableCell>
         </TableRow>
       );
@@ -679,119 +783,147 @@ export function InventoryStepClient({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-      <header className="bg-card text-card-foreground rounded-lg border p-4 shadow-sm">
-        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
-        <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {storeName} · 영업일: {formatClosingDate(data.closingDate)}
-        </p>
-      </header>
+    <TooltipProvider>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <header className="bg-card text-card-foreground rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
+          <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {storeName} · 영업일: {formatClosingDate(data.closingDate)}
+          </p>
+        </header>
 
-      <Alert
-        variant={data.carryover.status === "manual" ? "destructive" : "default"}
-      >
-        <AlertTitle>
-          {data.carryover.status === "manual"
-            ? "수동 입력 필요"
-            : "전일재고 이월"}
-        </AlertTitle>
-        <AlertDescription>{carryoverMessage}</AlertDescription>
-      </Alert>
-
-      {isOriginalEditBlocked ? (
-        <Alert variant="destructive">
-          <AlertTitle>본사 마감 장부</AlertTitle>
-          <AlertDescription>
-            {
-              "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-            }
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <form
-        ref={formRef}
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-4"
-        noValidate
-      >
-        <Tabs
-          value={activeCategory}
-          onValueChange={(value) => setActiveCategory(normalizeCategory(value))}
+        <Alert
+          variant={
+            data.carryover.status === "manual" ? "destructive" : "default"
+          }
         >
-          <TabsList
-            variant="line"
-            className="min-h-11 w-full justify-start border-b bg-transparent"
+          <AlertTitle>
+            {data.carryover.status === "manual"
+              ? "수동 입력 필요"
+              : "전일재고 이월"}
+          </AlertTitle>
+          <AlertDescription>{carryoverMessage}</AlertDescription>
+        </Alert>
+
+        {isOriginalEditBlocked ? (
+          <Alert variant="destructive">
+            <AlertTitle>본사 마감 장부</AlertTitle>
+            <AlertDescription>
+              {
+                "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+              }
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-4"
+          noValidate
+        >
+          <Tabs
+            value={activeCategory}
+            onValueChange={(value) =>
+              setActiveCategory(normalizeCategory(value))
+            }
           >
+            <TabsList
+              variant="line"
+              className="min-h-11 w-full justify-start border-b bg-transparent"
+            >
+              {categories.map((category) => (
+                <TabsTrigger
+                  key={category}
+                  value={category}
+                  className="min-h-9 px-4"
+                >
+                  {category}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+
             {categories.map((category) => (
-              <TabsTrigger
-                key={category}
-                value={category}
-                className="min-h-9 px-4"
-              >
-                {category}
-              </TabsTrigger>
+              <TabsContent key={category} value={category}>
+                <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
+                  <Table aria-label="재고 품목" className="min-w-[940px]">
+                    <TableHeader className="sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead scope="col" className="w-40">
+                          품목
+                        </TableHead>
+                        <TableHead scope="col" className="w-20">
+                          규격
+                        </TableHead>
+                        <TableHead scope="col" className="w-16 text-right">
+                          전일재고
+                        </TableHead>
+                        <TableHead scope="col" className="w-16 text-right">
+                          매입
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          손실
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          기준재고
+                        </TableHead>
+                        <TableHead scope="col" className="w-28">
+                          당일재고
+                        </TableHead>
+                        <TableHead scope="col" className="w-28 text-right">
+                          차이
+                        </TableHead>
+                        <TableHead scope="col" className="w-28 text-right">
+                          재고금액
+                        </TableHead>
+                        <TableHead scope="col" className="w-56">
+                          정정
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>{renderRows(category)}</TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
             ))}
-          </TabsList>
+          </Tabs>
 
-          {categories.map((category) => (
-            <TabsContent key={category} value={category}>
-              <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                <Table aria-label="재고 품목" className="min-w-[1200px]">
-                  <TableHeader className="sticky top-0 z-10">
-                    <TableRow>
-                      <TableHead scope="col">품목</TableHead>
-                      <TableHead scope="col">규격</TableHead>
-                      <TableHead scope="col" className="text-right">
-                        전일재고
-                      </TableHead>
-                      <TableHead scope="col" className="text-right">
-                        매입
-                      </TableHead>
-                      <TableHead scope="col" className="text-right">
-                        손실
-                      </TableHead>
-                      <TableHead scope="col">당일재고</TableHead>
-                      <TableHead scope="col" className="text-right">
-                        재고금액
-                      </TableHead>
-                      <TableHead scope="col">수량</TableHead>
-                      <TableHead scope="col">상태</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>{renderRows(category)}</TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-          ))}
-        </Tabs>
+          {resultMessage ? (
+            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+              <p
+                className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                role="status"
+                aria-live="polite"
+              >
+                <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+                {resultMessage}
+              </p>
+              {resultMessage === "저장됐습니다." ? (
+                <Button asChild>
+                  <a href={nextStepHref}>다음 단계로 →</a>
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
-        {resultMessage ? (
-          <p
-            className="text-sm text-emerald-700 dark:text-emerald-300"
-            role="status"
-          >
-            {resultMessage}
-          </p>
-        ) : null}
+          {formError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {formError}
+            </p>
+          ) : null}
 
-        {formError ? (
-          <p className="text-destructive text-sm" role="alert">
-            {formError}
-          </p>
-        ) : null}
-
-        <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
-          <Button
-            type="submit"
-            className="min-h-11 w-full md:w-auto"
-            disabled={isSaving || isClosed}
-          >
-            {isSaving ? "저장 중..." : "저장"}
-          </Button>
-        </div>
-      </form>
-    </div>
+          <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+            <Button
+              type="submit"
+              className="min-h-11 w-full md:w-auto"
+              disabled={isSaving || isClosed}
+            >
+              {isSaving ? "저장 중..." : "저장"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </TooltipProvider>
   );
 }
