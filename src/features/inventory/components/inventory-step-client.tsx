@@ -27,6 +27,7 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
@@ -190,7 +191,7 @@ export function InventoryStepClient({
   const isClosed = isOriginalEditBlocked;
   const nextStepHref = `/app/store-entry/losses?storeId=${data.storeId}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
-  // Contract: disabled={isClosed || adjusted || savingAdjustmentProductId !== null}
+  // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
 
   useEffect(() => {
     setData(initialData);
@@ -340,13 +341,6 @@ export function InventoryStepClient({
 
   async function handleAdjustmentSave(item: InventoryLineState) {
     const reason = item.adjustmentReasonInput.trim();
-
-    if (item.adjustment) {
-      setResultMessage(null);
-      setFormError("이미 조정 기록이 있습니다.");
-      toast.error("이미 조정 기록이 있습니다.");
-      return;
-    }
 
     setResultMessage(null);
     setFormError(null);
@@ -587,6 +581,7 @@ export function InventoryStepClient({
       const isSavingThisAdjustment =
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
+      const adjustmentActionLabel = adjusted ? "수정" : "조정";
 
       return (
         <TableRow
@@ -696,35 +691,37 @@ export function InventoryStepClient({
             {formatKrw(amount)}
           </TableCell>
           <TableCell className="w-56">
-            {adjusted && item.adjustment ? (
-              <div className="text-muted-foreground grid gap-0.5 text-xs">
-                <p>
-                  조정 전{" "}
-                  <span className="tabular-nums">
-                    {item.adjustment.beforeQuantity} /{" "}
-                    {formatKrw(item.adjustment.beforeAmount)}
-                  </span>
-                </p>
-                <p>
-                  조정 후{" "}
-                  <span className="tabular-nums">
-                    {item.adjustment.afterQuantity} /{" "}
-                    {formatKrw(item.adjustment.afterAmount)}
-                  </span>
-                </p>
-                <p>
-                  차이{" "}
-                  <span className="tabular-nums">
-                    {formatSignedQuantity(item.adjustment.differenceQuantity)} /{" "}
-                    {formatKrw(item.adjustment.differenceAmount)}
-                  </span>
-                </p>
-                <p>사유: {item.adjustment.reason}</p>
-              </div>
-            ) : isClosed ? (
+            {isClosed ? (
               <p className="text-muted-foreground text-xs">정정 기록 사용</p>
             ) : (
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-1.5">
+                {adjusted && item.adjustment ? (
+                  <div className="text-muted-foreground grid gap-0.5 text-xs">
+                    <p>
+                      조정 전{" "}
+                      <span className="tabular-nums">
+                        {item.adjustment.beforeQuantity} /{" "}
+                        {formatKrw(item.adjustment.beforeAmount)}
+                      </span>
+                    </p>
+                    <p>
+                      조정 후{" "}
+                      <span className="tabular-nums">
+                        {item.adjustment.afterQuantity} /{" "}
+                        {formatKrw(item.adjustment.afterAmount)}
+                      </span>
+                    </p>
+                    <p>
+                      차이{" "}
+                      <span className="tabular-nums">
+                        {formatSignedQuantity(
+                          item.adjustment.differenceQuantity,
+                        )}{" "}
+                        / {formatKrw(item.adjustment.differenceAmount)}
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-1.5">
                   <Input
                     ref={(node) => {
@@ -745,7 +742,7 @@ export function InventoryStepClient({
                         event.currentTarget.value,
                       )
                     }
-                    disabled={adjusted || isAdjustmentSavePending}
+                    disabled={isAdjustmentSavePending}
                     className="h-8 min-w-0 flex-1"
                     placeholder="조정 사유"
                   />
@@ -753,12 +750,12 @@ export function InventoryStepClient({
                     type="button"
                     variant="outline"
                     size="sm"
-                    aria-label={`${item.productName} 조정 기록`}
+                    aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
                     onClick={() => handleAdjustmentSave(item)}
-                    disabled={adjusted || savingAdjustmentProductId !== null}
+                    disabled={savingAdjustmentProductId !== null}
                     className="h-8 shrink-0 px-2 text-xs"
                   >
-                    {isSavingThisAdjustment ? "기록 중" : "조정"}
+                    {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
                   </Button>
                 </div>
                 {reasonError ? (
@@ -792,6 +789,12 @@ export function InventoryStepClient({
             {storeName} · 영업일: {formatClosingDate(data.closingDate)}
           </p>
         </header>
+
+        <StoreEntryStepNavigation
+          storeId={data.storeId}
+          currentStep="inventory"
+          stepCompletion={data.stepCompletion}
+        />
 
         <Alert
           variant={

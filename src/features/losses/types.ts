@@ -1,4 +1,5 @@
 import { type DailyLedgerStatus } from "../../../generated/prisma";
+import { type StoreEntryStepCompletion } from "~/features/ledger/step-completion";
 
 export type LossProductOption = {
   id: string;
@@ -46,6 +47,7 @@ export type LossStepData = {
   closingDate: string;
   updatedAt: string;
   status: DailyLedgerStatus;
+  stepCompletion: StoreEntryStepCompletion;
   productOptions: LossProductOption[];
   lossTypeOptions: LossTypeOption[];
   lossItems: LossLineItem[];

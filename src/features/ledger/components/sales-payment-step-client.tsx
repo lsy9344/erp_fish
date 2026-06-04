@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CheckCircle2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
@@ -127,6 +129,11 @@ export function SalesPaymentStepClient({
   const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isSalesSaved = ledger.totalSalesAmount > 0;
+  const isExpenseSaved = ledger.expenseItems.length > 0;
+  const isPurchaseSaved = ledger.purchaseItems.length > 0;
+  const isWorkSaved = ledger.workerCount !== null;
+  const nextStepHref = stepHref(ledger.storeId, "cost");
 
   function fillLedger(data: LedgerCostStepData) {
     setLedger(data);
@@ -181,10 +188,9 @@ export function SalesPaymentStepClient({
         cardAmount: toRawKrwInputValue(
           cardAmountInputRef.current?.value ?? cardAmount,
         ),
-        otherPaymentAmount:
-          toRawKrwInputValue(
-            otherPaymentInputRef.current?.value ?? otherPaymentAmount,
-          ),
+        otherPaymentAmount: toRawKrwInputValue(
+          otherPaymentInputRef.current?.value ?? otherPaymentAmount,
+        ),
       };
 
       const result = await saveAction(payload);
@@ -195,15 +201,18 @@ export function SalesPaymentStepClient({
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
         focusFirstError(nextErrors);
+        toast.error(result.error.message);
         return;
       }
 
       fillLedger(result.data);
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setResultMessage("저장됐습니다.");
+      toast.success("매출/결제 정보를 저장했습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       setResultMessage(null);
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -249,6 +258,11 @@ export function SalesPaymentStepClient({
                 href={stepHref(ledger.storeId, "sales")}
               >
                 1단계: 매출/결제
+                {isSalesSaved ? (
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -257,6 +271,11 @@ export function SalesPaymentStepClient({
                 href={stepHref(ledger.storeId, "cost")}
               >
                 2단계: 비용
+                {isExpenseSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -265,6 +284,11 @@ export function SalesPaymentStepClient({
                 href={stepHref(ledger.storeId, "purchase")}
               >
                 3단계: 매입
+                {isPurchaseSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
@@ -279,6 +303,11 @@ export function SalesPaymentStepClient({
                 href={stepHref(ledger.storeId, "work")}
               >
                 6단계: 근무인원
+                {isWorkSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -407,9 +436,7 @@ export function SalesPaymentStepClient({
               value={otherPaymentAmount}
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
-                setOtherPaymentAmount(
-                  formatKrwInput(event.currentTarget.value),
-                )
+                setOtherPaymentAmount(formatKrwInput(event.currentTarget.value))
               }
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(otherPaymentAmountError)}
@@ -454,12 +481,19 @@ export function SalesPaymentStepClient({
           </div>
 
           {resultMessage ? (
-            <p
-              className="text-sm text-emerald-700 dark:text-emerald-300"
-              role="status"
-            >
-              {resultMessage}
-            </p>
+            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+              <p
+                className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                role="status"
+                aria-live="polite"
+              >
+                <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+                {resultMessage}
+              </p>
+              <Button asChild>
+                <a href={nextStepHref}>다음 단계로 →</a>
+              </Button>
+            </div>
           ) : null}
 
           {formError ? (

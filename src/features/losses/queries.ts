@@ -8,6 +8,7 @@ import {
 import { requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
 import { getTodayStoreLedgerInTx } from "~/features/ledger/queries";
+import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { type LossStepData } from "./types";
 
 const lossItemSelect = {
@@ -35,6 +36,18 @@ const lossLedgerSelect = {
   closingDate: true,
   updatedAt: true,
   status: true,
+  totalSalesAmount: true,
+  workerCount: true,
+  ledgerExpenses: {
+    select: {
+      id: true,
+    },
+  },
+  ledgerPurchaseItems: {
+    select: {
+      id: true,
+    },
+  },
 } as const;
 
 type LossLedgerPayload = Prisma.DailyLedgerGetPayload<{
@@ -46,33 +59,37 @@ async function getLossStepDataForLedgerInTx(
   ledger: LossLedgerPayload,
   thresholds: LossSignalThresholds = defaultLossSignalThresholds,
 ): Promise<LossStepData> {
-  const [productOptions, lossTypeOptions, lossItems] = await Promise.all([
-    tx.product.findMany({
-      where: { isActive: true },
-      orderBy: [{ category: "asc" }, { name: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        spec: true,
-        defaultUnitPrice: true,
-      },
-    }),
-    tx.ledgerInputCode.findMany({
-      where: { isActive: true, group: "LOSS_TYPE" },
-      orderBy: [{ displayOrder: "asc" }, { name: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        displayOrder: true,
-      },
-    }),
-    tx.ledgerLossItem.findMany({
-      where: { dailyLedgerId: ledger.id },
-      select: lossItemSelect,
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-  ]);
+  const [productOptions, lossTypeOptions, lossItems, inventoryItemCount] =
+    await Promise.all([
+      tx.product.findMany({
+        where: { isActive: true },
+        orderBy: [{ category: "asc" }, { name: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          spec: true,
+          defaultUnitPrice: true,
+        },
+      }),
+      tx.ledgerInputCode.findMany({
+        where: { isActive: true, group: "LOSS_TYPE" },
+        orderBy: [{ displayOrder: "asc" }, { name: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          displayOrder: true,
+        },
+      }),
+      tx.ledgerLossItem.findMany({
+        where: { dailyLedgerId: ledger.id },
+        select: lossItemSelect,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+      tx.ledgerInventoryItem.count({
+        where: { dailyLedgerId: ledger.id },
+      }),
+    ]);
   const summary = summarizeLossItems(lossItems);
 
   return {
@@ -81,6 +98,11 @@ async function getLossStepDataForLedgerInTx(
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
     status: ledger.status,
+    stepCompletion: getStoreEntryStepCompletion({
+      ...ledger,
+      inventoryItemCount,
+      lossItemCount: lossItems.length,
+    }),
     productOptions,
     lossTypeOptions,
     lossItems,

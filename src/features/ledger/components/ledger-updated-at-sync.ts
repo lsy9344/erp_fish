@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const LEDGER_UPDATED_EVENT = "erp-fish:ledger-updated";
 const latestLedgerUpdatedAt = new Map<string, string>();
@@ -24,18 +24,22 @@ export function useLedgerUpdatedAtSync(
   ledgerId: string,
   onUpdatedAt: (updatedAt: string) => void,
 ) {
+  const onUpdatedAtRef = useRef(onUpdatedAt);
+
+  onUpdatedAtRef.current = onUpdatedAt;
+
   useEffect(() => {
     const latestUpdatedAt = latestLedgerUpdatedAt.get(ledgerId);
 
     if (latestUpdatedAt) {
-      onUpdatedAt(latestUpdatedAt);
+      onUpdatedAtRef.current(latestUpdatedAt);
     }
 
     function handleLedgerUpdated(event: Event) {
       const detail = (event as CustomEvent<LedgerUpdatedEventDetail>).detail;
 
       if (detail?.ledgerId === ledgerId) {
-        onUpdatedAt(detail.updatedAt);
+        onUpdatedAtRef.current(detail.updatedAt);
       }
     }
 
@@ -44,5 +48,5 @@ export function useLedgerUpdatedAtSync(
     return () => {
       window.removeEventListener(LEDGER_UPDATED_EVENT, handleLedgerUpdated);
     };
-  }, [ledgerId, onUpdatedAt]);
+  }, [ledgerId]);
 }

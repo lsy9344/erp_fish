@@ -2,6 +2,7 @@ import {
   type DailyLedgerStatus,
   type InventoryCarryoverSource,
 } from "../../../generated/prisma";
+import { type StoreEntryStepCompletion } from "~/features/ledger/step-completion";
 
 export type InventoryStepLine = {
   id: string;
@@ -50,6 +51,7 @@ export type InventoryStepData = {
   closingDate: string;
   updatedAt: string;
   status: DailyLedgerStatus;
+  stepCompletion: StoreEntryStepCompletion;
   items: InventoryStepLine[];
   carryover: InventoryCarryoverState;
 };

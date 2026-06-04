@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -11,6 +12,7 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { saveLedgerLosses } from "~/features/losses/actions";
 import { type LossStepData } from "~/features/losses/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
@@ -64,16 +66,9 @@ function normalizeStatusLabel(status: LossStepData["status"]) {
   return "휴무";
 }
 
-function createClientKey() {
-  return typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function createLineState(): LossLineState {
+function createLineState(clientKey: string): LossLineState {
   return {
-    clientKey: createClientKey(),
+    clientKey,
     id: "",
     productId: "",
     ledgerInputCodeId: "",
@@ -129,6 +124,7 @@ export function LossStepClient({
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
   const amountRefs = useRef<(HTMLInputElement | null)[]>([]);
   const reasonRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const nextDraftLineNumberRef = useRef(0);
 
   const [data, setData] = useState(initialData);
   const [items, setItems] = useState(() => toLineState(initialData));
@@ -185,7 +181,11 @@ export function LossStepClient({
 
   function addLine() {
     clearFeedback();
-    setItems((current) => [...current, createLineState()]);
+    nextDraftLineNumberRef.current += 1;
+    setItems((current) => [
+      ...current,
+      createLineState(`draft-loss-line-${nextDraftLineNumberRef.current}`),
+    ]);
   }
 
   function removeLine(lineKey: string) {
@@ -257,15 +257,23 @@ export function LossStepClient({
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
         focusFirstError(nextErrors);
+        toast.error(result.error.message);
         return;
       }
 
       setData(result.data);
       setItems(toLineState(result.data));
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
-      setResultMessage("저장됐습니다.");
+      const savedCount = result.data.lossItems.length;
+      const message =
+        savedCount > 0
+          ? `손실/폐기 항목 ${savedCount}건을 저장했습니다.`
+          : "저장됐습니다.";
+      setResultMessage(message);
+      toast.success(message);
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -291,6 +299,7 @@ export function LossStepClient({
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
+  const nextStepHref = `/app/store-entry?storeId=${data.storeId}&step=work`;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -306,6 +315,12 @@ export function LossStepClient({
           </span>
         </p>
       </header>
+
+      <StoreEntryStepNavigation
+        storeId={data.storeId}
+        currentStep="losses"
+        stepCompletion={data.stepCompletion}
+      />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -632,12 +647,19 @@ export function LossStepClient({
 
         <div className="flex flex-col gap-2">
           {resultMessage ? (
-            <p
-              className="text-sm text-emerald-700 dark:text-emerald-300"
-              role="status"
-            >
-              {resultMessage}
-            </p>
+            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+              <p
+                className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                role="status"
+                aria-live="polite"
+              >
+                <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+                {resultMessage}
+              </p>
+              <Button asChild>
+                <a href={nextStepHref}>다음 단계로 →</a>
+              </Button>
+            </div>
           ) : null}
 
           {formError ? (

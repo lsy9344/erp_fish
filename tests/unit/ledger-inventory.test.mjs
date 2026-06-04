@@ -497,11 +497,15 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /disabled={isClosed \|\| adjusted \|\| savingAdjustmentProductId !== null}/,
+    /const adjustmentActionLabel = adjusted \? "수정" : "조정"/,
   );
   assert.match(
     componentSource,
     /const isAdjustmentSavePending = savingAdjustmentProductId !== null/,
+  );
+  assert.match(
+    componentSource,
+    /disabled={savingAdjustmentProductId !== null}/,
   );
   assert.match(
     componentSource,

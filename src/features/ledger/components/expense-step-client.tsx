@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
@@ -49,6 +50,7 @@ const DEFAULT_EXPENSE_CODE_OPTION: ExpenseCodeOption = {
   id: "__default_expense_other__",
   name: "기타",
 };
+const FALLBACK_EXPENSE_LINE_ID = "fallback-expense-line";
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
@@ -92,12 +94,19 @@ function stepHref(
   return `/app/store-entry?storeId=${storeId}&step=${step}`;
 }
 
-function createLineState(option?: ExpenseCodeOption): ExpenseLine {
+function createExpenseLineId() {
+  return typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createLineState(
+  option?: ExpenseCodeOption,
+  id = createExpenseLineId(),
+): ExpenseLine {
   return {
-    id:
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id,
     ledgerInputCodeId: option?.id ?? "",
     ledgerInputCodeName: option?.name ?? "",
     amount: "",
@@ -120,7 +129,7 @@ function createFallbackExpenseLines(items: LedgerCostStepData["expenseItems"]) {
 
   return lines.length > 0
     ? lines
-    : [createLineState(DEFAULT_EXPENSE_CODE_OPTION)];
+    : [createLineState(DEFAULT_EXPENSE_CODE_OPTION, FALLBACK_EXPENSE_LINE_ID)];
 }
 
 export function ExpenseStepClient({
@@ -190,7 +199,13 @@ export function ExpenseStepClient({
     setLedger(next);
     setExpenseItems(toExpenseLines(next.expenseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
-    setResultMessage("저장됐습니다.");
+    const savedCount = next.expenseItems.length;
+    const message =
+      savedCount > 0
+        ? `비용 항목 ${savedCount}건을 저장했습니다.`
+        : "저장됐습니다.";
+    setResultMessage(message);
+    toast.success(message);
   }
 
   function clearRowErrors() {
@@ -204,6 +219,7 @@ export function ExpenseStepClient({
     if (!hasRegisteredExpenseCodeOptions) {
       setFormError("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
       setResultMessage(null);
+      toast.error("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
       return;
     }
 
@@ -234,6 +250,7 @@ export function ExpenseStepClient({
         setFormError(result.error.message);
         setIsSaving(false);
         focusFirstError(nextErrors);
+        toast.error(result.error.message);
         return;
       }
 
@@ -242,6 +259,7 @@ export function ExpenseStepClient({
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       setResultMessage(null);
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -285,6 +303,11 @@ export function ExpenseStepClient({
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isSalesSaved = ledger.totalSalesAmount > 0;
+  const isExpenseSaved = ledger.expenseItems.length > 0;
+  const isPurchaseSaved = ledger.purchaseItems.length > 0;
+  const isWorkSaved = ledger.workerCount !== null;
+  const nextStepHref = stepHref(ledger.storeId, "purchase");
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
@@ -312,6 +335,11 @@ export function ExpenseStepClient({
                 href={stepHref(ledger.storeId, "sales")}
               >
                 1단계: 매출/결제
+                {isSalesSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -321,6 +349,11 @@ export function ExpenseStepClient({
                 href={stepHref(ledger.storeId, "cost")}
               >
                 2단계: 비용
+                {isExpenseSaved ? (
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -329,6 +362,11 @@ export function ExpenseStepClient({
                 href={stepHref(ledger.storeId, "purchase")}
               >
                 3단계: 매입
+                {isPurchaseSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
@@ -343,6 +381,11 @@ export function ExpenseStepClient({
                 href={stepHref(ledger.storeId, "work")}
               >
                 6단계: 근무인원
+                {isWorkSaved ? (
+                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    저장됨
+                  </span>
+                ) : null}
               </a>
             </li>
             <li>
@@ -570,12 +613,19 @@ export function ExpenseStepClient({
         noValidate
       >
         {resultMessage ? (
-          <p
-            className="text-sm text-emerald-700 dark:text-emerald-300"
-            role="status"
-          >
-            {resultMessage}
-          </p>
+          <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <p
+              className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+              role="status"
+              aria-live="polite"
+            >
+              <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+              {resultMessage}
+            </p>
+            <Button asChild>
+              <a href={nextStepHref}>다음 단계로 →</a>
+            </Button>
+          </div>
         ) : null}
 
         {formError ? (

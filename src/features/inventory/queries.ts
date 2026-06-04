@@ -7,6 +7,7 @@ import {
   ledgerSelect,
   getTodayStoreLedgerInTx,
 } from "~/features/ledger/queries";
+import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { requireHeadquartersUser } from "~/server/authz";
 import { type InventoryStepData, type InventoryStepLine } from "./types";
 
@@ -499,26 +500,30 @@ async function getInventoryStepDataForLedgerInTx(
   ledger: InventoryLedgerPayload,
 ): Promise<InventoryStepData> {
   const purchases = aggregatePurchases(ledger.ledgerPurchaseItems);
-  const losses = aggregateLosses(
-    await tx.ledgerLossItem.findMany({
-      where: { dailyLedgerId: ledger.id },
-      select: {
-        productId: true,
-        productName: true,
-        productCategory: true,
-        productSpec: true,
-        unitPrice: true,
-        quantity: true,
-        amount: true,
-      },
-    }),
-  );
+  const lossItems = await tx.ledgerLossItem.findMany({
+    where: { dailyLedgerId: ledger.id },
+    select: {
+      productId: true,
+      productName: true,
+      productCategory: true,
+      productSpec: true,
+      unitPrice: true,
+      quantity: true,
+      amount: true,
+    },
+  });
+  const losses = aggregateLosses(lossItems);
   const existingItems = await tx.ledgerInventoryItem.findMany({
     where: {
       dailyLedgerId: ledger.id,
     },
     select: inventoryItemSelect,
     orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
+  });
+  const stepCompletion = getStoreEntryStepCompletion({
+    ...ledger,
+    inventoryItemCount: existingItems.length,
+    lossItemCount: lossItems.length,
   });
 
   if (existingItems.length > 0) {
@@ -531,6 +536,7 @@ async function getInventoryStepDataForLedgerInTx(
       closingDate: ledger.closingDate.toISOString(),
       updatedAt: ledger.updatedAt.toISOString(),
       status: ledger.status,
+      stepCompletion,
       items: await mergeExistingInventoryLines(
         tx,
         ledger.id,
@@ -563,6 +569,7 @@ async function getInventoryStepDataForLedgerInTx(
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
     status: ledger.status,
+    stepCompletion,
     items: bases.map((base) =>
       withPurchaseAggregate(
         toInventoryLine(
