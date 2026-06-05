@@ -87,7 +87,13 @@ export const authConfig = {
   },
   logger: {
     error(error) {
-      if (error instanceof Error && error.name === "CredentialsSignin") {
+      if (
+        error instanceof Error &&
+        (error.name === "CredentialsSignin" ||
+          error.name === "JWTSessionError")
+      ) {
+        // Expected: a bad sign-in attempt or a stale/invalid session cookie.
+        // These are handled gracefully (see safeAuth) and should not spam logs.
         return;
       }
 

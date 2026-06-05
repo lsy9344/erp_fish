@@ -781,8 +781,8 @@ export function InventoryStepClient({
 
   return (
     <TooltipProvider>
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <header className="bg-card text-card-foreground rounded-lg border p-4 shadow-sm">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+        <header className="bg-card text-card-foreground rounded-lg border p-4">
           <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
           <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
           <p className="text-muted-foreground mt-1 text-sm">
@@ -893,7 +893,7 @@ export function InventoryStepClient({
           </Tabs>
 
           {resultMessage ? (
-            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
               <p
                 className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
                 role="status"
@@ -902,11 +902,6 @@ export function InventoryStepClient({
                 <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
                 {resultMessage}
               </p>
-              {resultMessage === "저장됐습니다." ? (
-                <Button asChild>
-                  <a href={nextStepHref}>다음 단계로 →</a>
-                </Button>
-              ) : null}
             </div>
           ) : null}
 
@@ -916,14 +911,20 @@ export function InventoryStepClient({
             </p>
           ) : null}
 
-          <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+          <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
             <Button
               type="submit"
-              className="min-h-11 w-full md:w-auto"
+              variant={resultMessage === "저장됐습니다." ? "outline" : "default"}
+              className="min-h-11 w-full sm:w-auto"
               disabled={isSaving || isClosed}
             >
               {isSaving ? "저장 중..." : "저장"}
             </Button>
+            {resultMessage === "저장됐습니다." ? (
+              <Button asChild className="min-h-11 w-full sm:w-auto">
+                <a href={nextStepHref}>다음 단계로 →</a>
+              </Button>
+            ) : null}
           </div>
         </form>
       </div>

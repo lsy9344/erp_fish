@@ -173,22 +173,6 @@ export async function saveLedgerLosses(
         );
       }
 
-      const editableLedger = await tx.dailyLedger.updateMany({
-        where: {
-          id: before.id,
-          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
-          updatedAt: expectedUpdatedAt,
-        },
-        data: { updatedById: actor.user.id },
-      });
-
-      if (editableLedger.count !== 1) {
-        return actionError<LossStepData>(
-          "LEDGER_CONFLICT",
-          "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-        );
-      }
-
       const productIds = [
         ...new Set(parsed.data.losses.map((loss) => loss.productId)),
       ];
@@ -303,6 +287,22 @@ export async function saveLedgerLosses(
           "VALIDATION_ERROR",
           firstQuantityError ?? "입력값을 확인해 주세요.",
           quantityErrors,
+        );
+      }
+
+      const editableLedger = await tx.dailyLedger.updateMany({
+        where: {
+          id: before.id,
+          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+          updatedAt: expectedUpdatedAt,
+        },
+        data: { updatedById: actor.user.id },
+      });
+
+      if (editableLedger.count !== 1) {
+        return actionError<LossStepData>(
+          "LEDGER_CONFLICT",
+          "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
         );
       }
 

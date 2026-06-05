@@ -659,7 +659,7 @@ export function LossStepClient({
 
         <div className="flex flex-col gap-2">
           {resultMessage ? (
-            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
               <p
                 className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
                 role="status"
@@ -668,9 +668,6 @@ export function LossStepClient({
                 <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
                 {resultMessage}
               </p>
-              <Button asChild>
-                <a href={nextStepHref}>다음 단계로 →</a>
-              </Button>
             </div>
           ) : null}
 
@@ -691,13 +688,21 @@ export function LossStepClient({
             </div>
           ) : null}
 
-          <Button
-            type="submit"
-            className="min-h-11"
-            disabled={isSaving || isOriginalEditBlocked}
-          >
-            {isSaving ? "저장 중..." : "저장"}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="submit"
+              variant={resultMessage ? "outline" : "default"}
+              className="min-h-11 w-full sm:w-auto"
+              disabled={isSaving || isOriginalEditBlocked}
+            >
+              {isSaving ? "저장 중..." : "저장"}
+            </Button>
+            {resultMessage ? (
+              <Button asChild className="min-h-11 w-full sm:w-auto">
+                <a href={nextStepHref}>다음 단계로 →</a>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </form>
     </div>

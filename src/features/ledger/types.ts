@@ -1,4 +1,5 @@
 import { type DailyLedgerStatus } from "../../../generated/prisma";
+import { type StoreEntryStepCompletion } from "./step-completion";
 
 type PaymentAmounts = {
   totalSalesAmount: number;
@@ -50,6 +51,7 @@ export type LedgerCostStepData = LedgerSalesStepData & {
   purchaseTotal: number;
   grossProfit: number;
   productivity: number | null;
+  stepCompletion: StoreEntryStepCompletion;
 };
 
 export type LedgerPurchaseStepData = LedgerCostStepData;

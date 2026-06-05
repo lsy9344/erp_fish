@@ -157,6 +157,21 @@ async function seedLossType(name: string, isActive = true) {
 }
 
 async function cleanupStoryTwoSixData() {
+  const currentLedgers = await prisma.dailyLedger.findMany({
+    where: {
+      storeId: STORY_STORE_ID,
+      closingDate: getTodayKstMidnight(),
+    },
+    select: { id: true },
+  });
+  const currentLedgerIds = currentLedgers.map((ledger) => ledger.id);
+
+  if (currentLedgerIds.length > 0) {
+    await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: currentLedgerIds } },
+    });
+  }
+
   const products = await prisma.product.findMany({
     where: {
       OR: [
@@ -438,6 +453,14 @@ test("손실 수량이 재고 흐름보다 크면 저장을 막는다", async ({
   });
 
   expect(savedCount).toBe(0);
+
+  await page.getByLabel("수량").fill("2");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
 });
 
 test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다", async ({ page }) => {

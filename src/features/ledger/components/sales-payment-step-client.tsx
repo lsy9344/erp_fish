@@ -17,6 +17,7 @@ import {
   parseKrwInputValue,
   toRawKrwInputValue,
 } from "~/features/ledger/components/krw-input-format";
+import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
@@ -129,10 +130,6 @@ export function SalesPaymentStepClient({
   const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
-  const isSalesSaved = ledger.totalSalesAmount > 0;
-  const isExpenseSaved = ledger.expenseItems.length > 0;
-  const isPurchaseSaved = ledger.purchaseItems.length > 0;
-  const isWorkSaved = ledger.workerCount !== null;
   const nextStepHref = stepHref(ledger.storeId, "cost");
 
   function fillLedger(data: LedgerCostStepData) {
@@ -232,7 +229,7 @@ export function SalesPaymentStepClient({
   const otherPaymentAmountError = fieldErrors.otherPaymentAmount?.[0];
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
         <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
         <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
@@ -245,81 +242,11 @@ export function SalesPaymentStepClient({
       </header>
 
       {showStepNavigation ? (
-        <section
-          aria-label="매출/결제 단계"
-          className="bg-card text-card-foreground rounded-lg border p-4"
-        >
-          <p className="mb-3 text-sm font-medium">현재 단계</p>
-          <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            <li>
-              <a
-                aria-current={currentStep === "sales" ? "step" : undefined}
-                className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-                href={stepHref(ledger.storeId, "sales")}
-              >
-                1단계: 매출/결제
-                {isSalesSaved ? (
-                  <span className="ml-1 text-xs font-normal opacity-75">
-                    저장됨
-                  </span>
-                ) : null}
-              </a>
-            </li>
-            <li>
-              <a
-                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-                href={stepHref(ledger.storeId, "cost")}
-              >
-                2단계: 비용
-                {isExpenseSaved ? (
-                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
-                    저장됨
-                  </span>
-                ) : null}
-              </a>
-            </li>
-            <li>
-              <a
-                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-                href={stepHref(ledger.storeId, "purchase")}
-              >
-                3단계: 매입
-                {isPurchaseSaved ? (
-                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
-                    저장됨
-                  </span>
-                ) : null}
-              </a>
-            </li>
-            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-              4단계: 재고
-            </li>
-            <li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">
-              5단계: 손실/폐기
-            </li>
-            <li>
-              <a
-                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-                href={stepHref(ledger.storeId, "work")}
-              >
-                6단계: 근무인원
-                {isWorkSaved ? (
-                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
-                    저장됨
-                  </span>
-                ) : null}
-              </a>
-            </li>
-            <li>
-              <a
-                className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-                href={stepHref(ledger.storeId, "review")}
-              >
-                7단계: 검토/제출
-              </a>
-            </li>
-          </ol>
-        </section>
+        <StoreEntryStepNavigation
+          storeId={ledger.storeId}
+          currentStep={currentStep}
+          stepCompletion={ledger.stepCompletion}
+        />
       ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
@@ -481,7 +408,7 @@ export function SalesPaymentStepClient({
           </div>
 
           {resultMessage ? (
-            <div className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
               <p
                 className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
                 role="status"
@@ -490,9 +417,6 @@ export function SalesPaymentStepClient({
                 <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
                 {resultMessage}
               </p>
-              <Button asChild>
-                <a href={nextStepHref}>다음 단계로 →</a>
-              </Button>
             </div>
           ) : null}
 
@@ -513,13 +437,21 @@ export function SalesPaymentStepClient({
             </div>
           ) : null}
 
-          <Button
-            type="submit"
-            className="min-h-11"
-            disabled={!isHydrated || isSaving || isOriginalEditBlocked}
-          >
-            {isSaving ? "저장 중..." : "저장"}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="submit"
+              variant={resultMessage ? "outline" : "default"}
+              className="min-h-11 w-full sm:w-auto"
+              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
+            >
+              {isSaving ? "저장 중..." : "저장"}
+            </Button>
+            {resultMessage ? (
+              <Button asChild className="min-h-11 w-full sm:w-auto">
+                <a href={nextStepHref}>다음 단계로 →</a>
+              </Button>
+            ) : null}
+          </div>
         </form>
       </section>
     </div>

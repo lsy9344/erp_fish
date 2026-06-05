@@ -93,6 +93,15 @@ test("store manager shell preserves selected storeId in tab links", () => {
   }
 });
 
+test("store manager shell does not prefetch store entry data that can go stale", () => {
+  const shell = readFileSync(
+    path.join(root, "src", "components", "store-manager-shell.tsx"),
+    "utf8",
+  );
+
+  assert.match(shell, /prefetch={false}/);
+});
+
 test("authenticated shells expose a logout button that signs out to login", () => {
   const logoutButtonPath = path.join(root, "src", "components", "logout-button.tsx");
 

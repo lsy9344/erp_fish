@@ -9,6 +9,7 @@ import {
   RefreshCwIcon,
   SendIcon,
   TriangleAlertIcon,
+  XIcon,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -16,6 +17,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import { submitLedgerForReview } from "~/features/ledger/actions";
+import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type { LedgerReviewStepData } from "~/features/ledger/review-types";
 
 type ReviewSummaryClientProps = {
@@ -26,6 +28,62 @@ type ReviewSummaryClientProps = {
 type SubmitFeedback =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
+
+function SuccessModal({
+  message,
+  statusLabel,
+  onClose,
+}: {
+  message: string;
+  statusLabel: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="success-modal-title"
+    >
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative z-10 mx-4 w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus:outline-none"
+          aria-label="닫기"
+        >
+          <XIcon className="size-4" />
+        </button>
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex size-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+            <CheckCircle2Icon className="size-7 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div>
+            <h2 id="success-modal-title" className="text-lg font-semibold">
+              {message}
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              현재 상태:{" "}
+              <span className="font-medium text-foreground">{statusLabel}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-1 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
@@ -59,13 +117,6 @@ function normalizeStatusLabel(status: LedgerReviewStepData["status"]) {
   }
 
   return "휴무";
-}
-
-function stepHref(
-  storeId: string,
-  step: "sales" | "cost" | "purchase" | "work" | "review",
-) {
-  return `/app/store-entry?storeId=${storeId}&step=${step}`;
 }
 
 function formatMetric(metric: LedgerReviewMetric, kind: "krw" | "percent") {
@@ -131,6 +182,7 @@ export function ReviewSummaryClient({
   const [currentReviewData, setCurrentReviewData] = useState(reviewData);
   const [feedback, setFeedback] = useState<SubmitFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const previousReviewContextKey = useRef(
     `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`,
   );
@@ -170,6 +222,7 @@ export function ReviewSummaryClient({
               ? "이미 검토 대기 상태입니다."
               : "장부를 제출했습니다.",
         });
+        setShowSuccessModal(true);
         return;
       }
 
@@ -185,6 +238,14 @@ export function ReviewSummaryClient({
   }
 
   return (
+    <>
+    {showSuccessModal && feedback?.kind === "success" ? (
+      <SuccessModal
+        message={feedback.message}
+        statusLabel={normalizeStatusLabel(currentReviewData.status)}
+        onClose={() => setShowSuccessModal(false)}
+      />
+    ) : null}
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <header className="bg-card text-card-foreground rounded-lg border p-4">
         <p className="text-muted-foreground text-sm">오늘 장부 검토</p>
@@ -199,71 +260,10 @@ export function ReviewSummaryClient({
         </div>
       </header>
 
-      <section
-        aria-label="검토 단계"
-        className="bg-card text-card-foreground rounded-lg border p-4"
-      >
-        <p className="mb-3 text-sm font-medium">현재 단계</p>
-        <ol className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(currentReviewData.storeId, "sales")}
-            >
-              1단계: 매출/결제
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(currentReviewData.storeId, "cost")}
-            >
-              2단계: 비용
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(currentReviewData.storeId, "purchase")}
-            >
-              3단계: 매입
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={`/app/store-entry/inventory?storeId=${currentReviewData.storeId}`}
-            >
-              4단계: 재고
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={`/app/store-entry/losses?storeId=${currentReviewData.storeId}`}
-            >
-              5단계: 손실/폐기
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-muted-foreground hover:text-foreground block rounded-md border px-3 py-2 text-sm"
-              href={stepHref(currentReviewData.storeId, "work")}
-            >
-              6단계: 근무인원
-            </a>
-          </li>
-          <li>
-            <a
-              aria-current="step"
-              className="block rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-              href={stepHref(currentReviewData.storeId, "review")}
-            >
-              7단계: 검토/제출
-            </a>
-          </li>
-        </ol>
-      </section>
+      <StoreEntryStepNavigation
+        storeId={currentReviewData.storeId}
+        currentStep="review"
+      />
 
       <section
         aria-labelledby="review-metrics-heading"
@@ -447,5 +447,6 @@ export function ReviewSummaryClient({
         ) : null}
       </section>
     </div>
+    </>
   );
 }

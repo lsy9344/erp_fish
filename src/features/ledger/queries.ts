@@ -10,6 +10,7 @@ import {
 import { writeAuditLog } from "~/server/audit";
 import { requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
+import { getStoreEntryStepCompletion } from "./step-completion";
 import { type LedgerCostStepData, type LedgerSalesStepData } from "./types";
 
 const LEGAL_SEOUL_TZ = "Asia/Seoul";
@@ -65,6 +66,12 @@ export const ledgerSelect = {
     select: ledgerPurchaseSelect,
     orderBy: {
       createdAt: "asc",
+    },
+  },
+  _count: {
+    select: {
+      ledgerInventoryItems: true,
+      ledgerLossItems: true,
     },
   },
 } as const;
@@ -219,6 +226,11 @@ export function toLedgerCostStepData(
       grossProfit,
       ledger.workerCount ?? null,
     ),
+    stepCompletion: getStoreEntryStepCompletion({
+      ...ledger,
+      inventoryItemCount: ledger._count.ledgerInventoryItems,
+      lossItemCount: ledger._count.ledgerLossItems,
+    }),
   };
 }
 
