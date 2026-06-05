@@ -357,6 +357,7 @@ export default async function LedgerDetailPage({
             initialData={inventoryData}
             saveItemsAction={saveHqLedgerInventoryItems}
             saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
+            showStepNavigation={false}
             ledgerLabel={hqLedgerLabel}
           />
         </TabsContent>
@@ -366,6 +367,7 @@ export default async function LedgerDetailPage({
             storeName={detail.storeName}
             initialData={lossData}
             saveAction={saveHqLedgerLosses}
+            showStepNavigation={false}
             ledgerLabel={hqLedgerLabel}
           />
         </TabsContent>

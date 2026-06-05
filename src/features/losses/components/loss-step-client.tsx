@@ -42,6 +42,7 @@ type LossStepClientProps = {
   initialData: LossStepData;
   saveAction?: (input: unknown) => Promise<ActionResult<LossStepData>>;
   ledgerLabel?: string;
+  showStepNavigation?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -122,6 +123,7 @@ export function LossStepClient({
   initialData,
   saveAction = saveLedgerLosses,
   ledgerLabel = "오늘 장부",
+  showStepNavigation = true,
 }: LossStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -321,11 +323,13 @@ export function LossStepClient({
         </p>
       </header>
 
-      <StoreEntryStepNavigation
-        storeId={data.storeId}
-        currentStep="losses"
-        stepCompletion={data.stepCompletion}
-      />
+      {showStepNavigation ? (
+        <StoreEntryStepNavigation
+          storeId={data.storeId}
+          currentStep="losses"
+          stepCompletion={data.stepCompletion}
+        />
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="grid gap-3 sm:grid-cols-2">

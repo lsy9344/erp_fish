@@ -121,13 +121,6 @@ type LedgerAuditInput = Pick<
   | "ledgerPurchaseItems"
 >;
 
-function isPrismaUniqueError(error: unknown) {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  );
-}
-
 export function getTodayKstMidnight(inputDate = new Date()) {
   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
     timeZone: LEGAL_SEOUL_TZ,
@@ -309,53 +302,49 @@ async function getOrCreateTodayStoreLedgerInTx(
     return existing;
   }
 
-  try {
-    const created = await tx.dailyLedger.create({
-      data: {
+  const createdResult = await tx.dailyLedger.createMany({
+    data: {
+      storeId,
+      closingDate,
+      status: "IN_PROGRESS",
+      totalSalesAmount: 0,
+      cashAmount: 0,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: null,
+      workMemo: null,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+    skipDuplicates: true,
+  });
+
+  const ledger = await tx.dailyLedger.findUnique({
+    where: {
+      storeId_closingDate: {
         storeId,
         closingDate,
-        status: "IN_PROGRESS",
-        totalSalesAmount: 0,
-        cashAmount: 0,
-        cardAmount: 0,
-        otherPaymentAmount: 0,
-        workerCount: null,
-        workMemo: null,
-        createdById: actorId,
-        updatedById: actorId,
       },
-      select: ledgerSelect,
-    });
+    },
+    select: ledgerSelect,
+  });
 
+  if (!ledger) {
+    throw new Error("Daily ledger was not found after creation.");
+  }
+
+  if (createdResult.count === 1) {
     await writeAuditLog(tx, {
       action: "ledger.created",
       targetType: "DailyLedger",
-      targetId: created.id,
+      targetId: ledger.id,
       actorId,
       before: null,
-      after: toLedgerAuditPayload(created),
+      after: toLedgerAuditPayload(ledger),
     });
-
-    return created;
-  } catch (error) {
-    if (isPrismaUniqueError(error)) {
-      const recovered = await tx.dailyLedger.findUnique({
-        where: {
-          storeId_closingDate: {
-            storeId,
-            closingDate,
-          },
-        },
-        select: ledgerSelect,
-      });
-
-      if (recovered) {
-        return recovered;
-      }
-    }
-
-    throw error;
   }
+
+  return ledger;
 }
 
 export async function getTodayStoreLedger(

@@ -180,6 +180,32 @@ test("ledger save action enforces transaction, authorization, and ActionResult c
     "Story 2.1 should use Korea timezone when calculating closing date",
   );
   assert.match(querySource, /Date\.UTC\(/);
-  assert.match(querySource, /tx\.dailyLedger\.create/);
+  assert.match(querySource, /tx\.dailyLedger\.createMany/);
+  assert.match(querySource, /skipDuplicates:\s*true/);
   assert.match(querySource, /writeAuditLog\(/);
+});
+
+test("today ledger creation avoids duplicate-key races", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+
+  assert.match(
+    querySource,
+    /tx\.dailyLedger\.createMany\(\{[\s\S]*skipDuplicates:\s*true/s,
+    "today ledger creation should use duplicate-safe insert",
+  );
+  assert.match(
+    querySource,
+    /createdResult\.count\s*===\s*1[\s\S]*writeAuditLog/s,
+    "creation audit should only be written when this request inserted the ledger",
+  );
+  assert.doesNotMatch(
+    querySource,
+    /tx\.dailyLedger\.create\(/,
+    "today ledger creation should not throw on an already-created store/date row",
+  );
 });

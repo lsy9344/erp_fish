@@ -45,6 +45,7 @@ type InventoryStepClientProps = {
     input: unknown,
   ) => Promise<ActionResult<InventoryStepData>>;
   ledgerLabel?: string;
+  showStepNavigation?: boolean;
 };
 
 type InventoryLineState = InventoryStepData["items"][number] & {
@@ -155,6 +156,7 @@ export function InventoryStepClient({
   saveItemsAction = saveLedgerInventoryItems,
   saveAdjustmentAction = saveLedgerInventoryAdjustment,
   ledgerLabel = "오늘 장부",
+  showStepNavigation = true,
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
@@ -790,11 +792,13 @@ export function InventoryStepClient({
           </p>
         </header>
 
-        <StoreEntryStepNavigation
-          storeId={data.storeId}
-          currentStep="inventory"
-          stepCompletion={data.stepCompletion}
-        />
+        {showStepNavigation ? (
+          <StoreEntryStepNavigation
+            storeId={data.storeId}
+            currentStep="inventory"
+            stepCompletion={data.stepCompletion}
+          />
+        ) : null}
 
         <Alert
           variant={
