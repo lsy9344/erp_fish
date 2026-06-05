@@ -12,6 +12,7 @@ import { requireHeadquartersUser } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
+import { getLossQuantityErrorMessage } from "./quantity-error";
 import {
   ledgerLossesSchema,
   toFieldErrors,
@@ -314,29 +315,39 @@ export async function saveHqLedgerLosses(
         }
 
         const quantityErrors: Record<string, string[]> = {};
+        let firstQuantityError: string | null = null;
 
         for (let index = 0; index < normalizedLosses.length; index += 1) {
           const loss = normalizedLosses[index]!;
           const line = inventoryLineByProductId.get(loss.productId);
+          const requestedLossQuantity =
+            lossQuantityByProductId.get(loss.productId) ?? 0;
           const availableAfterLoss = line
             ? calculateSystemInventoryQuantity({
                 previousQuantity: line.previousQuantity,
                 purchasedQuantity: line.purchasedQuantity,
-                lossQuantity: lossQuantityByProductId.get(loss.productId) ?? 0,
+                lossQuantity: requestedLossQuantity,
               })
             : null;
 
           if (availableAfterLoss === null) {
-            quantityErrors[`losses.${index}.quantity`] = [
-              "손실 수량이 현재 재고 흐름보다 큽니다.",
-            ];
+            const message = getLossQuantityErrorMessage({
+              productName: loss.productName,
+              productSpec: loss.productSpec,
+              previousQuantity: line?.previousQuantity ?? null,
+              purchasedQuantity: line?.purchasedQuantity ?? null,
+              requestedLossQuantity,
+            });
+
+            firstQuantityError ??= message;
+            quantityErrors[`losses.${index}.quantity`] = [message];
           }
         }
 
         if (Object.keys(quantityErrors).length > 0) {
           return actionError<LossStepData>(
             "VALIDATION_ERROR",
-            "입력값을 확인해 주세요.",
+            firstQuantityError ?? "입력값을 확인해 주세요.",
             quantityErrors,
           );
         }

@@ -101,7 +101,7 @@ export const ledgerLossesSchema = z
       if (loss.quantity === 0 && loss.amount === 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "수량 또는 금액 중 하나는 0보다 커야 합니다.",
+          message: "수량 또는 손실액 중 하나는 0보다 커야 합니다.",
           path: ["losses", index, "quantity"],
         });
       }

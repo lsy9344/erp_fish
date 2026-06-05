@@ -507,7 +507,7 @@ export function InventoryStepClient({
     if (item.lossQuantity > 0) {
       badges.push({
         label: "오늘 손실",
-        detail: `손실/폐기 입력에 저장된 수량입니다. 손실 ${formatQuantity(item.lossQuantity)}, 금액 ${formatKrw(item.lossAmount)}.`,
+        detail: `손실/폐기 입력에 저장된 수량입니다. 손실 ${formatQuantity(item.lossQuantity)}, 손실액 ${formatKrw(item.lossAmount)}.`,
         className:
           "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
       });

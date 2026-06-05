@@ -6,7 +6,12 @@ import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Field, FieldError, FieldLabel } from "~/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import {
   notifyLedgerUpdated,
@@ -408,6 +413,7 @@ export function LossStepClient({
                   fieldErrors[`losses.${index}.quantity`]?.[0];
                 const amountError = fieldErrors[`losses.${index}.amount`]?.[0];
                 const reasonError = fieldErrors[`losses.${index}.reason`]?.[0];
+                const amountDescriptionId = `loss-amount-${item.clientKey}-description`;
                 const productActive = data.productOptions.some(
                   (option) => option.id === item.productId,
                 );
@@ -573,7 +579,7 @@ export function LossStepClient({
 
                       <Field data-invalid={Boolean(amountError)}>
                         <FieldLabel htmlFor={`loss-amount-${item.clientKey}`}>
-                          금액
+                          손실액(원)
                         </FieldLabel>
                         <Input
                           id={`loss-amount-${item.clientKey}`}
@@ -591,12 +597,18 @@ export function LossStepClient({
                           disabled={isSaving || isOriginalEditBlocked}
                           className="min-h-11 tabular-nums"
                           aria-invalid={Boolean(amountError)}
-                          aria-describedby={
+                          aria-describedby={[
+                            amountDescriptionId,
                             amountError
                               ? `loss-amount-${item.clientKey}-error`
-                              : undefined
-                          }
+                              : undefined,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                         />
+                        <FieldDescription id={amountDescriptionId}>
+                          판매금액이 아니라 손해 본 금액을 입력합니다.
+                        </FieldDescription>
                         {amountError ? (
                           <FieldError
                             id={`loss-amount-${item.clientKey}-error`}

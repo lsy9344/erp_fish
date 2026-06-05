@@ -256,6 +256,18 @@ test("inventory calculations expose amount and calculation unavailable states", 
   assert.equal(calculateInventoryAmount(2_147_483_647, 2), null);
 });
 
+test("inventory loss badges describe loss amount without sale amount ambiguity", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(componentSource, /손실액 \$\{formatKrw\(item\.lossAmount\)\}/);
+});
+
 test("inventory adjustment calculations derive before after and signed differences", async () => {
   const calcPath = assertProjectFile(
     "src",

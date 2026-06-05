@@ -182,6 +182,40 @@ test("ledger loss calculations aggregate totals and threshold candidates", async
   );
 });
 
+test("ledger loss quantity errors explain product and inventory flow", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "quantity-error.ts",
+  );
+  const { getLossQuantityErrorMessage } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  assert.equal(
+    getLossQuantityErrorMessage({
+      productName: "포크오징어",
+      productSpec: "M2",
+      previousQuantity: 0,
+      purchasedQuantity: 0,
+      requestedLossQuantity: 2,
+    }),
+    "포크오징어 / M2 손실 수량을 저장할 수 없습니다. 입력한 총 손실 수량 2이(가) 현재 차감 가능 수량 0보다 큽니다. 재고 흐름: 전일재고 0 + 오늘매입 0.",
+  );
+
+  assert.equal(
+    getLossQuantityErrorMessage({
+      productName: "포크오징어",
+      productSpec: "M2",
+      previousQuantity: null,
+      purchasedQuantity: null,
+      requestedLossQuantity: 2,
+    }),
+    "포크오징어 / M2 재고 흐름을 확인할 수 없습니다. 재고 단계에서 해당 품목의 전일재고 또는 오늘매입을 확인해 주세요.",
+  );
+});
+
 test("ledger loss query action and UI contracts are wired", () => {
   const querySource = readProjectFile(
     "src",
@@ -213,7 +247,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /ledgerUpdatedAt/);
   assert.match(actionSource, /LEDGER_CONFLICT/);
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
-  assert.match(actionSource, /손실 수량이 현재 재고 흐름보다 큽니다/);
+  assert.match(actionSource, /getLossQuantityErrorMessage/);
   assert.match(actionSource, /existing\.productName/);
   assert.match(actionSource, /reconcileLedgerInventoryAdjustments\(/);
   assert.match(actionSource, /action:\s*"ledger\.losses\.saved"/);
@@ -238,6 +272,11 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /기준 초과/);
   assert.match(componentSource, /총 손실 수량/);
   assert.match(componentSource, /총 손실액/);
+  assert.match(componentSource, /손실액\(원\)/);
+  assert.match(
+    componentSource,
+    /판매금액이 아니라 손해 본 금액을 입력합니다\./,
+  );
   assert.match(componentSource, /clientKey/);
   assert.match(componentSource, /id:\s*""/);
   assert.match(componentSource, /key={item\.clientKey}/);
