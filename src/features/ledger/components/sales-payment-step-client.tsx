@@ -19,8 +19,8 @@ import {
 } from "~/features/ledger/components/krw-input-format";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type {
-  LedgerCostStepData,
   LedgerSalesStepData,
+  StoreManagerLedgerCostStepData,
 } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
@@ -69,9 +69,11 @@ function stepHref(
 
 type SalesPaymentStepClientProps = {
   storeName: string;
-  initialLedger: LedgerCostStepData;
+  initialLedger: StoreManagerLedgerCostStepData;
   currentStep?: "sales" | "cost" | "purchase" | "work";
-  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  saveAction?: (
+    input: unknown,
+  ) => Promise<ActionResult<StoreManagerLedgerCostStepData>>;
   showStepNavigation?: boolean;
   ledgerLabel?: string;
 };
@@ -132,7 +134,7 @@ export function SalesPaymentStepClient({
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const nextStepHref = stepHref(ledger.storeId, "cost");
 
-  function fillLedger(data: LedgerCostStepData) {
+  function fillLedger(data: StoreManagerLedgerCostStepData) {
     setLedger(data);
     setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
     setCashAmount(formatKrwInput(String(data.cashAmount)));

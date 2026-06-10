@@ -1,4 +1,4 @@
-import { Prisma } from "../../../generated/prisma";
+import type { Prisma } from "../../../generated/prisma";
 
 import {
   calculateExpenseTotal,
@@ -10,8 +10,15 @@ import {
 import { writeAuditLog } from "~/server/audit";
 import { requireHeadquartersUser } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  toStoreManagerLedgerCostStepData as shapeStoreManagerLedgerCostStepData,
+} from "./response-shaping";
 import { getStoreEntryStepCompletion } from "./step-completion";
-import { type LedgerCostStepData, type LedgerSalesStepData } from "./types";
+import {
+  type LedgerCostStepData,
+  type LedgerSalesStepData,
+  type StoreManagerLedgerCostStepData,
+} from "./types";
 
 const LEGAL_SEOUL_TZ = "Asia/Seoul";
 
@@ -227,6 +234,12 @@ export function toLedgerCostStepData(
   };
 }
 
+export function toStoreManagerLedgerCostStepData(
+  ledger: DailyLedgerPayload,
+): StoreManagerLedgerCostStepData {
+  return shapeStoreManagerLedgerCostStepData(toLedgerCostStepData(ledger));
+}
+
 export function toLedgerPurchaseStepData(
   ledger: DailyLedgerPayload,
 ): LedgerCostStepData {
@@ -350,10 +363,10 @@ async function getOrCreateTodayStoreLedgerInTx(
 export async function getTodayStoreLedger(
   storeId: string,
   actorId: string,
-): Promise<LedgerCostStepData> {
+): Promise<StoreManagerLedgerCostStepData> {
   return db.$transaction((tx) =>
     getOrCreateTodayStoreLedgerInTx(tx, storeId, actorId).then(
-      toLedgerCostStepData,
+      toStoreManagerLedgerCostStepData,
     ),
   );
 }

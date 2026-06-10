@@ -265,7 +265,7 @@ test("ledger review route/query contracts use existing server flows", () => {
 
   assert.match(pageSource, /type\s+StoreEntryStep\s*=[^;]*"review"/s);
   assert.match(pageSource, /step\s*===\s*"review"/);
-  assert.match(pageSource, /getLedgerReviewStepData\(/);
+  assert.match(pageSource, /getStoreManagerLedgerReviewStepData\(/);
   assert.doesNotMatch(pageSource, /app\/api\/ledger\/review/);
 
   const querySource = readProjectFile(
@@ -273,6 +273,12 @@ test("ledger review route/query contracts use existing server flows", () => {
     "features",
     "ledger",
     "review-queries.ts",
+  );
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
   );
 
   assert.match(querySource, /getTodayStoreLedgerInTx\(/);
@@ -285,4 +291,105 @@ test("ledger review route/query contracts use existing server flows", () => {
     querySource,
     /export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)/,
   );
+});
+
+test("store manager ledger review response omits sensitive accounting metrics", async () => {
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-types.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-queries.ts",
+  );
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const clientSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "review-summary-client.tsx",
+  );
+
+  assert.match(typeSource, /StoreManagerLedgerReviewSummary/);
+  assert.match(typeSource, /StoreManagerLedgerReviewStepData/);
+  assert.match(querySource, /toStoreManagerLedgerReviewStepData/);
+  assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
+  assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
+  assert.match(
+    responseShapeSource,
+    /grossMarginRate:\s*data\.summary\.grossMarginRate/,
+  );
+  assert.match(
+    responseShapeSource,
+    /inventoryAmount:\s*data\.summary\.inventoryAmount/,
+  );
+  assert.match(
+    responseShapeSource,
+    /paymentDifference:\s*data\.summary\.paymentDifference/,
+  );
+
+  assert.doesNotMatch(clientSource, /summary\.costOfGoodsSold/);
+  assert.doesNotMatch(clientSource, /summary\.grossProfit/);
+  assert.doesNotMatch(clientSource, /summary\.operatingProfit/);
+  assert.doesNotMatch(clientSource, /summary\.productivity/);
+  assert.doesNotMatch(clientSource, /summary\.salesDifference/);
+  assert.doesNotMatch(clientSource, /label="매출원가"/);
+  assert.doesNotMatch(clientSource, /label="매출이익"/);
+  assert.doesNotMatch(clientSource, /label="영업이익"/);
+  assert.doesNotMatch(clientSource, /label="인당생산성"/);
+  assert.doesNotMatch(clientSource, /label="매출차액"/);
+
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const { toStoreManagerLedgerReviewStepData } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const safeReview = toStoreManagerLedgerReviewStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: "2026-06-10T00:00:00.000Z",
+    status: "IN_PROGRESS",
+    submittedById: null,
+    submittedAt: null,
+    summary: {
+      totalSales: { value: 100_000 },
+      costOfGoodsSold: { value: 30_000 },
+      grossProfit: { value: 70_000 },
+      grossMarginRate: { value: 0.7 },
+      operatingProfit: { value: 60_000 },
+      productivity: { value: 30_000 },
+      inventoryAmount: { value: 8_000 },
+      salesDifference: { value: 2_000 },
+      paymentDifference: { value: 0 },
+    },
+    missingItems: [],
+    warnings: [],
+    signals: [],
+  });
+
+  assert.deepEqual(Object.keys(safeReview.summary), [
+    "totalSales",
+    "grossMarginRate",
+    "inventoryAmount",
+    "paymentDifference",
+  ]);
+  assert.equal(Object.hasOwn(safeReview.summary, "costOfGoodsSold"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "grossProfit"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "operatingProfit"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
 });

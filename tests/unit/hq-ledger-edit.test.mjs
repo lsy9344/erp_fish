@@ -123,6 +123,7 @@ test("HQ detail page renders editable sections with HQ actions", () => {
   assert.match(source, /saveHqLedgerInventoryAdjustment/);
   assert.match(source, /saveHqLedgerLosses/);
   assert.match(source, /saveHqLedgerWorkInfo/);
+  assert.match(source, /showSensitiveAccountingMetrics/);
   assert.match(source, /getLedgerCostStepDataById/);
   assert.match(source, /getInventoryStepDataByLedgerId/);
   assert.match(source, /getLossStepDataByLedgerId/);

@@ -54,6 +54,11 @@ export type LedgerCostStepData = LedgerSalesStepData & {
   stepCompletion: StoreEntryStepCompletion;
 };
 
+export type StoreManagerLedgerCostStepData = Omit<
+  LedgerCostStepData,
+  "grossProfit" | "productivity"
+>;
+
 export type LedgerPurchaseStepData = LedgerCostStepData;
 
 export type LedgerSalesInput = PaymentAmounts & {

@@ -33,6 +33,8 @@ ERP Fish는 지점별 일일 장부를 웹 기반 내부 ERP로 전환하는 ful
 - 마스터와 관리 설정: 지점, 사용자, 품목, 매입 기준, 코드, 이상 신호 기준값을 본사가 관리한다.
 - 리포트: 일별 아침 회의 리포트, 지점별 기간 비교, 월간 지점 요약을 제공한다.
 
+2026-06-10 추가 구현 범위는 기존 MVP 위에 CAP-1~CAP-18을 확장한다. 주요 확장 영역은 직원/근무/급여 정산 참고 자료, 품목명/규격 정규화, 이카운트 엑셀 업로드, FIFO 재고 원가, 본사 통합 재고, 상품별 분석, 지점장 민감 지표 제한, 일괄 마감, 월 손익, 특수기간 리포트, LINE/텔레그램 알림이다. AI 분석 기능은 구현하지 않고 향후 분석 가능한 구조화 데이터만 남긴다.
+
 **Non-Functional Requirements:**
 권한은 서버에서 강제되어야 하며, 마감, 정정, 주요 입력/수정, 기준값 변경은 감사 추적이 가능해야 한다. 본사 마감 후 원본 장부는 보존되어야 하고 정정 기록으로 덮어쓰면 안 된다. 지점장 입력 화면은 PC, 태블릿, 모바일 웹에서 사용할 수 있어야 하며 최소 390px 폭 모바일에서도 핵심 흐름이 동작해야 한다. 본사 관제판은 10개 내외 지점 기준 기본 조회를 3초 안에 표시하는 것을 목표로 한다. 기존 엑셀 수식/서식 복제가 아니라 서버 계산 로직과 데이터 모델로 업무 규칙을 재정의해야 한다.
 
@@ -45,11 +47,13 @@ ERP Fish는 지점별 일일 장부를 웹 기반 내부 ERP로 전환하는 ful
 
 ### Technical Constraints & Dependencies
 
-1차 제품은 수동 입력, 검증, 본사 관제, 마감, 정정 기록, 기본 리포트에 집중한다. POS/카드 매출 자동 연동, 이카운트 연동, 텔레그램 알림, AI 이미지 식별, 과거 엑셀 일괄 이관은 1차 범위에서 제외되거나 후순위다.
+1차 MVP는 수동 입력, 검증, 본사 관제, 마감, 정정 기록, 기본 리포트에 집중한다. POS/카드 매출 자동 연동, AI 이미지 식별, 과거 엑셀 일괄 이관은 계속 제외된다. 2026-06-10 추가 구현 범위에서는 이카운트 엑셀 업로드, LINE/텔레그램 알림, 직원/급여 참고 자료, FIFO 재고 원가, 특수기간 리포트가 후속 범위로 승격되었다.
 
 기존 엑셀에는 수식 오류와 결측 데이터가 많으므로 수식을 그대로 옮기는 방식은 위험하다. 품목명/규격 정규화, 월초 재고 스냅샷, 직전 마감 장부의 재고 자동 이월, 정정 반영값 계산이 핵심 의존점이다.
 
 정책 미정 항목은 계산 모델에 직접 영향을 준다. 특히 `30%단가`, 전일 이월금액, 매출차액 허용 기준, 손실액 저장 방식, 상품별 판매량 산출 방식은 이후 설계 전 반드시 결정하거나 명확한 보류 상태로 다뤄야 한다.
+
+추가 범위의 정책 미정 항목도 계산 모델에 직접 영향을 준다. 이카운트 양식 고정 여부, FIFO 적용 범위, 희망 판매가 입력 주체와 입력 시점, 지점장에게 보여줄 마진율 기준, LINE/텔레그램 우선순위, `차이`를 `당일 판매량`으로 바꾸는 변경의 의미는 구현 전 결정하거나 `확인 필요` 상태로 남겨야 한다.
 
 ### Cross-Cutting Concerns Identified
 
@@ -63,6 +67,12 @@ ERP Fish는 지점별 일일 장부를 웹 기반 내부 ERP로 전환하는 ful
 - 이상 신호 기준값의 설정, 적용, 변경 이력
 - 모바일 입력성과 단계형 저장 흐름
 - 계산 실패와 데이터 불일치를 숨기지 않는 검증 상태
+- 원문 품목명과 분석용 품목/규격 분리
+- 이카운트 업로드 이력, 매입 자동 생성, 매핑 실패 검수
+- FIFO 매입 잔량과 재고 금액 근거 추적
+- 지점장 민감 회계 지표 서버 응답 제한
+- 외부 알림 토큰 보안, 발송 실패, 재시도, 로그
+- AI 기능 제외와 분석 가능한 구조화 데이터 보존
 
 ## Starter Template Evaluation
 
@@ -145,6 +155,21 @@ Use normalized relational tables for core business data. JSON fields are allowed
 - Money and quantity values must be validated at the server boundary and protected by database constraints where practical.
 - Master data changes must not rewrite historical ledger values.
 
+**Additional Scope Models:**
+
+The 2026-06-10 scope should extend the relational model with explicit tables or equivalent normalized structures for:
+
+- `Employee`, `EmployeeStoreAssignment`, and `LedgerWorker` for employee master data, multi-store work, and daily worker selection.
+- `ProductAlias` or `ProductMapping` for raw item names, normalized products/specs, and mapping review status.
+- `ImportBatch` and upload row trace models for eCount Excel uploads, validation results, source filenames, and audit links.
+- `PurchaseLot` or equivalent lot/remaining-quantity records for FIFO inventory valuation.
+- `InventoryValuation` or calculation snapshots only where persisted evidence is needed; derived values should still come from shared server calculations.
+- `FixedCost` for monthly store fixed costs distinct from daily expense lines.
+- `PayrollAdjustment` for manual payroll difference notes used as settlement reference, not payment finalization.
+- `NotificationRule`, `NotificationRecipient`, and `NotificationDeliveryLog` for LINE/Telegram conditions, targets, delivery attempts, failures, and retries.
+
+Do not store business-critical reporting data only in free-text notes or unstructured JSON. JSON remains acceptable for narrow upload trace metadata where reporting does not depend on arbitrary keys.
+
 **Validation Strategy:**
 Use Zod at server action/API boundaries and database constraints as a second line of defense. UI validation is helpful for speed, but server validation is authoritative.
 
@@ -153,6 +178,8 @@ Original ledger records are preserved after HQ close. `AuditLog` and `Correction
 
 **Calculation Strategy:**
 Dashboard, detail pages, and reports must share the same server-side calculation functions. Do not duplicate calculation rules in separate UI-only code paths.
+
+Additional calculations for FIFO inventory valuation, product sales/margin analysis, hoped-sale-price loss calculations, special-period comparison, monthly P&L, and alert condition evaluation must also live in shared server calculation modules. If the required policy or source data is missing, return an explicit `확인 필요`, `계산 불가`, or `데이터 부족` state instead of silently substituting zero or a stale unit price.
 
 **Caching Strategy:**
 For MVP, prefer correctness and freshness over aggressive caching. Cache stable master data lightly if needed, but daily ledger status, anomaly signals, and correction-applied values should be computed from current server data.
@@ -175,6 +202,9 @@ Authorization is enforced on the server for every ledger, report, master-data, c
 - `STORE_MANAGER` users can access only assigned stores.
 - Store access should be represented explicitly, either by a direct user-store relation for simple cases or a join table if one manager can cover multiple stores.
 - UI-level hiding is helpful but never authoritative.
+- Store-manager responses must omit sensitive accounting fields such as COGS, gross profit, per-person productivity, and operating profit. This restriction belongs in query/action result shaping as well as UI rendering.
+- Ledger entry, ledger review, dashboard, and report queries must use a shared response shaping helper or equivalent server-side mapper for store-manager responses. Do not return sensitive fields to the client and rely on client components to hide them.
+- HQ-uploaded purchase lines are read-only for store-manager mutations unless a later approved emergency-entry story defines an exception.
 
 **Security Middleware and Server Boundaries:**
 Use authenticated server helpers for Server Actions, Route Handlers, and database queries. Every sensitive server entrypoint should load the session, verify role/store access, and only then execute the business operation.
@@ -205,6 +235,12 @@ Use Server Actions for internal mutations such as saving ledger steps, closing l
 **Route Handler Pattern:**
 Use Route Handlers only when an actual HTTP endpoint is useful, such as future webhooks, exports, health checks, or integration endpoints.
 
+For the additional scope, Route Handlers are appropriate for authenticated eCount upload endpoints, generated exports, health checks, and any future webhook-like integration surface. Upload handlers must validate auth, parse files server-side, write import/audit records, and return row-level validation errors.
+
+**Background and Scheduled Work Pattern:**
+
+Scheduled alert delivery should not run as a browser-side effect. Use a Vercel Cron job, scheduled Route Handler, queue-backed worker, or equivalent deployment-supported mechanism. The scheduled job must load notification rules, compute alert conditions with shared calculations, send through LINE Messaging API or Telegram, and write `NotificationDeliveryLog` rows for success, failure, and retry attempts.
+
 **tRPC Decision:**
 Do not include tRPC in MVP. Reconsider only if the application develops a large client-side API surface where tRPC would remove meaningful duplication.
 
@@ -230,9 +266,13 @@ ERP Fish users repeat the same operational workflows daily. The UI should priori
 - HQ users use a sidebar-based dashboard with status tables, filters, anomaly badges, and detail panels.
 - Store managers use a mobile-friendly step-by-step ledger input flow.
 - Ledger detail pages separate original values, correction-applied values, audit history, and validation results clearly.
+- Additional HQ surfaces include product mapping review, eCount import, all-store inventory, product analysis, employee/work logs, payroll reference, fixed costs, monthly P&L, special-period reports, and notification settings.
+- Store-manager purchase views must clearly distinguish editable manual lines from HQ-uploaded read-only lines.
 
 **Component Pattern:**
 Use shadcn/ui components first. Custom components should be domain composition components, such as `LedgerStatusBadge`, `ClosingStepForm`, `InventoryFlowTable`, `CorrectionSummary`, and `AnomalySignalList`.
+
+Additional composition components may include `ProductMappingReview`, `EcountImportUploader`, `InventoryLotTracePanel`, `AllStoreInventoryTable`, `SensitiveMetricGuard`, `BulkCloseDialog`, `EmployeeWorkSelector`, `FixedCostForm`, `NotificationRuleForm`, and `DeliveryLogTable`.
 
 **Form Strategy:**
 Use explicit schemas for ledger step forms. Complex forms should use React Hook Form with Zod resolver or Server Action form state, depending on the implementation story. Server validation remains authoritative.
@@ -242,6 +282,8 @@ Use URL state, server state, and local form state for MVP. Defer a global client
 
 **Tables and Reports:**
 Use shadcn Table for simple tables. Add TanStack Table only when sorting, filtering, pagination, column visibility, or row selection become complex enough to justify it.
+
+Resizable dashboard and analysis tables may justify TanStack Table or an equivalent proven table utility. Column resizing must not become a security boundary or hide required error states; it is only a presentation preference.
 
 **Charts:**
 Use shadcn Chart/Recharts for monthly summaries, store comparisons, and report visuals.
@@ -290,8 +332,10 @@ Before production launch, confirm the managed Postgres provider's backup and poi
 **Scaling Strategy:**
 MVP scale is small, around 7 to 10 stores, so serverless Next.js plus managed Postgres is sufficient. Realtime infrastructure, background queues, and external integration workers are deferred until requirements demand them.
 
+The additional alert scope creates a requirement for scheduled background execution. Start with deployment-native cron/scheduled handlers before introducing a queue. Add a queue only if delivery retries, long-running uploads, or external API limits outgrow cron-style processing.
+
 **File Storage Strategy:**
-MVP does not require persistent file upload storage. Report exports can start as generated downloads. If file attachments or uploaded evidence are added later, use a managed blob storage option.
+MVP does not require persistent file upload storage. Report exports can start as generated downloads. For eCount Excel upload, the system may parse and discard the binary after storing row-level trace data, or store the original file in managed blob storage if audit policy requires it. Do not commit uploaded files or operational exports to the repository.
 
 ### Decision Impact Analysis
 
@@ -434,6 +478,7 @@ All business-changing actions must either write an audit record directly through
 - Validation errors return field-level messages.
 - Business rule errors return action-level messages.
 - Unexpected errors are logged and returned as a generic failure message.
+- `확인 필요`, `계산 불가`, and `데이터 부족` must use a shared status enum or display helper so reports, ledger review, uploads, FIFO, alerts, and dashboards do not drift into different labels for the same state.
 
 **Loading State Pattern:**
 Use shadcn Skeleton for page/table loading states, button disabled states with spinner for submitted forms, and Sonner for success/failure feedback where appropriate.
@@ -447,6 +492,8 @@ Use shadcn Skeleton for page/table loading states, button disabled states with s
 - Keep money in integer KRW values until UI formatting.
 - Keep original ledger values and correction-applied values distinct.
 - Keep dashboard, detail, and report calculations on shared server-side functions.
+- Keep CAP-1 through CAP-18 operational data queryable and structured. Do not bury important dates, stores, employees, products, money, statuses, or history only in free-text notes.
+- Exclude AI chatbot, natural language query, AI API calls, prompt storage, and AI analysis result storage from the current scope. If an AI-like request appears, split it into a later enhancement.
 
 **Pattern Enforcement:**
 
@@ -648,6 +695,12 @@ Prisma schema is the source of truth for persisted data. Feature queries should 
 - FR-18 to FR-21, HQ edits, closing, corrections: `src/features/ledger`, `src/features/corrections`, `src/features/audit`.
 - FR-22 to FR-26, master data and settings: `src/features/master-data`, `src/app/app/master-data`.
 - FR-27 to FR-29, reports: `src/features/reports`, `src/app/app/reports`, `src/app/api/exports`.
+- CAP-1 and CAP-9, employee/work/payroll reference: `src/features/hr`, `src/features/payroll`, `src/app/app/hr`, `src/app/app/payroll`.
+- CAP-5 to CAP-7, product mapping, imports, FIFO valuation: `src/features/product-mapping`, `src/features/imports`, `src/features/inventory-valuation`, `src/server/calculations/inventory`.
+- CAP-4 and CAP-8, all-store inventory and product analysis: `src/features/inventory`, `src/features/reports`, `src/app/app/inventory`, `src/app/app/reports/product-analysis`.
+- CAP-10, fixed costs and monthly P&L: `src/features/fixed-costs`, `src/features/reports`, `src/server/calculations/pnl`.
+- CAP-11, notifications: `src/features/notifications`, `src/app/app/settings/notifications`, scheduled Route Handlers or worker entrypoints.
+- CAP-12 and CAP-13, AI exclusion and sensitive metric filtering: `src/server/calculations`, `src/server/authz.ts`, query result mappers.
 
 **Cross-Cutting Concerns:**
 
@@ -664,7 +717,7 @@ Prisma schema is the source of truth for persisted data. Feature queries should 
 Pages call feature queries for reads. Forms call feature actions for mutations. Feature actions validate input, authorize the user, run business logic, write audit records, and trigger revalidation.
 
 **External Integrations:**
-MVP has no required external business integrations. Future POS, card, eCount, Telegram, or AI integrations should enter through dedicated Route Handlers or background workers, not through UI actions.
+MVP has no required external business integrations. In the 2026-06-10 additional scope, eCount Excel upload and LINE/Telegram notification delivery are approved integrations. POS/card automation and AI features remain excluded. Approved integrations should enter through dedicated Route Handlers or scheduled workers, not through ad hoc UI-only actions.
 
 **Data Flow:**
 User input enters a page form, passes through a feature schema, reaches a Server Action, runs authorization and transaction logic, updates Prisma models, writes audit rows, revalidates affected routes, and returns an `ActionResult` to the UI.
@@ -796,10 +849,14 @@ No blocking validation issues were found. The main risks were clarified as imple
 
 **Areas for Future Enhancement:**
 
-- External integrations such as eCount, POS/card data, Telegram, and AI image recognition.
+- POS/card data and AI image recognition.
 - Realtime status updates if HQ needs live dashboards.
 - Dedicated observability/error tracking beyond Vercel logs.
 - File/blob storage if attachments or uploaded evidence become part of the workflow.
+
+**Additional Scope Readiness Note:**
+
+The MVP architecture remains ready for implementation. The 2026-06-10 additional scope is a major backlog expansion and should be implemented in the Epic 6-first sequence: product mapping, eCount upload, FIFO valuation, inventory/product analysis, permission hardening, employee/reporting extensions, then notifications. Implementing later analytics or alerts before product mapping and FIFO are stable will increase rework risk.
 
 ### Implementation Handoff
 
@@ -809,7 +866,7 @@ No blocking validation issues were found. The main risks were clarified as imple
 - Use implementation patterns consistently across all components.
 - Respect project structure and boundaries.
 - Refer to this document for all architectural questions.
-- Do not implement PRD excluded items in MVP unless a later story explicitly changes scope.
+- Do not implement PRD excluded items in MVP unless a later story explicitly changes scope. CAP-1~CAP-18 are such later approved scope and must still follow the security, audit, calculation, and data preservation rules above.
 
 **First Implementation Priority:**
 Initialize the project using Create T3 App, configure PostgreSQL/Prisma/Auth, initialize shadcn/ui, and create the baseline server helpers for authorization, audit, action results, and calculations before building feature screens.

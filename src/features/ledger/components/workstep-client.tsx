@@ -16,15 +16,19 @@ import { StoreEntryStepNavigation } from "~/features/ledger/components/store-ent
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
+  StoreManagerLedgerCostStepData,
 } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
+type WorkLedgerData = StoreManagerLedgerCostStepData | LedgerCostStepData;
+
 type WorkStepClientProps = {
   storeName: string;
-  initialLedger: LedgerCostStepData;
+  initialLedger: WorkLedgerData;
   currentStep: "sales" | "cost" | "purchase" | "work";
-  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  saveAction?: (input: unknown) => Promise<ActionResult<WorkLedgerData>>;
   showStepNavigation?: boolean;
+  showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
 };
 
@@ -66,6 +70,12 @@ function sanitizeAmount(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
+function hasSensitiveAccountingMetrics(
+  data: WorkLedgerData,
+): data is LedgerCostStepData {
+  return "grossProfit" in data && "productivity" in data;
+}
+
 function formatProductivity(value: number | null) {
   if (value == null) {
     return "계산 불가";
@@ -80,6 +90,7 @@ export function WorkStepClient({
   currentStep = "work",
   saveAction = saveLedgerWorkInfo,
   showStepNavigation = true,
+  showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -123,7 +134,7 @@ export function WorkStepClient({
     }, 0);
   }
 
-  function fillLedger(next: LedgerCostStepData) {
+  function fillLedger(next: WorkLedgerData) {
     setLedger(next);
     setWorkerCount(next.workerCount === null ? "" : String(next.workerCount));
     setWorkMemo(next.workMemo ?? "");
@@ -182,6 +193,8 @@ export function WorkStepClient({
   const workMemoError = fieldErrors.workMemo?.[0];
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const canShowSensitiveAccountingMetrics =
+    showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const nextStepHref = stepHref(ledger.storeId, "review");
 
   return (
@@ -263,18 +276,22 @@ export function WorkStepClient({
                 {formatKrw(ledger.expenseTotal)}
               </span>
             </div>
-            <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">영업이익</span>
-              <span className="font-semibold tabular-nums">
-                {formatKrw(ledger.grossProfit)}
-              </span>
-            </div>
-            <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">인당생산성</span>
-              <span className="font-semibold tabular-nums">
-                {formatProductivity(ledger.productivity)}
-              </span>
-            </div>
+            {canShowSensitiveAccountingMetrics ? (
+              <>
+                <div className="mt-2 flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">영업이익</span>
+                  <span className="font-semibold tabular-nums">
+                    {formatKrw(ledger.grossProfit)}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">인당생산성</span>
+                  <span className="font-semibold tabular-nums">
+                    {formatProductivity(ledger.productivity)}
+                  </span>
+                </div>
+              </>
+            ) : null}
           </div>
 
           {resultMessage ? (

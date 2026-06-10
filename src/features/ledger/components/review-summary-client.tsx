@@ -18,11 +18,11 @@ import { Button } from "~/components/ui/button";
 import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import { submitLedgerForReview } from "~/features/ledger/actions";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
-import type { LedgerReviewStepData } from "~/features/ledger/review-types";
+import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
 
 type ReviewSummaryClientProps = {
   storeName: string;
-  reviewData: LedgerReviewStepData;
+  reviewData: StoreManagerLedgerReviewStepData;
 };
 
 type SubmitFeedback =
@@ -103,7 +103,7 @@ function formatClosingDate(value: string) {
   }).format(new Date(value));
 }
 
-function normalizeStatusLabel(status: LedgerReviewStepData["status"]) {
+function normalizeStatusLabel(status: StoreManagerLedgerReviewStepData["status"]) {
   if (status === "IN_PROGRESS") {
     return "입력중";
   }
@@ -274,17 +274,13 @@ export function ReviewSummaryClient({
         </h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="총매출" metric={summary.totalSales} />
-          <MetricCard label="매출원가" metric={summary.costOfGoodsSold} />
-          <MetricCard label="매출이익" metric={summary.grossProfit} />
           <MetricCard
             label="이익률"
             metric={summary.grossMarginRate}
             kind="percent"
           />
-          <MetricCard label="영업이익" metric={summary.operatingProfit} />
-          <MetricCard label="인당생산성" metric={summary.productivity} />
           <MetricCard label="재고금액" metric={summary.inventoryAmount} />
-          <MetricCard label="매출차액" metric={summary.salesDifference} />
+          <MetricCard label="결제 차액" metric={summary.paymentDifference} />
         </div>
       </section>
 

@@ -334,6 +334,7 @@ export default async function LedgerDetailPage({
             currentStep="cost"
             saveAction={saveHqLedgerExpenses}
             showStepNavigation={false}
+            showSensitiveAccountingMetrics
             ledgerLabel={hqLedgerLabel}
           />
         </TabsContent>
@@ -379,6 +380,7 @@ export default async function LedgerDetailPage({
             currentStep="work"
             saveAction={saveHqLedgerWorkInfo}
             showStepNavigation={false}
+            showSensitiveAccountingMetrics
             ledgerLabel={hqLedgerLabel}
           />
         </TabsContent>

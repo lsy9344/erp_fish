@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>PRD Validation: ERP Fish PRD</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+    --grade-poor: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .grade {
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: white;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .grade-poor { background: var(--grade-poor); }
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 { display: inline; margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+  .findings-list { padding: 0 20px 4px; }
+  article.finding { padding: 14px 0; border-top: 1px solid var(--border); }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+  .reviewer-source { font-size: 12px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="report-header">
+      <div class="title">
+        <h1>ERP Fish PRD — Validation Report</h1>
+        <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
+      </div>
+      <div class="grade grade-poor">Poor</div>
+    </header>
+
+    <div class="synthesis">
+      <p>이 PRD는 "본사 관제탑"이라는 중심축, 장부 상태 모델, 본사 마감/정정 원칙, 지점장 입력 흐름을 잘 잡고 있어 MVP 방향 공유용으로는 충분하다. 다만 §8의 추가 구현 범위가 §6의 제외 범위와 겹치고, CAP 요구사항들이 성공 지표·완료 기준·Open Questions에 충분히 연결되지 않아 에픽/스토리 작성자는 범위와 우선순위를 다시 해석해야 한다.</p>
+      <p>추가 비판 리뷰는 더 보수적으로 판단했다. 문서가 <code>final</code> 상태이지만 핵심 회계·재고·권한·리포트 정책이 아직 열려 있고, MVP/추가 범위/계약 조건이 한 문서 안에 섞여 있어 현재 상태를 "구현 착수 가능한 최종 PRD"로 보기 어렵다.</p>
+    </div>
+
+    <div class="dimension-summary">
+      <div class="dim-card"><div class="dim-name">Decision-readiness</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Substance over theater</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+      <div class="dim-card"><div class="dim-name">Strategic coherence</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Done-ness clarity</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Scope honesty</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Downstream usability</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Shape fit</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+    </div>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>Decision-readiness</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>MVP의 핵심 선택은 읽고 판단할 수 있다. 제품은 본사 관제탑으로 정의되어 있고, 장부 상태 모델과 Open Questions의 결정 등급도 유용하다. 하지만 §6, §7, §8을 함께 읽어야만 현재 만들 범위가 보인다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">MVP 제외와 추가 구현 범위가 충돌함</h3><span class="finding-location">§6, §7.2, §8</span></header>
+            <div class="finding-note">제외된 텔레그램 알림, 이카운트 연동, 특수 기간 비교, 직원 마스터가 §8에서 다시 추가 구현 범위로 들어온다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 릴리스 구분 표를 추가해 각 항목을 MVP, 추가 구현 승인, 계약/운영 별도, 후순위 검토로 정리한다.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">CAP별 Open Questions 연결이 약함</h3><span class="finding-location">§8, §10</span></header>
+            <div class="finding-note">CAP-7, CAP-11, CAP-14 등은 관련 OQ와 직접 연결되지 않는다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 각 CAP 끝에 Blockers/Open Questions 줄을 붙인다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Substance over theater</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>대부분의 내용은 실제 업무 관찰에서 나온 요구로 보인다. JTBD와 addendum은 원본 엑셀과 운영 상황을 잘 보존하고, NFR도 제품 맥락과 연결된다.</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Strategic coherence</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>MVP의 전략은 "매일 아침 지점장 회의의 기준 자료"로 선명하다. 약점은 §8이 직원/급여, FIFO, 통합 재고, 알림, 월 손익까지 넓어졌지만 별도 성공 기준을 받지 않는다는 점이다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">추가 구현 범위의 성공 기준이 없음</h3><span class="finding-location">§8, §9</span></header>
+            <div class="finding-note">CAP-1~CAP-19가 넓게 추가되었지만 §9는 MVP FR 중심이다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> CAP 묶음별 성공 지표와 counter-metric을 §9에 추가한다.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">CAP 우선순위와 phase 논리가 드러나지 않음</h3><span class="finding-location">§8</span></header>
+            <div class="finding-note">CAP 번호와 배치만으로는 구현 순서와 의존성을 알기 어렵다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 각 CAP에 phase, depends on, priority rationale를 추가한다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Done-ness clarity</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>FR-1~FR-29는 대부분 검증 조건을 갖고 있지만 §8 CAPs와 일부 운영/외부 연동 조건은 아직 테스트 가능한 형태로 닫히지 않았다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">외부 알림과 보안 완료 기준이 약함</h3><span class="finding-location">CAP-11</span></header>
+            <div class="finding-note">재시도 횟수, 실패 노출 방식, 토큰 저장/회전 기준이 없다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 실패 상태, 재시도, 비밀값 저장, 감사 로그 기준을 검증 조건으로 추가한다.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">분석 확장성 요구가 데이터 계약으로 내려오지 않음</h3><span class="finding-location">CAP-12</span></header>
+            <div class="finding-note">중요 운영 데이터 중 무엇이 구조화 필드인지 불명확하다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 최소 구조화 필드 목록과 자유 메모 항목을 분리한다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Scope honesty</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>범위를 숨기지 않으려는 태도는 좋지만, 제외·포함·추가 견적·계약 조건이 한 PRD 안에 들어와 범위 판단이 문장 해석에 의존한다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">계약/운영 조건이 제품 요구사항과 같은 레벨에 있음</h3><span class="finding-location">CAP-19</span></header>
+            <div class="finding-note">유지보수/서버 운영이 CAP 요구사항처럼 보인다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 운영/계약 결정사항으로 분리하고 제품에는 시스템 동작만 남긴다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Downstream usability</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>FR, UJ, 용어집은 하위 문서가 추출하기 좋은 기반이다. 하지만 §8 CAP 묶음은 FR/SM/UJ와 연결이 약하고 CAP ID 순서도 읽기 부담을 만든다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">CAP 요구사항이 FR/SM/UJ에 연결되지 않음</h3><span class="finding-location">§4, §8, §9</span></header>
+            <div class="finding-note">CAP-6, CAP-13, CAP-15 등은 기존 FR과 강하게 연결되지만 cross-reference가 없다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> CAP별 Related FR, Related SM, Related OQ를 붙인다.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">제품 용어 `지점`과 원본 용어 `매장`이 섞임</h3><span class="finding-location">§3, §8.5, addendum §2</span></header>
+            <div class="finding-note">표준 용어가 흔들릴 수 있다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> 제품 표준은 `지점`으로 통일하고 원본의 `매장=지점` 매핑을 설명한다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>Shape fit</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>내부 ERP와 본사/지점장 양면 업무 도구에는 대체로 맞는 capability spec 형태다. 가장 큰 아쉬움은 하나의 final PRD가 MVP 기준선, 추가 구현 견적 범위, 운영 계약 조건을 모두 담는 혼합 문서가 되었다는 점이다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">PRD가 MVP spec과 phase-extension annex 사이에 걸쳐 있음</h3><span class="finding-location">§0, §6, §8</span></header>
+            <div class="finding-note">§0은 1차 제품 범위를 정의한다고 하면서 2026-06-10 추가 구현 범위도 다룬다.</div>
+            <div class="finding-fix"><strong>Fix:</strong> `MVP baseline + approved extension`이라고 명명하고 §8을 extension annex처럼 구성한다.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="reviewer-section">
+      <details open>
+        <summary><h2>Adversarial review</h2><span class="reviewer-source">review-adversarial-general.md</span></summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>비판 리뷰는 이 문서가 완성되어 보이지만 구현 준비 상태는 아니라고 판단했다. 가장 큰 위험은 `final` 상태와 실제 미결정 항목의 불일치, 그리고 MVP/추가 범위/계약 조건의 혼합이다.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">`final` status conflicts with critical open questions</h3><span class="finding-location">frontmatter, §10</span></header><div class="finding-note">스토리 작성 전 필수 결정이 남아 있어 downstream author가 정책을 발명할 위험이 있다.</div><div class="finding-fix"><strong>Fix:</strong> status를 낮추거나 gate 표로 affected FR/CAP를 연결한다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">Financial calculation rules are not strong enough for an ERP</h3><span class="finding-location">§4.3</span></header><div class="finding-note">rounding, VAT, zero denominator, correction recalculation, FIFO coexistence가 없다.</div><div class="finding-fix"><strong>Fix:</strong> KPI별 calculation spec과 예시를 추가한다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">Inventory carryover policy still has dangerous gaps</h3><span class="finding-location">FR-9, §3.1</span></header><div class="finding-note">휴무, skipped day, late close, correction after close, month boundary가 비어 있다.</div><div class="finding-fix"><strong>Fix:</strong> 상태 전이와 사례별 예시를 정의한다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Permissions are too coarse for a multi-role ERP</h3><span class="finding-location">FR-1~FR-3, CAP-13</span></header><div class="finding-note">본사 사용자/지점장 두 역할로 powerful action을 안전하게 나눌 수 없다.</div><div class="finding-fix"><strong>Fix:</strong> action/screen/API/data scope별 permission matrix를 만든다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Batch close is underspecified and risky</h3><span class="finding-location">CAP-15</span></header><div class="finding-note">eligible state, validation error, partial failure, dry run, reason required가 없다.</div><div class="finding-fix"><strong>Fix:</strong> preflight와 partial failure policy를 정의한다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Upload-driven purchasing lacks file contract</h3><span class="finding-location">CAP-6</span></header><div class="finding-note">file version, required columns, duplicate policy, re-upload behavior가 없다.</div><div class="finding-fix"><strong>Fix:</strong> upload contract와 preview/commit/rollback flow를 추가한다.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Reporting requirements are too broad</h3><span class="finding-location">FR-27~FR-29, CAP-2~CAP-4, CAP-10</span></header><div class="finding-note">columns, filters, grouping, exports, aggregate rules가 없다.</div><div class="finding-fix"><strong>Fix:</strong> 주요 리포트별 data contract와 예시를 만든다.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li>FR ID는 FR-1~FR-29까지 연속이고 중복이 보이지 않는다.</li>
+        <li>UJ ID는 UJ-1~UJ-4까지 연속이며 각 여정에 주체가 있다.</li>
+        <li>SM ID는 SM-1~SM-5와 SM-C1~SM-C2로 구분되어 있고 주요 SM은 관련 FR을 참조한다.</li>
+        <li>CAP ID는 CAP-1~CAP-19가 모두 존재하지만 문서 순서가 숫자 순서와 다르다.</li>
+        <li>Assumptions Index는 inline `[ASSUMPTION]` 태그가 없다는 현재 상태와 맞다.</li>
+        <li>§10 Open Questions는 결정 등급과 담당/재확인 시점을 갖고 있어 downstream 사용성이 좋아졌다.</li>
+      </ul>
+    </div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md</span>
+        <span>Generated: 2026-06-10T17:06:51+09:00</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -13,7 +13,7 @@ import {
   getTodayStoreLedger,
   getTodayStoreLedgerInTx,
   toLedgerAuditPayload,
-  toLedgerCostStepData,
+  toStoreManagerLedgerCostStepData,
 } from "./queries";
 import {
   ledgerSalesPaymentSchema,
@@ -29,7 +29,7 @@ import {
   type LedgerWorkInfoInput,
 } from "./schemas";
 import { type LedgerSubmitForReviewResult } from "./review-types";
-import { type LedgerCostStepData } from "./types";
+import { type StoreManagerLedgerCostStepData } from "./types";
 
 type LedgerRecord = Awaited<ReturnType<typeof getTodayStoreLedgerInTx>>;
 
@@ -190,7 +190,7 @@ function toLedgerSubmitResult(
 
 function isExistingSnapshotPurchase(
   purchase: LedgerPurchasesInput["purchases"][number],
-  existing: LedgerCostStepData["purchaseItems"][number] | undefined,
+  existing: StoreManagerLedgerCostStepData["purchaseItems"][number] | undefined,
 ) {
   return (
     existing?.productId === purchase.productId &&
@@ -310,7 +310,7 @@ export async function submitLedgerForReview(
 
 export async function saveLedgerSalesPayment(
   input: unknown,
-): Promise<ActionResult<LedgerCostStepData>> {
+): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
   const parsed = parseLedgerSalesInput(input);
 
   if (!parsed.ok) {
@@ -353,7 +353,7 @@ export async function saveLedgerSalesPayment(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(afterLedger);
     });
 
     revalidateLedgerSalesPaths();
@@ -374,7 +374,7 @@ export async function saveLedgerSalesPayment(
 
 export async function saveLedgerExpenses(
   input: unknown,
-): Promise<ActionResult<LedgerCostStepData>> {
+): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
   const parsed = parseLedgerExpenseInput(input);
 
   if (!parsed.ok) {
@@ -430,7 +430,7 @@ export async function saveLedgerExpenses(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(afterLedger);
     });
 
     revalidateLedgerSalesPaths();
@@ -443,7 +443,7 @@ export async function saveLedgerExpenses(
 
 export async function saveLedgerPurchases(
   input: unknown,
-): Promise<ActionResult<LedgerCostStepData>> {
+): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
   const parsed = parseLedgerPurchaseInput(input);
 
   if (!parsed.ok) {
@@ -577,7 +577,7 @@ export async function saveLedgerPurchases(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(afterLedger);
     });
 
     revalidateLedgerSalesPaths();
@@ -590,7 +590,7 @@ export async function saveLedgerPurchases(
 
 export async function saveLedgerWorkInfo(
   input: unknown,
-): Promise<ActionResult<LedgerCostStepData>> {
+): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
   const parsed = parseLedgerWorkInfoInput(input);
 
   if (!parsed.ok) {
@@ -631,7 +631,7 @@ export async function saveLedgerWorkInfo(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(afterLedger);
     });
 
     revalidateLedgerSalesPaths();

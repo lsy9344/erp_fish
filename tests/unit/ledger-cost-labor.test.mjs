@@ -195,6 +195,112 @@ test("ledger cost/work data model, actions, and queries follow expected contract
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
 });
 
+test("store manager ledger responses omit sensitive accounting metrics", async () => {
+  const typeSource = readProjectFile("src", "features", "ledger", "types.ts");
+  const querySource = readProjectFile("src", "features", "ledger", "queries.ts");
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
+  const expenseClientSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "expense-step-client.tsx",
+  );
+  const workClientSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "workstep-client.tsx",
+  );
+
+  assert.match(typeSource, /StoreManagerLedgerCostStepData/);
+  assert.match(
+    typeSource,
+    /Omit<\s*LedgerCostStepData,\s*"grossProfit"\s*\|\s*"productivity"\s*>/s,
+  );
+  assert.match(querySource, /shapeStoreManagerLedgerCostStepData/);
+  assert.match(
+    responseShapeSource,
+    /const\s*\{\s*grossProfit,\s*productivity,\s*\.\.\.safeLedger\s*\}/s,
+  );
+  assert.match(
+    actionSource,
+    /toStoreManagerLedgerCostStepData\(afterLedger\)/,
+  );
+  assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);
+  assert.match(
+    expenseClientSource,
+    /showSensitiveAccountingMetrics\s*\?\s*\(/,
+  );
+  assert.match(workClientSource, /showSensitiveAccountingMetrics/);
+
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const { toStoreManagerLedgerCostStepData } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const safeLedger = toStoreManagerLedgerCostStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: new Date("2026-06-10T00:00:00.000Z"),
+    updatedAt: new Date("2026-06-10T01:00:00.000Z"),
+    status: "IN_PROGRESS",
+    submittedById: null,
+    submittedAt: null,
+    closedById: null,
+    closedAt: null,
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 10_000,
+    paymentDifferenceAmount: 0,
+    workerCount: 2,
+    workMemo: null,
+    expenseItems: [
+      {
+        id: "expense-1",
+        ledgerInputCodeId: "code-1",
+        ledgerInputCodeName: "재료비",
+        amount: 30_000,
+        memo: null,
+      },
+    ],
+    expenseTotal: 30_000,
+    purchaseItems: [],
+    purchaseTotal: 0,
+    grossProfit: 70_000,
+    productivity: 35_000,
+    stepCompletion: {
+      sales: true,
+      cost: true,
+      purchase: false,
+      inventory: false,
+      losses: false,
+      work: true,
+    },
+  });
+
+  assert.equal(Object.hasOwn(safeLedger, "grossProfit"), false);
+  assert.equal(Object.hasOwn(safeLedger, "productivity"), false);
+  assert.equal(safeLedger.expenseTotal, 30_000);
+});
+
 test("expense step provides 기타 fallback and disables amount when no HQ expense codes exist", () => {
   const source = readProjectFile(
     "src",

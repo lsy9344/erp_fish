@@ -1,5 +1,5 @@
 # generated: 2026-05-29T00:58:04+09:00
-# last_updated: 2026-06-02T15:12:59+09:00
+# last_updated: 2026-06-10T13:24:27+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review
 
 generated: "2026-05-29T00:58:04+09:00"
-last_updated: "2026-06-02T15:38:46+09:00"
+last_updated: "2026-06-10T13:24:27+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -60,6 +60,7 @@ development_status:
   2-6-지점장이-손실-폐기-떨이를-입력하고-재고-흐름에-반영한다: done
   2-7-입력자가-검토-화면에서-계산값과-이상-후보를-확인한다: done
   2-8-입력자가-장부를-검토-대기로-제출한다: done
+  2-9-지점장-장부-입력-검토-서버-응답에서-민감-회계-지표를-차단한다: review
   epic-2-retrospective: optional
   epic-3: in-progress
   3-1-본사가-전체-지점-장부-상태를-관제판에서-본다: done
@@ -82,4 +83,38 @@ development_status:
   5-4-본사가-월간-지점별-마감과-이상-현황을-본다: done
   5-5-본사가-월간-손실-재고-흐름과-핵심-성과를-본다: done
   epic-5-retrospective: done
-
+  epic-6: backlog
+  6-1-본사가-품목명-규격-별칭과-매핑-실패를-관리한다: backlog
+  6-2-본사가-이카운트-엑셀-업로드로-매입-라인을-자동-생성한다: backlog
+  6-3-시스템이-매입-라인별-잔량과-fifo-재고-금액을-계산한다: backlog
+  6-4-본사가-재고-금액의-매입-잔량-근거를-확인한다: backlog
+  epic-6-retrospective: optional
+  epic-7: backlog
+  7-1-본사가-전체-지점-품목별-재고를-한-화면에서-본다: backlog
+  7-2-본사가-상품별-판매-원가-마진-분석을-본다: backlog
+  7-3-본사가-상품-분석과-통합-재고의-근거를-추적한다: backlog
+  epic-7-retrospective: optional
+  epic-8: backlog
+  8-1-지점장-민감-회계-지표-제한을-추가-범위-화면까지-검증-강화한다: backlog
+  8-2-본사가-일괄-마감-또는-검토-생략을-실행한다: backlog
+  8-3-장부-작성자-이름을-입력-흐름-전체에-유지한다: backlog
+  8-4-재고-테이블의-차이-문구를-당일-판매량으로-정리한다: backlog
+  8-5-희망-판매가-기준-손실액-정책을-반영한다: backlog
+  8-6-본사-대시보드-그리드를-리사이징할-수-있다: backlog
+  epic-8-retrospective: optional
+  epic-9: backlog
+  9-1-본사가-직원-마스터와-소속-지점을-관리한다: backlog
+  9-2-지점장이-일일-장부에서-근무자를-선택하고-월간-근무일수를-집계한다: backlog
+  9-3-본사가-직원별-월급-정산-참고-자료를-관리한다: backlog
+  epic-9-retrospective: optional
+  epic-10: backlog
+  10-1-본사가-대조-기간과-현재-기간을-비교한다: backlog
+  10-2-본사가-연도별-월별-지점-실적을-본다: backlog
+  10-3-본사가-특수기간-템플릿과-d-day-비교-리포트를-관리한다: backlog
+  10-4-본사가-매장별-월-고정비와-손익계산서를-관리한다: backlog
+  10-5-본사가-엑셀-보고-양식과-신규-리포트-항목을-매칭한다: backlog
+  epic-10-retrospective: optional
+  epic-11: backlog
+  11-1-본사가-line-또는-텔레그램-알림-채널과-조건을-설정한다: backlog
+  11-2-시스템이-정해진-시간에-알림을-발송하고-실패를-추적한다: backlog
+  epic-11-retrospective: optional

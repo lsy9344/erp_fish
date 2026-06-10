@@ -37,6 +37,18 @@ export type LedgerReviewStepData = {
   signals: LedgerReviewSignal[];
 };
 
+export type StoreManagerLedgerReviewSummary = Pick<
+  LedgerReviewSummary,
+  "totalSales" | "grossMarginRate" | "inventoryAmount" | "paymentDifference"
+>;
+
+export type StoreManagerLedgerReviewStepData = Omit<
+  LedgerReviewStepData,
+  "summary"
+> & {
+  summary: StoreManagerLedgerReviewSummary;
+};
+
 export type LedgerSubmitForReviewResult = {
   status: "submitted" | "already-in-review";
   ledger: Pick<

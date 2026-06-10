@@ -21,6 +21,7 @@ import { StoreEntryStepNavigation } from "~/features/ledger/components/store-ent
 import type {
   LedgerCostStepData,
   LedgerSalesStepData,
+  StoreManagerLedgerCostStepData,
 } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
@@ -37,13 +38,16 @@ type ExpenseLine = {
   memo: string;
 };
 
+type ExpenseLedgerData = StoreManagerLedgerCostStepData | LedgerCostStepData;
+
 type ExpenseStepClientProps = {
   storeName: string;
-  initialLedger: LedgerCostStepData;
+  initialLedger: ExpenseLedgerData;
   expenseCodeOptions: ExpenseCodeOption[];
   currentStep: "sales" | "cost" | "purchase" | "work";
-  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  saveAction?: (input: unknown) => Promise<ActionResult<ExpenseLedgerData>>;
   showStepNavigation?: boolean;
+  showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
 };
 
@@ -115,7 +119,7 @@ function createLineState(
   };
 }
 
-function toExpenseLines(items: LedgerCostStepData["expenseItems"]) {
+function toExpenseLines(items: StoreManagerLedgerCostStepData["expenseItems"]) {
   return items.map<ExpenseLine>((item) => ({
     id: item.id,
     ledgerInputCodeId: item.ledgerInputCodeId,
@@ -125,7 +129,9 @@ function toExpenseLines(items: LedgerCostStepData["expenseItems"]) {
   }));
 }
 
-function createFallbackExpenseLines(items: LedgerCostStepData["expenseItems"]) {
+function createFallbackExpenseLines(
+  items: StoreManagerLedgerCostStepData["expenseItems"],
+) {
   const lines = toExpenseLines(items);
 
   return lines.length > 0
@@ -140,6 +146,7 @@ export function ExpenseStepClient({
   currentStep = "cost",
   saveAction = saveLedgerExpenses,
   showStepNavigation = true,
+  showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
 }: ExpenseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -196,7 +203,7 @@ export function ExpenseStepClient({
     }, 50);
   }
 
-  function fillLedger(next: LedgerCostStepData) {
+  function fillLedger(next: ExpenseLedgerData) {
     setLedger(next);
     setExpenseItems(toExpenseLines(next.expenseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
@@ -524,12 +531,14 @@ export function ExpenseStepClient({
               {formatKrw(draftExpenseTotal)}
             </span>
           </div>
-          <div className="mt-2 flex justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">영업이익</span>
-            <span className="font-semibold tabular-nums">
-              {formatKrw(draftGrossProfit)}
-            </span>
-          </div>
+          {showSensitiveAccountingMetrics ? (
+            <div className="mt-2 flex justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">영업이익</span>
+              <span className="font-semibold tabular-nums">
+                {formatKrw(draftGrossProfit)}
+              </span>
+            </div>
+          ) : null}
         </div>
       </section>
 

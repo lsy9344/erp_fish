@@ -5,11 +5,13 @@ import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
 import { getTodayStoreLedgerInTx } from "./queries";
+import { toStoreManagerLedgerReviewStepData } from "./response-shaping";
 import type {
   LedgerReviewMissingItem,
   LedgerReviewSignal,
   LedgerReviewStepData,
   LedgerReviewWarning,
+  StoreManagerLedgerReviewStepData,
 } from "./review-types";
 
 type LedgerReviewThresholds = {
@@ -262,4 +264,14 @@ export async function getLedgerReviewStepData(
       }),
     };
   });
+}
+
+export async function getStoreManagerLedgerReviewStepData(
+  storeId: string,
+  actorId: string,
+  thresholds: LedgerReviewThresholds = {},
+): Promise<StoreManagerLedgerReviewStepData> {
+  const data = await getLedgerReviewStepData(storeId, actorId, thresholds);
+
+  return toStoreManagerLedgerReviewStepData(data);
 }

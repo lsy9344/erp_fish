@@ -11,7 +11,7 @@ import {
   requireStoreAccess,
 } from "~/server/authz";
 import { getTodayStoreLedger } from "~/features/ledger/queries";
-import { getLedgerReviewStepData } from "~/features/ledger/review-queries";
+import { getStoreManagerLedgerReviewStepData } from "~/features/ledger/review-queries";
 import { CorrectionReadonlySummary } from "~/features/corrections/components/correction-readonly-summary";
 import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
 import type { CorrectionRecordListItem } from "~/features/corrections/types";
@@ -29,7 +29,9 @@ type StoreEntryPageProps = {
 };
 
 type StoreEntryStep = "sales" | "cost" | "purchase" | "work" | "review";
-type LedgerReviewData = Awaited<ReturnType<typeof getLedgerReviewStepData>>;
+type LedgerReviewData = Awaited<
+  ReturnType<typeof getStoreManagerLedgerReviewStepData>
+>;
 type LedgerInputCodeOption = Awaited<
   ReturnType<typeof getActiveLedgerInputCodeOptions>
 >[number];
@@ -158,7 +160,7 @@ export default async function StoreEntryPage({
     const [initialLedger, reviewData] = await Promise.all([
       getTodayStoreLedger(store.id, user.id),
       step === "review"
-        ? getLedgerReviewStepData(store.id, user.id)
+        ? getStoreManagerLedgerReviewStepData(store.id, user.id)
         : Promise.resolve(null),
     ]);
     const correctionRecords =
@@ -215,7 +217,10 @@ export default async function StoreEntryPage({
   );
   const reviewData =
     step === "review"
-      ? await getLedgerReviewStepData(workspace.store.id, workspace.user.id)
+      ? await getStoreManagerLedgerReviewStepData(
+          workspace.store.id,
+          workspace.user.id,
+        )
       : null;
   const correctionRecords =
     initialLedger.status === "HEADQUARTERS_CLOSED"

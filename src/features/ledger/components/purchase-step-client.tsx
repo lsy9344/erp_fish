@@ -14,8 +14,8 @@ import {
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type {
-  LedgerCostStepData,
   LedgerSalesStepData,
+  StoreManagerLedgerCostStepData,
 } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
@@ -49,11 +49,13 @@ type PurchaseLine = {
 
 type PurchaseStepClientProps = {
   storeName: string;
-  initialLedger: LedgerCostStepData;
+  initialLedger: StoreManagerLedgerCostStepData;
   productOptions: ProductOption[];
   purchaseStandardOptions: PurchaseStandardOption[];
   currentStep: "sales" | "cost" | "purchase" | "work";
-  saveAction?: (input: unknown) => Promise<ActionResult<LedgerCostStepData>>;
+  saveAction?: (
+    input: unknown,
+  ) => Promise<ActionResult<StoreManagerLedgerCostStepData>>;
   showStepNavigation?: boolean;
   ledgerLabel?: string;
 };
@@ -113,7 +115,9 @@ function createLineState(id: string): PurchaseLine {
   };
 }
 
-function toPurchaseLines(items: LedgerCostStepData["purchaseItems"]) {
+function toPurchaseLines(
+  items: StoreManagerLedgerCostStepData["purchaseItems"],
+) {
   return items.map<PurchaseLine>((item) => ({
     id: item.id,
     productId: item.productId,
@@ -197,7 +201,7 @@ export function PurchaseStepClient({
     }, 50);
   }
 
-  function fillLedger(next: LedgerCostStepData) {
+  function fillLedger(next: StoreManagerLedgerCostStepData) {
     setLedger(next);
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
