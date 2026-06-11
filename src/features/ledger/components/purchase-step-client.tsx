@@ -99,7 +99,7 @@ function toPurchaseLines(
 ) {
   return items.map<PurchaseLine>((item) => ({
     id: item.id,
-    productId: item.productId,
+    productId: item.productId ?? "",
     purchaseStandardId: item.purchaseStandardId ?? "",
     productName: item.productName,
     productCategory: item.productCategory,
@@ -136,6 +136,9 @@ export function PurchaseStepClient({
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const standardRefs = useRef<(HTMLSelectElement | null)[]>([]);
+  const productNameRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const productCategoryRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const productSpecRefs = useRef<(HTMLInputElement | null)[]>([]);
   const unitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
   const nextDraftLineNumberRef = useRef(0);
@@ -168,6 +171,21 @@ export function PurchaseStepClient({
 
         if (errors[`purchases.${index}.purchaseStandardId`]?.length) {
           standardRefs.current[index]?.focus();
+          return;
+        }
+
+        if (errors[`purchases.${index}.productName`]?.length) {
+          productNameRefs.current[index]?.focus();
+          return;
+        }
+
+        if (errors[`purchases.${index}.productCategory`]?.length) {
+          productCategoryRefs.current[index]?.focus();
+          return;
+        }
+
+        if (errors[`purchases.${index}.productSpec`]?.length) {
+          productSpecRefs.current[index]?.focus();
           return;
         }
 
@@ -223,6 +241,13 @@ export function PurchaseStepClient({
           productId: productRefs.current[index]?.value ?? line.productId,
           purchaseStandardId:
             standardRefs.current[index]?.value ?? line.purchaseStandardId,
+          productName:
+            productNameRefs.current[index]?.value ?? line.productName,
+          productCategory:
+            productCategoryRefs.current[index]?.value ?? line.productCategory,
+          productSpec:
+            productSpecRefs.current[index]?.value ?? line.productSpec,
+          referenceInfo: line.referenceInfo,
           unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
           quantity: quantityRefs.current[index]?.value ?? line.quantity,
         })),
@@ -335,13 +360,6 @@ export function PurchaseStepClient({
     });
   }
 
-  const selectableProductOptions = productOptions.filter((product) =>
-    purchaseStandardOptions.some(
-      (standard) => standard.product.id === product.id,
-    ),
-  );
-  const hasOptions =
-    selectableProductOptions.length > 0 && purchaseStandardOptions.length > 0;
   const isFormSaving = isSaving;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
   const isOriginalEditBlocked =
@@ -399,7 +417,7 @@ export function PurchaseStepClient({
         successMessage={resultMessage}
         unsavedFields={["매입 품목", "매입 기준", "단가", "수량"]}
         onRetry={handleRetry}
-        retryDisabled={isFormSaving || isOriginalEditBlocked || !hasOptions}
+        retryDisabled={isFormSaving || isOriginalEditBlocked}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
@@ -409,7 +427,7 @@ export function PurchaseStepClient({
             type="button"
             variant="outline"
             onClick={addPurchaseLine}
-            disabled={isFormSaving || isOriginalEditBlocked || !hasOptions}
+            disabled={isFormSaving || isOriginalEditBlocked}
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
@@ -428,6 +446,12 @@ export function PurchaseStepClient({
                 fieldErrors[`purchases.${index}.productId`]?.[0];
               const standardError =
                 fieldErrors[`purchases.${index}.purchaseStandardId`]?.[0];
+              const productNameError =
+                fieldErrors[`purchases.${index}.productName`]?.[0];
+              const productCategoryError =
+                fieldErrors[`purchases.${index}.productCategory`]?.[0];
+              const productSpecError =
+                fieldErrors[`purchases.${index}.productSpec`]?.[0];
               const unitPriceError =
                 fieldErrors[`purchases.${index}.unitPrice`]?.[0];
               const quantityError =
@@ -488,14 +512,14 @@ export function PurchaseStepClient({
                       className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
                     >
                       <option value="">품목 선택</option>
-                      {!selectableProductOptions.some(
+                      {!productOptions.some(
                         (option) => option.id === line.productId,
                       ) && line.productId ? (
                         <option value={line.productId}>
                           {line.productName || line.productId}
                         </option>
                       ) : null}
-                      {selectableProductOptions.map((option) => (
+                      {productOptions.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.name} / {option.spec}
                         </option>
@@ -557,6 +581,112 @@ export function PurchaseStepClient({
                       </FieldError>
                     ) : null}
                   </Field>
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <Field data-invalid={Boolean(productNameError)}>
+                      <FieldLabel htmlFor={`purchase-product-name-${line.id}`}>
+                        원문명
+                      </FieldLabel>
+                      <Input
+                        id={`purchase-product-name-${line.id}`}
+                        ref={(node) => {
+                          productNameRefs.current[index] = node;
+                        }}
+                        autoComplete="off"
+                        value={line.productName}
+                        disabled={isFormSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            productName: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11"
+                        aria-invalid={Boolean(productNameError)}
+                        aria-describedby={
+                          productNameError
+                            ? `purchase-product-name-${line.id}-error`
+                            : undefined
+                        }
+                      />
+                      {productNameError ? (
+                        <FieldError
+                          id={`purchase-product-name-${line.id}-error`}
+                        >
+                          {productNameError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(productCategoryError)}>
+                      <FieldLabel
+                        htmlFor={`purchase-product-category-${line.id}`}
+                      >
+                        구분
+                      </FieldLabel>
+                      <Input
+                        id={`purchase-product-category-${line.id}`}
+                        ref={(node) => {
+                          productCategoryRefs.current[index] = node;
+                        }}
+                        autoComplete="off"
+                        value={line.productCategory}
+                        disabled={isFormSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            productCategory: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11"
+                        aria-invalid={Boolean(productCategoryError)}
+                        aria-describedby={
+                          productCategoryError
+                            ? `purchase-product-category-${line.id}-error`
+                            : undefined
+                        }
+                      />
+                      {productCategoryError ? (
+                        <FieldError
+                          id={`purchase-product-category-${line.id}-error`}
+                        >
+                          {productCategoryError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(productSpecError)}>
+                      <FieldLabel htmlFor={`purchase-product-spec-${line.id}`}>
+                        규격
+                      </FieldLabel>
+                      <Input
+                        id={`purchase-product-spec-${line.id}`}
+                        ref={(node) => {
+                          productSpecRefs.current[index] = node;
+                        }}
+                        autoComplete="off"
+                        value={line.productSpec}
+                        disabled={isFormSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            productSpec: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11"
+                        aria-invalid={Boolean(productSpecError)}
+                        aria-describedby={
+                          productSpecError
+                            ? `purchase-product-spec-${line.id}-error`
+                            : undefined
+                        }
+                      />
+                      {productSpecError ? (
+                        <FieldError
+                          id={`purchase-product-spec-${line.id}-error`}
+                        >
+                          {productSpecError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+                  </div>
 
                   <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
                     <p>
@@ -653,9 +783,10 @@ export function PurchaseStepClient({
           </div>
         )}
 
-        {!hasOptions ? (
-          <p className="text-destructive mb-3 text-sm">
-            선택 가능한 active 품목 또는 매입 기준이 없습니다.
+        {productOptions.length === 0 || purchaseStandardOptions.length === 0 ? (
+          <p className="text-muted-foreground mb-3 text-sm">
+            선택 가능한 active 품목 또는 매입 기준이 없어도 수동 입력할 수
+            있습니다.
           </p>
         ) : null}
 

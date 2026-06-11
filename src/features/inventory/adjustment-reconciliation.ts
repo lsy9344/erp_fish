@@ -25,11 +25,15 @@ const inventoryItemSelect = {
 } as const;
 
 function aggregatePurchasedQuantity(
-  purchases: Array<{ productId: string; quantity: number }>,
+  purchases: Array<{ productId: string | null; quantity: number }>,
 ) {
   const quantities = new Map<string, number>();
 
   for (const purchase of purchases) {
+    if (!purchase.productId) {
+      continue;
+    }
+
     quantities.set(
       purchase.productId,
       (quantities.get(purchase.productId) ?? 0) + purchase.quantity,

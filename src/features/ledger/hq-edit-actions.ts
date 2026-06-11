@@ -7,7 +7,10 @@ import type { Prisma } from "../../../generated/prisma";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
+import {
+  requireLedgerHqEditAccess,
+  requireHeadquartersStoreScope,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ledgerSelect,
@@ -152,8 +155,7 @@ function isExistingSnapshotPurchase(
 ) {
   return (
     existing?.productId === purchase.productId &&
-    (!purchase.purchaseStandardId ||
-      existing.purchaseStandardId === purchase.purchaseStandardId)
+    existing.purchaseStandardId === purchase.purchaseStandardId
   );
 }
 
@@ -419,7 +421,14 @@ export async function saveHqLedgerPurchases(
           ...new Set(
             parsed.data.purchases
               .map((purchase) => purchase.purchaseStandardId)
-              .filter((id) => id.length > 0),
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const productIds = [
+          ...new Set(
+            parsed.data.purchases
+              .map((purchase) => purchase.productId)
+              .filter((id): id is string => Boolean(id)),
           ),
         ];
         const standards = await tx.purchaseStandard.findMany({
@@ -445,16 +454,42 @@ export async function saveHqLedgerPurchases(
         const standardsById = new Map(
           standards.map((standard) => [standard.id, standard]),
         );
+        const products = await tx.product.findMany({
+          where: {
+            id: { in: productIds },
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            spec: true,
+            defaultUnitPrice: true,
+          },
+        });
+        const productsById = new Map(
+          products.map((product) => [product.id, product]),
+        );
         const purchaseRows = [];
 
         for (let index = 0; index < parsed.data.purchases.length; index += 1) {
           const purchase = parsed.data.purchases[index]!;
-          const standard = standardsById.get(purchase.purchaseStandardId);
+          const standard = purchase.purchaseStandardId
+            ? standardsById.get(purchase.purchaseStandardId)
+            : null;
+          const product = purchase.productId
+            ? productsById.get(purchase.productId)
+            : null;
           const existing = existingPurchaseItemsById.get(purchase.id);
+          const isExistingSnapshot = isExistingSnapshotPurchase(
+            purchase,
+            existing,
+          );
 
           if (
-            standard?.product.id !== purchase.productId &&
-            !isExistingSnapshotPurchase(purchase, existing)
+            purchase.purchaseStandardId &&
+            !standard &&
+            !isExistingSnapshot
           ) {
             return actionError<LedgerCostStepData>(
               "VALIDATION_ERROR",
@@ -467,28 +502,83 @@ export async function saveHqLedgerPurchases(
             );
           }
 
+          if (
+            standard &&
+            purchase.productId &&
+            standard.product.id !== purchase.productId
+          ) {
+            return actionError<LedgerCostStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              {
+                [`purchases.${index}.purchaseStandardId`]: [
+                  "매입 기준과 품목이 일치하지 않습니다.",
+                ],
+              },
+            );
+          }
+
+          if (
+            purchase.productId &&
+            !product &&
+            !standard &&
+            !isExistingSnapshot
+          ) {
+            return actionError<LedgerCostStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              {
+                [`purchases.${index}.productId`]: ["품목을 확인해 주세요."],
+              },
+            );
+          }
+
           const snapshot = standard
             ? {
                 productId: standard.product.id,
                 purchaseStandardId: standard.id,
+                sourceType: "MANUAL" as const,
                 productName: standard.product.name,
                 productCategory: standard.product.category,
                 productSpec: standard.product.spec,
                 referenceInfo: standard.referenceInfo,
               }
-            : {
-                productId: existing!.productId,
-                purchaseStandardId: existing!.purchaseStandardId,
-                productName: existing!.productName,
-                productCategory: existing!.productCategory,
-                productSpec: existing!.productSpec,
-                referenceInfo: existing!.referenceInfo,
-              };
+            : product
+              ? {
+                  productId: product.id,
+                  purchaseStandardId: null,
+                  sourceType: "MANUAL" as const,
+                  productName: purchase.productName || product.name,
+                  productCategory: purchase.productCategory || product.category,
+                  productSpec: purchase.productSpec || product.spec,
+                  referenceInfo: purchase.referenceInfo,
+                }
+              : purchase.productId && existing
+                ? {
+                    productId: existing.productId,
+                    purchaseStandardId: existing.purchaseStandardId,
+                    sourceType: "MANUAL" as const,
+                    productName: purchase.productName || existing.productName,
+                    productCategory:
+                      purchase.productCategory || existing.productCategory,
+                    productSpec: purchase.productSpec || existing.productSpec,
+                    referenceInfo: purchase.referenceInfo,
+                  }
+                : {
+                    productId: null,
+                    purchaseStandardId: null,
+                    sourceType: "MANUAL" as const,
+                    productName: purchase.productName,
+                    productCategory: purchase.productCategory,
+                    productSpec: purchase.productSpec,
+                    referenceInfo: purchase.referenceInfo,
+                  };
 
           purchaseRows.push({
             dailyLedgerId: beforeLedger.id,
             productId: snapshot.productId,
             purchaseStandardId: snapshot.purchaseStandardId,
+            sourceType: snapshot.sourceType,
             productName: snapshot.productName,
             productCategory: snapshot.productCategory,
             productSpec: snapshot.productSpec,

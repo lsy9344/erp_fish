@@ -57,6 +57,10 @@ enum InventoryCarryoverSource {
   MANUAL
 }
 
+enum LedgerPurchaseSource {
+  MANUAL
+}
+
 enum CorrectionTargetType {
   LEDGER_FIELD
   PAYMENT_FIELD
@@ -401,10 +405,11 @@ model LedgerExpense {
 }
 
 model LedgerPurchaseItem {
-  id                 String   @id @default(cuid())
+  id                 String               @id @default(cuid())
   dailyLedgerId      String
-  productId          String
+  productId          String?
   purchaseStandardId String?
+  sourceType         LedgerPurchaseSource @default(MANUAL)
   productName        String
   productCategory    String
   productSpec        String
@@ -414,11 +419,11 @@ model LedgerPurchaseItem {
   referenceInfo      String?
   createdById        String
   updatedById        String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   dailyLedger      DailyLedger       @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
-  product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product          Product?          @relation(fields: [productId], references: [id], onDelete: Restrict)
   purchaseStandard PurchaseStandard? @relation(fields: [purchaseStandardId], references: [id], onDelete: SetNull)
   createdBy        User              @relation("LedgerPurchaseItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy        User              @relation("LedgerPurchaseItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
@@ -426,6 +431,7 @@ model LedgerPurchaseItem {
   @@index([dailyLedgerId])
   @@index([productId])
   @@index([purchaseStandardId])
+  @@index([sourceType])
 }
 
 model LedgerInventoryItem {

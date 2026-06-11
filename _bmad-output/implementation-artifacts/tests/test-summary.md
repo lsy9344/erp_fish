@@ -4,35 +4,36 @@
 
 ### API Tests
 
-- [x] N/A - Story 2.3는 public API route가 없고, 장부 저장은 Next.js Server Action과 Prisma transaction 경로로 처리된다. 서버 저장 계약은 unit/source tests와 Playwright UI 흐름으로 검증한다.
+- [x] N/A - Story 2.4는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 매입 저장을 처리한다. 서버 저장 계약은 focused unit/source tests와 Playwright UI 흐름으로 검증한다.
 
 ### E2E Tests
 
-- [x] `tests/e2e/store-ledger-sales.spec.ts` - 총매출/현금/카드/기타 결제수단 저장, 부호 있는 결제 합계 차액 표시, 저장 후 새로고침 유지, 단계 navigation 저장됨 표시, stale version 충돌, 권한 없는 지점 차단, 본사마감 입력 lock, 저장 실패 retry, 390px 터치 타깃과 overflow 방지를 검증한다.
-- [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - 비용 항목 다중 행 추가/삭제/저장, 비용 합계와 마지막 서버 저장 합계, 비활성 과거 비용 코드 표시 보존과 신규 선택지 제외, 비용 단계 미저장 변경 dialog 저장 경로, 저장 실패 retry, validation focus, 390px 다중 행 layout을 검증한다.
+- [x] `tests/e2e/store-ledger-purchase.spec.ts` - 품목/매입 기준 선택 저장, 여러 매입 라인 저장 후 재방문, 매입 합계 표시, 기준 정보 없는 원문 수동 입력, 삭제 후 저장, 품목 마스터 변경 후 snapshot 표시 보존, 모바일 390px 입력성, 검증 오류 focus, 음수/소수 입력 보존 검증을 커버한다.
+- [x] `tests/e2e/store-ledger-purchase.spec.ts` - 추가 gap으로 stale version 저장 거부와 DB 무변경, `HEADQUARTERS_CLOSED`/`HOLIDAY` 원본 저장 UI 차단, 권한 밖 지점 매입 라인 미노출을 보강했다.
 
 ### Unit Tests
 
-- [x] `tests/unit/ledger-sales.test.mjs` - 매출/결제 schema edge case, KST date serialization, version guard, audit/revalidation source contract, 결제 차이 계산, OQ-1 threshold/anomaly 미구현 contract를 검증한다.
-- [x] `tests/unit/ledger-cost-labor.test.mjs` - 비용 schema edge case, blank memo normalization, active `EXPENSE_ITEM` 서버 검증, inactive/wrong-group 직접 post 차단 source contract, fallback code non-saveability, 과거 비활성 코드 표시 보존, 서버 저장 합계 표시 contract를 검증한다.
+- [x] `tests/unit/ledger-purchase.test.mjs` - 매입 schema edge case, 기준 정보 없는 raw manual input, 정수/overflow 검증, manual source migration/model contract, 서버 계산/audit/revalidation/source contract, UI wiring을 검증한다.
+- [x] `tests/unit/ledger-sales.test.mjs` - 장부 저장의 version conflict/source contract 회귀를 함께 확인한다.
 
 ## Coverage
 
-- API endpoints: N/A. Story 2.3 범위에는 별도 public API endpoint가 없다.
-- Server actions/contracts: `saveLedgerSalesPayment`, `saveLedgerExpenses`, authorization, version conflict, audit logging, revalidation, active expense-code validation covered by unit/source tests.
-- UI workflows: sales/payment save and revisit, signed payment difference, cost multi-line save and revisit, inactive historical expense code behavior, unsaved navigation save path, save failure retry, closed-ledger lock, unauthorized store redirect, 390px layout/touch targets.
-- Happy path: 1단계 매출/결제 값 저장과 2단계 비용 다중 행 저장이 DB/UI에 유지된다.
-- Critical error cases: stale version conflict, unauthorized store access, network save failure retry, validation failure focus, inactive expense code 신규 선택지 제외, headquarters-closed mutation lock.
+- API endpoints: N/A. Story 2.4 범위에는 별도 public API endpoint가 없다.
+- Server actions/contracts: `saveLedgerPurchases`, `requireStoreAccess`, stale `version` conflict, editable ledger status guard, server-side amount calculation, audit logging, revalidation, manual source contract covered by unit/source tests and E2E user paths.
+- UI workflows: purchase option prefill, raw manual purchase input, multi-line save/revisit, snapshot preservation after master data change, deletion, validation focus, mobile touch targets, closed/holiday lock, unauthorized store redirect, stale version save rejection.
+- Happy path: multiple purchase lines save and reload with server-calculated total.
+- Critical error cases: stale version conflict, unauthorized store access, `HEADQUARTERS_CLOSED`/`HOLIDAY` edit lock, validation failure focus, negative/decimal numeric rejection, overflow contract.
 
 ## Validation
 
+- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-purchase.test.mjs` - pass.
 - [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-sales.test.mjs` - pass.
-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-cost-labor.test.mjs` - pass.
-- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts --list` - 19 tests loaded.
-- [x] `corepack pnpm exec prettier --check tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md` - pass.
-- [x] `corepack pnpm exec prisma generate && DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish corepack pnpm exec prisma validate` - pass.
-- [x] `corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test:unit && corepack pnpm build` - pass; unit tests 195/195 passed.
-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts` - 19/19 passed after scoping strict locators to the new common save-status UI.
+- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-purchase.test.mjs tests/unit/ledger-sales.test.mjs` - pass.
+- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-purchase.spec.ts --list` - 8 tests loaded.
+- [x] `corepack pnpm exec prettier --check tests/e2e/store-ledger-purchase.spec.ts` - pass.
+- [x] `corepack pnpm typecheck` - pass.
+- [x] `corepack pnpm lint` - pass.
+- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-purchase.spec.ts` - 8/8 passed after scoping strict locators to the common save-status UI.
 
 ## Checklist Result
 
@@ -41,8 +42,9 @@
 - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture assertions.
 - Happy path covered: complete.
 - Critical error cases covered: complete.
+- All generated tests run successfully: unit/source checks pass and focused purchase E2E passes on `PORT=3100`.
 - Proper locators: complete.
 - Clear descriptions: complete.
 - No hardcoded waits or sleeps: complete.
-- Tests are independent: selected ledger/code cleanup and deterministic fixtures are used.
+- Tests are independent: deterministic ledger date, product names, and cleanup helpers are used.
 - Summary includes coverage metrics: complete.

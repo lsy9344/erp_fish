@@ -9,8 +9,9 @@ const otherPaymentAmountError = "기타 결제수단은 0원 이상의 정수여
 const expenseCodeError = "비용 항목을 선택해 주세요.";
 const expenseAmountError = "비용 금액은 0원 이상의 정수여야 합니다.";
 const expenseMemoError = "메모는 0~500자 사이여야 합니다.";
-const purchaseProductError = "품목을 선택해 주세요.";
-const purchaseStandardError = "매입 기준을 선택해 주세요.";
+const purchaseProductNameError = "품목명을 입력해 주세요.";
+const purchaseProductCategoryError = "구분을 입력해 주세요.";
+const purchaseProductSpecError = "규격을 입력해 주세요.";
 const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.";
 const purchaseQuantityError = "수량은 0 이상의 정수여야 합니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
@@ -238,12 +239,29 @@ const ledgerPurchaseItemSchema = z.object({
     .unknown()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   productId: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(z.string().min(1, purchaseProductError)),
+    .unknown()
+    .transform((value) =>
+      typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
   purchaseStandardId: z
     .unknown()
+    .transform((value) =>
+      typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
+  productName: z
+    .unknown()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  productCategory: z
+    .unknown()
+    .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  productSpec: z
+    .unknown()
+    .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  referenceInfo: z
+    .unknown()
+    .transform((value) =>
+      typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
   unitPrice: z
     .unknown()
     .transform((value, context) =>
@@ -266,11 +284,39 @@ export const ledgerPurchaseSchema = z
   })
   .superRefine((value, context) => {
     value.purchases.forEach((purchase, index) => {
-      if (!purchase.id && !purchase.purchaseStandardId) {
+      if (
+        !purchase.productId &&
+        !purchase.purchaseStandardId &&
+        !purchase.productName
+      ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: purchaseStandardError,
-          path: ["purchases", index, "purchaseStandardId"],
+          message: purchaseProductNameError,
+          path: ["purchases", index, "productName"],
+        });
+      }
+
+      if (
+        !purchase.productId &&
+        !purchase.purchaseStandardId &&
+        !purchase.productCategory
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: purchaseProductCategoryError,
+          path: ["purchases", index, "productCategory"],
+        });
+      }
+
+      if (
+        !purchase.productId &&
+        !purchase.purchaseStandardId &&
+        !purchase.productSpec
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: purchaseProductSpecError,
+          path: ["purchases", index, "productSpec"],
         });
       }
 

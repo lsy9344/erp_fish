@@ -64,7 +64,7 @@ type InventoryAdjustmentPayload = Prisma.LedgerInventoryAdjustmentGetPayload<{
 type InventoryLedgerPayload = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
 
 type PurchasePayload = {
-  productId: string;
+  productId: string | null;
   productName: string;
   productCategory: string;
   productSpec: string;
@@ -124,6 +124,10 @@ function aggregatePurchases(purchases: PurchasePayload[]) {
   const aggregates = new Map<string, PurchaseAggregate>();
 
   for (const purchase of purchases) {
+    if (!purchase.productId) {
+      continue;
+    }
+
     const current = aggregates.get(purchase.productId);
 
     if (current) {

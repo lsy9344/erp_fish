@@ -27,13 +27,14 @@ function migrationDirNames() {
     .sort();
 }
 
-test("ledger purchase model and migration preserve purchase snapshots", () => {
+test("ledger purchase model and migration preserve manual purchase snapshots", () => {
   const schema = readProjectFile("prisma", "schema.prisma");
 
   assert.match(
     schema,
-    /model\s+LedgerPurchaseItem\s*{[^}]*id\s+String\s+@id\s+[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*purchaseStandardId\s+String\?[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*referenceInfo\s+String\?[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[purchaseStandardId\]\)/s,
+    /model\s+LedgerPurchaseItem\s*{[^}]*id\s+String\s+@id\s+[^}]*dailyLedgerId\s+String[^}]*productId\s+String\?[^}]*purchaseStandardId\s+String\?[^}]*sourceType\s+LedgerPurchaseSource\s+@default\(MANUAL\)[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*referenceInfo\s+String\?[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[purchaseStandardId\]\)[^}]*@@index\(\[sourceType\]\)/s,
   );
+  assert.match(schema, /enum\s+LedgerPurchaseSource\s*{\s*MANUAL\s*}/s);
   assert.match(
     schema,
     /model\s+DailyLedger\s*{[^}]*ledgerPurchaseItems\s+LedgerPurchaseItem\[\]/s,
@@ -44,29 +45,28 @@ test("ledger purchase model and migration preserve purchase snapshots", () => {
   );
 
   const migrationName = migrationDirNames().find((name) =>
-    name.includes("add_ledger_purchase"),
+    name.includes("ledger_purchase_manual_source_or_raw_snapshot"),
   );
-  assert.ok(migrationName, "purchase migration should exist");
+  assert.ok(migrationName, "manual purchase source migration should exist");
 
   const migration = readFileSync(
     assertProjectFile("prisma", "migrations", migrationName, "migration.sql"),
     "utf8",
   );
   assert.ok(
-    migration.includes('CREATE TABLE "LedgerPurchaseItem" ('),
-    "migration should create LedgerPurchaseItem",
+    migration.includes('CREATE TYPE "LedgerPurchaseSource"') &&
+      migration.includes("'MANUAL'"),
+    "migration should create LedgerPurchaseSource enum",
   );
   assert.ok(
-    migration.includes('"productName" TEXT NOT NULL') &&
-      migration.includes('"productSpec" TEXT NOT NULL') &&
-      migration.includes('"unitPrice" INTEGER NOT NULL') &&
-      migration.includes('"quantity" INTEGER NOT NULL') &&
-      migration.includes('"amount" INTEGER NOT NULL'),
-    "migration should store purchase snapshot and integer amounts",
+    migration.includes('ADD COLUMN "sourceType"') &&
+      migration.includes("DEFAULT 'MANUAL'") &&
+      migration.includes('ALTER COLUMN "productId" DROP NOT NULL'),
+    "migration should add sourceType and allow raw manual product snapshots",
   );
 });
 
-test("ledger purchase schema validates required options and integer amounts", async () => {
+test("ledger purchase schema allows raw manual input and validates integer amounts", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -94,6 +94,26 @@ test("ledger purchase schema validates required options and integer amounts", as
 
   assert.equal(ledgerPurchaseSchema.safeParse(basePayload).success, true);
 
+  const rawManual = ledgerPurchaseSchema.parse({
+    ...basePayload,
+    purchases: [
+      {
+        productId: "",
+        purchaseStandardId: "",
+        productName: "수기 광어",
+        productCategory: "생물",
+        productSpec: "1kg",
+        unitPrice: "12000",
+        quantity: "3",
+      },
+    ],
+  });
+  assert.equal(rawManual.purchases[0].productId, null);
+  assert.equal(rawManual.purchases[0].purchaseStandardId, null);
+  assert.equal(rawManual.purchases[0].productName, "수기 광어");
+  assert.equal(rawManual.purchases[0].productCategory, "생물");
+  assert.equal(rawManual.purchases[0].productSpec, "1kg");
+
   const zeroValues = ledgerPurchaseSchema.parse({
     ...basePayload,
     purchases: [
@@ -108,23 +128,41 @@ test("ledger purchase schema validates required options and integer amounts", as
   assert.equal(zeroValues.purchases[0].unitPrice, 0);
   assert.equal(zeroValues.purchases[0].quantity, 0);
 
-  const blankProduct = ledgerPurchaseSchema.safeParse({
+  const standardOnly = ledgerPurchaseSchema.parse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], productId: " " }],
+    purchases: [
+      {
+        productId: "",
+        purchaseStandardId: "standard-1",
+        productName: "",
+        productCategory: "",
+        productSpec: "",
+        unitPrice: "12000",
+        quantity: "3",
+      },
+    ],
   });
-  assert.equal(blankProduct.success, false);
-  assert.deepEqual(blankProduct.error.flatten().fieldErrors.purchases, [
-    "품목을 선택해 주세요.",
-  ]);
+  assert.equal(standardOnly.purchases[0].productId, null);
+  assert.equal(standardOnly.purchases[0].purchaseStandardId, "standard-1");
 
-  const blankStandard = ledgerPurchaseSchema.safeParse({
+  const blankRawProductName = ledgerPurchaseSchema.safeParse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], purchaseStandardId: "" }],
+    purchases: [
+      {
+        productId: "",
+        purchaseStandardId: "",
+        productName: " ",
+        productCategory: "생물",
+        productSpec: "1kg",
+        unitPrice: "12000",
+        quantity: "3",
+      },
+    ],
   });
-  assert.equal(blankStandard.success, false);
-  assert.deepEqual(blankStandard.error.flatten().fieldErrors.purchases, [
-    "매입 기준을 선택해 주세요.",
-  ]);
+  assert.equal(blankRawProductName.success, false);
+  assert.deepEqual(toFieldErrors(blankRawProductName.error), {
+    "purchases.0.productName": ["품목명을 입력해 주세요."],
+  });
 
   const negativePrice = ledgerPurchaseSchema.safeParse({
     ...basePayload,
@@ -207,6 +245,10 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
   assert.match(actionSource, /isExistingSnapshotPurchase/);
+  assert.match(actionSource, /LedgerPurchaseValidationError/);
+  assert.match(actionSource, /매입 기준과 품목이 일치하지 않습니다\./);
+  assert.match(actionSource, /매입 기준을 확인해 주세요\./);
+  assert.match(actionSource, /품목을 확인해 주세요\./);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.createMany/);
   assert.match(
@@ -214,6 +256,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     /unitPrice\s*\*\s*quantity|quantity\s*\*\s*unitPrice/,
   );
   assert.match(actionSource, /action:\s*"ledger\.purchases\.saved"/);
+  assert.match(actionSource, /sourceType:\s*"MANUAL"/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
 });
@@ -249,6 +292,11 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /getDraftPurchaseTotal/);
   assert.match(componentSource, /clearRowErrors/);
   assert.match(componentSource, /referenceUnitPrice/);
+  assert.match(componentSource, /품목명/);
+  assert.match(
+    componentSource,
+    /선택 가능한 active 품목 또는 매입 기준이 없어도 수동 입력할 수\s+있습니다\./,
+  );
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);
   assert.match(componentSource, /min-h-11/);

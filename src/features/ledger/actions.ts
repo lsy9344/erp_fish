@@ -154,6 +154,22 @@ function mapLedgerConflictError(): ActionResult<never> {
   );
 }
 
+class LedgerPurchaseValidationError extends Error {
+  constructor(readonly fieldErrors: Record<string, string[]>) {
+    super("LEDGER_PURCHASE_VALIDATION_ERROR");
+  }
+}
+
+function ledgerPurchaseValidationError(
+  index: number,
+  field: "productId" | "purchaseStandardId",
+  message: string,
+) {
+  return new LedgerPurchaseValidationError({
+    [`purchases.${index}.${field}`]: [message],
+  });
+}
+
 function isEditableLedgerStatus(status: string) {
   return editableLedgerStatuses.some(
     (editableStatus) => editableStatus === status,
@@ -261,8 +277,7 @@ function isExistingSnapshotPurchase(
 ) {
   return (
     existing?.productId === purchase.productId &&
-    (!purchase.purchaseStandardId ||
-      existing.purchaseStandardId === purchase.purchaseStandardId)
+    existing.purchaseStandardId === purchase.purchaseStandardId
   );
 }
 
@@ -602,7 +617,14 @@ export async function saveLedgerPurchases(
         ...new Set(
           parsed.data.purchases
             .map((purchase) => purchase.purchaseStandardId)
-            .filter((id) => id.length > 0),
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const productIds = [
+        ...new Set(
+          parsed.data.purchases
+            .map((purchase) => purchase.productId)
+            .filter((id): id is string => Boolean(id)),
         ),
       ];
       const standards = await tx.purchaseStandard.findMany({
@@ -628,6 +650,22 @@ export async function saveLedgerPurchases(
       const standardsById = new Map(
         standards.map((standard) => [standard.id, standard]),
       );
+      const products = await tx.product.findMany({
+        where: {
+          id: { in: productIds },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          spec: true,
+          defaultUnitPrice: true,
+        },
+      });
+      const productsById = new Map(
+        products.map((product) => [product.id, product]),
+      );
 
       await tx.ledgerPurchaseItem.deleteMany({
         where: { dailyLedgerId: beforeLedger.id },
@@ -635,15 +673,54 @@ export async function saveLedgerPurchases(
 
       if (parsed.data.purchases.length > 0) {
         await tx.ledgerPurchaseItem.createMany({
-          data: parsed.data.purchases.map((purchase) => {
-            const standard = standardsById.get(purchase.purchaseStandardId);
+          data: parsed.data.purchases.map((purchase, index) => {
+            const standard = purchase.purchaseStandardId
+              ? standardsById.get(purchase.purchaseStandardId)
+              : null;
+            const product = purchase.productId
+              ? productsById.get(purchase.productId)
+              : null;
             const existing = existingPurchaseItemsById.get(purchase.id);
+            const isExistingSnapshot = isExistingSnapshotPurchase(
+              purchase,
+              existing,
+            );
 
             if (
-              standard?.product.id !== purchase.productId &&
-              !isExistingSnapshotPurchase(purchase, existing)
+              purchase.purchaseStandardId &&
+              !standard &&
+              !isExistingSnapshot
             ) {
-              throw new Error("Invalid purchase standard");
+              throw ledgerPurchaseValidationError(
+                index,
+                "purchaseStandardId",
+                "매입 기준을 확인해 주세요.",
+              );
+            }
+
+            if (
+              standard &&
+              purchase.productId &&
+              standard.product.id !== purchase.productId
+            ) {
+              throw ledgerPurchaseValidationError(
+                index,
+                "purchaseStandardId",
+                "매입 기준과 품목이 일치하지 않습니다.",
+              );
+            }
+
+            if (
+              purchase.productId &&
+              !product &&
+              !standard &&
+              !isExistingSnapshot
+            ) {
+              throw ledgerPurchaseValidationError(
+                index,
+                "productId",
+                "품목을 확인해 주세요.",
+              );
             }
 
             const unitPrice = purchase.unitPrice;
@@ -652,24 +729,49 @@ export async function saveLedgerPurchases(
               ? {
                   productId: standard.product.id,
                   purchaseStandardId: standard.id,
+                  sourceType: "MANUAL" as const,
                   productName: standard.product.name,
                   productCategory: standard.product.category,
                   productSpec: standard.product.spec,
                   referenceInfo: standard.referenceInfo,
                 }
-              : {
-                  productId: existing!.productId,
-                  purchaseStandardId: existing!.purchaseStandardId,
-                  productName: existing!.productName,
-                  productCategory: existing!.productCategory,
-                  productSpec: existing!.productSpec,
-                  referenceInfo: existing!.referenceInfo,
-                };
+              : product
+                ? {
+                    productId: product.id,
+                    purchaseStandardId: null,
+                    sourceType: "MANUAL" as const,
+                    productName: purchase.productName || product.name,
+                    productCategory:
+                      purchase.productCategory || product.category,
+                    productSpec: purchase.productSpec || product.spec,
+                    referenceInfo: purchase.referenceInfo,
+                  }
+                : purchase.productId && existing
+                  ? {
+                      productId: existing.productId,
+                      purchaseStandardId: existing.purchaseStandardId,
+                      sourceType: "MANUAL" as const,
+                      productName: purchase.productName || existing.productName,
+                      productCategory:
+                        purchase.productCategory || existing.productCategory,
+                      productSpec: purchase.productSpec || existing.productSpec,
+                      referenceInfo: purchase.referenceInfo,
+                    }
+                  : {
+                      productId: null,
+                      purchaseStandardId: null,
+                      sourceType: "MANUAL" as const,
+                      productName: purchase.productName,
+                      productCategory: purchase.productCategory,
+                      productSpec: purchase.productSpec,
+                      referenceInfo: purchase.referenceInfo,
+                    };
 
             return {
               dailyLedgerId: beforeLedger.id,
               productId: snapshot.productId,
               purchaseStandardId: snapshot.purchaseStandardId,
+              sourceType: snapshot.sourceType,
               productName: snapshot.productName,
               productCategory: snapshot.productCategory,
               productSpec: snapshot.productSpec,
@@ -713,6 +815,14 @@ export async function saveLedgerPurchases(
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return mapLedgerConflictError();
+    }
+
+    if (error instanceof LedgerPurchaseValidationError) {
+      return actionError(
+        "VALIDATION_ERROR",
+        "입력값을 확인해 주세요.",
+        error.fieldErrors,
+      );
     }
 
     return mapStoreActionError();
