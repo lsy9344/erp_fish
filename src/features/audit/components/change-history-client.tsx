@@ -253,19 +253,29 @@ export function ChangeHistoryClient({
             </DialogDescription>
           </DialogHeader>
           {selectedHistory ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold">변경 전</h3>
-                <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                  {selectedHistory.beforeText}
-                </pre>
-              </section>
-              <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold">변경 후</h3>
-                <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                  {selectedHistory.afterText}
-                </pre>
-              </section>
+            <div className="flex flex-col gap-4">
+              {selectedHistory.reasonText !== "-" ? (
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold">사유</h3>
+                  <p className="bg-muted max-h-40 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                    {selectedHistory.reasonText}
+                  </p>
+                </section>
+              ) : null}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold">변경 전</h3>
+                  <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                    {selectedHistory.beforeText}
+                  </pre>
+                </section>
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold">변경 후</h3>
+                  <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                    {selectedHistory.afterText}
+                  </pre>
+                </section>
+              </div>
             </div>
           ) : null}
         </DialogContent>

@@ -39,6 +39,7 @@ export type AuditHistoryItem = {
   targetName: string;
   action: string;
   actionLabel: string;
+  reasonText: string;
   beforeText: string;
   afterText: string;
 };
@@ -64,6 +65,7 @@ type AuditLogWithActor = Prisma.AuditLogGetPayload<{
     actorId: true;
     before: true;
     after: true;
+    reason: true;
     createdAt: true;
     actor: {
       select: {
@@ -361,6 +363,7 @@ export async function getAuditHistoryForHeadquarters(
         actorId: true,
         before: true,
         after: true,
+        reason: true,
         createdAt: true,
         actor: {
           select: {
@@ -394,6 +397,7 @@ export async function getAuditHistoryForHeadquarters(
         log.targetId,
       action: log.action,
       actionLabel: getAuditActionLabel(log.action),
+      reasonText: log.reason ?? "-",
       beforeText: formatAuditJsonValue(log.before),
       afterText: formatAuditJsonValue(log.after),
     }));

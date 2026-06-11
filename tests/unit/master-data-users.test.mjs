@@ -153,6 +153,20 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.match(actions, /db\.\$transaction/);
   assert.match(actions, /writeAuditLog/);
   assert.match(actions, /hashPassword/);
+  assert.match(actions, /function\s+toAuditUserSnapshot/);
+  assert.match(
+    actions,
+    /requiredAction:\s*PermissionAction\.USER_PERMISSION_MANAGE/,
+  );
+  assert.match(actions, /\.sort\(\)/);
+  assert.match(
+    actions,
+    /before:\s*toAuditUserSnapshot\(before,\s*actorContext\)/,
+  );
+  assert.match(
+    actions,
+    /after:\s*toAuditUserSnapshot\(after,\s*actorContext\)/,
+  );
   assert.match(actions, /user\.created/);
   assert.match(actions, /user\.role_changed/);
   assert.match(actions, /user\.store_assignments_changed/);

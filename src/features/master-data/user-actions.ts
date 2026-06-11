@@ -2,9 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 
-import { Prisma, UserRole } from "../../../generated/prisma/index.js";
+import {
+  PermissionAction,
+  Prisma,
+  UserRole,
+} from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import { writeAuditLog } from "~/server/audit";
+import {
+  withAuditActorContext,
+  writeAuditLog,
+  type AuditActorContext,
+} from "~/server/audit";
 import { requireUserPermissionAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { hashPassword } from "~/server/password";
@@ -28,6 +36,7 @@ type UserActionData = {
 };
 
 type UserSnapshot = {
+  id: string;
   name: string | null;
   email: string | null;
   role: UserRole;
@@ -185,6 +194,7 @@ async function getUserSnapshot(
   const user = await tx.user.findUnique({
     where: { id: userId },
     select: {
+      id: true,
       name: true,
       email: true,
       role: true,
@@ -212,6 +222,7 @@ async function getUserSnapshot(
   }
 
   return {
+    id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
@@ -224,22 +235,52 @@ async function getUserSnapshot(
 }
 
 function sameStringArray(first: string[], second: string[]) {
+  const sortedFirst = [...first].sort();
+  const sortedSecond = [...second].sort();
+
   return (
-    first.length === second.length &&
-    first.every((value, index) => value === second[index])
+    sortedFirst.length === sortedSecond.length &&
+    sortedFirst.every((value, index) => value === sortedSecond[index])
   );
+}
+
+function toAuditUserSnapshot(
+  snapshot: UserSnapshot,
+  actorContext: AuditActorContext,
+) {
+  return withAuditActorContext(
+    {
+      id: snapshot.id,
+      name: snapshot.name,
+      email: snapshot.email,
+      role: snapshot.role,
+      isActive: snapshot.isActive,
+      storeIds: snapshot.storeIds,
+      storeNames: snapshot.storeNames,
+    },
+    actorContext,
+  );
+}
+
+function toUserPermissionAuditContext(actorRole: UserRole) {
+  return {
+    actorRole,
+    requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
+  };
 }
 
 async function writeUserChangeAudits(
   tx: Prisma.TransactionClient,
   params: {
     actorId: string;
+    actorRole: UserRole;
     userId: string;
     before: UserSnapshot | null;
     after: UserSnapshot;
   },
 ) {
-  const { actorId, userId, before, after } = params;
+  const { actorId, actorRole, userId, before, after } = params;
+  const actorContext = toUserPermissionAuditContext(actorRole);
 
   if (!before) {
     await writeAuditLog(tx, {
@@ -248,12 +289,7 @@ async function writeUserChangeAudits(
       targetId: userId,
       actorId,
       before: null,
-      after: {
-        name: after.name,
-        email: after.email,
-        role: after.role,
-        isActive: after.isActive,
-      },
+      after: toAuditUserSnapshot(after, actorContext),
     });
   } else if (
     before.name !== after.name ||
@@ -270,16 +306,8 @@ async function writeUserChangeAudits(
       targetType: "User",
       targetId: userId,
       actorId,
-      before: {
-        name: before.name,
-        email: before.email,
-        isActive: before.isActive,
-      },
-      after: {
-        name: after.name,
-        email: after.email,
-        isActive: after.isActive,
-      },
+      before: toAuditUserSnapshot(before, actorContext),
+      after: toAuditUserSnapshot(after, actorContext),
     });
   }
 
@@ -289,8 +317,8 @@ async function writeUserChangeAudits(
       targetType: "User",
       targetId: userId,
       actorId,
-      before: { role: before.role },
-      after: { role: after.role },
+      before: toAuditUserSnapshot(before, actorContext),
+      after: toAuditUserSnapshot(after, actorContext),
     });
   }
 
@@ -302,14 +330,8 @@ async function writeUserChangeAudits(
       targetType: "User",
       targetId: userId,
       actorId,
-      before: {
-        storeIds: beforeStoreIds,
-        storeNames: before?.storeNames ?? [],
-      },
-      after: {
-        storeIds: after.storeIds,
-        storeNames: after.storeNames,
-      },
+      before: before ? toAuditUserSnapshot(before, actorContext) : null,
+      after: toAuditUserSnapshot(after, actorContext),
     });
   }
 }
@@ -393,6 +415,7 @@ export async function createUserAccount(
 
       await writeUserChangeAudits(tx, {
         actorId: actor.id,
+        actorRole: actor.role,
         userId: created.id,
         before: null,
         after,
@@ -489,6 +512,7 @@ export async function updateUserAccount(
 
       await writeUserChangeAudits(tx, {
         actorId: actor.id,
+        actorRole: actor.role,
         userId,
         before,
         after,
@@ -576,6 +600,7 @@ export async function updateUserStatus(
 
     await writeUserChangeAudits(tx, {
       actorId: actor.id,
+      actorRole: actor.role,
       userId,
       before,
       after,

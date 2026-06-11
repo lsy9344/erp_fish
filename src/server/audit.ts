@@ -1,5 +1,10 @@
 import type { Prisma } from "../../generated/prisma";
 
+export type AuditActorContext = {
+  actorRole: string;
+  requiredAction: string;
+};
+
 type AuditLogInput = {
   action: string;
   targetType: string;
@@ -25,4 +30,17 @@ export async function writeAuditLog(
       reason: input.reason ?? undefined,
     },
   });
+}
+
+export function withAuditActorContext<T extends Record<string, unknown>>(
+  snapshot: T,
+  actorContext: AuditActorContext,
+): Prisma.InputJsonObject {
+  return {
+    ...snapshot,
+    actorContext: {
+      actorRole: actorContext.actorRole,
+      requiredAction: actorContext.requiredAction,
+    },
+  } as Prisma.InputJsonObject;
 }

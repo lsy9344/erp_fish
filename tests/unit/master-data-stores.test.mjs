@@ -119,6 +119,8 @@ test("master-data actions enforce headquarters authorization, audit, transaction
   assert.match(actions, /requireSettingsAccess\(\)/);
   assert.match(actions, /db\.\$transaction/);
   assert.match(actions, /writeAuditLog/);
+  assert.match(actions, /withAuditActorContext/);
+  assert.match(actions, /requiredAction:\s*PermissionAction\.SETTINGS_MANAGE/);
   assert.match(actions, /store\.created/);
   assert.match(actions, /store\.updated/);
   assert.match(actions, /store\.activated/);
@@ -148,6 +150,7 @@ test("master-data queries and audit helper use the shared server boundaries", ()
   assert.match(queries, /requireSettingsAccess\(\)/);
   assert.match(queries, /isActive:\s*true/);
   assert.match(audit, /export\s+async\s+function\s+writeAuditLog/);
+  assert.match(audit, /export\s+function\s+withAuditActorContext/);
   assert.match(audit, /actorId/);
   assert.match(audit, /targetType/);
   assert.match(audit, /before/);

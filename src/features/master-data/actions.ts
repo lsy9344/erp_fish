@@ -2,9 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
-import { Prisma } from "../../../generated/prisma";
+import { PermissionAction, Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import { writeAuditLog } from "~/server/audit";
+import {
+  withAuditActorContext,
+  writeAuditLog,
+  type AuditActorContext,
+} from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
@@ -80,6 +84,26 @@ function getStoreAuditAction(before: StoreActionData, after: StoreActionData) {
   return "store.updated";
 }
 
+function toSettingsAuditContext(actorRole: string): AuditActorContext {
+  return {
+    actorRole,
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
+  };
+}
+
+function toAuditStoreSnapshot(
+  store: Pick<StoreActionData, "name" | "isActive">,
+  actorContext: AuditActorContext,
+) {
+  return withAuditActorContext(
+    {
+      name: store.name,
+      isActive: store.isActive,
+    },
+    actorContext,
+  );
+}
+
 function isPrismaUniqueError(error: unknown) {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -126,10 +150,10 @@ export async function createStore(
         targetId: created.id,
         actorId: actor.id,
         before: null,
-        after: {
-          name: created.name,
-          isActive: created.isActive,
-        },
+        after: toAuditStoreSnapshot(
+          created,
+          toSettingsAuditContext(actor.role),
+        ),
       });
 
       return {
@@ -207,14 +231,14 @@ export async function updateStore(
         targetType: "Store",
         targetId: updated.id,
         actorId: actor.id,
-        before: {
-          name: existing.name,
-          isActive: existing.isActive,
-        },
-        after: {
-          name: updated.name,
-          isActive: updated.isActive,
-        },
+        before: toAuditStoreSnapshot(
+          existing,
+          toSettingsAuditContext(actor.role),
+        ),
+        after: toAuditStoreSnapshot(
+          updated,
+          toSettingsAuditContext(actor.role),
+        ),
       });
 
       return {
@@ -284,14 +308,11 @@ export async function updateStoreStatus(
       targetType: "Store",
       targetId: updated.id,
       actorId: actor.id,
-      before: {
-        name: existing.name,
-        isActive: existing.isActive,
-      },
-      after: {
-        name: updated.name,
-        isActive: updated.isActive,
-      },
+      before: toAuditStoreSnapshot(
+        existing,
+        toSettingsAuditContext(actor.role),
+      ),
+      after: toAuditStoreSnapshot(updated, toSettingsAuditContext(actor.role)),
     });
 
     return {

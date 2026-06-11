@@ -153,6 +153,8 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /normalizeAuditHistoryFilters/);
   assert.match(query, /targetType/);
   assert.match(query, /actorId/);
+  assert.match(query, /reason:\s*true/);
+  assert.match(query, /reasonText:\s*log\.reason\s*\?\?\s*"-"/);
   assert.match(query, /from/);
   assert.match(query, /to/);
   assert.match(query, /createdAt:\s*"desc"/);
@@ -227,6 +229,8 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(client, /대상 유형/);
   assert.match(client, /대상 이름/);
   assert.match(client, /변경 유형/);
+  assert.match(client, /selectedHistory\.reasonText/);
+  assert.match(client, /사유/);
   assert.match(client, /조건에 맞는 변경 이력이 없습니다\./);
   assert.match(client, /Dialog/);
   assert.match(client, /whitespace-pre-wrap/);

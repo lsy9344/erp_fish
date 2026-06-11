@@ -130,6 +130,12 @@ test("본사는 지점을 생성하고 이름과 활성 상태를 수정할 수 
   expect(auditLogs.at(-1)?.actorId).toBeTruthy();
   expect(auditLogs.at(-1)?.before).toBeTruthy();
   expect(auditLogs.at(-1)?.after).toBeTruthy();
+  expect(auditLogs.at(-1)?.after).toMatchObject({
+    actorContext: {
+      actorRole: "HEADQUARTERS",
+      requiredAction: "SETTINGS_MANAGE",
+    },
+  });
 
   await page.getByLabel("상태 필터").selectOption("active");
   await expect(page.getByRole("cell", { name: editedName })).toHaveCount(0);

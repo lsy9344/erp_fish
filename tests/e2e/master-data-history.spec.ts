@@ -24,6 +24,7 @@ type SeededHistory = {
   productName: string;
   codeName: string;
   longMemo: string;
+  reason: string;
 };
 
 async function tableExists(tableName: string) {
@@ -103,6 +104,7 @@ async function seedHistoryRows(): Promise<SeededHistory> {
   const productName = `스토리17 광어 ${suffix}`;
   const codeName = `스토리17 카드 ${suffix}`;
   const longMemo = `스토리17 긴 변경 메모 ${"가나다라마".repeat(40)}`;
+  const reason = `스토리17 변경 사유 ${suffix}`;
 
   await prisma.store.create({
     data: {
@@ -163,6 +165,7 @@ async function seedHistoryRows(): Promise<SeededHistory> {
         actorId,
         before: { name: "스토리17 이전 지점", memo: longMemo },
         after: { name: storeName, memo: longMemo },
+        reason,
         createdAt: new Date("2030-01-03T00:00:00.000Z"),
       },
       {
@@ -208,7 +211,15 @@ async function seedHistoryRows(): Promise<SeededHistory> {
     ],
   });
 
-  return { actorId, storeName, userName, productName, codeName, longMemo };
+  return {
+    actorId,
+    storeName,
+    userName,
+    productName,
+    codeName,
+    longMemo,
+    reason,
+  };
 }
 
 function historyRow(page: Page, text: string): Locator {
@@ -236,29 +247,41 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
 
   await expect(page).toHaveURL(/\/app\/master-data\/history/);
   await expect(page.getByRole("heading", { name: "변경 이력" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "변경 시각" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "변경자" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "대상 유형" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "대상 이름" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "변경 유형" })).toBeVisible();
-  await expect(page.locator("tbody tr").first()).toContainText(seeded.storeName);
+  await expect(
+    page.getByRole("columnheader", { name: "변경 시각" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "변경자" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "대상 유형" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "대상 이름" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "변경 유형" }),
+  ).toBeVisible();
+  await expect(page.locator("tbody tr").first()).toContainText(
+    seeded.storeName,
+  );
   await expect(historyRow(page, seeded.userName)).toContainText("사용자/권한");
   await expect(historyRow(page, seeded.userName)).toContainText("역할 변경");
   await expect(
     historyRow(page, seeded.productName).filter({ hasText: "품목" }),
   ).toBeVisible();
-  await expect(historyRow(page, seeded.codeName)).toContainText("표시 순서 변경");
+  await expect(historyRow(page, seeded.codeName)).toContainText(
+    "표시 순서 변경",
+  );
 
   await historyRow(page, seeded.storeName)
     .getByRole("button", { name: "상세 보기" })
     .click();
   await expect(page.getByRole("dialog", { name: "변경 상세" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "변경 전" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "변경 후" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "변경 전" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "변경 후" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "사유" })).toBeVisible();
+  await expect(page.getByText(seeded.reason)).toBeVisible();
   await expect(page.getByText(seeded.longMemo).first()).toBeVisible();
 });
 
@@ -291,7 +314,9 @@ test("본사는 대상 유형, 변경자, 기간 필터를 URL query로 유지�
   await page.getByLabel("시작일").fill("1999-01-01");
   await page.getByLabel("종료일").fill("1999-01-02");
   await page.getByRole("button", { name: "필터 적용" }).click();
-  await expect(page.getByText("조건에 맞는 변경 이력이 없습니다.")).toBeVisible();
+  await expect(
+    page.getByText("조건에 맞는 변경 이력이 없습니다."),
+  ).toBeVisible();
 });
 
 test("변경 이력 loading route는 실제 표와 비슷한 skeleton을 정의한다", () => {

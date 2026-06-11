@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-11T21:24:37+09:00
+# last_updated: 2026-06-11T22:31:35+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-11T21:24:37+09:00"
+last_updated: "2026-06-11T22:31:35+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -47,7 +47,7 @@ development_status:
   1-2-사용자-지점-권한-프로파일-모델링: done
   1-3-역할-기반-로그인과-지점-접근-제한: done
   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: done
-  1-5-감사-로그-기반-구축: backlog
+  1-5-감사-로그-기반-구축: done
   epic-1-retrospective: optional
   epic-2: in-progress
   2-1-지점-일자-장부-생성과-상태-관리: backlog
