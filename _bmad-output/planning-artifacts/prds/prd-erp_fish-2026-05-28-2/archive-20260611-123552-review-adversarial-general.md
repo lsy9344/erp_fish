@@ -56,4 +56,4 @@ No further fix needed unless the CAP ledger is later split into a separate artif
 
 ## Residual Risk
 
-No critical product-definition gaps remain from the three requested findings. The PRD is usable for controlled extraction of `MVP-S01~MVP-S03`, but it is still not a final full-build PRD because OQ-linked slices remain discovery-only by design.
+No critical product-definition gaps remain from the three requested findings. The PRD is still not final story-source material because approval artifacts remain open by design.

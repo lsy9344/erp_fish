@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>PRD Validation: ERP Fish PRD</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+    --strong: #16a34a;
+    --adequate: #65a30d;
+    --medium: #ca8a04;
+    --high: #ea580c;
+    --critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+  }
+  h1 { margin: 0; font-size: 24px; }
+  h2 { margin: 28px 0 12px; font-size: 18px; }
+  h3 { margin: 20px 0 8px; font-size: 15px; }
+  p { margin: 0 0 12px; }
+  code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.92em; }
+  .subtitle { margin-top: 4px; color: var(--muted); font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+  .grade { align-self: flex-start; padding: 10px 18px; border-radius: 8px; background: var(--medium); color: white; font-weight: 700; white-space: nowrap; }
+  .card, details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+    margin: 18px 0 24px;
+  }
+  .dim { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .dim span { display: block; color: var(--muted); font-size: 12px; }
+  .dim strong { font-size: 14px; }
+  .strong { color: var(--strong); }
+  .adequate { color: var(--adequate); }
+  .sev-high { color: var(--high); font-weight: 700; }
+  .sev-medium { color: var(--medium); font-weight: 700; }
+  .sev-low { color: var(--muted); font-weight: 700; }
+  summary { cursor: pointer; font-weight: 700; }
+  ul { margin-top: 8px; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>PRD Validation: ERP Fish PRD</h1>
+      <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
+    </div>
+    <div class="grade">Fair</div>
+  </header>
+
+  <section class="card">
+    <p>Rubric review judges the PRD as <strong>Good / build-ready 전 게이트 필요</strong>: the control-tower thesis, MVP/extension/contract boundaries, FR/CAP/OQ structure, and calculation/permission/audit/report contracts are strong. It is still a <code>draft</code>, and story generation should wait until the named gates and OQ-linked slices are resolved.</p>
+    <p>The adversarial review materially lowers the final gate grade to <strong>Fair</strong> because it found <strong>High 3</strong> risks. The PRD now makes major risks visible, but several handoff controls still need external approval artifacts before UX, architecture, or story extraction can proceed safely.</p>
+  </section>
+
+  <div class="summary-grid">
+    <div class="dim"><span>Decision-readiness</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Substance over theater</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Strategic coherence</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Done-ness clarity</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Scope honesty</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Downstream usability</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Shape fit</span><strong class="strong">strong</strong></div>
+  </div>
+
+  <h2>Findings By Severity</h2>
+  <details open>
+    <summary><span class="sev-high">High (3)</span></summary>
+    <h3>G6 is not yet an actual story-extraction gate (§0.1, §0.2, §10)</h3>
+    <p>The PRD adds G6 and instructs teams to create an <code>MVP story extraction checklist</code>, but that checklist does not yet exist as an approved artifact. Fix by creating the actual checklist before <code>bmad-create-epics-and-stories</code>, with slice IDs, related FR/CAP/OQ, current status, required closure artifact, owner, approval date, and implementation-story yes/no.</p>
+    <h3>OQ-10 remains overloaded even with split close criteria (§4.1, §10)</h3>
+    <p>The PRD separates MVP minimum blocking from CAP-13 advanced policy inside OQ-10, but a single "OQ-10 closed" phrase can still be misread. Fix by splitting it or adding explicit status fields for MVP minimum and CAP-13 advanced closure.</p>
+    <h3>CAP commitment language is still commercially ambiguous (§8)</h3>
+    <p>The CAP promise ledger is much safer, but terms like <code>approved backlog only</code> and <code>MVP+1 후보</code> can still mean different things to customer, PM, and engineering readers. Fix by adding stricter commitment labels such as contracted build, approved discovery only, approved backlog candidate, blocked pending OQ, or contract/ops only.</p>
+  </details>
+
+  <details open>
+    <summary><span class="sev-medium">Medium (7)</span></summary>
+    <ul>
+      <li><strong>MVP included scope can still be misread as build-ready scope (§7.1, §0.2, §10).</strong> Add a note under §7.1 that all MVP items inherit §0.2 story-readiness and §10 OQ gates.</li>
+      <li><strong>Some CAPs still defer measurable completion criteria (§8.4, §8.6).</strong> Close UX sizing, retry/failure, escalation, and default settings before implementation epics.</li>
+      <li><strong>Price trust statuses need transitions and approval authority (§4.3, §4.5).</strong> Add a state transition table with actor, scope, audit event, and closeability effect.</li>
+      <li><strong>Sensitive report/API/export variants are still not explicit enough (§4.1, §4.7).</strong> Add role/surface variants and negative acceptance tests.</li>
+      <li><strong>CAP-6 sample mapping can still become a hidden blocker (§8.2, §10 OQ-6).</strong> Collect representative Ecount fixture files before upload stories.</li>
+      <li><strong>CAP-12 structured-for-AI scope needs a field registry (§8.6).</strong> Tie each field to a current FR/CAP/report/alert/compliance need.</li>
+      <li><strong>Employee/payroll export lifecycle needs operational ownership (§8.1, §10 OQ-12).</strong> Define purge owner, audit event, link expiry, and emergency revocation.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary><span class="sev-low">Low (2)</span></summary>
+    <ul>
+      <li><strong>SM-6 lacks a target threshold (§9).</strong> Add a post-open target for system ledger completion rate and Excel fallback trend.</li>
+      <li><strong>Performance target may be narrow for future branch growth (§5, addendum).</strong> Add a scale assumption for branch counts above the MVP baseline.</li>
+    </ul>
+  </details>
+
+  <h2>Reviewer Details</h2>
+  <details>
+    <summary>Rubric Reviewer</summary>
+    <p><strong>Overall:</strong> Good / build-ready 전 게이트 필요.</p>
+    <p><strong>Counts:</strong> Critical 0, High 0, Medium 3, Low 1.</p>
+    <p><strong>Source:</strong> C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-rubric.md</p>
+  </details>
+  <details>
+    <summary>Adversarial Reviewer</summary>
+    <p><strong>Verdict:</strong> 조건부 통과, 하지만 바로 story extraction에 넣기에는 아직 위험하다.</p>
+    <p><strong>Counts:</strong> Critical 0, High 3, Medium 5, Low 1.</p>
+    <p><strong>Source:</strong> C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-adversarial-general.md</p>
+  </details>
+
+  <h2>Mechanical Notes</h2>
+  <section class="card">
+    <ul>
+      <li>FR IDs are contiguous: FR-1 through FR-29.</li>
+      <li>CAP IDs are present: CAP-1 through CAP-19.</li>
+      <li>OQ IDs are contiguous: OQ-1 through OQ-18.</li>
+      <li>UJ IDs are contiguous: UJ-1 through UJ-4, all with named protagonists.</li>
+      <li>No inline <code>[ASSUMPTION]</code> tags were found.</li>
+      <li>No broken FR/CAP/OQ references were found in the reviewed scope.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md<br>
+    Generated: 2026-06-11T11:35:00+09:00
+  </footer>
+</div>
+</body>
+</html>

@@ -2,12 +2,13 @@
 
 - **PRD:** `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md`
 - **Rubric:** `.agents/skills/bmad-prd/assets/prd-validation-checklist.md`
-- **Run at:** 2026-06-11T12:35:52+09:00
+- **Run at:** 2026-06-11T12:08:19+09:00
+- **Updated after approval:** 2026-06-11
 - **Grade:** Good
 
 ## Overall verdict
 
-The PRD is adequate and now usable as a controlled story-extraction source for the approved MVP slices. The previous High finding is resolved: `mvp-story-extraction-checklist.md` is approved as the G6 gate, and implementation story generation is limited to `MVP-S01~MVP-S03`. The PRD remains `draft` because several policy questions still require discovery before their slices can become implementation stories.
+The PRD is adequate and now usable as a controlled story-extraction source. The previous High finding is resolved: `mvp-story-extraction-checklist.md` is approved as the G6 gate, and implementation story generation is limited to `MVP-S01~MVP-S03`. The PRD remains `draft` because several policy questions still require discovery before their slices can become implementation stories.
 
 ## Dimension verdicts
 
