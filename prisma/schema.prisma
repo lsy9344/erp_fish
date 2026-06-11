@@ -68,6 +68,11 @@ enum InventoryCarryoverStatus {
   POLICY_UNCONFIRMED
 }
 
+enum InventoryAdjustmentAmountStatus {
+  POLICY_UNCONFIRMED
+  CONFIRMED
+}
+
 enum LedgerPurchaseSource {
   MANUAL
 }
@@ -494,6 +499,7 @@ model LedgerInventoryAdjustment {
   afterAmount           Int
   differenceQuantity    Int
   differenceAmount      Int
+  amountStatus          InventoryAdjustmentAmountStatus @default(POLICY_UNCONFIRMED)
   reason                String
   createdById           String
   updatedById           String

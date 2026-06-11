@@ -134,8 +134,13 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryAdjustment\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInventoryItemId\s+String\?[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*beforeQuantity\s+Int[^}]*beforeAmount\s+Int[^}]*afterQuantity\s+Int[^}]*afterAmount\s+Int[^}]*differenceQuantity\s+Int[^}]*differenceAmount\s+Int[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@unique\(\[dailyLedgerId,\s*productId\]/s,
-    "LedgerInventoryAdjustment should store before/after snapshots and one original adjustment per ledger product",
+    /model\s+LedgerInventoryAdjustment\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInventoryItemId\s+String\?[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*beforeQuantity\s+Int[^}]*beforeAmount\s+Int[^}]*afterQuantity\s+Int[^}]*afterAmount\s+Int[^}]*differenceQuantity\s+Int[^}]*differenceAmount\s+Int[^}]*amountStatus\s+InventoryAdjustmentAmountStatus[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@unique\(\[dailyLedgerId,\s*productId\]/s,
+    "LedgerInventoryAdjustment should store before/after snapshots, policy status, and one original adjustment per ledger product",
+  );
+  assert.match(
+    schema,
+    /enum\s+InventoryAdjustmentAmountStatus\s*{[^}]*POLICY_UNCONFIRMED[^}]*CONFIRMED[^}]*}/s,
+    "inventory adjustment amounts should carry an explicit policy status",
   );
 
   const migrationName = migrationDirNames().find((name) =>
@@ -159,6 +164,30 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
     migration.includes('"differenceQuantity" INTEGER NOT NULL') &&
       migration.includes('"differenceAmount" INTEGER NOT NULL'),
     "migration should store signed difference values",
+  );
+
+  const policyMigrationName = migrationDirNames().find((name) =>
+    name.includes("inventory_adjustment_amount_status"),
+  );
+  assert.ok(
+    policyMigrationName,
+    "inventory adjustment amount status migration should exist",
+  );
+
+  const policyMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      policyMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    policyMigration.includes('CREATE TYPE "InventoryAdjustmentAmountStatus"') &&
+      policyMigration.includes('"amountStatus"') &&
+      policyMigration.includes("'POLICY_UNCONFIRMED'"),
+    "migration should mark existing adjustment amount fields as policy-unconfirmed",
   );
 });
 
@@ -452,6 +481,20 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   );
   assert.match(querySource, /createdBy:\s*{[\s\S]*select:\s*{[\s\S]*name:/);
   assert.match(querySource, /adjustment:/);
+  assert.match(querySource, /amountStatus:\s*true/);
+  assert.match(
+    querySource,
+    /amountStatus:\s*adjustment\.amountStatus/,
+    "queries should expose adjustment amount policy status",
+  );
+  const safeMapperSource = querySource.slice(
+    querySource.indexOf("export function toStoreManagerInventoryStepData"),
+  );
+  assert.doesNotMatch(
+    safeMapperSource,
+    /beforeAmount:\s*adjustment\.beforeAmount|afterAmount:\s*adjustment\.afterAmount|differenceAmount:\s*adjustment\.differenceAmount/s,
+    "store manager safe mapper should not include adjustment amount fields",
+  );
 
   const actionSource = readProjectFile(
     "src",
@@ -473,8 +516,14 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     actionSource,
     /본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다/,
   );
+  assert.match(
+    actionSource,
+    /휴무 장부는 원본 재고 조정으로 수정할 수 없습니다/,
+  );
   assert.match(actionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.upsert/);
+  assert.match(actionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
+  assert.match(actionSource, /재고 기준을 계산할 수 없습니다/);
   assert.match(
     actionSource,
     /differenceQuantity\s*===\s*0/,
@@ -505,6 +554,36 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   const auditSource = readProjectFile("src", "server", "audit.ts");
   assert.match(auditSource, /reason\?:\s*string\s*\|\s*null/);
   assert.match(auditSource, /reason:\s*input\.reason\s*\?\?\s*undefined/);
+});
+
+test("inventory adjustment validation does not mutate ledger version on rejected requests", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  const storeAdjustmentSource = actionSource.slice(
+    actionSource.indexOf("export async function saveLedgerInventoryAdjustment"),
+    actionSource.indexOf(
+      "const inventoryItem = await tx.ledgerInventoryItem.upsert",
+    ),
+  );
+  const zeroDifferenceGuardIndex = storeAdjustmentSource.indexOf(
+    "adjustment.differenceQuantity === 0",
+  );
+  const ledgerMutationIndex = storeAdjustmentSource.indexOf(
+    "const editableLedger = await tx.dailyLedger.updateMany",
+  );
+
+  assert.ok(
+    zeroDifferenceGuardIndex >= 0,
+    "store adjustment save should reject zero-difference adjustments",
+  );
+  assert.ok(
+    ledgerMutationIndex > zeroDifferenceGuardIndex,
+    "store adjustment save should only increment the ledger version after validation succeeds",
+  );
 });
 
 test("inventory UI is wired to the canonical inventory route", () => {
@@ -563,11 +642,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
   assert.match(componentSource, /차이/);
+  assert.match(componentSource, /금액 기준 확인 필요/);
+  assert.match(componentSource, /amountStatus === "CONFIRMED"/);
   assert.match(componentSource, /상태\/조정/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /정정\s+기록을 사용해 주세요/);
-  assert.match(componentSource, /disabled={isSaving \|\| isClosed/);
-  assert.match(componentSource, /disabled={isSaving \|\| isClosed}/);
+  assert.match(componentSource, /휴무 장부/);
+  assert.match(
+    componentSource,
+    /재고 조정 저장이 끝난 뒤 다시 저장해 주세요\./,
+  );
   assert.match(componentSource, /reasonRefs/);
   assert.match(componentSource, /setAdjustmentErrors\({}\)/);
   assert.match(componentSource, /setFieldErrors\({}\)/);
@@ -590,11 +674,12 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /disabled={savingAdjustmentProductId !== null}/,
+    /disabled={savingAdjustmentProductId !== null \|\| isClosed}/,
   );
   assert.match(
     componentSource,
     /disabled={isSaving \|\| isClosed \|\| isAdjustmentSavePending}/,
+    "full draft save should be disabled while an adjustment save is pending",
   );
   assert.match(
     componentSource,
@@ -615,5 +700,20 @@ test("ledger purchase save reconciles inventory adjustments affected by purchase
     actionSource,
     /reconcileLedgerInventoryAdjustments\(/,
     "purchase changes should refresh adjustment before and difference values",
+  );
+});
+
+test("ledger loss save reconciles inventory adjustments affected by loss totals", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "actions.ts",
+  );
+
+  assert.match(
+    actionSource,
+    /reconcileLedgerInventoryAdjustments\(/,
+    "loss changes should refresh adjustment before and difference values",
   );
 });

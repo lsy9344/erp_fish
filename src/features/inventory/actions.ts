@@ -71,6 +71,29 @@ function mapLedgerConflictError(): ActionResult<never> {
   );
 }
 
+function originalAdjustmentBlockedError(
+  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
+): ActionResult<never> {
+  const message =
+    status === "HOLIDAY"
+      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+
+  return actionError("LEDGER_CLOSED", message);
+}
+
+function inventoryBasisUnavailableError<T>(): ActionResult<T> {
+  return actionError(
+    "VALIDATION_ERROR",
+    "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
+    {
+      actualQuantity: [
+        "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
+      ],
+    },
+  );
+}
+
 function revalidateInventoryPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/dashboard");
@@ -229,11 +252,11 @@ export async function saveLedgerInventoryAdjustment(
         return mapLedgerConflictError();
       }
 
-      if (before.status === "HEADQUARTERS_CLOSED") {
-        return actionError<StoreManagerInventoryStepData>(
-          "LEDGER_CLOSED",
-          "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-        );
+      if (
+        before.status === "HEADQUARTERS_CLOSED" ||
+        before.status === "HOLIDAY"
+      ) {
+        return originalAdjustmentBlockedError(before.status);
       }
 
       if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
@@ -241,19 +264,6 @@ export async function saveLedgerInventoryAdjustment(
           "LEDGER_NOT_EDITABLE",
           "저장에 실패했습니다. 다시 시도해 주세요.",
         );
-      }
-
-      const editableLedger = await tx.dailyLedger.updateMany({
-        where: {
-          id: before.id,
-          version: parsed.data.version,
-          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
-        },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
-      });
-
-      if (editableLedger.count !== 1) {
-        return mapLedgerConflictError();
       }
 
       const line = before.items.find(
@@ -279,11 +289,7 @@ export async function saveLedgerInventoryAdjustment(
           : calculateInventoryAmount(beforeQuantity, line.unitPrice);
 
       if (beforeQuantity === null || beforeAmount === null) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          "재고 금액을 계산할 수 없습니다.",
-          { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
-        );
+        return inventoryBasisUnavailableError<StoreManagerInventoryStepData>();
       }
 
       const adjustment = calculateInventoryAdjustment({
@@ -294,11 +300,7 @@ export async function saveLedgerInventoryAdjustment(
       });
 
       if (!adjustment) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          "재고 금액을 계산할 수 없습니다.",
-          { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
-        );
+        return inventoryBasisUnavailableError<StoreManagerInventoryStepData>();
       }
 
       if (adjustment.differenceQuantity === 0) {
@@ -311,6 +313,19 @@ export async function saveLedgerInventoryAdjustment(
             ],
           },
         );
+      }
+
+      const editableLedger = await tx.dailyLedger.updateMany({
+        where: {
+          id: before.id,
+          version: parsed.data.version,
+          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+        },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
+      });
+
+      if (editableLedger.count !== 1) {
+        return mapLedgerConflictError();
       }
 
       const inventoryItem = await tx.ledgerInventoryItem.upsert({
@@ -381,6 +396,7 @@ export async function saveLedgerInventoryAdjustment(
           afterAmount: adjustment.afterAmount,
           differenceQuantity: adjustment.differenceQuantity,
           differenceAmount: adjustment.differenceAmount,
+          amountStatus: "POLICY_UNCONFIRMED",
           reason: parsed.data.reason,
           createdById: actor.user.id,
           updatedById: actor.user.id,
@@ -397,6 +413,7 @@ export async function saveLedgerInventoryAdjustment(
           afterAmount: adjustment.afterAmount,
           differenceQuantity: adjustment.differenceQuantity,
           differenceAmount: adjustment.differenceAmount,
+          amountStatus: "POLICY_UNCONFIRMED",
           reason: parsed.data.reason,
           updatedById: actor.user.id,
         },

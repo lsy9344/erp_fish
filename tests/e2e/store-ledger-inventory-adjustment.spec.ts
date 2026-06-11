@@ -8,10 +8,10 @@ import {
 
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
-const STORY_MARKER = "story-2-5-test";
+const STORY_MARKER = "story-2-6-test";
 
 test.afterAll(async () => {
-  await cleanupStoryTwoFiveData();
+  await cleanupStoryTwoSixAdjustmentData();
   await prisma.$disconnect();
 });
 
@@ -34,6 +34,16 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+function getAdjustmentButton(page: Page, productName: string) {
+  return page.getByRole("button", { name: `${productName} 조정 조정` });
+}
+
+async function expectAdjustmentSaveSucceeded(page: Page) {
+  await expect(
+    page.getByRole("status").filter({ hasText: "조정이 저장됐습니다." }),
+  ).toBeVisible();
+}
+
 async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
   const actorId = await getHeadquartersUserId();
   const suffix = randomUUID().slice(0, 8);
@@ -44,6 +54,21 @@ async function seedProduct(name: string, category = "냉동", unitPrice = 12000)
       category,
       spec: "1kg",
       defaultUnitPrice: unitPrice,
+      updatedById: actorId,
+    },
+  });
+}
+
+async function seedLossType(name: string) {
+  const actorId = await getHeadquartersUserId();
+  const suffix = randomUUID().slice(0, 8);
+
+  return prisma.ledgerInputCode.create({
+    data: {
+      group: "LOSS_TYPE",
+      name: `${name} ${suffix}`,
+      displayOrder: 500,
+      isActive: true,
       updatedById: actorId,
     },
   });
@@ -99,14 +124,22 @@ async function seedTodayLedger(status: DailyLedgerStatus = "IN_PROGRESS") {
   });
 }
 
-async function cleanupStoryTwoFiveData() {
+async function cleanupStoryTwoSixAdjustmentData() {
   const products = await prisma.product.findMany({
     where: {
-      name: { startsWith: "스토리2-5" },
+      name: { startsWith: "스토리2-6" },
     },
     select: { id: true },
   });
   const productIds = products.map((product) => product.id);
+  const lossTypes = await prisma.ledgerInputCode.findMany({
+    where: {
+      group: "LOSS_TYPE",
+      name: { startsWith: "스토리2-6" },
+    },
+    select: { id: true },
+  });
+  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
     { workMemo: { startsWith: STORY_MARKER } },
   ];
@@ -153,6 +186,12 @@ async function cleanupStoryTwoFiveData() {
     });
   }
 
+  if (lossTypeIds.length > 0) {
+    await prisma.ledgerLossItem.deleteMany({
+      where: { ledgerInputCodeId: { in: lossTypeIds } },
+    });
+  }
+
   if (productIds.length > 0) {
     await prisma.inventoryOpeningSnapshot.deleteMany({
       where: { productId: { in: productIds } },
@@ -164,17 +203,23 @@ async function cleanupStoryTwoFiveData() {
       where: { id: { in: productIds } },
     });
   }
+
+  if (lossTypeIds.length > 0) {
+    await prisma.ledgerInputCode.deleteMany({
+      where: { id: { in: lossTypeIds } },
+    });
+  }
 }
 
 test.beforeEach(async () => {
-  await cleanupStoryTwoFiveData();
+  await cleanupStoryTwoSixAdjustmentData();
 });
 
 test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시 표시한다", async ({
   page,
 }) => {
   await login(page);
-  const product = await seedProduct("스토리2-5 조정 광어", "냉동", 12000);
+  const product = await seedProduct("스토리2-6 조정 광어", "냉동", 12000);
   const ledger = await seedTodayLedger();
 
   await prisma.inventoryOpeningSnapshot.create({
@@ -197,9 +242,9 @@ test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시
   await expect(row.getByText("조정 필요").first()).toBeVisible();
 
   await page.getByLabel(`${product.name} 조정 사유`).fill("실사 재고 차이");
-  await page.getByRole("button", { name: `${product.name} 조정 기록` }).click();
+  await getAdjustmentButton(page, product.name).click();
 
-  await expect(page.getByText("조정이 저장됐습니다.")).toBeVisible();
+  await expectAdjustmentSaveSucceeded(page);
   await page.reload();
 
   const updatedRow = page.locator("tr").filter({ hasText: product.name });
@@ -210,8 +255,37 @@ test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시
   await expect(updatedRow.getByText("조정 후")).toBeVisible();
   await expect(updatedRow.getByText("9").first()).toBeVisible();
   await expect(updatedRow.getByText("차이").first()).toBeVisible();
-  await expect(updatedRow.getByText("+2")).toBeVisible();
-  await expect(updatedRow.getByText("실사 재고 차이")).toBeVisible();
+  await expect(updatedRow.getByText("+2", { exact: true })).toBeVisible();
+  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
+    "실사 재고 차이",
+  );
+  await expect(updatedRow.getByText("금액 기준 확인 필요")).toBeVisible();
+
+  const adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+    select: {
+      beforeQuantity: true,
+      afterQuantity: true,
+      differenceQuantity: true,
+      amountStatus: true,
+    },
+  });
+
+  expect(adjustment).toMatchObject({
+    beforeQuantity: 7,
+    afterQuantity: 9,
+    differenceQuantity: 2,
+    amountStatus: "POLICY_UNCONFIRMED",
+  });
+
+  await expect(updatedRow).not.toContainText(
+    /unitPrice|purchaseAmount|lossAmount|inventoryAmount|beforeAmount|afterAmount|differenceAmount|FIFO/,
+  );
 
   const auditLog = await prisma.auditLog.findFirst({
     where: {
@@ -234,7 +308,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  const product = await seedProduct("스토리2-5 사유 우럭", "냉동", 8000);
+  const product = await seedProduct("스토리2-6 사유 우럭", "냉동", 8000);
   await seedTodayLedger();
 
   await prisma.inventoryOpeningSnapshot.create({
@@ -254,9 +328,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
 
   await page.getByLabel(`${product.name} 당일재고`).fill("6");
   const reasonInput = page.getByLabel(`${product.name} 조정 사유`);
-  const saveButton = page.getByRole("button", {
-    name: `${product.name} 조정 기록`,
-  });
+  const saveButton = getAdjustmentButton(page, product.name);
 
   await saveButton.click();
 
@@ -273,7 +345,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
 test("본사 마감 장부는 원본 재고 조정을 막고 정정 기록 안내를 보여준다", async ({
   page,
 }) => {
-  const product = await seedProduct("스토리2-5 마감 참돔", "냉동", 7000);
+  const product = await seedProduct("스토리2-6 마감 참돔", "냉동", 7000);
   await seedTodayLedger("HEADQUARTERS_CLOSED");
 
   await prisma.inventoryOpeningSnapshot.create({
@@ -299,16 +371,15 @@ test("본사 마감 장부는 원본 재고 조정을 막고 정정 기록 안�
       )
       .first(),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: `${product.name} 조정 기록` }),
-  ).toBeDisabled();
+  await expect(page.getByText("정정 기록 사용").first()).toBeVisible();
+  await expect(getAdjustmentButton(page, product.name)).toHaveCount(0);
 });
 
 test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조정을 저장한다", async ({
   page,
 }) => {
   await login(page);
-  const product = await seedProduct("스토리2-5 검토 농어", "생물", 9000);
+  const product = await seedProduct("스토리2-6 검토 농어", "생물", 9000);
   await seedTodayLedger("IN_REVIEW");
 
   await prisma.inventoryOpeningSnapshot.create({
@@ -328,9 +399,9 @@ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조
   await page.getByRole("tab", { name: "생물" }).click();
   await page.getByLabel(`${product.name} 당일재고`).fill("4");
   await page.getByLabel(`${product.name} 조정 사유`).fill("검토 중 실사 차이");
-  await page.getByRole("button", { name: `${product.name} 조정 기록` }).click();
+  await getAdjustmentButton(page, product.name).click();
 
-  await expect(page.getByText("조정이 저장됐습니다.")).toBeVisible();
+  await expectAdjustmentSaveSucceeded(page);
   await expect(
     page
       .locator("tr")
@@ -338,4 +409,113 @@ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조
       .getByText("조정됨")
       .first(),
   ).toBeVisible();
+});
+
+test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
+  page,
+}) => {
+  await login(page);
+  const product = await seedProduct(
+    "스토리2-6 손실 재계산 방어",
+    "냉동",
+    11000,
+  );
+  const lossType = await seedLossType("스토리2-6 재계산 폐기");
+  const ledger = await seedTodayLedger();
+
+  await prisma.inventoryOpeningSnapshot.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      yearMonth: getCurrentYearMonth(),
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 10,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  await page.getByLabel(`${product.name} 당일재고`).fill("12");
+  await page.getByLabel(`${product.name} 조정 사유`).fill("손실 반영 전 실사");
+  await getAdjustmentButton(page, product.name).click();
+  await expectAdjustmentSaveSucceeded(page);
+
+  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+    select: {
+      beforeQuantity: true,
+      afterQuantity: true,
+      differenceQuantity: true,
+      amountStatus: true,
+      reason: true,
+    },
+  });
+
+  expect(adjustment).toMatchObject({
+    beforeQuantity: 10,
+    afterQuantity: 12,
+    differenceQuantity: 2,
+    amountStatus: "POLICY_UNCONFIRMED",
+    reason: "손실 반영 전 실사",
+  });
+
+  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page.getByLabel("품목").selectOption(product.id);
+  await page.getByLabel("처리 유형").selectOption(lossType.id);
+  await page.getByLabel("수량").fill("3");
+  await page.getByLabel("손실액(원)").fill("33000");
+  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  const updatedRow = page.locator("tr").filter({ hasText: product.name });
+
+  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
+  await expect(updatedRow.getByText("기준 7")).toBeVisible();
+  await expect(updatedRow.getByText("조정 전")).toBeVisible();
+  await expect(updatedRow.getByText("7").first()).toBeVisible();
+  await expect(updatedRow.getByText("조정 후")).toBeVisible();
+  await expect(updatedRow.getByText("12").first()).toBeVisible();
+  await expect(updatedRow.getByText("차이").first()).toBeVisible();
+  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
+  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
+    "손실 반영 전 실사",
+  );
+
+  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+    select: {
+      beforeQuantity: true,
+      afterQuantity: true,
+      differenceQuantity: true,
+      amountStatus: true,
+      reason: true,
+    },
+  });
+
+  expect(adjustment).toMatchObject({
+    beforeQuantity: 7,
+    afterQuantity: 12,
+    differenceQuantity: 5,
+    amountStatus: "POLICY_UNCONFIRMED",
+    reason: "손실 반영 전 실사",
+  });
 });

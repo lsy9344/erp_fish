@@ -162,6 +162,7 @@ export async function reconcileLedgerInventoryAdjustments(
         afterAmount: nextAdjustment.afterAmount,
         differenceQuantity: nextAdjustment.differenceQuantity,
         differenceAmount: nextAdjustment.differenceAmount,
+        amountStatus: "POLICY_UNCONFIRMED",
         reason: adjustment.reason,
         updatedById: actorId,
       },

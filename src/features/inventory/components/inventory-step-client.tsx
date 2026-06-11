@@ -109,7 +109,11 @@ function hasSensitiveInventoryAmounts(
 function hasSensitiveAdjustmentAmounts(
   adjustment: InventoryLineState["adjustment"],
 ): adjustment is InventoryAdjustmentView {
-  return Boolean(adjustment && "differenceAmount" in adjustment);
+  return Boolean(
+    adjustment &&
+    "differenceAmount" in adjustment &&
+    adjustment.amountStatus === "CONFIRMED",
+  );
 }
 
 function getInventoryAmount(value: string, unitPrice: number) {
@@ -224,6 +228,10 @@ export function InventoryStepClient({
   const isOriginalEditBlocked =
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const isClosed = isOriginalEditBlocked;
+  const originalEditBlockedMessage =
+    data.status === "HOLIDAY"
+      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
@@ -301,10 +309,16 @@ export function InventoryStepClient({
   async function saveCurrentDraft() {
     if (isClosed) {
       setResultMessage(null);
-      const message =
-        "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
-      setFormError(message);
+      setFormError(originalEditBlockedMessage);
       setAdjustmentErrors({});
+      toast.error(originalEditBlockedMessage);
+      return false;
+    }
+
+    if (isAdjustmentSavePending) {
+      const message = "재고 조정 저장이 끝난 뒤 다시 저장해 주세요.";
+      setResultMessage(null);
+      setFormError(message);
       toast.error(message);
       return false;
     }
@@ -716,6 +730,8 @@ export function InventoryStepClient({
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
       const adjustmentActionLabel = adjusted ? "수정" : "조정";
+      const adjustmentAmountPolicyUnconfirmed =
+        item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
 
       return (
         <TableRow
@@ -870,6 +886,9 @@ export function InventoryStepClient({
                           : ""}
                       </span>
                     </p>
+                    {adjustmentAmountPolicyUnconfirmed ? (
+                      <p>금액 기준 확인 필요</p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="flex items-center gap-1.5">
@@ -892,7 +911,7 @@ export function InventoryStepClient({
                         event.currentTarget.value,
                       )
                     }
-                    disabled={isAdjustmentSavePending}
+                    disabled={isAdjustmentSavePending || isClosed}
                     className="h-11 min-w-0 flex-1 sm:h-8"
                     placeholder="조정 사유"
                   />
@@ -902,7 +921,7 @@ export function InventoryStepClient({
                     size="sm"
                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
                     onClick={() => handleAdjustmentSave(item)}
-                    disabled={savingAdjustmentProductId !== null}
+                    disabled={savingAdjustmentProductId !== null || isClosed}
                     className="h-11 shrink-0 px-2 text-xs sm:h-8"
                   >
                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
@@ -1035,12 +1054,10 @@ export function InventoryStepClient({
 
         {isOriginalEditBlocked ? (
           <Alert variant="destructive">
-            <AlertTitle>본사 마감 장부</AlertTitle>
-            <AlertDescription>
-              {
-                "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-              }
-            </AlertDescription>
+            <AlertTitle>
+              {data.status === "HOLIDAY" ? "휴무 장부" : "본사 마감 장부"}
+            </AlertTitle>
+            <AlertDescription>{originalEditBlockedMessage}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -1150,7 +1167,7 @@ export function InventoryStepClient({
                 resultMessage === "저장됐습니다." ? "outline" : "default"
               }
               className="min-h-11 w-full sm:w-auto"
-              disabled={isSaving || isClosed}
+              disabled={isSaving || isClosed || isAdjustmentSavePending}
             >
               {isSaving ? "저장 중..." : "저장"}
             </Button>

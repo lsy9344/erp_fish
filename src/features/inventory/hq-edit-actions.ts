@@ -345,8 +345,12 @@ export async function saveHqLedgerInventoryAdjustment(
         if (beforeQuantity === null || beforeAmount === null) {
           return actionError<InventoryStepData>(
             "VALIDATION_ERROR",
-            "재고 금액을 계산할 수 없습니다.",
-            { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
+            "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
+            {
+              actualQuantity: [
+                "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
+              ],
+            },
           );
         }
 
@@ -360,8 +364,12 @@ export async function saveHqLedgerInventoryAdjustment(
         if (!adjustment) {
           return actionError<InventoryStepData>(
             "VALIDATION_ERROR",
-            "재고 금액을 계산할 수 없습니다.",
-            { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
+            "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
+            {
+              actualQuantity: [
+                "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
+              ],
+            },
           );
         }
 
@@ -456,6 +464,7 @@ export async function saveHqLedgerInventoryAdjustment(
             afterAmount: adjustment.afterAmount,
             differenceQuantity: adjustment.differenceQuantity,
             differenceAmount: adjustment.differenceAmount,
+            amountStatus: "POLICY_UNCONFIRMED",
             reason: parsed.data.reason,
             createdById: actor.user.id,
             updatedById: actor.user.id,
@@ -472,6 +481,7 @@ export async function saveHqLedgerInventoryAdjustment(
             afterAmount: adjustment.afterAmount,
             differenceQuantity: adjustment.differenceQuantity,
             differenceAmount: adjustment.differenceAmount,
+            amountStatus: "POLICY_UNCONFIRMED",
             reason: parsed.data.reason,
             updatedById: actor.user.id,
           },

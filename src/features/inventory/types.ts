@@ -1,5 +1,6 @@
 import {
   type DailyLedgerStatus,
+  type InventoryAdjustmentAmountStatus,
   type InventoryCarryoverSource,
   type InventoryCarryoverStatus,
 } from "../../../generated/prisma";
@@ -35,6 +36,7 @@ export type InventoryAdjustmentView = {
   afterAmount: number;
   differenceQuantity: number;
   differenceAmount: number;
+  amountStatus: InventoryAdjustmentAmountStatus;
   reason: string;
   createdByName: string | null;
   createdAt: string;
