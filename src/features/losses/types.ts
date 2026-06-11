@@ -66,10 +66,7 @@ export type StoreManagerLossProductOption = Omit<
   "defaultUnitPrice"
 >;
 
-export type StoreManagerLossLineItem = Omit<
-  LossLineItem,
-  "unitPrice" | "amount"
->;
+export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
 
 export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
 

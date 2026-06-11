@@ -180,9 +180,8 @@ export function toStoreManagerLossStepData(
         return option;
       },
     ),
-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
+    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
       void unitPrice;
-      void amount;
 
       return item;
     }),

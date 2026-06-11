@@ -361,7 +361,7 @@ export function LossStepClient({
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
+        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
         onRetry={handleRetry}
         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
       />

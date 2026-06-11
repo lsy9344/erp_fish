@@ -122,7 +122,8 @@ test("store manager inventory and loss contracts define safe response types", ()
   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
   assert.match(lossTypes, /StoreManagerLossStepData/);
   assert.match(lossTypes, /StoreManagerLossLineItem/);
-  assert.match(
+  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
+  assert.doesNotMatch(
     lossTypes,
     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
   );
@@ -145,7 +146,7 @@ test("store manager inventory and loss contracts define safe response types", ()
 
   assert.match(
     lossQueries,
-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
+    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
   );
   assert.match(
     lossQueries,

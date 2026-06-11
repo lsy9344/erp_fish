@@ -112,7 +112,7 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount ?? existing.amount,
+      amount: loss.amount,
       reason: loss.reason,
     };
   }
@@ -131,7 +131,7 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount ?? existing?.amount ?? 0,
+    amount: loss.amount,
     reason: loss.reason,
   };
 }
@@ -217,18 +217,6 @@ export async function saveLedgerLosses(
       for (let index = 0; index < parsed.data.losses.length; index += 1) {
         const loss = parsed.data.losses[index]!;
         const existing = existingById.get(loss.id);
-
-        if (loss.amount === null && !existing) {
-          return actionError<StoreManagerLossStepData>(
-            "VALIDATION_ERROR",
-            "입력값을 확인해 주세요.",
-            {
-              [`losses.${index}.amount`]: [
-                "손실 금액은 0원 이상의 정수여야 합니다.",
-              ],
-            },
-          );
-        }
 
         const normalized = normalizeLossItem({
           loss,

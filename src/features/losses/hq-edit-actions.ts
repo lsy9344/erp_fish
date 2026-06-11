@@ -80,40 +80,6 @@ function parseRequiredInteger(
   return z.NEVER;
 }
 
-function parseOptionalInteger(
-  value: unknown,
-  context: z.RefinementCtx,
-  errorMessage: string,
-) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  if (typeof value === "string" && value.trim() === "") {
-    return null;
-  }
-
-  if (typeof value === "number" && isValidInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-
-      if (isValidInteger(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
-
-  return z.NEVER;
-}
-
 const requiredIdSchema = (message: string) =>
   z
     .string()
@@ -134,7 +100,7 @@ const hqLedgerLossItemSchema = z.object({
   amount: z
     .unknown()
     .transform((value, context) =>
-      parseOptionalInteger(
+      parseRequiredInteger(
         value,
         context,
         "손실 금액은 0원 이상의 정수여야 합니다.",
@@ -168,19 +134,10 @@ const hqLedgerLossesSchema = z
     value.losses.forEach((loss, index) => {
       if (
         typeof loss.quantity !== "number" ||
-        (loss.amount !== null && typeof loss.amount !== "number") ||
+        typeof loss.amount !== "number" ||
         !isValidInteger(loss.quantity) ||
-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
+        !isValidInteger(loss.amount)
       ) {
-        return;
-      }
-
-      if (!loss.id && loss.amount === null) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "손실 금액은 0원 이상의 정수여야 합니다.",
-          path: ["losses", index, "amount"],
-        });
         return;
       }
 
@@ -317,7 +274,7 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount ?? existing.amount,
+      amount: loss.amount,
       reason: loss.reason,
     };
   }
@@ -336,7 +293,7 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount ?? existing?.amount ?? 0,
+    amount: loss.amount,
     reason: loss.reason,
   };
 }
@@ -419,18 +376,6 @@ export async function saveHqLedgerLosses(
         for (let index = 0; index < parsed.data.losses.length; index += 1) {
           const loss = parsed.data.losses[index]!;
           const existing = existingById.get(loss.id);
-
-          if (loss.amount === null && !existing) {
-            return actionError<LossStepData>(
-              "VALIDATION_ERROR",
-              "입력값을 확인해 주세요.",
-              {
-                [`losses.${index}.amount`]: [
-                  "손실 금액은 0원 이상의 정수여야 합니다.",
-                ],
-              },
-            );
-          }
 
           const normalized = normalizeLossItem({
             loss,

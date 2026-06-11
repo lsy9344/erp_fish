@@ -115,6 +115,14 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
     false,
   );
 
+  assert.equal(
+    ledgerLossesSchema.safeParse({
+      ...payload,
+      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
+    }).success,
+    false,
+  );
+
   const invalidReason = ledgerLossesSchema.safeParse({
     ...payload,
     losses: [{ ...payload.losses[0], reason: "" }],
@@ -298,7 +306,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.doesNotMatch(pageSource, /손실 입력 준비/);
 });
 
-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
+test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
   const schemaSource = readProjectFile(
     "src",
     "features",
@@ -306,6 +314,11 @@ test("ledger loss review fixes keep thresholds, stale guards, and loss-only inve
     "schemas.ts",
   );
   assert.match(schemaSource, /versionSchema/);
+  assert.match(
+    schemaSource,
+    /parseRequiredInteger\(value, context, amountError\)/,
+  );
+  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
 
   const lossQuerySource = readProjectFile(
     "src",
@@ -315,6 +328,14 @@ test("ledger loss review fixes keep thresholds, stale guards, and loss-only inve
   );
   assert.match(lossQuerySource, /quantity:\s*0/);
   assert.match(lossQuerySource, /amount:\s*0/);
+  assert.match(
+    lossQuerySource,
+    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+  );
+  assert.doesNotMatch(
+    lossQuerySource,
+    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
+  );
 
   const inventoryQuerySource = readProjectFile(
     "src",

@@ -43,43 +43,6 @@ function parseRequiredInteger(
   return z.NEVER;
 }
 
-function parseOptionalInteger(
-  value: unknown,
-  context: z.RefinementCtx,
-  errorMessage: string,
-) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  if (typeof value === "string" && value.trim() === "") {
-    return null;
-  }
-
-  if (typeof value === "number" && isValidInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-
-      if (isValidInteger(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: errorMessage,
-  });
-
-  return z.NEVER;
-}
-
 const requiredIdSchema = (message: string) =>
   z
     .string()
@@ -125,7 +88,7 @@ const ledgerLossItemSchema = z.object({
   amount: z
     .unknown()
     .transform((value, context) =>
-      parseOptionalInteger(value, context, amountError),
+      parseRequiredInteger(value, context, amountError),
     ),
   reason: z.unknown().transform((value, context) => {
     if (typeof value === "string") {
@@ -157,19 +120,10 @@ export const ledgerLossesSchema = z
     value.losses.forEach((loss, index) => {
       if (
         typeof loss.quantity !== "number" ||
-        (loss.amount !== null && typeof loss.amount !== "number") ||
+        typeof loss.amount !== "number" ||
         !isValidInteger(loss.quantity) ||
-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
+        !isValidInteger(loss.amount)
       ) {
-        return;
-      }
-
-      if (!loss.id && loss.amount === null) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: amountError,
-          path: ["losses", index, "amount"],
-        });
         return;
       }
 
