@@ -1,6 +1,8 @@
-# Create T3 App
+# ERP Fish
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+ERP Fish is an internal ERP web app built with Next.js, Prisma, PostgreSQL,
+NextAuth/Auth.js, Tailwind CSS, and shadcn/ui. The current local workflow uses
+Docker PostgreSQL and seed-created internal accounts.
 
 ## Local Docker Test Run
 
@@ -17,51 +19,67 @@ with `pnpm`.
 - Database URL:
   `postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish`
 - Auth local host trust: `AUTH_TRUST_HOST=true`
-- Seed login email: `admin@example.com`
-- Seed login password: `AdminPassword123!`
-- Seed login name: `본사 관리자`
+- Headquarters seed email: `admin@example.com`
+- Headquarters seed name: `본사 관리자`
+- Store manager seed email: `store-manager@example.com`
+
+Do not commit real seed passwords. Set local values in `.env`.
 
 ### First Setup
 
 1. Install Docker Desktop and keep it running.
 2. Install Node.js and pnpm.
 3. Create `.env` from `.env.example` if `.env` does not exist.
-4. Start PostgreSQL:
+4. Fill the required local secrets in `.env`:
+
+```env
+AUTH_SECRET="generate-a-new-random-secret-of-at-least-32-characters"
+SEED_HQ_PASSWORD="choose-a-local-password-of-at-least-12-characters"
+SEED_STORE_MANAGER_PASSWORD="choose-a-local-password-of-at-least-12-characters"
+```
+
+Generate a local `AUTH_SECRET` with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+5. Start PostgreSQL:
 
 ```bash
 docker compose up -d
 ```
 
-5. Install packages:
+6. Install packages:
 
 ```bash
 pnpm install
 ```
 
-6. Apply Prisma migrations:
+7. Apply Prisma migrations:
 
 ```bash
 pnpm db:migrate
 ```
 
-7. Create or update the test headquarters account:
+8. Create or update the seed headquarters and store manager accounts:
 
 ```bash
 pnpm db:seed
 ```
 
-8. Build and start the app in production mode:
+9. Build and start the app in production mode:
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-9. Open `http://localhost:3000` and log in with:
+10. Open `http://localhost:3000` and log in with:
 
 ```text
 admin@example.com
-AdminPassword123!
+the SEED_HQ_PASSWORD value from your local .env
 ```
 
 ### Daily Start
@@ -72,6 +90,32 @@ pnpm start
 ```
 
 Run `pnpm build` again before `pnpm start` when source code changed.
+
+### Validation
+
+Run the main local checks with:
+
+```bash
+pnpm exec prisma validate
+pnpm exec prisma generate
+pnpm lint
+pnpm typecheck
+pnpm test:unit
+pnpm build
+```
+
+Playwright uses `playwright.config.ts`. By default it expects:
+
+```text
+DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish_e2e
+PORT=3000
+```
+
+Override those when your local test database or app port differs:
+
+```bash
+PORT=3100 DATABASE_URL="postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish" pnpm test:e2e
+```
 
 ### Stop
 
@@ -118,31 +162,13 @@ docker compose up -d
 
 Copy the project files, but do not copy `node_modules`, `.next`, or local Docker
 volumes. On the new PC, install Docker Desktop, Node.js, and pnpm, create a new
-`.env` from `.env.example`, generate a fresh `AUTH_SECRET`, then run the first
-setup commands above.
-
-## What's next? How do I make an app with this?
-
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
-
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
-
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+`.env` from `.env.example`, generate a fresh `AUTH_SECRET`, set local seed
+passwords, then run the first setup commands above.
 
 ## Learn More
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
-
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
-
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
-
-## How do I deploy this?
-
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+- [Create T3 App](https://create.t3.gg/)
+- [Next.js](https://nextjs.org)
+- [NextAuth.js](https://next-auth.js.org)
+- [Prisma](https://prisma.io)
+- [Tailwind CSS](https://tailwindcss.com)
