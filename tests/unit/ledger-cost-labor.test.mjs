@@ -28,13 +28,21 @@ function migrationDirNames() {
 }
 
 test("ledger cost and work schemas validate expense/work input edge cases", async () => {
-  const schemaPath = assertProjectFile("src", "features", "ledger", "schemas.ts");
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
   const { ledgerExpenseSchema, ledgerWorkInfoSchema } = await import(
-    pathToFileURL(schemaPath).href,
+    pathToFileURL(schemaPath).href
   );
 
   const expenseBase = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     expenses: [
       {
         ledgerInputCodeId: "code-food",
@@ -104,6 +112,9 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
 
   const workBase = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     workerCount: 4,
     workMemo: "메모",
   };
@@ -139,12 +150,14 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
 });
 
 test("ledger cost calculation helpers validate edge cases", async () => {
-  const calcPath = assertProjectFile("src", "server", "calculations", "ledger.ts");
-  const {
-    calculateExpenseTotal,
-    calculateGrossProfit,
-    calculateProductivity,
-  } = await import(pathToFileURL(calcPath).href);
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateExpenseTotal, calculateGrossProfit, calculateProductivity } =
+    await import(pathToFileURL(calcPath).href);
 
   assert.equal(calculateExpenseTotal([1_000, 2_000, 300]), 3_300);
   assert.equal(calculateExpenseTotal([]), 0);
@@ -167,7 +180,12 @@ test("ledger cost/work data model, actions, and queries follow expected contract
     /model\s+DailyLedger\s*{[^}]*workerCount\s+Int\?\s+[^}]*workMemo\s+String\?/s,
   );
 
-  const querySource = readProjectFile("src", "features", "ledger", "queries.ts");
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
   assert.match(
     querySource,
     /const\s+ledgerExpenseSelect\s*=\s*{[\s\S]*ledgerInputCodeId:\s*true[\s\S]*ledgerExpenses:/,
@@ -177,7 +195,12 @@ test("ledger cost/work data model, actions, and queries follow expected contract
     /type\s+DailyLedgerPayload\s*=\s*Prisma\.DailyLedgerGetPayload<\{[\s\S]*ledgerExpenses/s,
   );
 
-  const actionSource = readProjectFile("src", "features", "ledger", "actions.ts");
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerExpenses/);
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerWorkInfo/);
   assert.match(
@@ -197,7 +220,12 @@ test("ledger cost/work data model, actions, and queries follow expected contract
 
 test("store manager ledger responses omit sensitive accounting metrics", async () => {
   const typeSource = readProjectFile("src", "features", "ledger", "types.ts");
-  const querySource = readProjectFile("src", "features", "ledger", "queries.ts");
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
   const responseShapeSource = readProjectFile(
     "src",
     "features",
@@ -235,15 +263,9 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
     responseShapeSource,
     /const\s*\{\s*grossProfit,\s*productivity,\s*\.\.\.safeLedger\s*\}/s,
   );
-  assert.match(
-    actionSource,
-    /toStoreManagerLedgerCostStepData\(afterLedger\)/,
-  );
+  assert.match(actionSource, /toStoreManagerLedgerCostStepData\(afterLedger\)/);
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);
-  assert.match(
-    expenseClientSource,
-    /showSensitiveAccountingMetrics\s*\?\s*\(/,
-  );
+  assert.match(expenseClientSource, /showSensitiveAccountingMetrics\s*\?\s*\(/);
   assert.match(workClientSource, /showSensitiveAccountingMetrics/);
 
   const queryPath = assertProjectFile(

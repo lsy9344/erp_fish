@@ -144,6 +144,9 @@ test("inventory schema validates current inventory and quantity separately", asy
 
   const payload = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     items: [
       {
         productId: "product-1",
@@ -200,6 +203,9 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
 
   const payload = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     productId: "product-1",
     actualQuantity: "5",
     reason: "실사 재고 차이 확인",
@@ -364,6 +370,11 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     /reconcileLedgerInventoryAdjustments\(/,
     "normal inventory save should keep existing adjustment records in sync",
   );
+  assert.match(
+    actionSource,
+    /editableLedger\.count !== 1\)\s*{\s*throw new Error\("LEDGER_CONFLICT"\)/,
+    "inventory save should report stale version races as ledger conflicts",
+  );
   assert.match(actionSource, /action:\s*"ledger\.inventory\.saved"/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(
@@ -426,6 +437,11 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     actionSource,
     /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]\s*}/,
     "adjustment save should lock or conditionally guard editable ledger status",
+  );
+  assert.match(
+    actionSource,
+    /editableLedger\.count !== 1\)\s*{\s*return mapLedgerConflictError\(\)/,
+    "adjustment save should report stale version races as ledger conflicts",
   );
   assert.doesNotMatch(
     actionSource,

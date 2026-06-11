@@ -52,7 +52,7 @@ test("Prisma schema supports user active status and modification timestamps", ()
   );
   assert.match(
     schema,
-    /model\s+User\s*{[^}]*updatedAt\s+DateTime\s+@updatedAt[^}]*}/s,
+    /model\s+User\s*{[^}]*updatedAt\s+DateTime\s+(?=[^\n]*@updatedAt)[^\n]*/s,
   );
   assert.match(
     schema,

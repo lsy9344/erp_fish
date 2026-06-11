@@ -41,6 +41,13 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
+function mapLedgerConflictError(): ActionResult<never> {
+  return actionError(
+    "LEDGER_CONFLICT",
+    "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+  );
+}
+
 function revalidateLossPaths() {
   revalidatePath("/app/store-entry/losses");
   revalidatePath("/app/store-entry/inventory");
@@ -145,18 +152,15 @@ export async function saveLedgerLosses(
       const before = await getLossStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
-      const expectedUpdatedAt = new Date(parsed.data.ledgerUpdatedAt);
 
       if (
-        Number.isNaN(expectedUpdatedAt.getTime()) ||
-        before.updatedAt !== expectedUpdatedAt.toISOString()
+        before.id !== parsed.data.ledgerId ||
+        before.version !== parsed.data.version
       ) {
-        return actionError<StoreManagerLossStepData>(
-          "LEDGER_CONFLICT",
-          "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-        );
+        return mapLedgerConflictError();
       }
 
       if (before.status === "HEADQUARTERS_CLOSED") {
@@ -252,6 +256,7 @@ export async function saveLedgerLosses(
       const inventoryData = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
       const inventoryLineByProductId = new Map(
@@ -308,15 +313,15 @@ export async function saveLedgerLosses(
         where: {
           id: before.id,
           status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
-          updatedAt: expectedUpdatedAt,
+          version: parsed.data.version,
         },
-        data: { updatedById: actor.user.id },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
       });
 
       if (editableLedger.count !== 1) {
         return actionError<StoreManagerLossStepData>(
           "LEDGER_CONFLICT",
-          "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+          "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
         );
       }
 
@@ -368,6 +373,7 @@ export async function saveLedgerLosses(
       const after = await getLossStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
 

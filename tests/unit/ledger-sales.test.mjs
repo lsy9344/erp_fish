@@ -27,7 +27,7 @@ test("ledger schema includes DailyLedger model, enum, and relations", () => {
   );
   assert.match(
     schema,
-    /model\s+DailyLedger\s*{[^}]*id\s+String\s+@id[^}]*storeId\s+String[^}]*closingDate\s+DateTime[^}]*status\s+DailyLedgerStatus\s+@default\(IN_PROGRESS\)[^}]*totalSalesAmount\s+Int[^}]*cashAmount\s+Int[^}]*cardAmount\s+Int[^}]*otherPaymentAmount\s+Int[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*createdAt\s+DateTime[^}]*updatedAt\s+DateTime[^}]*\n[^}]*@@unique\(\[storeId,\s*closingDate\],\s*map:\s*"dailyLedger_storeId_closingDate_key"\)[^}]*\n[^}]*@@index\(\[status\]\)/s,
+    /model\s+DailyLedger\s*{[^}]*id\s+String\s+@id[^}]*storeId\s+String[^}]*closingDate\s+DateTime[^}]*status\s+DailyLedgerStatus\s+@default\(IN_PROGRESS\)[^}]*version\s+Int\s+@default\(1\)[^}]*totalSalesAmount\s+Int[^}]*cashAmount\s+Int[^}]*cardAmount\s+Int[^}]*otherPaymentAmount\s+Int[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*createdAt\s+DateTime[^}]*updatedAt\s+DateTime[^}]*\n[^}]*@@unique\(\[storeId,\s*closingDate\],\s*map:\s*"dailyLedger_storeId_closingDate_key"\)[^}]*\n[^}]*@@index\(\[status\]\)/s,
   );
   assert.match(
     schema,
@@ -43,7 +43,7 @@ test("ledger schema includes DailyLedger model, enum, and relations", () => {
   );
 });
 
-test("ledger migration creates DailyLedger and unique constraint", () => {
+test("ledger migrations create DailyLedger, unique constraint, and version token", () => {
   const migrationRoot = path.join(root, "prisma", "migrations");
   const migrationNames = readdirSync(migrationRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -76,6 +76,19 @@ test("ledger migration creates DailyLedger and unique constraint", () => {
     ),
     "Story 2.1 migration should define Store relation",
   );
+
+  const versionMigrationSql = migrationNames
+    .map((name) => path.join(migrationRoot, name, "migration.sql"))
+    .filter((migrationPath) => existsSync(migrationPath))
+    .map((migrationPath) => readFileSync(migrationPath, "utf8"))
+    .find((migration) => migration.includes('"version"'));
+
+  assert.ok(
+    versionMigrationSql?.includes(
+      'ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1',
+    ),
+    "Story 2.1 migration should add DailyLedger.version as the edit token",
+  );
 });
 
 test("ledger amount calculation helper validates payment difference", async () => {
@@ -85,25 +98,31 @@ test("ledger amount calculation helper validates payment difference", async () =
     "calculations",
     "ledger.ts",
   );
-  const { calculatePaymentDifference } = await import(pathToFileURL(calculatorPath).href);
+  const { calculatePaymentDifference } = await import(
+    pathToFileURL(calculatorPath).href
+  );
 
-  assert.equal(
-    calculatePaymentDifference(120000, 50000, 30000, 20000),
-    20000,
-  );
-  assert.equal(
-    calculatePaymentDifference(50000, 60000, 20000, 10000),
-    -40000,
-  );
+  assert.equal(calculatePaymentDifference(120000, 50000, 30000, 20000), 20000);
+  assert.equal(calculatePaymentDifference(50000, 60000, 20000, 10000), -40000);
   assert.equal(calculatePaymentDifference(0, 0, 0, 0), 0);
 });
 
 test("ledger sales schema rejects blank, negative, decimal, and formatted values", async () => {
-  const schemaPath = assertProjectFile("src", "features", "ledger", "schemas.ts");
-  const { ledgerSalesPaymentSchema } = await import(pathToFileURL(schemaPath).href);
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const { ledgerSalesPaymentSchema } = await import(
+    pathToFileURL(schemaPath).href
+  );
 
   const basePayload = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     totalSalesAmount: 0,
     cashAmount: 0,
     cardAmount: 0,
@@ -142,9 +161,10 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
     otherPaymentAmount: "1,000",
   });
   assert.equal(formattedAmount.success, false);
-  assert.deepEqual(formattedAmount.error.flatten().fieldErrors.otherPaymentAmount, [
-    "기타 결제수단은 0원 이상의 정수여야 합니다.",
-  ]);
+  assert.deepEqual(
+    formattedAmount.error.flatten().fieldErrors.otherPaymentAmount,
+    ["기타 결제수단은 0원 이상의 정수여야 합니다."],
+  );
 
   const overflow = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,
@@ -156,30 +176,96 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   ]);
 });
 
-test("ledger save action enforces transaction, authorization, and ActionResult contracts", () => {
-  const actionSource = readProjectFile("src", "features", "ledger", "actions.ts");
-  const querySource = readProjectFile("src", "features", "ledger", "queries.ts");
+test("ledger date and open schemas normalize KST business dates", async () => {
+  const datePath = assertProjectFile("src", "features", "ledger", "date.ts");
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const {
+    getKstBusinessDate,
+    getKstBusinessDateParam,
+    getKstLedgerDateParam,
+  } = await import(pathToFileURL(datePath).href);
+  const { ledgerOpenSchema } = await import(pathToFileURL(schemaPath).href);
+
+  assert.equal(
+    getKstBusinessDate("2026-06-11").toISOString(),
+    "2026-06-11T00:00:00.000Z",
+  );
+  assert.equal(
+    getKstBusinessDate(new Date("2026-06-10T16:00:00.000Z")).toISOString(),
+    "2026-06-11T00:00:00.000Z",
+  );
+  assert.equal(
+    getKstBusinessDateParam(new Date("2026-06-11T00:00:00.000Z")),
+    "2026-06-11",
+  );
+  assert.equal(
+    getKstLedgerDateParam("2026-06-11T00:00:00.000Z"),
+    "2026-06-11",
+  );
+
+  assert.equal(
+    ledgerOpenSchema.safeParse({
+      storeId: "store-gangnam",
+      closingDate: "2026-06-11",
+    }).success,
+    true,
+  );
+  assert.equal(
+    ledgerOpenSchema.safeParse({
+      storeId: "store-gangnam",
+      closingDate: "2026/06/11",
+    }).success,
+    false,
+  );
+});
+
+test("ledger save action enforces transaction, authorization, version guard, and ActionResult contracts", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
 
   assert.match(actionSource, /"use server"/);
-  assert.match(actionSource, /export\s+async\s+function\s+saveLedgerSalesPayment/);
+  assert.match(
+    actionSource,
+    /export\s+async\s+function\s+saveLedgerSalesPayment/,
+  );
   assert.match(actionSource, /requireStoreAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /writeAuditLog/);
   assert.match(actionSource, /actionOk\(/);
   assert.match(actionSource, /actionError\(/);
+  assert.match(actionSource, /LEDGER_CONFLICT/);
+  assert.match(actionSource, /version:\s*parsed\.data\.version/);
+  assert.match(actionSource, /version:\s*\{\s*increment:\s*1\s*\}/);
+  assert.match(actionSource, /parsed\.data\.closingDate/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
-  assert.ok(
-    actionSource.includes('action: "ledger.sales_payment.updated",'),
-  );
+  assert.ok(actionSource.includes('action: "ledger.sales_payment.updated",'));
   assert.doesNotMatch(actionSource, /\.delete\(/);
 
+  assert.match(querySource, /getKstBusinessDate/);
+  assert.match(querySource, /function\s+getOrCreateStoreLedgerInTx/);
   assert.match(querySource, /function\s+getTodayKstMidnight/);
+  const dateSource = readProjectFile("src", "features", "ledger", "date.ts");
   assert.ok(
-    querySource.includes('const LEGAL_SEOUL_TZ = "Asia/Seoul";'),
+    dateSource.includes('const LEGAL_SEOUL_TZ = "Asia/Seoul";'),
     "Story 2.1 should use Korea timezone when calculating closing date",
   );
-  assert.match(querySource, /Date\.UTC\(/);
+  assert.match(dateSource, /Date\.UTC\(/);
   assert.match(querySource, /tx\.dailyLedger\.createMany/);
   assert.match(querySource, /skipDuplicates:\s*true/);
   assert.match(querySource, /writeAuditLog\(/);
@@ -208,4 +294,66 @@ test("today ledger creation avoids duplicate-key races", () => {
     /tx\.dailyLedger\.create\(/,
     "today ledger creation should not throw on an already-created store/date row",
   );
+});
+
+test("store-entry UI passes selected date and ledger version through save and navigation contracts", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "store-entry",
+    "page.tsx",
+  );
+  const navigationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "store-entry-step-navigation.tsx",
+  );
+
+  assert.match(pageSource, /date\?: string \| string\[\]/);
+  assert.match(pageSource, /normalizeClosingDateParam/);
+  assert.match(pageSource, /getStoreLedger\(/);
+  assert.match(
+    pageSource,
+    /getStoreManagerLedgerReviewStepData\([^)]*closingDate/s,
+  );
+  assert.match(navigationSource, /closingDate/);
+  assert.match(
+    navigationSource,
+    /date:\s*getKstLedgerDateParam\(closingDate\)/,
+  );
+
+  for (const component of [
+    "sales-payment-step-client.tsx",
+    "expense-step-client.tsx",
+    "purchase-step-client.tsx",
+    "workstep-client.tsx",
+  ]) {
+    const source = readProjectFile(
+      "src",
+      "features",
+      "ledger",
+      "components",
+      component,
+    );
+
+    assert.match(source, /LedgerContextHeader/);
+    assert.match(source, /closingDate:\s*getKstLedgerDateParam\(ledger\.closingDate\)/);
+    assert.match(source, /version:\s*ledger\.version/);
+    assert.match(source, /closingDate=\{ledger\.closingDate\}/);
+  }
+
+  const headerSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-context-header.tsx",
+  );
+  assert.match(headerSource, /LedgerStatusBadge/);
+  assert.match(headerSource, /type="date"/);
+  assert.match(headerSource, /name="storeId"/);
+  assert.match(headerSource, /name="date"/);
 });

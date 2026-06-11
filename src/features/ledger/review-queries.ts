@@ -4,7 +4,8 @@ import { calculateLedgerReviewSummary } from "~/server/calculations/ledger";
 import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
-import { getTodayStoreLedgerInTx } from "./queries";
+import { getStoreLedgerInTx, getKstBusinessDateParam } from "./queries";
+import { getKstLedgerDateParam } from "./date";
 import { toStoreManagerLedgerReviewStepData } from "./response-shaping";
 import type {
   LedgerReviewMissingItem,
@@ -37,21 +38,39 @@ const reviewInventoryItemSelect = {
 
 function storeStepHref(
   storeId: string,
+  closingDate: string,
   step: "sales" | "cost" | "purchase" | "work",
 ) {
-  return `/app/store-entry?storeId=${storeId}&step=${step}`;
+  const params = new URLSearchParams({
+    storeId,
+    date: getKstLedgerDateParam(closingDate),
+    step,
+  });
+
+  return `/app/store-entry?${params.toString()}`;
 }
 
-function inventoryHref(storeId: string) {
-  return `/app/store-entry/inventory?storeId=${storeId}`;
+function inventoryHref(storeId: string, closingDate: string) {
+  const params = new URLSearchParams({
+    storeId,
+    date: getKstLedgerDateParam(closingDate),
+  });
+
+  return `/app/store-entry/inventory?${params.toString()}`;
 }
 
-function lossesHref(storeId: string) {
-  return `/app/store-entry/losses?storeId=${storeId}`;
+function lossesHref(storeId: string, closingDate: string) {
+  const params = new URLSearchParams({
+    storeId,
+    date: getKstLedgerDateParam(closingDate),
+  });
+
+  return `/app/store-entry/losses?${params.toString()}`;
 }
 
 function getMissingItems({
   storeId,
+  closingDate,
   totalSalesAmount,
   paymentTotal,
   expenseCount,
@@ -62,6 +81,7 @@ function getMissingItems({
   workerCount,
 }: {
   storeId: string;
+  closingDate: string;
   totalSalesAmount: number;
   paymentTotal: number;
   expenseCount: number;
@@ -77,7 +97,7 @@ function getMissingItems({
     items.push({
       id: "sales",
       label: "총매출/결제",
-      href: storeStepHref(storeId, "sales"),
+      href: storeStepHref(storeId, closingDate, "sales"),
       status: "missing",
       detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
     });
@@ -87,7 +107,7 @@ function getMissingItems({
     items.push({
       id: "expenses",
       label: "비용",
-      href: storeStepHref(storeId, "cost"),
+      href: storeStepHref(storeId, closingDate, "cost"),
       status: "missing",
       detail: "비용 항목이 아직 입력되지 않았습니다.",
     });
@@ -97,7 +117,7 @@ function getMissingItems({
     items.push({
       id: "purchases",
       label: "매입",
-      href: storeStepHref(storeId, "purchase"),
+      href: storeStepHref(storeId, closingDate, "purchase"),
       status: "missing",
       detail: "매입 항목이 아직 입력되지 않았습니다.",
     });
@@ -107,7 +127,7 @@ function getMissingItems({
     items.push({
       id: "inventory",
       label: "재고",
-      href: inventoryHref(storeId),
+      href: inventoryHref(storeId, closingDate),
       status: "missing",
       detail:
         inventoryCount === 0
@@ -119,7 +139,7 @@ function getMissingItems({
   items.push({
     id: "losses",
     label: "손실/폐기",
-    href: lossesHref(storeId),
+    href: lossesHref(storeId, closingDate),
     status: "review",
     detail:
       lossCount === 0
@@ -131,7 +151,7 @@ function getMissingItems({
     items.push({
       id: "work",
       label: "근무인원",
-      href: storeStepHref(storeId, "work"),
+      href: storeStepHref(storeId, closingDate, "work"),
       status: "missing",
       detail: "근무인원이 아직 입력되지 않았습니다.",
     });
@@ -192,15 +212,23 @@ function getSignals({
 
 export async function getLedgerReviewStepData(
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
   thresholds: LedgerReviewThresholds = {},
 ): Promise<LedgerReviewStepData> {
   return db.$transaction(async (tx) => {
-    const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
-    const inventory = await getInventoryStepDataInTx(tx, storeId, actorId);
+    const ledger = await getStoreLedgerInTx(tx, storeId, closingDate, actorId);
+    const closingDateParam = getKstBusinessDateParam(closingDate);
+    const inventory = await getInventoryStepDataInTx(
+      tx,
+      storeId,
+      closingDate,
+      actorId,
+    );
     const losses = await getLossStepDataInTx(
       tx,
       storeId,
+      closingDate,
       actorId,
       thresholds.loss ?? reviewLossSignalThresholds,
     );
@@ -241,12 +269,14 @@ export async function getLedgerReviewStepData(
       id: ledger.id,
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
+      version: ledger.version,
       status: ledger.status,
       submittedById: ledger.submittedById ?? null,
       submittedAt: ledger.submittedAt?.toISOString() ?? null,
       summary,
       missingItems: getMissingItems({
         storeId,
+        closingDate: closingDateParam,
         totalSalesAmount: ledger.totalSalesAmount,
         paymentTotal:
           ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
@@ -268,10 +298,16 @@ export async function getLedgerReviewStepData(
 
 export async function getStoreManagerLedgerReviewStepData(
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
   thresholds: LedgerReviewThresholds = {},
 ): Promise<StoreManagerLedgerReviewStepData> {
-  const data = await getLedgerReviewStepData(storeId, actorId, thresholds);
+  const data = await getLedgerReviewStepData(
+    storeId,
+    closingDate,
+    actorId,
+    thresholds,
+  );
 
   return toStoreManagerLedgerReviewStepData(data);
 }

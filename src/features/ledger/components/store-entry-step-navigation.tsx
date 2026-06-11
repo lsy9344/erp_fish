@@ -1,4 +1,5 @@
 import { cn } from "~/lib/utils";
+import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   type StoreEntryStep,
   type StoreEntryStepCompletion,
@@ -6,6 +7,7 @@ import {
 
 type StoreEntryStepNavigationProps = {
   storeId: string;
+  closingDate: string;
   currentStep: StoreEntryStep;
   stepCompletion?: StoreEntryStepCompletion;
 };
@@ -20,8 +22,11 @@ const steps: { id: StoreEntryStep; label: string }[] = [
   { id: "review", label: "7단계: 검토/제출" },
 ];
 
-function stepHref(storeId: string, step: StoreEntryStep) {
-  const params = new URLSearchParams({ storeId });
+function stepHref(storeId: string, closingDate: string, step: StoreEntryStep) {
+  const params = new URLSearchParams({
+    storeId,
+    date: getKstLedgerDateParam(closingDate),
+  });
 
   if (step === "inventory" || step === "losses") {
     return `/app/store-entry/${step}?${params.toString()}`;
@@ -34,6 +39,7 @@ function stepHref(storeId: string, step: StoreEntryStep) {
 
 export function StoreEntryStepNavigation({
   storeId,
+  closingDate,
   currentStep,
   stepCompletion = {},
 }: StoreEntryStepNavigationProps) {
@@ -58,7 +64,7 @@ export function StoreEntryStepNavigation({
                     ? "border-emerald-500/40 bg-emerald-500/5 font-medium text-emerald-700 dark:text-emerald-300"
                     : "text-muted-foreground hover:text-foreground",
                 )}
-                href={stepHref(storeId, step.id)}
+                href={stepHref(storeId, closingDate, step.id)}
               >
                 {step.label}
                 {isSaved ? (

@@ -5,9 +5,12 @@ import {
   summarizeLossItems,
   type LossSignalThresholds,
 } from "~/server/calculations/inventory";
-import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
+import {
+  requireHeadquartersLedgerScope,
+  requireReportAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
-import { getTodayStoreLedgerInTx } from "~/features/ledger/queries";
+import { getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 
@@ -35,6 +38,7 @@ const lossLedgerSelect = {
   storeId: true,
   closingDate: true,
   updatedAt: true,
+  version: true,
   status: true,
   totalSalesAmount: true,
   workerCount: true,
@@ -97,6 +101,7 @@ async function getLossStepDataForLedgerInTx(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
+    version: ledger.version,
     status: ledger.status,
     stepCompletion: getStoreEntryStepCompletion({
       ...ledger,
@@ -114,10 +119,11 @@ async function getLossStepDataForLedgerInTx(
 export async function getLossStepDataInTx(
   tx: Prisma.TransactionClient,
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
   thresholds: LossSignalThresholds = defaultLossSignalThresholds,
 ): Promise<LossStepData> {
-  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
+  const ledger = await getStoreLedgerInTx(tx, storeId, closingDate, actorId);
 
   return getLossStepDataForLedgerInTx(tx, ledger, thresholds);
 }
@@ -141,10 +147,11 @@ export async function getLossStepDataByLedgerIdInTx(
 
 export async function getLossStepData(
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerLossStepData> {
   const data = await db.$transaction((tx) =>
-    getLossStepDataInTx(tx, storeId, actorId),
+    getLossStepDataInTx(tx, storeId, closingDate, actorId),
   );
 
   return toStoreManagerLossStepData(data);
@@ -164,11 +171,13 @@ export function toStoreManagerLossStepData(
 ): StoreManagerLossStepData {
   return {
     ...data,
-    productOptions: data.productOptions.map(({ defaultUnitPrice, ...option }) => {
-      void defaultUnitPrice;
+    productOptions: data.productOptions.map(
+      ({ defaultUnitPrice, ...option }) => {
+        void defaultUnitPrice;
 
-      return option;
-    }),
+        return option;
+      },
+    ),
     lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
       void unitPrice;
       void amount;

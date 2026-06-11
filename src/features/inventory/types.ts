@@ -50,6 +50,7 @@ export type InventoryStepData = {
   storeId: string;
   closingDate: string;
   updatedAt: string;
+  version: number;
   status: DailyLedgerStatus;
   stepCompletion: StoreEntryStepCompletion;
   items: InventoryStepLine[];
@@ -63,14 +64,15 @@ export type StoreManagerInventoryAdjustmentView = Omit<
 
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
-  "unitPrice" | "purchaseAmount" | "lossAmount" | "inventoryAmount" | "adjustment"
+  | "unitPrice"
+  | "purchaseAmount"
+  | "lossAmount"
+  | "inventoryAmount"
+  | "adjustment"
 > & {
   adjustment: StoreManagerInventoryAdjustmentView | null;
 };
 
-export type StoreManagerInventoryStepData = Omit<
-  InventoryStepData,
-  "items"
-> & {
+export type StoreManagerInventoryStepData = Omit<InventoryStepData, "items"> & {
   items: StoreManagerInventoryStepLine[];
 };

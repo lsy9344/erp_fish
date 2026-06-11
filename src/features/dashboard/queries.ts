@@ -17,6 +17,7 @@ import type {
   evaluateInventoryLossAnomalySignals as evaluateInventoryLossAnomalySignalsFunction,
   evaluateRevenueAnomalySignals as evaluateRevenueAnomalySignalsFunction,
 } from "../../server/calculations/anomaly.ts";
+import { mapLedgerStatus } from "../ledger/status.ts";
 import type {
   DashboardBusinessStatus,
   DashboardDatePreset,
@@ -146,18 +147,7 @@ export function getDashboardDate(
 export function mapDashboardLedgerStatus(
   status: DailyLedgerStatus | null,
 ): DashboardLedgerStatus {
-  switch (status) {
-    case "IN_PROGRESS":
-      return { key: "IN_PROGRESS", label: "입력중" };
-    case "IN_REVIEW":
-      return { key: "IN_REVIEW", label: "검토대기" };
-    case "HEADQUARTERS_CLOSED":
-      return { key: "HEADQUARTERS_CLOSED", label: "본사마감" };
-    case "HOLIDAY":
-      return { key: "HOLIDAY", label: "휴무" };
-    default:
-      return { key: "EMPTY", label: "미입력" };
-  }
+  return mapLedgerStatus(status);
 }
 
 export function mapDashboardBusinessStatus(
@@ -183,9 +173,8 @@ export async function getHqDashboardRows({
   sortMode?: DashboardSortMode;
   filterMode?: DashboardFilterMode;
 } = {}): Promise<HqDashboardData> {
-  const { getHeadquartersStoreScope, requireReportAccess } = await import(
-    "../../server/authz.ts"
-  );
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
@@ -527,9 +516,8 @@ function toDashboardRow(
 }
 
 export async function getHqLedgerDetail(ledgerId: string) {
-  const { getHeadquartersStoreScope, requireReportAccess } = await import(
-    "../../server/authz.ts"
-  );
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
@@ -784,10 +772,9 @@ function toCorrectedInventoryAdjustments(
       return adjustment;
     }
 
-    const correctedQuantity =
-      shouldUseCorrectedInventory
-        ? (correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null)
-        : adjustment.afterQuantity;
+    const correctedQuantity = shouldUseCorrectedInventory
+      ? (correctedItem?.currentQuantity ?? correctedItem?.quantity ?? null)
+      : adjustment.afterQuantity;
     const correctedAmount = calculateInventoryAmount(
       correctedQuantity,
       correctedItem?.unitPrice ?? adjustment.unitPrice,

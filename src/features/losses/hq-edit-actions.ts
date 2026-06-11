@@ -8,16 +8,15 @@ import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjust
 import { getInventoryStepDataByLedgerIdInTx } from "~/features/inventory/queries";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
+import {
+  requireLedgerHqEditAccess,
+  requireHeadquartersStoreScope,
+} from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
-import {
-  ledgerLossesSchema,
-  toFieldErrors,
-  type LedgerLossesInput,
-} from "./schemas";
+import { toFieldErrors } from "./schemas";
 import { type LossStepData } from "./types";
 
 type ActiveProduct = {
@@ -49,6 +48,154 @@ type NormalizedLossItem = {
   reason: string;
 };
 
+const MAX_KRW_INTEGER = 2_147_483_647;
+
+function isValidInteger(value: number) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
+}
+
+function parseRequiredInteger(
+  value: unknown,
+  context: z.RefinementCtx,
+  errorMessage: string,
+) {
+  if (typeof value === "number" && isValidInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+
+      if (isValidInteger(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+
+  return z.NEVER;
+}
+
+function parseOptionalInteger(
+  value: unknown,
+  context: z.RefinementCtx,
+  errorMessage: string,
+) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
+
+  if (typeof value === "number" && isValidInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+
+      if (isValidInteger(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+
+  return z.NEVER;
+}
+
+const requiredIdSchema = (message: string) =>
+  z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, message));
+
+const hqLedgerLossItemSchema = z.object({
+  id: z
+    .unknown()
+    .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  productId: requiredIdSchema("품목을 선택해 주세요."),
+  ledgerInputCodeId: requiredIdSchema("손실 유형을 선택해 주세요."),
+  quantity: z
+    .unknown()
+    .transform((value, context) =>
+      parseRequiredInteger(value, context, "수량은 0 이상의 정수여야 합니다."),
+    ),
+  amount: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalInteger(
+        value,
+        context,
+        "손실 금액은 0원 이상의 정수여야 합니다.",
+      ),
+    ),
+  reason: z.unknown().transform((value, context) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+
+      if (trimmed.length > 0 && trimmed.length <= 500) {
+        return trimmed;
+      }
+    }
+
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "사유/특이사항을 입력해 주세요.",
+    });
+
+    return z.NEVER;
+  }),
+});
+
+const hqLedgerLossesSchema = z
+  .object({
+    storeId: requiredIdSchema("지점을 확인해 주세요."),
+    ledgerUpdatedAt: requiredIdSchema("장부 상태를 확인해 주세요."),
+    losses: z.array(hqLedgerLossItemSchema),
+  })
+  .superRefine((value, context) => {
+    value.losses.forEach((loss, index) => {
+      if (
+        typeof loss.quantity !== "number" ||
+        (loss.amount !== null && typeof loss.amount !== "number") ||
+        !isValidInteger(loss.quantity) ||
+        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
+      ) {
+        return;
+      }
+
+      if (!loss.id && loss.amount === null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "손실 금액은 0원 이상의 정수여야 합니다.",
+          path: ["losses", index, "amount"],
+        });
+        return;
+      }
+
+      if (loss.quantity === 0 && loss.amount === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "수량 또는 손실액 중 하나는 0보다 커야 합니다.",
+          path: ["losses", index, "quantity"],
+        });
+      }
+    });
+  });
+
+type HqLedgerLossesInput = z.infer<typeof hqLedgerLossesSchema>;
+
 const ledgerIdInputSchema = z.object({
   ledgerId: z
     .string()
@@ -58,8 +205,8 @@ const ledgerIdInputSchema = z.object({
 
 function parseHqLossesInput(
   input: unknown,
-): ActionResult<LedgerLossesInput & { ledgerId: string }> {
-  const parsed = ledgerLossesSchema.safeParse(input);
+): ActionResult<HqLedgerLossesInput & { ledgerId: string }> {
+  const parsed = hqLedgerLossesSchema.safeParse(input);
   const parsedLedgerId = ledgerIdInputSchema.safeParse(input);
 
   if (!parsed.success || !parsedLedgerId.success) {
@@ -150,7 +297,7 @@ function normalizeLossItem({
   product,
   lossType,
 }: {
-  loss: LedgerLossesInput["losses"][number];
+  loss: HqLedgerLossesInput["losses"][number];
   existing: ExistingLossItem | undefined;
   product: ActiveProduct | undefined;
   lossType: ActiveLossType | undefined;

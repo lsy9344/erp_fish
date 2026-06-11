@@ -173,15 +173,15 @@ model UserStoreAssignment {
 }
 
 model PermissionProfile {
-  id              String            @id @default(cuid())
-  code            String            @unique
+  id              String          @id @default(cuid())
+  code            String          @unique
   name            String
   description     String?
-  isSystem        Boolean           @default(false)
-  isActive        Boolean           @default(true)
+  isSystem        Boolean         @default(false)
+  isActive        Boolean         @default(true)
   storeAccessMode StoreAccessMode
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   actions PermissionProfileAction[]
   users   UserPermissionProfile[]
@@ -251,7 +251,7 @@ model User {
   passwordHash                      String?
   isActive                          Boolean                     @default(true)
   createdAt                         DateTime                    @default(now())
-  updatedAt                         DateTime                    @updatedAt @default(now())
+  updatedAt                         DateTime                    @default(now()) @updatedAt
   accounts                          Account[]
   sessions                          Session[]
   posts                             Post[]
@@ -322,6 +322,7 @@ model DailyLedger {
   storeId                    String
   closingDate                DateTime
   status                     DailyLedgerStatus           @default(IN_PROGRESS)
+  version                    Int                         @default(1)
   totalSalesAmount           Int                         @default(0)
   cashAmount                 Int                         @default(0)
   cardAmount                 Int                         @default(0)

@@ -281,7 +281,8 @@ test("ledger review route/query contracts use existing server flows", () => {
     "response-shaping.ts",
   );
 
-  assert.match(querySource, /getTodayStoreLedgerInTx\(/);
+  assert.match(querySource, /getStoreLedgerInTx\(/);
+  assert.match(querySource, /getKstBusinessDateParam/);
   assert.match(querySource, /getInventoryStepDataInTx\(/);
   assert.match(querySource, /getLossStepDataInTx\(/);
   assert.match(querySource, /calculateLedgerReviewSummary\(/);

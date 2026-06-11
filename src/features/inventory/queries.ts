@@ -3,12 +3,12 @@ import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
-import {
-  ledgerSelect,
-  getTodayStoreLedgerInTx,
-} from "~/features/ledger/queries";
+import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
-import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
+import {
+  requireHeadquartersLedgerScope,
+  requireReportAccess,
+} from "~/server/authz";
 import {
   type InventoryStepData,
   type InventoryStepLine,
@@ -61,9 +61,7 @@ type InventoryAdjustmentPayload = Prisma.LedgerInventoryAdjustmentGetPayload<{
   select: typeof inventoryAdjustmentSelect;
 }>;
 
-type InventoryLedgerPayload = Awaited<
-  ReturnType<typeof getTodayStoreLedgerInTx>
->;
+type InventoryLedgerPayload = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
 
 type PurchasePayload = {
   productId: string;
@@ -539,6 +537,7 @@ async function getInventoryStepDataForLedgerInTx(
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
       updatedAt: ledger.updatedAt.toISOString(),
+      version: ledger.version,
       status: ledger.status,
       stepCompletion,
       items: await mergeExistingInventoryLines(
@@ -572,6 +571,7 @@ async function getInventoryStepDataForLedgerInTx(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
+    version: ledger.version,
     status: ledger.status,
     stepCompletion,
     items: bases.map((base) =>
@@ -596,9 +596,10 @@ async function getInventoryStepDataForLedgerInTx(
 export async function getInventoryStepDataInTx(
   tx: Prisma.TransactionClient,
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
 ): Promise<InventoryStepData> {
-  const ledger = await getTodayStoreLedgerInTx(tx, storeId, actorId);
+  const ledger = await getStoreLedgerInTx(tx, storeId, closingDate, actorId);
 
   return getInventoryStepDataForLedgerInTx(tx, ledger);
 }
@@ -621,10 +622,11 @@ export async function getInventoryStepDataByLedgerIdInTx(
 
 export async function getInventoryStepData(
   storeId: string,
+  closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerInventoryStepData> {
   const data = await db.$transaction((tx) =>
-    getInventoryStepDataInTx(tx, storeId, actorId),
+    getInventoryStepDataInTx(tx, storeId, closingDate, actorId),
   );
 
   return toStoreManagerInventoryStepData(data);

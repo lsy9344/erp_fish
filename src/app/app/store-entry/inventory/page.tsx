@@ -9,10 +9,12 @@ import {
   normalizeStoreIdParam,
   requireStoreAccess,
 } from "~/server/authz";
+import { getKstBusinessDateParam } from "~/features/ledger/queries";
 
 type InventoryEntryPageProps = {
   searchParams: Promise<{
     storeId?: string | string[];
+    date?: string | string[];
   }>;
 };
 
@@ -27,19 +29,36 @@ function InventoryContent({ storeName, initialData }: InventoryContentProps) {
   );
 }
 
+function normalizeClosingDateParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return null;
+  }
+
+  try {
+    return getKstBusinessDateParam(value ?? new Date());
+  } catch {
+    return null;
+  }
+}
+
 export default async function InventoryEntryPage({
   searchParams,
 }: InventoryEntryPageProps) {
   const params = await searchParams;
   const storeId = normalizeStoreIdParam(params.storeId);
+  const closingDate = normalizeClosingDateParam(params.date);
 
-  if (params.storeId !== undefined && !storeId) {
+  if ((params.storeId !== undefined && !storeId) || !closingDate) {
     redirect("/app/unauthorized");
   }
 
   if (storeId) {
     const { user, store } = await requireStoreAccess(storeId);
-    const initialData = await getInventoryStepData(store.id, user.id);
+    const initialData = await getInventoryStepData(
+      store.id,
+      closingDate,
+      user.id,
+    );
 
     return (
       <StoreManagerShell
@@ -76,6 +95,7 @@ export default async function InventoryEntryPage({
         storeName={workspace.store.name}
         initialData={await getInventoryStepData(
           workspace.store.id,
+          closingDate,
           workspace.user.id,
         )}
       />

@@ -10,8 +10,8 @@ import { requireStoreAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ledgerSelect,
-  getTodayStoreLedger,
-  getTodayStoreLedgerInTx,
+  getStoreLedger,
+  getStoreLedgerInTx,
   toLedgerAuditPayload,
   toStoreManagerLedgerCostStepData,
 } from "./queries";
@@ -31,7 +31,7 @@ import {
 import { type LedgerSubmitForReviewResult } from "./review-types";
 import { type StoreManagerLedgerCostStepData } from "./types";
 
-type LedgerRecord = Awaited<ReturnType<typeof getTodayStoreLedgerInTx>>;
+type LedgerRecord = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
 
 function isPrismaUniqueError(error: unknown) {
   return (
@@ -147,6 +147,13 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
+function mapLedgerConflictError(): ActionResult<never> {
+  return actionError(
+    "LEDGER_CONFLICT",
+    "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+  );
+}
+
 function isEditableLedgerStatus(status: string) {
   return editableLedgerStatuses.some(
     (editableStatus) => editableStatus === status,
@@ -156,19 +163,34 @@ function isEditableLedgerStatus(status: string) {
 async function updateEditableDailyLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
+  version: number,
   data: Prisma.DailyLedgerUncheckedUpdateManyInput,
 ) {
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
+      version,
       status: { in: [...editableLedgerStatuses] },
     },
-    data,
+    data: {
+      ...data,
+      version: { increment: 1 },
+    },
   });
 
   if (updated.count !== 1) {
-    throw new Error("Ledger is not editable");
+    throw new Error("LEDGER_CONFLICT");
   }
+}
+
+function hasLedgerContextChanged(
+  ledger: LedgerRecord,
+  input: {
+    ledgerId: string;
+    version: number;
+  },
+) {
+  return ledger.id !== input.ledgerId || ledger.version !== input.version;
 }
 
 function toLedgerSubmitResult(
@@ -181,6 +203,7 @@ function toLedgerSubmitResult(
       id: ledger.id,
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
+      version: ledger.version,
       status: ledger.status,
       submittedById: ledger.submittedById ?? null,
       submittedAt: ledger.submittedAt?.toISOString() ?? null,
@@ -213,83 +236,90 @@ export async function submitLedgerForReview(
   let result: ActionResult<LedgerSubmitForReviewResult>;
 
   try {
-    result = await db.$transaction<
-      ActionResult<LedgerSubmitForReviewResult>
-    >(async (tx) => {
-      const beforeLedger = await getTodayStoreLedgerInTx(
-        tx,
-        parsed.data.storeId,
-        actor.user.id,
-      );
-
-      if (beforeLedger.status === "IN_REVIEW") {
-        return actionOk(
-          toLedgerSubmitResult(beforeLedger, "already-in-review"),
+    result = await db.$transaction<ActionResult<LedgerSubmitForReviewResult>>(
+      async (tx) => {
+        const beforeLedger = await getStoreLedgerInTx(
+          tx,
+          parsed.data.storeId,
+          parsed.data.closingDate,
+          actor.user.id,
         );
-      }
 
-      if (beforeLedger.status === "HEADQUARTERS_CLOSED") {
-        return actionError(
-          "LEDGER_CLOSED",
-          "본사 마감된 장부는 검토 대기로 제출할 수 없습니다.",
-        );
-      }
+        if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+          return mapLedgerConflictError();
+        }
 
-      if (beforeLedger.status !== "IN_PROGRESS") {
-        return actionError(
-          "LEDGER_NOT_EDITABLE",
-          "제출할 수 없는 장부 상태입니다.",
-        );
-      }
+        if (beforeLedger.status === "IN_REVIEW") {
+          return actionOk(
+            toLedgerSubmitResult(beforeLedger, "already-in-review"),
+          );
+        }
 
-      const submittedAt = new Date();
-      const updated = await tx.dailyLedger.updateMany({
-        where: {
-          id: beforeLedger.id,
-          status: "IN_PROGRESS",
-        },
-        data: {
-          status: "IN_REVIEW",
-          submittedById: actor.user.id,
-          submittedAt: submittedAt,
-          updatedById: actor.user.id,
-        },
-      });
+        if (beforeLedger.status === "HEADQUARTERS_CLOSED") {
+          return actionError(
+            "LEDGER_CLOSED",
+            "본사 마감된 장부는 검토 대기로 제출할 수 없습니다.",
+          );
+        }
 
-      if (updated.count !== 1) {
-        const currentLedger = await tx.dailyLedger.findUnique({
+        if (beforeLedger.status !== "IN_PROGRESS") {
+          return actionError(
+            "LEDGER_NOT_EDITABLE",
+            "제출할 수 없는 장부 상태입니다.",
+          );
+        }
+
+        const submittedAt = new Date();
+        const updated = await tx.dailyLedger.updateMany({
+          where: {
+            id: beforeLedger.id,
+            version: parsed.data.version,
+            status: "IN_PROGRESS",
+          },
+          data: {
+            status: "IN_REVIEW",
+            submittedById: actor.user.id,
+            submittedAt: submittedAt,
+            updatedById: actor.user.id,
+            version: { increment: 1 },
+          },
+        });
+
+        if (updated.count !== 1) {
+          const currentLedger = await tx.dailyLedger.findUnique({
+            where: { id: beforeLedger.id },
+            select: ledgerSelect,
+          });
+
+          if (currentLedger?.status === "IN_REVIEW") {
+            return actionOk(
+              toLedgerSubmitResult(currentLedger, "already-in-review"),
+            );
+          }
+
+          return actionError(
+            "LEDGER_CONFLICT",
+            "장부 상태가 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+          );
+        }
+
+        const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
           where: { id: beforeLedger.id },
           select: ledgerSelect,
         });
 
-        if (currentLedger?.status === "IN_REVIEW") {
-          return actionOk(
-            toLedgerSubmitResult(currentLedger, "already-in-review"),
-          );
-        }
+        await writeAuditLog(tx, {
+          action: "ledger.review.submitted",
+          targetType: "DailyLedger",
+          targetId: afterLedger.id,
+          actorId: actor.user.id,
+          before: toLedgerAuditPayload(beforeLedger),
+          after: toLedgerAuditPayload(afterLedger),
+        });
 
-        return actionError(
-          "LEDGER_CONFLICT",
-          "장부 상태가 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-        );
-      }
-
-      const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
-        where: { id: beforeLedger.id },
-        select: ledgerSelect,
-      });
-
-      await writeAuditLog(tx, {
-        action: "ledger.review.submitted",
-        targetType: "DailyLedger",
-        targetId: afterLedger.id,
-        actorId: actor.user.id,
-        before: toLedgerAuditPayload(beforeLedger),
-        after: toLedgerAuditPayload(afterLedger),
-      });
-
-      return actionOk(toLedgerSubmitResult(afterLedger, "submitted"));
-    });
+        return actionOk(toLedgerSubmitResult(afterLedger, "submitted"));
+      },
+    );
   } catch {
     return actionError(
       "LEDGER_SUBMIT_FAILED",
@@ -321,23 +351,33 @@ export async function saveLedgerSalesPayment(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const beforeLedger = await getTodayStoreLedgerInTx(
+      const beforeLedger = await getStoreLedgerInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+        throw new Error("LEDGER_CONFLICT");
+      }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
         throw new Error("Ledger is not editable");
       }
 
-      await updateEditableDailyLedgerInTx(tx, beforeLedger.id, {
-        totalSalesAmount: parsed.data.totalSalesAmount,
-        cashAmount: parsed.data.cashAmount,
-        cardAmount: parsed.data.cardAmount,
-        otherPaymentAmount: parsed.data.otherPaymentAmount,
-        updatedById: actor.user.id,
-      });
+      await updateEditableDailyLedgerInTx(
+        tx,
+        beforeLedger.id,
+        parsed.data.version,
+        {
+          totalSalesAmount: parsed.data.totalSalesAmount,
+          cashAmount: parsed.data.cashAmount,
+          cardAmount: parsed.data.cardAmount,
+          otherPaymentAmount: parsed.data.otherPaymentAmount,
+          updatedById: actor.user.id,
+        },
+      );
 
       const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
         where: { id: beforeLedger.id },
@@ -360,9 +400,14 @@ export async function saveLedgerSalesPayment(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return mapLedgerConflictError();
+    }
+
     if (isPrismaUniqueError(error)) {
-      const current = await getTodayStoreLedger(
+      const current = await getStoreLedger(
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
       return actionOk(current);
@@ -385,19 +430,29 @@ export async function saveLedgerExpenses(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const beforeLedger = await getTodayStoreLedgerInTx(
+      const beforeLedger = await getStoreLedgerInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+        throw new Error("LEDGER_CONFLICT");
+      }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
         throw new Error("Ledger is not editable");
       }
 
-      await updateEditableDailyLedgerInTx(tx, beforeLedger.id, {
-        updatedById: actor.user.id,
-      });
+      await updateEditableDailyLedgerInTx(
+        tx,
+        beforeLedger.id,
+        parsed.data.version,
+        {
+          updatedById: actor.user.id,
+        },
+      );
 
       await tx.ledgerExpense.deleteMany({
         where: { dailyLedgerId: beforeLedger.id },
@@ -436,7 +491,11 @@ export async function saveLedgerExpenses(
     revalidateLedgerSalesPaths();
 
     return actionOk(result);
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return mapLedgerConflictError();
+    }
+
     return mapStoreActionError();
   }
 }
@@ -454,19 +513,29 @@ export async function saveLedgerPurchases(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const beforeLedger = await getTodayStoreLedgerInTx(
+      const beforeLedger = await getStoreLedgerInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+        throw new Error("LEDGER_CONFLICT");
+      }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
         throw new Error("Ledger is not editable");
       }
 
-      await updateEditableDailyLedgerInTx(tx, beforeLedger.id, {
-        updatedById: actor.user.id,
-      });
+      await updateEditableDailyLedgerInTx(
+        tx,
+        beforeLedger.id,
+        parsed.data.version,
+        {
+          updatedById: actor.user.id,
+        },
+      );
 
       const existingPurchaseItemsById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
@@ -583,7 +652,11 @@ export async function saveLedgerPurchases(
     revalidateLedgerSalesPaths();
 
     return actionOk(result);
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return mapLedgerConflictError();
+    }
+
     return mapStoreActionError();
   }
 }
@@ -601,21 +674,31 @@ export async function saveLedgerWorkInfo(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const beforeLedger = await getTodayStoreLedgerInTx(
+      const beforeLedger = await getStoreLedgerInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+        throw new Error("LEDGER_CONFLICT");
+      }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
         throw new Error("Ledger is not editable");
       }
 
-      await updateEditableDailyLedgerInTx(tx, beforeLedger.id, {
-        workerCount: parsed.data.workerCount,
-        workMemo: parsed.data.workMemo,
-        updatedById: actor.user.id,
-      });
+      await updateEditableDailyLedgerInTx(
+        tx,
+        beforeLedger.id,
+        parsed.data.version,
+        {
+          workerCount: parsed.data.workerCount,
+          workMemo: parsed.data.workMemo,
+          updatedById: actor.user.id,
+        },
+      );
 
       const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
         where: { id: beforeLedger.id },
@@ -637,7 +720,11 @@ export async function saveLedgerWorkInfo(
     revalidateLedgerSalesPaths();
 
     return actionOk(result);
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return mapLedgerConflictError();
+    }
+
     return mapStoreActionError();
   }
 }

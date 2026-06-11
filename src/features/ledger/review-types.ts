@@ -28,6 +28,7 @@ export type LedgerReviewStepData = {
   id: string;
   storeId: string;
   closingDate: string;
+  version: number;
   status: DailyLedgerStatus;
   submittedById: string | null;
   submittedAt: string | null;
@@ -42,10 +43,7 @@ export type StoreManagerLedgerReviewSummary = Pick<
   "totalSales" | "paymentDifference"
 >;
 
-export type StoreManagerLedgerReviewSignal = Omit<
-  LedgerReviewSignal,
-  "amount"
->;
+export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;
 
 export type StoreManagerLedgerReviewStepData = Omit<
   LedgerReviewStepData,
@@ -62,6 +60,7 @@ export type LedgerSubmitForReviewResult = {
     | "id"
     | "storeId"
     | "closingDate"
+    | "version"
     | "status"
     | "submittedById"
     | "submittedAt"

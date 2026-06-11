@@ -27,7 +27,9 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
@@ -162,13 +164,6 @@ function normalizeCategory(value: string): (typeof categories)[number] {
   return value === "생물" ? "생물" : "냉동";
 }
 
-function formatClosingDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "full",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
-}
-
 export function InventoryStepClient({
   storeName,
   initialData,
@@ -211,7 +206,10 @@ export function InventoryStepClient({
   const isOriginalEditBlocked =
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const isClosed = isOriginalEditBlocked;
-  const nextStepHref = `/app/store-entry/losses?storeId=${data.storeId}`;
+  const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
+    storeId: data.storeId,
+    date: getKstLedgerDateParam(data.closingDate),
+  }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
 
@@ -266,8 +264,9 @@ export function InventoryStepClient({
     try {
       const result = await saveItemsAction({
         ledgerId: data.id,
-        ledgerUpdatedAt: data.updatedAt,
         storeId: data.storeId,
+        closingDate: getKstLedgerDateParam(data.closingDate),
+        version: data.version,
         items: items.map((item) => ({
           productId: item.productId,
           currentQuantity:
@@ -389,8 +388,9 @@ export function InventoryStepClient({
     try {
       const result = await saveAdjustmentAction({
         ledgerId: data.id,
-        ledgerUpdatedAt: data.updatedAt,
         storeId: data.storeId,
+        closingDate: getKstLedgerDateParam(data.closingDate),
+        version: data.version,
         productId: item.productId,
         actualQuantity: item.currentQuantityInput,
         reason,
@@ -817,17 +817,19 @@ export function InventoryStepClient({
   return (
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-        <header className="bg-card text-card-foreground rounded-lg border p-4">
-          <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
-          <h1 className="text-2xl font-semibold tracking-normal">재고 입력</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {storeName} · 영업일: {formatClosingDate(data.closingDate)}
-          </p>
-        </header>
+        <LedgerContextHeader
+          ledgerLabel={ledgerLabel}
+          title="재고 입력"
+          storeName={storeName}
+          storeId={data.storeId}
+          closingDate={data.closingDate}
+          status={data.status}
+        />
 
         {showStepNavigation ? (
           <StoreEntryStepNavigation
             storeId={data.storeId}
+            closingDate={data.closingDate}
             currentStep="inventory"
             stepCompletion={data.stepCompletion}
           />
@@ -889,7 +891,9 @@ export function InventoryStepClient({
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
                   <Table
                     aria-label="재고 품목"
-                    className={showsSensitiveAmounts ? "min-w-[940px]" : "min-w-[820px]"}
+                    className={
+                      showsSensitiveAmounts ? "min-w-[940px]" : "min-w-[820px]"
+                    }
                   >
                     <TableHeader className="sticky top-0 z-10">
                       <TableRow>
@@ -956,7 +960,9 @@ export function InventoryStepClient({
           <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
             <Button
               type="submit"
-              variant={resultMessage === "저장됐습니다." ? "outline" : "default"}
+              variant={
+                resultMessage === "저장됐습니다." ? "outline" : "default"
+              }
               className="min-h-11 w-full sm:w-auto"
               disabled={isSaving || isClosed}
             >

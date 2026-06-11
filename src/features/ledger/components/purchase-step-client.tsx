@@ -8,15 +8,14 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerPurchases } from "~/features/ledger/actions";
+import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
-import type {
-  LedgerSalesStepData,
-  StoreManagerLedgerCostStepData,
-} from "~/features/ledger/types";
+import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 type ProductOption = {
@@ -75,29 +74,6 @@ function parseAmount(value: string) {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function normalizeStatusLabel(status: LedgerSalesStepData["status"]) {
-  if (status === "IN_PROGRESS") {
-    return "입력중";
-  }
-
-  if (status === "IN_REVIEW") {
-    return "검토대기";
-  }
-
-  if (status === "HEADQUARTERS_CLOSED") {
-    return "본사마감";
-  }
-
-  return "휴무";
-}
-
-function formatClosingDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "full",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
 }
 
 function createLineState(id: string): PurchaseLine {
@@ -234,8 +210,9 @@ export function PurchaseStepClient({
     try {
       const result = await saveAction({
         ledgerId: ledger.id,
-        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
+        closingDate: getKstLedgerDateParam(ledger.closingDate),
+        version: ledger.version,
         purchases: purchaseItems.map((line, index) => ({
           id: line.id,
           productId: productRefs.current[index]?.value ?? line.productId,
@@ -357,24 +334,26 @@ export function PurchaseStepClient({
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
-  const nextStepHref = `/app/store-entry/inventory?storeId=${ledger.storeId}`;
+  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
+    storeId: ledger.storeId,
+    date: getKstLedgerDateParam(ledger.closingDate),
+  }).toString()}`;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-      <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
-        <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
-          <span className="text-foreground font-medium">
-            {normalizeStatusLabel(ledger.status)}
-          </span>
-        </p>
-      </header>
+      <LedgerContextHeader
+        ledgerLabel={ledgerLabel}
+        title={storeName}
+        storeId={ledger.storeId}
+        closingDate={ledger.closingDate}
+        status={ledger.status}
+        step={currentStep}
+      />
 
       {showStepNavigation ? (
         <StoreEntryStepNavigation
           storeId={ledger.storeId}
+          closingDate={ledger.closingDate}
           currentStep={currentStep}
           stepCompletion={ledger.stepCompletion}
         />

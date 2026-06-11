@@ -143,7 +143,7 @@ async function assignPermissionProfile(
 export default async function globalSetup() {
   process.env.DATABASE_URL = requireTestDatabaseUrl(databaseUrl);
 
-  execSync("pnpm exec prisma db push --skip-generate", {
+  execSync("corepack pnpm exec prisma db push --skip-generate", {
     env: process.env,
     stdio: "inherit",
   });

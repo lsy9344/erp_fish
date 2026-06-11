@@ -84,7 +84,9 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
 
   const payload = {
     storeId: "store-gangnam",
-    ledgerUpdatedAt: "2026-05-30T00:00:00.000Z",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     losses: [
       {
         id: "",
@@ -244,7 +246,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /tx\.ledgerLossItem\.update\(/);
   assert.match(actionSource, /tx\.ledgerLossItem\.create\(/);
   assert.doesNotMatch(actionSource, /tx\.ledgerLossItem\.createMany/);
-  assert.match(actionSource, /ledgerUpdatedAt/);
+  assert.match(actionSource, /version:\s*parsed\.data\.version/);
   assert.match(actionSource, /LEDGER_CONFLICT/);
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
   assert.match(actionSource, /getLossQuantityErrorMessage/);
@@ -303,7 +305,7 @@ test("ledger loss review fixes keep thresholds, stale guards, and loss-only inve
     "losses",
     "schemas.ts",
   );
-  assert.match(schemaSource, /ledgerUpdatedAt/);
+  assert.match(schemaSource, /versionSchema/);
 
   const lossQuerySource = readProjectFile(
     "src",

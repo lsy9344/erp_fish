@@ -67,7 +67,7 @@ test("daily ledger submission fields are modeled and migrated as nullable metada
   assert.match(migration, /ON DELETE SET NULL/);
 });
 
-test("ledger submit schema accepts only the store id boundary", async () => {
+test("ledger submit schema accepts the selected ledger boundary", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -76,9 +76,20 @@ test("ledger submit schema accepts only the store id boundary", async () => {
   );
   const { ledgerSubmitSchema } = await import(pathToFileURL(schemaPath).href);
 
-  assert.deepEqual(ledgerSubmitSchema.parse({ storeId: " store-1 " }), {
-    storeId: "store-1",
-  });
+  assert.deepEqual(
+    ledgerSubmitSchema.parse({
+      storeId: " store-1 ",
+      ledgerId: " ledger-1 ",
+      closingDate: "2026-06-11",
+      version: "1",
+    }),
+    {
+      storeId: "store-1",
+      ledgerId: "ledger-1",
+      closingDate: "2026-06-11",
+      version: 1,
+    },
+  );
   assert.equal(ledgerSubmitSchema.safeParse({ storeId: " " }).success, false);
 });
 
@@ -114,7 +125,7 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
   assert.match(actionSource, /submittedAt:\s*submittedAt/);
   assert.match(
     getExportedAsyncFunctionSource(actionSource, "submitLedgerForReview"),
-    /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*status:\s*"IN_PROGRESS",\s*\},\s*data:\s*\{[\s\S]*status:\s*"IN_REVIEW"/,
+    /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*version:\s*parsed\.data\.version,\s*status:\s*"IN_PROGRESS",\s*\},\s*data:\s*\{[\s\S]*status:\s*"IN_REVIEW"[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/,
   );
   assert.match(actionSource, /already-in-review/);
   assert.match(actionSource, /ledger\.review\.submitted/);
@@ -150,7 +161,9 @@ test("submit action keeps post-commit revalidation outside submit failure handli
   );
   const submitSource = actionSource.slice(submitStart, submitEnd);
   const submitFailureIndex = submitSource.indexOf("LEDGER_SUBMIT_FAILED");
-  const revalidateIndex = submitSource.indexOf("revalidateLedgerSubmitPaths();");
+  const revalidateIndex = submitSource.indexOf(
+    "revalidateLedgerSubmitPaths();",
+  );
 
   assert.ok(submitStart >= 0, "submitLedgerForReview should exist");
   assert.ok(submitEnd > submitStart, "submitLedgerForReview body should parse");
@@ -258,21 +271,15 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
     ledgerActionSource,
     /status:\s*\{\s*in:\s*\[\.\.\.editableLedgerStatuses\]\s*\}/,
   );
-  assert.doesNotMatch(
-    salesSource,
-    /data:\s*\{[\s\S]*?status:\s*"IN_PROGRESS"/,
-  );
-  assert.doesNotMatch(
-    workSource,
-    /data:\s*\{[\s\S]*?status:\s*"IN_PROGRESS"/,
-  );
+  assert.doesNotMatch(salesSource, /data:\s*\{[\s\S]*?status:\s*"IN_PROGRESS"/);
+  assert.doesNotMatch(workSource, /data:\s*\{[\s\S]*?status:\s*"IN_PROGRESS"/);
   assert.match(
     expenseSource,
     /if\s*\(!isEditableLedgerStatus\(beforeLedger\.status\)\)/,
   );
   assert.match(
     expenseSource,
-    /updateEditableDailyLedgerInTx\(tx,\s*beforeLedger\.id,/,
+    /updateEditableDailyLedgerInTx\(\s*tx,\s*beforeLedger\.id,\s*parsed\.data\.version,/,
   );
   assert.match(
     purchaseSource,
@@ -280,7 +287,7 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
   );
   assert.match(
     purchaseSource,
-    /updateEditableDailyLedgerInTx\(tx,\s*beforeLedger\.id,/,
+    /updateEditableDailyLedgerInTx\(\s*tx,\s*beforeLedger\.id,\s*parsed\.data\.version,/,
   );
   assert.match(
     inventoryActionSource,

@@ -17,7 +17,9 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { saveLedgerLosses } from "~/features/losses/actions";
 import {
   type LossProductOption,
@@ -53,29 +55,6 @@ type LossStepClientProps = {
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
-}
-
-function formatClosingDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "full",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
-}
-
-function normalizeStatusLabel(status: LossStepData["status"]) {
-  if (status === "IN_PROGRESS") {
-    return "입력중";
-  }
-
-  if (status === "IN_REVIEW") {
-    return "검토대기";
-  }
-
-  if (status === "HEADQUARTERS_CLOSED") {
-    return "본사마감";
-  }
-
-  return "휴무";
 }
 
 function createLineState(clientKey: string): LossLineState {
@@ -259,7 +238,8 @@ export function LossStepClient({
       const result = await saveAction({
         ledgerId: data.id,
         storeId: data.storeId,
-        ledgerUpdatedAt: data.updatedAt,
+        closingDate: getKstLedgerDateParam(data.closingDate),
+        version: data.version,
         losses: items.map((item, index) => ({
           id: item.id || undefined,
           productId: productRefs.current[index]?.value ?? item.productId,
@@ -319,27 +299,28 @@ export function LossStepClient({
     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
-  const nextStepHref = `/app/store-entry?storeId=${data.storeId}&step=work`;
+  const nextStepHref = `/app/store-entry?${new URLSearchParams({
+    storeId: data.storeId,
+    date: getKstLedgerDateParam(data.closingDate),
+    step: "work",
+  }).toString()}`;
   const showsSensitiveLossAmounts = "totalAmount" in data.summary;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-      <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
-        <h1 className="text-2xl font-semibold tracking-normal">
-          손실/폐기/떨이 입력
-        </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {storeName} · 영업일: {formatClosingDate(data.closingDate)} · 상태:{" "}
-          <span className="text-foreground font-medium">
-            {normalizeStatusLabel(data.status)}
-          </span>
-        </p>
-      </header>
+      <LedgerContextHeader
+        ledgerLabel={ledgerLabel}
+        title="손실/폐기/떨이 입력"
+        storeName={storeName}
+        storeId={data.storeId}
+        closingDate={data.closingDate}
+        status={data.status}
+      />
 
       {showStepNavigation ? (
         <StoreEntryStepNavigation
           storeId={data.storeId}
+          closingDate={data.closingDate}
           currentStep="losses"
           stepCompletion={data.stepCompletion}
         />

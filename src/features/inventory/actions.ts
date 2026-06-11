@@ -64,6 +64,13 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
+function mapLedgerConflictError(): ActionResult<never> {
+  return actionError(
+    "LEDGER_CONFLICT",
+    "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+  );
+}
+
 function revalidateInventoryPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/dashboard");
@@ -87,8 +94,16 @@ export async function saveLedgerInventoryItems(
       const before = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (
+        before.id !== parsed.data.ledgerId ||
+        before.version !== parsed.data.version
+      ) {
+        throw new Error("LEDGER_CONFLICT");
+      }
 
       if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
         throw new Error("Ledger is not editable");
@@ -97,13 +112,14 @@ export async function saveLedgerInventoryItems(
       const editableLedger = await tx.dailyLedger.updateMany({
         where: {
           id: before.id,
+          version: parsed.data.version,
           status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
         },
-        data: { updatedById: actor.user.id },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
       });
 
       if (editableLedger.count !== 1) {
-        throw new Error("Ledger is not editable");
+        throw new Error("LEDGER_CONFLICT");
       }
 
       const inputByProductId = new Map(
@@ -157,6 +173,7 @@ export async function saveLedgerInventoryItems(
       const after = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
 
@@ -175,7 +192,11 @@ export async function saveLedgerInventoryItems(
     revalidateInventoryPaths();
 
     return actionOk(toStoreManagerInventoryStepData(result));
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return mapLedgerConflictError();
+    }
+
     return mapStoreActionError();
   }
 }
@@ -196,8 +217,16 @@ export async function saveLedgerInventoryAdjustment(
       const before = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
+
+      if (
+        before.id !== parsed.data.ledgerId ||
+        before.version !== parsed.data.version
+      ) {
+        return mapLedgerConflictError();
+      }
 
       if (before.status === "HEADQUARTERS_CLOSED") {
         return actionError<StoreManagerInventoryStepData>(
@@ -216,16 +245,14 @@ export async function saveLedgerInventoryAdjustment(
       const editableLedger = await tx.dailyLedger.updateMany({
         where: {
           id: before.id,
+          version: parsed.data.version,
           status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
         },
-        data: { updatedById: actor.user.id },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
       });
 
       if (editableLedger.count !== 1) {
-        return actionError<StoreManagerInventoryStepData>(
-          "LEDGER_NOT_EDITABLE",
-          "저장에 실패했습니다. 다시 시도해 주세요.",
-        );
+        return mapLedgerConflictError();
       }
 
       const line = before.items.find(
@@ -375,6 +402,7 @@ export async function saveLedgerInventoryAdjustment(
       const after = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
+        parsed.data.closingDate,
         actor.user.id,
       );
 

@@ -8,19 +8,20 @@ import {
   calculateProductivity,
 } from "~/server/calculations/ledger";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
-import { db } from "~/server/db";
 import {
-  toStoreManagerLedgerCostStepData as shapeStoreManagerLedgerCostStepData,
-} from "./response-shaping";
+  requireHeadquartersLedgerScope,
+  requireReportAccess,
+} from "~/server/authz";
+import { db } from "~/server/db";
+import { toStoreManagerLedgerCostStepData as shapeStoreManagerLedgerCostStepData } from "./response-shaping";
 import { getStoreEntryStepCompletion } from "./step-completion";
 import {
   type LedgerCostStepData,
   type LedgerSalesStepData,
   type StoreManagerLedgerCostStepData,
 } from "./types";
-
-const LEGAL_SEOUL_TZ = "Asia/Seoul";
+import { getKstBusinessDate } from "./date";
+export { getKstBusinessDate, getKstBusinessDateParam } from "./date";
 
 const ledgerExpenseSelect = {
   id: true,
@@ -52,6 +53,7 @@ export const ledgerSelect = {
   storeId: true,
   closingDate: true,
   updatedAt: true,
+  version: true,
   status: true,
   totalSalesAmount: true,
   cashAmount: true,
@@ -92,6 +94,7 @@ type LedgerPurchasePayload = DailyLedgerPayload["ledgerPurchaseItems"][number];
 
 type LedgerAuditPayload = {
   status: DailyLedgerPayload["status"];
+  version: number;
   totalSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
@@ -114,6 +117,7 @@ type LedgerAuditPayload = {
 type LedgerAuditInput = Pick<
   DailyLedgerPayload,
   | "status"
+  | "version"
   | "totalSalesAmount"
   | "cashAmount"
   | "cardAmount"
@@ -129,18 +133,7 @@ type LedgerAuditInput = Pick<
 >;
 
 export function getTodayKstMidnight(inputDate = new Date()) {
-  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
-    timeZone: LEGAL_SEOUL_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(inputDate)
-    .split("-");
-
-  return new Date(
-    Date.UTC(Number(year), Number(month) - 1, Number(day), 0, 0, 0),
-  );
+  return getKstBusinessDate(inputDate);
 }
 
 export function toLedgerSalesStepData(
@@ -151,6 +144,7 @@ export function toLedgerSalesStepData(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
+    version: ledger.version,
     status: ledger.status,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
@@ -266,6 +260,7 @@ export function toLedgerAuditPayload(
 
   return {
     status: ledger.status,
+    version: ledger.version,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
     closedById: ledger.closedById ?? null,
@@ -294,12 +289,13 @@ export function toLedgerAuditPayload(
   };
 }
 
-async function getOrCreateTodayStoreLedgerInTx(
+export async function getOrCreateStoreLedgerInTx(
   tx: Prisma.TransactionClient,
   storeId: string,
+  closingDateInput: string | Date,
   actorId: string,
 ) {
-  const closingDate = getTodayKstMidnight();
+  const closingDate = getKstBusinessDate(closingDateInput);
 
   const existing = await tx.dailyLedger.findUnique({
     where: {
@@ -320,6 +316,7 @@ async function getOrCreateTodayStoreLedgerInTx(
       storeId,
       closingDate,
       status: "IN_PROGRESS",
+      version: 1,
       totalSalesAmount: 0,
       cashAmount: 0,
       cardAmount: 0,
@@ -364,8 +361,16 @@ export async function getTodayStoreLedger(
   storeId: string,
   actorId: string,
 ): Promise<StoreManagerLedgerCostStepData> {
+  return getStoreLedger(storeId, getTodayKstMidnight(), actorId);
+}
+
+export async function getStoreLedger(
+  storeId: string,
+  closingDate: string | Date,
+  actorId: string,
+): Promise<StoreManagerLedgerCostStepData> {
   return db.$transaction((tx) =>
-    getOrCreateTodayStoreLedgerInTx(tx, storeId, actorId).then(
+    getOrCreateStoreLedgerInTx(tx, storeId, closingDate, actorId).then(
       toStoreManagerLedgerCostStepData,
     ),
   );
@@ -376,7 +381,28 @@ export async function getTodayStoreLedgerInTx(
   storeId: string,
   actorId: string,
 ): Promise<DailyLedgerPayload> {
-  const ledger = await getOrCreateTodayStoreLedgerInTx(tx, storeId, actorId);
+  const ledger = await getStoreLedgerInTx(
+    tx,
+    storeId,
+    getTodayKstMidnight(),
+    actorId,
+  );
+
+  return ledger;
+}
+
+export async function getStoreLedgerInTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  closingDate: string | Date,
+  actorId: string,
+): Promise<DailyLedgerPayload> {
+  const ledger = await getOrCreateStoreLedgerInTx(
+    tx,
+    storeId,
+    closingDate,
+    actorId,
+  );
 
   return ledger;
 }

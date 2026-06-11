@@ -79,6 +79,9 @@ test("ledger purchase schema validates required options and integer amounts", as
 
   const basePayload = {
     storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-11",
+    version: 1,
     purchases: [
       {
         productId: "product-1",

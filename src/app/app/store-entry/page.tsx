@@ -10,7 +10,10 @@ import {
   normalizeStoreIdParam,
   requireStoreAccess,
 } from "~/server/authz";
-import { getTodayStoreLedger } from "~/features/ledger/queries";
+import {
+  getKstBusinessDateParam,
+  getStoreLedger,
+} from "~/features/ledger/queries";
 import { getStoreManagerLedgerReviewStepData } from "~/features/ledger/review-queries";
 import { CorrectionReadonlySummary } from "~/features/corrections/components/correction-readonly-summary";
 import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
@@ -24,6 +27,7 @@ import { ReviewSummaryClient } from "~/features/ledger/components/review-summary
 type StoreEntryPageProps = {
   searchParams: Promise<{
     storeId?: string | string[];
+    date?: string | string[];
     step?: string | string[];
   }>;
 };
@@ -60,9 +64,21 @@ function normalizeStoreEntryStep(
   return "sales";
 }
 
+function normalizeClosingDateParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return null;
+  }
+
+  try {
+    return getKstBusinessDateParam(value ?? new Date());
+  } catch {
+    return null;
+  }
+}
+
 type StoreEntryContentProps = {
   storeName: string;
-  initialLedger: Awaited<ReturnType<typeof getTodayStoreLedger>>;
+  initialLedger: Awaited<ReturnType<typeof getStoreLedger>>;
   reviewData: LedgerReviewData | null;
   correctionRecords: CorrectionRecordListItem[];
   step: StoreEntryStep;
@@ -143,9 +159,10 @@ export default async function StoreEntryPage({
 }: StoreEntryPageProps) {
   const params = await searchParams;
   const storeId = normalizeStoreIdParam(params.storeId);
+  const closingDate = normalizeClosingDateParam(params.date);
   const step = normalizeStoreEntryStep(params.step);
 
-  if (params.storeId !== undefined && !storeId) {
+  if ((params.storeId !== undefined && !storeId) || !closingDate) {
     redirect("/app/unauthorized");
   }
 
@@ -158,9 +175,9 @@ export default async function StoreEntryPage({
       getActivePurchaseStandardOptions(),
     ]);
     const [initialLedger, reviewData] = await Promise.all([
-      getTodayStoreLedger(store.id, user.id),
+      getStoreLedger(store.id, closingDate, user.id),
       step === "review"
-        ? getStoreManagerLedgerReviewStepData(store.id, user.id)
+        ? getStoreManagerLedgerReviewStepData(store.id, closingDate, user.id)
         : Promise.resolve(null),
     ]);
     const correctionRecords =
@@ -211,14 +228,16 @@ export default async function StoreEntryPage({
     getActiveProductOptions(),
     getActivePurchaseStandardOptions(),
   ]);
-  const initialLedger = await getTodayStoreLedger(
+  const initialLedger = await getStoreLedger(
     workspace.store.id,
+    closingDate,
     workspace.user.id,
   );
   const reviewData =
     step === "review"
       ? await getStoreManagerLedgerReviewStepData(
           workspace.store.id,
+          closingDate,
           workspace.user.id,
         )
       : null;

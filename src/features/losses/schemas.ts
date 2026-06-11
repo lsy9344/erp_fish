@@ -7,6 +7,8 @@ const lossTypeError = "손실 유형을 선택해 주세요.";
 const quantityError = "수량은 0 이상의 정수여야 합니다.";
 const amountError = "손실 금액은 0원 이상의 정수여야 합니다.";
 const reasonError = "사유/특이사항을 입력해 주세요.";
+const closingDateError = "영업일을 확인해 주세요.";
+const ledgerVersionError = "장부 상태를 확인해 주세요.";
 
 function isValidInteger(value: number) {
   return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
@@ -84,6 +86,31 @@ const requiredIdSchema = (message: string) =>
     .transform((value) => value.trim())
     .pipe(z.string().min(1, message));
 
+const closingDateSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, closingDateError));
+
+const versionSchema = z.unknown().transform((value, context) => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (Number.isSafeInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: ledgerVersionError,
+  });
+
+  return z.NEVER;
+});
+
 const ledgerLossItemSchema = z.object({
   id: z
     .unknown()
@@ -121,7 +148,9 @@ const ledgerLossItemSchema = z.object({
 export const ledgerLossesSchema = z
   .object({
     storeId: requiredIdSchema("지점을 확인해 주세요."),
-    ledgerUpdatedAt: requiredIdSchema("장부 상태를 확인해 주세요."),
+    ledgerId: requiredIdSchema("장부를 확인해 주세요."),
+    closingDate: closingDateSchema,
+    version: versionSchema,
     losses: z.array(ledgerLossItemSchema),
   })
   .superRefine((value, context) => {

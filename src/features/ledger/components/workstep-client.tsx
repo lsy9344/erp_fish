@@ -8,6 +8,8 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerWorkInfo } from "~/features/ledger/actions";
+import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -15,7 +17,6 @@ import {
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type {
   LedgerCostStepData,
-  LedgerSalesStepData,
   StoreManagerLedgerCostStepData,
 } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
@@ -36,34 +37,18 @@ function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
-function formatClosingDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "full",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
-}
-
 function stepHref(
   storeId: string,
+  closingDate: string,
   step: "sales" | "cost" | "purchase" | "work" | "review",
 ) {
-  return `/app/store-entry?storeId=${storeId}&step=${step}`;
-}
+  const params = new URLSearchParams({
+    storeId,
+    date: getKstLedgerDateParam(closingDate),
+    step,
+  });
 
-function normalizeStatusLabel(status: LedgerSalesStepData["status"]) {
-  if (status === "IN_PROGRESS") {
-    return "입력중";
-  }
-
-  if (status === "IN_REVIEW") {
-    return "검토대기";
-  }
-
-  if (status === "HEADQUARTERS_CLOSED") {
-    return "본사마감";
-  }
-
-  return "휴무";
+  return `/app/store-entry?${params.toString()}`;
 }
 
 function sanitizeAmount(value: string) {
@@ -154,8 +139,9 @@ export function WorkStepClient({
     try {
       const result = await saveAction({
         ledgerId: ledger.id,
-        ledgerUpdatedAt: ledger.updatedAt,
         storeId: ledger.storeId,
+        closingDate: getKstLedgerDateParam(ledger.closingDate),
+        version: ledger.version,
         workerCount: workerCountInputRef.current?.value ?? workerCount,
         workMemo: workMemoInputRef.current?.value ?? workMemo,
       });
@@ -195,24 +181,23 @@ export function WorkStepClient({
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
-  const nextStepHref = stepHref(ledger.storeId, "review");
+  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-      <header className="bg-card text-card-foreground rounded-lg border p-4">
-        <p className="text-muted-foreground text-sm">{ledgerLabel}</p>
-        <h1 className="text-2xl font-semibold tracking-normal">{storeName}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          영업일: {formatClosingDate(ledger.closingDate)} · 상태:{" "}
-          <span className="text-foreground font-medium">
-            {normalizeStatusLabel(ledger.status)}
-          </span>
-        </p>
-      </header>
+      <LedgerContextHeader
+        ledgerLabel={ledgerLabel}
+        title={storeName}
+        storeId={ledger.storeId}
+        closingDate={ledger.closingDate}
+        status={ledger.status}
+        step={currentStep}
+      />
 
       {showStepNavigation ? (
         <StoreEntryStepNavigation
           storeId={ledger.storeId}
+          closingDate={ledger.closingDate}
           currentStep={currentStep}
           stepCompletion={ledger.stepCompletion}
         />

@@ -475,6 +475,15 @@ async function expectNoOverlap(first: Locator, second: Locator) {
 test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다", async ({
   page,
 }) => {
+  const emptyLedgerCountBefore = await prisma.dailyLedger.count({
+    where: {
+      storeId: STORE_IDS.empty,
+      closingDate: getTodayKstMidnight(),
+    },
+  });
+
+  expect(emptyLedgerCountBefore).toBe(0);
+
   await login(page, "hq@example.com");
   await page.goto("/app/dashboard?date=today");
 
@@ -490,6 +499,15 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩256,000");
   await expect(page.getByText("스토리3-1 비활성점")).toHaveCount(0);
+
+  const emptyLedgerCountAfter = await prisma.dailyLedger.count({
+    where: {
+      storeId: STORE_IDS.empty,
+      closingDate: getTodayKstMidnight(),
+    },
+  });
+
+  expect(emptyLedgerCountAfter).toBe(0);
 });
 
 test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 이동을 제공한다", async ({

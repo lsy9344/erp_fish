@@ -9,10 +9,12 @@ import {
   normalizeStoreIdParam,
   requireStoreAccess,
 } from "~/server/authz";
+import { getKstBusinessDateParam } from "~/features/ledger/queries";
 
 type LossEntryPageProps = {
   searchParams: Promise<{
     storeId?: string | string[];
+    date?: string | string[];
   }>;
 };
 
@@ -25,19 +27,32 @@ function LossContent({ storeName, initialData }: LossContentProps) {
   return <LossStepClient storeName={storeName} initialData={initialData} />;
 }
 
+function normalizeClosingDateParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return null;
+  }
+
+  try {
+    return getKstBusinessDateParam(value ?? new Date());
+  } catch {
+    return null;
+  }
+}
+
 export default async function LossEntryPage({
   searchParams,
 }: LossEntryPageProps) {
   const params = await searchParams;
   const storeId = normalizeStoreIdParam(params.storeId);
+  const closingDate = normalizeClosingDateParam(params.date);
 
-  if (params.storeId !== undefined && !storeId) {
+  if ((params.storeId !== undefined && !storeId) || !closingDate) {
     redirect("/app/unauthorized");
   }
 
   if (storeId) {
     const { user, store } = await requireStoreAccess(storeId);
-    const initialData = await getLossStepData(store.id, user.id);
+    const initialData = await getLossStepData(store.id, closingDate, user.id);
 
     return (
       <StoreManagerShell
@@ -74,6 +89,7 @@ export default async function LossEntryPage({
         storeName={workspace.store.name}
         initialData={await getLossStepData(
           workspace.store.id,
+          closingDate,
           workspace.user.id,
         )}
       />

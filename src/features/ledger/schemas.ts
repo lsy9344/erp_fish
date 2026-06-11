@@ -15,6 +15,8 @@ const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.
 const purchaseQuantityError = "수량은 0 이상의 정수여야 합니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
 const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
+const closingDateError = "영업일을 확인해 주세요.";
+const ledgerVersionError = "장부 상태를 확인해 주세요.";
 
 function isValidKrwInteger(value: number) {
   return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
@@ -112,8 +114,47 @@ const salesPaymentStoreSchema = z
   .transform((value) => value.trim())
   .pipe(z.string().min(1, "지점을 확인해 주세요."));
 
-export const ledgerSalesPaymentSchema = z.object({
+const ledgerIdSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1, "장부를 확인해 주세요."));
+
+const closingDateSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, closingDateError));
+
+const versionSchema = z.unknown().transform((value, context) => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (Number.isSafeInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: ledgerVersionError,
+  });
+
+  return z.NEVER;
+});
+
+export const ledgerOpenSchema = z.object({
   storeId: salesPaymentStoreSchema,
+  closingDate: closingDateSchema,
+});
+
+const ledgerMutationContextSchema = ledgerOpenSchema.extend({
+  ledgerId: ledgerIdSchema,
+  version: versionSchema,
+});
+
+export const ledgerSalesPaymentSchema = ledgerMutationContextSchema.extend({
   totalSalesAmount: z
     .unknown()
     .transform((value, context) =>
@@ -153,8 +194,7 @@ const ledgerExpenseItemSchema = z.object({
     .transform((value, context) => parseOptionalMemo(value, context)),
 });
 
-export const ledgerExpenseSchema = z.object({
-  storeId: salesPaymentStoreSchema,
+export const ledgerExpenseSchema = ledgerMutationContextSchema.extend({
   expenses: z.array(ledgerExpenseItemSchema),
 });
 
@@ -186,6 +226,9 @@ const ledgerPurchaseItemSchema = z.object({
 export const ledgerPurchaseSchema = z
   .object({
     storeId: salesPaymentStoreSchema,
+    ledgerId: ledgerIdSchema,
+    closingDate: closingDateSchema,
+    version: versionSchema,
     purchases: z.array(ledgerPurchaseItemSchema),
   })
   .superRefine((value, context) => {
@@ -221,8 +264,7 @@ export const ledgerPurchaseSchema = z
 
 export type LedgerPurchasesInput = z.infer<typeof ledgerPurchaseSchema>;
 
-export const ledgerWorkInfoSchema = z.object({
-  storeId: salesPaymentStoreSchema,
+export const ledgerWorkInfoSchema = ledgerMutationContextSchema.extend({
   workerCount: z
     .unknown()
     .transform((value, context) =>
@@ -235,9 +277,7 @@ export const ledgerWorkInfoSchema = z.object({
 
 export type LedgerWorkInfoInput = z.infer<typeof ledgerWorkInfoSchema>;
 
-export const ledgerSubmitSchema = z.object({
-  storeId: salesPaymentStoreSchema,
-});
+export const ledgerSubmitSchema = ledgerMutationContextSchema;
 
 export type LedgerSubmitInput = z.infer<typeof ledgerSubmitSchema>;
 
