@@ -160,6 +160,48 @@ function isEditableLedgerStatus(status: string) {
   );
 }
 
+async function validateActiveExpenseCodesInTx(
+  tx: Prisma.TransactionClient,
+  expenses: LedgerExpensesInput["expenses"],
+): Promise<ActionResult<Set<string>>> {
+  const activeExpenseCodes = await tx.ledgerInputCode.findMany({
+    where: {
+      group: "EXPENSE_ITEM",
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+  const activeExpenseCodeIds = new Set(
+    activeExpenseCodes.map((code) => code.id),
+  );
+
+  if (activeExpenseCodeIds.size === 0) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "비용 항목 코드가 등록된 뒤 저장할 수 있습니다.",
+      {
+        expenses: ["비용 항목 코드가 등록된 뒤 저장할 수 있습니다."],
+      },
+    );
+  }
+
+  const invalidExpenseIndex = expenses.findIndex(
+    (expense) => !activeExpenseCodeIds.has(expense.ledgerInputCodeId),
+  );
+
+  if (invalidExpenseIndex !== -1) {
+    return actionError("VALIDATION_ERROR", "비용 항목을 확인해 주세요.", {
+      [`expenses.${invalidExpenseIndex}.ledgerInputCodeId`]: [
+        "활성 비용 항목만 저장할 수 있습니다.",
+      ],
+    });
+  }
+
+  return actionOk(activeExpenseCodeIds);
+}
+
 async function updateEditableDailyLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
@@ -203,10 +245,10 @@ function toLedgerSubmitResult(
       id: ledger.id,
       storeId: ledger.storeId,
       closingDate: ledger.closingDate.toISOString(),
-          version: ledger.version,
-          updatedAt: ledger.updatedAt.toISOString(),
-          authorDisplayName: ledger.authorDisplayName ?? null,
-          status: ledger.status,
+      version: ledger.version,
+      updatedAt: ledger.updatedAt.toISOString(),
+      authorDisplayName: ledger.authorDisplayName ?? null,
+      status: ledger.status,
       submittedById: ledger.submittedById ?? null,
       submittedAt: ledger.submittedAt?.toISOString() ?? null,
     },
@@ -432,7 +474,9 @@ export async function saveLedgerExpenses(
   const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
-    const result = await db.$transaction(async (tx) => {
+    const result = await db.$transaction<
+      ActionResult<StoreManagerLedgerCostStepData>
+    >(async (tx) => {
       const beforeLedger = await getStoreLedgerInTx(
         tx,
         parsed.data.storeId,
@@ -446,6 +490,15 @@ export async function saveLedgerExpenses(
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
         throw new Error("Ledger is not editable");
+      }
+
+      const expenseCodeValidation = await validateActiveExpenseCodesInTx(
+        tx,
+        parsed.data.expenses,
+      );
+
+      if (!expenseCodeValidation.ok) {
+        return expenseCodeValidation;
       }
 
       await updateEditableDailyLedgerInTx(
@@ -488,12 +541,14 @@ export async function saveLedgerExpenses(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      return actionOk(toStoreManagerLedgerCostStepData(afterLedger));
     });
 
-    revalidateLedgerSalesPaths();
+    if (result.ok) {
+      revalidateLedgerSalesPaths();
+    }
 
-    return actionOk(result);
+    return result;
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return mapLedgerConflictError();

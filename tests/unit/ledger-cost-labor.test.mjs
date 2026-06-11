@@ -53,6 +53,24 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   };
 
   assert.equal(ledgerExpenseSchema.safeParse(expenseBase).success, true);
+  const normalizedExpense = ledgerExpenseSchema.parse({
+    ...expenseBase,
+    expenses: [
+      {
+        ledgerInputCodeId: " code-food ",
+        amount: "10000",
+        memo: "  trim memo  ",
+      },
+      {
+        ledgerInputCodeId: "code-utility",
+        amount: 0,
+        memo: "   ",
+      },
+    ],
+  });
+  assert.equal(normalizedExpense.expenses[0].ledgerInputCodeId, "code-food");
+  assert.equal(normalizedExpense.expenses[0].memo, "trim memo");
+  assert.equal(normalizedExpense.expenses[1].memo, null);
 
   const expenseBlankCode = ledgerExpenseSchema.safeParse({
     ...expenseBase,
@@ -216,6 +234,16 @@ test("ledger cost/work data model, actions, and queries follow expected contract
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
+  assert.match(actionSource, /validateActiveExpenseCodesInTx/);
+  assert.match(
+    actionSource,
+    /ledgerInputCode\.findMany\(\{[\s\S]*group:\s*"EXPENSE_ITEM"[\s\S]*isActive:\s*true/s,
+  );
+  assert.match(
+    actionSource,
+    /expenses\.findIndex\([\s\S]*activeExpenseCodeIds\.has\(expense\.ledgerInputCodeId\)/s,
+  );
+  assert.match(actionSource, /"활성 비용 항목만 저장할 수 있습니다\."/);
 });
 
 test("store manager ledger responses omit sensitive accounting metrics", async () => {
@@ -337,6 +365,64 @@ test("expense step provides 기타 fallback and disables amount when no HQ expen
   assert.match(source, /expenseCodeOptions\.length > 0/);
   assert.match(source, /disabled=\{[^}]*!hasRegisteredExpenseCodeOptions/s);
   assert.match(source, /createFallbackExpenseLines/);
+  assert.match(source, /if\s*\(\s*!hasRegisteredExpenseCodeOptions\s*\)/);
+  assert.doesNotMatch(
+    source,
+    /saveAction\(\{[\s\S]*DEFAULT_EXPENSE_CODE_OPTION/s,
+    "Fallback 기타 must not be treated as a saveable expense code",
+  );
+});
+
+test("expense step preserves inactive historical code display without adding it to new options", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "store-entry",
+    "page.tsx",
+  );
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "expense-step-client.tsx",
+  );
+
+  assert.match(
+    pageSource,
+    /getActiveLedgerInputCodeOptions\("EXPENSE_ITEM"\)/,
+    "new expense options should come from active EXPENSE_ITEM codes only",
+  );
+  assert.match(
+    source,
+    /!selectedCode\s*&&\s*line\.ledgerInputCodeId/,
+    "stored inactive code should remain visible on its existing row",
+  );
+  assert.match(
+    source,
+    /<option value=\{line\.ledgerInputCodeId\}>[\s\S]*line\.ledgerInputCodeName/s,
+  );
+  assert.match(
+    source,
+    /expenseOptions\.map\(\(option\) =>/,
+    "new row options should be based on active options passed from the server",
+  );
+});
+
+test("expense UI distinguishes draft total from authoritative server total", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "expense-step-client.tsx",
+  );
+
+  assert.match(source, /const\s+draftExpenseTotal\s*=\s*getDraftExpenseTotal/);
+  assert.match(source, /입력 중 비용 합계/);
+  assert.match(source, /마지막 서버 저장 합계/);
+  assert.match(source, /formatKrw\(ledger\.expenseTotal\)/);
 });
 
 test("cost and work migration exists and defines required schema objects", () => {

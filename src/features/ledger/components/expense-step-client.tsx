@@ -390,7 +390,7 @@ export function ExpenseStepClient({
             항목이 없습니다. 새 항목을 추가해 주세요.
           </p>
         ) : (
-          <div className="mb-3 space-y-3">
+          <div className="mb-3 flex flex-col gap-3">
             {expenseItems.map((line, index) => {
               const lineCodeError = expenseCodeIdErrors[index]?.code;
               const lineAmountError = expenseCodeIdErrors[index]?.amount;
@@ -558,9 +558,15 @@ export function ExpenseStepClient({
 
         <div className="bg-muted/40 rounded-md p-3">
           <div className="flex justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">비용 합계</span>
+            <span className="text-muted-foreground">입력 중 비용 합계</span>
             <span className="font-semibold tabular-nums">
               {formatKrw(draftExpenseTotal)}
+            </span>
+          </div>
+          <div className="mt-2 flex justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">마지막 서버 저장 합계</span>
+            <span className="font-semibold tabular-nums">
+              {formatKrw(ledger.expenseTotal)}
             </span>
           </div>
           {showSensitiveAccountingMetrics ? (

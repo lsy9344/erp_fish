@@ -97,6 +97,10 @@ function parseOptionalMemo(value: unknown, context: z.RefinementCtx) {
   if (typeof value === "string") {
     const memo = value.trim();
 
+    if (memo === "") {
+      return null;
+    }
+
     if (memo.length <= 500) {
       return memo;
     }

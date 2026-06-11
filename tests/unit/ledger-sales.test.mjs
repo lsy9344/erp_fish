@@ -221,11 +221,8 @@ test("ledger date and open schemas normalize KST business dates", async () => {
     "ledger",
     "schemas.ts",
   );
-  const {
-    getKstBusinessDate,
-    getKstBusinessDateParam,
-    getKstLedgerDateParam,
-  } = await import(pathToFileURL(datePath).href);
+  const { getKstBusinessDate, getKstBusinessDateParam, getKstLedgerDateParam } =
+    await import(pathToFileURL(datePath).href);
   const { ledgerOpenSchema } = await import(pathToFileURL(schemaPath).href);
 
   assert.equal(
@@ -240,10 +237,7 @@ test("ledger date and open schemas normalize KST business dates", async () => {
     getKstBusinessDateParam(new Date("2026-06-11T00:00:00.000Z")),
     "2026-06-11",
   );
-  assert.equal(
-    getKstLedgerDateParam("2026-06-11T00:00:00.000Z"),
-    "2026-06-11",
-  );
+  assert.equal(getKstLedgerDateParam("2026-06-11T00:00:00.000Z"), "2026-06-11");
 
   assert.equal(
     ledgerOpenSchema.safeParse({
@@ -289,11 +283,19 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(actionSource, /version:\s*parsed\.data\.version/);
   assert.match(actionSource, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.match(actionSource, /parsed\.data\.closingDate/);
-  assert.match(actionSource, /authorDisplayName:\s*parsed\.data\.authorDisplayName/);
+  assert.match(
+    actionSource,
+    /authorDisplayName:\s*parsed\.data\.authorDisplayName/,
+  );
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
   assert.ok(actionSource.includes('action: "ledger.sales_payment.updated",'));
   assert.doesNotMatch(actionSource, /\.delete\(/);
+  assert.doesNotMatch(
+    actionSource,
+    /threshold|anomaly|이상\s*신호|임계값/,
+    "Story 2.3 must not implement OQ-1 threshold/anomaly classification in sales save",
+  );
 
   assert.match(querySource, /getKstBusinessDate/);
   assert.match(querySource, /function\s+getOrCreateStoreLedgerInTx/);
@@ -307,7 +309,10 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(querySource, /tx\.dailyLedger\.createMany/);
   assert.match(querySource, /skipDuplicates:\s*true/);
   assert.match(querySource, /writeAuditLog\(/);
-  assert.match(querySource, /authorDisplayName:\s*ledger\.authorDisplayName\s*\?\?\s*null/);
+  assert.match(
+    querySource,
+    /authorDisplayName:\s*ledger\.authorDisplayName\s*\?\?\s*null/,
+  );
 });
 
 test("today ledger creation avoids duplicate-key races", () => {
@@ -379,7 +384,10 @@ test("store-entry UI passes selected date and ledger version through save and na
     );
 
     assert.match(source, /LedgerContextHeader/);
-    assert.match(source, /closingDate:\s*getKstLedgerDateParam\(ledger\.closingDate\)/);
+    assert.match(
+      source,
+      /closingDate:\s*getKstLedgerDateParam\(ledger\.closingDate\)/,
+    );
     assert.match(source, /version:\s*ledger\.version/);
     assert.match(source, /closingDate=\{ledger\.closingDate\}/);
   }
