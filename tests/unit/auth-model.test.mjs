@@ -47,6 +47,30 @@ test("Prisma models include active stores and explicit user-store assignments", 
   );
 });
 
+test("Prisma models include explicit permission profiles and action assignments", () => {
+  const schema = readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
+  const migrationsRoot = path.join(root, "prisma", "migrations");
+  const migrationNames = existsSync(migrationsRoot)
+    ? readdirSync(migrationsRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    : [];
+  const permissionMigration = migrationNames.find((name) =>
+    existsSync(path.join(migrationsRoot, name, "migration.sql")) &&
+    /CREATE TABLE "PermissionProfile"|CREATE TYPE "PermissionAction"/.test(
+      readFileSync(path.join(migrationsRoot, name, "migration.sql"), "utf8"),
+    ),
+  );
+
+  assert.match(schema, /enum\s+StoreAccessMode\s*{[^}]*ALL_STORES[^}]*ASSIGNED_STORES[^}]*}/s);
+  assert.match(schema, /enum\s+PermissionAction\s*{[^}]*LEDGER_CREATE[^}]*LEDGER_EDIT[^}]*LEDGER_HQ_CLOSE[^}]*CORRECTION_CREATE[^}]*UPLOAD_PREVIEW[^}]*UPLOAD_COMMIT[^}]*SETTINGS_MANAGE[^}]*REPORT_VIEW[^}]*EXPORT_CREATE[^}]*USER_PERMISSION_MANAGE[^}]*}/s);
+  assert.match(schema, /model\s+PermissionProfile\s*{[^}]*id\s+String\s+@id\s+@default\(cuid\(\)\)[^}]*code\s+String\s+@unique[^}]*name\s+String[^}]*description\s+String\?[^}]*isSystem\s+Boolean\s+@default\(false\)[^}]*isActive\s+Boolean\s+@default\(true\)[^}]*storeAccessMode\s+StoreAccessMode[^}]*createdAt\s+DateTime\s+@default\(now\(\)\)[^}]*updatedAt\s+DateTime\s+@updatedAt[^}]*}/s);
+  assert.match(schema, /model\s+PermissionProfileAction\s*{[^}]*profileId\s+String[^}]*action\s+PermissionAction[^}]*@@id\(\[profileId,\s*action\]\)[^}]*}/s);
+  assert.match(schema, /model\s+UserPermissionProfile\s*{[^}]*userId\s+String[^}]*profileId\s+String[^}]*@@id\(\[userId,\s*profileId\]\)[^}]*}/s);
+  assert.match(schema, /model\s+User\s*{[^}]*permissionProfiles\s+UserPermissionProfile\[\][^}]*}/s);
+  assert.ok(permissionMigration, "permission profile tables must be added in a new migration");
+});
+
 test("seed flow uses environment-provided headquarters credentials", () => {
   const seedPath = path.join(root, "prisma", "seed.ts");
   assert.ok(existsSync(seedPath), "prisma/seed.ts should exist");
@@ -67,6 +91,49 @@ test("seed flow uses environment-provided headquarters credentials", () => {
   assert.match(envExample, /SEED_HQ_PASSWORD=/);
   assert.match(envExample, /ALLOW_PRODUCTION_SEED=/);
   assert.match(envExample, /ALLOW_SEED_PASSWORD_ROTATION=/);
+});
+
+test("seed flow idempotently creates system permission profiles and safe fixtures", () => {
+  const seed = readFileSync(path.join(root, "prisma", "seed.ts"), "utf8");
+
+  for (const profile of [
+    "OWNER",
+    "HQ_ADMIN",
+    "HQ_STAFF",
+    "CLOSE_MANAGER",
+    "UPLOAD_STAFF",
+    "SETTINGS_ADMIN",
+    "HQ_READONLY",
+    "STORE_MANAGER",
+  ]) {
+    assert.match(seed, new RegExp(`code:\\s*"${profile}"`));
+  }
+
+  for (const action of [
+    "LEDGER_CREATE",
+    "LEDGER_EDIT",
+    "LEDGER_HQ_CLOSE",
+    "CORRECTION_CREATE",
+    "UPLOAD_PREVIEW",
+    "UPLOAD_COMMIT",
+    "SETTINGS_MANAGE",
+    "REPORT_VIEW",
+    "EXPORT_CREATE",
+    "USER_PERMISSION_MANAGE",
+  ]) {
+    assert.match(seed, new RegExp(`PermissionAction\\.${action}`));
+  }
+
+  assert.match(seed, /permissionProfile\.upsert/);
+  assert.match(seed, /permissionProfileAction\.deleteMany/);
+  assert.match(seed, /notIn:\s*\[\.\.\.profileDefinition\.actions\]/);
+  assert.match(seed, /permissionProfileAction\.upsert/);
+  assert.match(seed, /userPermissionProfile\.upsert/);
+  assert.match(seed, /userStoreAssignment\.upsert/);
+  assert.match(seed, /SEED_STORE_MANAGER_EMAIL/);
+  assert.match(seed, /SEED_STORE_MANAGER_PASSWORD/);
+  assert.match(seed, /SEED_SAMPLE_STORE_NAME/);
+  assert.doesNotMatch(seed, /correct-password|store-password|manager123|password123|changeme/i);
 });
 
 test("auth environment validates production secret strength", () => {

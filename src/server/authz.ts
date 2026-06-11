@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { unstable_noStore as noStore } from "next/cache";
 
-import { UserRole } from "../../generated/prisma";
+import { StoreAccessMode, UserRole } from "../../generated/prisma";
+import type { PermissionAction } from "../../generated/prisma";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 
@@ -19,6 +20,21 @@ const storeSelect = {
   id: true,
   name: true,
   isActive: true,
+};
+
+const permissionProfileSelect = {
+  id: true,
+  code: true,
+  storeAccessMode: true,
+  actions: {
+    select: {
+      action: true,
+    },
+  },
+};
+
+type ActionPermissionOptions = {
+  requiredRole?: UserRole | null;
 };
 
 export type StoreIdParam = string | string[] | undefined;
@@ -73,6 +89,84 @@ export async function requireHeadquartersUser() {
   }
 
   return currentUser;
+}
+
+export async function getActivePermissionProfiles(userId: string) {
+  return db.userPermissionProfile.findMany({
+    where: {
+      userId,
+      profile: {
+        isActive: true,
+      },
+    },
+    select: {
+      profile: {
+        select: permissionProfileSelect,
+      },
+    },
+  });
+}
+
+export async function hasActionPermission(
+  userId: string,
+  action: PermissionAction,
+  options: ActionPermissionOptions = {},
+) {
+  const requiredRole = options.requiredRole ?? UserRole.HEADQUARTERS;
+  const user = await db.user.findFirst({
+    where: {
+      id: userId,
+      isActive: true,
+      ...(requiredRole ? { role: requiredRole } : {}),
+      permissionProfiles: {
+        some: {
+          profile: {
+            isActive: true,
+            actions: {
+              some: {
+                action,
+              },
+            },
+          },
+        },
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return Boolean(user);
+}
+
+export async function requireActionPermission(
+  action: PermissionAction,
+  options: ActionPermissionOptions = {},
+) {
+  const currentUser = await requireAppUser();
+  const requiredRole = options.requiredRole ?? UserRole.HEADQUARTERS;
+
+  if (requiredRole && currentUser.role !== requiredRole) {
+    redirect("/app/unauthorized");
+  }
+
+  const hasPermission = await hasActionPermission(currentUser.id, action, {
+    requiredRole,
+  });
+
+  if (!hasPermission) {
+    redirect("/app/unauthorized");
+  }
+
+  return currentUser;
+}
+
+export async function requireHeadquartersActionPermission(
+  action: PermissionAction,
+) {
+  return requireActionPermission(action, {
+    requiredRole: UserRole.HEADQUARTERS,
+  });
 }
 
 export async function getAppHomePath() {
@@ -134,8 +228,33 @@ export async function requireStoreAccess(storeId: string) {
   const currentUser = await requireAppUser();
 
   if (currentUser.role === UserRole.HEADQUARTERS) {
+    const activeProfiles = await getActivePermissionProfiles(currentUser.id);
+    const hasAllStoreAccess = activeProfiles.some(
+      ({ profile }) => profile.storeAccessMode === StoreAccessMode.ALL_STORES,
+    );
+    const hasAssignedStoreAccess = activeProfiles.some(
+      ({ profile }) =>
+        profile.storeAccessMode === StoreAccessMode.ASSIGNED_STORES,
+    );
+
+    if (!hasAllStoreAccess && !hasAssignedStoreAccess) {
+      redirect("/app/unauthorized");
+    }
+
     const store = await db.store.findFirst({
-      where: { id: storeId },
+      where: {
+        id: storeId,
+        isActive: true,
+        ...(hasAllStoreAccess
+          ? {}
+          : {
+              assignments: {
+                some: {
+                  userId: currentUser.id,
+                },
+              },
+            }),
+      },
       select: storeSelect,
     });
 

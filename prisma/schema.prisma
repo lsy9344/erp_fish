@@ -20,6 +20,24 @@ enum UserRole {
   STORE_MANAGER
 }
 
+enum StoreAccessMode {
+  ALL_STORES
+  ASSIGNED_STORES
+}
+
+enum PermissionAction {
+  LEDGER_CREATE
+  LEDGER_EDIT
+  LEDGER_HQ_CLOSE
+  CORRECTION_CREATE
+  UPLOAD_PREVIEW
+  UPLOAD_COMMIT
+  SETTINGS_MANAGE
+  REPORT_VIEW
+  EXPORT_CREATE
+  USER_PERMISSION_MANAGE
+}
+
 enum DailyLedgerStatus {
   IN_PROGRESS
   IN_REVIEW
@@ -154,6 +172,47 @@ model UserStoreAssignment {
   @@index([storeId])
 }
 
+model PermissionProfile {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  name            String
+  description     String?
+  isSystem        Boolean           @default(false)
+  isActive        Boolean           @default(true)
+  storeAccessMode StoreAccessMode
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  actions PermissionProfileAction[]
+  users   UserPermissionProfile[]
+
+  @@index([isActive])
+  @@index([storeAccessMode])
+}
+
+model PermissionProfileAction {
+  profileId String
+  action    PermissionAction
+  createdAt DateTime         @default(now())
+
+  profile PermissionProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, action])
+  @@index([action])
+}
+
+model UserPermissionProfile {
+  userId    String
+  profileId String
+  createdAt DateTime @default(now())
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile PermissionProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([userId, profileId])
+  @@index([profileId])
+}
+
 // Necessary for Next auth
 model Account {
   id                       String  @id @default(cuid())
@@ -197,6 +256,7 @@ model User {
   sessions                          Session[]
   posts                             Post[]
   storeAssignments                  UserStoreAssignment[]
+  permissionProfiles                UserPermissionProfile[]
   updatedStores                     Store[]                     @relation("StoreUpdatedBy")
   updatedProducts                   Product[]                   @relation("ProductUpdatedBy")
   updatedPurchaseStandards          PurchaseStandard[]          @relation("PurchaseStandardUpdatedBy")

@@ -66,6 +66,41 @@ test("server authorization helper enforces store access from database assignment
   assert.match(authz, /redirect\("\/app\/unauthorized"\)/);
 });
 
+test("server authorization helper checks action permissions through active database profiles", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+
+  assert.match(authz, /hasActionPermission/);
+  assert.match(authz, /requireActionPermission/);
+  assert.match(authz, /requireHeadquartersActionPermission/);
+  assert.match(authz, /PermissionAction/);
+  assert.match(authz, /db\.user\.(?:findUnique|findFirst)/);
+  assert.match(authz, /requiredRole\s*=\s*options\.requiredRole\s*\?\?\s*UserRole\.HEADQUARTERS/);
+  assert.match(authz, /\.\.\.\(requiredRole\s*\?\s*{\s*role:\s*requiredRole\s*}\s*:\s*{}\)/s);
+  assert.match(authz, /permissionProfiles:\s*{\s*some:/s);
+  assert.match(authz, /profile:\s*{\s*isActive:\s*true/s);
+  assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
+  assert.match(authz, /redirect\("\/app\/unauthorized"\)/);
+});
+
+test("server authorization helper scopes headquarters store access by permission profile mode", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+
+  assert.match(authz, /StoreAccessMode/);
+  assert.match(authz, /ALL_STORES/);
+  assert.match(authz, /ASSIGNED_STORES/);
+  assert.match(authz, /getActivePermissionProfiles/);
+  assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ALL_STORES/);
+  assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ASSIGNED_STORES/);
+  assert.match(authz, /id:\s*storeId,\s*isActive:\s*true/s);
+  assert.match(authz, /assignments:\s*{\s*some:\s*{\s*userId:\s*currentUser\.id/s);
+});
+
 test("store entry routes reject repeated storeId query values before authorization", () => {
   const authz = readFileSync(
     path.join(root, "src", "server", "authz.ts"),

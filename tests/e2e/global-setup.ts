@@ -1,9 +1,51 @@
 import { execSync } from "node:child_process";
 
-import { PrismaClient, UserRole } from "../../generated/prisma/index.js";
+import {
+  PermissionAction,
+  PrismaClient,
+  StoreAccessMode,
+  UserRole,
+} from "../../generated/prisma/index.js";
 import { hashPassword } from "../../src/server/password";
 
 const databaseUrl = process.env.DATABASE_URL;
+const profileDefinitions = [
+  {
+    code: "HQ_ADMIN",
+    name: "본사 관리자",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+    actions: [
+      PermissionAction.LEDGER_EDIT,
+      PermissionAction.LEDGER_HQ_CLOSE,
+      PermissionAction.CORRECTION_CREATE,
+      PermissionAction.REPORT_VIEW,
+      PermissionAction.EXPORT_CREATE,
+      PermissionAction.USER_PERMISSION_MANAGE,
+    ],
+  },
+  {
+    code: "HQ_STAFF",
+    name: "본사 스텝",
+    storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
+    actions: [PermissionAction.LEDGER_EDIT, PermissionAction.REPORT_VIEW],
+  },
+  {
+    code: "SETTINGS_ADMIN",
+    name: "설정 관리자",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+    actions: [
+      PermissionAction.SETTINGS_MANAGE,
+      PermissionAction.USER_PERMISSION_MANAGE,
+      PermissionAction.REPORT_VIEW,
+    ],
+  },
+  {
+    code: "STORE_MANAGER",
+    name: "지점장",
+    storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
+    actions: [PermissionAction.LEDGER_CREATE, PermissionAction.LEDGER_EDIT],
+  },
+] as const;
 
 function requireTestDatabaseUrl(value: string | undefined) {
   if (!value) {
@@ -21,6 +63,83 @@ function requireTestDatabaseUrl(value: string | undefined) {
   return value;
 }
 
+async function upsertPermissionProfiles(prisma: PrismaClient) {
+  const profiles = new Map<string, { id: string }>();
+
+  for (const definition of profileDefinitions) {
+    const profile = await prisma.permissionProfile.upsert({
+      where: { code: definition.code },
+      create: {
+        code: definition.code,
+        name: definition.name,
+        isSystem: true,
+        isActive: true,
+        storeAccessMode: definition.storeAccessMode,
+      },
+      update: {
+        name: definition.name,
+        isSystem: true,
+        isActive: true,
+        storeAccessMode: definition.storeAccessMode,
+      },
+      select: { id: true },
+    });
+
+    profiles.set(definition.code, profile);
+
+    await prisma.permissionProfileAction.deleteMany({
+      where: {
+        profileId: profile.id,
+        action: {
+          notIn: [...definition.actions],
+        },
+      },
+    });
+
+    for (const action of definition.actions) {
+      await prisma.permissionProfileAction.upsert({
+        where: {
+          profileId_action: {
+            profileId: profile.id,
+            action,
+          },
+        },
+        create: {
+          profileId: profile.id,
+          action,
+        },
+        update: {},
+      });
+    }
+  }
+
+  return profiles;
+}
+
+async function assignPermissionProfile(
+  prisma: PrismaClient,
+  userId: string,
+  profileId: string | undefined,
+) {
+  if (!profileId) {
+    throw new Error("Missing permission profile fixture.");
+  }
+
+  await prisma.userPermissionProfile.upsert({
+    where: {
+      userId_profileId: {
+        userId,
+        profileId,
+      },
+    },
+    create: {
+      userId,
+      profileId,
+    },
+    update: {},
+  });
+}
+
 export default async function globalSetup() {
   process.env.DATABASE_URL = requireTestDatabaseUrl(databaseUrl);
 
@@ -31,6 +150,7 @@ export default async function globalSetup() {
 
   const prisma = new PrismaClient();
   const passwordHash = await hashPassword("correct-password");
+  const permissionProfiles = await upsertPermissionProfiles(prisma);
 
   const storyStores = await prisma.store.findMany({
     where: {
@@ -223,7 +343,7 @@ export default async function globalSetup() {
     });
   }
 
-  await prisma.user.upsert({
+  const hqUser = await prisma.user.upsert({
     where: { email: "hq@example.com" },
     create: {
       email: "hq@example.com",
@@ -234,6 +354,23 @@ export default async function globalSetup() {
     },
     update: {
       name: "본사 관리자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
+  const assignedHqUser = await prisma.user.upsert({
+    where: { email: "hq-assigned@example.com" },
+    create: {
+      email: "hq-assigned@example.com",
+      name: "지정 지점 본사",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "지정 지점 본사",
       role: UserRole.HEADQUARTERS,
       passwordHash,
       isActive: true,
@@ -346,10 +483,59 @@ export default async function globalSetup() {
   await prisma.userStoreAssignment.deleteMany({
     where: {
       userId: {
-        in: [manager.id, unassignedManager.id, inactiveOnlyManager.id],
+        in: [
+          manager.id,
+          unassignedManager.id,
+          inactiveOnlyManager.id,
+          assignedHqUser.id,
+        ],
       },
     },
   });
+  await prisma.userPermissionProfile.deleteMany({
+    where: {
+      userId: {
+        in: [
+          hqUser.id,
+          assignedHqUser.id,
+          manager.id,
+          unassignedManager.id,
+          inactiveOnlyManager.id,
+        ],
+      },
+    },
+  });
+
+  await assignPermissionProfile(
+    prisma,
+    hqUser.id,
+    permissionProfiles.get("HQ_ADMIN")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    hqUser.id,
+    permissionProfiles.get("SETTINGS_ADMIN")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    assignedHqUser.id,
+    permissionProfiles.get("HQ_STAFF")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    manager.id,
+    permissionProfiles.get("STORE_MANAGER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    unassignedManager.id,
+    permissionProfiles.get("STORE_MANAGER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    inactiveOnlyManager.id,
+    permissionProfiles.get("STORE_MANAGER")?.id,
+  );
 
   await prisma.userStoreAssignment.upsert({
     where: {
@@ -389,6 +575,20 @@ export default async function globalSetup() {
     create: {
       userId: inactiveOnlyManager.id,
       storeId: inactiveStore.id,
+    },
+    update: {},
+  });
+
+  await prisma.userStoreAssignment.upsert({
+    where: {
+      userId_storeId: {
+        userId: assignedHqUser.id,
+        storeId: seochoStore.id,
+      },
+    },
+    create: {
+      userId: assignedHqUser.id,
+      storeId: seochoStore.id,
     },
     update: {},
   });
