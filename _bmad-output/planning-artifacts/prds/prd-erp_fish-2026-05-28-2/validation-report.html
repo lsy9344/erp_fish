@@ -10,218 +10,150 @@
     --border: #e7e5e4;
     --text: #1c1917;
     --muted: #78716c;
-    --verdict-strong: #16a34a;
-    --verdict-adequate: #65a30d;
-    --verdict-thin: #d97706;
-    --verdict-broken: #dc2626;
-    --sev-low: #64748b;
-    --sev-medium: #ca8a04;
-    --sev-high: #ea580c;
-    --sev-critical: #dc2626;
-    --grade-poor: #dc2626;
+    --strong: #16a34a;
+    --adequate: #65a30d;
+    --medium: #ca8a04;
+    --high: #ea580c;
+    --critical: #dc2626;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    margin: 0;
     background: var(--bg);
     color: var(--text);
-    line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     font-size: 15px;
+    line-height: 1.6;
   }
-  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
-  .report-header {
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
+  header {
     display: flex;
-    align-items: flex-start;
     justify-content: space-between;
     gap: 24px;
-    padding-bottom: 16px;
     border-bottom: 1px solid var(--border);
+    padding-bottom: 18px;
     margin-bottom: 24px;
   }
-  .title h1 { margin: 0; font-size: 22px; font-weight: 600; }
-  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .grade {
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-weight: 600;
-    color: white;
-    font-size: 15px;
-    white-space: nowrap;
-    background: var(--grade-poor);
-  }
-  .synthesis {
+  h1 { margin: 0; font-size: 24px; }
+  h2 { margin: 28px 0 12px; font-size: 18px; }
+  h3 { margin: 20px 0 8px; font-size: 15px; }
+  p { margin: 0 0 12px; }
+  code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.92em; }
+  .subtitle { margin-top: 4px; color: var(--muted); font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+  .grade { align-self: flex-start; padding: 10px 18px; border-radius: 8px; background: var(--medium); color: white; font-weight: 700; white-space: nowrap; }
+  .card, details {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--muted);
     border-radius: 8px;
-    padding: 18px 22px;
-    margin-bottom: 24px;
-    font-size: 15.5px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
   }
-  .synthesis p { margin: 0 0 10px; }
-  .synthesis p:last-child { margin-bottom: 0; }
-  .dimension-summary {
+  .summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 10px;
-    margin-bottom: 24px;
+    margin: 18px 0 24px;
   }
-  .dim-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-  }
-  .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  .dim-verdict { font-size: 14px; font-weight: 600; }
-  section { margin-bottom: 14px; }
-  details {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  summary {
-    padding: 14px 20px;
-    cursor: pointer;
-    user-select: none;
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  summary::-webkit-details-marker { display: none; }
-  summary::before {
-    content: "▸";
-    display: inline-block;
-    color: var(--muted);
-    transition: transform 0.15s ease;
-  }
-  details[open] summary::before { transform: rotate(90deg); }
-  summary h2 { display: inline; margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
-  .verdict-pill {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: white;
-  }
-  .verdict-strong { background: var(--verdict-strong); }
-  .verdict-adequate { background: var(--verdict-adequate); }
-  .dim-body { padding: 4px 20px 18px; }
-  .dim-judgment { color: var(--text); font-size: 14.5px; }
-  .dim-judgment p { margin: 0 0 10px; }
-  .findings-list { padding: 0 20px 4px; }
-  article.finding { padding: 14px 0; border-top: 1px solid var(--border); }
-  article.finding:first-child { border-top: none; }
-  article.finding header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
-  .badge {
-    font-size: 10.5px;
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
-  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
-  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
-  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
-  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
-  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
-  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
-  .finding-fix strong { color: var(--muted); font-weight: 500; }
-  .mechanical {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-top: 24px;
-    font-size: 14px;
-  }
-  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .dim { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .dim span { display: block; color: var(--muted); font-size: 12px; }
+  .dim strong { font-size: 14px; }
+  .strong { color: var(--strong); }
+  .adequate { color: var(--adequate); }
+  .sev-high { color: var(--high); font-weight: 700; }
+  .sev-medium { color: var(--medium); font-weight: 700; }
+  .sev-low { color: var(--muted); font-weight: 700; }
+  summary { cursor: pointer; font-weight: 700; }
+  ul { margin-top: 8px; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 16px; }
 </style>
 </head>
 <body>
-  <div class="container">
-    <header class="report-header">
-      <div class="title">
-        <h1>ERP Fish PRD — Validation Report</h1>
-        <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
-      </div>
-      <div class="grade">Poor</div>
-    </header>
-
-    <div class="synthesis">
-      <p>이 PRD는 본사 관제탑 중심의 MVP와 2026-06-10 승인 추가 구현 범위를 비교적 정직하게 분리했고, FR/CAP별 검증 조건도 대부분 후속 UX, 아키텍처, 스토리 작성자가 추출할 수 있는 수준이다.</p>
-      <p>다만 MVP 필수 FR 일부가 <code>스토리 작성 전 필수</code> Open Question에 걸려 있고, <code>매출차액</code>과 재고 이월/정정 연쇄 정책이 아직 제품 결정으로 닫히지 않아 최종화나 스토리 생성에는 차단 리스크가 남아 있다.</p>
+<div class="container">
+  <header>
+    <div>
+      <h1>PRD Validation: ERP Fish PRD</h1>
+      <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
     </div>
+    <div class="grade">Fair</div>
+  </header>
 
-    <div class="dimension-summary">
-      <div class="dim-card"><div class="dim-name">Decision-readiness</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
-      <div class="dim-card"><div class="dim-name">Substance over theater</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
-      <div class="dim-card"><div class="dim-name">Strategic coherence</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
-      <div class="dim-card"><div class="dim-name">Done-ness clarity</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
-      <div class="dim-card"><div class="dim-name">Scope honesty</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
-      <div class="dim-card"><div class="dim-name">Downstream usability</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
-      <div class="dim-card"><div class="dim-name">Shape fit</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
-    </div>
+  <section class="card">
+    <p>Rubric review judges the PRD as <strong>Good / build-ready 전 게이트 필요</strong>: the control-tower thesis, MVP/extension/contract boundaries, FR/CAP/OQ structure, and calculation/permission/audit/report contracts are strong. It is still a <code>draft</code>, and story generation should wait until the named gates and OQ-linked slices are resolved.</p>
+    <p>The adversarial review materially lowers the final gate grade to <strong>Fair</strong> because it found <strong>High 3</strong> risks. The PRD now makes major risks visible, but several handoff controls still need external approval artifacts before UX, architecture, or story extraction can proceed safely.</p>
+  </section>
 
-    <section>
-      <details open>
-        <summary><h2>Critical Findings</h2><span class="verdict-pill" style="background: var(--sev-critical)">3</span></summary>
-        <div class="findings-list">
-          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">MVP 필수 범위 안에 스토리 작성 전 필수 OQ가 남아 있음</h3><span class="finding-location">§0.2, §10</span></header><div class="finding-note">OQ-1~OQ-3이 MVP 필수 FR을 직접 막고 있어 바로 스토리 생성하기 어렵다.</div><div class="finding-fix"><strong>Fix:</strong> MVP FR별 스토리 작성 가능/불가 상태를 표시하고 discovery story로 분리한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">매출차액 정의가 아직 안전하지 않음</h3><span class="finding-location">§3, §4.3, FR-6, FR-14</span></header><div class="finding-note">용어 정의, 계산표, 검증 조건이 같은 뜻으로 닫히지 않는다.</div><div class="finding-fix"><strong>Fix:</strong> 지표를 분리하거나 예시와 부호/표시/임계값 규칙을 확정한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">재고 이월과 정정 반영의 연쇄 갱신 정책이 닫히지 않음</h3><span class="finding-location">FR-9, FR-20, FR-21</span></header><div class="finding-note">마감 후 정정이 이후 장부와 리포트에 어떻게 전파되는지 부족하다.</div><div class="finding-fix"><strong>Fix:</strong> 영향 범위, 재계산 큐, 본사 확인 이벤트, 리포트 표시값, 재마감 여부를 상태 전이로 명시한다.</div></article>
-        </div>
-      </details>
-    </section>
-
-    <section>
-      <details open>
-        <summary><h2>High Findings</h2><span class="verdict-pill" style="background: var(--sev-high)">10</span></summary>
-        <div class="findings-list">
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">승인 추가 구현의 릴리스 경계가 PRD 밖에 있음</h3><span class="finding-location">§0.2, §8</span></header><div class="finding-note">CAP-1~CAP-18의 MVP 동시/후속 배포 판단이 에픽 계획으로 밀려 있다.</div><div class="finding-fix"><strong>Fix:</strong> CAP별 릴리스 판정과 OQ 차단 여부를 붙인다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">CAP-14가 CAP 구현 순서/추적 표에서 빠져 있음</h3><span class="finding-location">§8, §8.4, §10</span></header><div class="finding-note">손실액 계산 CAP가 표 기반 추출에서 누락될 수 있다.</div><div class="finding-fix"><strong>Fix:</strong> CAP-14를 phase, 의존성, Related FR/SM/OQ와 함께 추가한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">권한 프로파일과 넓은 “본사 사용자” 표현이 충돌 가능</h3><span class="finding-location">§4.1, FR-18~FR-26</span></header><div class="finding-note">FR 문구가 단일 본사 권한처럼 읽힐 수 있다.</div><div class="finding-fix"><strong>Fix:</strong> action별 허용 권한 프로파일 매트릭스를 추가한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">공동 입력 동시 편집 정책이 얕음</h3><span class="finding-location">FR-4, FR-5, §5</span></header><div class="finding-note">본사와 지점장이 같은 장부를 수정할 때 충돌 처리 기준이 부족하다.</div><div class="finding-fix"><strong>Fix:</strong> optimistic locking, 충돌 비교 화면, 재시도 방식을 정한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">일괄 마감 hard stop 조건이 없음</h3><span class="finding-location">CAP-15</span></header><div class="finding-note">어떤 오류가 절대 마감 불가인지 부족하다.</div><div class="finding-fix"><strong>Fix:</strong> hard stop, override 가능 오류, 경고 항목을 표로 구분한다.</div></article>
-          <article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">업로드 commit 이후 상태 정책이 부족함</h3><span class="finding-location">CAP-6</span></header><div class="finding-note">취소, 재처리, 마감 장부 처리 정책이 없다.</div><div class="finding-fix"><strong>Fix:</strong> 업로드 상태 모델과 행 단위 idempotency, 취소 감사 이벤트를 정의한다.</div></article>
-        </div>
-      </details>
-    </section>
-
-    <section>
-      <details>
-        <summary><h2>Reviewer Summaries</h2><span class="verdict-pill verdict-adequate">adequate/poor</span></summary>
-        <div class="dim-body">
-          <div class="dim-judgment">
-            <p><strong>Rubric:</strong> Adequate / 조건부 통과. Critical 0, High 2, Medium 7, Low 4.</p>
-            <p><strong>Adversarial:</strong> 최종화/스토리 생성용으로는 위험. P0 3, P1 8, P2 7, P3 2.</p>
-          </div>
-        </div>
-      </details>
-    </section>
-
-    <div class="mechanical">
-      <h3>Mechanical notes</h3>
-      <ul>
-        <li>FR 번호는 FR-1~FR-29까지 연속이다.</li>
-        <li>CAP 번호는 CAP-1~CAP-19가 본문에 존재하지만, §8 표에서 CAP-14가 누락되어 있다.</li>
-        <li>OQ 번호는 OQ-1~OQ-18까지 연속이다.</li>
-        <li>UJ-1~UJ-4는 모두 named protagonist를 가진다.</li>
-      </ul>
-    </div>
-
-    <footer>
-      <div>Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md</div>
-      <div>Generated: 2026-06-10T17:34:43+09:00</div>
-    </footer>
+  <div class="summary-grid">
+    <div class="dim"><span>Decision-readiness</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Substance over theater</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Strategic coherence</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Done-ness clarity</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Scope honesty</span><strong class="strong">strong</strong></div>
+    <div class="dim"><span>Downstream usability</span><strong class="adequate">adequate</strong></div>
+    <div class="dim"><span>Shape fit</span><strong class="strong">strong</strong></div>
   </div>
+
+  <h2>Findings By Severity</h2>
+  <details open>
+    <summary><span class="sev-high">High (3)</span></summary>
+    <h3>G6 is not yet an actual story-extraction gate (§0.1, §0.2, §10)</h3>
+    <p>The PRD adds G6 and instructs teams to create an <code>MVP story extraction checklist</code>, but that checklist does not yet exist as an approved artifact. Fix by creating the actual checklist before <code>bmad-create-epics-and-stories</code>, with slice IDs, related FR/CAP/OQ, current status, required closure artifact, owner, approval date, and implementation-story yes/no.</p>
+    <h3>OQ-10 remains overloaded even with split close criteria (§4.1, §10)</h3>
+    <p>The PRD separates MVP minimum blocking from CAP-13 advanced policy inside OQ-10, but a single "OQ-10 closed" phrase can still be misread. Fix by splitting it or adding explicit status fields for MVP minimum and CAP-13 advanced closure.</p>
+    <h3>CAP commitment language is still commercially ambiguous (§8)</h3>
+    <p>The CAP promise ledger is much safer, but terms like <code>approved backlog only</code> and <code>MVP+1 후보</code> can still mean different things to customer, PM, and engineering readers. Fix by adding stricter commitment labels such as contracted build, approved discovery only, approved backlog candidate, blocked pending OQ, or contract/ops only.</p>
+  </details>
+
+  <details open>
+    <summary><span class="sev-medium">Medium (7)</span></summary>
+    <ul>
+      <li><strong>MVP included scope can still be misread as build-ready scope (§7.1, §0.2, §10).</strong> Add a note under §7.1 that all MVP items inherit §0.2 story-readiness and §10 OQ gates.</li>
+      <li><strong>Some CAPs still defer measurable completion criteria (§8.4, §8.6).</strong> Close UX sizing, retry/failure, escalation, and default settings before implementation epics.</li>
+      <li><strong>Price trust statuses need transitions and approval authority (§4.3, §4.5).</strong> Add a state transition table with actor, scope, audit event, and closeability effect.</li>
+      <li><strong>Sensitive report/API/export variants are still not explicit enough (§4.1, §4.7).</strong> Add role/surface variants and negative acceptance tests.</li>
+      <li><strong>CAP-6 sample mapping can still become a hidden blocker (§8.2, §10 OQ-6).</strong> Collect representative Ecount fixture files before upload stories.</li>
+      <li><strong>CAP-12 structured-for-AI scope needs a field registry (§8.6).</strong> Tie each field to a current FR/CAP/report/alert/compliance need.</li>
+      <li><strong>Employee/payroll export lifecycle needs operational ownership (§8.1, §10 OQ-12).</strong> Define purge owner, audit event, link expiry, and emergency revocation.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary><span class="sev-low">Low (2)</span></summary>
+    <ul>
+      <li><strong>SM-6 lacks a target threshold (§9).</strong> Add a post-open target for system ledger completion rate and Excel fallback trend.</li>
+      <li><strong>Performance target may be narrow for future branch growth (§5, addendum).</strong> Add a scale assumption for branch counts above the MVP baseline.</li>
+    </ul>
+  </details>
+
+  <h2>Reviewer Details</h2>
+  <details>
+    <summary>Rubric Reviewer</summary>
+    <p><strong>Overall:</strong> Good / build-ready 전 게이트 필요.</p>
+    <p><strong>Counts:</strong> Critical 0, High 0, Medium 3, Low 1.</p>
+    <p><strong>Source:</strong> C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-rubric.md</p>
+  </details>
+  <details>
+    <summary>Adversarial Reviewer</summary>
+    <p><strong>Verdict:</strong> 조건부 통과, 하지만 바로 story extraction에 넣기에는 아직 위험하다.</p>
+    <p><strong>Counts:</strong> Critical 0, High 3, Medium 5, Low 1.</p>
+    <p><strong>Source:</strong> C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-adversarial-general.md</p>
+  </details>
+
+  <h2>Mechanical Notes</h2>
+  <section class="card">
+    <ul>
+      <li>FR IDs are contiguous: FR-1 through FR-29.</li>
+      <li>CAP IDs are present: CAP-1 through CAP-19.</li>
+      <li>OQ IDs are contiguous: OQ-1 through OQ-18.</li>
+      <li>UJ IDs are contiguous: UJ-1 through UJ-4, all with named protagonists.</li>
+      <li>No inline <code>[ASSUMPTION]</code> tags were found.</li>
+      <li>No broken FR/CAP/OQ references were found in the reviewed scope.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md<br>
+    Generated: 2026-06-11T11:35:00+09:00
+  </footer>
+</div>
 </body>
 </html>

@@ -1,182 +1,186 @@
 # Adversarial PRD Review: ERP Fish
 
-검토 대상: `prd.md`  
-함께 검토한 문서: `addendum.md`, `.decision-log.md`  
-검토 관점: 최종화, 아키텍처, UX, 에픽/스토리 생성 전에 남아 있는 차단 위험
+검토 대상:
 
-## Overall Risk Picture
+- `C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md`
+- `C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\addendum.md`
+- `C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\.decision-log.md`
 
-업데이트된 PRD는 이전보다 훨씬 방어적이다. `final`을 `draft`로 낮췄고, 릴리스 기준선, 구현 게이트, 권한 프로파일, 감사 이벤트, 계산 공통 규칙, 리포트 최소 계약을 추가했다. 즉, 문서가 스스로 아직 최종 PRD가 아니라는 점을 인정한 것은 맞다.
+검토 관점: 제품 리스크, 누락 요구사항, 모순, acceptance boundary 부족, downstream UX/architecture/story churn 위험, scope contradiction, OQ/gate 안전성.
 
-문제는 그 다음이다. 문서는 “게이트가 닫히면 최종화 가능하다”고 말하지만, 게이트를 닫는 데 필요한 결정, 산출물, 승인 방식, 스토리 분리 기준이 아직 충분히 구체적이지 않다. 특히 MVP 필수 FR 일부가 여전히 `스토리 작성 전 필수` Open Question에 걸려 있고, 핵심 계산/재고/권한/리포트 영역은 “표시는 한다”, “구분한다”, “설정한다” 수준에서 멈춘 곳이 많다. 이 상태로 에픽/스토리를 만들면 구현팀이 제품 정책을 대신 정하게 된다.
+## Verdict
 
-## Findings
+**조건부 통과, 하지만 바로 story extraction에 넣기에는 아직 위험하다.**
 
-### P0-1. MVP 필수 범위 안에 스토리 작성 전 필수 OQ가 남아 있어 MVP 스토리 생성이 막힌다
-
-§0.2는 FR-1~FR-29를 MVP 필수로 둔다. 동시에 §10의 OQ-1, OQ-2, OQ-3은 `스토리 작성 전 필수`이며 각각 FR-6/FR-14/FR-16/FR-17, FR-9/FR-13, FR-24에 직접 연결된다. 이는 MVP 필수 기능 중 매출차액, `30%단가`, 품목 마스터가 아직 스토리로 쪼갤 수 없다는 뜻이다.
-
-왜 문제인가: PRD가 draft임은 명시했지만, MVP 범위표만 보고 에픽 작성이 시작되면 핵심 정책이 빈 상태로 story acceptance criteria에 흘러 들어간다.
-
-요구 보정: MVP FR별로 “스토리 작성 가능/불가” 상태를 표시하고, OQ-1~OQ-3의 결정값이 반영되기 전에는 관련 FR을 스토리 생성 대상에서 제외하거나 별도 discovery story로 분리해야 한다.
-
-### P0-2. 매출차액 정의가 수식, 용어, 검증 조건 사이에서 아직 안전하지 않다
-
-용어에서는 매출차액을 “총매출과 상품별 판매금액 합계에서 손실/조정 반영액을 차감한 값 사이의 차이”로 설명한다. §4.3 계산표는 `총매출 - 상품별 판매금액 합계 - 손실/당일 조정 반영액`으로 적는다. FR-6/FR-14는 결제수단 합계, 상품별 판매금액, 총매출 차이를 함께 검증한다. 어느 금액이 기준값이고 손실/조정이 더해지는지 빠지는지, 양수/음수 방향이 무엇인지, 허용 기준만 OQ-1인지 정의 자체도 OQ인지가 모호하다.
-
-왜 문제인가: 매출차액은 관제판, 이상 신호, 아침 회의 리포트의 핵심 경고다. 부호 하나가 틀리면 위험 지점이 숨거나 정상 지점이 경고된다.
-
-요구 보정: 매출차액을 결제 차액, 상품 합계 차액, 손실/조정 반영 차액으로 쪼개거나, 단일 지표라면 입력 예시 3~5개와 부호/표시/임계값 규칙을 확정해야 한다.
-
-### P0-3. 재고 이월과 정정 반영의 연결이 아직 장부 연쇄 갱신 정책으로 닫히지 않았다
-
-FR-9는 후보 이월, 확정 이월, 늦은 마감, 마감 후 정정, 월 전환을 표로 보강했다. 하지만 마감 후 정정이 이후 장부의 전일재고, 당일재고, FIFO 잔량, 리포트 집계에 자동 전파되는지, 본사 확인 전에는 어떤 숫자를 쓰는지, 확인 후 어떤 이벤트로 확정되는지는 불명확하다. “정정 반영 재확인” 상태 표시는 있지만 재계산/재확정 절차가 없다.
-
-왜 문제인가: ERP에서 재고는 하루짜리 입력값이 아니라 연쇄 데이터다. 하루 정정이 이후 모든 장부와 월 요약을 흔들 수 있다.
-
-요구 보정: 마감 후 정정이 발생했을 때 영향받는 날짜 범위 산정, 재계산 큐, 본사 확인/확정 이벤트, 리포트 표시값, 재마감 필요 여부를 상태 전이로 명시해야 한다.
-
-### P1-1. 릴리스 기준선은 생겼지만 “승인 추가 구현”의 배포 경계가 아직 견적/스토리 기준으로 부족하다
-
-§0.2는 CAP-1~CAP-18을 승인 추가 구현으로 묶고, “MVP와 같은 배포에 묶을지, 후속 배포로 뺄지는 에픽 계획에서 결정”한다고 한다. §8에는 Extension A~D가 있지만, 각 Extension이 독립 릴리스인지, 같은 계약 묶음인지, MVP 오픈 차단 여부가 바뀔 수 있는지, 선행 OQ가 닫히지 않으면 어떤 CAP가 빠지는지까지는 정리되지 않았다.
-
-왜 문제인가: 승인 추가 구현이라는 말은 계약상 포함처럼 들리지만, 구현 판단은 나중으로 미뤄져 있다. PM, 아키텍트, 개발자가 서로 다른 범위를 기준으로 계획할 가능성이 크다.
-
-요구 보정: CAP별로 `Committed release`, `Optional`, `Blocked by OQ`, `Contract/Ops only` 중 하나를 붙이고, MVP 동시 배포 여부를 명시해야 한다.
-
-### P1-2. 권한 프로파일과 FR 문구의 “본사 사용자”가 충돌할 여지가 있다
-
-§4.1은 본사 사용자를 여러 프로파일로 나눈다. 그러나 FR-18은 “본사 사용자는 모든 지점의 본사 마감 전 일일 장부를 직접 입력하거나 수정할 수 있다”고 쓰고, FR-19~FR-21도 본사 사용자를 넓게 사용한다. 프로파일 표에서는 본사 스텝, 업로드 담당자, 마감 담당자, 설정 관리자의 권한이 다르지만, FR acceptance criteria는 여전히 넓은 역할명을 기준으로 한다.
-
-왜 문제인가: 스토리 작성자가 “본사 사용자”를 단일 role로 받아들이면 최소 권한 원칙이 무너진다.
-
-요구 보정: FR-18~FR-26, CAP-6, CAP-13, CAP-15에 대해 `권한 프로파일 x action` 매트릭스를 추가하고, 각 mutation의 허용 프로파일을 명시해야 한다.
-
-### P1-3. 동시 편집 정책이 공동 입력 구조에 비해 너무 얕다
-
-FR-4는 같은 지점+일자에 하나의 장부만 존재한다고 하고, 본사와 지점장이 마감 전까지 모두 수정할 수 있다. NFR은 동시 저장 충돌 시 조용히 덮어쓰지 않는다고만 한다. 그러나 단계형 입력, 본사 강제 수정, 모바일 네트워크 오류, 부분 저장이 동시에 일어날 때 필드 단위 병합인지, 장부 단위 잠금인지, 마지막 저장 차단인지가 없다.
-
-왜 문제인가: 이 제품은 공동 입력이 기본 구조다. 충돌 정책이 없으면 감사 로그는 남아도 사용자는 숫자가 왜 바뀌었는지 이해하지 못한다.
-
-요구 보정: optimistic locking 기준, 충돌 감지 단위, 사용자가 보는 비교 화면, 저장 재시도 방식, 본사 강제 수정 중 지점장 편집 제한 여부를 정해야 한다.
-
-### P1-4. 일괄 마감은 보강됐지만 “절대 마감 불가” 조건이 없다
-
-CAP-15는 dry run, 부분 실패, non-rollback, 사유 입력을 추가했다. 하지만 검증 오류나 이월 공백도 사유가 있으면 마감할 수 있게 되어 있고, 어떤 오류가 본사 사유로도 넘길 수 없는 hard stop인지 없다. 이미 마감된 장부, 미입력 장부, 필수 금액 누락, 권한 오류, 계산 불가, 정정 재확인 상태의 처리도 모두 같은 위험 요약으로 뭉쳐 있다.
-
-왜 문제인가: 일괄 마감은 원본을 잠그는 고위험 기능이다. 모든 오류를 “사유 입력 후 진행”으로 열어두면 감사 로그는 생기지만 품질 통제는 약해진다.
-
-요구 보정: hard stop, override 가능 오류, 경고만 표시할 항목을 구분하고, 각 상태별 마감 가능 여부를 표로 확정해야 한다.
-
-### P1-5. 업로드 commit 이후의 취소/재처리/마감 장부 처리 정책이 빠져 있다
-
-CAP-6은 preview/commit, 중복 감지, 덮어쓰기/추가/취소 선택, 출처 구분을 정의한다. 그러나 commit된 업로드를 취소하거나 재처리할 때 기존 매입 라인을 어떻게 무효화하는지, 이미 마감된 장부에는 업로드를 막는지 정정으로 넣는지, 부분 commit 실패 시 어떤 행이 반영됐는지 어떻게 보장하는지는 없다.
-
-왜 문제인가: 엑셀 업로드는 운영 중 반드시 재업로드와 수정이 발생한다. 이 정책이 없으면 같은 매입이 중복 반영되거나 마감 원본이 우회 수정될 수 있다.
-
-요구 보정: 업로드 상태 모델(`preview`, `committed`, `voided`, `reprocessed`, `failed`)과 마감 전/후 처리 규칙, 행 단위 idempotency, 취소 감사 이벤트를 정의해야 한다.
-
-### P1-6. 리포트 데이터 계약은 최소 컬럼만 있고 집계 규칙은 아직 구현자가 해석해야 한다
-
-§4.7은 리포트 계약을 추가했고 필수 컬럼도 나열했다. 그러나 미입력, 입력 중, 검토 대기, 본사 마감, 휴무일을 “구분한다”는 말은 있어도 평균매출, 평균재고, 증감률, 마감일수, 미마감일수에서 각 상태를 분모에 넣는지 빼는지 명시하지 않는다. 정정 반영값도 기본값이라는 원칙은 있으나 원본 기준 export의 컬럼 구조는 없다.
-
-왜 문제인가: 같은 데이터로도 월 평균과 기간 비교 결과가 달라진다. 회의 자료와 월 손익 자료가 서로 다른 숫자를 낼 수 있다.
-
-요구 보정: 각 리포트 주요 지표별 분자/분모, 제외 상태, `데이터 부족`, 휴무일, 미마감, 정정 반영/원본 export 규칙을 예시와 함께 확정해야 한다.
-
-### P1-7. 계산 공통 규칙은 개선됐지만 품목 단위 원가/수량 계산의 단위가 여전히 섞여 있다
-
-§4.3의 `매출원가 = 전일재고 + 매입 - 당일재고`는 금액 기준처럼 보이지만 FR-9는 품목, 규격, 단가, 수량, 재고금액을 함께 다룬다. CAP-7 전에는 FIFO 확정 원가가 아니라고 했지만, MVP에서 재고금액과 매출원가를 어떤 단가로 계산하는지는 아직 단일 기준이 아니다. `30%단가` OQ-2도 이 영역에 남아 있다.
-
-왜 문제인가: 기본 계산값이라도 장부 마감, 이상 신호, 리포트에 쓰인다. “확정 원가는 아님”이라고 표시하는 것만으로 잘못된 원가 계산 위험이 사라지지 않는다.
-
-요구 보정: MVP 원가 계산에서 사용하는 단가 우선순위, 수량 x 단가 변환 방식, 품목별 합산 방식, 미확정 단가 표시/마감 가능 여부를 정해야 한다.
-
-### P1-8. 백업/복구 핵심 목표를 계약 문서로 미루면 아키텍처 결정이 흔들린다
-
-§5는 백업 대상 데이터는 식별하지만 백업 주기, 보존 기간, 복구 목표 시간을 운영 계약 또는 운영 문서에서 확정한다고 한다. 하지만 일일 장부, 감사 로그, 업로드 이력, 정정 기록은 데이터 모델과 인프라 설계 단계에서 이미 보존/복구 요구가 필요하다.
-
-왜 문제인가: RPO/RTO가 없으면 DB 백업, 파일 저장소, 업로드 원본 보관, 감사 로그 저장 방식의 비용과 설계가 달라진다.
-
-요구 보정: 계약 금액과 대응 시간은 별도 문서로 두더라도, 제품 PRD에는 최소 RPO/RTO, 감사 로그 보존 기간, 업로드 원본/파싱 결과 보관 기준을 둬야 한다.
-
-### P2-1. 인증/계정 보안 요구가 운영 매뉴얼로 밀려 있다
-
-FR-1은 비밀번호 변경/초기화, 세션 만료, 로그인 실패 제한을 운영 설정 또는 운영 매뉴얼에 정의한다고 한다. 평문 저장 금지는 명시됐지만, 최소 비밀번호 기준, 초기 계정 전달 방식, 잠금/해제, 비활성 계정 세션 종료, 관리자 초기화 감사 이벤트는 PRD acceptance criteria가 아니다.
-
-왜 문제인가: 내부 ERP라도 재무/급여/권한 데이터가 있다. 계정 정책이 매뉴얼로만 남으면 구현 누락 가능성이 크다.
-
-요구 보정: MVP 최소 계정 보안 기준을 PRD에 직접 넣고, 운영 매뉴얼은 사용 절차를 설명하는 문서로 제한해야 한다.
-
-### P2-2. 작성자 이름 세션 캐싱은 로그인 사용자/감사 로그와의 관계가 불명확하다
-
-CAP-16은 1단계 작성자 이름을 7단계까지 유지한다고 한다. 그러나 이미 로그인 사용자, 입력자, 수정자, 감사 이벤트가 있다. 작성자 이름이 로그인 사용자와 다른 자유 입력값인지, 지점에서 여러 사람이 한 계정으로 입력하는 보조 필드인지, 감사 주체와 다를 때 어떻게 표시되는지 없다.
-
-왜 문제인가: 작성자명을 편의 필드로 넣으면 실제 책임 주체와 화면 표시 주체가 갈라질 수 있다.
-
-요구 보정: `로그인 계정`, `작성자 표시명`, `실제 입력 담당자`의 관계를 정의하고, 작성자 이름이 감사 로그의 사용자 식별자를 대체하지 못한다는 규칙을 명시해야 한다.
-
-### P2-3. 희망 판매가 기준 손실액은 시간 정책이 약하다
-
-CAP-14는 희망 판매가를 당일 영업 개시 전 지점장 입력값으로 삼는다고 한다. 그러나 영업 개시 시간이 무엇인지, 미입력/지연 입력/영업 중 변경/OQ-9 상태에서 마감 가능 여부, 본사 수정 권한, 변경 이력 표시가 없다.
-
-왜 문제인가: 손실액은 입력 시점에 따라 조작 가능하거나 해석이 달라질 수 있다.
-
-요구 보정: 영업 개시 전 기준 시각, 변경 잠금, 예외 입력, 미입력 처리, 본사 override 감사 규칙을 정해야 한다.
-
-### P2-4. 직원/급여 참고 범위는 실제 지급 제외만으로는 민감도 관리가 부족하다
-
-CAP-1/CAP-9는 직원 id, 여러 지점 근무, 입사일, 지각/조퇴, 특수 메모, 급여 차액을 다룬다. 실제 지급 확정은 제외했지만, 이 정보 자체가 민감하다. 조회 권한은 제한한다고 되어 있으나 지점장 생성/조회 범위, 지점 간 근무 이력 노출, 퇴사/비활성 직원 보존, 급여 차액 export 제한은 구체적이지 않다.
-
-왜 문제인가: “급여 참고”라는 이름과 달리 개인정보/인사정보 영역이다. 권한 설계를 가볍게 잡으면 운영 사고로 이어진다.
-
-요구 보정: 직원 정보 필드별 조회/수정 권한, export 가능 여부, 비활성/퇴사 처리, 지점 간 노출 범위를 정해야 한다.
-
-### P2-5. 알림 요구는 보안과 메시지 내용 제한이 아직 약하다
-
-CAP-11은 수신자, 채널, 조건, 중복 억제, test send를 포함한다. 그러나 알림 메시지에 민감 지표를 담을 수 있는지, 지점장/본사 수신자별 템플릿이 다른지, 그룹방에 보낼 때 노출 가능한 정보 범위가 무엇인지 없다.
-
-왜 문제인가: LINE/텔레그램 알림은 시스템 밖으로 데이터가 나가는 기능이다. 민감 지표 숨김 정책이 알림에서 깨질 수 있다.
-
-요구 보정: 알림 템플릿별 허용 필드, 수신자 권한별 마스킹, 그룹 채널 사용 제한, 발송 로그의 개인정보/민감정보 보관 기준을 추가해야 한다.
-
-### P2-6. CAP-18 대시보드 리사이징은 UX acceptance가 거의 없다
-
-CAP-18은 컬럼, 영역, 레이아웃 크기 조절을 요구하지만 저장 범위가 사용자별인지 전체 공통인지, 초기화/기본값 복원, 모바일 적용 여부, 최소/최대 폭, 중요 컬럼 숨김 방지, 권한별 설정 가능 여부가 없다.
-
-왜 문제인가: 리사이징은 작은 UX 기능처럼 보이지만 관제판 가독성과 운영 실수를 직접 건드린다.
-
-요구 보정: 사용자별 저장, reset, 최소/최대 크기, 필수 컬럼 보호, 반응형 동작을 acceptance criteria에 넣어야 한다.
-
-### P2-7. 마스터 데이터 변경의 적용 시점이 일부만 정의되어 있다
-
-FR-22~FR-26은 중복, 별칭, 활성/비활성, 적용 시작일을 다룬다. 그러나 품목 기본 단가, 비용 코드, 손실 유형, 결제수단 변경이 미래 장부에만 적용되는지, 작성 중 장부에 반영되는지, 업로드 매핑과 충돌할 때 우선순위가 무엇인지는 부족하다.
-
-왜 문제인가: 마스터 변경은 과거 보존만으로 충분하지 않다. 현재 작성 중 데이터와 미래 기본값의 경계가 필요하다.
-
-요구 보정: 마스터 유형별 effective dating, 작성 중 장부 반영 여부, 비활성 코드의 기존 장부 수정 가능 여부, 업로드 매핑 우선순위를 정해야 한다.
-
-### P3-1. “Excel 수준” 표현이 아직 남아 있어 기준 혼선을 만들 수 있다
-
-CAP-3는 기존 엑셀 수준의 리포트 고도화를 말하고, 동시에 엑셀 수식 자체는 권위 있는 기준이 아니라고 한다. 보정 문구가 붙었지만 “엑셀 수준”은 여전히 범위가 넓고 검증하기 어렵다.
-
-왜 문제인가: 고객은 화면/항목/숫자/차트까지 엑셀과 같기를 기대할 수 있고, 개발팀은 서버 계산 기준만 맞추면 된다고 이해할 수 있다.
-
-요구 보정: “엑셀 수준” 대신 비교 대상 항목, 제외 항목, 참고 매핑 표, 숫자 불일치 시 우선 기준을 명시해야 한다.
-
-### P3-2. 기술 용어가 운영자용 PRD 문맥에 섞여 있다
-
-문서에는 `mutation`, `export`, `shared server calculation`, `trace`, `commit`, `preview`, `rollback`, `API response` 같은 구현 용어가 자주 나온다. 개발팀에는 유용하지만, 본사 운영자나 UX 담당자가 승인해야 할 정책 문장에서는 의미가 흐릴 수 있다.
-
-왜 문제인가: PRD 승인자가 기술 용어를 이해하지 못한 채 정책을 승인할 수 있다.
-
-요구 보정: 기술 용어를 용어집에 추가하거나, 운영자 승인 문맥에서는 “저장 요청”, “업로드 확정”, “서버 기준 계산값”처럼 쉬운 말로 바꿔야 한다.
+최근 보강으로 이전의 큰 구멍은 많이 줄었다. G6, CAP 약속 원장, 가격 신뢰 상태, 민감 필드 매트릭스, OQ-10 종료 기준은 모두 "위험을 보이게 만드는 장치"로는 유효하다. 그러나 일부 장치는 아직 실제 차단 장치라기보다 문서 안의 경고문에 가깝다. 가장 큰 남은 위험은 downstream 팀이 `MVP 필수`, `후속 확정`, `OQ-10 닫힘` 같은 표현을 서로 다르게 해석해 구현 스토리, 계약 기대치, 보안 정책을 다시 흔드는 것이다.
 
 ## Severity Summary
 
-- P0: 3
-- P1: 8
-- P2: 7
-- P3: 2
-- Total: 20 findings
+- Critical: 0
+- High: 3
+- Medium: 5
+- Low: 1
+- Total: 9 findings
 
+## High Findings
+
+### H1. G6는 좋은 경고지만 아직 story extraction을 실제로 막는 산출물이 아니다
+
+**Location / evidence**
+
+- `prd.md:20` states the document is still `draft` and not final for epic/story generation.
+- `prd.md:29` adds G6 and requires all MVP FR slices to be marked as `implementation story`, `discovery story`, or `blocked`.
+- `prd.md:46-59` says the story team should copy the table into an `MVP story extraction checklist`, but the checklist itself does not exist in the reviewed artifact set.
+- `prd.md:1264-1271` still has story-blocking OQs before MVP story generation.
+
+**Risk**
+
+The PRD now names the risk, but it does not yet enforce the handoff. A downstream story writer can still start from §7 or the FR list, see `MVP 필수`, and generate implementation stories for slices that the PRD says must remain discovery-only. This creates the exact churn G6 is meant to prevent: later UX, architecture, and dev stories will need to be unwound after OQ closure.
+
+**Remediation**
+
+Before any epic/story generation, create the actual `MVP story extraction checklist` as a separate approved artifact. It should have stable slice IDs, related FR/CAP/OQ, current status, required closure artifact, owner, approval date, and explicit "may generate implementation story: yes/no". Treat the checklist as a hard input gate for `bmad-create-epics-and-stories`, not as guidance embedded in the PRD.
+
+### H2. OQ-10 is still too easy to close too broadly or leave open too long
+
+**Location / evidence**
+
+- `prd.md:229-234` makes MVP-sensitive data blocking mandatory before CAP-13.
+- `prd.md:240` blocks many fields for 지점장 화면/API and says there is no exception before OQ-10 MVP minimum approval.
+- `prd.md:1288` keeps OQ-10 as one question with two decision grades: MVP minimum blocking and CAP-13 advanced policy.
+- `prd.md:1300-1305` adds two close criteria under one OQ.
+
+**Risk**
+
+The split close criteria are the right direction, but the single OQ remains semantically overloaded. One team may say "OQ-10 is closed" after approving the MVP deny-list and then accidentally unlock CAP-13 advanced exposure. Another team may say "OQ-10 is still open" because CAP-13 is not decided and unnecessarily block FR-13/FR-28/FR-29 MVP-safe 본사-only reporting. This is both a security risk and a story sequencing risk.
+
+**Remediation**
+
+Either split it into `OQ-10A MVP 최소 노출 차단` and `OQ-10B CAP-13 고도화 정책`, or keep the number but add explicit status fields: `MVP minimum: open/closed`, `CAP-13 advanced: open/closed`. The MVP closure artifact must list allowed/blocked fields by surface and role, and must state that closing the MVP part does not permit any 지점장 exposure of cost/profit-derived values.
+
+### H3. CAP 약속 원장은 scope contradiction을 줄였지만 계약 약속 경계는 아직 약하다
+
+**Location / evidence**
+
+- `prd.md:842-845` says §8 is 추가 구현 범위 included after customer meeting and estimate context.
+- `prd.md:861-881` classifies CAPs by phase, release bucket, dependencies, and OQs.
+- `prd.md:883-907` adds a CAP promise ledger and says `후속 확정` is not a delivery promise.
+- Several rows still use ambiguous states such as `approved backlog only`, `MVP+1 후보`, or `별도 유상 릴리스`.
+
+**Risk**
+
+This is much safer than before, but the commercial/product boundary is still not fully testable. `approved backlog only` can mean "approved to implement later", "approved to estimate", or "customer asked for it but not contracted". CAP-13 also mixes `MVP+0 최소 차단` with `MVP+1 후보 고도화`, which is correct but easy to misread as one CAP with two different commitment levels. The result is likely contract churn, roadmap churn, and story churn.
+
+**Remediation**
+
+Add a stricter commitment field for every CAP: `contracted build`, `approved discovery only`, `approved backlog candidate`, `blocked pending OQ`, or `contract/ops only`. For split CAPs such as CAP-13, separate the MVP security slice from the advanced policy slice in the ledger so each has its own commitment, owner, and approval artifact.
+
+## Medium Findings
+
+### M1. 가격 신뢰 상태는 strong addition, but state transitions and approval authority are underspecified
+
+**Location / evidence**
+
+- `prd.md:438-447` defines MVP price source priority.
+- `prd.md:451-456` defines `approved`, `manual_override`, `pending_review`, and `basis_missing`.
+- `prd.md:593` requires close summary counts and monthly reporting for `basis_missing`.
+
+**Risk**
+
+The statuses are useful, but implementation still has room to diverge. The PRD does not define who can move a line from `manual_override` to `approved`, whether `pending_review` can be saved but not closed, how an old approved price is invalidated, or whether approval applies to a single line, item, branch, date range, or batch. Architecture may create a state machine; stories may treat it as a display label.
+
+**Remediation**
+
+Add a price trust state transition table before implementation: allowed transitions, actor/permission, required reason, affected scope, audit event, and closeability effect. Also define whether price approval is line-level, item-level, branch-level, or batch-level.
+
+### M2. Sensitive field policy is clear at the matrix level, but report contracts still list sensitive metrics without role-specific variants
+
+**Location / evidence**
+
+- `prd.md:231-234` requires sensitive blocking across screen, API, export, alert templates, and cache.
+- `prd.md:238-244` gives the sensitive field matrix.
+- `prd.md:723-728` lists report columns including 이익률, 매출이익, 영업이익, 인당생산성, 재고금액-related metrics without separate role-specific report schemas.
+- `prd.md:717` says report/export/alert exposure follows §4.1.
+
+**Risk**
+
+The cross-reference is correct, so this is not a critical gap. The remaining problem is implementation granularity. If a single report API is built first and role filtering is bolted on later, sensitive fields may appear in cached responses, exports, shared links, or alert templates. The PRD tells teams to avoid this, but the report contracts do not provide explicit per-role acceptance boundaries.
+
+**Remediation**
+
+For FR-27/FR-28/FR-29 and CAP-10, add role/surface-specific response and export variants: 본사 관리자, 조회 전용 본사, 지점장, shared link, alert template. Include negative acceptance tests: 지점장 session must not receive the field at all, not merely see it hidden.
+
+### M3. CAP-6 upload is much safer, but OQ-6 being "implementation setup" can still hide a story blocker
+
+**Location / evidence**
+
+- `prd.md:1005-1007` requires `.xlsx` and logical field mapping.
+- `prd.md:1009-1014` describes preview, commit, and manual edits.
+- `prd.md:1032-1034` defines row identity and preview edit identity.
+- `prd.md:1274` and `prd.md:1284` classify real header mapping as setup-time confirmation, not an epic blocker.
+
+**Risk**
+
+The logical contract is good, but if no real sample header mapping is available before story implementation, upload parsing stories can still become speculative. The team may build a generic mapper that does not fit the actual Ecount file, or create wrong idempotency assumptions because the "document number/supplier/outbound document" fields are optional.
+
+**Remediation**
+
+Create a short discovery/setup story before CAP-6 implementation stories: collect at least one representative Ecount file, map actual headers to logical fields, decide which optional identity fields are available, and approve fixture files for tests. Keep OQ-6 as setup-time only only after those fixtures exist.
+
+### M4. CAP-12 can create hidden schema scope unless "structured for AI later" is bounded
+
+**Location / evidence**
+
+- `prd.md:854` excludes AI screens, API calls, prompts, and AI analysis storage.
+- `prd.md:1209-1218` asks the system to preserve structured data for future analysis.
+- `prd.md:900` says CAP-12 is optional data-structure preparation with no AI feature promise.
+
+**Risk**
+
+The exclusion of AI functionality is clear. The risk is schema creep: "future analysis" can be used to justify new structured fields, tags, normalization screens, and search/filter requirements that are not needed by the current MVP or approved CAPs. That can quietly expand UX, database design, and story scope even while the PRD says AI is excluded.
+
+**Remediation**
+
+Require a `structured field registry` for CAP-12. Each field should tie back to a current FR/CAP, report, alert, or compliance need. Fields that exist only for hypothetical future AI should be marked as backlog research, not MVP or approved extension implementation.
+
+### M5. Employee/payroll privacy is improved, but deletion/export lifecycle still needs operational ownership
+
+**Location / evidence**
+
+- `prd.md:971-973` requires field-level permissions and ties preservation/deletion/anonymization to OQ-12.
+- `prd.md:975-985` adds a default retention table.
+- `prd.md:1290` keeps OQ-12 as required before Epic 9.
+
+**Risk**
+
+The retention defaults are now concrete enough for PRD level, but operational ownership remains thin. Export files are especially risky: the PRD says not to preserve them long-term and requires expiring download links, but it does not assign who can purge exports, how purge is audited, or whether generated files are stored outside the app.
+
+**Remediation**
+
+In the CAP-1/CAP-9 approval artifact, add an export lifecycle section: link expiry duration, storage location, purge owner, purge audit event, and emergency revocation process.
+
+## Low Findings
+
+### L1. The performance target may be too narrow for the stated "10+ branches" operating model
+
+**Location / evidence**
+
+- `prd.md:783` targets dashboard load within 3 seconds for around 10 branches.
+- `addendum.md` says headquarters must dynamically register 10 or more branches.
+- `prd.md:795` repeats 10-ish branches as the default concurrency scale.
+
+**Risk**
+
+This is not blocking for MVP, but the target can age badly. If the business grows from 10 to 20 or 30 branches, teams will have no agreed degradation rule or scaling acceptance boundary.
+
+**Remediation**
+
+Add a simple scale assumption: MVP validates 10 active branches, and any branch count above that must either meet the same 3-second target or trigger a reviewed performance target. This can live in NFR or architecture, not necessarily in the PRD body.
+
+## Notes On Recent Additions
+
+- **G6:** Directionally correct, but must become an actual checklist artifact before story generation.
+- **CAP promise ledger:** Strong improvement. Remaining issue is commitment vocabulary, not concept.
+- **Price trust state:** Strong improvement. Remaining issue is state transition and approval authority.
+- **Sensitive field matrix:** Strong improvement. Remaining issue is role-specific report/API/export acceptance.
+- **OQ-10 close criteria:** Directionally correct, but still overloaded under one OQ and risky for handoff language.

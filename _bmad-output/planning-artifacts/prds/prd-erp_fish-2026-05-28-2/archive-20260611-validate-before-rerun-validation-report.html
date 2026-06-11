@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<!--
+  PRD Validation Report — skeleton template.
+
+  This file is a starter the synthesis pass fills in directly. There is no
+  substitution engine. The LLM:
+    1. Reads {doc_workspace}/review-rubric.md and every review-{slug}.md from
+       additional reviewers.
+    2. Copies this skeleton.
+    3. Replaces the placeholder content (everything between TEMPLATE markers)
+       with the consolidated review, preserving the structure and CSS.
+    4. Writes the result to {doc_workspace}/validation-report.html.
+    5. Writes a markdown twin to {doc_workspace}/validation-report.md.
+
+  Visual rules the LLM must preserve:
+    - The container width, the color tokens, the typography.
+    - One dimension = one collapsible <section class="dimension">.
+    - Verdict pill uses the verdict-* class matching its judgment.
+    - Severity badge uses the sev-* class matching its level.
+    - Each extra reviewer (adversarial, etc.) gets its own collapsible section
+      below the rubric dimensions.
+    - The footer always shows the artifact paths and timestamp.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>PRD Validation: ERP Fish PRD</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+
+    --grade-exc: #16a34a;
+    --grade-good: #65a30d;
+    --grade-fair: #d97706;
+    --grade-poor: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .grade {
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: white;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .grade-excellent { background: var(--grade-exc); }
+  .grade-good { background: var(--grade-good); }
+  .grade-fair { background: var(--grade-fair); }
+  .grade-poor { background: var(--grade-poor); }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- TEMPLATE: header. Fill prd name, prd path, grade text & class. -->
+    <header class="report-header">
+      <div class="title">
+        <h1>ERP Fish PRD — Validation Report</h1>
+        <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
+      </div>
+      <div class="grade grade-poor">Poor</div>
+    </header>
+
+    <!-- TEMPLATE: overall synthesis paragraphs. Lift directly from
+         review-rubric.md "Overall verdict" section; expand if extra reviewers
+         materially shift the picture. Wrap each paragraph in <p>. -->
+    <div class="synthesis"><p>루브릭 리뷰는 PRD를 adequate로 보았습니다. 운영 thesis, scope honesty, FR/CAP 구조는 강하지만, 문서가 아직 draft이고 구현 게이트가 닫히지 않았으며 승인 추가 구현의 릴리스 경계가 확정되지 않았습니다.</p><p>추가 비판 리뷰는 critical 3건을 제기했습니다. 특히 민감 지표 숨김의 MVP/Extension 충돌, story-readiness와 OQ 영향표의 불일치, approved extension의 릴리스 경계 부재는 에픽/스토리 생성 전에 먼저 닫아야 합니다.</p></div>
+
+    <!-- TEMPLATE: dimension summary cards. One per rubric dimension. The
+         dim-verdict text uses one of: strong | adequate | thin | broken. -->
+    <div class="dimension-summary"><div class="dim-card"><div class="dim-name">Decision-readiness</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+<div class="dim-card"><div class="dim-name">Substance over theater</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+<div class="dim-card"><div class="dim-name">Strategic coherence</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+<div class="dim-card"><div class="dim-name">Done-ness clarity</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+<div class="dim-card"><div class="dim-name">Scope honesty</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+<div class="dim-card"><div class="dim-name">Downstream usability</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+<div class="dim-card"><div class="dim-name">Shape fit</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div></div>
+
+    <!-- TEMPLATE: one section per rubric dimension. Filled. -->
+    <section class="dimension"><details><summary><h2>Decision-readiness</h2><span class="verdict-pill verdict-adequate">adequate</span></summary><div class="dim-body"><div class="dim-judgment"><p>The PRD is honest about being draft and names real implementation gates: release boundary, calculation policy, inventory/FIFO policy, permissions/audit, and report data contract. The weakness is that the largest schedule/scope decision, CAP release targeting, is still deferred to later epic planning.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Approved extension release boundary is still not decision-ready</h3><span class="finding-location">§0.2</span></header><div class="finding-note">CAP-1~CAP-18 are approved additional implementation, but same-release versus follow-up deployment is left to epic planning.</div><div class="finding-fix"><strong>Fix:</strong> Add a CAP-level release target column and tie unknown targets to G1 or a named OQ.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Substance over theater</h2><span class="verdict-pill verdict-strong">strong</span></summary><div class="dim-body"><div class="dim-judgment"><p>The content is earned by the operating problem: head office needs a daily control tower before branch-manager meetings. The user journeys and NFRs are product-specific rather than template filler.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-low">low</span><h3 class="finding-title">CAP-12 has one vague validation bullet</h3><span class="finding-location">§8.6</span></header><div class="finding-note">The phrase about saving data in an analysis-ready structure repeats the CAP intent after structured fields are already listed.</div><div class="finding-fix"><strong>Fix:</strong> Replace it with concrete extraction/search targets such as worker, branch, work date, signal type, and loss reason.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Strategic coherence</h2><span class="verdict-pill verdict-adequate">adequate</span></summary><div class="dim-body"><div class="dim-judgment"><p>The core thesis is coherent: replace OneDrive Excel with a web ERP for monitoring, risk detection, closing, and correction traceability. Extension scope is broader and needs a clearer phase thesis.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Extension phases lack explicit value/risk rationale</h3><span class="finding-location">§8</span></header><div class="finding-note">Extension A-D are ordered, but the PRD does not say why each phase comes next or what condition allows the next phase to start.</div><div class="finding-fix"><strong>Fix:</strong> Add one phase goal and one exit condition per extension phase.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Some extension success metrics are feature checks</h3><span class="finding-location">§9</span></header><div class="finding-note">SM-7 through SM-10 verify that capabilities exist, but say less about operating outcomes.</div><div class="finding-fix"><strong>Fix:</strong> Add signals like upload rework rate, FIFO review rate, sensitive export attempts, or manual report correction count.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Done-ness clarity</h2><span class="verdict-pill verdict-adequate">adequate</span></summary><div class="dim-body"><div class="dim-judgment"><p>Most MVP FRs have testable consequences, especially audit fields, inventory carryover, closing/correction states, calculation rules, and report contracts. Gaps remain in UI criteria, security/account policy, and extension calculation readiness.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Some UI completion criteria remain subjective</h3><span class="finding-location">§4.4, §8.4</span></header><div class="finding-note">Phrases such as visually noticeable and good-looking size are not stable acceptance criteria.</div><div class="finding-fix"><strong>Fix:</strong> Define icon/text rules, ordering, accessibility, persistence, and min/max layout bounds.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">CAP-14 depends on unresolved loss calculation policy</h3><span class="finding-location">§8.4, §10</span></header><div class="finding-note">Desired sale price is central to loss calculation, but OQ-9 still asks what to do when it is missing or changed during business hours.</div><div class="finding-fix"><strong>Fix:</strong> Mark CAP-14 as blocked by OQ-9 and add lock/version/apply-time rules once closed.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Account lifecycle policy is partly outside acceptance</h3><span class="finding-location">§4.1</span></header><div class="finding-note">Password reset, deactivation, session expiry, and failed-login limits are pushed into settings or manuals.</div><div class="finding-fix"><strong>Fix:</strong> Add minimum product rules for reset flow, failed-login throttling, session expiry, and deactivation effects.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Scope honesty</h2><span class="verdict-pill verdict-strong">strong</span></summary><div class="dim-body"><div class="dim-judgment"><p>Scope honesty is a strength. MVP exclusions, approved extension scope, contract/ops items, deferred work, and Open Questions are separated rather than hidden.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">The OQ list needs an execution order for closure</h3><span class="finding-location">§10</span></header><div class="finding-note">There are 18 OQs across story-before-MVP, epic-before-extension, implementation-check, deferred, and contract-before-operation grades.</div><div class="finding-fix"><strong>Fix:</strong> Add a short queue before the table: close before MVP stories, before extension epics, during setup, and in contract.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Downstream usability</h2><span class="verdict-pill verdict-adequate">adequate</span></summary><div class="dim-body"><div class="dim-judgment"><p>The document is mostly source-extract friendly: FR, UJ, SM, OQ, and CAP IDs are unique and complete, and the glossary covers important domain nouns. CAP ordering and brownfield traceability can still be easier to audit.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-low">low</span><h3 class="finding-title">CAP definitions are complete but not easy to audit in numeric order</h3><span class="finding-location">§8</span></header><div class="finding-note">CAPs appear by domain grouping rather than numeric order.</div><div class="finding-fix"><strong>Fix:</strong> Add a compact numeric CAP ID index with title and section anchor.</div></article>
+<article class="finding"><header><span class="badge badge-sev-low">low</span><h3 class="finding-title">Brownfield traceability is preserved but not linked per FR</h3><span class="finding-location">§4, addendum.md</span></header><div class="finding-note">The addendum records source Excel/workflow observations, but FR clusters do not always say which legacy workflow they replace.</div><div class="finding-fix"><strong>Fix:</strong> Add optional source workflow notes per major FR cluster where useful.</div></article></div></details></section>
+<section class="dimension"><details><summary><h2>Shape fit</h2><span class="verdict-pill verdict-strong">strong</span></summary><div class="dim-body"><div class="dim-judgment"><p>The shape fits an internal brownfield operations tool: capability spec first, with enough journeys to ground UX and enough policy detail for audit, reports, calculations, and workflow states.</p></div></div><div class="findings-list"><article class="finding"><div class="finding-note">No findings.</div></article></div></details></section>
+
+    <!-- TEMPLATE: one section per extra reviewer that ran (adversarial, etc.).
+         Skip this block entirely if only the rubric walker ran. -->
+    <section class="reviewer-section"><details><summary><h2>Adversarial review</h2><span class="reviewer-source">review-adversarial-general.md</span></summary><div class="dim-body"><div class="dim-judgment"><p>조건부 보류: 현재 PRD는 discovery와 정책 정리용 draft로는 유용하지만, 그대로 에픽/스토리 생성 또는 구현 착수 기준으로 쓰기에는 위험하다는 판단입니다.</p></div></div><div class="findings-list"><article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">Sensitive metric hiding conflicts between MVP security and Extension scope</h3><span class="finding-location">§0.2, §4.1, §8.4, §10</span></header><div class="finding-note">The base permission model blocks sensitive metrics, while CAP-13 places sensitive metric hiding in approved extension scope and OQ-10 is still open. This can expose cost/profit data through dashboards, reports, exports, caches, or APIs.</div><div class="finding-fix"><strong>Fix:</strong> Split CAP-13 into an MVP mandatory server-side exposure baseline and an extension enhancement for configurable masking/audits.</div></article>
+<article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">The story-readiness table undercounts blocking Open Questions</h3><span class="finding-location">§0.2, §4.3, §10</span></header><div class="finding-note">FR-13 is marked mainly against OQ-2, but OQ-7, OQ-9, OQ-10, and OQ-14 also affect calculation or exposure.</div><div class="finding-fix"><strong>Fix:</strong> Regenerate story readiness from the full OQ impact matrix and split FR-13 into story-ready and blocked metric slices.</div></article>
+<article class="finding"><header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">Approved extension is not a release boundary</h3><span class="finding-location">§0.2, §8</span></header><div class="finding-note">Approved additional implementation sounds committed, while deployment timing is left undecided. This affects estimates, contracts, UX, data model choices, and story slicing.</div><div class="finding-fix"><strong>Fix:</strong> Bucket every CAP as MVP same release, prerequisite, post-MVP committed, optional, blocked, or contract/ops only.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">FRs still grant broad HQ user powers</h3><span class="finding-location">§4.1, §4.5</span></header><div class="finding-note">The permission section splits HQ profiles, but FR-18 and FR-19 still use broad HQ user wording for force-edit and close actions.</div><div class="finding-fix"><strong>Fix:</strong> Add an action-level permission matrix and replace broad wording with allowed profiles or mutation rights.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Closing policy lacks a hard-stop matrix</h3><span class="finding-location">§4.5, §8.4</span></header><div class="finding-note">Serious data quality failures are mostly treated as overrideable with a reason. Some conditions should be hard stops.</div><div class="finding-fix"><strong>Fix:</strong> Define closeability by condition, individual close, bulk close, override permission, and required audit fields.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Concurrent editing is underspecified</h3><span class="finding-location">§3.1, §4.5, §5, CAP-16</span></header><div class="finding-note">Branch managers and HQ can both edit before close, but conflict detection and merge behavior are not defined enough for UX/API design.</div><div class="finding-fix"><strong>Fix:</strong> Define edit tokens, conflict unit, compare/resolve UX, HQ force-edit locking, stale session behavior, and partial-save merge rules.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">MVP cost/profit calculations are not product-safe enough</h3><span class="finding-location">§4.3, §10</span></header><div class="finding-note">The PRD separates MVP operating values from FIFO final values but does not fully define MVP price basis and missing-price behavior.</div><div class="finding-fix"><strong>Fix:</strong> Define unit price source priority, missing-price behavior, display/hide rules, and closeability when price basis is unresolved.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Upload idempotency can merge distinct purchase rows</h3><span class="finding-location">§8.2</span></header><div class="finding-note">Branch/date/item/quantity/price style keys can collapse legitimate duplicate rows or duplicate corrected rows.</div><div class="finding-fix"><strong>Fix:</strong> Use layered row identity: batch, sheet, row number, document/supplier keys, mapping id, and hash as a secondary duplicate signal.</div></article>
+<article class="finding"><header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Backup and recovery targets are too weak</h3><span class="finding-location">§1, §5</span></header><div class="finding-note">A daily meeting and ledger system with 1-business-day RPO/RTO can lose important close, correction, and upload work.</div><div class="finding-fix"><strong>Fix:</strong> Set stronger product minimums for database RPO, business-hour RTO, immutable audit retention, uploaded source retention, and restore drill acceptance.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Author name can conflict with login and audit identity</h3><span class="finding-location">§4.1, §8.4</span></header><div class="finding-note">A free-form 작성자 이름 can be mistaken for the accountable authenticated actor.</div><div class="finding-fix"><strong>Fix:</strong> Separate authenticated account, displayed author name, and actual input person, and state that author name never replaces audit actor.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">External alert messages can leak sensitive data</h3><span class="finding-location">§8.6, §8.4</span></header><div class="finding-note">LINE/Telegram alerts leave the ERP permission boundary, but the PRD secures tokens more than message content.</div><div class="finding-fix"><strong>Fix:</strong> Add allowed fields by recipient, masking, branch/HQ templates, group restrictions, template approval, and cautious log retention.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Employee/payroll reference scope has privacy risk</h3><span class="finding-location">§8.1, §10</span></header><div class="finding-note">Reference-only employee/payroll data still includes personal and compensation-adjacent information.</div><div class="finding-fix"><strong>Fix:</strong> Add field-level access, branch visibility, export rules, inactive employee handling, and retention/deletion policy.</div></article>
+<article class="finding"><header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Master data effective-date rules are incomplete</h3><span class="finding-location">§4.6, §8.2</span></header><div class="finding-note">Changed item mappings or default prices can unexpectedly affect drafts, uploads, reports, or old corrections.</div><div class="finding-fix"><strong>Fix:</strong> Define effective dating per master type and upload mapping precedence after preview.</div></article>
+<article class="finding"><header><span class="badge badge-sev-low">low</span><h3 class="finding-title">Technical terms may need operator-facing wording</h3><span class="finding-location">전체</span></header><div class="finding-note">Terms like mutation, commit, rollback, idempotency, and cache may be unclear to PM/HQ approvers.</div><div class="finding-fix"><strong>Fix:</strong> Add a short technical glossary or paired wording on first use.</div></article>
+<article class="finding"><header><span class="badge badge-sev-low">low</span><h3 class="finding-title">Excel-level language can widen expectations</h3><span class="finding-location">§8.5</span></header><div class="finding-note">Excel level can imply layout, formulas, charts, and export shape parity beyond intended server-calculation parity.</div><div class="finding-fix"><strong>Fix:</strong> Replace with explicit matched report fields and excluded Excel behaviors.</div></article></div></details></section>
+
+    <!-- TEMPLATE: mechanical notes — short, bulleted. Skip if there are none. -->
+    <div class="mechanical"><h3>Mechanical notes</h3><ul><li>FR IDs are contiguous: FR-1 through FR-29.</li>
+<li>CAP IDs are all present: CAP-1 through CAP-19, with CAP-19 treated as contract/ops.</li>
+<li>UJ IDs are contiguous: UJ-1 through UJ-4, each with a named protagonist.</li>
+<li>OQ IDs are contiguous: OQ-1 through OQ-18.</li>
+<li>SM IDs are contiguous: SM-1 through SM-11, plus counter-metrics SM-C1 through SM-C5.</li>
+<li>No inline [ASSUMPTION] tags were found; §11 points remaining decisions to §10.</li>
+<li>No TODO/TBD placeholders were found in the reviewed PRD.</li></ul></div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md</span>
+        <span>Generated: 2026-06-10T18:15:00+09:00</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

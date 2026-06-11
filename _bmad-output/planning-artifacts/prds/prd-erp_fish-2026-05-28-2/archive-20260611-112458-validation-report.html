@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>PRD Validation: ERP Fish PRD</title>
+<style>
+  :root { --bg:#fafaf9; --surface:#fff; --border:#e7e5e4; --text:#1c1917; --muted:#78716c; --green:#16a34a; --lime:#65a30d; --amber:#d97706; --orange:#ea580c; --red:#dc2626; --slate:#64748b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; font-size:15px; }
+  .container { max-width:960px; margin:0 auto; padding:32px 24px 64px; }
+  header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding-bottom:16px; border-bottom:1px solid var(--border); margin-bottom:24px; }
+  h1 { margin:0; font-size:24px; }
+  h2 { margin:28px 0 10px; font-size:18px; }
+  h3 { margin:18px 0 8px; font-size:16px; }
+  .subtitle { color:var(--muted); font-family:ui-monospace,Menlo,monospace; font-size:12px; margin-top:4px; }
+  .grade { background:var(--amber); color:white; padding:10px 18px; border-radius:8px; font-weight:700; white-space:nowrap; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:18px 22px; margin-bottom:18px; }
+  .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:20px; }
+  .dim { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+  .dim .name { color:var(--muted); font-size:13px; }
+  .strong { color:var(--green); font-weight:700; }
+  .adequate { color:var(--lime); font-weight:700; }
+  .sev-critical { color:var(--red); font-weight:700; }
+  .sev-high { color:var(--orange); font-weight:700; }
+  .sev-medium { color:var(--amber); font-weight:700; }
+  .sev-low { color:var(--slate); font-weight:700; }
+  details { background:var(--surface); border:1px solid var(--border); border-radius:8px; margin-bottom:12px; overflow:hidden; }
+  summary { cursor:pointer; padding:13px 16px; font-weight:700; border-bottom:1px solid var(--border); }
+  details > div { padding:14px 18px; }
+  code { font-family:ui-monospace,Menlo,monospace; background:#f5f5f4; padding:1px 4px; border-radius:4px; }
+  footer { margin-top:28px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Validation Report — ERP Fish PRD</h1>
+      <div class="subtitle">C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\prd.md</div>
+    </div>
+    <div class="grade">Fair</div>
+  </header>
+
+  <section class="card">
+    <p>루브릭 리뷰는 현재 PRD를 <strong>adequate</strong>로 보았습니다. 2026-06-11 draft는 이전 검증 대상보다 훨씬 안전합니다. 민감 지표 충돌, FR-13/OQ 영향 누락, CAP 릴리스 경계 부재는 본문에서 상당히 정리되었습니다.</p>
+    <p>추가 비판 리뷰는 <strong>critical 없이 high 3건</strong>을 제기했습니다. 핵심은 PRD 내용이 부족하다는 것보다, 문서가 아직 <code>draft</code>이고 MVP story generation 전에 닫아야 할 OQ와 CAP commitment가 남아 있다는 점입니다.</p>
+  </section>
+
+  <section class="summary">
+    <div class="dim"><div class="name">Decision-readiness</div><div class="adequate">adequate</div></div>
+    <div class="dim"><div class="name">Substance over theater</div><div class="strong">strong</div></div>
+    <div class="dim"><div class="name">Strategic coherence</div><div class="adequate">adequate</div></div>
+    <div class="dim"><div class="name">Done-ness clarity</div><div class="adequate">adequate</div></div>
+    <div class="dim"><div class="name">Scope honesty</div><div class="strong">strong</div></div>
+    <div class="dim"><div class="name">Downstream usability</div><div class="adequate">adequate</div></div>
+    <div class="dim"><div class="name">Shape fit</div><div class="strong">strong</div></div>
+  </section>
+
+  <h2>Findings By Severity</h2>
+  <details open><summary><span class="sev-critical">Critical (0)</span></summary><div><p>없음.</p></div></details>
+
+  <details open><summary><span class="sev-high">High (3)</span></summary><div>
+    <h3>[Decision-readiness] MVP story generation is still gated by open policy decisions</h3>
+    <p><strong>Location:</strong> §0.1, §0.2, §10</p>
+    <p>The PRD clearly discloses the blockers, but it still cannot be used as a final story source until OQ-1, OQ-2, OQ-3, and the MVP minimum slice of OQ-10 are closed or converted into discovery-only stories.</p>
+    <p><strong>Fix:</strong> Before story generation, produce the G1/G2/G4 evidence artifacts and classify each FR slice as implementation story, discovery story, or blocked.</p>
+    <h3>[Decision-readiness] Several CAP release buckets are categories, not delivery commitments</h3>
+    <p><strong>Location:</strong> §8</p>
+    <p>The new 릴리스 버킷 table is useful, but "후속 확정" does not yet say whether each CAP belongs to the next paid release, a later committed release, or future planning.</p>
+    <p><strong>Fix:</strong> Add a target release/contract column or a CAP commitment ledger with owner, target milestone, and approval artifact.</p>
+    <h3>[Adversarial] MVP price basis still lacks a strong price-trust state</h3>
+    <p><strong>Location:</strong> §4.3, §4.5</p>
+    <p>The MVP unit-price priority is defined, but user-entered price can drive cost/profit numbers and individual close can proceed with a reason when price basis is missing.</p>
+    <p><strong>Fix:</strong> Add source, verification status, approved by, effective date, and manual override reason per price; show price-trust status in close summaries and reports.</p>
+  </div></details>
+
+  <details open><summary><span class="sev-medium">Medium (6)</span></summary><div>
+    <ul>
+      <li><strong>Extension breadth still risks diffusing the operating thesis</strong> (§8). Add an extension priority rule for what protects the morning-meeting control-tower thesis first.</li>
+      <li><strong>Account security still lacks numeric thresholds</strong> (§4.1). Add failed-login count, lockout duration, session timeout, and reset-token expiry defaults.</li>
+      <li><strong>Sensitive-field allowlists are not enumerated per surface</strong> (§4.1, §4.7, §8.6). Add a field exposure matrix.</li>
+      <li><strong>OQ-10 combines MVP minimum blocking and extension hardening</strong> (§10). Split it or add two close criteria.</li>
+      <li><strong>Employee/payroll privacy retention is still deferred</strong> (§8.1, §10). Create a privacy retention table before CAP-1/CAP-9 epic work.</li>
+      <li><strong>Restore drill acceptance is still thin</strong> (§5). Include ledger, close events, corrections, upload originals, preview/commit/void history, and audit-log search.</li>
+    </ul>
+  </div></details>
+
+  <details><summary><span class="sev-low">Low (2)</span></summary><div>
+    <ul>
+      <li><strong>Technical terms remain in approval-facing text</strong> (§3, §4, §8). Prefer operator-facing Korean terms after the glossary.</li>
+      <li><strong>Some phase labels remain English-coded</strong> (§8). Optionally rename Extension A/B/C/D and Contract/Ops to Korean labels.</li>
+    </ul>
+  </div></details>
+
+  <h2>Mechanical Notes</h2>
+  <section class="card">
+    <ul>
+      <li>Frontmatter status is <code>draft</code>, updated <code>2026-06-11</code>.</li>
+      <li>FR IDs are contiguous: FR-1 through FR-29.</li>
+      <li>CAP IDs are all present: CAP-1 through CAP-19.</li>
+      <li>OQ IDs are contiguous: OQ-1 through OQ-18.</li>
+      <li>SM IDs are contiguous: SM-1 through SM-11, plus counter-metrics SM-C1 through SM-C5.</li>
+      <li>UJ IDs are contiguous: UJ-1 through UJ-4.</li>
+      <li>No inline <code>[ASSUMPTION]</code>, <code>TODO</code>, or <code>TBD</code> markers were found in <code>prd.md</code>.</li>
+    </ul>
+  </section>
+
+  <h2>Reviewer Files</h2>
+  <section class="card">
+    <ul>
+      <li><code>C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-rubric.md</code></li>
+      <li><code>C:\Code\Project\erp_fish\_bmad-output\planning-artifacts\prds\prd-erp_fish-2026-05-28-2\review-adversarial-general.md</code></li>
+    </ul>
+  </section>
+
+  <footer>
+    Rubric: C:\Code\Project\erp_fish\.agents\skills\bmad-prd\assets\prd-validation-checklist.md<br>
+    Run at: 2026-06-11T10:46:48+09:00
+  </footer>
+</div>
+</body>
+</html>
