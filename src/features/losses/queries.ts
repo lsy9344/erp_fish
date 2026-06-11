@@ -9,7 +9,7 @@ import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/au
 import { db } from "~/server/db";
 import { getTodayStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
-import { type LossStepData } from "./types";
+import { type LossStepData, type StoreManagerLossStepData } from "./types";
 
 const lossItemSelect = {
   id: true,
@@ -142,8 +142,12 @@ export async function getLossStepDataByLedgerIdInTx(
 export async function getLossStepData(
   storeId: string,
   actorId: string,
-): Promise<LossStepData> {
-  return db.$transaction((tx) => getLossStepDataInTx(tx, storeId, actorId));
+): Promise<StoreManagerLossStepData> {
+  const data = await db.$transaction((tx) =>
+    getLossStepDataInTx(tx, storeId, actorId),
+  );
+
+  return toStoreManagerLossStepData(data);
 }
 
 export async function getLossStepDataByLedgerId(
@@ -153,4 +157,39 @@ export async function getLossStepDataByLedgerId(
   await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) => getLossStepDataByLedgerIdInTx(tx, ledgerId));
+}
+
+export function toStoreManagerLossStepData(
+  data: LossStepData,
+): StoreManagerLossStepData {
+  return {
+    ...data,
+    productOptions: data.productOptions.map(({ defaultUnitPrice, ...option }) => {
+      void defaultUnitPrice;
+
+      return option;
+    }),
+    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
+      void unitPrice;
+      void amount;
+
+      return item;
+    }),
+    summary: {
+      totalQuantity: data.summary.totalQuantity,
+      byProduct: data.summary.byProduct.map(({ amount, ...item }) => {
+        void amount;
+
+        return item;
+      }),
+    },
+    signalCandidates: data.signalCandidates.map(
+      ({ amount, exceededAmount, ...item }) => {
+        void amount;
+        void exceededAmount;
+
+        return item;
+      },
+    ),
+  };
 }

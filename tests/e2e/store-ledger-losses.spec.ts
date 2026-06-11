@@ -303,10 +303,9 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
       .filter({ hasText: "손실/폐기 항목 2건을 저장했습니다." }),
   ).toBeVisible();
   await expect(page.getByText(`기준 초과 ${first.name}`)).toBeVisible();
+  await expect(page.getByText(`기준 초과 ${first.name}`)).toContainText("수량");
   await expect(page.getByText("총 손실 수량").locator("..")).toContainText("3");
-  await expect(page.getByText("총 손실액").locator("..")).toContainText(
-    "8,000원",
-  );
+  await expect(page.getByText("총 손실액")).toHaveCount(0);
 
   await page.reload();
 
@@ -323,6 +322,22 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
     "떨이 판매",
   );
+  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
+  await expect(page.getByText("총 손실액")).toHaveCount(0);
+  await expect(page.getByText("기준 단가")).toHaveCount(0);
+  const html = await page.content();
+
+  for (const sensitiveNeedle of [
+    "defaultUnitPrice",
+    "unitPrice",
+    "totalAmount",
+    "exceededAmount",
+    "5000",
+    "3000",
+  ]) {
+    expect(html).not.toContain(sensitiveNeedle);
+  }
 
   const renamedProductName = `변경된 ${first.name}`;
   const renamedLossTypeName = `변경된 ${disposal.name}`;
@@ -491,9 +506,20 @@ test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다", 
   const row = page.locator("tr").filter({ hasText: product.name });
 
   await expect(row).toContainText("2");
-  await expect(row).toContainText("20,000원");
+  await expect(row).not.toContainText("20,000원");
   await expect(row.getByText("조정 필요").first()).toBeVisible();
   await expect(row.getByText("기준 5")).toBeVisible();
+  const html = await page.content();
+
+  for (const sensitiveNeedle of [
+    "lossAmount",
+    "inventoryAmount",
+    "unitPrice",
+    "purchaseAmount",
+    "20000",
+  ]) {
+    expect(html).not.toContain(sensitiveNeedle);
+  }
 
   const savedLoss = await prisma.ledgerLossItem.findFirst({
     where: {

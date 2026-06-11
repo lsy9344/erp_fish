@@ -327,15 +327,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
   assert.match(
     responseShapeSource,
+    /paymentDifference:\s*data\.summary\.paymentDifference/,
+  );
+  assert.doesNotMatch(
+    responseShapeSource,
     /grossMarginRate:\s*data\.summary\.grossMarginRate/,
   );
-  assert.match(
+  assert.doesNotMatch(
     responseShapeSource,
     /inventoryAmount:\s*data\.summary\.inventoryAmount/,
-  );
-  assert.match(
-    responseShapeSource,
-    /paymentDifference:\s*data\.summary\.paymentDifference/,
   );
 
   assert.doesNotMatch(clientSource, /summary\.costOfGoodsSold/);
@@ -383,13 +383,13 @@ test("store manager ledger review response omits sensitive accounting metrics", 
 
   assert.deepEqual(Object.keys(safeReview.summary), [
     "totalSales",
-    "grossMarginRate",
-    "inventoryAmount",
     "paymentDifference",
   ]);
   assert.equal(Object.hasOwn(safeReview.summary, "costOfGoodsSold"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "grossProfit"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "operatingProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
 });

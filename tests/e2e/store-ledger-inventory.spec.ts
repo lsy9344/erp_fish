@@ -126,6 +126,91 @@ test.beforeEach(async () => {
   await cleanupStoryTwoFourData();
 });
 
+test("지점장 재고 화면 응답은 단가와 재고금액, 조정 금액을 직렬화하지 않는다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-4 민감 차단 광어", "냉동", 987654);
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      closingDate: getTodayKstMidnight(),
+      status: "IN_PROGRESS",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 10,
+      purchasedQuantity: 0,
+      currentQuantity: 9,
+      quantity: 9,
+      inventoryAmount: 8_888_886,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await prisma.ledgerInventoryAdjustment.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      ledgerInventoryItemId: inventoryItem.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      beforeQuantity: 10,
+      beforeAmount: 9_876_540,
+      afterQuantity: 9,
+      afterAmount: 8_888_886,
+      differenceQuantity: -1,
+      differenceAmount: -987_654,
+      reason: "민감 금액 차단 확인",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  const row = page.locator("tr").filter({ hasText: product.name });
+  await expect(row).toContainText(product.name);
+  await expect(row).toContainText("10");
+  await expect(row).toContainText("9");
+  await expect(row.getByText("조정됨").first()).toBeVisible();
+  await expect(row).not.toContainText("987,654원");
+  await expect(row).not.toContainText("8,888,886원");
+  await expect(row).not.toContainText("9,876,540원");
+
+  const html = await page.content();
+
+  for (const sensitiveNeedle of [
+    "unitPrice",
+    "purchaseAmount",
+    "lossAmount",
+    "inventoryAmount",
+    "beforeAmount",
+    "afterAmount",
+    "differenceAmount",
+    "987654",
+    "8888886",
+    "9876540",
+    "-987654",
+  ]) {
+    expect(html).not.toContain(sensitiveNeedle);
+  }
+});
+
 test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 행을 유지한다", async ({
   page,
 }) => {

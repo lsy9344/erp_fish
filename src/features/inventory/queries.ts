@@ -9,7 +9,11 @@ import {
 } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
-import { type InventoryStepData, type InventoryStepLine } from "./types";
+import {
+  type InventoryStepData,
+  type InventoryStepLine,
+  type StoreManagerInventoryStepData,
+} from "./types";
 
 const inventoryItemSelect = {
   id: true,
@@ -618,10 +622,12 @@ export async function getInventoryStepDataByLedgerIdInTx(
 export async function getInventoryStepData(
   storeId: string,
   actorId: string,
-): Promise<InventoryStepData> {
-  return db.$transaction((tx) =>
+): Promise<StoreManagerInventoryStepData> {
+  const data = await db.$transaction((tx) =>
     getInventoryStepDataInTx(tx, storeId, actorId),
   );
+
+  return toStoreManagerInventoryStepData(data);
 }
 
 export async function getInventoryStepDataByLedgerId(
@@ -633,4 +639,43 @@ export async function getInventoryStepDataByLedgerId(
   return db.$transaction((tx) =>
     getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
   );
+}
+
+export function toStoreManagerInventoryStepData(
+  data: InventoryStepData,
+): StoreManagerInventoryStepData {
+  return {
+    ...data,
+    items: data.items.map(
+      ({
+        unitPrice,
+        purchaseAmount,
+        lossAmount,
+        inventoryAmount,
+        adjustment,
+        ...item
+      }) => {
+        void unitPrice;
+        void purchaseAmount;
+        void lossAmount;
+        void inventoryAmount;
+
+        return {
+          ...item,
+          adjustment: adjustment
+            ? {
+                id: adjustment.id,
+                beforeQuantity: adjustment.beforeQuantity,
+                afterQuantity: adjustment.afterQuantity,
+                differenceQuantity: adjustment.differenceQuantity,
+                reason: adjustment.reason,
+                createdByName: adjustment.createdByName,
+                createdAt: adjustment.createdAt,
+                updatedAt: adjustment.updatedAt,
+              }
+            : null,
+        };
+      },
+    ),
+  };
 }

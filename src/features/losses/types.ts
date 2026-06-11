@@ -58,3 +58,33 @@ export type LossStepData = {
   };
   signalCandidates: LossSignalCandidate[];
 };
+
+export type StoreManagerLossProductOption = Omit<
+  LossProductOption,
+  "defaultUnitPrice"
+>;
+
+export type StoreManagerLossLineItem = Omit<
+  LossLineItem,
+  "unitPrice" | "amount"
+>;
+
+export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+export type StoreManagerLossSignalCandidate = Omit<
+  LossSignalCandidate,
+  "amount" | "exceededAmount"
+>;
+
+export type StoreManagerLossStepData = Omit<
+  LossStepData,
+  "productOptions" | "lossItems" | "summary" | "signalCandidates"
+> & {
+  productOptions: StoreManagerLossProductOption[];
+  lossItems: StoreManagerLossLineItem[];
+  summary: {
+    totalQuantity: number;
+    byProduct: StoreManagerLossProductSummary[];
+  };
+  signalCandidates: StoreManagerLossSignalCandidate[];
+};

@@ -19,7 +19,11 @@ import {
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { saveLedgerLosses } from "~/features/losses/actions";
-import { type LossStepData } from "~/features/losses/types";
+import {
+  type LossProductOption,
+  type LossStepData,
+  type StoreManagerLossStepData,
+} from "~/features/losses/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
 
 type LossLineState = {
@@ -30,17 +34,19 @@ type LossLineState = {
   productName: string;
   productCategory: string;
   productSpec: string;
-  unitPrice: number;
+  unitPrice?: number;
   lossTypeName: string;
   quantity: string;
   amount: string;
   reason: string;
 };
 
+type LossDisplayData = LossStepData | StoreManagerLossStepData;
+
 type LossStepClientProps = {
   storeName: string;
-  initialData: LossStepData;
-  saveAction?: (input: unknown) => Promise<ActionResult<LossStepData>>;
+  initialData: LossDisplayData;
+  saveAction?: (input: unknown) => Promise<ActionResult<LossDisplayData>>;
   ledgerLabel?: string;
   showStepNavigation?: boolean;
 };
@@ -81,7 +87,6 @@ function createLineState(clientKey: string): LossLineState {
     productName: "",
     productCategory: "",
     productSpec: "",
-    unitPrice: 0,
     lossTypeName: "",
     quantity: "",
     amount: "",
@@ -89,7 +94,7 @@ function createLineState(clientKey: string): LossLineState {
   };
 }
 
-function toLineState(data: LossStepData): LossLineState[] {
+function toLineState(data: LossDisplayData): LossLineState[] {
   return data.lossItems.map((item) => ({
     clientKey: item.id,
     id: item.id,
@@ -98,12 +103,18 @@ function toLineState(data: LossStepData): LossLineState[] {
     productName: item.productName,
     productCategory: item.productCategory,
     productSpec: item.productSpec,
-    unitPrice: item.unitPrice,
+    unitPrice: "unitPrice" in item ? item.unitPrice : undefined,
     lossTypeName: item.lossTypeName,
     quantity: String(item.quantity),
-    amount: String(item.amount),
+    amount: "amount" in item ? String(item.amount) : "",
     reason: item.reason,
   }));
+}
+
+function hasDefaultUnitPrice(
+  product: LossDisplayData["productOptions"][number] | undefined,
+): product is LossProductOption {
+  return Boolean(product && "defaultUnitPrice" in product);
 }
 
 function parseNumber(value: string) {
@@ -219,7 +230,9 @@ export function LossStepClient({
       productName: product?.name ?? "",
       productCategory: product?.category ?? "",
       productSpec: product?.spec ?? "",
-      unitPrice: product?.defaultUnitPrice ?? 0,
+      unitPrice: hasDefaultUnitPrice(product)
+        ? product.defaultUnitPrice
+        : undefined,
     });
   }
 
@@ -307,6 +320,7 @@ export function LossStepClient({
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
   const nextStepHref = `/app/store-entry?storeId=${data.storeId}&step=work`;
+  const showsSensitiveLossAmounts = "totalAmount" in data.summary;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -339,12 +353,14 @@ export function LossStepClient({
               {draftTotalQuantity}
             </p>
           </div>
-          <div className="bg-muted/40 rounded-md p-3">
-            <p className="text-muted-foreground text-sm">총 손실액</p>
-            <p className="text-xl font-semibold tabular-nums">
-              {formatKrw(draftTotalAmount)}
-            </p>
-          </div>
+          {showsSensitiveLossAmounts ? (
+            <div className="bg-muted/40 rounded-md p-3">
+              <p className="text-muted-foreground text-sm">총 손실액</p>
+              <p className="text-xl font-semibold tabular-nums">
+                {formatKrw(draftTotalAmount)}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {data.summary.byProduct.length > 0 ? (
@@ -356,7 +372,8 @@ export function LossStepClient({
               >
                 <span>{summary.productName}</span>
                 <span className="tabular-nums">
-                  {summary.quantity} · {formatKrw(summary.amount)}
+                  {summary.quantity}
+                  {"amount" in summary ? ` · ${formatKrw(summary.amount)}` : ""}
                 </span>
               </div>
             ))}
@@ -368,7 +385,7 @@ export function LossStepClient({
             {data.signalCandidates.map((candidate) => (
               <Badge key={candidate.productId} variant="secondary">
                 기준 초과 {candidate.productName} {candidate.quantity} ·{" "}
-                {formatKrw(candidate.amount)}
+                {"amount" in candidate ? formatKrw(candidate.amount) : "수량"}
               </Badge>
             ))}
           </div>
@@ -541,8 +558,10 @@ export function LossStepClient({
                     <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
                       품목명: {item.productName || "선택 전"} · 구분:{" "}
                       {item.productCategory || "-"} · 규격:{" "}
-                      {item.productSpec || "-"} · 기준 단가:{" "}
-                      {formatKrw(item.unitPrice)}
+                      {item.productSpec || "-"}
+                      {item.unitPrice !== undefined
+                        ? ` · 기준 단가: ${formatKrw(item.unitPrice)}`
+                        : ""}
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">

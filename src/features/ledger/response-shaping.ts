@@ -21,12 +21,17 @@ export function toStoreManagerLedgerCostStepData(
 export function toStoreManagerLedgerReviewStepData(
   data: LedgerReviewStepData,
 ): StoreManagerLedgerReviewStepData {
+  const signals = data.signals.map(({ amount, ...signal }) => {
+    void amount;
+
+    return signal;
+  });
+
   return {
     ...data,
+    signals,
     summary: {
       totalSales: data.summary.totalSales,
-      grossMarginRate: data.summary.grossMarginRate,
-      inventoryAmount: data.summary.inventoryAmount,
       paymentDifference: data.summary.paymentDifference,
     },
   };

@@ -89,13 +89,6 @@ function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
-function formatPercent(value: number) {
-  return `${new Intl.NumberFormat("ko-KR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value * 100)}%`;
-}
-
 function formatClosingDate(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "full",
@@ -119,14 +112,12 @@ function normalizeStatusLabel(status: StoreManagerLedgerReviewStepData["status"]
   return "휴무";
 }
 
-function formatMetric(metric: LedgerReviewMetric, kind: "krw" | "percent") {
+function formatMetric(metric: LedgerReviewMetric) {
   if (metric.value === null) {
     return metric.unavailableReason ?? "계산 불가";
   }
 
-  return kind === "percent"
-    ? formatPercent(metric.value)
-    : formatKrw(metric.value);
+  return formatKrw(metric.value);
 }
 
 function metricDetail(metric: LedgerReviewMetric) {
@@ -140,11 +131,9 @@ function metricDetail(metric: LedgerReviewMetric) {
 function MetricCard({
   label,
   metric,
-  kind = "krw",
 }: {
   label: string;
   metric: LedgerReviewMetric;
-  kind?: "krw" | "percent";
 }) {
   const detail = metricDetail(metric);
 
@@ -152,7 +141,7 @@ function MetricCard({
     <div className="min-w-0 rounded-lg border p-3">
       <p className="text-muted-foreground text-sm break-words">{label}</p>
       <p className="mt-2 text-lg font-semibold tracking-normal break-words tabular-nums">
-        {formatMetric(metric, kind)}
+        {formatMetric(metric)}
       </p>
       {detail ? (
         <p className="text-muted-foreground mt-1 text-xs break-words">
@@ -274,12 +263,6 @@ export function ReviewSummaryClient({
         </h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="총매출" metric={summary.totalSales} />
-          <MetricCard
-            label="이익률"
-            metric={summary.grossMarginRate}
-            kind="percent"
-          />
-          <MetricCard label="재고금액" metric={summary.inventoryAmount} />
           <MetricCard label="결제 차액" metric={summary.paymentDifference} />
         </div>
       </section>
@@ -365,9 +348,6 @@ export function ReviewSummaryClient({
                 <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-medium tabular-nums">
                   {signal.quantity !== undefined ? (
                     <span>수량 {formatSignedQuantity(signal.quantity)}</span>
-                  ) : null}
-                  {signal.amount !== undefined ? (
-                    <span>금액 {formatSignedKrw(signal.amount)}</span>
                   ) : null}
                 </p>
               </AlertDescription>

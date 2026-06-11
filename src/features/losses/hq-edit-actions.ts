@@ -170,7 +170,7 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount,
+      amount: loss.amount ?? existing.amount,
       reason: loss.reason,
     };
   }
@@ -189,7 +189,7 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount,
+    amount: loss.amount ?? existing?.amount ?? 0,
     reason: loss.reason,
   };
 }
@@ -271,9 +271,23 @@ export async function saveHqLedgerLosses(
 
         for (let index = 0; index < parsed.data.losses.length; index += 1) {
           const loss = parsed.data.losses[index]!;
+          const existing = existingById.get(loss.id);
+
+          if (loss.amount === null && !existing) {
+            return actionError<LossStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              {
+                [`losses.${index}.amount`]: [
+                  "손실 금액은 0원 이상의 정수여야 합니다.",
+                ],
+              },
+            );
+          }
+
           const normalized = normalizeLossItem({
             loss,
-            existing: existingById.get(loss.id),
+            existing,
             product: productsById.get(loss.productId),
             lossType: lossTypesById.get(loss.ledgerInputCodeId),
           });

@@ -55,3 +55,22 @@ export type InventoryStepData = {
   items: InventoryStepLine[];
   carryover: InventoryCarryoverState;
 };
+
+export type StoreManagerInventoryAdjustmentView = Omit<
+  InventoryAdjustmentView,
+  "beforeAmount" | "afterAmount" | "differenceAmount"
+>;
+
+export type StoreManagerInventoryStepLine = Omit<
+  InventoryStepLine,
+  "unitPrice" | "purchaseAmount" | "lossAmount" | "inventoryAmount" | "adjustment"
+> & {
+  adjustment: StoreManagerInventoryAdjustmentView | null;
+};
+
+export type StoreManagerInventoryStepData = Omit<
+  InventoryStepData,
+  "items"
+> & {
+  items: StoreManagerInventoryStepLine[];
+};

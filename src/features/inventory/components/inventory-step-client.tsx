@@ -32,23 +32,30 @@ import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
-import { type InventoryStepData } from "~/features/inventory/types";
+import {
+  type InventoryAdjustmentView,
+  type InventoryStepData,
+  type InventoryStepLine,
+  type StoreManagerInventoryStepData,
+} from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
 
 type InventoryStepClientProps = {
   storeName: string;
-  initialData: InventoryStepData;
+  initialData: InventoryDisplayData;
   saveItemsAction?: (
     input: unknown,
-  ) => Promise<ActionResult<InventoryStepData>>;
+  ) => Promise<ActionResult<InventoryDisplayData>>;
   saveAdjustmentAction?: (
     input: unknown,
-  ) => Promise<ActionResult<InventoryStepData>>;
+  ) => Promise<ActionResult<InventoryDisplayData>>;
   ledgerLabel?: string;
   showStepNavigation?: boolean;
 };
 
-type InventoryLineState = InventoryStepData["items"][number] & {
+type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
+
+type InventoryLineState = InventoryDisplayData["items"][number] & {
   currentQuantityInput: string;
   adjustmentReasonInput: string;
 };
@@ -86,6 +93,18 @@ function parseQuantityInput(value: string) {
     : null;
 }
 
+function hasSensitiveInventoryAmounts(
+  item: InventoryDisplayData["items"][number],
+): item is InventoryStepLine {
+  return "unitPrice" in item;
+}
+
+function hasSensitiveAdjustmentAmounts(
+  adjustment: InventoryLineState["adjustment"],
+): adjustment is InventoryAdjustmentView {
+  return Boolean(adjustment && "differenceAmount" in adjustment);
+}
+
 function getInventoryAmount(value: string, unitPrice: number) {
   const quantity = parseQuantityInput(value);
 
@@ -102,7 +121,7 @@ function getInventoryAmount(value: string, unitPrice: number) {
   return amount;
 }
 
-function toLineState(data: InventoryStepData): InventoryLineState[] {
+function toLineState(data: InventoryDisplayData): InventoryLineState[] {
   return data.items.map((item) => ({
     ...item,
     currentQuantityInput:
@@ -112,7 +131,7 @@ function toLineState(data: InventoryStepData): InventoryLineState[] {
 }
 
 function mergeAdjustedLineState(
-  data: InventoryStepData,
+  data: InventoryDisplayData,
   currentItems: InventoryLineState[],
   adjustedProductId: string,
 ) {
@@ -178,6 +197,7 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
+  const showsSensitiveAmounts = items.some(hasSensitiveInventoryAmounts);
 
   useLedgerUpdatedAtSync(data.id, (updatedAt) => {
     setData((current) => ({ ...current, updatedAt }));
@@ -507,9 +527,13 @@ export function InventoryStepClient({
     }
 
     if (item.lossQuantity > 0) {
+      const lossDetail = hasSensitiveInventoryAmounts(item)
+        ? ` 손실 ${formatQuantity(item.lossQuantity)}, 손실액 ${formatKrw(item.lossAmount)}.`
+        : ` 손실 ${formatQuantity(item.lossQuantity)}.`;
+
       badges.push({
         label: "오늘 손실",
-        detail: `손실/폐기 입력에 저장된 수량입니다. 손실 ${formatQuantity(item.lossQuantity)}, 손실액 ${formatKrw(item.lossAmount)}.`,
+        detail: `손실/폐기 입력에 저장된 수량입니다.${lossDetail}`,
         className:
           "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
       });
@@ -555,7 +579,7 @@ export function InventoryStepClient({
       return (
         <TableRow>
           <TableCell
-            colSpan={10}
+            colSpan={showsSensitiveAmounts ? 10 : 9}
             className="text-muted-foreground h-24 text-center"
           >
             표시할 품목이 없습니다.
@@ -573,10 +597,9 @@ export function InventoryStepClient({
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
-      const amount = getInventoryAmount(
-        item.currentQuantityInput,
-        item.unitPrice,
-      );
+      const amount = hasSensitiveInventoryAmounts(item)
+        ? getInventoryAmount(item.currentQuantityInput, item.unitPrice)
+        : null;
       const systemQuantity = getSystemQuantity(item);
       const quantityDifference = getQuantityDifference(item);
       const reasonError = adjustmentErrors[item.productId];
@@ -619,7 +642,7 @@ export function InventoryStepClient({
                   ? renderBadgeWithTooltip({
                       label: "조정됨",
                       detail: item.adjustment
-                        ? `조정 사유가 저장됐습니다. 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개, ${formatKrw(item.adjustment.differenceAmount)}.`
+                        ? `조정 사유가 저장됐습니다. 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
                         : "조정 사유가 저장됐습니다.",
                       className:
                         "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
@@ -639,9 +662,11 @@ export function InventoryStepClient({
           <TableCell className="w-20 text-right tabular-nums">
             <div className="grid gap-0.5">
               <span>{item.lossQuantity}</span>
-              <span className="text-muted-foreground text-xs">
-                {formatKrw(item.lossAmount)}
-              </span>
+              {hasSensitiveInventoryAmounts(item) ? (
+                <span className="text-muted-foreground text-xs">
+                  {formatKrw(item.lossAmount)}
+                </span>
+              ) : null}
             </div>
           </TableCell>
           <TableCell className="w-20 text-right tabular-nums">
@@ -689,9 +714,11 @@ export function InventoryStepClient({
               {formatDifference(quantityDifference)}
             </span>
           </TableCell>
-          <TableCell className="w-28 text-right tabular-nums">
-            {formatKrw(amount)}
-          </TableCell>
+          {showsSensitiveAmounts ? (
+            <TableCell className="w-28 text-right tabular-nums">
+              {formatKrw(amount)}
+            </TableCell>
+          ) : null}
           <TableCell className="w-56">
             {isClosed ? (
               <p className="text-muted-foreground text-xs">정정 기록 사용</p>
@@ -702,15 +729,19 @@ export function InventoryStepClient({
                     <p>
                       조정 전{" "}
                       <span className="tabular-nums">
-                        {item.adjustment.beforeQuantity} /{" "}
-                        {formatKrw(item.adjustment.beforeAmount)}
+                        {item.adjustment.beforeQuantity}
+                        {hasSensitiveAdjustmentAmounts(item.adjustment)
+                          ? ` / ${formatKrw(item.adjustment.beforeAmount)}`
+                          : ""}
                       </span>
                     </p>
                     <p>
                       조정 후{" "}
                       <span className="tabular-nums">
-                        {item.adjustment.afterQuantity} /{" "}
-                        {formatKrw(item.adjustment.afterAmount)}
+                        {item.adjustment.afterQuantity}
+                        {hasSensitiveAdjustmentAmounts(item.adjustment)
+                          ? ` / ${formatKrw(item.adjustment.afterAmount)}`
+                          : ""}
                       </span>
                     </p>
                     <p>
@@ -718,8 +749,10 @@ export function InventoryStepClient({
                       <span className="tabular-nums">
                         {formatSignedQuantity(
                           item.adjustment.differenceQuantity,
-                        )}{" "}
-                        / {formatKrw(item.adjustment.differenceAmount)}
+                        )}
+                        {hasSensitiveAdjustmentAmounts(item.adjustment)
+                          ? ` / ${formatKrw(item.adjustment.differenceAmount)}`
+                          : ""}
                       </span>
                     </p>
                   </div>
@@ -854,7 +887,10 @@ export function InventoryStepClient({
             {categories.map((category) => (
               <TabsContent key={category} value={category}>
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                  <Table aria-label="재고 품목" className="min-w-[940px]">
+                  <Table
+                    aria-label="재고 품목"
+                    className={showsSensitiveAmounts ? "min-w-[940px]" : "min-w-[820px]"}
+                  >
                     <TableHeader className="sticky top-0 z-10">
                       <TableRow>
                         <TableHead scope="col" className="w-40">
@@ -881,9 +917,11 @@ export function InventoryStepClient({
                         <TableHead scope="col" className="w-28 text-right">
                           차이
                         </TableHead>
-                        <TableHead scope="col" className="w-28 text-right">
-                          재고금액
-                        </TableHead>
+                        {showsSensitiveAmounts ? (
+                          <TableHead scope="col" className="w-28 text-right">
+                            재고금액
+                          </TableHead>
+                        ) : null}
                         <TableHead scope="col" className="w-56">
                           정정
                         </TableHead>

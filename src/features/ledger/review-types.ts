@@ -39,14 +39,20 @@ export type LedgerReviewStepData = {
 
 export type StoreManagerLedgerReviewSummary = Pick<
   LedgerReviewSummary,
-  "totalSales" | "grossMarginRate" | "inventoryAmount" | "paymentDifference"
+  "totalSales" | "paymentDifference"
+>;
+
+export type StoreManagerLedgerReviewSignal = Omit<
+  LedgerReviewSignal,
+  "amount"
 >;
 
 export type StoreManagerLedgerReviewStepData = Omit<
   LedgerReviewStepData,
-  "summary"
+  "summary" | "signals"
 > & {
   summary: StoreManagerLedgerReviewSummary;
+  signals: StoreManagerLedgerReviewSignal[];
 };
 
 export type LedgerSubmitForReviewResult = {

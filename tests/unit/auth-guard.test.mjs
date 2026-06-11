@@ -154,6 +154,42 @@ test("server authorization helper exposes profile-aware semantic gates", () => {
   assert.match(authz, /StoreAccessMode\.ALL_STORES/);
 });
 
+test("semantic headquarters gates require explicit actions and store scope", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+  const dashboardQuery = readFileSync(
+    path.join(root, "src", "features", "dashboard", "queries.ts"),
+    "utf8",
+  );
+  const reportQuery = readFileSync(
+    path.join(root, "src", "features", "reports", "queries.ts"),
+    "utf8",
+  );
+
+  assert.match(
+    authz,
+    /requireReportAccess\(\)[\s\S]*PermissionAction\.REPORT_VIEW/,
+  );
+  assert.match(
+    authz,
+    /requireExportCreateAccess\(\)[\s\S]*PermissionAction\.EXPORT_CREATE/,
+  );
+  assert.doesNotMatch(
+    authz,
+    /function\s+requireExportCreateAccess\(\)[\s\S]*requireReportAccess\(/,
+  );
+  assert.match(authz, /getHeadquartersStoreScope/);
+  assert.match(authz, /UserStoreAssignment|assignments:\s*{\s*some:/s);
+  assert.match(authz, /StoreAccessMode\.ASSIGNED_STORES/);
+
+  for (const source of [dashboardQuery, reportQuery]) {
+    assert.match(source, /requireReportAccess\(\)/);
+    assert.match(source, /getHeadquartersStoreScope\(\)/);
+  }
+});
+
 test("headquarters navigation is derived from database-backed permissions", () => {
   const appSidebar = readFileSync(
     path.join(root, "src", "components", "app-sidebar.tsx"),

@@ -14,9 +14,9 @@ import {
   toFieldErrors,
   type LedgerLossesInput,
 } from "./schemas";
-import { getLossStepDataInTx } from "./queries";
+import { getLossStepDataInTx, toStoreManagerLossStepData } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
-import { type LossStepData } from "./types";
+import { type LossStepData, type StoreManagerLossStepData } from "./types";
 
 function parseLedgerLossesInput(
   input: unknown,
@@ -105,7 +105,7 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount,
+      amount: loss.amount ?? existing.amount,
       reason: loss.reason,
     };
   }
@@ -124,14 +124,14 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount,
+    amount: loss.amount ?? existing?.amount ?? 0,
     reason: loss.reason,
   };
 }
 
 export async function saveLedgerLosses(
   input: unknown,
-): Promise<ActionResult<LossStepData>> {
+): Promise<ActionResult<StoreManagerLossStepData>> {
   const parsed = parseLedgerLossesInput(input);
 
   if (!parsed.ok) {
@@ -153,21 +153,21 @@ export async function saveLedgerLosses(
         Number.isNaN(expectedUpdatedAt.getTime()) ||
         before.updatedAt !== expectedUpdatedAt.toISOString()
       ) {
-        return actionError<LossStepData>(
+        return actionError<StoreManagerLossStepData>(
           "LEDGER_CONFLICT",
           "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
         );
       }
 
       if (before.status === "HEADQUARTERS_CLOSED") {
-        return actionError<LossStepData>(
+        return actionError<StoreManagerLossStepData>(
           "LEDGER_CLOSED",
           "본사 마감된 장부는 원본 손실 입력으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
         );
       }
 
       if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
-        return actionError<LossStepData>(
+        return actionError<StoreManagerLossStepData>(
           "LEDGER_NOT_EDITABLE",
           "저장에 실패했습니다. 다시 시도해 주세요.",
         );
@@ -212,15 +212,29 @@ export async function saveLedgerLosses(
 
       for (let index = 0; index < parsed.data.losses.length; index += 1) {
         const loss = parsed.data.losses[index]!;
+        const existing = existingById.get(loss.id);
+
+        if (loss.amount === null && !existing) {
+          return actionError<StoreManagerLossStepData>(
+            "VALIDATION_ERROR",
+            "입력값을 확인해 주세요.",
+            {
+              [`losses.${index}.amount`]: [
+                "손실 금액은 0원 이상의 정수여야 합니다.",
+              ],
+            },
+          );
+        }
+
         const normalized = normalizeLossItem({
           loss,
-          existing: existingById.get(loss.id),
+          existing,
           product: productsById.get(loss.productId),
           lossType: lossTypesById.get(loss.ledgerInputCodeId),
         });
 
         if (!normalized) {
-          return actionError<LossStepData>(
+          return actionError<StoreManagerLossStepData>(
             "VALIDATION_ERROR",
             "입력값을 확인해 주세요.",
             {
@@ -283,7 +297,7 @@ export async function saveLedgerLosses(
       }
 
       if (Object.keys(quantityErrors).length > 0) {
-        return actionError<LossStepData>(
+        return actionError<StoreManagerLossStepData>(
           "VALIDATION_ERROR",
           firstQuantityError ?? "입력값을 확인해 주세요.",
           quantityErrors,
@@ -300,7 +314,7 @@ export async function saveLedgerLosses(
       });
 
       if (editableLedger.count !== 1) {
-        return actionError<LossStepData>(
+        return actionError<StoreManagerLossStepData>(
           "LEDGER_CONFLICT",
           "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
         );
@@ -366,7 +380,7 @@ export async function saveLedgerLosses(
         after,
       });
 
-      return actionOk(after);
+      return actionOk(toStoreManagerLossStepData(after));
     });
 
     if (!result.ok) {
