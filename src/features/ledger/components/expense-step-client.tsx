@@ -9,6 +9,9 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerExpenses } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   notifyLedgerUpdated,
@@ -124,6 +127,10 @@ function createFallbackExpenseLines(
     : [createLineState(DEFAULT_EXPENSE_CODE_OPTION, FALLBACK_EXPENSE_LINE_ID)];
 }
 
+function areExpenseLinesEqual(left: ExpenseLine[], right: ExpenseLine[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function ExpenseStepClient({
   storeName,
   initialLedger,
@@ -206,14 +213,12 @@ export function ExpenseStepClient({
     setFormError(null);
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function saveCurrentDraft() {
     if (!hasRegisteredExpenseCodeOptions) {
       setFormError("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
       setResultMessage(null);
       toast.error("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -245,18 +250,25 @@ export function ExpenseStepClient({
         setIsSaving(false);
         focusFirstError(nextErrors);
         toast.error(result.error.message);
-        return;
+        return false;
       }
 
       fillLedger(result.data);
       setFormError(null);
+      return true;
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       setResultMessage(null);
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+      return false;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCurrentDraft();
   }
 
   function handleRetry() {
@@ -298,14 +310,32 @@ export function ExpenseStepClient({
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "purchase");
+  const isDirty = !areExpenseLinesEqual(
+    expenseItems,
+    toExpenseLines(ledger.expenseItems),
+  );
+  const guard = useUnsavedStepGuard({
+    isDirty,
+    onSave: saveCurrentDraft,
+  });
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <UnsavedChangeDialog
+        open={guard.isDialogOpen}
+        isSaving={isFormSaving}
+        onOpenChange={guard.setIsDialogOpen}
+        onSave={guard.saveAndContinue}
+        onDiscard={guard.discard}
+        onKeepEditing={guard.keepEditing}
+      />
+
       <LedgerContextHeader
         ledgerLabel={ledgerLabel}
         title={storeName}
         storeId={ledger.storeId}
         closingDate={ledger.closingDate}
+        authorDisplayName={ledger.authorDisplayName}
         status={ledger.status}
         step={currentStep}
       />
@@ -316,8 +346,25 @@ export function ExpenseStepClient({
           closingDate={ledger.closingDate}
           currentStep={currentStep}
           stepCompletion={ledger.stepCompletion}
+          onNavigateAttempt={guard.requestNavigation}
         />
       ) : null}
+
+      <LedgerSaveStatus
+        stepLabel="2단계 비용"
+        authorDisplayName={ledger.authorDisplayName}
+        updatedAt={ledger.updatedAt}
+        isSaving={isFormSaving}
+        errorMessage={formError}
+        successMessage={resultMessage}
+        unsavedFields={["비용 항목", "비용 금액", "메모"]}
+        onRetry={handleRetry}
+        retryDisabled={
+          isFormSaving ||
+          isOriginalEditBlocked ||
+          !hasRegisteredExpenseCodeOptions
+        }
+      />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -581,8 +628,14 @@ export function ExpenseStepClient({
             {isFormSaving ? "저장 중..." : "저장"}
           </Button>
           {resultMessage ? (
-            <Button asChild className="min-h-11 w-full sm:w-auto">
-              <a href={nextStepHref}>다음 단계로 →</a>
+            <Button
+              type="button"
+              className="min-h-11 w-full sm:w-auto"
+              onClick={(event) =>
+                guard.requestNavigation(nextStepHref, event.currentTarget)
+              }
+            >
+              다음 단계로 →
             </Button>
           ) : null}
         </div>

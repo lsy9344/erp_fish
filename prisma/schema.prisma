@@ -323,6 +323,7 @@ model DailyLedger {
   closingDate                DateTime
   status                     DailyLedgerStatus           @default(IN_PROGRESS)
   version                    Int                         @default(1)
+  authorDisplayName          String?
   totalSalesAmount           Int                         @default(0)
   cashAmount                 Int                         @default(0)
   cardAmount                 Int                         @default(0)

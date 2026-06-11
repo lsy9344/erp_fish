@@ -47,6 +47,7 @@ export type LossStepData = {
   closingDate: string;
   updatedAt: string;
   version: number;
+  authorDisplayName: string | null;
   status: DailyLedgerStatus;
   stepCompletion: StoreEntryStepCompletion;
   productOptions: LossProductOption[];

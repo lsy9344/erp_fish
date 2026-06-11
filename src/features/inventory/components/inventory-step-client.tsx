@@ -28,7 +28,10 @@ import {
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   saveLedgerInventoryAdjustment,
@@ -164,6 +167,13 @@ function normalizeCategory(value: string): (typeof categories)[number] {
   return value === "생물" ? "생물" : "냉동";
 }
 
+function areInventoryLinesEqual(
+  left: InventoryLineState[],
+  right: InventoryLineState[],
+) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function InventoryStepClient({
   storeName,
   initialData,
@@ -242,9 +252,7 @@ export function InventoryStepClient({
     }, 0);
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function saveCurrentDraft() {
     if (isClosed) {
       setResultMessage(null);
       const message =
@@ -252,7 +260,7 @@ export function InventoryStepClient({
       setFormError(message);
       setAdjustmentErrors({});
       toast.error(message);
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -284,7 +292,7 @@ export function InventoryStepClient({
         setFormError(result.error.message);
         focusFirstError(nextErrors);
         toast.error(result.error.message);
-        return;
+        return false;
       }
 
       setData(result.data);
@@ -293,12 +301,19 @@ export function InventoryStepClient({
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
       toast.success("재고 정보를 저장했습니다.");
+      return true;
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+      return false;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCurrentDraft();
   }
 
   function normalizeNumericInput(value: string) {
@@ -814,15 +829,31 @@ export function InventoryStepClient({
     });
   }
 
+  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
+  const guard = useUnsavedStepGuard({
+    isDirty,
+    onSave: saveCurrentDraft,
+  });
+
   return (
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+        <UnsavedChangeDialog
+          open={guard.isDialogOpen}
+          isSaving={isSaving}
+          onOpenChange={guard.setIsDialogOpen}
+          onSave={guard.saveAndContinue}
+          onDiscard={guard.discard}
+          onKeepEditing={guard.keepEditing}
+        />
+
         <LedgerContextHeader
           ledgerLabel={ledgerLabel}
           title="재고 입력"
           storeName={storeName}
           storeId={data.storeId}
           closingDate={data.closingDate}
+          authorDisplayName={data.authorDisplayName}
           status={data.status}
         />
 
@@ -832,8 +863,21 @@ export function InventoryStepClient({
             closingDate={data.closingDate}
             currentStep="inventory"
             stepCompletion={data.stepCompletion}
+            onNavigateAttempt={guard.requestNavigation}
           />
         ) : null}
+
+        <LedgerSaveStatus
+          stepLabel="4단계 재고"
+          authorDisplayName={data.authorDisplayName}
+          updatedAt={data.updatedAt}
+          isSaving={isSaving || isAdjustmentSavePending}
+          errorMessage={formError}
+          successMessage={resultMessage}
+          unsavedFields={["현재 재고", "재고 조정 사유"]}
+          onRetry={() => formRef.current?.requestSubmit()}
+          retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
+        />
 
         <Alert
           variant={
@@ -969,8 +1013,14 @@ export function InventoryStepClient({
               {isSaving ? "저장 중..." : "저장"}
             </Button>
             {resultMessage === "저장됐습니다." ? (
-              <Button asChild className="min-h-11 w-full sm:w-auto">
-                <a href={nextStepHref}>다음 단계로 →</a>
+              <Button
+                type="button"
+                className="min-h-11 w-full sm:w-auto"
+                onClick={(event) =>
+                  guard.requestNavigation(nextStepHref, event.currentTarget)
+                }
+              >
+                다음 단계로 →
               </Button>
             ) : null}
           </div>

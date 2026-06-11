@@ -51,6 +51,7 @@ export type InventoryStepData = {
   closingDate: string;
   updatedAt: string;
   version: number;
+  authorDisplayName: string | null;
   status: DailyLedgerStatus;
   stepCompletion: StoreEntryStepCompletion;
   items: InventoryStepLine[];

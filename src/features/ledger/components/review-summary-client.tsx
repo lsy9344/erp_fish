@@ -18,6 +18,7 @@ import { Button } from "~/components/ui/button";
 import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import { submitLedgerForReview } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
@@ -201,7 +202,9 @@ export function ReviewSummaryClient({
         setCurrentReviewData((current) => ({
           ...current,
           status: result.data.ledger.status,
+          updatedAt: result.data.ledger.updatedAt,
           version: result.data.ledger.version,
+          authorDisplayName: result.data.ledger.authorDisplayName,
           submittedById: result.data.ledger.submittedById,
           submittedAt: result.data.ledger.submittedAt,
         }));
@@ -242,6 +245,7 @@ export function ReviewSummaryClient({
           title={storeName}
           storeId={currentReviewData.storeId}
           closingDate={currentReviewData.closingDate}
+          authorDisplayName={currentReviewData.authorDisplayName}
           status={currentReviewData.status}
           step="review"
         />
@@ -250,6 +254,20 @@ export function ReviewSummaryClient({
           storeId={currentReviewData.storeId}
           closingDate={currentReviewData.closingDate}
           currentStep="review"
+        />
+
+        <LedgerSaveStatus
+          stepLabel="7단계 검토/제출"
+          authorDisplayName={currentReviewData.authorDisplayName}
+          updatedAt={currentReviewData.updatedAt}
+          isSaving={isSubmitting}
+          errorMessage={feedback?.kind === "error" ? feedback.message : null}
+          successMessage={
+            feedback?.kind === "success" ? feedback.message : null
+          }
+          unsavedFields={["검토 제출 상태"]}
+          onRetry={handleSubmit}
+          retryDisabled={isSubmitting}
         />
 
         <section

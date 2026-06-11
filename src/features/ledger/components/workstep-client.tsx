@@ -9,6 +9,9 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerWorkInfo } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   notifyLedgerUpdated,
@@ -128,9 +131,7 @@ export function WorkStepClient({
     toast.success("근무인원 정보를 저장했습니다.");
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function saveCurrentDraft() {
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
@@ -153,18 +154,25 @@ export function WorkStepClient({
         setFormError(result.error.message);
         focusFirstError(nextErrors);
         toast.error(result.error.message);
-        return;
+        return false;
       }
 
       fillLedger(result.data);
       setFormError(null);
+      return true;
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       setResultMessage(null);
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+      return false;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCurrentDraft();
   }
 
   function handleRetry() {
@@ -182,14 +190,31 @@ export function WorkStepClient({
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
+  const isDirty =
+    workerCount !== (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
+    workMemo !== (ledger.workMemo ?? "");
+  const guard = useUnsavedStepGuard({
+    isDirty,
+    onSave: saveCurrentDraft,
+  });
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <UnsavedChangeDialog
+        open={guard.isDialogOpen}
+        isSaving={isSaving}
+        onOpenChange={guard.setIsDialogOpen}
+        onSave={guard.saveAndContinue}
+        onDiscard={guard.discard}
+        onKeepEditing={guard.keepEditing}
+      />
+
       <LedgerContextHeader
         ledgerLabel={ledgerLabel}
         title={storeName}
         storeId={ledger.storeId}
         closingDate={ledger.closingDate}
+        authorDisplayName={ledger.authorDisplayName}
         status={ledger.status}
         step={currentStep}
       />
@@ -200,8 +225,21 @@ export function WorkStepClient({
           closingDate={ledger.closingDate}
           currentStep={currentStep}
           stepCompletion={ledger.stepCompletion}
+          onNavigateAttempt={guard.requestNavigation}
         />
       ) : null}
+
+      <LedgerSaveStatus
+        stepLabel="6단계 근무인원/특이사항"
+        authorDisplayName={ledger.authorDisplayName}
+        updatedAt={ledger.updatedAt}
+        isSaving={isSaving}
+        errorMessage={formError}
+        successMessage={resultMessage}
+        unsavedFields={["근무인원", "특이사항 메모"]}
+        onRetry={handleRetry}
+        retryDisabled={isSaving || isOriginalEditBlocked}
+      />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <form
@@ -319,8 +357,14 @@ export function WorkStepClient({
               {isSaving ? "저장 중..." : "저장"}
             </Button>
             {resultMessage ? (
-              <Button asChild className="min-h-11 w-full sm:w-auto">
-                <a href={nextStepHref}>다음 단계로 →</a>
+              <Button
+                type="button"
+                className="min-h-11 w-full sm:w-auto"
+                onClick={(event) =>
+                  guard.requestNavigation(nextStepHref, event.currentTarget)
+                }
+              >
+                다음 단계로 →
               </Button>
             ) : null}
           </div>

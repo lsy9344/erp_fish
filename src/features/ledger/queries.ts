@@ -54,6 +54,7 @@ export const ledgerSelect = {
   closingDate: true,
   updatedAt: true,
   version: true,
+  authorDisplayName: true,
   status: true,
   totalSalesAmount: true,
   cashAmount: true,
@@ -95,6 +96,7 @@ type LedgerPurchasePayload = DailyLedgerPayload["ledgerPurchaseItems"][number];
 type LedgerAuditPayload = {
   status: DailyLedgerPayload["status"];
   version: number;
+  authorDisplayName: string | null;
   totalSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
@@ -118,6 +120,7 @@ type LedgerAuditInput = Pick<
   DailyLedgerPayload,
   | "status"
   | "version"
+  | "authorDisplayName"
   | "totalSalesAmount"
   | "cashAmount"
   | "cardAmount"
@@ -145,6 +148,7 @@ export function toLedgerSalesStepData(
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
     version: ledger.version,
+    authorDisplayName: ledger.authorDisplayName ?? null,
     status: ledger.status,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
@@ -261,6 +265,7 @@ export function toLedgerAuditPayload(
   return {
     status: ledger.status,
     version: ledger.version,
+    authorDisplayName: ledger.authorDisplayName ?? null,
     submittedById: ledger.submittedById ?? null,
     submittedAt: ledger.submittedAt?.toISOString() ?? null,
     closedById: ledger.closedById ?? null,

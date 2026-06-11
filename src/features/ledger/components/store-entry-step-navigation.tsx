@@ -1,3 +1,5 @@
+"use client";
+
 import { cn } from "~/lib/utils";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -10,6 +12,7 @@ type StoreEntryStepNavigationProps = {
   closingDate: string;
   currentStep: StoreEntryStep;
   stepCompletion?: StoreEntryStepCompletion;
+  onNavigateAttempt?: (href: string, trigger: HTMLAnchorElement) => void;
 };
 
 const steps: { id: StoreEntryStep; label: string }[] = [
@@ -42,6 +45,7 @@ export function StoreEntryStepNavigation({
   closingDate,
   currentStep,
   stepCompletion = {},
+  onNavigateAttempt,
 }: StoreEntryStepNavigationProps) {
   return (
     <section
@@ -59,12 +63,20 @@ export function StoreEntryStepNavigation({
               <a
                 aria-current={isCurrent ? "step" : undefined}
                 className={cn(
-                  "block rounded-md border px-3 py-2 text-sm",
+                  "block min-h-11 rounded-md border px-3 py-2 text-sm",
                   isCurrent
                     ? "border-emerald-500/40 bg-emerald-500/5 font-medium text-emerald-700 dark:text-emerald-300"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 href={stepHref(storeId, closingDate, step.id)}
+                onClick={(event) => {
+                  if (!onNavigateAttempt || isCurrent) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  onNavigateAttempt(event.currentTarget.href, event.currentTarget);
+                }}
               >
                 {step.label}
                 {isSaved ? (

@@ -9,6 +9,9 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
   notifyLedgerUpdated,
@@ -70,12 +73,16 @@ export function SalesPaymentStepClient({
   ledgerLabel = "오늘 장부",
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const authorDisplayNameInputRef = useRef<HTMLInputElement>(null);
   const totalSalesInputRef = useRef<HTMLInputElement>(null);
   const cashAmountInputRef = useRef<HTMLInputElement>(null);
   const cardAmountInputRef = useRef<HTMLInputElement>(null);
   const otherPaymentInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
+  const [authorDisplayName, setAuthorDisplayName] = useState(
+    initialLedger.authorDisplayName ?? "",
+  );
   const [totalSalesAmount, setTotalSalesAmount] = useState(
     formatKrwInput(String(initialLedger.totalSalesAmount)),
   );
@@ -116,9 +123,16 @@ export function SalesPaymentStepClient({
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "cost");
+  const isDirty =
+    authorDisplayName.trim() !== (ledger.authorDisplayName ?? "") ||
+    totalSalesAmountValue !== ledger.totalSalesAmount ||
+    cashAmountValue !== ledger.cashAmount ||
+    cardAmountValue !== ledger.cardAmount ||
+    otherPaymentAmountValue !== ledger.otherPaymentAmount;
 
   function fillLedger(data: StoreManagerLedgerCostStepData) {
     setLedger(data);
+    setAuthorDisplayName(data.authorDisplayName ?? "");
     setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
     setCashAmount(formatKrwInput(String(data.cashAmount)));
     setCardAmount(formatKrwInput(String(data.cardAmount)));
@@ -148,9 +162,7 @@ export function SalesPaymentStepClient({
     }, 0);
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function saveCurrentDraft() {
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
@@ -162,6 +174,8 @@ export function SalesPaymentStepClient({
         storeId: ledger.storeId,
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
+        authorDisplayName:
+          authorDisplayNameInputRef.current?.value ?? authorDisplayName,
         totalSalesAmount: toRawKrwInputValue(
           totalSalesInputRef.current?.value ?? totalSalesAmount,
         ),
@@ -185,21 +199,33 @@ export function SalesPaymentStepClient({
         setFormError(result.error.message);
         focusFirstError(nextErrors);
         toast.error(result.error.message);
-        return;
+        return false;
       }
 
       fillLedger(result.data);
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setResultMessage("저장됐습니다.");
       toast.success("매출/결제 정보를 저장했습니다.");
+      return true;
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       setResultMessage(null);
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+      return false;
     } finally {
       setIsSaving(false);
     }
   }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCurrentDraft();
+  }
+
+  const guard = useUnsavedStepGuard({
+    isDirty,
+    onSave: saveCurrentDraft,
+  });
 
   function handleRetry() {
     if (!formRef.current || isSaving) {
@@ -213,14 +239,25 @@ export function SalesPaymentStepClient({
   const cashAmountError = fieldErrors.cashAmount?.[0];
   const cardAmountError = fieldErrors.cardAmount?.[0];
   const otherPaymentAmountError = fieldErrors.otherPaymentAmount?.[0];
+  const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <UnsavedChangeDialog
+        open={guard.isDialogOpen}
+        isSaving={isSaving}
+        onOpenChange={guard.setIsDialogOpen}
+        onSave={guard.saveAndContinue}
+        onDiscard={guard.discard}
+        onKeepEditing={guard.keepEditing}
+      />
+
       <LedgerContextHeader
         ledgerLabel={ledgerLabel}
         title={storeName}
         storeId={ledger.storeId}
         closingDate={ledger.closingDate}
+        authorDisplayName={ledger.authorDisplayName}
         status={ledger.status}
         step={currentStep}
       />
@@ -231,8 +268,27 @@ export function SalesPaymentStepClient({
           closingDate={ledger.closingDate}
           currentStep={currentStep}
           stepCompletion={ledger.stepCompletion}
+          onNavigateAttempt={guard.requestNavigation}
         />
       ) : null}
+
+      <LedgerSaveStatus
+        stepLabel="1단계 매출/결제"
+        authorDisplayName={ledger.authorDisplayName}
+        updatedAt={ledger.updatedAt}
+        isSaving={isSaving}
+        errorMessage={formError}
+        successMessage={resultMessage}
+        unsavedFields={[
+          "작성자 표시명",
+          "총매출",
+          "현금",
+          "카드",
+          "기타 결제수단",
+        ]}
+        onRetry={handleRetry}
+        retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
+      />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <form
@@ -241,6 +297,43 @@ export function SalesPaymentStepClient({
           className="flex flex-col gap-4"
           noValidate
         >
+          <Field data-invalid={Boolean(authorDisplayNameError)}>
+            <FieldLabel htmlFor="author-display-name">
+              작성자 표시명
+            </FieldLabel>
+            <Input
+              ref={authorDisplayNameInputRef}
+              id="author-display-name"
+              name="authorDisplayName"
+              autoComplete="name"
+              maxLength={50}
+              value={authorDisplayName}
+              disabled={!isHydrated || isOriginalEditBlocked}
+              onChange={(event) => {
+                setAuthorDisplayName(event.currentTarget.value);
+                setResultMessage(null);
+              }}
+              className="min-h-11"
+              aria-invalid={Boolean(authorDisplayNameError)}
+              aria-describedby={
+                authorDisplayNameError
+                  ? "author-display-name-error"
+                  : "author-display-name-help"
+              }
+            />
+            <p
+              id="author-display-name-help"
+              className="text-muted-foreground mt-1 text-xs"
+            >
+              감사 실행 계정과 별도로 장부 화면에 표시되는 이름입니다.
+            </p>
+            {authorDisplayNameError ? (
+              <FieldError id="author-display-name-error">
+                {authorDisplayNameError}
+              </FieldError>
+            ) : null}
+          </Field>
+
           <Field data-invalid={Boolean(totalSalesError)}>
             <FieldLabel htmlFor="total-sales-amount">총매출</FieldLabel>
             <Input
@@ -432,8 +525,14 @@ export function SalesPaymentStepClient({
               {isSaving ? "저장 중..." : "저장"}
             </Button>
             {resultMessage ? (
-              <Button asChild className="min-h-11 w-full sm:w-auto">
-                <a href={nextStepHref}>다음 단계로 →</a>
+              <Button
+                type="button"
+                className="min-h-11 w-full sm:w-auto"
+                onClick={(event) =>
+                  guard.requestNavigation(nextStepHref, event.currentTarget)
+                }
+              >
+                다음 단계로 →
               </Button>
             ) : null}
           </div>

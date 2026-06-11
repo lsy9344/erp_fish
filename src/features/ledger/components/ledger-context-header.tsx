@@ -16,6 +16,7 @@ type LedgerContextHeaderProps = {
   storeName?: string;
   storeId: string;
   closingDate: string;
+  authorDisplayName?: string | null;
   status: DailyLedgerStatus;
   step?: StoreEntryStep;
 };
@@ -31,12 +32,19 @@ function toDateInputValue(value: string) {
   return value.slice(0, 10);
 }
 
+function formatAuthorDisplayName(value?: string | null) {
+  const displayName = value?.trim();
+
+  return displayName && displayName.length > 0 ? displayName : "미입력";
+}
+
 export function LedgerContextHeader({
   ledgerLabel,
   title,
   storeName,
   storeId,
   closingDate,
+  authorDisplayName,
   status,
   step,
 }: LedgerContextHeaderProps) {
@@ -58,6 +66,9 @@ export function LedgerContextHeader({
             </span>
             <LedgerStatusBadge status={status} />
           </div>
+          <p className="text-muted-foreground mt-1 text-sm break-words">
+            작성자 표시명: {formatAuthorDisplayName(authorDisplayName)}
+          </p>
         </div>
 
         <form

@@ -28,7 +28,9 @@ export type LedgerReviewStepData = {
   id: string;
   storeId: string;
   closingDate: string;
+  updatedAt: string;
   version: number;
+  authorDisplayName: string | null;
   status: DailyLedgerStatus;
   submittedById: string | null;
   submittedAt: string | null;
@@ -60,7 +62,9 @@ export type LedgerSubmitForReviewResult = {
     | "id"
     | "storeId"
     | "closingDate"
+    | "updatedAt"
     | "version"
+    | "authorDisplayName"
     | "status"
     | "submittedById"
     | "submittedAt"

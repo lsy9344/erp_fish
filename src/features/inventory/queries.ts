@@ -538,6 +538,7 @@ async function getInventoryStepDataForLedgerInTx(
       closingDate: ledger.closingDate.toISOString(),
       updatedAt: ledger.updatedAt.toISOString(),
       version: ledger.version,
+      authorDisplayName: ledger.authorDisplayName ?? null,
       status: ledger.status,
       stepCompletion,
       items: await mergeExistingInventoryLines(
@@ -572,6 +573,7 @@ async function getInventoryStepDataForLedgerInTx(
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
     version: ledger.version,
+    authorDisplayName: ledger.authorDisplayName ?? null,
     status: ledger.status,
     stepCompletion,
     items: bases.map((base) =>

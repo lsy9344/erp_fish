@@ -39,6 +39,7 @@ const lossLedgerSelect = {
   closingDate: true,
   updatedAt: true,
   version: true,
+  authorDisplayName: true,
   status: true,
   totalSalesAmount: true,
   workerCount: true,
@@ -102,6 +103,7 @@ async function getLossStepDataForLedgerInTx(
     closingDate: ledger.closingDate.toISOString(),
     updatedAt: ledger.updatedAt.toISOString(),
     version: ledger.version,
+    authorDisplayName: ledger.authorDisplayName ?? null,
     status: ledger.status,
     stepCompletion: getStoreEntryStepCompletion({
       ...ledger,

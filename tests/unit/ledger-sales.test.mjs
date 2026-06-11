@@ -31,6 +31,11 @@ test("ledger schema includes DailyLedger model, enum, and relations", () => {
   );
   assert.match(
     schema,
+    /authorDisplayName\s+String\?/,
+    "DailyLedger should store display-only ledger author name",
+  );
+  assert.match(
+    schema,
     /store\s+Store\s*@relation\(fields:\s*\[storeId\], references:\s*\[id\], onDelete:\s*Restrict\)/,
   );
   assert.match(
@@ -89,6 +94,19 @@ test("ledger migrations create DailyLedger, unique constraint, and version token
     ),
     "Story 2.1 migration should add DailyLedger.version as the edit token",
   );
+
+  const authorDisplayNameMigrationSql = migrationNames
+    .map((name) => path.join(migrationRoot, name, "migration.sql"))
+    .filter((migrationPath) => existsSync(migrationPath))
+    .map((migrationPath) => readFileSync(migrationPath, "utf8"))
+    .find((migration) => migration.includes('"authorDisplayName"'));
+
+  assert.ok(
+    authorDisplayNameMigrationSql?.includes(
+      'ADD COLUMN "authorDisplayName" TEXT',
+    ),
+    "Story 2.2 migration should add DailyLedger.authorDisplayName",
+  );
 });
 
 test("ledger amount calculation helper validates payment difference", async () => {
@@ -123,6 +141,7 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
     ledgerId: "ledger-1",
     closingDate: "2026-06-11",
     version: 1,
+    authorDisplayName: " 김지점장 ",
     totalSalesAmount: 0,
     cashAmount: 0,
     cardAmount: 0,
@@ -173,6 +192,24 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   assert.equal(overflow.success, false);
   assert.deepEqual(overflow.error.flatten().fieldErrors.totalSalesAmount, [
     "총매출은 0원 이상의 정수여야 합니다.",
+  ]);
+
+  const normalizedAuthor = ledgerSalesPaymentSchema.parse(basePayload);
+  assert.equal(normalizedAuthor.authorDisplayName, "김지점장");
+
+  const blankAuthor = ledgerSalesPaymentSchema.parse({
+    ...basePayload,
+    authorDisplayName: "   ",
+  });
+  assert.equal(blankAuthor.authorDisplayName, null);
+
+  const longAuthor = ledgerSalesPaymentSchema.safeParse({
+    ...basePayload,
+    authorDisplayName: "가".repeat(51),
+  });
+  assert.equal(longAuthor.success, false);
+  assert.deepEqual(longAuthor.error.flatten().fieldErrors.authorDisplayName, [
+    "작성자 표시명은 50자 이하여야 합니다.",
   ]);
 });
 
@@ -252,6 +289,7 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(actionSource, /version:\s*parsed\.data\.version/);
   assert.match(actionSource, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.match(actionSource, /parsed\.data\.closingDate/);
+  assert.match(actionSource, /authorDisplayName:\s*parsed\.data\.authorDisplayName/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
   assert.ok(actionSource.includes('action: "ledger.sales_payment.updated",'));
@@ -269,6 +307,7 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(querySource, /tx\.dailyLedger\.createMany/);
   assert.match(querySource, /skipDuplicates:\s*true/);
   assert.match(querySource, /writeAuditLog\(/);
+  assert.match(querySource, /authorDisplayName:\s*ledger\.authorDisplayName\s*\?\?\s*null/);
 });
 
 test("today ledger creation avoids duplicate-key races", () => {
