@@ -1,4 +1,4 @@
-import { requireAppUser, requireHeadquartersUser } from "~/server/authz";
+import { requireAppUser, requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   LEDGER_INPUT_CODE_GROUP_VALUES,
@@ -70,7 +70,7 @@ export function normalizeLedgerInputCodeStatusFilter(
 export async function getLedgerInputCodesForHeadquarters(
   filters: LedgerInputCodeListFilters = {},
 ) {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const q = filters.q?.trim();
   const group = filters.group ?? "all";

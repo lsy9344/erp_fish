@@ -1,4 +1,5 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { CodeManagementClient } from "~/features/master-data/components/code-management-client";
 import {
@@ -7,7 +8,7 @@ import {
   normalizeLedgerInputCodeSearch,
   normalizeLedgerInputCodeStatusFilter,
 } from "~/features/master-data/code-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 
 type CodeManagementPageProps = {
   searchParams: Promise<{
@@ -20,7 +21,8 @@ type CodeManagementPageProps = {
 export default async function CodeManagementPage({
   searchParams,
 }: CodeManagementPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireSettingsAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = {
     q: normalizeLedgerInputCodeSearch(params.q),
@@ -33,6 +35,7 @@ export default async function CodeManagementPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="코드 관리"

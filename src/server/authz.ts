@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 import { unstable_noStore as noStore } from "next/cache";
 
-import { StoreAccessMode, UserRole } from "../../generated/prisma";
-import type { PermissionAction } from "../../generated/prisma";
+import {
+  PermissionAction,
+  StoreAccessMode,
+  UserRole,
+} from "../../generated/prisma";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 
@@ -167,6 +170,114 @@ export async function requireHeadquartersActionPermission(
   return requireActionPermission(action, {
     requiredRole: UserRole.HEADQUARTERS,
   });
+}
+
+export async function requireSettingsAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.SETTINGS_MANAGE);
+}
+
+export async function requireUserPermissionAccess() {
+  return requireHeadquartersActionPermission(
+    PermissionAction.USER_PERMISSION_MANAGE,
+  );
+}
+
+export async function requireReportAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.REPORT_VIEW);
+}
+
+export async function requireLedgerHqEditAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
+}
+
+export async function requireLedgerHqCloseAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.LEDGER_HQ_CLOSE);
+}
+
+export async function requireCorrectionCreateAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.CORRECTION_CREATE);
+}
+
+export async function requireExportCreateAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.EXPORT_CREATE);
+}
+
+export async function getHeadquartersStoreScope() {
+  const currentUser = await requireHeadquartersUser();
+  const activeProfiles = await getActivePermissionProfiles(currentUser.id);
+  const hasAllStoreAccess = activeProfiles.some(
+    ({ profile }) => profile.storeAccessMode === StoreAccessMode.ALL_STORES,
+  );
+  const hasAssignedStoreAccess = activeProfiles.some(
+    ({ profile }) =>
+      profile.storeAccessMode === StoreAccessMode.ASSIGNED_STORES,
+  );
+
+  if (!hasAllStoreAccess && !hasAssignedStoreAccess) {
+    redirect("/app/unauthorized");
+  }
+
+  const stores = await db.store.findMany({
+    where: {
+      isActive: true,
+      ...(hasAllStoreAccess
+        ? {}
+        : {
+            assignments: {
+              some: {
+                userId: currentUser.id,
+              },
+            },
+          }),
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: storeSelect,
+  });
+
+  return {
+    user: currentUser,
+    mode: hasAllStoreAccess
+      ? StoreAccessMode.ALL_STORES
+      : StoreAccessMode.ASSIGNED_STORES,
+    stores,
+    storeIds: stores.map((store) => store.id),
+  };
+}
+
+export async function requireHeadquartersStoreScope(storeId: string) {
+  const scope = await getHeadquartersStoreScope();
+  const store = scope.stores.find((item) => item.id === storeId);
+
+  if (!store) {
+    redirect("/app/unauthorized");
+  }
+
+  return {
+    user: scope.user,
+    store,
+  };
+}
+
+export async function requireHeadquartersLedgerScope(ledgerId: string) {
+  const ledger = await db.dailyLedger.findUnique({
+    where: { id: ledgerId },
+    select: {
+      id: true,
+      storeId: true,
+    },
+  });
+
+  if (!ledger) {
+    redirect("/app/unauthorized");
+  }
+
+  const scopedStore = await requireHeadquartersStoreScope(ledger.storeId);
+
+  return {
+    user: scopedStore.user,
+    ledger,
+    store: scopedStore.store,
+  };
 }
 
 export async function getAppHomePath() {

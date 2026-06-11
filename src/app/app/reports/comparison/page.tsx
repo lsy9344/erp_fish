@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
 import { StoreComparisonReportTable } from "~/features/reports/components/store-comparison-report-table";
@@ -9,7 +10,7 @@ import {
   getHqStoreComparisonReport,
   getStoreComparisonReportPath,
 } from "~/features/reports/queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireReportAccess } from "~/server/authz";
 
 type StoreComparisonReportPageProps = {
   searchParams: Promise<{
@@ -21,7 +22,8 @@ type StoreComparisonReportPageProps = {
 export default async function StoreComparisonReportPage({
   searchParams,
 }: StoreComparisonReportPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireReportAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const startDate = Array.isArray(params.startDate)
     ? params.startDate[0]
@@ -35,6 +37,7 @@ export default async function StoreComparisonReportPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

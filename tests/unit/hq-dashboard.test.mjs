@@ -65,7 +65,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
     "dashboard",
     "loading.tsx",
   );
-  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqDashboardRows\(/);
   assert.match(pageSource, /datePreset/);
   assert.doesNotMatch(pageSource, /overviewItems/);
@@ -85,7 +85,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
     "[ledgerId]",
     "page.tsx",
   );
-  assert.match(detailPageSource, /requireHeadquartersUser\(/);
+  assert.match(detailPageSource, /requireReportAccess\(/);
   assert.match(detailPageSource, /getHqLedgerDetail\(/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
@@ -123,9 +123,9 @@ test("HQ dashboard query keeps 미입력 rows and avoids creating ledgers", () =
   );
 
   assert.match(querySource, /export\s+async\s+function\s+getHqDashboardRows/);
-  assert.match(querySource, /requireHeadquartersUser\(\)/);
-  assert.match(querySource, /store\.findMany\(/);
-  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /requireReportAccess\(\)/);
+  assert.match(querySource, /getHeadquartersStoreScope\(\)/);
+  assert.match(querySource, /storeScope\.stores/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /storeId:\s*\{\s*in:/s);
   assert.match(querySource, /closingDate/);

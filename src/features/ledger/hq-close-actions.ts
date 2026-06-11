@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { DailyLedgerStatus } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireHeadquartersLedgerScope, requireLedgerHqCloseAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ledgerSelect,
@@ -109,8 +109,9 @@ export async function closeHqLedger(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqCloseAccess() };
   const { ledgerId, ledgerUpdatedAt } = parsed.data;
+  await requireHeadquartersLedgerScope(ledgerId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {

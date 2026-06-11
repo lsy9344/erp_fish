@@ -149,7 +149,7 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.match(actions, /export\s+async\s+function\s+createUserAccount/);
   assert.match(actions, /export\s+async\s+function\s+updateUserAccount/);
   assert.match(actions, /export\s+async\s+function\s+updateUserStatus/);
-  assert.match(actions, /requireHeadquartersUser\(\)/);
+  assert.match(actions, /requireUserPermissionAccess\(\)/);
   assert.match(actions, /db\.\$transaction/);
   assert.match(actions, /writeAuditLog/);
   assert.match(actions, /hashPassword/);
@@ -164,7 +164,7 @@ test("user management server actions enforce auth, transactions, audit, hashing,
 
   assert.match(queries, /getUsersForHeadquarters/);
   assert.match(queries, /getUserManagementOptions/);
-  assert.match(queries, /requireHeadquartersUser\(\)/);
+  assert.match(queries, /requireUserPermissionAccess\(\)/);
   assert.match(queries, /storeAssignments/);
   assert.match(queries, /updatedAt/);
 });
@@ -227,6 +227,6 @@ test("headquarters navigation exposes user management without replacing store ma
 
   assert.match(sidebar, /\/app\/master-data\/stores/);
   assert.match(sidebar, /\/app\/master-data\/users/);
-  assert.match(usersPage, /requireHeadquartersUser/);
+  assert.match(usersPage, /requireUserPermissionAccess/);
   assert.match(usersPage, /HeadquartersShell/);
 });

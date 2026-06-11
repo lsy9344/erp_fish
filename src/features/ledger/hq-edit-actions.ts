@@ -7,7 +7,7 @@ import type { Prisma } from "../../../generated/prisma";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ledgerSelect,
@@ -185,8 +185,9 @@ export async function saveHqLedgerSalesPayment(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
@@ -263,8 +264,9 @@ export async function saveHqLedgerExpenses(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
@@ -388,8 +390,9 @@ export async function saveHqLedgerPurchases(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
@@ -565,8 +568,9 @@ export async function saveHqLedgerWorkInfo(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {

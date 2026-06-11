@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   storeFormSchema,
@@ -90,7 +90,7 @@ function isPrismaUniqueError(error: unknown) {
 export async function createStore(
   input: unknown,
 ): Promise<ActionResult<StoreActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseStoreInput({
     ...(typeof input === "object" && input ? input : {}),
     isActive: true,
@@ -158,7 +158,7 @@ export async function updateStore(
   storeId: string,
   input: unknown,
 ): Promise<ActionResult<StoreActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseStoreInput(input);
 
   if (!parsed.ok) {
@@ -249,7 +249,7 @@ export async function updateStoreStatus(
   storeId: string,
   input: unknown,
 ): Promise<ActionResult<StoreActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseStoreStatusInput(input);
 
   if (!parsed.ok) {

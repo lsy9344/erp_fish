@@ -140,7 +140,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
     query,
     /export\s+async\s+function\s+getAuditHistoryForHeadquarters/,
   );
-  assert.match(query, /requireHeadquartersUser\(\)/);
+  assert.match(query, /requireSettingsAccess\(\)/);
   assert.match(query, /AUDIT_HISTORY_TARGET_TYPES/);
   assert.match(query, /Store/);
   assert.match(query, /User/);
@@ -210,7 +210,7 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
 
-  assert.match(page, /requireHeadquartersUser/);
+  assert.match(page, /requireSettingsAccess/);
   assert.match(page, /HeadquartersShell/);
   assert.match(page, /PageHeader/);
   assert.match(page, /getAuditHistoryForHeadquarters/);

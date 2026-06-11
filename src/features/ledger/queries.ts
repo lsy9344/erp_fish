@@ -8,7 +8,7 @@ import {
   calculateProductivity,
 } from "~/server/calculations/ledger";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   toStoreManagerLedgerCostStepData as shapeStoreManagerLedgerCostStepData,
@@ -396,7 +396,8 @@ export async function getLedgerCostStepDataByIdInTx(
 export async function getLedgerCostStepDataById(
   ledgerId: string,
 ): Promise<LedgerCostStepData | null> {
-  await requireHeadquartersUser();
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) => getLedgerCostStepDataByIdInTx(tx, ledgerId));
 }

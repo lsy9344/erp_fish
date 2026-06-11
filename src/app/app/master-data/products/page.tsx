@@ -1,4 +1,5 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { ProductManagementClient } from "~/features/master-data/components/product-management-client";
 import {
@@ -7,7 +8,7 @@ import {
   normalizeProductSearch,
   normalizeProductStatusFilter,
 } from "~/features/master-data/product-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 
 type ProductManagementPageProps = {
   searchParams: Promise<{
@@ -20,7 +21,8 @@ type ProductManagementPageProps = {
 export default async function ProductManagementPage({
   searchParams,
 }: ProductManagementPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireSettingsAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = {
     q: normalizeProductSearch(params.q),
@@ -33,6 +35,7 @@ export default async function ProductManagementPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="품목 마스터"

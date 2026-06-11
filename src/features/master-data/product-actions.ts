@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   productFormSchema,
@@ -144,7 +144,7 @@ async function findDuplicateProduct(
 export async function createProduct(
   input: unknown,
 ): Promise<ActionResult<ProductActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseProductInput({
     ...(typeof input === "object" && input ? input : {}),
     isActive: true,
@@ -209,7 +209,7 @@ export async function updateProduct(
   productId: string,
   input: unknown,
 ): Promise<ActionResult<ProductActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseProductInput(input);
 
   if (!parsed.ok) {
@@ -290,7 +290,7 @@ export async function updateProductStatus(
   productId: string,
   input: unknown,
 ): Promise<ActionResult<ProductActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseProductStatusInput(input);
 
   if (!parsed.ok) {

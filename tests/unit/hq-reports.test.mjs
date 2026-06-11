@@ -49,7 +49,7 @@ test("HQ daily meeting report source files follow story 5.1 boundaries", () => {
   );
   const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
 
-  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqDailyMeetingReport\(/);
   assert.match(pageSource, /DailyMeetingReportTable/);
   assert.match(pageSource, /아침 회의 리포트/);
@@ -71,9 +71,9 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
     querySource,
     /export\s+async\s+function\s+getHqDailyMeetingReport/,
   );
-  assert.match(querySource, /requireHeadquartersUser\(\)/);
-  assert.match(querySource, /store\.findMany\(/);
-  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /requireReportAccess\(\)/);
+  assert.match(querySource, /getHeadquartersStoreScope\(\)/);
+  assert.match(querySource, /storeScope\.stores/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /storeId:\s*\{\s*in:/s);
   assert.match(querySource, /closingDate/);
@@ -168,7 +168,7 @@ test("HQ store comparison report source files follow story 5.3 boundaries", () =
     "store-comparison-report-table.tsx",
   );
 
-  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqStoreComparisonReport\(/);
   assert.match(pageSource, /StoreComparisonReportTable/);
   assert.match(pageSource, /기간 비교 리포트/);
@@ -208,9 +208,9 @@ test("HQ store comparison report query reuses report calculation contracts", () 
     querySource,
     /export\s+async\s+function\s+getHqStoreComparisonReport/,
   );
-  assert.match(querySource, /requireHeadquartersUser\(\)/);
-  assert.match(querySource, /store\.findMany\(/);
-  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /requireReportAccess\(\)/);
+  assert.match(querySource, /getHeadquartersStoreScope\(\)/);
+  assert.match(querySource, /storeScope\.stores/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /closingDate:\s*\{\s*gte:/s);
   assert.match(querySource, /lte:/);
@@ -280,7 +280,7 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
     "page.tsx",
   );
 
-  assert.match(pageSource, /requireHeadquartersUser\(/);
+  assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqMonthlyClosingAnomalyReport\(/);
   assert.match(pageSource, /MonthlyClosingAnomalyReport/);
   assert.match(pageSource, /월간 요약 리포트/);
@@ -355,9 +355,9 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   assert.match(querySource, /getMonthlyClosingAnomalyReportMonthRange/);
   assert.match(querySource, /getMonthlyClosingAnomalyReportPath/);
   assert.match(querySource, /MONTH_QUERY_PATTERN/);
-  assert.match(querySource, /requireHeadquartersUser\(\)/);
-  assert.match(querySource, /store\.findMany\(/);
-  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /requireReportAccess\(\)/);
+  assert.match(querySource, /getHeadquartersStoreScope\(\)/);
+  assert.match(querySource, /storeScope\.stores/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /storeId/);
   assert.match(querySource, /closingDate:\s*\{\s*gte:/s);

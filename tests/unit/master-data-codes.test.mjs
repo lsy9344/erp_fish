@@ -193,7 +193,7 @@ test("ledger input code actions enforce auth, audit, transactions, and revalidat
     codeActions,
     /export\s+async\s+function\s+updateLedgerInputCodeStatus/,
   );
-  assert.match(codeActions, /requireHeadquartersUser\(\)/);
+  assert.match(codeActions, /requireSettingsAccess\(\)/);
   assert.match(codeActions, /db\.\$transaction/);
   assert.match(codeActions, /writeAuditLog/);
   assert.match(codeActions, /ledger_input_code\.created/);
@@ -233,7 +233,7 @@ test("ledger input code queries expose headquarters lists and authenticated acti
   assert.match(codeQueries, /normalizeLedgerInputCodeGroupFilter/);
   assert.match(codeQueries, /normalizeLedgerInputCodeStatusFilter/);
   assert.match(codeQueries, /normalizeLedgerInputCodeSearch/);
-  assert.match(codeQueries, /requireHeadquartersUser\(\)/);
+  assert.match(codeQueries, /requireSettingsAccess\(\)/);
   assert.match(codeQueries, /requireAppUser\(\)/);
   assert.match(codeQueries, /isActive:\s*true/);
   assert.match(codeQueries, /displayOrder:\s*"asc"/);
@@ -258,7 +258,7 @@ test("ledger input code screen follows headquarters shell and form accessibility
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
 
-  assert.match(codesPage, /requireHeadquartersUser/);
+  assert.match(codesPage, /requireSettingsAccess/);
   assert.match(codesPage, /HeadquartersShell/);
   assert.match(codesPage, /CodeManagementClient/);
   assert.match(codeClient, /inputMode="numeric"/);

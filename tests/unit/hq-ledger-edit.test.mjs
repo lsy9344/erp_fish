@@ -38,7 +38,7 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
     );
   }
 
-  assert.match(source, /requireHeadquartersUser\(/);
+  assert.match(source, /requireLedgerHqEditAccess\(/);
   assert.match(source, /ledgerId/);
   assert.match(
     source,
@@ -52,7 +52,7 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
   assert.match(source, /ledger\.hq\.work_info\.saved/);
   assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
   assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.doesNotMatch(source, /requireStoreAccess\(/);
+  assert.match(source, /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/);
   assert.doesNotMatch(source, /getTodayStoreLedger/);
 });
 
@@ -72,7 +72,7 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
 
   for (const source of [inventorySource, lossesSource]) {
     assert.match(source, /"use server"/);
-    assert.match(source, /requireHeadquartersUser\(/);
+    assert.match(source, /requireLedgerHqEditAccess\(/);
     assert.match(source, /ledgerId/);
     assert.match(
       source,
@@ -82,7 +82,7 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
     assert.match(source, /writeAuditLog\(/);
     assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
     assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
-    assert.doesNotMatch(source, /requireStoreAccess\(/);
+    assert.match(source, /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/);
     assert.doesNotMatch(source, /getTodayStoreLedger/);
   }
 

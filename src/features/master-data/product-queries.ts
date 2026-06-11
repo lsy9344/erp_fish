@@ -1,4 +1,4 @@
-import { requireAppUser, requireHeadquartersUser } from "~/server/authz";
+import { requireAppUser, requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { PRODUCT_CATEGORY_VALUES } from "./product-schemas";
 
@@ -57,7 +57,7 @@ export function normalizeProductStatusFilter(
 export async function getProductsForHeadquarters(
   filters: ProductListFilters = {},
 ) {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const q = filters.q?.trim();
   const category = filters.category ?? "all";

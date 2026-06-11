@@ -303,8 +303,11 @@ export async function getHqDailyMeetingReport({
   datePreset?: string;
   dateQuery?: string;
 } = {}): Promise<DailyMeetingReportData> {
-  const { requireHeadquartersUser } = await import("../../server/authz.ts");
-  await requireHeadquartersUser();
+  const { getHeadquartersStoreScope, requireReportAccess } = await import(
+    "../../server/authz.ts"
+  );
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   const query = getDailyMeetingReportDateQuery(dateQuery ?? datePreset);
   const preset = getDailyMeetingReportDatePreset(query);
@@ -317,14 +320,7 @@ export async function getHqDailyMeetingReport({
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [stores, thresholdSettings] = await Promise.all([
-    db.store.findMany({
-      where: { isActive: true },
-      orderBy: [{ name: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        name: true,
-      },
-    }),
+    Promise.resolve(storeScope.stores),
     getAnomalyThresholdSettingsForSignals(),
   ]);
   const storeIds = stores.map((store) => store.id);
@@ -436,21 +432,17 @@ export async function getHqStoreComparisonReport({
   startDate?: unknown;
   endDate?: unknown;
 } = {}): Promise<StoreComparisonReportData> {
-  const { requireHeadquartersUser } = await import("../../server/authz.ts");
-  await requireHeadquartersUser();
+  const { getHeadquartersStoreScope, requireReportAccess } = await import(
+    "../../server/authz.ts"
+  );
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   const range = getStoreComparisonReportDateRange({ startDate, endDate });
   const { db } = await import("../../server/db.ts");
   const { getLatestCorrectionValuesForLedgers } =
     await import("../corrections/queries.ts");
-  const stores = await db.store.findMany({
-    where: { isActive: true },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    select: {
-      id: true,
-      name: true,
-    },
-  });
+  const stores = storeScope.stores;
   const storeIds = stores.map((store) => store.id);
   const ledgers =
     storeIds.length === 0
@@ -563,8 +555,13 @@ export async function getHqMonthlyClosingAnomalyReport({
   month?: unknown;
   storeId?: unknown;
 } = {}): Promise<MonthlyClosingAnomalyReportData> {
-  const { requireHeadquartersUser } = await import("../../server/authz.ts");
-  await requireHeadquartersUser();
+  const {
+    getHeadquartersStoreScope,
+    requireHeadquartersStoreScope,
+    requireReportAccess,
+  } = await import("../../server/authz.ts");
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   const monthRange = getMonthlyClosingAnomalyReportMonthRange(month);
   const { db } = await import("../../server/db.ts");
@@ -575,18 +572,15 @@ export async function getHqMonthlyClosingAnomalyReport({
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [stores, thresholdSettings] = await Promise.all([
-    db.store.findMany({
-      where: { isActive: true },
-      orderBy: [{ name: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        name: true,
-      },
-    }),
+    Promise.resolve(storeScope.stores),
     getAnomalyThresholdSettingsForSignals(),
   ]);
   const normalizedStoreId =
     typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  if (normalizedStoreId) {
+    await requireHeadquartersStoreScope(normalizedStoreId);
+  }
+
   const matchedStore = normalizedStoreId
     ? stores.find((store) => store.id === normalizedStoreId)
     : null;

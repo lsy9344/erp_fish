@@ -1,5 +1,5 @@
 import { UserRole } from "../../../generated/prisma/index.js";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireUserPermissionAccess } from "~/server/authz";
 import { db } from "~/server/db";
 
 export type UserRoleFilter = "all" | UserRole;
@@ -42,7 +42,7 @@ export function normalizeUserStatusFilter(
 }
 
 export async function getUsersForHeadquarters(filters: UserListFilters = {}) {
-  await requireHeadquartersUser();
+  await requireUserPermissionAccess();
 
   const role = filters.role ?? "all";
   const status = filters.status ?? "all";
@@ -99,7 +99,7 @@ export async function getUsersForHeadquarters(filters: UserListFilters = {}) {
 }
 
 export async function getUserManagementOptions() {
-  await requireHeadquartersUser();
+  await requireUserPermissionAccess();
 
   const stores = await db.store.findMany({
     where: { isActive: true },

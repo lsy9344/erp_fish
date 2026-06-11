@@ -1,4 +1,5 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { UserManagementClient } from "~/features/master-data/components/user-management-client";
 import {
@@ -7,7 +8,7 @@ import {
   normalizeUserRoleFilter,
   normalizeUserStatusFilter,
 } from "~/features/master-data/user-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireUserPermissionAccess } from "~/server/authz";
 
 type UserManagementPageProps = {
   searchParams: Promise<{
@@ -19,7 +20,8 @@ type UserManagementPageProps = {
 export default async function UserManagementPage({
   searchParams,
 }: UserManagementPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireUserPermissionAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = {
     role: normalizeUserRoleFilter(params.role),
@@ -34,6 +36,7 @@ export default async function UserManagementPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="사용자/권한 관리"

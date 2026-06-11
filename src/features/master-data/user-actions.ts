@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma, UserRole } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireUserPermissionAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { hashPassword } from "~/server/password";
 import {
@@ -339,7 +339,7 @@ async function replaceStoreAssignments(
 export async function createUserAccount(
   input: unknown,
 ): Promise<ActionResult<UserActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireUserPermissionAccess();
   const parsed = parseCreateUserInput(input);
 
   if (!parsed.ok) {
@@ -429,7 +429,7 @@ export async function updateUserAccount(
   userId: string,
   input: unknown,
 ): Promise<ActionResult<UserActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireUserPermissionAccess();
   const parsed = parseUpdateUserInput(input);
 
   if (!parsed.ok) {
@@ -525,7 +525,7 @@ export async function updateUserStatus(
   userId: string,
   input: unknown,
 ): Promise<ActionResult<UserActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireUserPermissionAccess();
   const parsed = parseUserStatusInput(input);
 
   if (!parsed.ok) {

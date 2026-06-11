@@ -277,7 +277,7 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
     productActions,
     /export\s+async\s+function\s+updateProductStatus/,
   );
-  assert.match(productActions, /requireHeadquartersUser\(\)/);
+  assert.match(productActions, /requireSettingsAccess\(\)/);
   assert.match(productActions, /db\.\$transaction/);
   assert.match(productActions, /writeAuditLog/);
   assert.match(productActions, /product\.created/);
@@ -311,7 +311,7 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
     standardActions,
     /export\s+async\s+function\s+updatePurchaseStandardStatus/,
   );
-  assert.match(standardActions, /requireHeadquartersUser\(\)/);
+  assert.match(standardActions, /requireSettingsAccess\(\)/);
   assert.match(standardActions, /db\.\$transaction/);
   assert.match(standardActions, /writeAuditLog/);
   assert.match(standardActions, /purchase_standard\.created/);
@@ -353,14 +353,14 @@ test("product and purchase standard queries expose headquarters lists and active
   assert.match(productQueries, /normalizeProductSearch/);
   assert.match(productQueries, /normalizeProductCategoryFilter/);
   assert.match(productQueries, /normalizeProductStatusFilter/);
-  assert.match(productQueries, /requireHeadquartersUser\(\)/);
+  assert.match(productQueries, /requireSettingsAccess\(\)/);
   assert.match(productQueries, /name:\s*{\s*contains:\s*q/s);
   assert.match(productQueries, /category/);
   assert.match(productQueries, /isActive:\s*true/);
 
   assert.match(standardQueries, /getPurchaseStandardsForHeadquarters/);
   assert.match(standardQueries, /getActivePurchaseStandardOptions/);
-  assert.match(standardQueries, /requireHeadquartersUser\(\)/);
+  assert.match(standardQueries, /requireSettingsAccess\(\)/);
   assert.match(standardQueries, /product:\s*{/);
   assert.match(standardQueries, /isActive:\s*true/);
   assert.match(standardQueries, /product:\s*{\s*isActive:\s*true\s*}/s);
@@ -399,10 +399,10 @@ test("product and purchase standard screens follow headquarters shell and form a
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
 
-  assert.match(productsPage, /requireHeadquartersUser/);
+  assert.match(productsPage, /requireSettingsAccess/);
   assert.match(productsPage, /HeadquartersShell/);
   assert.match(productsPage, /ProductManagementClient/);
-  assert.match(standardsPage, /requireHeadquartersUser/);
+  assert.match(standardsPage, /requireSettingsAccess/);
   assert.match(standardsPage, /HeadquartersShell/);
   assert.match(standardsPage, /PurchaseStandardManagementClient/);
   assert.match(productClient, /inputMode="numeric"/);

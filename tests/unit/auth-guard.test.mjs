@@ -77,8 +77,14 @@ test("server authorization helper checks action permissions through active datab
   assert.match(authz, /requireHeadquartersActionPermission/);
   assert.match(authz, /PermissionAction/);
   assert.match(authz, /db\.user\.(?:findUnique|findFirst)/);
-  assert.match(authz, /requiredRole\s*=\s*options\.requiredRole\s*\?\?\s*UserRole\.HEADQUARTERS/);
-  assert.match(authz, /\.\.\.\(requiredRole\s*\?\s*{\s*role:\s*requiredRole\s*}\s*:\s*{}\)/s);
+  assert.match(
+    authz,
+    /requiredRole\s*=\s*options\.requiredRole\s*\?\?\s*UserRole\.HEADQUARTERS/,
+  );
+  assert.match(
+    authz,
+    /\.\.\.\(requiredRole\s*\?\s*{\s*role:\s*requiredRole\s*}\s*:\s*{}\)/s,
+  );
   assert.match(authz, /permissionProfiles:\s*{\s*some:/s);
   assert.match(authz, /profile:\s*{\s*isActive:\s*true/s);
   assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
@@ -96,9 +102,183 @@ test("server authorization helper scopes headquarters store access by permission
   assert.match(authz, /ASSIGNED_STORES/);
   assert.match(authz, /getActivePermissionProfiles/);
   assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ALL_STORES/);
-  assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ASSIGNED_STORES/);
+  assert.match(
+    authz,
+    /storeAccessMode\s*===\s*StoreAccessMode\.ASSIGNED_STORES/,
+  );
   assert.match(authz, /id:\s*storeId,\s*isActive:\s*true/s);
-  assert.match(authz, /assignments:\s*{\s*some:\s*{\s*userId:\s*currentUser\.id/s);
+  assert.match(
+    authz,
+    /assignments:\s*{\s*some:\s*{\s*userId:\s*currentUser\.id/s,
+  );
+});
+
+test("server authorization helper exposes profile-aware semantic gates", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+
+  for (const helper of [
+    "requireSettingsAccess",
+    "requireUserPermissionAccess",
+    "requireReportAccess",
+    "requireLedgerHqEditAccess",
+    "requireLedgerHqCloseAccess",
+    "requireCorrectionCreateAccess",
+    "requireExportCreateAccess",
+    "getHeadquartersStoreScope",
+    "requireHeadquartersStoreScope",
+  ]) {
+    assert.match(authz, new RegExp(`export async function ${helper}\\(`));
+  }
+
+  for (const action of [
+    "SETTINGS_MANAGE",
+    "USER_PERMISSION_MANAGE",
+    "REPORT_VIEW",
+    "LEDGER_EDIT",
+    "LEDGER_HQ_CLOSE",
+    "CORRECTION_CREATE",
+    "EXPORT_CREATE",
+  ]) {
+    assert.match(authz, new RegExp(`PermissionAction\\.${action}`));
+  }
+
+  assert.match(authz, /db\.user\.findFirst\(/);
+  assert.match(authz, /isActive:\s*true/);
+  assert.match(authz, /permissionProfiles:\s*{\s*some:/s);
+  assert.match(authz, /profile:\s*{\s*isActive:\s*true/s);
+  assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
+  assert.match(authz, /StoreAccessMode\.ASSIGNED_STORES/);
+  assert.match(authz, /StoreAccessMode\.ALL_STORES/);
+});
+
+test("headquarters navigation is derived from database-backed permissions", () => {
+  const appSidebar = readFileSync(
+    path.join(root, "src", "components", "app-sidebar.tsx"),
+    "utf8",
+  );
+  const hqShell = readFileSync(
+    path.join(root, "src", "components", "headquarters-shell.tsx"),
+    "utf8",
+  );
+  const dashboardPage = readFileSync(
+    path.join(root, "src", "app", "app", "dashboard", "page.tsx"),
+    "utf8",
+  );
+
+  assert.match(appSidebar, /navigationItems/);
+  assert.match(appSidebar, /requiredAction/);
+  assert.match(appSidebar, /PermissionAction\.REPORT_VIEW/);
+  assert.match(appSidebar, /PermissionAction\.SETTINGS_MANAGE/);
+  assert.match(appSidebar, /PermissionAction\.USER_PERMISSION_MANAGE/);
+  assert.match(appSidebar, /filterHeadquartersNavigationItems/);
+  assert.doesNotMatch(
+    appSidebar,
+    /const navigationItems = \[[\s\S]*\] satisfies AppSidebarNavigationItem\[\];/,
+  );
+
+  assert.match(hqShell, /navigationItems/);
+  assert.match(hqShell, /<AppSidebar[\s\S]*navigationItems={navigationItems}/);
+  assert.match(dashboardPage, /getHeadquartersNavigationItems/);
+});
+
+test("headquarters pages and queries use semantic action gates before data reads", () => {
+  const expected = [
+    {
+      file: path.join(root, "src", "app", "app", "dashboard", "page.tsx"),
+      gate: "requireReportAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "dashboard", "queries.ts"),
+      gate: "requireReportAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "reports", "queries.ts"),
+      gate: "requireReportAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "master-data", "queries.ts"),
+      gate: "requireSettingsAccess",
+    },
+    {
+      file: path.join(
+        root,
+        "src",
+        "features",
+        "master-data",
+        "user-queries.ts",
+      ),
+      gate: "requireUserPermissionAccess",
+    },
+    {
+      file: path.join(
+        root,
+        "src",
+        "features",
+        "master-data",
+        "user-actions.ts",
+      ),
+      gate: "requireUserPermissionAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "ledger", "hq-edit-actions.ts"),
+      gate: "requireLedgerHqEditAccess",
+    },
+    {
+      file: path.join(
+        root,
+        "src",
+        "features",
+        "inventory",
+        "hq-edit-actions.ts",
+      ),
+      gate: "requireLedgerHqEditAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "losses", "hq-edit-actions.ts"),
+      gate: "requireLedgerHqEditAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "ledger", "hq-close-actions.ts"),
+      gate: "requireLedgerHqCloseAccess",
+    },
+    {
+      file: path.join(root, "src", "features", "corrections", "actions.ts"),
+      gate: "requireCorrectionCreateAccess",
+    },
+  ];
+
+  for (const { file, gate } of expected) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, new RegExp(gate));
+  }
+});
+
+test("ledger detail action UI is hidden unless the user has matching action permissions", () => {
+  const ledgerPage = readFileSync(
+    path.join(root, "src", "app", "app", "ledgers", "[ledgerId]", "page.tsx"),
+    "utf8",
+  );
+
+  assert.match(ledgerPage, /hasActionPermission/);
+  assert.match(ledgerPage, /PermissionAction\.LEDGER_EDIT/);
+  assert.match(ledgerPage, /PermissionAction\.LEDGER_HQ_CLOSE/);
+  assert.match(ledgerPage, /PermissionAction\.CORRECTION_CREATE/);
+  assert.match(ledgerPage, /canEditLedger/);
+  assert.match(ledgerPage, /canCloseLedger/);
+  assert.match(ledgerPage, /canCreateCorrection/);
+  assert.match(
+    ledgerPage,
+    /canEditLedger[\s\S]*\?[\s\S]*getActiveLedgerInputCodeOptions/,
+  );
+  assert.match(ledgerPage, /!isOriginalEditBlocked && canCloseLedger/);
+  assert.match(
+    ledgerPage,
+    /ledger\.status === "HEADQUARTERS_CLOSED" && canCreateCorrection/,
+  );
+  assert.match(ledgerPage, /canEditLedger \? \(\s*<Tabs/);
 });
 
 test("store entry routes reject repeated storeId query values before authorization", () => {

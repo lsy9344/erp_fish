@@ -9,62 +9,110 @@ import {
   AppSidebarNav,
   type AppSidebarNavigationItem,
 } from "~/components/app-sidebar-nav";
+import { PermissionAction } from "../../generated/prisma";
+import { hasActionPermission } from "~/server/authz";
 
-const navigationItems = [
-  { label: "홈", href: "/app/dashboard", icon: "home" },
+type PermissionAwareNavigationItem = AppSidebarNavigationItem & {
+  requiredAction: PermissionAction;
+};
+
+const headquartersNavigationItems = [
+  {
+    label: "홈",
+    href: "/app/dashboard",
+    icon: "home",
+    requiredAction: PermissionAction.REPORT_VIEW,
+  },
   {
     label: "리포트",
     href: "/app/reports/daily",
     icon: "reports",
+    requiredAction: PermissionAction.REPORT_VIEW,
   },
   {
     label: "기준정보",
     href: "/app/master-data/stores",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "품목 마스터",
     href: "/app/master-data/products",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "매입 기준",
     href: "/app/master-data/purchase-standards",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "이상 신호 기준값",
     href: "/app/master-data/anomaly-thresholds",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "코드 관리",
     href: "/app/master-data/codes",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "사용자/권한",
     href: "/app/master-data/users",
     icon: "master-data",
+    requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
   },
   {
     label: "변경 이력",
     href: "/app/master-data/history",
     icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
     label: "설정",
     href: "/app/master-data/users",
     icon: "settings",
+    requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
   },
-] satisfies AppSidebarNavigationItem[];
+] satisfies PermissionAwareNavigationItem[];
+
+export async function filterHeadquartersNavigationItems(userId: string) {
+  const allowedActions = new Set(
+    (
+      await Promise.all(
+        Object.values(PermissionAction).map(async (action) => ({
+          action,
+          allowed: await hasActionPermission(userId, action),
+        })),
+      )
+    )
+      .filter(({ allowed }) => allowed)
+      .map(({ action }) => action),
+  );
+
+  return headquartersNavigationItems
+    .filter((item) => allowedActions.has(item.requiredAction))
+    .map(({ requiredAction: _requiredAction, ...item }) => item);
+}
+
+export async function getHeadquartersNavigationItems(userId: string) {
+  return filterHeadquartersNavigationItems(userId);
+}
 
 type AppSidebarProps = {
   userName: string;
   userEmail: string;
+  navigationItems: AppSidebarNavigationItem[];
 };
 
-export function AppSidebar({ userName, userEmail }: AppSidebarProps) {
+export function AppSidebar({
+  userName,
+  userEmail,
+  navigationItems,
+}: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" className="border-sidebar-border bg-sidebar">
       <SidebarHeader className="border-sidebar-border border-b p-4">

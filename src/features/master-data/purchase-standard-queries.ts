@@ -1,4 +1,4 @@
-import { requireAppUser, requireHeadquartersUser } from "~/server/authz";
+import { requireAppUser, requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import type { ProductCategory } from "./product-queries";
 
@@ -35,7 +35,7 @@ export function normalizePurchaseStandardStatusFilter(
 export async function getPurchaseStandardsForHeadquarters(
   filters: PurchaseStandardListFilters = {},
 ) {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const status = filters.status ?? "all";
 

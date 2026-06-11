@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { HqDashboardTable } from "~/features/dashboard/components/hq-dashboard-table";
@@ -12,7 +13,7 @@ import {
   getDashboardSortMode,
   getHqDashboardRows,
 } from "~/features/dashboard/queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireReportAccess } from "~/server/authz";
 
 type DashboardPageProps = {
   searchParams: Promise<{
@@ -25,7 +26,8 @@ type DashboardPageProps = {
 export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireReportAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const datePreset = getDashboardDatePreset(
     Array.isArray(params.date) ? params.date[0] : params.date,
@@ -74,6 +76,7 @@ export default async function DashboardPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

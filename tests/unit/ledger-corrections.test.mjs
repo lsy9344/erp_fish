@@ -114,8 +114,9 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /export\s+async\s+function\s+createCorrectionRecord/);
   assert.match(
     actions,
-    /const actor = \{ user: await requireHeadquartersUser\(\) \};\s*const parsed = parseCorrectionRecordInput/s,
+    /const actor = \{ user: await requireCorrectionCreateAccess\(\) \};\s*const parsed = parseCorrectionRecordInput/s,
   );
+  assert.match(actions, /requireHeadquartersLedgerScope\(ledgerId\)/);
   assert.match(actions, /status:\s*"HEADQUARTERS_CLOSED"/);
   assert.match(actions, /db\.\$transaction/);
   assert.match(actions, /Prisma\.TransactionIsolationLevel\.Serializable/);
@@ -165,7 +166,8 @@ test("correction queries expose batched latest values for dashboard calculations
   );
 
   assert.match(queries, /getLatestCorrectionValuesForLedgers/);
-  assert.match(queries, /await requireHeadquartersUser\(\)/);
+  assert.match(queries, /await requireReportAccess\(\)/);
+  assert.match(queries, /getHeadquartersStoreScope\(\)/);
   assert.match(queries, /dailyLedgerId:\s*\{\s*in:\s*ledgerIds\s*\}/);
   assert.match(queries, /getLatestCorrectionValueMap\(records\)/);
   assert.match(queries, /Map<string,\s*ReturnType<typeof getLatestCorrectionValueMap>>/);

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ledgerInputCodeFormSchema,
@@ -209,7 +209,7 @@ async function resolveLedgerInputCodeDisplayOrder(
 export async function createLedgerInputCode(
   input: unknown,
 ): Promise<ActionResult<LedgerInputCodeActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseLedgerInputCodeInput(input);
 
   if (!parsed.ok) {
@@ -284,7 +284,7 @@ export async function updateLedgerInputCode(
   codeId: string,
   input: unknown,
 ): Promise<ActionResult<LedgerInputCodeActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseLedgerInputCodeInput(input);
 
   if (!parsed.ok) {
@@ -385,7 +385,7 @@ export async function updateLedgerInputCodeStatus(
   codeId: string,
   input: unknown,
 ): Promise<ActionResult<LedgerInputCodeActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseLedgerInputCodeStatusInput(input);
 
   if (!parsed.ok) {

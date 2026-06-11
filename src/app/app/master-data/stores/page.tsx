@@ -1,4 +1,5 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { StoreManagementClient } from "~/features/master-data/components/store-management-client";
 import {
@@ -6,7 +7,7 @@ import {
   normalizeStoreSearch,
   normalizeStoreStatusFilter,
 } from "~/features/master-data/queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 
 type StoreManagementPageProps = {
   searchParams: Promise<{
@@ -18,7 +19,8 @@ type StoreManagementPageProps = {
 export default async function StoreManagementPage({
   searchParams,
 }: StoreManagementPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireSettingsAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = {
     q: normalizeStoreSearch(params.q),
@@ -30,6 +32,7 @@ export default async function StoreManagementPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="지점 관리"

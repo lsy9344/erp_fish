@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   ANOMALY_THRESHOLD_SCOPE,
@@ -99,7 +99,7 @@ async function lockAnomalyThresholdSettings(
 export async function updateAnomalyThresholdSettings(
   input: unknown,
 ): Promise<ActionResult<AnomalyThresholdActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parseAnomalyThresholdInput(input);
 
   if (!parsed.ok) {

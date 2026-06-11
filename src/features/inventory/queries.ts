@@ -8,7 +8,7 @@ import {
   getTodayStoreLedgerInTx,
 } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
 import { type InventoryStepData, type InventoryStepLine } from "./types";
 
 const inventoryItemSelect = {
@@ -627,7 +627,8 @@ export async function getInventoryStepData(
 export async function getInventoryStepDataByLedgerId(
   ledgerId: string,
 ): Promise<InventoryStepData | null> {
-  await requireHeadquartersUser();
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) =>
     getInventoryStepDataByLedgerIdInTx(tx, ledgerId),

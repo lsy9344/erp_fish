@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
@@ -11,7 +12,7 @@ import {
   getDailyMeetingReportPath,
   getHqDailyMeetingReport,
 } from "~/features/reports/queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireReportAccess } from "~/server/authz";
 
 type DailyMeetingReportPageProps = {
   searchParams: Promise<{
@@ -22,7 +23,8 @@ type DailyMeetingReportPageProps = {
 export default async function DailyMeetingReportPage({
   searchParams,
 }: DailyMeetingReportPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireReportAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const dateQuery = getDailyMeetingReportDateQuery(
     Array.isArray(params.date) ? params.date[0] : params.date,
@@ -66,6 +68,7 @@ export default async function DailyMeetingReportPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

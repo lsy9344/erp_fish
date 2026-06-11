@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
 import { MonthlyClosingAnomalyReport } from "~/features/reports/components/monthly-closing-anomaly-report";
@@ -9,7 +10,7 @@ import {
   getHqMonthlyClosingAnomalyReport,
   getMonthlyClosingAnomalyReportPath,
 } from "~/features/reports/queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireReportAccess } from "~/server/authz";
 
 type MonthlyClosingAnomalyReportPageProps = {
   searchParams: Promise<{
@@ -21,7 +22,8 @@ type MonthlyClosingAnomalyReportPageProps = {
 export default async function MonthlyClosingAnomalyReportPage({
   searchParams,
 }: MonthlyClosingAnomalyReportPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireReportAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const month = Array.isArray(params.month) ? params.month[0] : params.month;
   const storeId = Array.isArray(params.storeId)
@@ -34,6 +36,7 @@ export default async function MonthlyClosingAnomalyReportPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

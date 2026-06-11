@@ -2,7 +2,12 @@ import type { CorrectionTargetType, Prisma } from "../../../generated/prisma/ind
 import { UserRole } from "../../../generated/prisma/index.js";
 import { redirect } from "next/navigation";
 
-import { requireAppUser, requireHeadquartersUser } from "../../server/authz.ts";
+import {
+  getHeadquartersStoreScope,
+  requireAppUser,
+  requireHeadquartersLedgerScope,
+  requireReportAccess,
+} from "../../server/authz.ts";
 import { db } from "../../server/db.ts";
 import type { CorrectionAppliedValue, CorrectionRecordListItem } from "./types.ts";
 import { correctionTargetTypeLabels } from "./types.ts";
@@ -122,7 +127,8 @@ export async function getCorrectionRecordsForLedgerInTx(
 }
 
 export async function getCorrectionRecordsForLedger(ledgerId: string) {
-  await requireHeadquartersUser();
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) =>
     getCorrectionRecordsForLedgerInTx(tx, ledgerId),
@@ -178,14 +184,20 @@ export async function getLatestCorrectionValuesForLedger(ledgerId: string) {
 }
 
 export async function getLatestCorrectionValuesForLedgers(ledgerIds: string[]) {
-  await requireHeadquartersUser();
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   if (ledgerIds.length === 0) {
     return new Map<string, ReturnType<typeof getLatestCorrectionValueMap>>();
   }
 
   const records = await db.correctionRecord.findMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
+    where: {
+      dailyLedgerId: { in: ledgerIds },
+      dailyLedger: {
+        storeId: { in: storeScope.storeIds },
+      },
+    },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: correctionRecordSelect,
   });

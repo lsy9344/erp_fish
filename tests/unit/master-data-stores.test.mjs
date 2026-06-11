@@ -116,7 +116,7 @@ test("master-data actions enforce headquarters authorization, audit, transaction
   assert.match(actions, /export\s+async\s+function\s+createStore/);
   assert.match(actions, /export\s+async\s+function\s+updateStore/);
   assert.match(actions, /export\s+async\s+function\s+updateStoreStatus/);
-  assert.match(actions, /requireHeadquartersUser\(\)/);
+  assert.match(actions, /requireSettingsAccess\(\)/);
   assert.match(actions, /db\.\$transaction/);
   assert.match(actions, /writeAuditLog/);
   assert.match(actions, /store\.created/);
@@ -145,7 +145,7 @@ test("master-data queries and audit helper use the shared server boundaries", ()
 
   assert.match(queries, /getStoresForHeadquarters/);
   assert.match(queries, /getActiveStoreOptions/);
-  assert.match(queries, /requireHeadquartersUser\(\)/);
+  assert.match(queries, /requireSettingsAccess\(\)/);
   assert.match(queries, /isActive:\s*true/);
   assert.match(audit, /export\s+async\s+function\s+writeAuditLog/);
   assert.match(audit, /actorId/);
@@ -169,7 +169,7 @@ test("headquarters navigation points 기준정보 to the store management route"
 
   assert.match(sidebar, /href:\s*"\/app\/master-data\/stores"/);
   assert.doesNotMatch(sidebar, /dashboard#master-data/);
-  assert.match(storesPage, /requireHeadquartersUser/);
+  assert.match(storesPage, /requireSettingsAccess/);
   assert.match(storesPage, /HeadquartersShell/);
 });
 

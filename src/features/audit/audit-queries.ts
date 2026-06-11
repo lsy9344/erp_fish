@@ -10,7 +10,7 @@ import {
   type AuditHistoryTargetType,
   type AuditHistoryTargetTypeFilter,
 } from "~/features/audit/audit-format";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 
 export const AUDIT_HISTORY_PAGE_SIZE = 50;
@@ -340,7 +340,7 @@ async function getAuditActorOptions() {
 export async function getAuditHistoryForHeadquarters(
   filters: Partial<AuditHistoryFilters> = {},
 ): Promise<AuditHistoryResult> {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const normalizedFilters: AuditHistoryFilters = {
     targetType: filters.targetType ?? "all",

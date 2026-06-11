@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -51,7 +52,8 @@ import { getLossStepDataByLedgerId } from "~/features/losses/queries";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
 import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { PermissionAction } from "../../../../../generated/prisma";
+import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type LedgerDetailPageProps = {
   params: Promise<{
@@ -91,7 +93,14 @@ export default async function LedgerDetailPage({
   params,
   searchParams,
 }: LedgerDetailPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireReportAccess();
+  const [navigationItems, canEditLedger, canCloseLedger, canCreateCorrection] =
+    await Promise.all([
+      getHeadquartersNavigationItems(user.id),
+      hasActionPermission(user.id, PermissionAction.LEDGER_EDIT),
+      hasActionPermission(user.id, PermissionAction.LEDGER_HQ_CLOSE),
+      hasActionPermission(user.id, PermissionAction.CORRECTION_CREATE),
+    ]);
   const { ledgerId } = await params;
   const query = await searchParams;
   const dashboardPath = getDashboardPath({
@@ -105,30 +114,27 @@ export default async function LedgerDetailPage({
       Array.isArray(query.filter) ? query.filter[0] : query.filter,
     ),
   });
-  const [
-    detail,
-    ledger,
-    inventoryData,
-    lossData,
-    expenseCodeOptions,
-    productOptions,
-    purchaseStandardOptions,
-    correctionRecords,
-  ] = await Promise.all([
-    getHqLedgerDetail(ledgerId),
-    getLedgerCostStepDataById(ledgerId),
-    getInventoryStepDataByLedgerId(ledgerId),
-    getLossStepDataByLedgerId(ledgerId),
-    getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
-    getActiveProductOptions(),
-    getActivePurchaseStandardOptions(),
-    getCorrectionRecordsForLedger(ledgerId),
-  ]);
+  const [detail, ledger, inventoryData, lossData, correctionRecords] =
+    await Promise.all([
+      getHqLedgerDetail(ledgerId),
+      getLedgerCostStepDataById(ledgerId),
+      getInventoryStepDataByLedgerId(ledgerId),
+      getLossStepDataByLedgerId(ledgerId),
+      getCorrectionRecordsForLedger(ledgerId),
+    ]);
 
   if (!detail || !ledger || !inventoryData || !lossData) {
     notFound();
   }
 
+  const [expenseCodeOptions, productOptions, purchaseStandardOptions] =
+    canEditLedger
+      ? await Promise.all([
+          getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
+          getActiveProductOptions(),
+          getActivePurchaseStandardOptions(),
+        ])
+      : [[], [], []];
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const lastModifiedBy =
@@ -155,6 +161,7 @@ export default async function LedgerDetailPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
@@ -271,7 +278,7 @@ export default async function LedgerDetailPage({
           </AlertDescription>
         </Alert>
       ) : null}
-      {isOriginalEditBlocked ? null : (
+      {!isOriginalEditBlocked && canCloseLedger ? (
         <section className="bg-card rounded-lg border p-4 shadow-sm">
           <HqLedgerCloseDialog
             ledgerId={ledger.id}
@@ -279,8 +286,8 @@ export default async function LedgerDetailPage({
             status={ledger.status}
           />
         </section>
-      )}
-      {ledger.status === "HEADQUARTERS_CLOSED" ? (
+      ) : null}
+      {ledger.status === "HEADQUARTERS_CLOSED" && canCreateCorrection ? (
         <CorrectionPanel
           ledgerId={ledger.id}
           targetOptions={correctionTargetOptions}
@@ -289,102 +296,104 @@ export default async function LedgerDetailPage({
         />
       ) : null}
 
-      <Tabs defaultValue="sales" className="w-full">
-        <TabsList
-          variant="line"
-          className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
-        >
-          <TabsTrigger value="sales" className="min-h-9 px-3">
-            매출/결제
-          </TabsTrigger>
-          <TabsTrigger value="expenses" className="min-h-9 px-3">
-            비용
-          </TabsTrigger>
-          <TabsTrigger value="purchases" className="min-h-9 px-3">
-            매입
-          </TabsTrigger>
-          <TabsTrigger value="inventory" className="min-h-9 px-3">
-            재고
-          </TabsTrigger>
-          <TabsTrigger value="losses" className="min-h-9 px-3">
-            손실
-          </TabsTrigger>
-          <TabsTrigger value="work" className="min-h-9 px-3">
-            근무
-          </TabsTrigger>
-        </TabsList>
+      {canEditLedger ? (
+        <Tabs defaultValue="sales" className="w-full">
+          <TabsList
+            variant="line"
+            className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
+          >
+            <TabsTrigger value="sales" className="min-h-9 px-3">
+              매출/결제
+            </TabsTrigger>
+            <TabsTrigger value="expenses" className="min-h-9 px-3">
+              비용
+            </TabsTrigger>
+            <TabsTrigger value="purchases" className="min-h-9 px-3">
+              매입
+            </TabsTrigger>
+            <TabsTrigger value="inventory" className="min-h-9 px-3">
+              재고
+            </TabsTrigger>
+            <TabsTrigger value="losses" className="min-h-9 px-3">
+              손실
+            </TabsTrigger>
+            <TabsTrigger value="work" className="min-h-9 px-3">
+              근무
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="sales" className="mt-3">
-          <SalesPaymentStepClient
-            key={`sales-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
-            storeName={detail.storeName}
-            initialLedger={ledger}
-            currentStep="sales"
-            saveAction={saveHqLedgerSalesPayment}
-            showStepNavigation={false}
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-        <TabsContent value="expenses" className="mt-3">
-          <ExpenseStepClient
-            key={`expenses-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
-            storeName={detail.storeName}
-            initialLedger={ledger}
-            expenseCodeOptions={expenseCodeOptions}
-            currentStep="cost"
-            saveAction={saveHqLedgerExpenses}
-            showStepNavigation={false}
-            showSensitiveAccountingMetrics
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-        <TabsContent value="purchases" className="mt-3">
-          <PurchaseStepClient
-            key={`purchases-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
-            storeName={detail.storeName}
-            initialLedger={ledger}
-            productOptions={productOptions}
-            purchaseStandardOptions={purchaseStandardOptions}
-            currentStep="purchase"
-            saveAction={saveHqLedgerPurchases}
-            showStepNavigation={false}
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-        <TabsContent value="inventory" className="mt-3">
-          <InventoryStepClient
-            key={`inventory-${inventoryData.id}-${inventoryData.status}-${inventoryData.updatedAt}`}
-            storeName={detail.storeName}
-            initialData={inventoryData}
-            saveItemsAction={saveHqLedgerInventoryItems}
-            saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
-            showStepNavigation={false}
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-        <TabsContent value="losses" className="mt-3">
-          <LossStepClient
-            key={`losses-${lossData.id}-${lossData.status}-${lossData.updatedAt}`}
-            storeName={detail.storeName}
-            initialData={lossData}
-            saveAction={saveHqLedgerLosses}
-            showStepNavigation={false}
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-        <TabsContent value="work" className="mt-3">
-          <WorkStepClient
-            key={`work-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
-            storeName={detail.storeName}
-            initialLedger={ledger}
-            currentStep="work"
-            saveAction={saveHqLedgerWorkInfo}
-            showStepNavigation={false}
-            showSensitiveAccountingMetrics
-            ledgerLabel={hqLedgerLabel}
-          />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="sales" className="mt-3">
+            <SalesPaymentStepClient
+              key={`sales-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              storeName={detail.storeName}
+              initialLedger={ledger}
+              currentStep="sales"
+              saveAction={saveHqLedgerSalesPayment}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+          <TabsContent value="expenses" className="mt-3">
+            <ExpenseStepClient
+              key={`expenses-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              storeName={detail.storeName}
+              initialLedger={ledger}
+              expenseCodeOptions={expenseCodeOptions}
+              currentStep="cost"
+              saveAction={saveHqLedgerExpenses}
+              showStepNavigation={false}
+              showSensitiveAccountingMetrics
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+          <TabsContent value="purchases" className="mt-3">
+            <PurchaseStepClient
+              key={`purchases-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              storeName={detail.storeName}
+              initialLedger={ledger}
+              productOptions={productOptions}
+              purchaseStandardOptions={purchaseStandardOptions}
+              currentStep="purchase"
+              saveAction={saveHqLedgerPurchases}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+          <TabsContent value="inventory" className="mt-3">
+            <InventoryStepClient
+              key={`inventory-${inventoryData.id}-${inventoryData.status}-${inventoryData.updatedAt}`}
+              storeName={detail.storeName}
+              initialData={inventoryData}
+              saveItemsAction={saveHqLedgerInventoryItems}
+              saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+          <TabsContent value="losses" className="mt-3">
+            <LossStepClient
+              key={`losses-${lossData.id}-${lossData.status}-${lossData.updatedAt}`}
+              storeName={detail.storeName}
+              initialData={lossData}
+              saveAction={saveHqLedgerLosses}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+          <TabsContent value="work" className="mt-3">
+            <WorkStepClient
+              key={`work-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              storeName={detail.storeName}
+              initialLedger={ledger}
+              currentStep="work"
+              saveAction={saveHqLedgerWorkInfo}
+              showStepNavigation={false}
+              showSensitiveAccountingMetrics
+              ledgerLabel={hqLedgerLabel}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : null}
     </HeadquartersShell>
   );
 }

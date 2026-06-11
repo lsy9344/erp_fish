@@ -1,4 +1,4 @@
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 
 export type StoreStatusFilter = "all" | "active" | "inactive";
@@ -35,7 +35,7 @@ export function normalizeStoreSearch(value: string | string[] | undefined) {
 }
 
 export async function getStoresForHeadquarters(filters: StoreListFilters = {}) {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const q = filters.q?.trim();
   const status = filters.status ?? "all";
@@ -78,7 +78,7 @@ export async function getStoresForHeadquarters(filters: StoreListFilters = {}) {
 }
 
 export async function getActiveStoreOptions() {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   return db.store.findMany({
     where: { isActive: true },

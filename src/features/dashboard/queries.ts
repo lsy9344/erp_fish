@@ -183,8 +183,11 @@ export async function getHqDashboardRows({
   sortMode?: DashboardSortMode;
   filterMode?: DashboardFilterMode;
 } = {}): Promise<HqDashboardData> {
-  const { requireHeadquartersUser } = await import("../../server/authz.ts");
-  await requireHeadquartersUser();
+  const { getHeadquartersStoreScope, requireReportAccess } = await import(
+    "../../server/authz.ts"
+  );
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   const preset = getDashboardDatePreset(datePreset);
   const normalizedSortMode = getDashboardSortMode(sortMode);
@@ -198,14 +201,7 @@ export async function getHqDashboardRows({
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [stores, thresholdSettings] = await Promise.all([
-    db.store.findMany({
-      where: { isActive: true },
-      orderBy: [{ name: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        name: true,
-      },
-    }),
+    Promise.resolve(storeScope.stores),
     getAnomalyThresholdSettingsForSignals(),
   ]);
   const storeIds = stores.map((store) => store.id);
@@ -531,8 +527,11 @@ function toDashboardRow(
 }
 
 export async function getHqLedgerDetail(ledgerId: string) {
-  const { requireHeadquartersUser } = await import("../../server/authz.ts");
-  await requireHeadquartersUser();
+  const { getHeadquartersStoreScope, requireReportAccess } = await import(
+    "../../server/authz.ts"
+  );
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
 
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
@@ -542,8 +541,8 @@ export async function getHqLedgerDetail(ledgerId: string) {
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
   const [ledger, thresholdSettings] = await Promise.all([
-    db.dailyLedger.findUnique({
-      where: { id: ledgerId },
+    db.dailyLedger.findFirst({
+      where: { id: ledgerId, storeId: { in: storeScope.storeIds } },
       select: {
         id: true,
         closingDate: true,

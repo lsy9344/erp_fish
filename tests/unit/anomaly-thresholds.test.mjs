@@ -264,7 +264,7 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
 
   assert.match(actionSource, /"use server"/);
   assert.match(actionSource, /updateAnomalyThresholdSettings/);
-  assert.match(actionSource, /requireHeadquartersUser\(\)/);
+  assert.match(actionSource, /requireSettingsAccess\(\)/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /pg_advisory_xact_lock/);
   assert.match(actionSource, /upsert/);
@@ -277,15 +277,15 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
 
   assert.match(querySource, /getAnomalyThresholdSettingsForHeadquarters/);
   assert.match(querySource, /getAnomalyThresholdSettingsForSignals/);
-  assert.match(querySource, /requireHeadquartersUser\(\)/);
+  assert.match(querySource, /requireSettingsAccess\(\)/);
   assert.match(
     querySource,
-    /getAnomalyThresholdSettingsForSignals[\s\S]*requireHeadquartersUser\(\)/,
+    /getAnomalyThresholdSettingsForSignals[\s\S]*requireReportAccess\(\)/,
   );
   assert.match(querySource, /anomalyThresholdSetting\.findUnique/);
   assert.match(querySource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
 
-  assert.match(pageSource, /requireHeadquartersUser/);
+  assert.match(pageSource, /requireSettingsAccess/);
   assert.match(pageSource, /HeadquartersShell/);
   assert.match(pageSource, /PageHeader/);
   assert.match(pageSource, /getAnomalyThresholdSettingsForHeadquarters/);

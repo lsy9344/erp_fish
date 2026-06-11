@@ -1,4 +1,4 @@
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireReportAccess, requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { normalizeAnomalyThresholdSignalSettings } from "~/server/calculations/anomaly";
 import {
@@ -84,7 +84,7 @@ export function toAnomalyThresholdSettingsView(
 }
 
 export async function getAnomalyThresholdSettingsForHeadquarters() {
-  await requireHeadquartersUser();
+  await requireSettingsAccess();
 
   const setting = await db.anomalyThresholdSetting.findUnique({
     where: { scope: ANOMALY_THRESHOLD_SCOPE },
@@ -95,7 +95,7 @@ export async function getAnomalyThresholdSettingsForHeadquarters() {
 }
 
 export async function getAnomalyThresholdSettingsForSignals() {
-  await requireHeadquartersUser();
+  await requireReportAccess();
 
   const setting = await db.anomalyThresholdSetting.findUnique({
     where: { scope: ANOMALY_THRESHOLD_SCOPE },

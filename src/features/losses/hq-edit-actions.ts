@@ -8,7 +8,7 @@ import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjust
 import { getInventoryStepDataByLedgerIdInTx } from "~/features/inventory/queries";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
@@ -203,8 +203,9 @@ export async function saveHqLedgerLosses(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
 
   try {
     const result = await db.$transaction<ActionResult<LossStepData>>(

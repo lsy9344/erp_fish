@@ -5,7 +5,7 @@ import {
   summarizeLossItems,
   type LossSignalThresholds,
 } from "~/server/calculations/inventory";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireHeadquartersLedgerScope, requireReportAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { getTodayStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
@@ -149,7 +149,8 @@ export async function getLossStepData(
 export async function getLossStepDataByLedgerId(
   ledgerId: string,
 ): Promise<LossStepData | null> {
-  await requireHeadquartersUser();
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) => getLossStepDataByLedgerIdInTx(tx, ledgerId));
 }

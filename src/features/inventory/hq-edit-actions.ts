@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
 import {
   calculateInventoryAdjustment,
   calculateInventoryAmount,
@@ -166,8 +166,9 @@ export async function saveHqLedgerInventoryItems(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
@@ -296,8 +297,9 @@ export async function saveHqLedgerInventoryAdjustment(
     return parsed;
   }
 
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireLedgerHqEditAccess() };
   const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {

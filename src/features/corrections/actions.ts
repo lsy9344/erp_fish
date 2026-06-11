@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireCorrectionCreateAccess, requireHeadquartersLedgerScope } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   correctionRecordSchema,
@@ -510,7 +510,7 @@ async function resolveOriginalCorrectionValue(
 export async function createCorrectionRecord(
   input: unknown,
 ): Promise<ActionResult<CreateCorrectionRecordResult>> {
-  const actor = { user: await requireHeadquartersUser() };
+  const actor = { user: await requireCorrectionCreateAccess() };
   const parsed = parseCorrectionRecordInput(input);
 
   if (!parsed.ok) {
@@ -518,6 +518,7 @@ export async function createCorrectionRecord(
   }
 
   const { ledgerId } = parsed.data;
+  await requireHeadquartersLedgerScope(ledgerId);
 
   try {
     const result = await db.$transaction<

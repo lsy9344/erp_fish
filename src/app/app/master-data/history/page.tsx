@@ -1,11 +1,12 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { ChangeHistoryClient } from "~/features/audit/components/change-history-client";
 import {
   getAuditHistoryForHeadquarters,
   normalizeAuditHistoryFilters,
 } from "~/features/audit/audit-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 
 type ChangeHistoryPageProps = {
   searchParams: Promise<{
@@ -19,7 +20,8 @@ type ChangeHistoryPageProps = {
 export default async function ChangeHistoryPage({
   searchParams,
 }: ChangeHistoryPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireSettingsAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = normalizeAuditHistoryFilters(params);
   const history = await getAuditHistoryForHeadquarters(filters);
@@ -28,6 +30,7 @@ export default async function ChangeHistoryPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="변경 이력"

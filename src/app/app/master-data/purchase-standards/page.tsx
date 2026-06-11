@@ -1,4 +1,5 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
+import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
 import { PurchaseStandardManagementClient } from "~/features/master-data/components/purchase-standard-management-client";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
@@ -6,7 +7,7 @@ import {
   getPurchaseStandardsForHeadquarters,
   normalizePurchaseStandardStatusFilter,
 } from "~/features/master-data/purchase-standard-queries";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 
 type PurchaseStandardManagementPageProps = {
   searchParams: Promise<{
@@ -17,7 +18,8 @@ type PurchaseStandardManagementPageProps = {
 export default async function PurchaseStandardManagementPage({
   searchParams,
 }: PurchaseStandardManagementPageProps) {
-  const user = await requireHeadquartersUser();
+  const user = await requireSettingsAccess();
+  const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const filters = {
     status: normalizePurchaseStandardStatusFilter(params.status),
@@ -31,6 +33,7 @@ export default async function PurchaseStandardManagementPage({
     <HeadquartersShell
       userName={user.name ?? "본사 사용자"}
       userEmail={user.email ?? "headquarters"}
+      navigationItems={navigationItems}
     >
       <PageHeader
         title="매입 기준 관리"

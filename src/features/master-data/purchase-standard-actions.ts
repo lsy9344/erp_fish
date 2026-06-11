@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersUser } from "~/server/authz";
+import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
   purchaseStandardFormSchema,
@@ -177,7 +177,7 @@ async function getProductActiveState(
 export async function createPurchaseStandard(
   input: unknown,
 ): Promise<ActionResult<PurchaseStandardActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parsePurchaseStandardInput({
     ...(typeof input === "object" && input ? input : {}),
     isActive: true,
@@ -231,7 +231,7 @@ export async function updatePurchaseStandard(
   purchaseStandardId: string,
   input: unknown,
 ): Promise<ActionResult<PurchaseStandardActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parsePurchaseStandardInput(input);
 
   if (!parsed.ok) {
@@ -306,7 +306,7 @@ export async function updatePurchaseStandardStatus(
   purchaseStandardId: string,
   input: unknown,
 ): Promise<ActionResult<PurchaseStandardActionData>> {
-  const actor = await requireHeadquartersUser();
+  const actor = await requireSettingsAccess();
   const parsed = parsePurchaseStandardStatusInput(input);
 
   if (!parsed.ok) {
