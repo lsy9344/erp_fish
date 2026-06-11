@@ -1,6 +1,17 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+const exampleAuthSecret =
+  "replace-with-a-random-string-of-at-least-32-characters";
+const productionAuthSecretSchema = z
+  .string()
+  .trim()
+  .min(32)
+  .refine((value) => value !== exampleAuthSecret, {
+    message:
+      "AUTH_SECRET must not use the .env.example placeholder in production.",
+  });
+
 export const env = createEnv({
   /**
    * Specify your server-side environment variables schema here. This way you can ensure the app
@@ -9,7 +20,7 @@ export const env = createEnv({
   server: {
     AUTH_SECRET:
       process.env.NODE_ENV === "production"
-        ? z.string().trim().min(32)
+        ? productionAuthSecretSchema
         : z.string().trim().min(32).optional(),
     DATABASE_URL: z.string().url(),
     SEED_HQ_EMAIL: z.string().email().optional(),
