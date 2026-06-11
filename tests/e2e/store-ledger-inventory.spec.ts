@@ -601,3 +601,55 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
   expect(inputBox?.height).toBeGreaterThanOrEqual(44);
   expect(saveBox?.height).toBeGreaterThanOrEqual(44);
 });
+
+test("stale version 재고 저장은 conflict dialog를 보여주고 입력값을 쓰지 않는다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-5 stale 재고 방어", "냉동", 7000);
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+
+  await prisma.inventoryOpeningSnapshot.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      yearMonth: getCurrentKstYearMonth(),
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 5,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`);
+  await expect(currentQuantityInput).toBeVisible();
+
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: {
+      workMemo: "재고 저장 전 다른 저장",
+      updatedById: actorId,
+      version: { increment: 1 },
+    },
+  });
+
+  await currentQuantityInput.fill("3");
+  await page.getByRole("button", { name: "저장" }).click();
+
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("재고").first()).toBeVisible();
+  await expect(
+    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
+  ).toBeVisible();
+
+  const savedInventoryCount = await prisma.ledgerInventoryItem.count({
+    where: { dailyLedgerId: ledger.id, productId: product.id },
+  });
+  expect(savedInventoryCount).toBe(0);
+});

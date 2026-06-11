@@ -82,7 +82,7 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     /aria-labelledby="unsaved-change-dialog-title"/,
   );
   assert.match(unsavedDialogSource, /계속 편집/);
-  assert.match(unsavedDialogSource, /취소/);
+  assert.match(unsavedDialogSource, /변경 버리고 이동/);
   assert.match(unsavedDialogSource, /저장/);
 
   const guardSource = readProjectFile(
@@ -93,6 +93,8 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     "use-unsaved-step-guard.ts",
   );
   assert.match(guardSource, /beforeunload/);
+  assert.match(guardSource, /event\.returnValue = ""/);
+  assert.match(guardSource, /a\[data-unsaved-guard-nav\]/);
   assert.match(guardSource, /lastTriggerRef\.current\?\.focus\(\)/);
   assert.match(guardSource, /window\.location\.href = pendingHref/);
 

@@ -13,6 +13,10 @@ import {
   calculateSystemInventoryQuantity,
 } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+} from "~/features/ledger/conflicts";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { getInventoryStepDataByLedgerIdInTx } from "./queries";
 import {
@@ -76,11 +80,63 @@ function notFoundError(): ActionResult<never> {
   return actionError("LEDGER_NOT_FOUND", "장부를 찾을 수 없습니다.");
 }
 
-function conflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+type HqInventoryConflictSection = "inventory" | "inventory-adjustment";
+
+type HqInventoryConflictInput =
+  | (LedgerInventoryInput & { ledgerId: string; ledgerUpdatedAt: string })
+  | (LedgerInventoryAdjustmentInput & {
+      ledgerId: string;
+      ledgerUpdatedAt: string;
+    });
+
+function toInventoryConflictValues(data: InventoryStepData) {
+  return Object.fromEntries(
+    data.items.map((item) => [
+      item.productName,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
+    ]),
   );
+}
+
+function toInventoryClientValues(input: HqInventoryConflictInput) {
+  if ("items" in input) {
+    return Object.fromEntries(
+      input.items.map((item) => [
+        item.productId,
+        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
+      ]),
+    );
+  }
+
+  return {
+    productId: input.productId,
+    actualQuantity: input.actualQuantity,
+    reason: input.reason,
+  };
+}
+
+async function hqInventoryConflictError<T = never>(
+  tx: Prisma.TransactionClient,
+  section: HqInventoryConflictSection,
+  input: HqInventoryConflictInput,
+): Promise<ActionResult<T>> {
+  const [current, meta] = await Promise.all([
+    getInventoryStepDataByLedgerIdInTx(tx, input.ledgerId),
+    getLedgerConflictMetaInTx(tx, input.ledgerId),
+  ]);
+
+  return ledgerConflictErrorFromMeta<T>({
+    meta,
+    ledgerId: input.ledgerId,
+    section,
+    clientToken: input.ledgerUpdatedAt,
+    serverToken: current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+    clientValues: toInventoryClientValues(input),
+    serverValues: current ? toInventoryConflictValues(current) : {},
+    lastModifiedAt: current?.updatedAt,
+    reloadRequired: true,
+    hqEditing: true,
+  });
 }
 
 function notEditableError(
@@ -172,7 +228,9 @@ export async function saveHqLedgerInventoryItems(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqInventoryConflictError(tx, "inventory", parsed.data),
+    );
   }
 
   try {
@@ -196,7 +254,7 @@ export async function saveHqLedgerInventoryItems(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqInventoryConflictError(tx, "inventory", parsed.data);
         }
 
         const inputByProductId = new Map(
@@ -304,7 +362,9 @@ export async function saveHqLedgerInventoryAdjustment(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqInventoryConflictError(tx, "inventory-adjustment", parsed.data),
+    );
   }
 
   try {
@@ -393,7 +453,11 @@ export async function saveHqLedgerInventoryAdjustment(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqInventoryConflictError(
+            tx,
+            "inventory-adjustment",
+            parsed.data,
+          );
         }
 
         const inventoryItem = await tx.ledgerInventoryItem.upsert({

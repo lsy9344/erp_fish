@@ -5,13 +5,22 @@ import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
-import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import {
+  actionError,
+  actionOk,
+  type ActionConflictValue,
+  type ActionResult,
+} from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+} from "./conflicts";
 import {
   ledgerSelect,
   toLedgerAuditPayload,
@@ -87,11 +96,112 @@ function notFoundError(): ActionResult<never> {
   return actionError("LEDGER_NOT_FOUND", "장부를 찾을 수 없습니다.");
 }
 
-function conflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-  );
+type HqLedgerConflictSection = "sales" | "expenses" | "purchases" | "work";
+
+type HqLedgerConflictInput =
+  | (LedgerSalesPaymentInput & { ledgerId: string; ledgerUpdatedAt: string })
+  | (LedgerExpensesInput & { ledgerId: string; ledgerUpdatedAt: string })
+  | (LedgerPurchasesInput & { ledgerId: string; ledgerUpdatedAt: string })
+  | (LedgerWorkInfoInput & { ledgerId: string; ledgerUpdatedAt: string });
+
+function toHqLedgerServerConflictValues(
+  section: HqLedgerConflictSection,
+  data: LedgerCostStepData,
+): Record<string, ActionConflictValue> {
+  switch (section) {
+    case "sales":
+      return {
+        "작성자 표시명": data.authorDisplayName,
+        총매출: data.totalSalesAmount,
+        현금: data.cashAmount,
+        카드: data.cardAmount,
+        "기타 결제수단": data.otherPaymentAmount,
+      };
+    case "expenses":
+      return Object.fromEntries(
+        data.expenseItems.map((item, index) => [
+          `비용 ${index + 1}`,
+          `${item.ledgerInputCodeName} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
+        ]),
+      );
+    case "purchases":
+      return Object.fromEntries(
+        data.purchaseItems.map((item, index) => [
+          `매입 ${index + 1}`,
+          `${item.productName} ${item.quantity}개 ${item.amount}원`,
+        ]),
+      );
+    case "work":
+      return {
+        근무인원: data.workerCount,
+        특이사항: data.workMemo,
+      };
+  }
+}
+
+function toHqLedgerClientConflictValues(
+  section: HqLedgerConflictSection,
+  input: HqLedgerConflictInput,
+): Record<string, ActionConflictValue> {
+  switch (section) {
+    case "sales": {
+      const sales = input as LedgerSalesPaymentInput;
+      return {
+        "작성자 표시명": sales.authorDisplayName,
+        총매출: sales.totalSalesAmount,
+        현금: sales.cashAmount,
+        카드: sales.cardAmount,
+        "기타 결제수단": sales.otherPaymentAmount,
+      };
+    }
+    case "expenses":
+      return Object.fromEntries(
+        (input as LedgerExpensesInput).expenses.map((item, index) => [
+          `비용 ${index + 1}`,
+          `${item.ledgerInputCodeId} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
+        ]),
+      );
+    case "purchases":
+      return Object.fromEntries(
+        (input as LedgerPurchasesInput).purchases.map((item, index) => [
+          `매입 ${index + 1}`,
+          `${item.productName ?? item.productId ?? "품목 미선택"} ${item.quantity}개 ${item.unitPrice}원`,
+        ]),
+      );
+    case "work": {
+      const work = input as LedgerWorkInfoInput;
+      return {
+        근무인원: work.workerCount,
+        특이사항: work.workMemo,
+      };
+    }
+  }
+}
+
+async function hqConflictError<T = never>(
+  tx: Prisma.TransactionClient,
+  section: HqLedgerConflictSection,
+  input: HqLedgerConflictInput,
+): Promise<ActionResult<T>> {
+  const [ledger, meta] = await Promise.all([
+    getLedgerByIdInTx(tx, input.ledgerId),
+    getLedgerConflictMetaInTx(tx, input.ledgerId),
+  ]);
+
+  return ledgerConflictErrorFromMeta<T>({
+    meta,
+    ledgerId: input.ledgerId,
+    section,
+    clientToken: input.ledgerUpdatedAt,
+    serverToken: ledger?.updatedAt.toISOString() ?? meta?.updatedAt.toISOString() ?? "unknown",
+    clientValues: toHqLedgerClientConflictValues(section, input),
+    serverValues: ledger
+      ? toHqLedgerServerConflictValues(section, toLedgerCostStepData(ledger))
+      : {},
+    lastModifiedAt: ledger?.updatedAt.toISOString(),
+    reloadRequired: true,
+    hqEditing: true,
+  });
 }
 
 function notEditableError(status: LedgerRecord["status"]): ActionResult<never> {
@@ -193,7 +303,9 @@ export async function saveHqLedgerSalesPayment(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqConflictError(tx, "sales", parsed.data),
+    );
   }
 
   try {
@@ -223,7 +335,7 @@ export async function saveHqLedgerSalesPayment(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqConflictError(tx, "sales", parsed.data);
         }
 
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
@@ -272,7 +384,9 @@ export async function saveHqLedgerExpenses(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqConflictError(tx, "expenses", parsed.data),
+    );
   }
 
   try {
@@ -332,7 +446,7 @@ export async function saveHqLedgerExpenses(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqConflictError(tx, "expenses", parsed.data);
         }
 
         await tx.ledgerExpense.deleteMany({
@@ -398,7 +512,9 @@ export async function saveHqLedgerPurchases(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqConflictError(tx, "purchases", parsed.data),
+    );
   }
 
   try {
@@ -601,7 +717,7 @@ export async function saveHqLedgerPurchases(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqConflictError(tx, "purchases", parsed.data);
         }
 
         await tx.ledgerPurchaseItem.deleteMany({
@@ -664,7 +780,9 @@ export async function saveHqLedgerWorkInfo(
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) =>
+      hqConflictError(tx, "work", parsed.data),
+    );
   }
 
   try {
@@ -692,7 +810,7 @@ export async function saveHqLedgerWorkInfo(
         );
 
         if (!updated) {
-          return conflictError();
+          return await hqConflictError(tx, "work", parsed.data);
         }
 
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({

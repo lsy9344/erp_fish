@@ -10,7 +10,9 @@ import { Input } from "~/components/ui/input";
 import { saveLedgerWorkInfo } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -90,21 +92,40 @@ export function WorkStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const saveConflict = useSaveConflictDialog();
   const workerCountError = fieldErrors.workerCount?.[0];
   const workMemoError = fieldErrors.workMemo?.[0];
+  const isDirty =
+    workerCount !==
+      (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
+    workMemo !== (ledger.workMemo ?? "");
+  const previousInitialLedgerRef = useRef(initialLedger);
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
   });
 
   useEffect(() => {
-    setLedger(initialLedger);
-    setWorkerCount(
-      initialLedger.workerCount === null
+    const previousInitialLedger = previousInitialLedgerRef.current;
+    const previousWorkerCount =
+      previousInitialLedger.workerCount === null
         ? ""
-        : String(initialLedger.workerCount),
+        : String(previousInitialLedger.workerCount);
+
+    setLedger(initialLedger);
+    setWorkerCount((current) =>
+      current === previousWorkerCount
+        ? initialLedger.workerCount === null
+          ? ""
+          : String(initialLedger.workerCount)
+        : current,
     );
-    setWorkMemo(initialLedger.workMemo ?? "");
+    setWorkMemo((current) =>
+      current === (previousInitialLedger.workMemo ?? "")
+        ? (initialLedger.workMemo ?? "")
+        : current,
+    );
+    previousInitialLedgerRef.current = initialLedger;
   }, [initialLedger]);
 
   useEffect(() => {
@@ -147,11 +168,18 @@ export function WorkStepClient({
         storeId: ledger.storeId,
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
+        ledgerUpdatedAt: ledger.updatedAt,
         workerCount: workerCountInputRef.current?.value ?? workerCount,
         workMemo: workMemoInputRef.current?.value ?? workMemo,
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
 
         setFieldErrors(nextErrors);
@@ -191,10 +219,6 @@ export function WorkStepClient({
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
-  const isDirty =
-    workerCount !==
-      (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
-    workMemo !== (ledger.workMemo ?? "");
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -209,6 +233,13 @@ export function WorkStepClient({
         onSave={guard.saveAndContinue}
         onDiscard={guard.discard}
         onKeepEditing={guard.keepEditing}
+      />
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
       />
 
       <LedgerContextHeader

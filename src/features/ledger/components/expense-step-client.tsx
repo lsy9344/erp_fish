@@ -10,7 +10,9 @@ import { Input } from "~/components/ui/input";
 import { saveLedgerExpenses } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -160,18 +162,33 @@ export function ExpenseStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const saveConflict = useSaveConflictDialog();
+  const isDirty = !areExpenseLinesEqual(
+    expenseItems,
+    toExpenseLines(ledger.expenseItems),
+  );
+  const previousInitialLedgerRef = useRef(initialLedger);
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
   });
 
   useEffect(() => {
+    const previousInitialLedger = previousInitialLedgerRef.current;
+    const previousExpenseItems = hasRegisteredExpenseCodeOptions
+      ? toExpenseLines(previousInitialLedger.expenseItems)
+      : createFallbackExpenseLines(previousInitialLedger.expenseItems);
+    const nextExpenseItems = hasRegisteredExpenseCodeOptions
+      ? toExpenseLines(initialLedger.expenseItems)
+      : createFallbackExpenseLines(initialLedger.expenseItems);
+
     setLedger(initialLedger);
-    setExpenseItems(
-      hasRegisteredExpenseCodeOptions
-        ? toExpenseLines(initialLedger.expenseItems)
-        : createFallbackExpenseLines(initialLedger.expenseItems),
+    setExpenseItems((current) =>
+      areExpenseLinesEqual(current, previousExpenseItems)
+        ? nextExpenseItems
+        : current,
     );
+    previousInitialLedgerRef.current = initialLedger;
   }, [hasRegisteredExpenseCodeOptions, initialLedger]);
 
   function focusFirstError(errors: FieldErrors) {
@@ -232,6 +249,7 @@ export function ExpenseStepClient({
         storeId: ledger.storeId,
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
+        ledgerUpdatedAt: ledger.updatedAt,
         expenses: expenseItems.map((line, index) => ({
           ledgerInputCodeId:
             lineCodeRefs.current[index]?.value ?? line.ledgerInputCodeId,
@@ -243,6 +261,12 @@ export function ExpenseStepClient({
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
 
         setFieldErrors(nextErrors);
@@ -310,10 +334,6 @@ export function ExpenseStepClient({
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "purchase");
-  const isDirty = !areExpenseLinesEqual(
-    expenseItems,
-    toExpenseLines(ledger.expenseItems),
-  );
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -328,6 +348,13 @@ export function ExpenseStepClient({
         onSave={guard.saveAndContinue}
         onDiscard={guard.discard}
         onKeepEditing={guard.keepEditing}
+      />
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
       />
 
       <LedgerContextHeader

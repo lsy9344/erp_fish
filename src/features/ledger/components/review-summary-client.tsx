@@ -19,7 +19,9 @@ import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import { submitLedgerForReview } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
 import type { FieldErrors } from "~/lib/action-result";
@@ -171,6 +173,7 @@ export function ReviewSummaryClient({
   const [feedback, setFeedback] = useState<SubmitFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const saveConflict = useSaveConflictDialog();
   const previousReviewContextKey = useRef(
     `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`,
   );
@@ -220,6 +223,15 @@ export function ReviewSummaryClient({
         return;
       }
 
+      if (saveConflict.captureConflict(result)) {
+        setFeedback({
+          kind: "error",
+          message: result.error.message,
+          fieldErrors: result.error.fieldErrors,
+        });
+        return;
+      }
+
       setFeedback({
         kind: "error",
         message: result.error.message,
@@ -244,6 +256,13 @@ export function ReviewSummaryClient({
           onClose={() => setShowSuccessModal(false)}
         />
       ) : null}
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
+      />
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <LedgerContextHeader
           ledgerLabel="오늘 장부 검토"

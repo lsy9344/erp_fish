@@ -7,6 +7,10 @@ import type { Prisma } from "../../../generated/prisma";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { getInventoryStepDataByLedgerIdInTx } from "~/features/inventory/queries";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+} from "~/features/ledger/conflicts";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
@@ -230,6 +234,47 @@ function ensureTargetLossData(
   return actionOk(data);
 }
 
+function toLossConflictValues(data: LossStepData) {
+  return Object.fromEntries(
+    data.lossItems.map((item, index) => [
+      `손실 ${index + 1}`,
+      `${item.productName} / ${item.lossTypeName} / ${item.quantity}개 / ${item.amount}원 / ${item.reason}`,
+    ]),
+  );
+}
+
+function toLossClientValues(input: HqLedgerLossesInput) {
+  return Object.fromEntries(
+    input.losses.map((item, index) => [
+      `손실 ${index + 1}`,
+      `${item.productId} / ${item.ledgerInputCodeId} / ${item.quantity}개 / ${item.amount}원 / ${item.reason}`,
+    ]),
+  );
+}
+
+async function hqLossConflictError<T = never>(
+  tx: Prisma.TransactionClient,
+  input: HqLedgerLossesInput & { ledgerId: string },
+): Promise<ActionResult<T>> {
+  const [current, meta] = await Promise.all([
+    getLossStepDataByLedgerIdInTx(tx, input.ledgerId),
+    getLedgerConflictMetaInTx(tx, input.ledgerId),
+  ]);
+
+  return ledgerConflictErrorFromMeta<T>({
+    meta,
+    ledgerId: input.ledgerId,
+    section: "losses",
+    clientToken: input.ledgerUpdatedAt,
+    serverToken: current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+    clientValues: toLossClientValues(input),
+    serverValues: current ? toLossConflictValues(current) : {},
+    lastModifiedAt: current?.updatedAt,
+    reloadRequired: true,
+    hqEditing: true,
+  });
+}
+
 async function markEditableLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
@@ -330,10 +375,7 @@ export async function saveHqLedgerLosses(
           Number.isNaN(expectedUpdatedAt.getTime()) ||
           before.updatedAt !== expectedUpdatedAt.toISOString()
         ) {
-          return actionError<LossStepData>(
-            "LEDGER_CONFLICT",
-            "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-          );
+          return await hqLossConflictError<LossStepData>(tx, parsed.data);
         }
 
         const productIds = [
@@ -467,10 +509,7 @@ export async function saveHqLedgerLosses(
         );
 
         if (!updated) {
-          return actionError<LossStepData>(
-            "LEDGER_CONFLICT",
-            "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-          );
+          return await hqLossConflictError<LossStepData>(tx, parsed.data);
         }
 
         const existingIdsToKeep = normalizedLosses

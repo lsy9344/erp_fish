@@ -55,7 +55,7 @@ export function UnsavedChangeDialog({
             disabled={isSaving}
             className="min-h-11"
           >
-            취소
+            변경 버리고 이동
           </Button>
           <Button
             type="button"

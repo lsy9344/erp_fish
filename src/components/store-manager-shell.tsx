@@ -66,6 +66,7 @@ export function StoreManagerShell({
                 key={item.label}
                 href={getStoreScopedHref(item.href, storeId)}
                 prefetch={false}
+                data-unsaved-guard-nav="store-shell"
                 className="text-muted-foreground hover:bg-primary/10 hover:text-primary inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium"
               >
                 <item.icon className="size-4" aria-hidden="true" />
@@ -91,6 +92,7 @@ export function StoreManagerShell({
               key={item.label}
               href={getStoreScopedHref(item.href, storeId)}
               prefetch={false}
+              data-unsaved-guard-nav="store-shell"
               className={cn(
                 "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium",
                 "text-muted-foreground hover:bg-primary/10 hover:text-primary",

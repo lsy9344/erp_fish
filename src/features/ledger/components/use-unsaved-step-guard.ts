@@ -22,6 +22,7 @@ export function useUnsavedStepGuard({
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
+      event.returnValue = "";
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -44,6 +45,37 @@ export function useUnsavedStepGuard({
     },
     [isDirty],
   );
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const handleStoreShellNavigation = (event: MouseEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const link = target.closest<HTMLAnchorElement>(
+        "a[data-unsaved-guard-nav]",
+      );
+
+      if (!link || event.defaultPrevented) {
+        return;
+      }
+
+      event.preventDefault();
+      requestNavigation(link.href, link);
+    };
+
+    document.addEventListener("click", handleStoreShellNavigation, true);
+
+    return () => {
+      document.removeEventListener("click", handleStoreShellNavigation, true);
+    };
+  }, [isDirty, requestNavigation]);
 
   const keepEditing = useCallback(() => {
     setIsDialogOpen(false);

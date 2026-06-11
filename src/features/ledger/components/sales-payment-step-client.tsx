@@ -10,7 +10,9 @@ import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -100,6 +102,7 @@ export function SalesPaymentStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const saveConflict = useSaveConflictDialog();
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
@@ -174,6 +177,7 @@ export function SalesPaymentStepClient({
         storeId: ledger.storeId,
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
+        ledgerUpdatedAt: ledger.updatedAt,
         authorDisplayName:
           authorDisplayNameInputRef.current?.value ?? authorDisplayName,
         totalSalesAmount: toRawKrwInputValue(
@@ -193,6 +197,12 @@ export function SalesPaymentStepClient({
       const result = await saveAction(payload);
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
 
         setFieldErrors(nextErrors);
@@ -251,6 +261,13 @@ export function SalesPaymentStepClient({
         onDiscard={guard.discard}
         onKeepEditing={guard.keepEditing}
       />
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
+      />
 
       <LedgerContextHeader
         ledgerLabel={ledgerLabel}
@@ -298,9 +315,7 @@ export function SalesPaymentStepClient({
           noValidate
         >
           <Field data-invalid={Boolean(authorDisplayNameError)}>
-            <FieldLabel htmlFor="author-display-name">
-              작성자 표시명
-            </FieldLabel>
+            <FieldLabel htmlFor="author-display-name">작성자 표시명</FieldLabel>
             <Input
               ref={authorDisplayNameInputRef}
               id="author-display-name"

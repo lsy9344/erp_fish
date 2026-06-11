@@ -256,7 +256,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
   await page.getByRole("link", { name: /2단계: 비용/ }).click();
   await page
     .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
-    .getByRole("button", { name: "취소" })
+    .getByRole("button", { name: "변경 버리고 이동" })
     .click();
   await expect(page).toHaveURL(/step=cost/);
 
@@ -306,7 +306,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
   expect(ledger.totalSalesAmount).toBe(77777);
 });
 
-test("지점장은 stale version 저장 충돌 시 새로고침 안내를 본다", async ({
+test("지점장은 stale version 저장 충돌 시 저장 충돌 dialog를 본다", async ({
   page,
 }) => {
   await loginAsStoreManager(page);
@@ -333,16 +333,20 @@ test("지점장은 stale version 저장 충돌 시 새로고침 안내를 본다
     .fill("333");
   await page.getByRole("button", { name: "저장" }).click();
 
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("내 입력값").first()).toBeVisible();
+  await expect(conflictDialog.getByText("서버 최신값").first()).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({
-      hasText:
-        "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-    }),
+    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
   ).toBeVisible();
   await expect(
-    page
-      .getByLabel("장부 저장 상태")
-      .getByRole("button", { name: "다시 시도" }),
+    conflictDialog.getByRole("button", { name: "계속 편집" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("장부 저장 상태").getByRole("alert"),
   ).toBeVisible();
 });
 

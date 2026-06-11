@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import type { DailyLedgerStatus } from "../../../generated/prisma";
+import type { DailyLedgerStatus, Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireHeadquartersLedgerScope, requireLedgerHqCloseAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+} from "./conflicts";
 import {
   ledgerSelect,
   toLedgerAuditPayload,
@@ -81,11 +85,30 @@ function alreadyClosedError(): ActionResult<never> {
   return actionError("LEDGER_ALREADY_CLOSED", "이미 마감된 장부입니다.");
 }
 
-function conflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 다른 화면에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-  );
+async function closeConflictError<T = never>(
+  tx: Prisma.TransactionClient,
+  input: LedgerCloseInput,
+): Promise<ActionResult<T>> {
+  const [current, meta] = await Promise.all([
+    tx.dailyLedger.findUnique({
+      where: { id: input.ledgerId },
+      select: { status: true, updatedAt: true },
+    }),
+    getLedgerConflictMetaInTx(tx, input.ledgerId),
+  ]);
+
+  return ledgerConflictErrorFromMeta<T>({
+    meta,
+    ledgerId: input.ledgerId,
+    section: "hq-close",
+    clientToken: input.ledgerUpdatedAt,
+    serverToken: current?.updatedAt.toISOString() ?? "unknown",
+    clientValues: { 요청: "본사마감" },
+    serverValues: { 현재상태: current?.status ?? null },
+    lastModifiedAt: current?.updatedAt.toISOString(),
+    reloadRequired: true,
+    hqEditing: true,
+  });
 }
 
 function parseExpectedUpdatedAt(value: string): Date | null {
@@ -115,7 +138,7 @@ export async function closeHqLedger(
   const expectedUpdatedAt = parseExpectedUpdatedAt(ledgerUpdatedAt);
 
   if (!expectedUpdatedAt) {
-    return conflictError();
+    return await db.$transaction((tx) => closeConflictError(tx, parsed.data));
   }
 
   let result: ActionResult<HqCloseLedgerResult>;
@@ -165,7 +188,7 @@ export async function closeHqLedger(
             return alreadyClosedError();
           }
 
-          return conflictError();
+          return await closeConflictError(tx, parsed.data);
         }
 
         const after = await tx.dailyLedger.findUniqueOrThrow({

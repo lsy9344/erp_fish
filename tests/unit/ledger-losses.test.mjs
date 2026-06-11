@@ -255,7 +255,10 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /tx\.ledgerLossItem\.create\(/);
   assert.doesNotMatch(actionSource, /tx\.ledgerLossItem\.createMany/);
   assert.match(actionSource, /version:\s*parsed\.data\.version/);
-  assert.match(actionSource, /LEDGER_CONFLICT/);
+  assert.match(actionSource, /ledgerConflictErrorFromMeta/);
+  assert.match(actionSource, /section:\s*"losses"/);
+  assert.match(actionSource, /clientValues:\s*toLossClientValues/);
+  assert.match(actionSource, /serverValues:\s*toLossConflictValues/);
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
   assert.match(actionSource, /getLossQuantityErrorMessage/);
   assert.match(actionSource, /existing\.productName/);

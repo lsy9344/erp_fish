@@ -354,11 +354,14 @@ test("stale version 매입 저장은 거부되고 기존 데이터가 바뀌지 
   await page.getByLabel("수량").fill("1");
   await page.getByRole("button", { name: "저장" }).click();
 
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("내 입력값").first()).toBeVisible();
+  await expect(conflictDialog.getByText("서버 최신값").first()).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({
-      hasText:
-        "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-    }),
+    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
   ).toBeVisible();
 
   await expect

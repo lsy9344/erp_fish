@@ -20,10 +20,15 @@ import {
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import {
+  getInventoryStepDataByLedgerIdInTx,
   getInventoryStepDataInTx,
   toStoreManagerInventoryStepData,
 } from "./queries";
 import { type StoreManagerInventoryStepData } from "./types";
+import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+} from "~/features/ledger/conflicts";
 
 function parseLedgerInventoryInput(
   input: unknown,
@@ -64,11 +69,88 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
-function mapLedgerConflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+class OriginalInventoryBlockedError extends Error {
+  constructor(
+    readonly code: "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function originalInventoryBlockedError(
+  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
+) {
+  const message =
+    status === "HOLIDAY"
+      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
+      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+
+  return new OriginalInventoryBlockedError(
+    status === "HEADQUARTERS_CLOSED" ? "LEDGER_CLOSED" : "LEDGER_NOT_EDITABLE",
+    message,
   );
+}
+
+function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
+  return Object.fromEntries(
+    data.items.map((item) => [
+      item.productName,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
+    ]),
+  );
+}
+
+function toInventoryClientValues(input: LedgerInventoryInput) {
+  return Object.fromEntries(
+    input.items.map((item) => [
+      item.productId,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
+    ]),
+  );
+}
+
+function toInventoryAdjustmentClientValues(
+  input: LedgerInventoryAdjustmentInput,
+) {
+  return {
+    productId: input.productId,
+    actualQuantity: input.actualQuantity,
+    reason: input.reason,
+  };
+}
+
+async function mapLedgerConflictError(
+  section: "inventory" | "inventory-adjustment",
+  input: LedgerInventoryInput | LedgerInventoryAdjustmentInput,
+): Promise<ActionResult<never>> {
+  const snapshot = await db.$transaction(async (tx) => {
+    const current = await getInventoryStepDataByLedgerIdInTx(
+      tx,
+      input.ledgerId,
+    );
+    const meta = await getLedgerConflictMetaInTx(tx, input.ledgerId);
+
+    return {
+      data: current ? toStoreManagerInventoryStepData(current) : null,
+      meta,
+    };
+  });
+
+  return ledgerConflictErrorFromMeta({
+    meta: snapshot.meta,
+    ledgerId: input.ledgerId,
+    section,
+    clientToken: input.version,
+    clientValues:
+      section === "inventory"
+        ? toInventoryClientValues(input as LedgerInventoryInput)
+        : toInventoryAdjustmentClientValues(
+            input as LedgerInventoryAdjustmentInput,
+          ),
+    serverValues: snapshot.data ? toInventoryConflictValues(snapshot.data) : {},
+    reloadRequired: true,
+  });
 }
 
 function originalAdjustmentBlockedError(
@@ -128,8 +210,18 @@ export async function saveLedgerInventoryItems(
         throw new Error("LEDGER_CONFLICT");
       }
 
+      if (
+        before.status === "HEADQUARTERS_CLOSED" ||
+        before.status === "HOLIDAY"
+      ) {
+        throw originalInventoryBlockedError(before.status);
+      }
+
       if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
-        throw new Error("Ledger is not editable");
+        throw new OriginalInventoryBlockedError(
+          "LEDGER_NOT_EDITABLE",
+          "수정할 수 없는 장부 상태입니다.",
+        );
       }
 
       const editableLedger = await tx.dailyLedger.updateMany({
@@ -218,7 +310,11 @@ export async function saveLedgerInventoryItems(
     return actionOk(toStoreManagerInventoryStepData(result));
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
-      return mapLedgerConflictError();
+      return await mapLedgerConflictError("inventory", parsed.data);
+    }
+
+    if (error instanceof OriginalInventoryBlockedError) {
+      return actionError(error.code, error.message);
     }
 
     return mapStoreActionError();
@@ -249,7 +345,18 @@ export async function saveLedgerInventoryAdjustment(
         before.id !== parsed.data.ledgerId ||
         before.version !== parsed.data.version
       ) {
-        return mapLedgerConflictError();
+        const meta = await getLedgerConflictMetaInTx(tx, before.id);
+        return ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>({
+          meta,
+          ledgerId: parsed.data.ledgerId,
+          section: "inventory-adjustment",
+          clientToken: parsed.data.version,
+          clientValues: toInventoryAdjustmentClientValues(parsed.data),
+          serverValues: toInventoryConflictValues(
+            toStoreManagerInventoryStepData(before),
+          ),
+          reloadRequired: true,
+        });
       }
 
       if (
@@ -325,7 +432,18 @@ export async function saveLedgerInventoryAdjustment(
       });
 
       if (editableLedger.count !== 1) {
-        return mapLedgerConflictError();
+        const meta = await getLedgerConflictMetaInTx(tx, before.id);
+        return ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>({
+          meta,
+          ledgerId: parsed.data.ledgerId,
+          section: "inventory-adjustment",
+          clientToken: parsed.data.version,
+          clientValues: toInventoryAdjustmentClientValues(parsed.data),
+          serverValues: toInventoryConflictValues(
+            toStoreManagerInventoryStepData(before),
+          ),
+          reloadRequired: true,
+        });
       }
 
       const inventoryItem = await tx.ledgerInventoryItem.upsert({

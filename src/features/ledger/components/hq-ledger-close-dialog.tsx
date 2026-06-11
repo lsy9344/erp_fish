@@ -17,6 +17,9 @@ import {
 } from "~/components/ui/dialog";
 import { closeHqLedger } from "~/features/ledger/hq-close-actions";
 import { useLedgerUpdatedAtSync } from "~/features/ledger/components/ledger-updated-at-sync";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
+import { isLedgerConflictResult } from "~/lib/action-result";
 import type { LedgerCostStepData } from "~/features/ledger/types";
 
 type HqLedgerCloseDialogProps = {
@@ -36,6 +39,7 @@ export function HqLedgerCloseDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentLedgerUpdatedAt, setCurrentLedgerUpdatedAt] =
     useState(ledgerUpdatedAt);
+  const saveConflict = useSaveConflictDialog();
 
   const isEditable = status === "IN_PROGRESS" || status === "IN_REVIEW";
 
@@ -55,6 +59,9 @@ export function HqLedgerCloseDialog({
       });
 
       if (!result.ok) {
+        if (isLedgerConflictResult(result)) {
+          saveConflict.captureConflict(result);
+        }
         setErrorMessage(result.error.message);
         return;
       }
@@ -70,53 +77,63 @@ export function HqLedgerCloseDialog({
   }
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        setIsOpen(open);
+    <>
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          setIsOpen(open);
 
-        if (open) {
-          setErrorMessage(null);
-        }
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline">
-          본사마감
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>장부를 마감합니다</DialogTitle>
-          <DialogDescription>
-            본사 마감 후에는 원본 항목을 수정할 수 없습니다. 정정 기록만
-            추가할 수 있습니다.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="text-sm text-muted-foreground">
-          마감하면 원본 데이터는 잠기고 보고서 기준이 사용하는 원본 값이 고정됩니다.
-        </div>
-        {errorMessage ? (
-          <Alert role="alert" className="border-destructive/50">
-            <AlertTitle>요청 처리 실패</AlertTitle>
-            <AlertDescription>{errorMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button type="button" variant="outline" disabled={isSubmitting}>
-              취소
-            </Button>
-          </DialogClose>
-          <Button
-            type="button"
-            onClick={() => void handleConfirm()}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "마감 중..." : "마감 확정"}
+          if (open) {
+            setErrorMessage(null);
+          }
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button type="button" variant="outline">
+            본사마감
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>장부를 마감합니다</DialogTitle>
+            <DialogDescription>
+              본사 마감 후에는 원본 항목을 수정할 수 없습니다. 정정 기록만
+              추가할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-muted-foreground text-sm">
+            마감하면 원본 데이터는 잠기고 보고서 기준이 사용하는 원본 값이
+            고정됩니다.
+          </div>
+          {errorMessage ? (
+            <Alert role="alert" className="border-destructive/50">
+              <AlertTitle>요청 처리 실패</AlertTitle>
+              <AlertDescription>{errorMessage}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isSubmitting}>
+                취소
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "마감 중..." : "마감 확정"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
+      />
+    </>
   );
 }

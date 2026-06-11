@@ -19,8 +19,10 @@ import {
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { saveLedgerLosses } from "~/features/losses/actions";
@@ -136,14 +138,24 @@ export function LossStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const saveConflict = useSaveConflictDialog();
+  const isDirty = !areLossLinesEqual(items, toLineState(data));
+  const previousInitialDataRef = useRef(initialData);
 
   useLedgerUpdatedAtSync(data.id, (updatedAt) => {
     setData((current) => ({ ...current, updatedAt }));
   });
 
   useEffect(() => {
+    const previousInitialData = previousInitialDataRef.current;
+    const previousItems = toLineState(previousInitialData);
+    const nextItems = toLineState(initialData);
+
     setData(initialData);
-    setItems(toLineState(initialData));
+    setItems((current) =>
+      areLossLinesEqual(current, previousItems) ? nextItems : current,
+    );
+    previousInitialDataRef.current = initialData;
   }, [initialData]);
 
   function clearFeedback() {
@@ -245,6 +257,7 @@ export function LossStepClient({
         storeId: data.storeId,
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
+        ledgerUpdatedAt: data.updatedAt,
         losses: items.map((item, index) => ({
           id: item.id || undefined,
           productId: productRefs.current[index]?.value ?? item.productId,
@@ -257,6 +270,12 @@ export function LossStepClient({
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
 
         setFieldErrors(nextErrors);
@@ -317,7 +336,6 @@ export function LossStepClient({
     step: "work",
   }).toString()}`;
   const showsSensitiveLossAmounts = "totalAmount" in data.summary;
-  const isDirty = !areLossLinesEqual(items, toLineState(data));
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -332,6 +350,13 @@ export function LossStepClient({
         onSave={guard.saveAndContinue}
         onDiscard={guard.discard}
         onKeepEditing={guard.keepEditing}
+      />
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
       />
 
       <LedgerContextHeader

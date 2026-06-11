@@ -3,12 +3,23 @@
 import { revalidatePath } from "next/cache";
 
 import { Prisma } from "../../../generated/prisma";
-import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import {
+  actionError,
+  actionOk,
+  type ActionConflictValue,
+  type ActionResult,
+} from "~/lib/action-result";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
+  getLedgerConflictMetaInTx,
+  ledgerConflictErrorFromMeta,
+  type LedgerConflictMeta,
+} from "./conflicts";
+import {
+  getLedgerCostStepDataByIdInTx,
   ledgerSelect,
   getStoreLedger,
   getStoreLedgerInTx,
@@ -148,11 +159,158 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
-function mapLedgerConflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+class OriginalLedgerBlockedError extends Error {
+  constructor(
+    readonly code: "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function originalLedgerBlockedError(status: string) {
+  if (status === "HEADQUARTERS_CLOSED") {
+    return new OriginalLedgerBlockedError(
+      "LEDGER_CLOSED",
+      "본사 마감된 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
+    );
+  }
+
+  if (status === "HOLIDAY") {
+    return new OriginalLedgerBlockedError(
+      "LEDGER_NOT_EDITABLE",
+      "휴무 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
+    );
+  }
+
+  return new OriginalLedgerBlockedError(
+    "LEDGER_NOT_EDITABLE",
+    "수정할 수 없는 장부 상태입니다.",
   );
+}
+
+type LedgerConflictSection = Parameters<
+  typeof ledgerConflictErrorFromMeta
+>[0]["section"];
+
+type StoreLedgerConflictInput =
+  | LedgerSalesPaymentInput
+  | LedgerExpensesInput
+  | LedgerPurchasesInput
+  | LedgerWorkInfoInput
+  | LedgerSubmitInput;
+
+function toStoreLedgerConflictValues(
+  section: LedgerConflictSection,
+  data: StoreManagerLedgerCostStepData,
+): Record<string, ActionConflictValue> {
+  switch (section) {
+    case "sales":
+      return {
+        "작성자 표시명": data.authorDisplayName,
+        총매출: data.totalSalesAmount,
+        현금: data.cashAmount,
+        카드: data.cardAmount,
+        "기타 결제수단": data.otherPaymentAmount,
+      };
+    case "expenses":
+      return Object.fromEntries(
+        data.expenseItems.map((item, index) => [
+          `비용 ${index + 1}`,
+          `${item.ledgerInputCodeName} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
+        ]),
+      );
+    case "purchases":
+      return Object.fromEntries(
+        data.purchaseItems.map((item, index) => [
+          `매입 ${index + 1}`,
+          `${item.productName} ${item.quantity}개 ${item.amount}원`,
+        ]),
+      );
+    case "work":
+      return {
+        근무인원: data.workerCount,
+        특이사항: data.workMemo,
+      };
+    case "review":
+      return {
+        제출상태: data.status,
+        제출시각: data.submittedAt,
+      };
+    default:
+      return {};
+  }
+}
+
+function toStoreLedgerClientValues(
+  section: LedgerConflictSection,
+  input: StoreLedgerConflictInput,
+): Record<string, ActionConflictValue> {
+  switch (section) {
+    case "sales": {
+      const sales = input as LedgerSalesPaymentInput;
+      return {
+        "작성자 표시명": sales.authorDisplayName,
+        총매출: sales.totalSalesAmount,
+        현금: sales.cashAmount,
+        카드: sales.cardAmount,
+        "기타 결제수단": sales.otherPaymentAmount,
+      };
+    }
+    case "expenses":
+      return Object.fromEntries(
+        (input as LedgerExpensesInput).expenses.map((item, index) => [
+          `비용 ${index + 1}`,
+          `${item.ledgerInputCodeId} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
+        ]),
+      );
+    case "purchases":
+      return Object.fromEntries(
+        (input as LedgerPurchasesInput).purchases.map((item, index) => [
+          `매입 ${index + 1}`,
+          `${item.productName ?? item.productId ?? "품목 미선택"} ${item.quantity}개 ${item.unitPrice}원`,
+        ]),
+      );
+    case "work": {
+      const work = input as LedgerWorkInfoInput;
+      return {
+        근무인원: work.workerCount,
+        특이사항: work.workMemo,
+      };
+    }
+    case "review":
+      return { 제출상태: "검토 대기 제출 시도" };
+    default:
+      return {};
+  }
+}
+
+async function mapLedgerConflictError(
+  section: LedgerConflictSection,
+  input: StoreLedgerConflictInput,
+): Promise<ActionResult<never>> {
+  const snapshot = await db.$transaction(async (tx) => {
+    const ledger = await getLedgerCostStepDataByIdInTx(tx, input.ledgerId);
+    const meta = await getLedgerConflictMetaInTx(tx, input.ledgerId);
+
+    return {
+      ledger,
+      meta,
+    };
+  });
+  const meta: LedgerConflictMeta | null = snapshot.meta;
+
+  return ledgerConflictErrorFromMeta({
+    meta,
+    ledgerId: input.ledgerId,
+    section,
+    clientToken: input.version,
+    clientValues: toStoreLedgerClientValues(section, input),
+    serverValues: snapshot.ledger
+      ? toStoreLedgerConflictValues(section, snapshot.ledger)
+      : {},
+    reloadRequired: true,
+  });
 }
 
 class LedgerPurchaseValidationError extends Error {
@@ -349,7 +507,19 @@ export async function submitLedgerForReview(
         );
 
         if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
-          return mapLedgerConflictError();
+          const meta = await getLedgerConflictMetaInTx(tx, beforeLedger.id);
+          return ledgerConflictErrorFromMeta<LedgerSubmitForReviewResult>({
+            meta,
+            ledgerId: parsed.data.ledgerId,
+            section: "review",
+            clientToken: parsed.data.version,
+            clientValues: toStoreLedgerClientValues("review", parsed.data),
+            serverValues: toStoreLedgerConflictValues(
+              "review",
+              toStoreManagerLedgerCostStepData(beforeLedger),
+            ),
+            reloadRequired: true,
+          });
         }
 
         if (beforeLedger.status === "IN_REVIEW") {
@@ -416,10 +586,21 @@ export async function submitLedgerForReview(
             );
           }
 
-          return actionError(
-            "LEDGER_CONFLICT",
-            "장부 상태가 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
-          );
+          const meta = await getLedgerConflictMetaInTx(tx, beforeLedger.id);
+          return ledgerConflictErrorFromMeta<LedgerSubmitForReviewResult>({
+            meta,
+            ledgerId: parsed.data.ledgerId,
+            section: "review",
+            clientToken: parsed.data.version,
+            clientValues: toStoreLedgerClientValues("review", parsed.data),
+            serverValues: currentLedger
+              ? toStoreLedgerConflictValues(
+                  "review",
+                  toStoreManagerLedgerCostStepData(currentLedger),
+                )
+              : {},
+            reloadRequired: true,
+          });
         }
 
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
@@ -482,7 +663,7 @@ export async function saveLedgerSalesPayment(
       }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
-        throw new Error("Ledger is not editable");
+        throw originalLedgerBlockedError(beforeLedger.status);
       }
 
       await updateEditableDailyLedgerInTx(
@@ -521,7 +702,7 @@ export async function saveLedgerSalesPayment(
     return actionOk(result);
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
-      return mapLedgerConflictError();
+      return await mapLedgerConflictError("sales", parsed.data);
     }
 
     if (isPrismaUniqueError(error)) {
@@ -531,6 +712,10 @@ export async function saveLedgerSalesPayment(
         actor.user.id,
       );
       return actionOk(current);
+    }
+
+    if (error instanceof OriginalLedgerBlockedError) {
+      return actionError(error.code, error.message);
     }
 
     return mapStoreActionError();
@@ -564,7 +749,7 @@ export async function saveLedgerExpenses(
       }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
-        throw new Error("Ledger is not editable");
+        throw originalLedgerBlockedError(beforeLedger.status);
       }
 
       const expenseCodeValidation = await validateActiveExpenseCodesInTx(
@@ -626,7 +811,11 @@ export async function saveLedgerExpenses(
     return result;
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
-      return mapLedgerConflictError();
+      return await mapLedgerConflictError("expenses", parsed.data);
+    }
+
+    if (error instanceof OriginalLedgerBlockedError) {
+      return actionError(error.code, error.message);
     }
 
     return mapStoreActionError();
@@ -658,7 +847,7 @@ export async function saveLedgerPurchases(
       }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
-        throw new Error("Ledger is not editable");
+        throw originalLedgerBlockedError(beforeLedger.status);
       }
 
       await updateEditableDailyLedgerInTx(
@@ -874,7 +1063,7 @@ export async function saveLedgerPurchases(
     return actionOk(result);
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
-      return mapLedgerConflictError();
+      return await mapLedgerConflictError("purchases", parsed.data);
     }
 
     if (error instanceof LedgerPurchaseValidationError) {
@@ -883,6 +1072,10 @@ export async function saveLedgerPurchases(
         "입력값을 확인해 주세요.",
         error.fieldErrors,
       );
+    }
+
+    if (error instanceof OriginalLedgerBlockedError) {
+      return actionError(error.code, error.message);
     }
 
     return mapStoreActionError();
@@ -914,7 +1107,7 @@ export async function saveLedgerWorkInfo(
       }
 
       if (!isEditableLedgerStatus(beforeLedger.status)) {
-        throw new Error("Ledger is not editable");
+        throw originalLedgerBlockedError(beforeLedger.status);
       }
 
       await updateEditableDailyLedgerInTx(
@@ -950,7 +1143,11 @@ export async function saveLedgerWorkInfo(
     return actionOk(result);
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
-      return mapLedgerConflictError();
+      return await mapLedgerConflictError("work", parsed.data);
+    }
+
+    if (error instanceof OriginalLedgerBlockedError) {
+      return actionError(error.code, error.message);
     }
 
     return mapStoreActionError();

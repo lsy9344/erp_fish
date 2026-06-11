@@ -29,8 +29,10 @@ import {
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -214,6 +216,7 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
+  const saveConflict = useSaveConflictDialog();
   const showsSensitiveAmounts = items.some(hasSensitiveInventoryAmounts);
 
   useLedgerUpdatedAtSync(data.id, (updatedAt) => {
@@ -238,11 +241,19 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
+  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
+  const previousInitialDataRef = useRef(initialData);
 
   useEffect(() => {
+    const previousInitialData = previousInitialDataRef.current;
+    const previousItems = toLineState(previousInitialData);
+    const nextItems = toLineState(initialData);
+
     setData(initialData);
-    setItems(toLineState(initialData));
-    setPageByCategory({ 냉동: 1, 생물: 1 });
+    setItems((current) =>
+      areInventoryLinesEqual(current, previousItems) ? nextItems : current,
+    );
+    previousInitialDataRef.current = initialData;
   }, [initialData]);
 
   function getCategoryItems(category: string) {
@@ -335,6 +346,7 @@ export function InventoryStepClient({
         storeId: data.storeId,
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
+        ledgerUpdatedAt: data.updatedAt,
         items: items.map((item) => ({
           productId: item.productId,
           currentQuantity:
@@ -347,6 +359,12 @@ export function InventoryStepClient({
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
@@ -466,12 +484,19 @@ export function InventoryStepClient({
         storeId: data.storeId,
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
+        ledgerUpdatedAt: data.updatedAt,
         productId: item.productId,
         actualQuantity: item.currentQuantityInput,
         reason,
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return;
+        }
+
         const reasonError = result.error.fieldErrors?.reason?.[0];
         const actualQuantityError =
           result.error.fieldErrors?.actualQuantity?.[0];
@@ -989,7 +1014,6 @@ export function InventoryStepClient({
     );
   }
 
-  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -1005,6 +1029,13 @@ export function InventoryStepClient({
           onSave={guard.saveAndContinue}
           onDiscard={guard.discard}
           onKeepEditing={guard.keepEditing}
+        />
+        <SaveConflictDialog
+          open={saveConflict.isOpen}
+          conflict={saveConflict.conflict}
+          onOpenChange={saveConflict.setIsOpen}
+          onReload={saveConflict.reloadLatest}
+          onKeepEditing={saveConflict.keepEditing}
         />
 
         <LedgerContextHeader

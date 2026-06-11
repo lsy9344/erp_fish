@@ -10,7 +10,9 @@ import { Input } from "~/components/ui/input";
 import { saveLedgerPurchases } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
+import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
@@ -151,14 +153,31 @@ export function PurchaseStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const saveConflict = useSaveConflictDialog();
+  const isDirty = !arePurchaseLinesEqual(
+    purchaseItems,
+    toPurchaseLines(ledger.purchaseItems),
+  );
+  const previousInitialLedgerRef = useRef(initialLedger);
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
   });
 
   useEffect(() => {
+    const previousInitialLedger = previousInitialLedgerRef.current;
+    const previousPurchaseItems = toPurchaseLines(
+      previousInitialLedger.purchaseItems,
+    );
+    const nextPurchaseItems = toPurchaseLines(initialLedger.purchaseItems);
+
     setLedger(initialLedger);
-    setPurchaseItems(toPurchaseLines(initialLedger.purchaseItems));
+    setPurchaseItems((current) =>
+      arePurchaseLinesEqual(current, previousPurchaseItems)
+        ? nextPurchaseItems
+        : current,
+    );
+    previousInitialLedgerRef.current = initialLedger;
   }, [initialLedger]);
 
   function focusFirstError(errors: FieldErrors) {
@@ -236,6 +255,7 @@ export function PurchaseStepClient({
         storeId: ledger.storeId,
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
+        ledgerUpdatedAt: ledger.updatedAt,
         purchases: purchaseItems.map((line, index) => ({
           id: line.id,
           productId: productRefs.current[index]?.value ?? line.productId,
@@ -254,6 +274,12 @@ export function PurchaseStepClient({
       });
 
       if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
         const nextErrors = result.error.fieldErrors ?? {};
 
         setFieldErrors(nextErrors);
@@ -368,10 +394,6 @@ export function PurchaseStepClient({
     storeId: ledger.storeId,
     date: getKstLedgerDateParam(ledger.closingDate),
   }).toString()}`;
-  const isDirty = !arePurchaseLinesEqual(
-    purchaseItems,
-    toPurchaseLines(ledger.purchaseItems),
-  );
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -386,6 +408,13 @@ export function PurchaseStepClient({
         onSave={guard.saveAndContinue}
         onDiscard={guard.discard}
         onKeepEditing={guard.keepEditing}
+      />
+      <SaveConflictDialog
+        open={saveConflict.isOpen}
+        conflict={saveConflict.conflict}
+        onOpenChange={saveConflict.setIsOpen}
+        onReload={saveConflict.reloadLatest}
+        onKeepEditing={saveConflict.keepEditing}
       />
 
       <LedgerContextHeader

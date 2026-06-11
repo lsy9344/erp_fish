@@ -536,8 +536,8 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   );
   assert.match(
     actionSource,
-    /editableLedger\.count !== 1\)\s*{\s*return mapLedgerConflictError\(\)/,
-    "adjustment save should report stale version races as ledger conflicts",
+    /editableLedger\.count !== 1\)\s*{[\s\S]*ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>\([\s\S]*section:\s*"inventory-adjustment"[\s\S]*clientValues:[\s\S]*serverValues:[\s\S]*reloadRequired:\s*true/s,
+    "adjustment save should report stale version races as structured ledger conflicts",
   );
   assert.doesNotMatch(
     actionSource,

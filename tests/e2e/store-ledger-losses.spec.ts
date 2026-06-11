@@ -700,3 +700,53 @@ test("본사 마감 장부는 원본 손실 입력 버튼을 비활성화한다"
   });
   expect(savedCount).toBe(0);
 });
+
+test("stale version 손실 저장은 conflict dialog를 보여주고 입력값을 쓰지 않는다", async ({
+  page,
+}) => {
+  await login(page);
+  const fixtureDate = new Date();
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-7 stale 손실 방어", "냉동", 9000);
+  const lossType = await seedLossType("스토리2-7 stale 폐기");
+  const ledger = await seedTodayLedger(fixtureDate);
+  await seedOpeningSnapshot(product, 4, fixtureDate);
+  await seedInventoryItem(ledger.id, product, 4);
+
+  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page.getByLabel("품목").selectOption(product.id);
+  await page.getByLabel("처리 유형").selectOption(lossType.id);
+  await page.getByLabel("수량").fill("1");
+  await page.getByLabel("손실액(원)").fill("3000");
+  await page.getByLabel("사유/특이사항").fill("stale 손실 저장");
+
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: {
+      workMemo: "손실 저장 전 다른 저장",
+      updatedById: actorId,
+      version: { increment: 1 },
+    },
+  });
+
+  await page.getByRole("button", { name: "저장" }).click();
+
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("손실/폐기").first()).toBeVisible();
+  await expect(
+    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
+  ).toBeVisible();
+
+  const savedLossCount = await prisma.ledgerLossItem.count({
+    where: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      ledgerInputCodeId: lossType.id,
+    },
+  });
+  expect(savedLossCount).toBe(0);
+});

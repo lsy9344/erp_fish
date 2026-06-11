@@ -322,9 +322,9 @@ export default async function LedgerDetailPage({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="sales" className="mt-3">
+          <TabsContent value="sales" className="mt-3" forceMount>
             <SalesPaymentStepClient
-              key={`sales-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              key={`sales-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={ledger}
               currentStep="sales"
@@ -333,9 +333,9 @@ export default async function LedgerDetailPage({
               ledgerLabel={hqLedgerLabel}
             />
           </TabsContent>
-          <TabsContent value="expenses" className="mt-3">
+          <TabsContent value="expenses" className="mt-3" forceMount>
             <ExpenseStepClient
-              key={`expenses-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              key={`expenses-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={ledger}
               expenseCodeOptions={expenseCodeOptions}
@@ -346,9 +346,9 @@ export default async function LedgerDetailPage({
               ledgerLabel={hqLedgerLabel}
             />
           </TabsContent>
-          <TabsContent value="purchases" className="mt-3">
+          <TabsContent value="purchases" className="mt-3" forceMount>
             <PurchaseStepClient
-              key={`purchases-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              key={`purchases-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={ledger}
               productOptions={productOptions}
@@ -359,9 +359,9 @@ export default async function LedgerDetailPage({
               ledgerLabel={hqLedgerLabel}
             />
           </TabsContent>
-          <TabsContent value="inventory" className="mt-3">
+          <TabsContent value="inventory" className="mt-3" forceMount>
             <InventoryStepClient
-              key={`inventory-${inventoryData.id}-${inventoryData.status}-${inventoryData.updatedAt}`}
+              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
               storeName={detail.storeName}
               initialData={inventoryData}
               saveItemsAction={saveHqLedgerInventoryItems}
@@ -370,9 +370,9 @@ export default async function LedgerDetailPage({
               ledgerLabel={hqLedgerLabel}
             />
           </TabsContent>
-          <TabsContent value="losses" className="mt-3">
+          <TabsContent value="losses" className="mt-3" forceMount>
             <LossStepClient
-              key={`losses-${lossData.id}-${lossData.status}-${lossData.updatedAt}`}
+              key={`losses-${lossData.id}-${lossData.status}`}
               storeName={detail.storeName}
               initialData={lossData}
               saveAction={saveHqLedgerLosses}
@@ -380,9 +380,9 @@ export default async function LedgerDetailPage({
               ledgerLabel={hqLedgerLabel}
             />
           </TabsContent>
-          <TabsContent value="work" className="mt-3">
+          <TabsContent value="work" className="mt-3" forceMount>
             <WorkStepClient
-              key={`work-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+              key={`work-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={ledger}
               currentStep="work"
