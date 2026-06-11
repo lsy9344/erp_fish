@@ -280,9 +280,20 @@ test("ledger review route/query contracts use existing server flows", () => {
     "ledger",
     "response-shaping.ts",
   );
+  const validationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-validation.ts",
+  );
 
   assert.match(querySource, /getStoreLedgerInTx\(/);
   assert.match(querySource, /getKstBusinessDateParam/);
+  assert.match(querySource, /getLedgerReviewMissingItems/);
+  assert.match(
+    validationSource,
+    /export\s+function\s+getLedgerReviewMissingItems/,
+  );
   assert.match(querySource, /getInventoryStepDataInTx\(/);
   assert.match(querySource, /getLossStepDataInTx\(/);
   assert.match(querySource, /calculateLedgerReviewSummary\(/);
@@ -291,6 +302,54 @@ test("ledger review route/query contracts use existing server flows", () => {
   assert.doesNotMatch(
     querySource,
     /export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)/,
+  );
+});
+
+test("ledger review missing item helper preserves KST links and separates review-only losses", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-validation.ts",
+  );
+  const { getLedgerReviewMissingItems } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const missingItems = getLedgerReviewMissingItems({
+    storeId: "store-1",
+    closingDate: "2026-06-11T00:00:00.000Z",
+    totalSalesAmount: 0,
+    paymentTotal: 0,
+    expenseCount: 0,
+    purchaseCount: 0,
+    hasInventoryUnavailable: true,
+    inventoryCount: 1,
+    lossCount: 0,
+    workerCount: 0,
+  });
+
+  assert.deepEqual(
+    missingItems.map((item) => [item.id, item.status]),
+    [
+      ["sales", "missing"],
+      ["expenses", "missing"],
+      ["purchases", "missing"],
+      ["inventory", "missing"],
+      ["losses", "review"],
+      ["work", "missing"],
+    ],
+  );
+  assert.match(missingItems[0].href, /storeId=store-1/);
+  assert.match(missingItems[0].href, /date=2026-06-11/);
+  assert.match(missingItems[0].href, /step=sales/);
+  assert.equal(
+    missingItems.find((item) => item.id === "losses")?.detail,
+    "손실 항목 없음으로 검토할 수 있습니다.",
+  );
+  assert.equal(
+    missingItems.find((item) => item.id === "work")?.detail,
+    "근무인원은 1명 이상이어야 제출할 수 있습니다.",
   );
 });
 

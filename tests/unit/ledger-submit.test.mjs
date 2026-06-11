@@ -128,6 +128,15 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
     /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*version:\s*parsed\.data\.version,\s*status:\s*"IN_PROGRESS",\s*\},\s*data:\s*\{[\s\S]*status:\s*"IN_REVIEW"[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/,
   );
   assert.match(actionSource, /already-in-review/);
+  assert.match(actionSource, /validateLedgerSubmitRequirementsInTx/);
+  assert.match(actionSource, /getLedgerReviewMissingItems/);
+  assert.match(
+    actionSource,
+    /filter\(\(item\)\s*=>\s*item\.status === "missing"\)/,
+  );
+  assert.match(actionSource, /필수 입력을 완료한 뒤 제출해 주세요\./);
+  assert.match(actionSource, /Object\.fromEntries/);
+  assert.match(actionSource, /beforeLedger\.status === "HOLIDAY"/);
   assert.match(actionSource, /ledger\.review\.submitted/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /LEDGER_SUBMIT_FAILED/);
@@ -195,6 +204,8 @@ test("review submit UI exposes non-blocking warnings, status feedback, retry, an
   assert.match(componentSource, /장부를 제출했습니다\./);
   assert.match(componentSource, /이미 검토 대기 상태입니다\./);
   assert.match(componentSource, /role="status"/);
+  assert.match(componentSource, /fieldErrors/);
+  assert.match(componentSource, /Object\.entries\(feedback\.fieldErrors\)/);
   assert.match(componentSource, /다시 시도/);
   assert.match(componentSource, /제출 중\.\.\./);
   assert.match(componentSource, /검토대기/);

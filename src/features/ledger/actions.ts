@@ -28,6 +28,7 @@ import {
   type LedgerSubmitInput,
   type LedgerWorkInfoInput,
 } from "./schemas";
+import { getLedgerReviewMissingItems } from "./review-validation";
 import { type LedgerSubmitForReviewResult } from "./review-types";
 import { type StoreManagerLedgerCostStepData } from "./types";
 
@@ -271,6 +272,49 @@ function toLedgerSubmitResult(
   };
 }
 
+async function validateLedgerSubmitRequirementsInTx(
+  tx: Prisma.TransactionClient,
+  ledger: LedgerRecord,
+) {
+  const inventoryItems = await tx.ledgerInventoryItem.findMany({
+    where: { dailyLedgerId: ledger.id },
+    select: {
+      currentQuantity: true,
+      quantity: true,
+      inventoryAmount: true,
+    },
+  });
+  const missingItems = getLedgerReviewMissingItems({
+    storeId: ledger.storeId,
+    closingDate: ledger.closingDate.toISOString(),
+    totalSalesAmount: ledger.totalSalesAmount,
+    paymentTotal:
+      ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
+    expenseCount: ledger.ledgerExpenses.length,
+    purchaseCount: ledger.ledgerPurchaseItems.length,
+    hasInventoryUnavailable: inventoryItems.some(
+      (item) =>
+        (item.currentQuantity ?? item.quantity) === null ||
+        item.inventoryAmount === null,
+    ),
+    inventoryCount: inventoryItems.length,
+    lossCount: ledger._count.ledgerLossItems,
+    workerCount: ledger.workerCount,
+  }).filter((item) => item.status === "missing");
+
+  if (missingItems.length === 0) {
+    return actionOk(null);
+  }
+
+  return actionError(
+    "VALIDATION_ERROR",
+    "필수 입력을 완료한 뒤 제출해 주세요.",
+    Object.fromEntries(
+      missingItems.map((item) => [item.id, [`${item.label}: ${item.detail}`]]),
+    ),
+  );
+}
+
 function isExistingSnapshotPurchase(
   purchase: LedgerPurchasesInput["purchases"][number],
   existing: StoreManagerLedgerCostStepData["purchaseItems"][number] | undefined,
@@ -321,11 +365,27 @@ export async function submitLedgerForReview(
           );
         }
 
+        if (beforeLedger.status === "HOLIDAY") {
+          return actionError(
+            "LEDGER_NOT_EDITABLE",
+            "휴무 장부는 검토 대기로 제출할 수 없습니다.",
+          );
+        }
+
         if (beforeLedger.status !== "IN_PROGRESS") {
           return actionError(
             "LEDGER_NOT_EDITABLE",
             "제출할 수 없는 장부 상태입니다.",
           );
+        }
+
+        const validation = await validateLedgerSubmitRequirementsInTx(
+          tx,
+          beforeLedger,
+        );
+
+        if (!validation.ok) {
+          return validation;
         }
 
         const submittedAt = new Date();

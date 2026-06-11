@@ -22,6 +22,7 @@ import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-statu
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
+import type { FieldErrors } from "~/lib/action-result";
 
 type ReviewSummaryClientProps = {
   storeName: string;
@@ -30,7 +31,7 @@ type ReviewSummaryClientProps = {
 
 type SubmitFeedback =
   | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; fieldErrors?: FieldErrors };
 
 function SuccessModal({
   message,
@@ -219,7 +220,11 @@ export function ReviewSummaryClient({
         return;
       }
 
-      setFeedback({ kind: "error", message: result.error.message });
+      setFeedback({
+        kind: "error",
+        message: result.error.message,
+        fieldErrors: result.error.fieldErrors,
+      });
     } catch {
       setFeedback({
         kind: "error",
@@ -430,6 +435,21 @@ export function ReviewSummaryClient({
                 {feedback.message}
               </AlertTitle>
               <AlertDescription className="min-w-0">
+                {feedback.fieldErrors ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                    {Object.entries(feedback.fieldErrors).flatMap(
+                      ([field, messages]) =>
+                        messages.map((message) => (
+                          <li
+                            key={`${field}-${message}`}
+                            className="break-words"
+                          >
+                            {message}
+                          </li>
+                        )),
+                    )}
+                  </ul>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"

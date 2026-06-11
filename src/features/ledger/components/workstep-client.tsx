@@ -54,10 +54,6 @@ function stepHref(
   return `/app/store-entry?${params.toString()}`;
 }
 
-function sanitizeAmount(value: string) {
-  return value.replace(/[^\d]/g, "");
-}
-
 function hasSensitiveAccountingMetrics(
   data: WorkLedgerData,
 ): data is LedgerCostStepData {
@@ -94,6 +90,8 @@ export function WorkStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const workerCountError = fieldErrors.workerCount?.[0];
+  const workMemoError = fieldErrors.workMemo?.[0];
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
@@ -109,18 +107,24 @@ export function WorkStepClient({
     setWorkMemo(initialLedger.workMemo ?? "");
   }, [initialLedger]);
 
-  function focusFirstError(errors: FieldErrors) {
-    window.setTimeout(() => {
-      if (errors.workerCount?.length) {
+  useEffect(() => {
+    if (isSaving || (!workerCountError && !workMemoError)) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (workerCountError) {
         workerCountInputRef.current?.focus();
         return;
       }
 
-      if (errors.workMemo?.length) {
+      if (workMemoError) {
         workMemoInputRef.current?.focus();
       }
     }, 0);
-  }
+
+    return () => window.clearTimeout(timer);
+  }, [isSaving, workerCountError, workMemoError]);
 
   function fillLedger(next: WorkLedgerData) {
     setLedger(next);
@@ -152,7 +156,6 @@ export function WorkStepClient({
 
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
-        focusFirstError(nextErrors);
         toast.error(result.error.message);
         return false;
       }
@@ -183,15 +186,14 @@ export function WorkStepClient({
     formRef.current.requestSubmit();
   }
 
-  const workerCountError = fieldErrors.workerCount?.[0];
-  const workMemoError = fieldErrors.workMemo?.[0];
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
-    workerCount !== (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
+    workerCount !==
+      (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
     workMemo !== (ledger.workMemo ?? "");
   const guard = useUnsavedStepGuard({
     isDirty,
@@ -257,9 +259,7 @@ export function WorkStepClient({
               autoComplete="off"
               value={workerCount}
               disabled={isSaving || isOriginalEditBlocked}
-              onChange={(event) =>
-                setWorkerCount(sanitizeAmount(event.currentTarget.value))
-              }
+              onChange={(event) => setWorkerCount(event.currentTarget.value)}
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(workerCountError)}
               aria-describedby={

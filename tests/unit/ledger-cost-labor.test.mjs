@@ -139,6 +139,22 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
 
   assert.equal(ledgerWorkInfoSchema.safeParse(workBase).success, true);
 
+  const normalizedWork = ledgerWorkInfoSchema.parse({
+    ...workBase,
+    workerCount: " 4 ",
+    workMemo: "  오전 피크타임 확인  ",
+  });
+  assert.equal(normalizedWork.workerCount, 4);
+  assert.equal(normalizedWork.workMemo, "오전 피크타임 확인");
+
+  const emptyWork = ledgerWorkInfoSchema.parse({
+    ...workBase,
+    workerCount: "",
+    workMemo: "   ",
+  });
+  assert.equal(emptyWork.workerCount, null);
+  assert.equal(emptyWork.workMemo, null);
+
   const workNegative = ledgerWorkInfoSchema.safeParse({
     ...workBase,
     workerCount: -3,
@@ -157,6 +173,15 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
     "근무인원은 0 이상의 정수여야 합니다.",
   ]);
 
+  const workFormatted = ledgerWorkInfoSchema.safeParse({
+    ...workBase,
+    workerCount: "1,000",
+  });
+  assert.equal(workFormatted.success, false);
+  assert.deepEqual(workFormatted.error.flatten().fieldErrors.workerCount, [
+    "근무인원은 0 이상의 정수여야 합니다.",
+  ]);
+
   const workMemoOverflow = ledgerWorkInfoSchema.safeParse({
     ...workBase,
     workMemo: "a".repeat(501),
@@ -165,6 +190,23 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   assert.deepEqual(workMemoOverflow.error.flatten().fieldErrors.workMemo, [
     "메모는 0~500자 사이여야 합니다.",
   ]);
+});
+
+test("work step client preserves invalid worker count text for server validation", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "workstep-client.tsx",
+  );
+
+  assert.match(
+    componentSource,
+    /onChange=\{\(event\)\s*=>\s*setWorkerCount\(event\.currentTarget\.value\)\}/,
+  );
+  assert.doesNotMatch(componentSource, /replace\(\s*\/\[\^\\d\]\//);
+  assert.doesNotMatch(componentSource, /sanitizeAmount/);
 });
 
 test("ledger cost calculation helpers validate edge cases", async () => {
