@@ -1,4 +1,7 @@
-import { InventoryCarryoverSource } from "../../../generated/prisma";
+import {
+  InventoryCarryoverSource,
+  InventoryCarryoverStatus,
+} from "../../../generated/prisma";
 import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
@@ -29,6 +32,7 @@ const inventoryItemSelect = {
   inventoryAmount: true,
   isModified: true,
   carryoverSource: true,
+  carryoverStatus: true,
   carryoverLedgerId: true,
 } as const;
 
@@ -103,7 +107,14 @@ type ProductInventoryBase = {
   unitPrice: number;
   previousQuantity: number;
   carryoverSource: InventoryCarryoverSource;
+  carryoverStatus: InventoryCarryoverStatus;
   carryoverLedgerId: string | null;
+};
+
+type ExistingCarryoverBasis = {
+  productId: string;
+  currentQuantity: number | null;
+  quantity: number | null;
 };
 
 function getYearMonth(date: Date) {
@@ -112,12 +123,6 @@ function getYearMonth(date: Date) {
     year: "numeric",
     month: "2-digit",
   }).format(date);
-}
-
-function getMonthStart(date: Date) {
-  const [year, month] = getYearMonth(date).split("-");
-
-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
 }
 
 function aggregatePurchases(purchases: PurchasePayload[]) {
@@ -147,6 +152,7 @@ function aggregatePurchases(purchases: PurchasePayload[]) {
         unitPrice: purchase.unitPrice,
         previousQuantity: 0,
         carryoverSource: InventoryCarryoverSource.MANUAL,
+        carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
         carryoverLedgerId: null,
       },
     });
@@ -178,6 +184,7 @@ function aggregateLosses(losses: LossPayload[]) {
         unitPrice: loss.unitPrice,
         previousQuantity: 0,
         carryoverSource: InventoryCarryoverSource.MANUAL,
+        carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
         carryoverLedgerId: null,
       },
     });
@@ -210,6 +217,7 @@ function toInventoryLine(
     quantity,
     inventoryAmount: calculateInventoryAmount(quantity, base.unitPrice),
     carryoverSource: base.carryoverSource,
+    carryoverStatus: base.carryoverStatus,
     carryoverLedgerId: base.carryoverLedgerId,
     isModified: false,
     adjustment: null,
@@ -241,6 +249,7 @@ function toExistingInventoryLine(
   purchase: PurchaseAggregate | undefined,
   loss: LossAggregate | undefined,
   adjustment: InventoryAdjustmentPayload | undefined,
+  carryoverStatus: InventoryCarryoverStatus,
 ): InventoryStepLine {
   return {
     id: item.id,
@@ -258,10 +267,110 @@ function toExistingInventoryLine(
     quantity: item.quantity,
     inventoryAmount: item.inventoryAmount,
     carryoverSource: item.carryoverSource,
+    carryoverStatus,
     carryoverLedgerId: item.carryoverLedgerId,
     isModified: item.isModified,
     adjustment: toAdjustmentView(adjustment),
   };
+}
+
+function isPreviousCalendarDate(closingDate: Date, priorDate: Date) {
+  const previous = new Date(closingDate);
+  previous.setUTCDate(previous.getUTCDate() - 1);
+
+  return (
+    previous.toISOString().slice(0, 10) === priorDate.toISOString().slice(0, 10)
+  );
+}
+
+function toPreviousQuantity(item: ExistingCarryoverBasis) {
+  return item.currentQuantity ?? item.quantity ?? 0;
+}
+
+function getCarryoverStatusRank(status: InventoryCarryoverStatus) {
+  switch (status) {
+    case InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED:
+      return 0;
+    case InventoryCarryoverStatus.REVIEW_REQUIRED:
+      return 1;
+    case InventoryCarryoverStatus.CARRYOVER_EMPTY:
+      return 2;
+    case InventoryCarryoverStatus.DATA_INSUFFICIENT:
+    case InventoryCarryoverStatus.POLICY_UNCONFIRMED:
+      return 3;
+    case InventoryCarryoverStatus.OPENING_CARRYOVER:
+      return 4;
+    case InventoryCarryoverStatus.PREVIOUS_CARRYOVER:
+      return 5;
+  }
+}
+
+function getPrimaryCarryoverStatus(lines: InventoryStepLine[]) {
+  return lines
+    .map((line) => line.carryoverStatus)
+    .sort(
+      (left, right) =>
+        getCarryoverStatusRank(left) - getCarryoverStatusRank(right),
+    )[0];
+}
+
+function toCarryoverMessage(status: InventoryCarryoverStatus | undefined) {
+  switch (status) {
+    case InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED:
+      return "이월 기준이 바뀔 수 있어 이월 재확인 필요 상태입니다. 기존 입력값은 자동으로 덮어쓰지 않습니다.";
+    case InventoryCarryoverStatus.REVIEW_REQUIRED:
+      return "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요.";
+    case InventoryCarryoverStatus.CARRYOVER_EMPTY:
+      return "전일 장부나 이월 근거가 부족해 이월 공백 상태입니다. 0이 아니라 근거 부족으로 확인해 주세요.";
+    case InventoryCarryoverStatus.DATA_INSUFFICIENT:
+      return "일부 품목은 이월 근거가 부족해 데이터 부족 상태입니다.";
+    case InventoryCarryoverStatus.POLICY_UNCONFIRMED:
+      return "일부 품목은 기준 확인 필요 상태입니다.";
+    case InventoryCarryoverStatus.OPENING_CARRYOVER:
+      return "월초 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
+    case InventoryCarryoverStatus.PREVIOUS_CARRYOVER:
+    default:
+      return "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
+  }
+}
+
+function toCarryoverLoadStatus(status: InventoryCarryoverStatus | undefined) {
+  return status === InventoryCarryoverStatus.CARRYOVER_EMPTY ||
+    status === InventoryCarryoverStatus.DATA_INSUFFICIENT ||
+    status === InventoryCarryoverStatus.POLICY_UNCONFIRMED
+    ? "manual"
+    : "loaded";
+}
+
+function resolveExistingCarryoverStatus(
+  item: InventoryItemPayload,
+  carryoverLedger:
+    | {
+        status: string;
+        ledgerInventoryItems: ExistingCarryoverBasis[];
+      }
+    | undefined,
+) {
+  if (!carryoverLedger) {
+    return item.carryoverStatus;
+  }
+
+  if (
+    item.carryoverStatus === InventoryCarryoverStatus.REVIEW_REQUIRED &&
+    carryoverLedger.status === "HEADQUARTERS_CLOSED"
+  ) {
+    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+  }
+
+  const basis = carryoverLedger.ledgerInventoryItems.find(
+    (candidate) => candidate.productId === item.productId,
+  );
+
+  if (basis && toPreviousQuantity(basis) !== item.previousQuantity) {
+    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+  }
+
+  return item.carryoverStatus;
 }
 
 function withPurchaseAggregate(
@@ -322,12 +431,45 @@ async function mergeExistingInventoryLines(
   const adjustmentByProductId = new Map(
     adjustments.map((adjustment) => [adjustment.productId, adjustment]),
   );
+  const carryoverLedgerIds = [
+    ...new Set(
+      existingItems
+        .map((item) => item.carryoverLedgerId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const carryoverLedgers =
+    carryoverLedgerIds.length === 0
+      ? []
+      : await tx.dailyLedger.findMany({
+          where: { id: { in: carryoverLedgerIds } },
+          select: {
+            id: true,
+            status: true,
+            ledgerInventoryItems: {
+              select: {
+                productId: true,
+                currentQuantity: true,
+                quantity: true,
+              },
+            },
+          },
+        });
+  const carryoverLedgerById = new Map(
+    carryoverLedgers.map((ledger) => [ledger.id, ledger]),
+  );
   const lines = existingItems.map((item) =>
     toExistingInventoryLine(
       item,
       purchases.get(item.productId),
       losses.get(item.productId),
       adjustmentByProductId.get(item.productId),
+      resolveExistingCarryoverStatus(
+        item,
+        item.carryoverLedgerId
+          ? carryoverLedgerById.get(item.carryoverLedgerId)
+          : undefined,
+      ),
     ),
   );
   const activeProductBases = await getActiveProductBases(tx);
@@ -361,16 +503,14 @@ async function getCarryoverBases(
   closingDate: Date,
 ) {
   const yearMonth = getYearMonth(closingDate);
-  const monthStart = getMonthStart(closingDate);
 
   const priorLedger = await tx.dailyLedger.findFirst({
     where: {
       storeId,
-      status: "HEADQUARTERS_CLOSED",
       closingDate: {
         lt: closingDate,
-        gte: monthStart,
       },
+      status: { not: "HOLIDAY" },
       ledgerInventoryItems: {
         some: {},
       },
@@ -381,6 +521,7 @@ async function getCarryoverBases(
     select: {
       id: true,
       status: true,
+      closingDate: true,
       ledgerInventoryItems: {
         select: inventoryItemSelect,
         orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
@@ -388,11 +529,32 @@ async function getCarryoverBases(
     },
   });
 
-  if (priorLedger) {
+  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+    const isDirectPrevious = isPreviousCalendarDate(
+      closingDate,
+      priorLedger.closingDate,
+    );
+    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
+    const source = isHeadquartersClosed
+      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
+      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
+    const status = isDirectPrevious
+      ? isHeadquartersClosed
+        ? InventoryCarryoverStatus.PREVIOUS_CARRYOVER
+        : InventoryCarryoverStatus.REVIEW_REQUIRED
+      : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
     return {
-      status: "loaded" as const,
-      source: InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER,
-      message: "전일 재고를 불러왔습니다. 변경된 품목만 수정하세요.",
+      status:
+        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
+          ? ("manual" as const)
+          : ("loaded" as const),
+      source,
+      message: isDirectPrevious
+        ? isHeadquartersClosed
+          ? "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요."
+          : "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요."
+        : "전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
       bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
         (item) => ({
           productId: item.productId,
@@ -400,34 +562,12 @@ async function getCarryoverBases(
           productCategory: item.productCategory,
           productSpec: item.productSpec,
           unitPrice: item.unitPrice,
-          previousQuantity: item.currentQuantity ?? item.quantity ?? 0,
-          carryoverSource: InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER,
+          previousQuantity: toPreviousQuantity(item),
+          carryoverSource: source,
+          carryoverStatus: status,
           carryoverLedgerId: priorLedger.id,
         }),
       ),
-    };
-  }
-
-  const anyPriorLedger = await tx.dailyLedger.findFirst({
-    where: {
-      storeId,
-      closingDate: {
-        lt: closingDate,
-        gte: monthStart,
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (anyPriorLedger) {
-    return {
-      status: "manual" as const,
-      source: InventoryCarryoverSource.MANUAL,
-      message:
-        "전일 장부가 마감되지 않아 자동 이월이 불가합니다. 직접 입력하거나 본사에 문의해 주세요.",
-      bases: await getActiveProductBases(tx),
     };
   }
 
@@ -448,20 +588,65 @@ async function getCarryoverBases(
   });
 
   if (snapshots.length > 0) {
+    const activeProductBases = await getActiveProductBases(tx);
+    const snapshotProductIds = new Set(
+      snapshots.map((snapshot) => snapshot.productId),
+    );
+    const missingSnapshotBases = activeProductBases
+      .filter((base) => !snapshotProductIds.has(base.productId))
+      .map<ProductInventoryBase>((base) => ({
+        ...base,
+        carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
+      }));
+
     return {
       status: "loaded" as const,
       source: InventoryCarryoverSource.OPENING_SNAPSHOT,
-      message: "전일 재고를 불러왔습니다. 변경된 품목만 수정하세요.",
-      bases: snapshots.map<ProductInventoryBase>((snapshot) => ({
-        productId: snapshot.productId,
-        productName: snapshot.productName,
-        productCategory: snapshot.productCategory,
-        productSpec: snapshot.productSpec,
-        unitPrice: snapshot.unitPrice,
-        previousQuantity: snapshot.quantity,
-        carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
-        carryoverLedgerId: null,
-      })),
+      message:
+        missingSnapshotBases.length > 0
+          ? "월초 이월 재고를 불러왔습니다. 스냅샷이 없는 품목은 데이터 부족 상태로 표시됩니다."
+          : "월초 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.",
+      bases: [
+        ...snapshots.map<ProductInventoryBase>((snapshot) => ({
+          productId: snapshot.productId,
+          productName: snapshot.productName,
+          productCategory: snapshot.productCategory,
+          productSpec: snapshot.productSpec,
+          unitPrice: snapshot.unitPrice,
+          previousQuantity: snapshot.quantity,
+          carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
+          carryoverStatus: InventoryCarryoverStatus.OPENING_CARRYOVER,
+          carryoverLedgerId: null,
+        })),
+        ...missingSnapshotBases,
+      ],
+    };
+  }
+
+  if (priorLedger) {
+    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
+    const source = isHeadquartersClosed
+      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
+      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
+
+    return {
+      status: "manual" as const,
+      source,
+      message:
+        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
+      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
+        (item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          productCategory: item.productCategory,
+          productSpec: item.productSpec,
+          unitPrice: item.unitPrice,
+          previousQuantity: toPreviousQuantity(item),
+          carryoverSource: source,
+          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
+          carryoverLedgerId: priorLedger.id,
+        }),
+      ),
     };
   }
 
@@ -469,12 +654,19 @@ async function getCarryoverBases(
     status: "manual" as const,
     source: InventoryCarryoverSource.MANUAL,
     message:
-      "전일 장부가 마감되지 않아 자동 이월이 불가합니다. 직접 입력하거나 본사에 문의해 주세요.",
-    bases: await getActiveProductBases(tx),
+      "전일 장부나 월초 스냅샷이 없어 이월 공백 상태입니다. 0이 아니라 근거 부족으로 보고 직접 확인해 주세요.",
+    bases: await getActiveProductBases(tx, {
+      carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
+    }),
   };
 }
 
-async function getActiveProductBases(tx: Prisma.TransactionClient) {
+async function getActiveProductBases(
+  tx: Prisma.TransactionClient,
+  options: {
+    carryoverStatus?: InventoryCarryoverStatus;
+  } = {},
+) {
   const products = await tx.product.findMany({
     where: {
       isActive: true,
@@ -497,6 +689,8 @@ async function getActiveProductBases(tx: Prisma.TransactionClient) {
     unitPrice: product.defaultUnitPrice,
     previousQuantity: 0,
     carryoverSource: InventoryCarryoverSource.MANUAL,
+    carryoverStatus:
+      options.carryoverStatus ?? InventoryCarryoverStatus.DATA_INSUFFICIENT,
     carryoverLedgerId: null,
   }));
 }
@@ -535,6 +729,14 @@ async function getInventoryStepDataForLedgerInTx(
   if (existingItems.length > 0) {
     const source =
       existingItems[0]?.carryoverSource ?? InventoryCarryoverSource.MANUAL;
+    const items = await mergeExistingInventoryLines(
+      tx,
+      ledger.id,
+      existingItems,
+      purchases,
+      losses,
+    );
+    const carryoverStatus = getPrimaryCarryoverStatus(items);
 
     return {
       id: ledger.id,
@@ -545,21 +747,11 @@ async function getInventoryStepDataForLedgerInTx(
       authorDisplayName: ledger.authorDisplayName ?? null,
       status: ledger.status,
       stepCompletion,
-      items: await mergeExistingInventoryLines(
-        tx,
-        ledger.id,
-        existingItems,
-        purchases,
-        losses,
-      ),
+      items,
       carryover: {
-        status:
-          source === InventoryCarryoverSource.MANUAL ? "manual" : "loaded",
+        status: toCarryoverLoadStatus(carryoverStatus),
         source,
-        message:
-          source === InventoryCarryoverSource.MANUAL
-            ? "전일 장부가 마감되지 않아 자동 이월이 불가합니다. 직접 입력하거나 본사에 문의해 주세요."
-            : "전일 재고를 불러왔습니다. 변경된 품목만 수정하세요.",
+        message: toCarryoverMessage(carryoverStatus),
       },
     };
   }

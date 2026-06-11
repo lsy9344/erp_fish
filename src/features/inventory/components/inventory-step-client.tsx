@@ -67,10 +67,12 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
 
 const categories = ["냉동", "생물"] as const;
 const MAX_INVENTORY_INTEGER = 2_147_483_647;
+const ROW_PAGING_THRESHOLD = 30;
+const ROW_PAGE_SIZE = 50;
 const carryoverLoadedMessage =
-  "전일 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
+  "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
 const carryoverManualMessage =
-  "전일 장부가 마감되지 않아 자동 이월이 불가합니다. 직접 입력하거나 본사에 문의해 주세요.";
+  "전일 장부나 이월 근거가 부족해 이월 공백 상태입니다. 직접 확인해 주세요.";
 
 function formatKrw(value: number | null) {
   if (value === null) {
@@ -192,6 +194,12 @@ export function InventoryStepClient({
   const [items, setItems] = useState(() => toLineState(initialData));
   const [activeCategory, setActiveCategory] =
     useState<(typeof categories)[number]>("냉동");
+  const [pageByCategory, setPageByCategory] = useState<
+    Record<(typeof categories)[number], number>
+  >({
+    냉동: 1,
+    생물: 1,
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -226,7 +234,29 @@ export function InventoryStepClient({
   useEffect(() => {
     setData(initialData);
     setItems(toLineState(initialData));
+    setPageByCategory({ 냉동: 1, 생물: 1 });
   }, [initialData]);
+
+  function getCategoryItems(category: string) {
+    return items.filter((item) => item.productCategory === category);
+  }
+
+  function getCategoryPage(category: (typeof categories)[number]) {
+    const visibleItems = getCategoryItems(category);
+    const pageCount = Math.max(
+      1,
+      Math.ceil(visibleItems.length / ROW_PAGE_SIZE),
+    );
+
+    return Math.min(pageByCategory[category] ?? 1, pageCount);
+  }
+
+  function setCategoryPage(
+    category: (typeof categories)[number],
+    page: number,
+  ) {
+    setPageByCategory((current) => ({ ...current, [category]: page }));
+  }
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
@@ -234,7 +264,15 @@ export function InventoryStepClient({
         const item = items[index]!;
 
         if (errors[`items.${index}.currentQuantity`]?.length) {
-          setActiveCategory(normalizeCategory(item.productCategory));
+          const category = normalizeCategory(item.productCategory);
+          const categoryIndex = getCategoryItems(category).findIndex(
+            (candidate) => candidate.productId === item.productId,
+          );
+          setActiveCategory(category);
+          setCategoryPage(
+            category,
+            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+          );
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -242,7 +280,15 @@ export function InventoryStepClient({
         }
 
         if (errors[`items.${index}.quantity`]?.length) {
-          setActiveCategory(normalizeCategory(item.productCategory));
+          const category = normalizeCategory(item.productCategory);
+          const categoryIndex = getCategoryItems(category).findIndex(
+            (candidate) => candidate.productId === item.productId,
+          );
+          setActiveCategory(category);
+          setCategoryPage(
+            category,
+            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+          );
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -508,28 +554,68 @@ export function InventoryStepClient({
       className?: string;
     }[] = [];
 
-    if (item.carryoverSource === "PREVIOUS_CLOSED_LEDGER") {
-      badges.push({
-        label: "전일 이월",
-        detail: `최근 본사 마감 장부의 재고가 넘어온 품목입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
-        className:
-          "border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300",
-      });
-    } else if (item.carryoverSource === "OPENING_SNAPSHOT") {
-      badges.push({
-        label: "월초 이월",
-        detail: `월초 재고 스냅샷에서 넘어온 품목입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
-        className:
-          "border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300",
-      });
-    } else {
-      badges.push({
-        label: "등록 품목",
-        detail:
-          "전일 재고 자동 이월이 불가하거나 기준 재고가 없어, 활성 품목 목록에서 표시된 항목입니다.",
-        className:
-          "border-slate-500 text-slate-700 dark:border-slate-400 dark:text-slate-300",
-      });
+    switch (item.carryoverStatus) {
+      case "PREVIOUS_CARRYOVER":
+        badges.push({
+          label: "전일 이월",
+          detail: `직전 본사 마감 장부의 당일재고 후보입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
+          className:
+            "border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300",
+        });
+        break;
+      case "REVIEW_REQUIRED":
+        badges.push({
+          label: "검토 필요",
+          detail: `직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 확인이 필요합니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
+          className:
+            "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
+        });
+        break;
+      case "CARRYOVER_EMPTY":
+        badges.push({
+          label: "이월 공백",
+          detail:
+            "전일 장부나 이월 근거가 부족합니다. 표시된 0은 확정 재고가 아니라 확인이 필요한 기본 입력값입니다.",
+          className:
+            "border-rose-600 text-rose-700 dark:border-rose-400 dark:text-rose-300",
+        });
+        break;
+      case "CARRYOVER_RECHECK_REQUIRED":
+        badges.push({
+          label: "이월 재확인 필요",
+          detail:
+            "마감 또는 정정으로 이월 기준이 바뀔 수 있습니다. 기존 입력값은 자동으로 덮어쓰지 않습니다.",
+          className:
+            "border-orange-600 text-orange-700 dark:border-orange-400 dark:text-orange-300",
+        });
+        break;
+      case "OPENING_CARRYOVER":
+        badges.push({
+          label: "월초 이월",
+          detail: `월초 재고 스냅샷에서 넘어온 품목입니다. 전일재고 ${formatQuantity(item.previousQuantity)}.`,
+          className:
+            "border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300",
+        });
+        break;
+      case "POLICY_UNCONFIRMED":
+        badges.push({
+          label: "기준 확인 필요",
+          detail:
+            "FIFO, 30%단가, 확정 재고금액 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다.",
+          className:
+            "border-purple-600 text-purple-700 dark:border-purple-400 dark:text-purple-300",
+        });
+        break;
+      case "DATA_INSUFFICIENT":
+      default:
+        badges.push({
+          label: "데이터 부족",
+          detail:
+            "이월 기준 데이터가 부족합니다. 0이나 정상값으로 확정하지 말고 근거를 확인해 주세요.",
+          className:
+            "border-slate-500 text-slate-700 dark:border-slate-400 dark:text-slate-300",
+        });
+        break;
     }
 
     if (item.purchasedQuantity > 0) {
@@ -569,7 +655,11 @@ export function InventoryStepClient({
     return (
       <Tooltip key={`${label}-${detail}`}>
         <TooltipTrigger asChild>
-          <span tabIndex={0} className="inline-flex outline-none">
+          <span
+            tabIndex={0}
+            aria-label={`${label}: ${detail}`}
+            className="inline-flex outline-none"
+          >
             <Badge
               variant="outline"
               className={`text-[10px] ${className ?? ""}`}
@@ -586,9 +676,13 @@ export function InventoryStepClient({
   }
 
   function renderRows(category: string) {
-    const visibleItems = items.filter(
-      (item) => item.productCategory === category,
-    );
+    const visibleItems = getCategoryItems(category);
+    const normalizedCategory = normalizeCategory(category);
+    const page = getCategoryPage(normalizedCategory);
+    const pagedItems =
+      visibleItems.length > ROW_PAGING_THRESHOLD
+        ? visibleItems.slice((page - 1) * ROW_PAGE_SIZE, page * ROW_PAGE_SIZE)
+        : visibleItems;
 
     if (visibleItems.length === 0) {
       return (
@@ -603,7 +697,7 @@ export function InventoryStepClient({
       );
     }
 
-    return visibleItems.map((item) => {
+    return pagedItems.map((item) => {
       const globalIndex = items.findIndex(
         (candidate) => candidate.productId === item.productId,
       );
@@ -702,11 +796,17 @@ export function InventoryStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={item.currentQuantityInput}
+              onFocus={(event) =>
+                event.currentTarget.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                })
+              }
               onChange={(event) =>
                 updateCurrentQuantity(item.productId, event.currentTarget.value)
               }
               disabled={isSaving || isClosed || isAdjustmentSavePending}
-              className="h-8 tabular-nums"
+              className="h-11 tabular-nums sm:h-8"
             />
             {quantityError ? (
               <p
@@ -793,7 +893,7 @@ export function InventoryStepClient({
                       )
                     }
                     disabled={isAdjustmentSavePending}
-                    className="h-8 min-w-0 flex-1"
+                    className="h-11 min-w-0 flex-1 sm:h-8"
                     placeholder="조정 사유"
                   />
                   <Button
@@ -803,7 +903,7 @@ export function InventoryStepClient({
                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
                     onClick={() => handleAdjustmentSave(item)}
                     disabled={savingAdjustmentProductId !== null}
-                    className="h-8 shrink-0 px-2 text-xs"
+                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
                   >
                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
                   </Button>
@@ -827,6 +927,47 @@ export function InventoryStepClient({
         </TableRow>
       );
     });
+  }
+
+  function renderPagingControls(category: (typeof categories)[number]) {
+    const visibleItems = getCategoryItems(category);
+
+    if (visibleItems.length <= ROW_PAGING_THRESHOLD) {
+      return null;
+    }
+
+    const page = getCategoryPage(category);
+    const pageCount = Math.ceil(visibleItems.length / ROW_PAGE_SIZE);
+    const start = (page - 1) * ROW_PAGE_SIZE + 1;
+    const end = Math.min(page * ROW_PAGE_SIZE, visibleItems.length);
+
+    return (
+      <div className="flex flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-muted-foreground tabular-nums">
+          {start}-{end} / {visibleItems.length}행
+        </p>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setCategoryPage(category, page - 1)}
+          >
+            이전
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= pageCount}
+            onClick={() => setCategoryPage(category, page + 1)}
+          >
+            다음
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   const isDirty = !areInventoryLinesEqual(items, toLineState(data));
@@ -932,6 +1073,7 @@ export function InventoryStepClient({
 
             {categories.map((category) => (
               <TabsContent key={category} value={category}>
+                {renderPagingControls(category)}
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
                   <Table
                     aria-label="재고 품목"
@@ -971,7 +1113,7 @@ export function InventoryStepClient({
                           </TableHead>
                         ) : null}
                         <TableHead scope="col" className="w-56">
-                          정정
+                          상태/조정
                         </TableHead>
                       </TableRow>
                     </TableHeader>

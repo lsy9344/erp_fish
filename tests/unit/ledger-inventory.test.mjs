@@ -32,11 +32,15 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
 
   assert.match(
     schema,
-    /enum\s+InventoryCarryoverSource\s*{[^}]*OPENING_SNAPSHOT[^}]*PREVIOUS_CLOSED_LEDGER[^}]*MANUAL[^}]*}/s,
+    /enum\s+InventoryCarryoverSource\s*{[^}]*OPENING_SNAPSHOT[^}]*PREVIOUS_CLOSED_LEDGER[^}]*PREVIOUS_SAVED_LEDGER[^}]*MANUAL[^}]*}/s,
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*previousQuantity\s+Int[^}]*purchasedQuantity\s+Int[^}]*currentQuantity\s+Int\?[^}]*inventoryAmount\s+Int\?[^}]*carryoverSource\s+InventoryCarryoverSource[^}]*carryoverLedgerId\s+String\?[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)/s,
+    /enum\s+InventoryCarryoverStatus\s*{[^}]*PREVIOUS_CARRYOVER[^}]*REVIEW_REQUIRED[^}]*CARRYOVER_EMPTY[^}]*CARRYOVER_RECHECK_REQUIRED[^}]*OPENING_CARRYOVER[^}]*DATA_INSUFFICIENT[^}]*POLICY_UNCONFIRMED[^}]*}/s,
+  );
+  assert.match(
+    schema,
+    /model\s+LedgerInventoryItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*previousQuantity\s+Int[^}]*purchasedQuantity\s+Int[^}]*currentQuantity\s+Int\?[^}]*inventoryAmount\s+Int\?[^}]*carryoverSource\s+InventoryCarryoverSource[^}]*carryoverStatus\s+InventoryCarryoverStatus[^}]*carryoverLedgerId\s+String\?[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)/s,
   );
   assert.match(
     schema,
@@ -75,6 +79,33 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
       migration.includes('"quantity" INTEGER') &&
       migration.includes('"inventoryAmount" INTEGER'),
     "migration should store carryover, current inventory, quantity, and calculated amount",
+  );
+
+  const statusMigrationName = migrationDirNames().find((name) =>
+    name.includes("inventory_carryover_status"),
+  );
+  assert.ok(statusMigrationName, "carryover status migration should exist");
+
+  const statusMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      statusMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    statusMigration.includes("ADD VALUE 'PREVIOUS_SAVED_LEDGER'") &&
+      statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+      statusMigration.includes(
+        '"carryoverStatus" "InventoryCarryoverStatus"',
+      ) &&
+      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
+      statusMigration.includes("'OPENING_CARRYOVER'::") &&
+      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
+      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+    "migration should add previous saved ledger source and row carryover status",
   );
 });
 
@@ -334,11 +365,26 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(querySource, /HEADQUARTERS_CLOSED/);
   assert.match(
     querySource,
-    /status:\s*"HEADQUARTERS_CLOSED"[\s\S]*ledgerInventoryItems:/,
-    "carryover should search for the previous closed ledger directly",
+    /PREVIOUS_SAVED_LEDGER/,
+    "carryover should support the latest saved ledger before headquarters close",
   );
   assert.match(querySource, /PREVIOUS_CLOSED_LEDGER/);
   assert.match(querySource, /OPENING_SNAPSHOT/);
+  assert.match(querySource, /REVIEW_REQUIRED/);
+  assert.match(querySource, /CARRYOVER_EMPTY/);
+  assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+  assert.match(querySource, /DATA_INSUFFICIENT/);
+  assert.match(querySource, /isPreviousCalendarDate/);
+  assert.match(
+    querySource,
+    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
+    "same-month prior ledgers should be used before month opening snapshots",
+  );
+  assert.match(
+    querySource,
+    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
+    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
+  );
   assert.match(querySource, /ledgerPurchaseItems/);
   assert.match(querySource, /purchasedQuantity/);
   assert.match(querySource, /purchaseAmount/);
@@ -365,6 +411,7 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /before\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.createMany/);
+  assert.match(actionSource, /carryoverStatus:\s*item\.carryoverStatus/);
   assert.match(
     actionSource,
     /reconcileLedgerInventoryAdjustments\(/,
@@ -486,10 +533,19 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /생물/);
   assert.match(
     componentSource,
-    /전일 재고를 불러왔습니다\. 변경된 품목만 수정하세요\./,
+    /전일 이월 재고를 불러왔습니다\. 변경된 품목만 수정하세요\./,
   );
-  assert.match(componentSource, /직접 입력하거나 본사에 문의/);
+  assert.match(componentSource, /이월 공백/);
+  assert.match(componentSource, /검토 필요/);
+  assert.match(componentSource, /이월 재확인 필요/);
+  assert.match(componentSource, /월초 이월/);
+  assert.match(componentSource, /데이터 부족/);
+  assert.match(componentSource, /기준 확인 필요/);
+  assert.match(componentSource, /ROW_PAGE_SIZE = 50/);
+  assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+  assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="numeric"/);
+  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(componentSource, /overflow-x-auto/);
   assert.match(
@@ -507,6 +563,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
   assert.match(componentSource, /차이/);
+  assert.match(componentSource, /상태\/조정/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /정정\s+기록을 사용해 주세요/);
   assert.match(componentSource, /disabled={isSaving \|\| isClosed/);

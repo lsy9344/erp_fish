@@ -1,6 +1,7 @@
 import {
   type DailyLedgerStatus,
   type InventoryCarryoverSource,
+  type InventoryCarryoverStatus,
 } from "../../../generated/prisma";
 import { type StoreEntryStepCompletion } from "~/features/ledger/step-completion";
 
@@ -20,6 +21,7 @@ export type InventoryStepLine = {
   quantity: number | null;
   inventoryAmount: number | null;
   carryoverSource: InventoryCarryoverSource;
+  carryoverStatus: InventoryCarryoverStatus;
   carryoverLedgerId: string | null;
   isModified: boolean;
   adjustment: InventoryAdjustmentView | null;

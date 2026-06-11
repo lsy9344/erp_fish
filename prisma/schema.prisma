@@ -54,7 +54,18 @@ enum LedgerInputCodeGroup {
 enum InventoryCarryoverSource {
   OPENING_SNAPSHOT
   PREVIOUS_CLOSED_LEDGER
+  PREVIOUS_SAVED_LEDGER
   MANUAL
+}
+
+enum InventoryCarryoverStatus {
+  PREVIOUS_CARRYOVER
+  REVIEW_REQUIRED
+  CARRYOVER_EMPTY
+  CARRYOVER_RECHECK_REQUIRED
+  OPENING_CARRYOVER
+  DATA_INSUFFICIENT
+  POLICY_UNCONFIRMED
 }
 
 enum LedgerPurchaseSource {
@@ -449,6 +460,7 @@ model LedgerInventoryItem {
   inventoryAmount   Int?
   isModified        Boolean                  @default(false)
   carryoverSource   InventoryCarryoverSource @default(MANUAL)
+  carryoverStatus   InventoryCarryoverStatus @default(DATA_INSUFFICIENT)
   carryoverLedgerId String?
   createdById       String
   updatedById       String

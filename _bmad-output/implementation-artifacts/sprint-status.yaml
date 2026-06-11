@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-12T02:29:36+09:00
+# last_updated: 2026-06-12T03:15:01+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-12T02:29:36+09:00"
+last_updated: "2026-06-12T03:15:01+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -54,7 +54,7 @@ development_status:
   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
   2-3-매출-결제와-비용-입력: done
   2-4-mvp-수동-매입-입력: done
-  2-5-재고-입력과-이월-상태-표시: backlog
+  2-5-재고-입력과-이월-상태-표시: done
   2-6-재고-조정-기록: backlog
   2-7-손실-폐기-떨이-입력: backlog
   2-8-근무인원-특이사항과-검토-제출: backlog

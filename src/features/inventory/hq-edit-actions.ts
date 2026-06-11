@@ -241,6 +241,7 @@ export async function saveHqLedgerInventoryItems(
                   currentQuantity !== item.previousQuantity) ||
                 (quantity !== null && quantity !== item.previousQuantity),
               carryoverSource: item.carryoverSource,
+              carryoverStatus: item.carryoverStatus,
               carryoverLedgerId: item.carryoverLedgerId,
               createdById: actor.user.id,
               updatedById: actor.user.id,
@@ -408,6 +409,7 @@ export async function saveHqLedgerInventoryAdjustment(
             inventoryAmount: adjustment.afterAmount,
             isModified: true,
             carryoverSource: line.carryoverSource,
+            carryoverStatus: line.carryoverStatus,
             carryoverLedgerId: line.carryoverLedgerId,
             createdById: actor.user.id,
             updatedById: actor.user.id,
@@ -424,6 +426,7 @@ export async function saveHqLedgerInventoryAdjustment(
             inventoryAmount: adjustment.afterAmount,
             isModified: true,
             carryoverSource: line.carryoverSource,
+            carryoverStatus: line.carryoverStatus,
             carryoverLedgerId: line.carryoverLedgerId,
             updatedById: actor.user.id,
           },
