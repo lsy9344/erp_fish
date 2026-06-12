@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-12T23:34:18+09:00
+# last_updated: 2026-06-13T00:02:10+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-12T23:34:18+09:00"
+last_updated: "2026-06-13T00:02:10+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -94,7 +94,7 @@ development_status:
   7-4-fifo-적용-범위와-재고-원가-처리-순서-확정: done
   7-5-희망-판매가-기준-손실액-정책-확정: done
   7-6-지점장-민감-필드-노출-차단-매트릭스-승인: done
-  7-7-차이-당일-판매량-의미-변경-범위-확정: backlog
+  7-7-차이-당일-판매량-의미-변경-범위-확정: done
   epic-7-retrospective: optional
   epic-8: backlog
   8-1-직원-근무-급여-참고-범위와-개인정보-기준-확정: backlog
