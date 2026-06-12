@@ -30,9 +30,11 @@ import {
   ledgerSalesPaymentSchema,
   ledgerExpenseSchema,
   ledgerPurchaseSchema,
+  ledgerStoreAccessSchema,
   ledgerSubmitSchema,
   ledgerWorkInfoSchema,
   toFieldErrors,
+  type LedgerStoreAccessInput,
   type LedgerSalesPaymentInput,
   type LedgerExpensesInput,
   type LedgerPurchasesInput,
@@ -76,6 +78,22 @@ function parseLedgerSalesInput(
   input: unknown,
 ): ActionResult<LedgerSalesPaymentInput> {
   const parsed = ledgerSalesPaymentSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toFieldErrors(parsed.error),
+    );
+  }
+
+  return actionOk(parsed.data);
+}
+
+function parseLedgerStoreAccessInput(
+  input: unknown,
+): ActionResult<LedgerStoreAccessInput> {
+  const parsed = ledgerStoreAccessSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -486,13 +504,19 @@ function isExistingSnapshotPurchase(
 export async function submitLedgerForReview(
   input: unknown,
 ): Promise<ActionResult<LedgerSubmitForReviewResult>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerSubmitInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   let result: ActionResult<LedgerSubmitForReviewResult>;
 
@@ -641,13 +665,19 @@ export async function submitLedgerForReview(
 export async function saveLedgerSalesPayment(
   input: unknown,
 ): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerSalesInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -725,13 +755,19 @@ export async function saveLedgerSalesPayment(
 export async function saveLedgerExpenses(
   input: unknown,
 ): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerExpenseInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction<
@@ -825,13 +861,19 @@ export async function saveLedgerExpenses(
 export async function saveLedgerPurchases(
   input: unknown,
 ): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerPurchaseInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -1085,13 +1127,19 @@ export async function saveLedgerPurchases(
 export async function saveLedgerWorkInfo(
   input: unknown,
 ): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerWorkInfoInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {

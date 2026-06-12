@@ -13,10 +13,12 @@ import {
 import { db } from "~/server/db";
 import {
   ledgerInventoryAdjustmentSchema,
+  ledgerInventoryStoreAccessSchema,
   ledgerInventorySchema,
   toFieldErrors,
   type LedgerInventoryAdjustmentInput,
   type LedgerInventoryInput,
+  type LedgerInventoryStoreAccessInput,
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import {
@@ -34,6 +36,22 @@ function parseLedgerInventoryInput(
   input: unknown,
 ): ActionResult<LedgerInventoryInput> {
   const parsed = ledgerInventorySchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toFieldErrors(parsed.error),
+    );
+  }
+
+  return actionOk(parsed.data);
+}
+
+function parseLedgerInventoryStoreAccessInput(
+  input: unknown,
+): ActionResult<LedgerInventoryStoreAccessInput> {
+  const parsed = ledgerInventoryStoreAccessSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -186,13 +204,19 @@ function revalidateInventoryPaths() {
 export async function saveLedgerInventoryItems(
   input: unknown,
 ): Promise<ActionResult<StoreManagerInventoryStepData>> {
+  const access = parseLedgerInventoryStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerInventoryInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -324,13 +348,19 @@ export async function saveLedgerInventoryItems(
 export async function saveLedgerInventoryAdjustment(
   input: unknown,
 ): Promise<ActionResult<StoreManagerInventoryStepData>> {
+  const access = parseLedgerInventoryStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerInventoryAdjustmentInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {

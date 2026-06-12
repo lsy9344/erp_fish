@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-const MAX_KRW_INTEGER = 2_147_483_647;
+import {
+  isNonNegativeIntegerInRange,
+  parseOptionalNonNegativeInteger,
+  parseRequiredNonNegativeInteger,
+  toFieldErrors,
+} from "../../lib/validation.ts";
 
 const totalSalesAmountError = "총매출은 0원 이상의 정수여야 합니다.";
 const cashAmountError = "현금은 0원 이상의 정수여야 합니다.";
@@ -20,37 +25,12 @@ const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const authorDisplayNameError = "작성자 표시명은 50자 이하여야 합니다.";
 
-function isValidKrwInteger(value: number) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
-}
-
 function parseRequiredKrwAmount(
   value: unknown,
   context: z.RefinementCtx,
   errorMessage: string,
 ) {
-  if (typeof value === "number" && isValidKrwInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-
-      if (isValidKrwInteger(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: errorMessage,
-  });
-
-  return z.NEVER;
+  return parseRequiredNonNegativeInteger(value, context, errorMessage);
 }
 
 function parseOptionalKrwAmount(
@@ -58,36 +38,7 @@ function parseOptionalKrwAmount(
   context: z.RefinementCtx,
   errorMessage: string,
 ) {
-  if (value === "" || value === null || value === undefined) {
-    return null;
-  }
-
-  if (typeof value === "number" && isValidKrwInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (trimmed === "") {
-      return null;
-    }
-
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-
-      if (isValidKrwInteger(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: errorMessage,
-  });
-
-  return z.NEVER;
+  return parseOptionalNonNegativeInteger(value, context, errorMessage);
 }
 
 function parseOptionalMemo(value: unknown, context: z.RefinementCtx) {
@@ -155,10 +106,16 @@ export const ledgerOpenSchema = z.object({
   closingDate: closingDateSchema,
 });
 
-const ledgerMutationContextSchema = ledgerOpenSchema.extend({
+export const ledgerStoreAccessSchema = z.object({
+  storeId: salesPaymentStoreSchema,
+});
+
+export const ledgerMutationContextSchema = ledgerOpenSchema.extend({
   ledgerId: ledgerIdSchema,
   version: versionSchema,
 });
+
+export type LedgerStoreAccessInput = z.infer<typeof ledgerStoreAccessSchema>;
 
 export const ledgerAuthorDisplayNameSchema = z
   .unknown()
@@ -323,15 +280,15 @@ export const ledgerPurchaseSchema = z
       if (
         typeof purchase.unitPrice !== "number" ||
         typeof purchase.quantity !== "number" ||
-        !isValidKrwInteger(purchase.unitPrice) ||
-        !isValidKrwInteger(purchase.quantity)
+        !isNonNegativeIntegerInRange(purchase.unitPrice) ||
+        !isNonNegativeIntegerInRange(purchase.quantity)
       ) {
         return;
       }
 
       const amount = purchase.unitPrice * purchase.quantity;
 
-      if (!isValidKrwInteger(amount)) {
+      if (!isNonNegativeIntegerInRange(amount)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: purchaseAmountError,
@@ -359,21 +316,4 @@ export type LedgerWorkInfoInput = z.infer<typeof ledgerWorkInfoSchema>;
 export const ledgerSubmitSchema = ledgerMutationContextSchema;
 
 export type LedgerSubmitInput = z.infer<typeof ledgerSubmitSchema>;
-
-export function toFieldErrors(error: z.ZodError) {
-  const result: Record<string, string[]> = {};
-
-  for (const issue of error.issues) {
-    if (issue.path.length === 0) {
-      continue;
-    }
-
-    const path = issue.path.map((segment) => String(segment)).join(".");
-
-    result[path] ??= [];
-
-    result[path].push(issue.message);
-  }
-
-  return result;
-}
+export { toFieldErrors };

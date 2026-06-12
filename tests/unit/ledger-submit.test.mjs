@@ -118,13 +118,23 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
     actionSource,
     /export\s+async\s+function\s+submitLedgerForReview/,
   );
-  assert.match(actionSource, /requireStoreAccess\(parsed\.data\.storeId\)/);
+  const submitSource = getExportedAsyncFunctionSource(
+    actionSource,
+    "submitLedgerForReview",
+  );
+  assert.match(submitSource, /parseLedgerStoreAccessInput\(input\)/);
+  assert.match(submitSource, /requireStoreAccess\(access\.data\.storeId\)/);
+  assert.ok(
+    submitSource.indexOf("requireStoreAccess(access.data.storeId)") <
+      submitSource.indexOf("parseLedgerSubmitInput(input)"),
+    "submit should authorize store access before detailed submit validation",
+  );
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /status:\s*"IN_REVIEW"/);
   assert.match(actionSource, /submittedById:\s*actor\.user\.id/);
   assert.match(actionSource, /submittedAt:\s*submittedAt/);
   assert.match(
-    getExportedAsyncFunctionSource(actionSource, "submitLedgerForReview"),
+    submitSource,
     /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*version:\s*parsed\.data\.version,\s*status:\s*"IN_PROGRESS",\s*\},\s*data:\s*\{[\s\S]*status:\s*"IN_REVIEW"[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/,
   );
   assert.match(actionSource, /already-in-review/);

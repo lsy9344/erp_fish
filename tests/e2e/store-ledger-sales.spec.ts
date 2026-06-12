@@ -453,6 +453,39 @@ test("지점장은 권한 없는 지점 URL로 이동하면 권한 없음 화면
   await expect(page.getByText("홍대점")).toHaveCount(0);
 });
 
+test("매출/결제 단계는 필수 금액 오류를 입력과 연결하고 첫 오류로 포커스한다", async ({
+  page,
+}) => {
+  await loginAsStoreManager(page);
+  await page.goto(
+    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
+  );
+
+  const totalSalesInput = page.getByRole("textbox", {
+    name: "총매출",
+    exact: true,
+  });
+
+  await totalSalesInput.fill("");
+  await page.getByRole("button", { name: "저장" }).click();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "입력값을 확인해 주세요." }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("총매출은 0원 이상의 정수여야 합니다."),
+  ).toBeVisible();
+  await expect(totalSalesInput).toBeFocused();
+  await expect(totalSalesInput).toHaveAttribute("aria-invalid", "true");
+  await expect(totalSalesInput).toHaveAttribute(
+    "aria-describedby",
+    "total-sales-amount-error",
+  );
+  await expect(page.locator("#total-sales-amount-error")).toContainText(
+    "총매출은 0원 이상의 정수여야 합니다.",
+  );
+});
+
 test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족된다", async ({
   page,
 }) => {

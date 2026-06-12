@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-const MAX_KRW_INTEGER = 2_147_483_647;
+import {
+  isNonNegativeIntegerInRange,
+  parseRequiredNonNegativeInteger,
+  toFieldErrors,
+} from "../../lib/validation.ts";
 
 const productError = "품목을 선택해 주세요.";
 const lossTypeError = "손실 유형을 선택해 주세요.";
@@ -10,37 +14,12 @@ const reasonError = "사유/특이사항을 입력해 주세요.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 
-function isValidInteger(value: number) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
-}
-
 function parseRequiredInteger(
   value: unknown,
   context: z.RefinementCtx,
   errorMessage: string,
 ) {
-  if (typeof value === "number" && isValidInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-
-      if (isValidInteger(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: errorMessage,
-  });
-
-  return z.NEVER;
+  return parseRequiredNonNegativeInteger(value, context, errorMessage);
 }
 
 const requiredIdSchema = (message: string) =>
@@ -108,12 +87,23 @@ const ledgerLossItemSchema = z.object({
   }),
 });
 
-export const ledgerLossesSchema = z
-  .object({
-    storeId: requiredIdSchema("지점을 확인해 주세요."),
-    ledgerId: requiredIdSchema("장부를 확인해 주세요."),
-    closingDate: closingDateSchema,
-    version: versionSchema,
+const ledgerLossesContextSchema = z.object({
+  storeId: requiredIdSchema("지점을 확인해 주세요."),
+  ledgerId: requiredIdSchema("장부를 확인해 주세요."),
+  closingDate: closingDateSchema,
+  version: versionSchema,
+});
+
+export const ledgerLossesStoreAccessSchema = z.object({
+  storeId: requiredIdSchema("지점을 확인해 주세요."),
+});
+
+export type LedgerLossesStoreAccessInput = z.infer<
+  typeof ledgerLossesStoreAccessSchema
+>;
+
+export const ledgerLossesSchema = ledgerLossesContextSchema
+  .extend({
     losses: z.array(ledgerLossItemSchema),
   })
   .superRefine((value, context) => {
@@ -121,8 +111,8 @@ export const ledgerLossesSchema = z
       if (
         typeof loss.quantity !== "number" ||
         typeof loss.amount !== "number" ||
-        !isValidInteger(loss.quantity) ||
-        !isValidInteger(loss.amount)
+        !isNonNegativeIntegerInRange(loss.quantity) ||
+        !isNonNegativeIntegerInRange(loss.amount)
       ) {
         return;
       }
@@ -138,20 +128,4 @@ export const ledgerLossesSchema = z
   });
 
 export type LedgerLossesInput = z.infer<typeof ledgerLossesSchema>;
-
-export function toFieldErrors(error: z.ZodError) {
-  const result: Record<string, string[]> = {};
-
-  for (const issue of error.issues) {
-    if (issue.path.length === 0) {
-      continue;
-    }
-
-    const path = issue.path.map((segment) => String(segment)).join(".");
-
-    result[path] ??= [];
-    result[path].push(issue.message);
-  }
-
-  return result;
-}
+export { toFieldErrors };

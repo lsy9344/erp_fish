@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-12T08:20:00+09:00
+# last_updated: 2026-06-12T09:50:45+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-12T08:20:00+09:00"
+last_updated: "2026-06-12T09:50:45+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -62,7 +62,7 @@ development_status:
   epic-2-retrospective: optional
   epic-3: in-progress
   3-1-기본-계산-모듈과-상태-표현: done
-  3-2-장부-단계별-입력-검증: backlog
+  3-2-장부-단계별-입력-검증: done
   3-3-검토-화면의-계산-검증-요약: backlog
   3-4-계산-정책-미정-항목-차단과-테스트-기준: backlog
   epic-3-retrospective: optional

@@ -144,6 +144,11 @@ export function SalesPaymentStepClient({
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
+      if (errors.authorDisplayName?.length) {
+        authorDisplayNameInputRef.current?.focus();
+        return;
+      }
+
       if (errors.totalSalesAmount?.length) {
         totalSalesInputRef.current?.focus();
         return;

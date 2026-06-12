@@ -40,7 +40,10 @@ test("server actions return common structured conflict contract", () => {
     "conflicts.ts",
   );
   assert.match(ledgerConflictSource, /ledgerConflictErrorFromMeta/);
-  assert.match(ledgerConflictSource, /code:\s*"LEDGER_CONFLICT"|LEDGER_CONFLICT/);
+  assert.match(
+    ledgerConflictSource,
+    /code:\s*"LEDGER_CONFLICT"|LEDGER_CONFLICT/,
+  );
   assert.match(ledgerConflictSource, /updatedBy:\s*\{\s*select:/s);
 
   for (const segments of [
@@ -85,8 +88,14 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
     "actions.ts",
   );
   assert.match(ledgerActionSource, /OriginalLedgerBlockedError/);
-  assert.match(ledgerActionSource, /본사 마감된 장부는 원본 항목으로 수정할 수 없습니다/);
-  assert.match(ledgerActionSource, /휴무 장부는 원본 항목으로 수정할 수 없습니다/);
+  assert.match(
+    ledgerActionSource,
+    /본사 마감된 장부는 원본 항목으로 수정할 수 없습니다/,
+  );
+  assert.match(
+    ledgerActionSource,
+    /휴무 장부는 원본 항목으로 수정할 수 없습니다/,
+  );
   assert.match(
     ledgerActionSource,
     /error instanceof OriginalLedgerBlockedError[\s\S]*actionError\(error\.code,\s*error\.message\)/,
@@ -104,7 +113,10 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
     inventoryActionSource,
     /before\.status === "HEADQUARTERS_CLOSED" \|\|[\s\S]*before\.status === "HOLIDAY"/,
   );
-  assert.match(inventoryActionSource, /휴무 장부는 원본 재고 조정으로 수정할 수 없습니다/);
+  assert.match(
+    inventoryActionSource,
+    /휴무 장부는 원본 재고 조정으로 수정할 수 없습니다/,
+  );
   assert.match(
     inventoryActionSource,
     /error instanceof OriginalInventoryBlockedError[\s\S]*actionError\(error\.code,\s*error\.message\)/,
@@ -119,9 +131,12 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
   assert.match(lossActionSource, /originalLossBlockedError/);
   assert.match(
     lossActionSource,
-    /before\.status === "HEADQUARTERS_CLOSED" \|\| before\.status === "HOLIDAY"/,
+    /before\.status === "HEADQUARTERS_CLOSED" \|\|[\s\S]*before\.status === "HOLIDAY"/,
   );
-  assert.match(lossActionSource, /휴무 장부는 원본 손실 입력으로 수정할 수 없습니다/);
+  assert.match(
+    lossActionSource,
+    /휴무 장부는 원본 손실 입력으로 수정할 수 없습니다/,
+  );
 });
 
 test("conflict UI is wired into every editable ledger surface", () => {
@@ -169,7 +184,11 @@ test("conflict UI is wired into every editable ledger surface", () => {
 });
 
 test("unsaved-change guard covers store shell tabs and HQ tab state", () => {
-  const shellSource = readProjectFile("src", "components", "store-manager-shell.tsx");
+  const shellSource = readProjectFile(
+    "src",
+    "components",
+    "store-manager-shell.tsx",
+  );
   const guardSource = readProjectFile(
     "src",
     "features",
@@ -190,6 +209,12 @@ test("unsaved-change guard covers store shell tabs and HQ tab state", () => {
   assert.match(guardSource, /a\[data-unsaved-guard-nav\]/);
   assert.match(guardSource, /document\.addEventListener\("click"/);
   assert.match(guardSource, /requestNavigation\(link\.href,\s*link\)/);
-  assert.match(hqPageSource, /<TabsContent value="sales" className="mt-3" forceMount>/);
-  assert.match(hqPageSource, /<TabsContent value="inventory" className="mt-3" forceMount>/);
+  assert.match(
+    hqPageSource,
+    /<TabsContent value="sales" className="mt-3" forceMount>/,
+  );
+  assert.match(
+    hqPageSource,
+    /<TabsContent value="inventory" className="mt-3" forceMount>/,
+  );
 });

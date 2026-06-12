@@ -11,8 +11,10 @@ import { calculateSystemInventoryQuantity } from "~/server/calculations/inventor
 import { db } from "~/server/db";
 import {
   ledgerLossesSchema,
+  ledgerLossesStoreAccessSchema,
   toFieldErrors,
   type LedgerLossesInput,
+  type LedgerLossesStoreAccessInput,
 } from "./schemas";
 import { getLossStepDataInTx, toStoreManagerLossStepData } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
@@ -26,6 +28,22 @@ function parseLedgerLossesInput(
   input: unknown,
 ): ActionResult<LedgerLossesInput> {
   const parsed = ledgerLossesSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toFieldErrors(parsed.error),
+    );
+  }
+
+  return actionOk(parsed.data);
+}
+
+function parseLedgerLossesStoreAccessInput(
+  input: unknown,
+): ActionResult<LedgerLossesStoreAccessInput> {
+  const parsed = ledgerLossesStoreAccessSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -168,13 +186,19 @@ function normalizeLossItem({
 export async function saveLedgerLosses(
   input: unknown,
 ): Promise<ActionResult<StoreManagerLossStepData>> {
+  const access = parseLedgerLossesStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreAccess(access.data.storeId);
+
   const parsed = parseLedgerLossesInput(input);
 
   if (!parsed.ok) {
     return parsed;
   }
-
-  const actor = await requireStoreAccess(parsed.data.storeId);
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -196,12 +220,17 @@ export async function saveLedgerLosses(
           section: "losses",
           clientToken: parsed.data.version,
           clientValues: toLossClientValues(parsed.data),
-          serverValues: toLossConflictValues(toStoreManagerLossStepData(before)),
+          serverValues: toLossConflictValues(
+            toStoreManagerLossStepData(before),
+          ),
           reloadRequired: true,
         });
       }
 
-      if (before.status === "HEADQUARTERS_CLOSED" || before.status === "HOLIDAY") {
+      if (
+        before.status === "HEADQUARTERS_CLOSED" ||
+        before.status === "HOLIDAY"
+      ) {
         return originalLossBlockedError(before.status);
       }
 
@@ -349,7 +378,9 @@ export async function saveLedgerLosses(
           section: "losses",
           clientToken: parsed.data.version,
           clientValues: toLossClientValues(parsed.data),
-          serverValues: toLossConflictValues(toStoreManagerLossStepData(before)),
+          serverValues: toLossConflictValues(
+            toStoreManagerLossStepData(before),
+          ),
           reloadRequired: true,
         });
       }

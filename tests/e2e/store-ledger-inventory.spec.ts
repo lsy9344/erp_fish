@@ -591,6 +591,13 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
     page.getByText("재고 수량은 0 이상의 정수여야 합니다."),
   ).toBeVisible();
   await expect(currentQuantityInput).toBeFocused();
+  await expect(currentQuantityInput).toHaveAttribute("aria-invalid", "true");
+  const describedBy =
+    await currentQuantityInput.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(page.locator(`[id="${describedBy}"]`)).toContainText(
+    "재고 수량은 0 이상의 정수여야 합니다.",
+  );
 
   await expect(currentQuantityInput).toHaveAttribute("inputmode", "numeric");
   const inputBox = await currentQuantityInput.boundingBox();

@@ -329,6 +329,12 @@ test("매입 단계는 음수와 소수 숫자 입력을 다른 값으로 바꾸
     page.getByText("수량은 0 이상의 정수여야 합니다."),
   ).toBeVisible();
   await expect(unitPriceInput).toBeFocused();
+  await expect(unitPriceInput).toHaveAttribute("aria-invalid", "true");
+  const describedBy = await unitPriceInput.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(page.locator(`[id="${describedBy}"]`)).toContainText(
+    "단가는 0원 이상의 정수여야 합니다.",
+  );
 });
 
 test("stale version 매입 저장은 거부되고 기존 데이터가 바뀌지 않는다", async ({
