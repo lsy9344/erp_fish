@@ -1021,10 +1021,12 @@ export async function saveLedgerPurchases(
                   productId: standard.product.id,
                   purchaseStandardId: standard.id,
                   sourceType: "MANUAL" as const,
-                  productName: standard.product.name,
-                  productCategory: standard.product.category,
-                  productSpec: standard.product.spec,
-                  referenceInfo: standard.referenceInfo,
+                  productName: purchase.productName || standard.product.name,
+                  productCategory:
+                    purchase.productCategory || standard.product.category,
+                  productSpec: purchase.productSpec || standard.product.spec,
+                  referenceInfo:
+                    purchase.referenceInfo ?? standard.referenceInfo,
                 }
               : product
                 ? {

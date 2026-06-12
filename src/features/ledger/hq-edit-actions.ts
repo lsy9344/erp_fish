@@ -210,7 +210,10 @@ async function hqConflictError<T = never>(
     ledgerId: input.ledgerId,
     section,
     clientToken: input.ledgerUpdatedAt,
-    serverToken: ledger?.updatedAt.toISOString() ?? meta?.updatedAt.toISOString() ?? "unknown",
+    serverToken:
+      ledger?.updatedAt.toISOString() ??
+      meta?.updatedAt.toISOString() ??
+      "unknown",
     clientValues: toHqLedgerClientConflictValues(section, input),
     serverValues: ledger
       ? toHqLedgerServerConflictValues(section, toLedgerCostStepData(ledger))
@@ -621,11 +624,7 @@ export async function saveHqLedgerPurchases(
             existing,
           );
 
-          if (
-            purchase.purchaseStandardId &&
-            !standard &&
-            !isExistingSnapshot
-          ) {
+          if (purchase.purchaseStandardId && !standard && !isExistingSnapshot) {
             return actionError<LedgerCostStepData>(
               "VALIDATION_ERROR",
               "입력값을 확인해 주세요.",
@@ -673,10 +672,11 @@ export async function saveHqLedgerPurchases(
                 productId: standard.product.id,
                 purchaseStandardId: standard.id,
                 sourceType: "MANUAL" as const,
-                productName: standard.product.name,
-                productCategory: standard.product.category,
-                productSpec: standard.product.spec,
-                referenceInfo: standard.referenceInfo,
+                productName: purchase.productName || standard.product.name,
+                productCategory:
+                  purchase.productCategory || standard.product.category,
+                productSpec: purchase.productSpec || standard.product.spec,
+                referenceInfo: purchase.referenceInfo ?? standard.referenceInfo,
               }
             : product
               ? {
