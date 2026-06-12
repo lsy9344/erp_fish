@@ -258,6 +258,7 @@ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만
         in: [
           "hq@example.com",
           "hq-assigned@example.com",
+          "hq-viewer@example.com",
           "manager@example.com",
         ],
       },
@@ -297,6 +298,7 @@ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만
   const byEmail = new Map(users.map((user) => [user.email, user]));
   const hq = byEmail.get("hq@example.com");
   const assignedHq = byEmail.get("hq-assigned@example.com");
+  const readOnlyHq = byEmail.get("hq-viewer@example.com");
   const manager = byEmail.get("manager@example.com");
 
   expect(
@@ -336,6 +338,17 @@ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만
   expect(assignedHq?.storeAssignments.map(({ storeId }) => storeId)).toEqual([
     "store-seocho",
   ]);
+
+  expect(readOnlyHq?.permissionProfiles).toHaveLength(1);
+  expect(readOnlyHq?.permissionProfiles[0]?.profile).toMatchObject({
+    code: "HQ_VIEWER",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+  });
+  expect(
+    readOnlyHq?.permissionProfiles[0]?.profile.actions.map(
+      ({ action }) => action,
+    ),
+  ).toEqual([PermissionAction.REPORT_VIEW]);
 
   expect(manager?.permissionProfiles[0]?.profile).toMatchObject({
     code: "STORE_MANAGER",

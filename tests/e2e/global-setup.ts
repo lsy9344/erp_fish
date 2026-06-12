@@ -30,6 +30,12 @@ const profileDefinitions = [
     actions: [PermissionAction.LEDGER_EDIT, PermissionAction.REPORT_VIEW],
   },
   {
+    code: "HQ_VIEWER",
+    name: "본사 조회 전용",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+    actions: [PermissionAction.REPORT_VIEW],
+  },
+  {
     code: "SETTINGS_ADMIN",
     name: "설정 관리자",
     storeAccessMode: StoreAccessMode.ALL_STORES,
@@ -377,6 +383,23 @@ export default async function globalSetup() {
     },
   });
 
+  const readOnlyHqUser = await prisma.user.upsert({
+    where: { email: "hq-viewer@example.com" },
+    create: {
+      email: "hq-viewer@example.com",
+      name: "본사 조회 전용",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "본사 조회 전용",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
   const gangnamStore = await prisma.store.upsert({
     where: { id: "store-gangnam" },
     create: {
@@ -498,6 +521,7 @@ export default async function globalSetup() {
         in: [
           hqUser.id,
           assignedHqUser.id,
+          readOnlyHqUser.id,
           manager.id,
           unassignedManager.id,
           inactiveOnlyManager.id,
@@ -520,6 +544,11 @@ export default async function globalSetup() {
     prisma,
     assignedHqUser.id,
     permissionProfiles.get("HQ_STAFF")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    readOnlyHqUser.id,
+    permissionProfiles.get("HQ_VIEWER")?.id,
   );
   await assignPermissionProfile(
     prisma,

@@ -2,6 +2,9 @@
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 inputDocuments:
   - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\prds\\prd-erp_fish-2026-05-28-2\\prd.md"
+  - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\prds\\prd-erp_fish-2026-05-28-2\\mvp-story-extraction-checklist.md"
+  - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\prds\\prd-erp_fish-2026-05-28-2\\validation-report.md"
+  - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\prds\\prd-erp_fish-2026-05-28-2\\review-resolution.md"
   - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\briefs\\brief-erp_fish-2026-05-28\\brief.md"
   - "C:\\Code\\Project\\erp_fish\\docs\\reference_from_customer\\feature_analysis.md"
   - "C:\\Code\\Project\\erp_fish\\docs\\reference_from_customer\\desc.md"
@@ -9,6 +12,7 @@ workflowType: 'architecture'
 project_name: 'erp_fish'
 user_name: 'Noah Lee'
 date: '2026-05-28'
+lastPrdAlignmentReview: '2026-06-11'
 lastStep: 8
 status: 'complete'
 completedAt: '2026-05-28'
@@ -172,6 +176,10 @@ Do not store business-critical reporting data only in free-text notes or unstruc
 
 **Validation Strategy:**
 Use Zod at server action/API boundaries and database constraints as a second line of defense. UI validation is helpful for speed, but server validation is authoritative.
+
+For store-scoped mutations, parse only the minimal identifiers needed for access control first, then authorize the store/action, then run the full step schema validation. This prevents unauthorized users from learning detailed field-validation feedback or receiving business data for stores outside their scope.
+
+If the identifier needed for authorization is missing or malformed, return a normal validation error for that identifier.
 
 **Audit and Correction Strategy:**
 Original ledger records are preserved after HQ close. `AuditLog` and `CorrectionRecord` are append-only records. Reports and dashboards use correction-applied values by default while details keep original values visible.
@@ -468,7 +476,9 @@ MVP does not need a separate event bus. Business events that matter for traceabi
 Every sensitive server action or query must call a shared authorization helper before touching business data. Do not rely on hidden UI controls as a security boundary.
 
 **Validation Pattern:**
-Every mutation validates input with a schema before running authorization-sensitive business logic. UI validation may improve speed, but server validation is authoritative.
+Every mutation validates input with schemas at the server boundary. For store-scoped mutations, use a two-stage validation pattern: first parse the minimal access-control fields such as `storeId` or `ledgerId`, run the shared authorization helper, then run detailed field validation before business writes.
+
+UI validation may improve speed, but server validation is authoritative.
 
 **Audit Pattern:**
 All business-changing actions must either write an audit record directly through the shared helper or use a transaction helper that writes audit records.
@@ -714,13 +724,13 @@ Prisma schema is the source of truth for persisted data. Feature queries should 
 ### Integration Points
 
 **Internal Communication:**
-Pages call feature queries for reads. Forms call feature actions for mutations. Feature actions validate input, authorize the user, run business logic, write audit records, and trigger revalidation.
+Pages call feature queries for reads. Forms call feature actions for mutations. Feature actions parse access-control identifiers, authorize the user, validate detailed input, run business logic, write audit records, and trigger revalidation.
 
 **External Integrations:**
 MVP has no required external business integrations. In the 2026-06-10 additional scope, eCount Excel upload and LINE/Telegram notification delivery are approved integrations. POS/card automation and AI features remain excluded. Approved integrations should enter through dedicated Route Handlers or scheduled workers, not through ad hoc UI-only actions.
 
 **Data Flow:**
-User input enters a page form, passes through a feature schema, reaches a Server Action, runs authorization and transaction logic, updates Prisma models, writes audit rows, revalidates affected routes, and returns an `ActionResult` to the UI.
+User input enters a page form and reaches a Server Action. Store-scoped actions parse the minimal identifier schema first, run authorization, then apply the detailed feature schema before transaction logic. Authorized writes update Prisma models, write audit rows, revalidate affected routes, and return an `ActionResult` to the UI.
 
 ### File Organization Patterns
 
@@ -866,7 +876,99 @@ The MVP architecture remains ready for implementation. The 2026-06-10 additional
 - Use implementation patterns consistently across all components.
 - Respect project structure and boundaries.
 - Refer to this document for all architectural questions.
-- Do not implement PRD excluded items in MVP unless a later story explicitly changes scope. CAP-1~CAP-18 are such later approved scope and must still follow the security, audit, calculation, and data preservation rules above.
+- Do not implement PRD excluded items in MVP unless a later story explicitly changes scope. CAP-1~CAP-18 are approved extension scope and must still follow the security, audit, calculation, and data preservation rules above. CAP-19 is contract/operations scope, not an automatic product implementation story.
 
 **First Implementation Priority:**
 Initialize the project using Create T3 App, configure PostgreSQL/Prisma/Auth, initialize shadcn/ui, and create the baseline server helpers for authorization, audit, action results, and calculations before building feature screens.
+
+## PRD Alignment Addendum - 2026-06-11
+
+### Source Review
+
+This addendum aligns the completed architecture with the PRD updated on 2026-06-11, the approved `mvp-story-extraction-checklist.md`, and the latest PRD validation report.
+
+**Decision:** No technology stack change is required. Create T3 App, Next.js, Prisma, PostgreSQL, Auth/NextAuth foundation, Tailwind, shadcn/ui, Vercel, shared server calculations, server-side authorization, and append-only audit/correction records remain the right architecture.
+
+**Architecture change required:** Yes, but only as handoff guardrails. The PRD now makes implementation gating, permission profiles, edit-token conflict handling, and several extension controls explicit enough that implementation agents need them in the architecture document.
+
+### Controlled Implementation Gate
+
+The PRD is still `draft`, but the approved MVP story gate is usable.
+
+- `mvp-story-extraction-checklist.md` is the authoritative G6 gate for MVP story generation.
+- Only `MVP-S01`, `MVP-S02`, and `MVP-S03` may become implementation stories now.
+- `MVP-S04` through `MVP-S10` must remain discovery or policy work until their linked OQs and closure artifacts are approved.
+- Story generators must not treat `MVP 필수` as equal to `implementation story allowed`.
+- The first implementation sequence should therefore start with baseline app setup, auth/permission/audit foundations, non-OQ basic ledger flows, non-sensitive basic calculations, and HQ-only report/export foundations.
+
+### Authorization Update
+
+The earlier two-role shorthand remains useful for product explanation, but implementation must model headquarters authority more carefully.
+
+- `본사 사용자` is an umbrella term, not one unrestricted role.
+- Server authorization must support action-level permission profiles such as headquarters admin, close manager, upload staff, settings admin, and read-only headquarters user.
+- Store managers remain store-scoped and must not receive sensitive fields.
+- Authorization helpers should check both store scope and action permission before any mutation or sensitive read.
+- Audit events must record the actor account, permission context, target entity, before/after values where applicable, and reason for high-risk actions.
+
+Implementation implication: `src/server/authz.ts` should expose explicit helpers for action checks, not only role checks. Examples: close permission, correction permission, upload commit permission, settings mutation permission, report/export permission, and store access.
+
+### Concurrent Editing And Save Conflicts
+
+The PRD now requires explicit protection against silent last-write-wins behavior.
+
+- Daily ledger records need a server version or edit token.
+- Partial saves and final submission must send the last-read token.
+- The default conflict unit is the input step or section.
+- Same-section field conflicts must be rejected or resolved explicitly.
+- Different-section changes may merge only when audit records make the actor, section, and changed fields clear.
+- Stale mobile/browser sessions must reload the latest ledger before saving.
+- Headquarters forced edits may mark a ledger or section as `본사 수정 중`; store-manager saves must re-check current state before writing.
+
+Implementation implication: ledger Server Actions should use optimistic concurrency checks inside transactions. Do not let form handlers update ledger rows without a version check.
+
+### Sensitive Field Gate
+
+The PRD split the old sensitive-metric question into OQ-10A and OQ-10B.
+
+- OQ-10A controls MVP minimum blocking of sensitive fields across store-manager screens, server responses, export, shared links, cache responses, and alert templates.
+- OQ-10B controls later CAP-13 advanced policy where headquarters may adjust field exposure.
+- Until OQ-10A is approved, ambiguous cost/profit-derived fields default to hidden for store-manager paths.
+- Until OQ-10B is approved, do not implement user-configurable sensitive-field exposure. Default deny and audit hardening are allowed.
+
+Implementation implication: use shared response shaping on the server. Client-side hiding is not enough.
+
+### Additional Data And UI Guardrails
+
+The following PRD additions do not change the stack, but they do affect model and UI boundaries.
+
+- CAP-16 작성자 이름 세션 캐싱: store the display author name through the whole ledger entry flow, but keep it separate from the authenticated account and audit actor.
+- CAP-18 대시보드 그리드 리사이징: store headquarters dashboard layout preferences per user, provide reset-to-default, and enforce minimum visibility for core columns such as store name, ledger status, close status, anomaly signal, and latest update time.
+- CAP-19 유지보수 및 서버 인프라 운영 대행: keep this as contract/operations scope. Do not convert it into product stories unless a later PRD or change proposal defines concrete product surfaces.
+
+Recommended future model additions when the related story is promoted:
+
+- Ledger-level `version` or section-level version metadata for optimistic concurrency.
+- Permission profile/action mapping, or a fixed equivalent if the first release keeps profiles static.
+- Ledger author display fields distinct from authenticated actor fields.
+- User dashboard layout preference records.
+
+### Updated Readiness Assessment
+
+The architecture remains valid, but readiness is now controlled by the PRD gates.
+
+**Overall Status:** READY FOR CONTROLLED IMPLEMENTATION
+
+**Ready now:**
+
+- App setup and shared foundations.
+- MVP-S01 through MVP-S03 implementation stories.
+- Server-side permission, audit, validation, response-shaping, and non-sensitive calculation foundations.
+
+**Not ready for implementation stories yet:**
+
+- MVP-S04 through MVP-S10.
+- FIFO final valuation, `30%단가`, sensitive-field exposure approval, `차이` to `당일 판매량` meaning change, and other OQ-bound calculations.
+- CAP-13 advanced configurable exposure, CAP-19 operations contract work, and any AI feature surface.
+
+Agents should read the latest PRD and checklist before creating or implementing stories. If a requested story conflicts with the checklist, create a discovery/policy story instead of a product implementation story.

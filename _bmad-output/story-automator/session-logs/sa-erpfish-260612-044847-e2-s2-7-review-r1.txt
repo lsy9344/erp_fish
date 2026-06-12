@@ -1,0 +1,2018 @@
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({
+-    code: z.ZodIssueCode.custom,
+-    message: errorMessage,
+-  });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -125,7 +88,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(value, context, amountError),
++      parseRequiredInteger(value, context, amountError),
+     ),
+   reason: z.unknown().transform((value, context) => {
+     if (typeof value === "string") {
+@@ -157,19 +120,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: amountError,
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index bdb7e332f09578402c5d19973dda2cae741964ec..acea4f17d5fa47a7cddef9495c035bb99f17795f
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -565,6 +565,17 @@
+   });
+   expect(initiallySavedLosses).toHaveLength(2);
+
++  await page.getByLabel("손실액(원)").nth(0).fill("");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(page.getByText("손실 금액은 0원 이상의 정수여야 합니다.")).toBeVisible();
++  await expect(page.getByLabel("손실액(원)").nth(0)).toBeFocused();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toHaveCount(0);
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++
+   await page.getByLabel("수량").nth(0).fill("3");
+   await page.getByLabel("손실액(원)").nth(0).fill("7000");
+   await page.getByLabel("사유/특이사항").nth(0).fill("수정된 폐기 사유");
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b7795e4ebfd11ed83af8265410543bf9b701c29a..4482fb1ed42480e9ab08d5220dd0bff5e5f4adf5
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -115,6 +115,14 @@
+     false,
+   );
+
++  assert.equal(
++    ledgerLossesSchema.safeParse({
++      ...payload,
++      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
++    }).success,
++    false,
++  );
++
+   const invalidReason = ledgerLossesSchema.safeParse({
+     ...payload,
+     losses: [{ ...payload.losses[0], reason: "" }],
+@@ -306,6 +314,8 @@
+     "schemas.ts",
+   );
+   assert.match(schemaSource, /versionSchema/);
++  assert.match(schemaSource, /parseRequiredInteger\(value, context, amountError\)/);
++  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
+
+   const lossQuerySource = readProjectFile(
+     "src",
+
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index 34fff62abcda158a9cd5d80bb52d35ce83b9560b..02c54a2b52b6ef1d99d18820f6a5d2b922a25054
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -227,6 +227,15 @@
+
+ ## Dev Agent Record
+
++### Senior Developer Review (AI)
++
++- Reviewer: GPT-5 Codex on 2026-06-12
++- Outcome: Approved after auto-fix.
++- Git vs Story File List: actual source/test changes matched the implementation surface, but review auto-fix added `src/features/losses/actions.ts`, `src/features/losses/hq-edit-actions.ts`, and `src
+/features/losses/schemas.ts`; File List updated.
++- HIGH fixed: Existing loss lines could be saved with a blank `amount`; server and HQ schemas parsed blank amount as `null`, and actions preserved the previous amount instead of rejecting the request
+. This violated AC 2's server-side required amount validation now that AC 1/6 intentionally re-display user-entered amount. Fixed by making `amount` required for all loss rows and removing previous-am
+ount fallback.
++- MEDIUM fixed: Regression coverage did not prove that clearing an existing loss amount is rejected. Added unit schema coverage and an E2E assertion in the edit/delete audit scenario.
++- Residual risk: Playwright E2E could not be rerun in this sandbox because Next dev server port binding fails with `listen EPERM: operation not permitted 127.0.0.1:3100`. Non-E2E verification passed.
++
+ ### Agent Model Used
+
+ GPT-5 Codex
+@@ -238,6 +247,9 @@
+ - 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
+ - 2026-06-12: Orchestrator final verification on `PORT=3100` passed focused loss/inventory-adjustment E2E 9/9; `prisma validate`, `typecheck`, `lint`, full unit 197/197, and `build` passed.
+ - 2026-06-12: Automate added loss edit/delete audit/version and headquarters-closed E2E guardrails; orchestrator rerun on `PORT=3100` passed focused loss/inventory-adjustment E2E 11/11.
++- 2026-06-12: Senior review auto-fix made loss `amount` required for existing rows as well as new rows in store-manager and HQ save paths; added regression coverage for clearing an existing amount.
++- 2026-06-12: Senior review Playwright rerun was blocked by sandbox port binding: `next dev --hostname 127.0.0.1 --port 3100` failed with `listen EPERM: operation not permitted 127.0.0.1:3100`.
++- 2026-06-12: Senior review verification passed `prisma validate`, focused loss/sensitive/inventory unit tests, `typecheck`, focused eslint, focused prettier check, full `lint`, full `test:unit` 29/2
+9, and `build`.
+
+ ### Completion Notes List
+
+@@ -248,13 +260,18 @@
+ - Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+ - Child-session E2E was blocked by local port binding on 3107, but orchestrator rerun on 3100 passed focused E2E and full non-E2E verification.
+ - Added automated guardrails for loss line edit/delete audit snapshots, version refresh, and headquarters-closed original input blocking.
++- Senior review auto-fixed the remaining AC 2 gap so blank `amount` on existing loss rows is rejected server-side instead of silently preserving the old amount.
++- Senior review could not rerun Playwright in this sandbox due to `listen EPERM`; static, unit, typecheck, lint, and production build verification passed.
+
+ ### File List
+
+ - `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
+ - `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/actions.ts`
+ - `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/hq-edit-actions.ts`
+ - `src/features/losses/queries.ts`
++- `src/features/losses/schemas.ts`
+ - `src/features/losses/types.ts`
+ - `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+ - `tests/e2e/store-ledger-losses.spec.ts`
+@@ -266,3 +283,4 @@
+ - 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+ - 2026-06-12: Tightened sensitive-field E2E checks to visible UI scopes and recorded final orchestrator verification pass.
+ - 2026-06-12: Added automate guardrail E2E for loss edit/delete audit/version and closed-ledger input blocking; focused E2E 11/11 passed on PORT=3100.
++- 2026-06-12: Senior review auto-fixed required `amount` validation for existing loss rows, added regression coverage, and moved story to done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec..627301ed5a5dbb4476142f450ba05461c3bd5148
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:28:51+09:00
++# last_updated: 2026-06-12T04:53:26+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:28:51+09:00"
++last_updated: "2026-06-12T04:53:26+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: review
++  2-7-손실-폐기-떨이-입력: done
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/actions.ts b/src/features/losses/actions.ts
+index 82dd6c9a805ac4a9ec4b3cc61f35fb1bbb7b1d41..ac424fef7ed743810b8e0de7b2644542bea95d54
+--- a/src/features/losses/actions.ts
++++ b/src/features/losses/actions.ts
+@@ -112,7 +112,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -131,7 +131,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -217,18 +217,6 @@
+       for (let index = 0; index < parsed.data.losses.length; index += 1) {
+         const loss = parsed.data.losses[index]!;
+         const existing = existingById.get(loss.id);
+-
+-        if (loss.amount === null && !existing) {
+-          return actionError<StoreManagerLossStepData>(
+-            "VALIDATION_ERROR",
+-            "입력값을 확인해 주세요.",
+-            {
+-              [`losses.${index}.amount`]: [
+-                "손실 금액은 0원 이상의 정수여야 합니다.",
+-              ],
+-            },
+-          );
+-        }
+
+         const normalized = normalizeLossItem({
+           loss,
+diff --git a/src/features/losses/hq-edit-actions.ts b/src/features/losses/hq-edit-actions.ts
+index 60faa740a54cabbbc1e679b11e104f7751dba940..978d46008d3db8414729fd45416259e8b838b4ca
+--- a/src/features/losses/hq-edit-actions.ts
++++ b/src/features/losses/hq-edit-actions.ts
+@@ -80,40 +80,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -134,7 +100,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(
++      parseRequiredInteger(
+         value,
+         context,
+         "손실 금액은 0원 이상의 정수여야 합니다.",
+@@ -168,19 +134,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: "손실 금액은 0원 이상의 정수여야 합니다.",
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+@@ -317,7 +274,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -336,7 +293,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -419,18 +376,6 @@
+         for (let index = 0; index < parsed.data.losses.length; index += 1) {
+           const loss = parsed.data.losses[index]!;
+           const existing = existingById.get(loss.id);
+-
+-          if (loss.amount === null && !existing) {
+-            return actionError<LossStepData>(
+-              "VALIDATION_ERROR",
+-              "입력값을 확인해 주세요.",
+-              {
+-                [`losses.${index}.amount`]: [
+-                  "손실 금액은 0원 이상의 정수여야 합니다.",
+-                ],
+-              },
+-            );
+-          }
+
+           const normalized = normalizeLossItem({
+             loss,
+diff --git a/src/features/losses/schemas.ts b/src/features/losses/schemas.ts
+index 6193d0fbf153f217920bcc9fd183b561219fd991..85a0c07b776d0f29cdd292df4351e13062a139dc
+--- a/src/features/losses/schemas.ts
++++ b/src/features/losses/schemas.ts
+@@ -43,43 +43,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({
+-    code: z.ZodIssueCode.custom,
+-    message: errorMessage,
+-  });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -125,7 +88,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(value, context, amountError),
++      parseRequiredInteger(value, context, amountError),
+     ),
+   reason: z.unknown().transform((value, context) => {
+     if (typeof value === "string") {
+@@ -157,19 +120,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: amountError,
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index bdb7e332f09578402c5d19973dda2cae741964ec..acea4f17d5fa47a7cddef9495c035bb99f17795f
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -565,6 +565,17 @@
+   });
+   expect(initiallySavedLosses).toHaveLength(2);
+
++  await page.getByLabel("손실액(원)").nth(0).fill("");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(page.getByText("손실 금액은 0원 이상의 정수여야 합니다.")).toBeVisible();
++  await expect(page.getByLabel("손실액(원)").nth(0)).toBeFocused();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toHaveCount(0);
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++
+   await page.getByLabel("수량").nth(0).fill("3");
+   await page.getByLabel("손실액(원)").nth(0).fill("7000");
+   await page.getByLabel("사유/특이사항").nth(0).fill("수정된 폐기 사유");
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b7795e4ebfd11ed83af8265410543bf9b701c29a..4482fb1ed42480e9ab08d5220dd0bff5e5f4adf5
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -115,6 +115,14 @@
+     false,
+   );
+
++  assert.equal(
++    ledgerLossesSchema.safeParse({
++      ...payload,
++      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
++    }).success,
++    false,
++  );
++
+   const invalidReason = ledgerLossesSchema.safeParse({
+     ...payload,
+     losses: [{ ...payload.losses[0], reason: "" }],
+@@ -306,6 +314,8 @@
+     "schemas.ts",
+   );
+   assert.match(schemaSource, /versionSchema/);
++  assert.match(schemaSource, /parseRequiredInteger\(value, context, amountError\)/);
++  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
+
+   const lossQuerySource = readProjectFile(
+     "src",
+
+codex
+story와 sprint-status 동기화까지 완료했습니다. 마지막으로 diff와 상태를 확인해서 의도한 변경만 남았는지 검산하겠습니다.
+exec
+/bin/bash -lc 'git status --porcelain' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M .agents/skills/bmad-story-automator/data/agent-config-presets.json
+ M .gitignore
+ D "_bmad-output/implementation-artifacts/2-7-\354\236\205\353\240\245\354\236\220\352\260\200-\352\262\200\355\206\240-\355\231\224\353\251\264\354\227\220\354\204\234-\352\263\204\354\202\260\352\26
+0\222\352\263\274-\354\235\264\354\203\201-\355\233\204\353\263\264\353\245\274-\355\231\225\354\235\270\355\225\234\353\213\244.md"
+ M _bmad-output/implementation-artifacts/sprint-status.yaml
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M _bmad-output/planning-artifacts/architecture.md
+ M _bmad-output/planning-artifacts/epics.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/.decision-log.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md
+ M src/features/losses/actions.ts
+ M src/features/losses/components/loss-step-client.tsx
+ M src/features/losses/hq-edit-actions.ts
+ M src/features/losses/queries.ts
+ M src/features/losses/schemas.ts
+ M src/features/losses/types.ts
+ M tests/e2e/store-ledger-inventory-adjustment.spec.ts
+ M tests/e2e/store-ledger-losses.spec.ts
+ M tests/unit/ledger-losses.test.mjs
+ M tests/unit/sensitive-response-shaping.test.mjs
+?? "_bmad-output/implementation-artifacts/2-7-\354\206\220\354\213\244-\355\217\220\352\270\260-\353\226\250\354\235\264-\354\236\205\353\240\245.md"
+?? _bmad-output/planning-artifacts/implementation-readiness-report-2026-06-11.md
+?? _bmad-output/story-automator/
+
+exec
+/bin/bash -lc 'rg -n "''^Status:|Senior Developer Review|2-7-손실-폐기-떨이-입력:" '"'_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md' _bmad-output/implementation-artifacts/sprint-sta
+tus.yaml" in /home/noah/code/erp_fish
+exec
+/bin/bash -lc "git diff -- src/features/losses/schemas.ts src/features/losses/actions.ts src/features/losses/hq-edit-actions.ts tests/unit/ledger-losses.test.mjs tests/e2e/store-ledger-losses.spec.ts
+'_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md' _bmad-output/implementation-artifacts/sprint-status.yaml" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:59:  2-7-손실-폐기-떨이-입력: done
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:12:Status: done
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:230:### Senior Developer Review (AI)
+
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 8a9f262..627301e 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:14:54+09:00
++# last_updated: 2026-06-12T04:53:26+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:14:54+09:00"
++last_updated: "2026-06-12T04:53:26+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@ development_status:
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: backlog
++  2-7-손실-폐기-떨이-입력: done
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/actions.ts b/src/features/losses/actions.ts
+index 82dd6c9..ac424fe 100644
+--- a/src/features/losses/actions.ts
++++ b/src/features/losses/actions.ts
+@@ -112,7 +112,7 @@ function normalizeLossItem({
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -131,7 +131,7 @@ function normalizeLossItem({
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -218,18 +218,6 @@ export async function saveLedgerLosses(
+         const loss = parsed.data.losses[index]!;
+         const existing = existingById.get(loss.id);
+
+-        if (loss.amount === null && !existing) {
+-          return actionError<StoreManagerLossStepData>(
+-            "VALIDATION_ERROR",
+-            "입력값을 확인해 주세요.",
+-            {
+-              [`losses.${index}.amount`]: [
+-                "손실 금액은 0원 이상의 정수여야 합니다.",
+-              ],
+-            },
+-          );
+-        }
+-
+         const normalized = normalizeLossItem({
+           loss,
+           existing,
+diff --git a/src/features/losses/hq-edit-actions.ts b/src/features/losses/hq-edit-actions.ts
+index 60faa74..978d460 100644
+--- a/src/features/losses/hq-edit-actions.ts
++++ b/src/features/losses/hq-edit-actions.ts
+@@ -80,40 +80,6 @@ function parseRequiredInteger(
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -134,7 +100,7 @@ const hqLedgerLossItemSchema = z.object({
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(
++      parseRequiredInteger(
+         value,
+         context,
+         "손실 금액은 0원 이상의 정수여야 합니다.",
+@@ -168,22 +134,13 @@ const hqLedgerLossesSchema = z
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+         return;
+       }
+
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: "손실 금액은 0원 이상의 정수여야 합니다.",
+-          path: ["losses", index, "amount"],
+-        });
+-        return;
+-      }
+-
+       if (loss.quantity === 0 && loss.amount === 0) {
+         context.addIssue({
+           code: z.ZodIssueCode.custom,
+@@ -317,7 +274,7 @@ function normalizeLossItem({
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -336,7 +293,7 @@ function normalizeLossItem({
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -420,18 +377,6 @@ export async function saveHqLedgerLosses(
+           const loss = parsed.data.losses[index]!;
+           const existing = existingById.get(loss.id);
+
+-          if (loss.amount === null && !existing) {
+-            return actionError<LossStepData>(
+-              "VALIDATION_ERROR",
+-              "입력값을 확인해 주세요.",
+-              {
+-                [`losses.${index}.amount`]: [
+-                  "손실 금액은 0원 이상의 정수여야 합니다.",
+-                ],
+-              },
+-            );
+-          }
+-
+           const normalized = normalizeLossItem({
+             loss,
+             existing,
+diff --git a/src/features/losses/schemas.ts b/src/features/losses/schemas.ts
+index 6193d0f..85a0c07 100644
+--- a/src/features/losses/schemas.ts
++++ b/src/features/losses/schemas.ts
+@@ -43,43 +43,6 @@ function parseRequiredInteger(
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({
+-    code: z.ZodIssueCode.custom,
+-    message: errorMessage,
+-  });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -125,7 +88,7 @@ const ledgerLossItemSchema = z.object({
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(value, context, amountError),
++      parseRequiredInteger(value, context, amountError),
+     ),
+   reason: z.unknown().transform((value, context) => {
+     if (typeof value === "string") {
+@@ -157,22 +120,13 @@ export const ledgerLossesSchema = z
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+         return;
+       }
+
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: amountError,
+-          path: ["losses", index, "amount"],
+-        });
+-        return;
+-      }
+-
+       if (loss.quantity === 0 && loss.amount === 0) {
+         context.addIssue({
+           code: z.ZodIssueCode.custom,
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index 6e537ad..0208edb 100644
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -4,10 +4,10 @@ import { PrismaClient } from "../../generated/prisma/index.js";
+
+ const prisma = new PrismaClient();
+ const STORY_STORE_ID = "store-gangnam";
+-const STORY_MARKER = "story-2-6-test";
++const STORY_MARKER = "story-2-7-test";
+
+ test.afterAll(async () => {
+-  await cleanupStoryTwoSixData();
++  await cleanupStoryTwoSevenData();
+   await prisma.$disconnect();
+ });
+
+@@ -156,7 +156,7 @@ async function seedLossType(name: string, isActive = true) {
+   });
+ }
+
+-async function cleanupStoryTwoSixData() {
++async function cleanupStoryTwoSevenData() {
+   const currentLedgers = await prisma.dailyLedger.findMany({
+     where: {
+       storeId: STORY_STORE_ID,
+@@ -175,8 +175,8 @@ async function cleanupStoryTwoSixData() {
+   const products = await prisma.product.findMany({
+     where: {
+       OR: [
+-        { name: { startsWith: "스토리2-6" } },
+-        { name: { startsWith: "변경된 스토리2-6" } },
++        { name: { startsWith: "스토리2-7" } },
++        { name: { startsWith: "변경된 스토리2-7" } },
+       ],
+     },
+     select: { id: true },
+@@ -186,8 +186,8 @@ async function cleanupStoryTwoSixData() {
+     where: {
+       group: "LOSS_TYPE",
+       OR: [
+-        { name: { startsWith: "스토리2-6" } },
+-        { name: { startsWith: "변경된 스토리2-6" } },
++        { name: { startsWith: "스토리2-7" } },
++        { name: { startsWith: "변경된 스토리2-7" } },
+       ],
+     },
+     select: { id: true },
+@@ -241,7 +241,7 @@ async function cleanupStoryTwoSixData() {
+ }
+
+ test.beforeEach(async () => {
+-  await cleanupStoryTwoSixData();
++  await cleanupStoryTwoSevenData();
+ });
+
+ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를 본다", async ({
+@@ -249,16 +249,16 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
+ }) => {
+   await login(page);
+   const fixtureDate = new Date();
+-  const first = await seedProduct("스토리2-6 폐기 광어", "냉동", 12000);
+-  const second = await seedProduct("스토리2-6 떨이 우럭", "생물", 8000);
+-  const inactive = await seedProduct("스토리2-6 비활성 농어");
++  const first = await seedProduct("스토리2-7 폐기 광어", "냉동", 12000);
++  const second = await seedProduct("스토리2-7 떨이 우럭", "생물", 8000);
++  const inactive = await seedProduct("스토리2-7 비활성 농어");
+   await prisma.product.update({
+     where: { id: inactive.id },
+     data: { isActive: false },
+   });
+-  const disposal = await seedLossType("스토리2-6 폐기");
+-  const discount = await seedLossType("스토리2-6 떨이");
+-  const inactiveType = await seedLossType("스토리2-6 비활성", false);
++  const disposal = await seedLossType("스토리2-7 폐기");
++  const discount = await seedLossType("스토리2-7 떨이");
++  const inactiveType = await seedLossType("스토리2-7 비활성", false);
+   const ledger = await seedTodayLedger(fixtureDate);
+   await seedOpeningSnapshot(first, 4, fixtureDate);
+   await seedOpeningSnapshot(second, 3, fixtureDate);
+@@ -322,22 +322,13 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+-  const html = await page.content();
+-
+-  for (const sensitiveNeedle of [
+-    "defaultUnitPrice",
+-    "unitPrice",
+-    "totalAmount",
+-    "exceededAmount",
+-    "5000",
+-    "3000",
+-  ]) {
+-    expect(html).not.toContain(sensitiveNeedle);
+-  }
++  await expect(page.locator("main")).not.toContainText(
++    /defaultUnitPrice|unitPrice|totalAmount|exceededAmount|FIFO|lot|margin|profit/,
++  );
+
+   const renamedProductName = `변경된 ${first.name}`;
+   const renamedLossTypeName = `변경된 ${disposal.name}`;
+@@ -384,8 +375,8 @@ test("사유가 비어 있으면 저장을 막고 390px 모바일 입력 상태
+   await page.setViewportSize({ width: 390, height: 844 });
+   await login(page);
+   const fixtureDate = new Date();
+-  const product = await seedProduct("스토리2-6 모바일 고등어", "냉동", 7000);
+-  const lossType = await seedLossType("스토리2-6 모바일 폐기");
++  const product = await seedProduct("스토리2-7 모바일 고등어", "냉동", 7000);
++  const lossType = await seedLossType("스토리2-7 모바일 폐기");
+   const ledger = await seedTodayLedger(fixtureDate);
+   await seedOpeningSnapshot(product, 2, fixtureDate);
+   await seedInventoryItem(ledger.id, product, 2);
+@@ -433,8 +424,8 @@ test("사유가 비어 있으면 저장을 막고 390px 모바일 입력 상태
+ test("손실 수량이 재고 흐름보다 크면 저장을 막는다", async ({ page }) => {
+   await login(page);
+   const fixtureDate = new Date();
+-  const product = await seedProduct("스토리2-6 과다 손실 방어", "냉동", 9000);
+-  const lossType = await seedLossType("스토리2-6 과다 폐기");
++  const product = await seedProduct("스토리2-7 과다 손실 방어", "냉동", 9000);
++  const lossType = await seedLossType("스토리2-7 과다 폐기");
+   const ledger = await seedTodayLedger(fixtureDate);
+
+   await seedOpeningSnapshot(product, 2, fixtureDate);
+@@ -481,8 +472,8 @@ test("손실 수량이 재고 흐름보다 크면 저장을 막는다", async ({
+ test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다", async ({ page }) => {
+   await login(page);
+   const fixtureDate = new Date();
+-  const product = await seedProduct("스토리2-6 재고 반영 연어", "냉동", 10000);
+-  const lossType = await seedLossType("스토리2-6 재고 폐기");
++  const product = await seedProduct("스토리2-7 재고 반영 연어", "냉동", 10000);
++  const lossType = await seedLossType("스토리2-7 재고 폐기");
+   const ledger = await seedTodayLedger(fixtureDate);
+
+   await seedOpeningSnapshot(product, 7, fixtureDate);
+@@ -509,17 +500,9 @@ test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다",
+   await expect(row).not.toContainText("20,000원");
+   await expect(row.getByText("조정 필요").first()).toBeVisible();
+   await expect(row.getByText("기준 5")).toBeVisible();
+-  const html = await page.content();
+-
+-  for (const sensitiveNeedle of [
+-    "lossAmount",
+-    "inventoryAmount",
+-    "unitPrice",
+-    "purchaseAmount",
+-    "20000",
+-  ]) {
+-    expect(html).not.toContain(sensitiveNeedle);
+-  }
++  await expect(row).not.toContainText(
++    /lossAmount|inventoryAmount|unitPrice|purchaseAmount|20000/,
++  );
+
+   const savedLoss = await prisma.ledgerLossItem.findFirst({
+     where: {
+@@ -533,3 +516,186 @@ test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다",
+   expect(savedLoss?.amount).toBe(20000);
+   expect(savedLoss?.reason).toBe("보관 중 폐기");
+ });
++
++test("손실 라인을 수정하고 삭제하면 version과 감사 로그에 전후 값이 남는다", async ({
++  page,
++}) => {
++  await login(page);
++  const fixtureDate = new Date();
++  const first = await seedProduct("스토리2-7 수정 폐기 방어", "냉동", 10000);
++  const second = await seedProduct("스토리2-7 삭제 떨이 방어", "생물", 6000);
++  const disposal = await seedLossType("스토리2-7 수정 폐기");
++  const discount = await seedLossType("스토리2-7 삭제 떨이");
++  const ledger = await seedTodayLedger(fixtureDate);
++  await seedOpeningSnapshot(first, 8, fixtureDate);
++  await seedOpeningSnapshot(second, 5, fixtureDate);
++  await seedInventoryItem(ledger.id, first, 8);
++  await seedInventoryItem(ledger.id, second, 5);
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").nth(0).selectOption(first.id);
++  await page.getByLabel("처리 유형").nth(0).selectOption(disposal.id);
++  await page.getByLabel("수량").nth(0).fill("2");
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++  await page.getByLabel("사유/특이사항").nth(0).fill("초기 폐기");
++
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").nth(1).selectOption(second.id);
++  await page.getByLabel("처리 유형").nth(1).selectOption(discount.id);
++  await page.getByLabel("수량").nth(1).fill("1");
++  await page.getByLabel("손실액(원)").nth(1).fill("1000");
++  await page.getByLabel("사유/특이사항").nth(1).fill("초기 떨이");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 2건을 저장했습니다." }),
++  ).toBeVisible();
++
++  const initialVersion = (
++    await prisma.dailyLedger.findUniqueOrThrow({
++      where: { id: ledger.id },
++      select: { version: true },
++    })
++  ).version;
++  const initiallySavedLosses = await prisma.ledgerLossItem.findMany({
++    where: { dailyLedgerId: ledger.id },
++    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
++  });
++  expect(initiallySavedLosses).toHaveLength(2);
++
++  await page.getByLabel("손실액(원)").nth(0).fill("");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page.getByText("손실 금액은 0원 이상의 정수여야 합니다."),
++  ).toBeVisible();
++  await expect(page.getByLabel("손실액(원)").nth(0)).toBeFocused();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toHaveCount(0);
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++
++  await page.getByLabel("수량").nth(0).fill("3");
++  await page.getByLabel("손실액(원)").nth(0).fill("7000");
++  await page.getByLabel("사유/특이사항").nth(0).fill("수정된 폐기 사유");
++  await page.getByRole("button", { name: "삭제" }).nth(1).click();
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  const afterVersion = (
++    await prisma.dailyLedger.findUniqueOrThrow({
++      where: { id: ledger.id },
++      select: { version: true },
++    })
++  ).version;
++  expect(afterVersion).toBeGreaterThan(initialVersion);
++
++  const finalLosses = await prisma.ledgerLossItem.findMany({
++    where: { dailyLedgerId: ledger.id },
++    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
++  });
++  expect(finalLosses).toHaveLength(1);
++  expect(finalLosses[0]).toMatchObject({
++    id: initiallySavedLosses[0]!.id,
++    productId: first.id,
++    ledgerInputCodeId: disposal.id,
++    quantity: 3,
++    amount: 7000,
++    reason: "수정된 폐기 사유",
++  });
++
++  const auditLog = await prisma.auditLog.findFirst({
++    where: {
++      action: "ledger.losses.saved",
++      targetType: "DailyLedger",
++      targetId: ledger.id,
++    },
++    orderBy: { createdAt: "desc" },
++  });
++
++  expect(auditLog?.actorId).toBeTruthy();
++  const beforeSnapshot = auditLog?.before as {
++    lossItems?: Array<{
++      id: string;
++      productId: string;
++      quantity: number;
++      amount: number;
++      reason: string;
++    }>;
++  } | null;
++  const afterSnapshot = auditLog?.after as {
++    lossItems?: Array<{
++      id: string;
++      productId: string;
++      quantity: number;
++      amount: number;
++      reason: string;
++    }>;
++  } | null;
++
++  expect(beforeSnapshot?.lossItems).toEqual(
++    expect.arrayContaining([
++      expect.objectContaining({
++        id: initiallySavedLosses[0]!.id,
++        productId: first.id,
++        quantity: 2,
++        amount: 5000,
++        reason: "초기 폐기",
++      }),
++      expect.objectContaining({
++        id: initiallySavedLosses[1]!.id,
++        productId: second.id,
++        quantity: 1,
++        amount: 1000,
++        reason: "초기 떨이",
++      }),
++    ]),
++  );
++  expect(afterSnapshot?.lossItems).toEqual([
++    expect.objectContaining({
++      id: initiallySavedLosses[0]!.id,
++      productId: first.id,
++      quantity: 3,
++      amount: 7000,
++      reason: "수정된 폐기 사유",
++    }),
++  ]);
++});
++
++test("본사 마감 장부는 원본 손실 입력 버튼을 비활성화한다", async ({
++  page,
++}) => {
++  const fixtureDate = new Date();
++  const product = await seedProduct("스토리2-7 마감 폐기 방어", "냉동", 9000);
++  const lossType = await seedLossType("스토리2-7 마감 폐기");
++  const ledger = await seedTodayLedger(fixtureDate);
++  await seedOpeningSnapshot(product, 3, fixtureDate);
++  await seedInventoryItem(ledger.id, product, 3);
++  await prisma.dailyLedger.update({
++    where: { id: ledger.id },
++    data: { status: "HEADQUARTERS_CLOSED" },
++  });
++
++  await login(page);
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++
++  await expect(page.getByRole("button", { name: "항목 추가" })).toBeDisabled();
++  await expect(page.getByRole("button", { name: "저장" })).toBeDisabled();
++  await expect(page.getByText("본사마감")).toBeVisible();
++
++  const savedCount = await prisma.ledgerLossItem.count({
++    where: {
++      dailyLedgerId: ledger.id,
++      productId: product.id,
++      ledgerInputCodeId: lossType.id,
++    },
++  });
++  expect(savedCount).toBe(0);
++});
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f14..e1d0cbc 100644
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -115,6 +115,14 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
+     false,
+   );
+
++  assert.equal(
++    ledgerLossesSchema.safeParse({
++      ...payload,
++      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
++    }).success,
++    false,
++  );
++
+   const invalidReason = ledgerLossesSchema.safeParse({
+     ...payload,
+     losses: [{ ...payload.losses[0], reason: "" }],
+@@ -298,7 +306,7 @@ test("ledger loss query action and UI contracts are wired", () => {
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -306,6 +314,11 @@ test("ledger loss review fixes keep thresholds, stale guards, and loss-only inve
+     "schemas.ts",
+   );
+   assert.match(schemaSource, /versionSchema/);
++  assert.match(
++    schemaSource,
++    /parseRequiredInteger\(value, context, amountError\)/,
++  );
++  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
+
+   const lossQuerySource = readProjectFile(
+     "src",
+@@ -315,6 +328,14 @@ test("ledger loss review fixes keep thresholds, stale guards, and loss-only inve
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+
+exec
+/bin/bash -lc 'git diff --stat' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ .../data/agent-config-presets.json                 |   14 +-
+ .gitignore                                         |    2 +
+ ...231\225\354\235\270\355\225\234\353\213\244.md" |  296 --
+ .../implementation-artifacts/sprint-status.yaml    |    6 +-
+ .../implementation-artifacts/tests/test-summary.md |   38 +-
+ _bmad-output/planning-artifacts/architecture.md    |   98 +-
+ _bmad-output/planning-artifacts/epics.md           | 3052 +++++++++-----------
+ .../ux-erp_fish-2026-05-28/.decision-log.md        |   46 +
+ .../ux-designs/ux-erp_fish-2026-05-28/DESIGN.md    |   81 +-
+ .../ux-erp_fish-2026-05-28/EXPERIENCE.md           |  309 +-
+ src/features/losses/actions.ts                     |   16 +-
+ .../losses/components/loss-step-client.tsx         |    2 +-
+ src/features/losses/hq-edit-actions.ts             |   65 +-
+ src/features/losses/queries.ts                     |    3 +-
+ src/features/losses/schemas.ts                     |   52 +-
+ src/features/losses/types.ts                       |    5 +-
+ .../e2e/store-ledger-inventory-adjustment.spec.ts  |   24 +-
+ tests/e2e/store-ledger-losses.spec.ts              |  256 +-
+ tests/unit/ledger-losses.test.mjs                  |   23 +-
+ tests/unit/sensitive-response-shaping.test.mjs     |    5 +-
+ 20 files changed, 2124 insertions(+), 2269 deletions(-)
+
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index 34fff62abcda158a9cd5d80bb52d35ce83b9560b..02c54a2b52b6ef1d99d18820f6a5d2b922a25054
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -227,6 +227,15 @@
+
+ ## Dev Agent Record
+
++### Senior Developer Review (AI)
++
++- Reviewer: GPT-5 Codex on 2026-06-12
++- Outcome: Approved after auto-fix.
++- Git vs Story File List: actual source/test changes matched the implementation surface, but review auto-fix added `src/features/losses/actions.ts`, `src/features/losses/hq-edit-actions.ts`, and `src
+/features/losses/schemas.ts`; File List updated.
++- HIGH fixed: Existing loss lines could be saved with a blank `amount`; server and HQ schemas parsed blank amount as `null`, and actions preserved the previous amount instead of rejecting the request
+. This violated AC 2's server-side required amount validation now that AC 1/6 intentionally re-display user-entered amount. Fixed by making `amount` required for all loss rows and removing previous-am
+ount fallback.
++- MEDIUM fixed: Regression coverage did not prove that clearing an existing loss amount is rejected. Added unit schema coverage and an E2E assertion in the edit/delete audit scenario.
++- Residual risk: Playwright E2E could not be rerun in this sandbox because Next dev server port binding fails with `listen EPERM: operation not permitted 127.0.0.1:3100`. Non-E2E verification passed.
++
+ ### Agent Model Used
+
+ GPT-5 Codex
+@@ -238,6 +247,9 @@
+ - 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
+ - 2026-06-12: Orchestrator final verification on `PORT=3100` passed focused loss/inventory-adjustment E2E 9/9; `prisma validate`, `typecheck`, `lint`, full unit 197/197, and `build` passed.
+ - 2026-06-12: Automate added loss edit/delete audit/version and headquarters-closed E2E guardrails; orchestrator rerun on `PORT=3100` passed focused loss/inventory-adjustment E2E 11/11.
++- 2026-06-12: Senior review auto-fix made loss `amount` required for existing rows as well as new rows in store-manager and HQ save paths; added regression coverage for clearing an existing amount.
++- 2026-06-12: Senior review Playwright rerun was blocked by sandbox port binding: `next dev --hostname 127.0.0.1 --port 3100` failed with `listen EPERM: operation not permitted 127.0.0.1:3100`.
++- 2026-06-12: Senior review verification passed `prisma validate`, focused loss/sensitive/inventory unit tests, `typecheck`, focused eslint, focused prettier check, full `lint`, full `test:unit` 29/2
+9, and `build`.
+
+ ### Completion Notes List
+
+@@ -248,13 +260,18 @@
+ - Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+ - Child-session E2E was blocked by local port binding on 3107, but orchestrator rerun on 3100 passed focused E2E and full non-E2E verification.
+ - Added automated guardrails for loss line edit/delete audit snapshots, version refresh, and headquarters-closed original input blocking.
++- Senior review auto-fixed the remaining AC 2 gap so blank `amount` on existing loss rows is rejected server-side instead of silently preserving the old amount.
++- Senior review could not rerun Playwright in this sandbox due to `listen EPERM`; static, unit, typecheck, lint, and production build verification passed.
+
+ ### File List
+
+ - `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
+ - `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/actions.ts`
+ - `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/hq-edit-actions.ts`
+ - `src/features/losses/queries.ts`
++- `src/features/losses/schemas.ts`
+ - `src/features/losses/types.ts`
+ - `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+ - `tests/e2e/store-ledger-losses.spec.ts`
+@@ -266,3 +283,4 @@
+ - 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+ - 2026-06-12: Tightened sensitive-field E2E checks to visible UI scopes and recorded final orchestrator verification pass.
+ - 2026-06-12: Added automate guardrail E2E for loss edit/delete audit/version and closed-ledger input blocking; focused E2E 11/11 passed on PORT=3100.
++- 2026-06-12: Senior review auto-fixed required `amount` validation for existing loss rows, added regression coverage, and moved story to done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec..627301ed5a5dbb4476142f450ba05461c3bd5148
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:28:51+09:00
++# last_updated: 2026-06-12T04:53:26+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:28:51+09:00"
++last_updated: "2026-06-12T04:53:26+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: review
++  2-7-손실-폐기-떨이-입력: done
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/actions.ts b/src/features/losses/actions.ts
+index 82dd6c9a805ac4a9ec4b3cc61f35fb1bbb7b1d41..ac424fef7ed743810b8e0de7b2644542bea95d54
+--- a/src/features/losses/actions.ts
++++ b/src/features/losses/actions.ts
+@@ -112,7 +112,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -131,7 +131,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -217,18 +217,6 @@
+       for (let index = 0; index < parsed.data.losses.length; index += 1) {
+         const loss = parsed.data.losses[index]!;
+         const existing = existingById.get(loss.id);
+-
+-        if (loss.amount === null && !existing) {
+-          return actionError<StoreManagerLossStepData>(
+-            "VALIDATION_ERROR",
+-            "입력값을 확인해 주세요.",
+-            {
+-              [`losses.${index}.amount`]: [
+-                "손실 금액은 0원 이상의 정수여야 합니다.",
+-              ],
+-            },
+-          );
+-        }
+
+         const normalized = normalizeLossItem({
+           loss,
+diff --git a/src/features/losses/hq-edit-actions.ts b/src/features/losses/hq-edit-actions.ts
+index 60faa740a54cabbbc1e679b11e104f7751dba940..978d46008d3db8414729fd45416259e8b838b4ca
+--- a/src/features/losses/hq-edit-actions.ts
++++ b/src/features/losses/hq-edit-actions.ts
+@@ -80,40 +80,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -134,7 +100,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(
++      parseRequiredInteger(
+         value,
+         context,
+         "손실 금액은 0원 이상의 정수여야 합니다.",
+@@ -168,19 +134,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: "손실 금액은 0원 이상의 정수여야 합니다.",
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+@@ -317,7 +274,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -336,7 +293,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -419,18 +376,6 @@
+         for (let index = 0; index < parsed.data.losses.length; index += 1) {
+           const loss = parsed.data.losses[index]!;
+           const existing = existingById.get(loss.id);
+-
+-          if (loss.amount === null && !existing) {
+-            return actionError<LossStepData>(
+-              "VALIDATION_ERROR",
+-              "입력값을 확인해 주세요.",
+-              {
+-                [`losses.${index}.amount`]: [
+-                  "손실 금액은 0원 이상의 정수여야 합니다.",
+-                ],
+-              },
+-            );
+-          }
+
+           const normalized = normalizeLossItem({
+             loss,
+diff --git a/src/features/losses/schemas.ts b/src/features/losses/schemas.ts
+index 6193d0fbf153f217920bcc9fd183b561219fd991..85a0c07b776d0f29cdd292df4351e13062a139dc
+--- a/src/features/losses/schemas.ts
++++ b/src/features/losses/schemas.ts
+@@ -43,43 +43,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({
+-    code: z.ZodIssueCode.custom,
+-    message: errorMessage,
+-  });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -125,7 +88,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(value, context, amountError),
++      parseRequiredInteger(value, context, amountError),
+     ),
+   reason: z.unknown().transform((value, context) => {
+     if (typeof value === "string") {
+@@ -157,19 +120,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: amountError,
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index bdb7e332f09578402c5d19973dda2cae741964ec..acea4f17d5fa47a7cddef9495c035bb99f17795f
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -565,6 +565,17 @@
+   });
+   expect(initiallySavedLosses).toHaveLength(2);
+
++  await page.getByLabel("손실액(원)").nth(0).fill("");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(page.getByText("손실 금액은 0원 이상의 정수여야 합니다.")).toBeVisible();
++  await expect(page.getByLabel("손실액(원)").nth(0)).toBeFocused();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toHaveCount(0);
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++
+   await page.getByLabel("수량").nth(0).fill("3");
+   await page.getByLabel("손실액(원)").nth(0).fill("7000");
+   await page.getByLabel("사유/특이사항").nth(0).fill("수정된 폐기 사유");
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b7795e4ebfd11ed83af8265410543bf9b701c29a..4482fb1ed42480e9ab08d5220dd0bff5e5f4adf5
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -115,6 +115,14 @@
+     false,
+   );
+
++  assert.equal(
++    ledgerLossesSchema.safeParse({
++      ...payload,
++      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
++    }).success,
++    false,
++  );
++
+   const invalidReason = ledgerLossesSchema.safeParse({
+     ...payload,
+     losses: [{ ...payload.losses[0], reason: "" }],
+@@ -306,6 +314,8 @@
+     "schemas.ts",
+   );
+   assert.match(schemaSource, /versionSchema/);
++  assert.match(schemaSource, /parseRequiredInteger\(value, context, amountError\)/);
++  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
+
+   const lossQuerySource = readProjectFile(
+     "src",
+
+codex
+리뷰 워크플로우 실행 완료했습니다. Story 2.7은 `done`으로 업데이트했고, `_bmad-output/implementation-artifacts/sprint-status.yaml`도 `done`으로 동기화했습니다.
+
+자동 수정한 핵심 이슈:
+- 기존 손실 라인의 `손실액`을 비우고 저장하면 서버가 오류를 내지 않고 이전 금액을 조용히 보존하던 AC 2 위반을 수정했습니다.
+- [schemas.ts](/home/noah/code/erp_fish/src/features/losses/schemas.ts), [actions.ts](/home/noah/code/erp_fish/src/features/losses/actions.ts), [hq-edit-actions.ts](/home/noah/code/erp_fish/src/featur
+es/losses/hq-edit-actions.ts)에서 `amount`를 모든 손실 row에 대해 필수 검증하도록 정리했습니다.
+- [ledger-losses.test.mjs](/home/noah/code/erp_fish/tests/unit/ledger-losses.test.mjs), [store-ledger-losses.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-losses.spec.ts)에 회귀 검증을 추가
+했습니다.
+
+검증 결과:
+- 통과: `prisma validate`
+- 통과: focused unit 3개
+- 통과: `typecheck`
+- 통과: focused eslint/prettier
+- 통과: full `lint`
+- 통과: full `test:unit` 29/29
+- 통과: `build`
+- 미실행: Playwright E2E는 샌드박스 포트 바인딩 제한으로 `next dev --hostname 127.0.0.1 --port 3100`가 `listen EPERM`으로 실패해 재실행하지 못했습니다. 이 blocker는 story의 Senior Developer Review 기
+록에 남겼습니다.
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index 34fff62abcda158a9cd5d80bb52d35ce83b9560b..02c54a2b52b6ef1d99d18820f6a5d2b922a25054
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -227,6 +227,15 @@
+
+ ## Dev Agent Record
+
++### Senior Developer Review (AI)
++
++- Reviewer: GPT-5 Codex on 2026-06-12
++- Outcome: Approved after auto-fix.
++- Git vs Story File List: actual source/test changes matched the implementation surface, but review auto-fix added `src/features/losses/actions.ts`, `src/features/losses/hq-edit-actions.ts`, and `src
+/features/losses/schemas.ts`; File List updated.
++- HIGH fixed: Existing loss lines could be saved with a blank `amount`; server and HQ schemas parsed blank amount as `null`, and actions preserved the previous amount instead of rejecting the request
+. This violated AC 2's server-side required amount validation now that AC 1/6 intentionally re-display user-entered amount. Fixed by making `amount` required for all loss rows and removing previous-am
+ount fallback.
++- MEDIUM fixed: Regression coverage did not prove that clearing an existing loss amount is rejected. Added unit schema coverage and an E2E assertion in the edit/delete audit scenario.
++- Residual risk: Playwright E2E could not be rerun in this sandbox because Next dev server port binding fails with `listen EPERM: operation not permitted 127.0.0.1:3100`. Non-E2E verification passed.
++
+ ### Agent Model Used
+
+ GPT-5 Codex
+@@ -238,6 +247,9 @@
+ - 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
+ - 2026-06-12: Orchestrator final verification on `PORT=3100` passed focused loss/inventory-adjustment E2E 9/9; `prisma validate`, `typecheck`, `lint`, full unit 197/197, and `build` passed.
+ - 2026-06-12: Automate added loss edit/delete audit/version and headquarters-closed E2E guardrails; orchestrator rerun on `PORT=3100` passed focused loss/inventory-adjustment E2E 11/11.
++- 2026-06-12: Senior review auto-fix made loss `amount` required for existing rows as well as new rows in store-manager and HQ save paths; added regression coverage for clearing an existing amount.
++- 2026-06-12: Senior review Playwright rerun was blocked by sandbox port binding: `next dev --hostname 127.0.0.1 --port 3100` failed with `listen EPERM: operation not permitted 127.0.0.1:3100`.
++- 2026-06-12: Senior review verification passed `prisma validate`, focused loss/sensitive/inventory unit tests, `typecheck`, focused eslint, focused prettier check, full `lint`, full `test:unit` 29/2
+9, and `build`.
+
+ ### Completion Notes List
+
+@@ -248,13 +260,18 @@
+ - Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+ - Child-session E2E was blocked by local port binding on 3107, but orchestrator rerun on 3100 passed focused E2E and full non-E2E verification.
+ - Added automated guardrails for loss line edit/delete audit snapshots, version refresh, and headquarters-closed original input blocking.
++- Senior review auto-fixed the remaining AC 2 gap so blank `amount` on existing loss rows is rejected server-side instead of silently preserving the old amount.
++- Senior review could not rerun Playwright in this sandbox due to `listen EPERM`; static, unit, typecheck, lint, and production build verification passed.
+
+ ### File List
+
+ - `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
+ - `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/actions.ts`
+ - `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/hq-edit-actions.ts`
+ - `src/features/losses/queries.ts`
++- `src/features/losses/schemas.ts`
+ - `src/features/losses/types.ts`
+ - `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+ - `tests/e2e/store-ledger-losses.spec.ts`
+@@ -266,3 +283,4 @@
+ - 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+ - 2026-06-12: Tightened sensitive-field E2E checks to visible UI scopes and recorded final orchestrator verification pass.
+ - 2026-06-12: Added automate guardrail E2E for loss edit/delete audit/version and closed-ledger input blocking; focused E2E 11/11 passed on PORT=3100.
++- 2026-06-12: Senior review auto-fixed required `amount` validation for existing loss rows, added regression coverage, and moved story to done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec..627301ed5a5dbb4476142f450ba05461c3bd5148
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:28:51+09:00
++# last_updated: 2026-06-12T04:53:26+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:28:51+09:00"
++last_updated: "2026-06-12T04:53:26+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: review
++  2-7-손실-폐기-떨이-입력: done
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/actions.ts b/src/features/losses/actions.ts
+index 82dd6c9a805ac4a9ec4b3cc61f35fb1bbb7b1d41..ac424fef7ed743810b8e0de7b2644542bea95d54
+--- a/src/features/losses/actions.ts
++++ b/src/features/losses/actions.ts
+@@ -112,7 +112,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -131,7 +131,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -217,18 +217,6 @@
+       for (let index = 0; index < parsed.data.losses.length; index += 1) {
+         const loss = parsed.data.losses[index]!;
+         const existing = existingById.get(loss.id);
+-
+-        if (loss.amount === null && !existing) {
+-          return actionError<StoreManagerLossStepData>(
+-            "VALIDATION_ERROR",
+-            "입력값을 확인해 주세요.",
+-            {
+-              [`losses.${index}.amount`]: [
+-                "손실 금액은 0원 이상의 정수여야 합니다.",
+-              ],
+-            },
+-          );
+-        }
+
+         const normalized = normalizeLossItem({
+           loss,
+diff --git a/src/features/losses/hq-edit-actions.ts b/src/features/losses/hq-edit-actions.ts
+index 60faa740a54cabbbc1e679b11e104f7751dba940..978d46008d3db8414729fd45416259e8b838b4ca
+--- a/src/features/losses/hq-edit-actions.ts
++++ b/src/features/losses/hq-edit-actions.ts
+@@ -80,40 +80,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({ code: z.ZodIssueCode.custom, message: errorMessage });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -134,7 +100,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(
++      parseRequiredInteger(
+         value,
+         context,
+         "손실 금액은 0원 이상의 정수여야 합니다.",
+@@ -168,19 +134,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: "손실 금액은 0원 이상의 정수여야 합니다.",
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+@@ -317,7 +274,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount ?? existing.amount,
++      amount: loss.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -336,7 +293,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount ?? existing?.amount ?? 0,
++    amount: loss.amount,
+     reason: loss.reason,
+   };
+ }
+@@ -419,18 +376,6 @@
+         for (let index = 0; index < parsed.data.losses.length; index += 1) {
+           const loss = parsed.data.losses[index]!;
+           const existing = existingById.get(loss.id);
+-
+-          if (loss.amount === null && !existing) {
+-            return actionError<LossStepData>(
+-              "VALIDATION_ERROR",
+-              "입력값을 확인해 주세요.",
+-              {
+-                [`losses.${index}.amount`]: [
+-                  "손실 금액은 0원 이상의 정수여야 합니다.",
+-                ],
+-              },
+-            );
+-          }
+
+           const normalized = normalizeLossItem({
+             loss,
+diff --git a/src/features/losses/schemas.ts b/src/features/losses/schemas.ts
+index 6193d0fbf153f217920bcc9fd183b561219fd991..85a0c07b776d0f29cdd292df4351e13062a139dc
+--- a/src/features/losses/schemas.ts
++++ b/src/features/losses/schemas.ts
+@@ -43,43 +43,6 @@
+   return z.NEVER;
+ }
+
+-function parseOptionalInteger(
+-  value: unknown,
+-  context: z.RefinementCtx,
+-  errorMessage: string,
+-) {
+-  if (value === null || value === undefined) {
+-    return null;
+-  }
+-
+-  if (typeof value === "string" && value.trim() === "") {
+-    return null;
+-  }
+-
+-  if (typeof value === "number" && isValidInteger(value)) {
+-    return value;
+-  }
+-
+-  if (typeof value === "string") {
+-    const trimmed = value.trim();
+-
+-    if (/^\d+$/.test(trimmed)) {
+-      const parsed = Number(trimmed);
+-
+-      if (isValidInteger(parsed)) {
+-        return parsed;
+-      }
+-    }
+-  }
+-
+-  context.addIssue({
+-    code: z.ZodIssueCode.custom,
+-    message: errorMessage,
+-  });
+-
+-  return z.NEVER;
+-}
+-
+ const requiredIdSchema = (message: string) =>
+   z
+     .string()
+@@ -125,7 +88,7 @@
+   amount: z
+     .unknown()
+     .transform((value, context) =>
+-      parseOptionalInteger(value, context, amountError),
++      parseRequiredInteger(value, context, amountError),
+     ),
+   reason: z.unknown().transform((value, context) => {
+     if (typeof value === "string") {
+@@ -157,19 +120,10 @@
+     value.losses.forEach((loss, index) => {
+       if (
+         typeof loss.quantity !== "number" ||
+-        (loss.amount !== null && typeof loss.amount !== "number") ||
++        typeof loss.amount !== "number" ||
+         !isValidInteger(loss.quantity) ||
+-        (typeof loss.amount === "number" && !isValidInteger(loss.amount))
++        !isValidInteger(loss.amount)
+       ) {
+-        return;
+-      }
+-
+-      if (!loss.id && loss.amount === null) {
+-        context.addIssue({
+-          code: z.ZodIssueCode.custom,
+-          message: amountError,
+-          path: ["losses", index, "amount"],
+-        });
+         return;
+       }
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index bdb7e332f09578402c5d19973dda2cae741964ec..acea4f17d5fa47a7cddef9495c035bb99f17795f
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -565,6 +565,17 @@
+   });
+   expect(initiallySavedLosses).toHaveLength(2);
+
++  await page.getByLabel("손실액(원)").nth(0).fill("");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(page.getByText("손실 금액은 0원 이상의 정수여야 합니다.")).toBeVisible();
++  await expect(page.getByLabel("손실액(원)").nth(0)).toBeFocused();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toHaveCount(0);
++  await page.getByLabel("손실액(원)").nth(0).fill("5000");
++
+   await page.getByLabel("수량").nth(0).fill("3");
+   await page.getByLabel("손실액(원)").nth(0).fill("7000");
+   await page.getByLabel("사유/특이사항").nth(0).fill("수정된 폐기 사유");
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b7795e4ebfd11ed83af8265410543bf9b701c29a..4482fb1ed42480e9ab08d5220dd0bff5e5f4adf5
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -115,6 +115,14 @@
+     false,
+   );
+
++  assert.equal(
++    ledgerLossesSchema.safeParse({
++      ...payload,
++      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
++    }).success,
++    false,
++  );
++
+   const invalidReason = ledgerLossesSchema.safeParse({
+     ...payload,
+     losses: [{ ...payload.losses[0], reason: "" }],
+@@ -306,6 +314,8 @@
+     "schemas.ts",
+   );
+   assert.match(schemaSource, /versionSchema/);
++  assert.match(schemaSource, /parseRequiredInteger\(value, context, amountError\)/);
++  assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
+
+   const lossQuerySource = readProjectFile(
+     "src",
+
+tokens used
+159,598
+
+Pane is dead (status 0, Fri Jun 12 04:54:21 2026)

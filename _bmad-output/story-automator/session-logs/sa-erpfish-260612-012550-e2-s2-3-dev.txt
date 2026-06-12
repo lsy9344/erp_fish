@@ -1,0 +1,200 @@
+   return { food, utility };
+ }
+@@ -60,7 +78,7 @@
+   const codes = await prisma.ledgerInputCode.findMany({
+     where: {
+       name: {
+-        startsWith: "스토리2-2",
++        startsWith: "스토리2-",
+       },
+     },
+     select: { id: true },
+@@ -166,6 +184,162 @@
+   await expect(
+     page.locator("section").filter({ hasText: "비용 합계" }),
+   ).toContainText("8,000원");
++  await expect(
++    page.locator("section").filter({ hasText: "마지막 서버 저장 합계" }),
++  ).toContainText("8,000원");
++});
++
++test("비활성 비용 코드는 기존 장부 표시만 유지되고 신규 선택지에는 없다", async ({
++  page,
++}) => {
++  await login(page);
++
++  const activeCode = await seedExpenseCode(
++    `스토리2-3 활성 비용 ${randomUUID().slice(0, 6)}`,
++    10,
++  );
++  const inactiveCode = await seedExpenseCode(
++    `스토리2-3 비활성 과거 ${randomUUID().slice(0, 6)}`,
++    20,
++    { isActive: false },
++  );
++  const actorId = await getManagerUserId();
++  const closingDate = new Date("2026-06-03T00:00:00.000Z");
++  const ledger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate,
++      status: "IN_PROGRESS",
++      totalSalesAmount: 0,
++      cashAmount: 0,
++      cardAmount: 0,
++      otherPaymentAmount: 0,
++      workerCount: null,
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerExpense.create({
++    data: {
++      dailyLedgerId: ledger.id,
++      ledgerInputCodeId: inactiveCode.id,
++      amount: 1200,
++      memo: "과거 코드",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry?storeId=${STORY_STORE_ID}&date=2026-06-03&step=cost`,
++  );
++
++  const existingSelect = page.getByLabel("비용 항목").nth(0);
++  await expect(existingSelect).toHaveValue(inactiveCode.id);
++  const existingOptions = await existingSelect.locator("option").allTextContents();
++  expect(existingOptions).toContain("비용 항목 선택");
++  expect(existingOptions).toContain(inactiveCode.name);
++  expect(existingOptions).toContain(activeCode.name);
++
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  const newLineOptions = await page
++    .getByLabel("비용 항목")
++    .nth(1)
++    .locator("option")
++    .allTextContents();
++
++  expect(newLineOptions).toContain(activeCode.name);
++  expect(newLineOptions).not.toContain(inactiveCode.name);
++});
++
++test("비용 단계 미저장 변경 이동 dialog에서 저장 후 다음 단계로 이동한다", async ({
++  page,
++}) => {
++  await login(page);
++
++  const code = await seedExpenseCode(
++    `스토리2-3 미저장 ${randomUUID().slice(0, 6)}`,
++    30,
++  );
++
++  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=cost`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("비용 항목").selectOption(code.id);
++  await page.getByRole("textbox", { name: "금액" }).fill("9000");
++
++  await page.getByRole("link", { name: /3단계: 매입/ }).click();
++  await expect(
++    page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
++  ).toBeVisible();
++  await page.getByRole("button", { name: "계속 편집" }).click();
++  await expect(page).toHaveURL(/step=cost/);
++
++  await page.getByRole("link", { name: /3단계: 매입/ }).click();
++  await page
++    .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
++    .getByRole("button", { name: "저장" })
++    .click();
++  await expect(page).toHaveURL(/step=purchase/);
++
++  const ledger = await prisma.dailyLedger.findFirstOrThrow({
++    where: { storeId: STORY_STORE_ID },
++    orderBy: { updatedAt: "desc" },
++    include: { ledgerExpenses: true },
++  });
++  expect(ledger.ledgerExpenses).toHaveLength(1);
++  expect(ledger.ledgerExpenses[0]?.amount).toBe(9000);
++});
++
++test("비용 저장 실패 시 한국어 오류와 재시도 동작이 표시된다", async ({
++  page,
++}) => {
++  await login(page);
++
++  const code = await seedExpenseCode(
++    `스토리2-3 재시도 ${randomUUID().slice(0, 6)}`,
++    40,
++  );
++
++  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=cost`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("비용 항목").selectOption(code.id);
++  await page.getByRole("textbox", { name: "금액" }).fill("4400");
++
++  await page.route("**/*", async (route) => {
++    const request = route.request();
++    const nextAction = request.headers()["next-action"];
++
++    if (
++      request.method() === "POST" &&
++      (request.url().includes("/app/store-entry") ||
++        request.url().includes("/_next/action") ||
++        Boolean(nextAction))
++    ) {
++      await route.abort();
++      return;
++    }
++
++    await route.continue();
++  });
++
++  await page.getByRole("button", { name: "저장" }).click();
++
++  await expect(
++    page
++      .getByRole("alert")
++      .filter({ hasText: "저장에 실패했습니다. 다시 시도해 주세요." }),
++  ).toBeVisible();
++  const retryButton = page
++    .getByLabel("장부 저장 상태")
++    .getByRole("button", { name: "다시 시도" });
++  await expect(retryButton).toBeVisible();
++
++  await page.unroute("**/*");
++  await retryButton.click();
++  await expect(page.getByRole("status")).toContainText(
++    "비용 항목 1건을 저장했습니다.",
++  );
+ });
+
+ test("지점장은 근무인원과 특이사항을 저장하고 민감 회계 지표를 보지 않는다", async ({
+@@ -173,7 +347,7 @@
+ }) => {
+   await login(page);
+   const code = await seedExpenseCode(
+-    `스토리2-2 생산성 ${randomUUID().slice(0, 6)}`,
++    `스토리2-3 생산성 ${randomUUID().slice(0, 6)}`,
+     30,
+   );
+
+@@ -230,7 +404,7 @@
+   page,
+ }) => {
+   await login(page);
+-  await seedExpenseCode(`스토리2-2 검증 ${randomUUID().slice(0, 6)}`, 50);
++  await seedExpenseCode(`스토리2-3 검증 ${randomUUID().slice(0, 6)}`, 50);
+
+   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=cost`);
+   await page.getByRole("button", { name: "항목 추가" }).click();
+@@ -250,13 +424,15 @@
+   await login(page);
+
+   const code = await seedExpenseCode(
+-    `스토리2-2 휴대 390 ${randomUUID().slice(0, 6)}`,
++    `스토리2-3 휴대 390 ${randomUUID().slice(0, 6)}`,
+     40,
+   );

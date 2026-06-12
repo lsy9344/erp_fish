@@ -17,6 +17,13 @@ const STORE_IDS = {
 const STORY_STORE_IDS = Object.values(STORE_IDS);
 const STORY_PRODUCT_NAME = "스토리3-1 테스트 품목";
 const STORY_LOSS_CODE_NAME = "스토리3-1 손실";
+const dashboardDateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 test.beforeEach(async () => {
   await cleanupStoryThreeOneData();
@@ -79,6 +86,10 @@ function getTodayKstMidnight(inputDate = new Date()) {
     .split("-");
 
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
+function formatDashboardDateTime(value: Date) {
+  return dashboardDateTimeFormatter.format(value);
 }
 
 async function seedStoryThreeOneData() {
@@ -481,6 +492,10 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
       closingDate: getTodayKstMidnight(),
     },
   });
+  const reviewLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.review },
+    select: { updatedAt: true },
+  });
 
   expect(emptyLedgerCountBefore).toBe(0);
 
@@ -488,6 +503,12 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   await page.goto("/app/dashboard?date=today");
 
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "최신 반영" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "마지막 수정자" }),
+  ).toBeVisible();
   await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText("미입력");
   await expect(getDesktopRow(page, STORE_IDS.progress)).toContainText("입력중");
   await expect(getDesktopRow(page, STORE_IDS.review)).toContainText("검토대기");
@@ -498,6 +519,10 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   await expect(reviewRow).toContainText("손실 있음");
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩256,000");
+  await expect(reviewRow).toContainText(
+    formatDashboardDateTime(reviewLedger.updatedAt),
+  );
+  await expect(reviewRow).toContainText("본사 관리자");
   await expect(page.getByText("스토리3-1 비활성점")).toHaveCount(0);
 
   const emptyLedgerCountAfter = await prisma.dailyLedger.count({
@@ -508,6 +533,103 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   });
 
   expect(emptyLedgerCountAfter).toBe(0);
+});
+
+test("관제판 행 전체 클릭은 상세로 이동하지만 미입력 행은 장부를 생성하지 않는다", async ({
+  page,
+}) => {
+  const progressLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.progress },
+    select: { id: true },
+  });
+  const emptyLedgerCountBefore = await prisma.dailyLedger.count({
+    where: {
+      storeId: STORE_IDS.empty,
+      closingDate: getTodayKstMidnight(),
+    },
+  });
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  const emptyRow = getDesktopRow(page, STORE_IDS.empty);
+  await expect(emptyRow).not.toHaveAttribute("role", "link");
+  await expect(
+    emptyRow.getByRole("button", { name: "스토리3-1 미입력점 장부 입력 전" }),
+  ).toBeDisabled();
+  await emptyRow.click();
+  await expect(page).toHaveURL(/\/app\/dashboard\?date=today/);
+  await expect(
+    page.locator(`[data-testid="hq-dashboard-row-${STORE_IDS.empty}"] a`),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "스토리3-1 미입력점 상세 보기" }),
+  ).toHaveCount(0);
+
+  const emptyLedgerCountAfter = await prisma.dailyLedger.count({
+    where: {
+      storeId: STORE_IDS.empty,
+      closingDate: getTodayKstMidnight(),
+    },
+  });
+  expect(emptyLedgerCountAfter).toBe(emptyLedgerCountBefore);
+
+  await getDesktopRow(page, STORE_IDS.progress).click();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/app/ledgers/${progressLedger.id}\\?date=today&sort=priority&filter=all`,
+    ),
+  );
+  await expect(
+    page.getByRole("heading", { name: "스토리3-1 입력중점 장부 상세" }),
+  ).toBeVisible();
+});
+
+test("본사 관제판은 오늘/어제 전환과 필터 빈 상태를 구분한다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  await expect(getDesktopRow(page, STORE_IDS.review)).toContainText("검토대기");
+  await page.getByRole("link", { name: "어제" }).click();
+  await expect(page).toHaveURL(/\/app\/dashboard\?date=yesterday/);
+  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText("미입력");
+
+  await page.getByRole("link", { name: "확인 필요" }).click();
+  await expect(page).toHaveURL(/filter=needs-attention/);
+  await expect(page.getByTestId("hq-dashboard-empty-state")).toHaveCount(0);
+  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText("미입력");
+});
+
+test("조회 전용 본사는 관제판과 상세에서 mutation action을 볼 수 없다", async ({
+  page,
+}) => {
+  const closedLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.closed },
+    select: { id: true },
+  });
+
+  await login(page, "hq-viewer@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
+  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText("본사마감");
+  await expect(
+    page.getByRole("button", { name: /저장|마감|정정/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "상세 보기" }).first(),
+  ).toBeVisible();
+
+  await page.goto(`/app/ledgers/${closedLedger.id}`);
+  await expect(
+    page.getByRole("heading", { name: "스토리3-1 본사마감점 장부 상세" }),
+  ).toBeVisible();
+  await expect(page.getByText("조회 전용")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /저장|본사 마감|정정 기록 저장/ }),
+  ).toHaveCount(0);
 });
 
 test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불가로 숨기지 않는다", async ({

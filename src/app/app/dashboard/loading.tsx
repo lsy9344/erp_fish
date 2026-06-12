@@ -1,6 +1,7 @@
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { PageHeader } from "~/components/page-header";
 import { Skeleton } from "~/components/ui/skeleton";
+import { DashboardDelayedLoadingNotice } from "~/features/dashboard/components/dashboard-delayed-loading-notice";
 
 const summarySkeletons = ["활성", "검토", "마감", "미입력", "손실"];
 const desktopRows = ["desktop-1", "desktop-2", "desktop-3", "desktop-4"];
@@ -15,6 +16,7 @@ const desktopColumns = [
   "w-16",
   "w-28",
   "w-36",
+  "w-28",
   "w-20",
   "w-24",
 ];
@@ -46,15 +48,19 @@ export default function DashboardLoading() {
       </section>
 
       <section className="space-y-3" aria-label="관제판 지점 목록 불러오기">
+        <DashboardDelayedLoadingNotice />
         <div className="bg-background hidden overflow-x-auto rounded-lg border p-3 md:block">
-          <div className="min-w-[1200px] space-y-3">
-            <div className="grid grid-cols-12 gap-3 border-b pb-3">
+          <div className="min-w-[1280px] space-y-3">
+            <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 border-b pb-3">
               {desktopColumns.map((width, index) => (
                 <Skeleton key={`head-${index}`} className={`h-4 ${width}`} />
               ))}
             </div>
             {desktopRows.map((row) => (
-              <div key={row} className="grid grid-cols-12 items-center gap-3">
+              <div
+                key={row}
+                className="grid grid-cols-[repeat(13,minmax(0,1fr))] items-center gap-3"
+              >
                 {desktopColumns.map((width, index) => (
                   <Skeleton
                     key={`${row}-${index}`}

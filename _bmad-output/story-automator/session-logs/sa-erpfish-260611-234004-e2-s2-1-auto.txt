@@ -1,0 +1,200 @@
++  const user = await prisma.user.findUnique({
++    where: { email: "manager@example.com" },
++    select: { id: true },
++  });
++
++  expect(user?.id).toBeTruthy();
++
++  return user!.id;
++}
++
++async function seedSelectedLedger(status: DailyLedgerStatus = "IN_PROGRESS") {
++  const actorId = await getManagerUserId();
++  const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
++
++  return prisma.dailyLedger.create({
++    data: {
++      storeId: STORE_ID,
++      closingDate,
++      status,
++      totalSalesAmount: 41000,
++      cashAmount: 12000,
++      cardAmount: 28000,
++      otherPaymentAmount: 1000,
++      workerCount: 2,
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++}
++
+ test("지점장은 오늘 장부에서 매출/결제 단계를 본다", async ({ page }) => {
+   await loginAsStoreManager(page);
+
+@@ -117,6 +151,41 @@
+   ).toHaveAttribute("href", new RegExp(`date=${SELECTED_LEDGER_DATE}`));
+ });
+
++test("지점장은 stale version 저장 충돌 시 새로고침 안내를 본다", async ({
++  page,
++}) => {
++  await loginAsStoreManager(page);
++  await page.goto(
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++  );
++
++  await expect(page.getByLabel("영업일")).toHaveValue(SELECTED_LEDGER_DATE);
++  await prisma.dailyLedger.updateMany({
++    where: {
++      storeId: STORE_ID,
++      closingDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
++    },
++    data: { version: { increment: 1 } },
++  });
++
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("33333");
++  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
++  await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
++  await page
++    .getByRole("textbox", { name: "기타 결제수단", exact: true })
++    .fill("333");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  await expect(
++    page.getByText(
++      "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
++    ),
++  ).toBeVisible();
++  await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible();
++});
++
+ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된다", async ({
+   page,
+ }) => {
+@@ -173,6 +242,31 @@
+   await expect(page.getByText("표시: 5,000원")).toBeVisible();
+ });
+
++test("지점장은 본사마감 장부에서 원본 매출/결제 입력을 수정할 수 없다", async ({
++  page,
++}) => {
++  await seedSelectedLedger("HEADQUARTERS_CLOSED");
++  await loginAsStoreManager(page);
++  await page.goto(
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++  );
++
++  await expect(page.getByText("상태 본사마감")).toBeVisible();
++  await expect(
++    page.getByRole("textbox", { name: "총매출", exact: true }),
++  ).toBeDisabled();
++  await expect(
++    page.getByRole("textbox", { name: "현금", exact: true }),
++  ).toBeDisabled();
++  await expect(
++    page.getByRole("textbox", { name: "카드", exact: true }),
++  ).toBeDisabled();
++  await expect(
++    page.getByRole("textbox", { name: "기타 결제수단", exact: true }),
++  ).toBeDisabled();
++  await expect(page.getByRole("button", { name: "저장" })).toBeDisabled();
++});
++
+ test("지점장은 권한 없는 지점 URL로 이동하면 권한 없음 화면만 본다", async ({
+   page,
+ }) => {
+
+codex
+BMAD `qa-generate-e2e-tests` workflow를 Story 2.1 기준으로 실행했고, 발견한 테스트 갭을 반영했습니다.
+
+변경 사항:
+- [store-ledger-sales.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-sales.spec.ts:154)에 stale ledger version 충돌 E2E 추가
+- [store-ledger-sales.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-sales.spec.ts:245)에 본사마감 장부 원본 입력 차단 E2E 추가
+- [playwright.config.ts](/home/noah/code/erp_fish/playwright.config.ts:27), [global-setup.ts](/home/noah/code/erp_fish/tests/e2e/global-setup.ts:146)의 `pnpm` 실행을 `corepack pnpm`으로 정리
+- [test-summary.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/tests/test-summary.md:1)를 Story 2.1 QA 요약으로 갱신
+
+검증:
+- PASS: `prettier --check`
+- PASS: targeted `eslint`
+- PASS: Playwright focused specs load, 17 tests detected
+- PASS: `ledger-sales` + `hq-dashboard` focused unit files
+- BLOCKED: 실제 Playwright runtime은 sandbox의 `listen EPERM: operation not permitted 127.0.0.1:3131`로 dev server 바인딩이 막혀 실행 불가
+
+`workflow.on_complete`는 비어 있어 추가 종료 지시는 없었습니다.
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index 6ef4c8153b7f03a7a0d77c0010cd7914ede7c317..c681935caa2215dc509837071cca3c006397870b
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,33 +4,27 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 1.5는 public API route가 없고, 서버 경계는 Server Action, server query, Prisma transaction, Playwright UI flow로 검증한다.
++- [x] N/A - Story 2.1은 public API route가 없고, 장부 생성/열기/저장은 Next.js Server Action, server query, Prisma transaction, Playwright UI flow로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/master-data-history.spec.ts` - 본사 변경 이력 목록, 시간 역순 정렬, 대상/변경자/기간 URL 필터, 상세 dialog의 변경 전/후 JSON, 감사 사유 표시, 빈 상태, 지점장 접근 차단을 검증한다.
+-- [x] `tests/e2e/master-data-users.spec.ts` - 사용자 생성, 지점 배정 변경, 비활성화, 역할 변경 후 `AuditLog` row와 sanitized before/after payload가 생성되는지 검증한다.
+-- [x] `tests/e2e/master-data-stores.spec.ts` - 지점 생성/수정/활성 상태 변경이 shared audit helper와 actor permission context를 통해 감사 로그로 남는지 검증한다.
++- [x] `tests/e2e/store-ledger-sales.spec.ts` - 지점장 오늘 장부 진입, 선택 날짜 장부 생성/재방문, 중복 장부 방지, selected date step navigation 보존, 권한 없는 지점 차단, 390px 날짜/상태 UI, 저장 실
+패 재시도, stale version 충돌 메시지, 본사마감 장부 원본 입력 차단을 검증한다.
++- [x] `tests/e2e/hq-dashboard.spec.ts` - 본사 관제판의 `미입력`/`입력중`/`검토대기`/`본사마감`/`휴무` 상태 표시, 비활성 지점 제외, 미입력 row 조회 시 장부 미생성, 지점장 관제판/상세 접근 차단, 390px
+상태 표시 비겹침을 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 1.5 범위에는 별도 API endpoint가 없다.
+-- UI workflows: 본사 감사 로그 목록/필터/상세, 권한 없는 지점장 차단, 사용자/권한/지점 변경으로 감사 row 생성 흐름을 커버한다.
+-- Happy path: 본사가 최근 변경 이력을 사람이 읽을 수 있는 대상명/유형/변경유형/상세 값으로 확인한다.
+-- Critical error cases: 빈 필터 결과, unauthorized direct access, self demotion/deactivation guard, credential fields excluded from audit payload를 커버한다.
++- API endpoints: N/A. Story 2.1 범위에는 별도 API endpoint가 없다.
++- UI workflows: 지점장 store-entry 장부 열기/저장/재방문, selected date 보존, 본사 관제판 상태 조회, unauthorized direct access를 커버한다.
++- Happy path: 선택한 `storeId + closingDate` 장부가 없으면 생성되고, 다시 열면 기존 입력값과 단일 ledger row가 유지된다.
++- Critical error cases: 권한 없는 지점 접근 차단, stale version 저장 충돌, 본사마감 원본 입력 차단, 미입력 관제판 조회의 장부 미생성을 커버한다.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write src/features/audit/audit-queries.ts src/features/audit/components/change-history-client.tsx tests/e2e/master-data-history.spec.ts tests/unit/master-data-his
+tory.test.mjs`
+-- [x] `corepack pnpm test:unit` - 29/29 unit files passed.
+-- [x] `corepack pnpm typecheck`
+-- [x] `corepack pnpm lint`
+-- [x] `corepack pnpm build`
+-- [x] `corepack pnpm exec playwright test tests/e2e/master-data-users.spec.ts tests/e2e/master-data-history.spec.ts --list` - 9 tests loaded.
+-- [x] `git diff --check -- src/features/audit/audit-queries.ts src/features/audit/components/change-history-client.tsx tests/e2e/master-data-history.spec.ts tests/unit/master-data-history.test.mjs _b
+mad-output/implementation-artifacts/tests/test-summary.md`
+-- [x] `PATH=/tmp/erp-fish-bin:$PATH PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/master-data-user
+s.spec.ts tests/e2e/master-data-history.spec.ts` - 9/9 passed after installing Playwright Chromium.
+-- [x] `PATH=/tmp/erp-fish-bin:$PATH PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/master-data-user
+s.spec.ts tests/e2e/master-data-history.spec.ts tests/e2e/master-data-stores.spec.ts` - 13/13 passed.
+-- [x] `git diff --check`
++- [x] `corepack pnpm exec prettier --check playwright.config.ts tests/e2e/global-setup.ts tests/e2e/store-ledger-sales.spec.ts`
++- [x] `corepack pnpm exec eslint playwright.config.ts tests/e2e/global-setup.ts tests/e2e/store-ledger-sales.spec.ts`
++- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/hq-dashboard.spec.ts --list` - 17 tests loaded.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-sales.test.mjs tests/unit/hq-dashboard.test.mjs` - 2/2 focused unit files passed.
++- [ ] `PORT=3131 corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/hq-dashboard.spec.ts` - blocked by sandbox `listen EPERM: operation not permitted 127.0.0.1:3131`.
+
+ ## Checklist Result
+
+@@ -38,9 +32,9 @@
+ - E2E tests generated if UI exists: complete.
+ - Standard framework APIs: Playwright `test`, `expect`, semantic role/label/text locators, and Prisma fixture setup.
+ - Happy path covered: complete.
+-- Critical error cases covered: complete for Story 1.5 audit/history access paths.
++- Critical error cases covered: complete for Story 2.1 access, conflict, closed-ledger, and dashboard no-auto-create paths.
+ - Tests use proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: scoped fixture prefixes and cleanup are used.
++- Tests are independent: selected ledger cleanup and story-scoped dashboard fixtures are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/playwright.config.ts b/playwright.config.ts
+index 8837279d018cf46b7c98f5fea80ef5432b8071b9..4a2e0ca429d269e4148344ae1be6452cb9c7740b
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -24,7 +24,7 @@
+     trace: "on-first-retry",
+   },

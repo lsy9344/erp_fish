@@ -1,0 +1,200 @@
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -50,7 +50,7 @@
+   1-5-감사-로그-기반-구축: done
+   epic-1-retrospective: done
+   epic-2: in-progress
+-  2-1-지점-일자-장부-생성과-상태-관리: review
++  2-1-지점-일자-장부-생성과-상태-관리: done
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: backlog
+   2-3-매출-결제와-비용-입력: backlog
+   2-4-mvp-수동-매입-입력: backlog
+diff --git a/src/features/inventory/actions.ts b/src/features/inventory/actions.ts
+index 9ea68e3a6fd62b638852f803ef93e733f42c40f3..fcc42ecf8c4d25460f6f966bbe4da915eab99858
+--- a/src/features/inventory/actions.ts
++++ b/src/features/inventory/actions.ts
+@@ -119,7 +119,7 @@
+       });
+
+       if (editableLedger.count !== 1) {
+-        throw new Error("Ledger is not editable");
++        throw new Error("LEDGER_CONFLICT");
+       }
+
+       const inputByProductId = new Map(
+@@ -252,10 +252,7 @@
+       });
+
+       if (editableLedger.count !== 1) {
+-        return actionError<StoreManagerInventoryStepData>(
+-          "LEDGER_NOT_EDITABLE",
+-          "저장에 실패했습니다. 다시 시도해 주세요.",
+-        );
++        return mapLedgerConflictError();
+       }
+
+       const line = before.items.find(
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index 3790357b276ec92449316b23a86f57b3d638d63b..c79488922247a5ef7aa5938ee7fea6d1fd6b1ab0
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -29,6 +29,7 @@
+ } from "~/features/ledger/components/ledger-updated-at-sync";
+ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+ import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   saveLedgerInventoryAdjustment,
+   saveLedgerInventoryItems,
+@@ -205,7 +206,10 @@
+   const isOriginalEditBlocked =
+     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
+   const isClosed = isOriginalEditBlocked;
+-  const nextStepHref = `/app/store-entry/losses?storeId=${data.storeId}&date=${data.closingDate}`;
++  const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
++    storeId: data.storeId,
++    date: getKstLedgerDateParam(data.closingDate),
++  }).toString()}`;
+   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
+   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
+
+diff --git a/src/features/ledger/components/expense-step-client.tsx b/src/features/ledger/components/expense-step-client.tsx
+index 28dd0876eafc7aa923148ca3660480b367391a35..713449db0d238942436b76ffe59e00e32ad72b40
+--- a/src/features/ledger/components/expense-step-client.tsx
++++ b/src/features/ledger/components/expense-step-client.tsx
+@@ -9,6 +9,7 @@
+ import { Input } from "~/components/ui/input";
+ import { saveLedgerExpenses } from "~/features/ledger/actions";
+ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   notifyLedgerUpdated,
+   useLedgerUpdatedAtSync,
+@@ -74,7 +75,13 @@
+   closingDate: string,
+   step: "sales" | "cost" | "purchase" | "work" | "review",
+ ) {
+-  return `/app/store-entry?storeId=${storeId}&date=${closingDate}&step=${step}`;
++  const params = new URLSearchParams({
++    storeId,
++    date: getKstLedgerDateParam(closingDate),
++    step,
++  });
++
++  return `/app/store-entry?${params.toString()}`;
+ }
+
+ function createExpenseLineId() {
+diff --git a/src/features/ledger/components/purchase-step-client.tsx b/src/features/ledger/components/purchase-step-client.tsx
+index 10e501281ee9719c0239f194532f77efa333d062..bfc8161380e8aed33c8ec7598fb1bbe613e7dccd
+--- a/src/features/ledger/components/purchase-step-client.tsx
++++ b/src/features/ledger/components/purchase-step-client.tsx
+@@ -9,6 +9,7 @@
+ import { Input } from "~/components/ui/input";
+ import { saveLedgerPurchases } from "~/features/ledger/actions";
+ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   notifyLedgerUpdated,
+   useLedgerUpdatedAtSync,
+@@ -333,7 +334,10 @@
+   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
+   const isOriginalEditBlocked =
+     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+-  const nextStepHref = `/app/store-entry/inventory?storeId=${ledger.storeId}&date=${ledger.closingDate}`;
++  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
++    storeId: ledger.storeId,
++    date: getKstLedgerDateParam(ledger.closingDate),
++  }).toString()}`;
+
+   return (
+     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+diff --git a/src/features/ledger/components/sales-payment-step-client.tsx b/src/features/ledger/components/sales-payment-step-client.tsx
+index 2b8cf79eccaa5f25ad74beb1688fcb94906711f5..c5a968957d3a8543796628633d04ef1e4cb3285f
+--- a/src/features/ledger/components/sales-payment-step-client.tsx
++++ b/src/features/ledger/components/sales-payment-step-client.tsx
+@@ -9,6 +9,7 @@
+ import { Input } from "~/components/ui/input";
+ import { saveLedgerSalesPayment } from "~/features/ledger/actions";
+ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   notifyLedgerUpdated,
+   useLedgerUpdatedAtSync,
+@@ -40,7 +41,13 @@
+   closingDate: string,
+   step: "sales" | "cost" | "purchase" | "work" | "review",
+ ) {
+-  return `/app/store-entry?storeId=${storeId}&date=${closingDate}&step=${step}`;
++  const params = new URLSearchParams({
++    storeId,
++    date: getKstLedgerDateParam(closingDate),
++    step,
++  });
++
++  return `/app/store-entry?${params.toString()}`;
+ }
+
+ type SalesPaymentStepClientProps = {
+diff --git a/src/features/ledger/components/store-entry-step-navigation.tsx b/src/features/ledger/components/store-entry-step-navigation.tsx
+index 46ad923693a05bdae879d71279a9689fa039eb8b..5f0b83ab8925f4ea58658cebaf655991992de815
+--- a/src/features/ledger/components/store-entry-step-navigation.tsx
++++ b/src/features/ledger/components/store-entry-step-navigation.tsx
+@@ -1,4 +1,5 @@
+ import { cn } from "~/lib/utils";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   type StoreEntryStep,
+   type StoreEntryStepCompletion,
+@@ -22,7 +23,10 @@
+ ];
+
+ function stepHref(storeId: string, closingDate: string, step: StoreEntryStep) {
+-  const params = new URLSearchParams({ storeId, date: closingDate });
++  const params = new URLSearchParams({
++    storeId,
++    date: getKstLedgerDateParam(closingDate),
++  });
+
+   if (step === "inventory" || step === "losses") {
+     return `/app/store-entry/${step}?${params.toString()}`;
+diff --git a/src/features/ledger/components/workstep-client.tsx b/src/features/ledger/components/workstep-client.tsx
+index ea54daf149a962fc77a16d2335bba9a6dc1ca54e..c534b9b371e36138548f603f6068238873806fcd
+--- a/src/features/ledger/components/workstep-client.tsx
++++ b/src/features/ledger/components/workstep-client.tsx
+@@ -9,6 +9,7 @@
+ import { Input } from "~/components/ui/input";
+ import { saveLedgerWorkInfo } from "~/features/ledger/actions";
+ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
++import { getKstLedgerDateParam } from "~/features/ledger/date";
+ import {
+   notifyLedgerUpdated,
+   useLedgerUpdatedAtSync,
+@@ -41,7 +42,13 @@
+   closingDate: string,
+   step: "sales" | "cost" | "purchase" | "work" | "review",
+ ) {
+-  return `/app/store-entry?storeId=${storeId}&date=${closingDate}&step=${step}`;
++  const params = new URLSearchParams({
++    storeId,
++    date: getKstLedgerDateParam(closingDate),
++    step,
++  });
++
++  return `/app/store-entry?${params.toString()}`;
+ }
+
+ function sanitizeAmount(value: string) {
+diff --git a/src/features/ledger/date.ts b/src/features/ledger/date.ts
+index 3db905db39c00ea37c9070f37ea08e5c86386947..22a2abff35b3826c0d2a04108071977f0845e143
+--- a/src/features/ledger/date.ts
++++ b/src/features/ledger/date.ts
+@@ -37,3 +37,13 @@
+
+   return date.toISOString().slice(0, 10);
+ }
++
++export function getKstLedgerDateParam(input: string | Date = new Date()) {
++  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
++    return getKstBusinessDateParam(input);

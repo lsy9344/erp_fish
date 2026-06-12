@@ -1,0 +1,200 @@
++- 생성 금지/주의:
++  - `src/components/ui`에는 shadcn primitive만 둔다. 권한 profile 화면/컴포넌트는 이 스토리 범위가 아니다.
++  - 관리 UI, 권한 편집 form, 권한 변경 감사 로그 화면은 후속 스토리에서 만든다.
++  - ledger 전체 모델이나 report/export 기능을 이 스토리 명목으로 새로 만들지 않는다.
++
++### Testing Requirements
++
++- 최소 검증 명령은 `pnpm exec prisma generate`, `pnpm exec prisma validate`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`이다.
++- E2E가 가능한 환경이면 기존 auth/store-manager 관련 Playwright 테스트 subset을 실행해 본사/지점장 진입 회귀를 확인한다.
++- 테스트가 DB, Corepack, Prisma engine download, 네트워크 제한 때문에 실패하면 실패 원인과 실행하지 못한 범위를 Dev Agent Record에 정확히 남긴다. 실패를 통과로 보고하지 않는다.
++
++### Latest Technical Information
++
++- 2026-06-11 확인: Prisma의 explicit many-to-many relation은 relation table 자체를 schema model로 표현하며, relation metadata를 저장해야 할 때 적합하다. 권한 profile assignment와 profile-action 연결
+은 system flag, createdAt, assignedBy 같은 확장 여지가 있으므로 explicit join model을 사용한다. [External: https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/many-to-many-relations]
++- 2026-06-11 확인: Auth.js Credentials provider는 username/password 흐름을 지원하지만 password hashing, rate limiting, reset 등은 애플리케이션 책임이다. 이 스토리는 기존 Credentials 흐름을 유지하고 r
+ate limiting debt를 해결한 것처럼 표시하지 않는다. [External: https://authjs.dev/getting-started/authentication/credentials]
++- 2026-06-11 확인: Next.js App Router 인증 가이드는 authorization을 session/cookie 기반 optimistic check와 DB 기반 secure check로 나누고, sensitive data/action은 data source 가까이에서 검사하라고 안
+내한다. 이 스토리도 profile/action/store authorization을 DB 기반 helper에 둔다. [External: https://nextjs.org/docs/app/guides/authentication]
++
++### Project Context Reference
++
++- Workflow persistent facts는 `file:{project-root}/**/project-context.md`를 요구했지만 현재 저장소에서 `project-context.md`는 발견되지 않았다.
++- UX 문서는 planning artifacts의 metadata에는 남아 있으나 현재 discovery glob(`_bmad-output/planning-artifacts/*ux*.md`, `*ux*/*.md`)에서는 별도 파일이 발견되지 않았다. 이 스토리는 UI 구현이 아니라 s
+erver/schema 기반 작업이므로 PRD와 architecture의 권한/보안 요구를 우선한다.
++
++### Git Intelligence Summary
++
++- 최근 commit `19db505 feat(story-1.1): 프로젝트 앱 기반과 인증 골격 초기화`는 Story 1.1 기반 구현을 반영한다.
++- 그 이전 `539c0d6 docs: add MVP story extraction gate`, `614305f docs: update PRD validation artifacts`, `649291d docs + implementation updates for readiness fixes and ledger features`, `6d986a7 Upd
+ate store entry and ledger flow`가 계획/구현 산출물을 갱신했다.
++- 현재 worktree에는 planning artifact와 BMad 관련 변경이 있다. 구현자는 사용자 또는 자동화가 만든 기존 변경을 되돌리지 않는다.
++
++### Implementation Boundaries
++
++- 이 스토리는 user/store/permission profile/action permission 기반과 seed/test 검증까지다.
++- 권한 관리 UI, 권한 변경 감사 로그 화면, 실제 권한 편집 UX는 후속 스토리에서 다룬다.
++- 지점장 업무 셸, 장부 입력, 재고/손실 저장, 본사 리포트/export는 기존 구현이 있더라도 이 스토리에서 새 범위로 확장하지 않는다.
++- `본사 사용자` role 하나로 모든 action을 허용하는 구현은 이 스토리 완료로 볼 수 없다.
++
++### Story Completion Status
++
++- Ultimate context engine analysis completed - comprehensive developer guide created.
++- Status is set to `ready-for-dev`.
++
++## Project Structure Notes
++
++- Architecture target tree는 `src/features/{domain}`, `src/server`, `src/lib`, `src/components/ui`, `src/components`, `prisma`, `tests` 경계를 사용한다.
++- 권한 profile/action helper는 shared server boundary인 `src/server/authz.ts` 또는 `src/server/permissions.ts`에 둔다.
++- 이미 존재하는 `Store`/`UserStoreAssignment`는 현재 스토리의 요구 일부를 충족하는 기반이다. 새 작업은 누락된 permission profile/action model과 helper 확장에 집중한다.
++
++## Dev Agent Record
++
++### Agent Model Used
++
++GPT-5 Codex
++
++### Debug Log References
++
++### Completion Notes List
++
++### File List
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 06584de9c86263b5812c8eebd641c707c28a56de..09317f82e1e858c612c863a11009b5cb3c41219e
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T19:07:09+09:00
++# last_updated: 2026-06-11T19:18:42+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T19:07:09+09:00"
++last_updated: "2026-06-11T19:18:42+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -44,7 +44,7 @@
+ development_status:
+   epic-1: in-progress
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+-  1-2-사용자-지점-권한-프로파일-모델링: backlog
++  1-2-사용자-지점-권한-프로파일-모델링: ready-for-dev
+   1-3-역할-기반-로그인과-지점-접근-제한: backlog
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: backlog
+   1-5-감사-로그-기반-구축: backlog
+
+ succeeded in 235ms:
+12:Status: ready-for-dev
+36:  - [ ] `PermissionProfile` 또는 동등 모델을 추가한다. 최소 필드: `id`, stable `code`, 사용자 표시 `name`, `description`, `isSystem`, `isActive`, `storeAccessMode`, `createdAt`, `updatedAt`.
+38:  - [ ] profile-action 연결은 `PermissionProfileAction` 같은 명시적 join model로 둔다. 이후 action 추가가 쉬워야 하고 profile별 permission set을 조회할 수 있어야 한다.
+39:  - [ ] user-profile 연결은 `UserPermissionProfile` 같은 명시적 join model로 둔다. 한 본사 사용자가 여러 운영 프로파일을 가질 수 있어야 한다.
+59:  - [ ] unit test: Prisma schema에 `PermissionProfile`, profile-action join, user-profile join, store access mode가 존재하는지 확인한다.
+89:- 현재 `PermissionProfile`, `UserPermissionProfile`, `PermissionProfileAction`, `PermissionAction` 또는 동등 구조는 발견되지 않았다. 이 스토리의 핵심 신규 모델은 이 권한 프로파일 기반이다.
+94:### Previous Story Intelligence
+125:### Latest Technical Information
+131:### Project Context Reference
+151:- Ultimate context engine analysis completed - comprehensive developer guide created.
+
+codex
+BMAD create-story workflow for Story 1.2 완료했습니다.
+
+생성한 파일: [_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md)
+
+업데이트한 상태 파일: [_bmad-output/implementation-artifacts/sprint-status.yaml](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml)
+
+상태는 `ready-for-dev`로 설정했습니다. 기존 과거 `1-2-지점장이...` 완료 문서와 현재 sprint-status의 새 Story 1.2가 충돌하지 않도록, 새 스토리 문서에 그 차이를 명시했습니다.
+
+검증: checklist 기준으로 AC, tasks, architecture guardrails, previous story intelligence, current repo state, testing requirements, latest technical refs를 포함했으며 `workflow.on_complete`는 비어 있
+음을 확인했습니다. External refs used: Prisma explicit many-to-many, Auth.js Credentials, Next.js authorization guide.
+diff --git a/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md b/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bb3db085107b325d83a55a395059ff6dc284cff
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md
+@@ -0,0 +1,170 @@
++---
++story_key: 1-2-사용자-지점-권한-프로파일-모델링
++story_id: "1.2"
++epic: "1"
++created_at: "2026-06-11T19:18:42+09:00"
++source_story: "_bmad-output/planning-artifacts/epics.md"
++baseline_commit: 19db505
++---
++
++# Story 1.2: 사용자, 지점, 권한 프로파일 모델링
++
++Status: ready-for-dev
++
++## Story
++
++As a 본사 설정 관리자,
++I want 사용자, 지점, 지점 접근권, 권한 프로파일의 기본 데이터 구조가 준비되기를 원한다,
++so that 본사와 지점장이 각자 허용된 범위에서만 ERP Fish를 사용할 수 있다.
++
++## Acceptance Criteria
++
++1. Given 개발자가 Prisma schema를 작성할 때, when 사용자와 지점 모델을 정의한다, then 사용자는 본사 사용자 또는 지점장 계정으로 구분될 수 있어야 한다, and 지점은 활성/비활성 상태와 기본 식별 정보를
+가져야 한다.
++2. Given 한 사용자가 지점 데이터에 접근할 때, when 서버가 접근 범위를 확인한다, then 지점장은 연결된 지점만 접근할 수 있어야 한다, and 본사 사용자는 권한 프로파일에 따라 전체 또는 지정 지점에 접근할
+수 있어야 한다.
++3. Given 본사 권한이 단일 역할로 충분하지 않을 때, when 권한 프로파일을 정의한다, then 마감, 정정, 업로드, 설정, 리포트/export 같은 action 단위 권한을 표현할 수 있어야 한다, and 이후 스토리에서 actio
+n-level authorization helper가 이 구조를 사용할 수 있어야 한다.
++4. Given 개발자가 초기 테스트 데이터를 준비할 때, when seed 데이터를 실행한다, then 최소 본사 관리자 계정, 지점장 계정, 샘플 지점, 지점 접근 연결이 생성되어야 한다, and 초기 비밀번호 또는 secret은 운
+영용 실제 값으로 저장소에 커밋되지 않아야 한다.
++5. Given 품목/장부/감사 기능이 아직 구현되지 않았을 때, when 이 스토리가 완료된다, then 사용자, 지점, 권한 프로파일 구조만 독립적으로 검증 가능해야 한다, and 미래 장부 모델 전체를 미리 만들지 않아야
+한다.
++
++## Tasks / Subtasks
++
++- [ ] 현재 구현된 사용자/지점 기반을 감사하고 중복 모델 생성을 막는다. (AC: 1, 2, 5)
++  - [ ] `prisma/schema.prisma`의 기존 `UserRole`, `User.role`, `User.passwordHash`, `Store`, `UserStoreAssignment`를 보존한다.
++  - [ ] `Store`와 `UserStoreAssignment`는 이미 존재하므로 같은 목적의 `Branch`, `Shop`, `UserStore`, `StoreUser` 모델을 새로 만들지 않는다.
++  - [ ] 기존 daily ledger, master data, audit, report 모델은 이 스토리의 직접 범위가 아니므로 삭제하거나 대규모 재구성하지 않는다.
++  - [ ] 새 migration을 추가하되 기존 migration 파일을 수정하지 않는다.
++- [ ] 권한 프로파일과 action 권한을 Prisma 모델로 추가한다. (AC: 2, 3, 5)
++  - [ ] `PermissionProfile` 또는 동등 모델을 추가한다. 최소 필드: `id`, stable `code`, 사용자 표시 `name`, `description`, `isSystem`, `isActive`, `storeAccessMode`, `createdAt`, `updatedAt`.
++  - [ ] `PermissionAction`을 enum 또는 정규화 테이블로 표현한다. 최소 action key는 `LEDGER_CREATE`, `LEDGER_EDIT`, `LEDGER_HQ_CLOSE`, `CORRECTION_CREATE`, `UPLOAD_PREVIEW`, `UPLOAD_COMMIT`, `SETTINGS
+_MANAGE`, `REPORT_VIEW`, `EXPORT_CREATE`, `USER_PERMISSION_MANAGE`를 포함한다.
++  - [ ] profile-action 연결은 `PermissionProfileAction` 같은 명시적 join model로 둔다. 이후 action 추가가 쉬워야 하고 profile별 permission set을 조회할 수 있어야 한다.
++  - [ ] user-profile 연결은 `UserPermissionProfile` 같은 명시적 join model로 둔다. 한 본사 사용자가 여러 운영 프로파일을 가질 수 있어야 한다.
++  - [ ] `storeAccessMode`는 `ALL_STORES`와 `ASSIGNED_STORES` 또는 동등한 값을 지원한다. 본사 사용자가 전체 지점 또는 지정 지점 범위만 갖는 경우를 구분해야 한다.
++- [ ] 사용자/지점 접근 규칙을 기존 authz helper 위에 확장한다. (AC: 2, 3)
++  - [ ] `src/server/authz.ts`의 `requireAppUser()`, `requireHeadquartersUser()`, `requireStoreAccess()` 기존 동작을 깨지 않는다.
++  - [ ] 새 helper는 세션/JWT의 role만 믿지 않고 DB에서 현재 사용자, 활성 상태, profile assignment, active permission profile, store assignment를 다시 조회한다.
++  - [ ] `hasActionPermission(userId, action)` 또는 `requireActionPermission(action)` 같은 명시적 helper를 추가한다.
++  - [ ] `requireStoreAccess(storeId)`는 지점장은 활성 배정 지점만 허용하고, 본사는 active profile의 `storeAccessMode`가 `ALL_STORES`이면 전체 지점, `ASSIGNED_STORES`이면 `UserStoreAssignment`에 연결
+된 지점만 허용하도록 확장한다.
++  - [ ] 권한 없는 요청은 업무 데이터 조회 전에 중단한다. UI에서 메뉴를 숨기는 것은 보조 수단일 뿐 보안 경계가 아니다.
++- [ ] seed와 테스트 fixture를 안전하게 확장한다. (AC: 4)
++  - [ ] `prisma/seed.ts`는 기존 본사 계정 seed 보호를 유지한다: production guard, password length guard, password rotation opt-in, non-HQ 계정 승격 차단.
++  - [ ] system permission profiles를 idempotent upsert로 만든다. 최소 profile: `OWNER`, `HQ_ADMIN`, `HQ_STAFF`, `CLOSE_MANAGER`, `UPLOAD_STAFF`, `SETTINGS_ADMIN`, `HQ_READONLY`, `STORE_MANAGER`.
++  - [ ] 기본 본사 seed 계정에는 `HQ_ADMIN`과 `SETTINGS_ADMIN` 또는 MVP 운영에 필요한 동등 profile을 연결한다.
++  - [ ] 개발/테스트용 지점장 계정, 샘플 활성 지점, user-store assignment는 실제 secret을 커밋하지 않는 방식으로 만든다. 환경 변수 입력 또는 E2E global setup fixture 중 하나를 사용하되, AC 검증이 재현
+ 가능해야 한다.
++  - [ ] seed 재실행 시 중복 profile, 중복 action, 중복 assignment가 생기지 않아야 한다.
++- [ ] 기존 화면과 기능 회귀를 막는다. (AC: 1-5)
++  - [ ] `/login`, `/app`, `/app/dashboard`, `/app/store-entry`, `/app/unauthorized`의 기존 역할별 진입을 유지한다.
++  - [ ] 본사 사이드바 `홈`, `리포트`, `기준정보`, `설정`과 지점장 하단 탭 `장부`, `재고`, `손실`을 깨지 않는다.
++  - [ ] 장부, 품목, 매입 기준, 코드, 이상 기준값, 리포트 구현은 이 스토리의 schema 변경 때문에 컴파일이 깨지면 고치되, 제품 동작을 새 범위로 확장하지 않는다.
++  - [ ] 권한 프로파일 변경에 대한 감사 로그 UI/관리 CRUD는 후속 스토리 범위다. 이 스토리는 모델, seed, 서버 helper, 테스트 가능한 기반까지만 구현한다.
++- [ ] 테스트를 추가하고 검증한다. (AC: 1-5)
++  - [ ] unit test: Prisma schema에 `PermissionProfile`, profile-action join, user-profile join, store access mode가 존재하는지 확인한다.
++  - [ ] unit test: `src/server/authz.ts`가 action permission helper를 제공하고 DB 기반 profile/action/store assignment 조회를 수행하는지 확인한다.
++  - [ ] unit test: seed가 system profiles/actions를 idempotent하게 upsert하고 실제 비밀번호/secret placeholder를 커밋하지 않는지 확인한다.
++  - [ ] regression test: 기존 본사 로그인, 지점장 store-entry, unauthorized 처리, store assignment 검증 테스트가 계속 통과해야 한다.
++  - [ ] 실행 명령: `pnpm exec prisma generate`, `pnpm exec prisma validate`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`.
++  - [ ] 가능한 경우 `pnpm test:e2e` 또는 권한 관련 Playwright subset을 실행한다. 환경/네트워크 문제로 실패하면 실패 원인과 미실행 범위를 Dev Agent Record에 남긴다.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 1 목표는 본사와 지점장이 권한에 맞게 로그인하고 모든 주요 변경을 추적 가능한 운영 기반 위에 올리는 것이다. [Source: `_bmad-output/planning-artifacts/epics.md:364`]
++- Story 1.2 원문은 사용자, 지점, 지점 접근권, 권한 프로파일의 기본 데이터 구조를 준비하는 것이다. [Source: `_bmad-output/planning-artifacts/epics.md:401`]

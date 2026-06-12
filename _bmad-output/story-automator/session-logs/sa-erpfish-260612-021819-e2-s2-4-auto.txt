@@ -1,0 +1,200 @@
++  );
++
++  await prisma.dailyLedger.update({
++    where: { id: ledger.id },
++    data: { version: { increment: 1 } },
++  });
++
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("원문명").fill("스토리2-4 stale 방어");
++  await page.getByLabel("구분").fill("생물");
++  await page.getByLabel("규격").fill("1kg");
++  await page.getByLabel("단가").fill("12000");
++  await page.getByLabel("수량").fill("1");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  await expect(
++    page.getByText("장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요."),
++  ).toBeVisible();
++
++  await expect
++    .poll(async () => {
++      return prisma.ledgerPurchaseItem.count({
++        where: { dailyLedgerId: ledger.id },
++      });
++    })
++    .toBe(0);
++});
++
++test("본사마감과 휴무 장부에서는 매입 원본 저장 UI가 차단된다", async ({
++  page,
++}) => {
++  await login(page);
++
++  for (const status of ["HEADQUARTERS_CLOSED", "HOLIDAY"] as const) {
++    await cleanupStoryTwoFourData();
++    await seedPurchaseLedger(status);
++
++    await page.goto(
++      `/app/store-entry?storeId=${STORY_STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=purchase`,
++    );
++
++    await expect(page.getByRole("button", { name: "항목 추가" })).toBeDisabled();
++    await expect(page.getByRole("button", { name: "저장" })).toBeDisabled();
++  }
++});
++
++test("권한 밖 지점 매입 라인은 화면에 노출되지 않는다", async ({ page }) => {
++  const actorId = await getManagerUserId();
++  const ledger = await seedPurchaseLedger("IN_PROGRESS", UNAUTHORIZED_STORE_ID);
++
++  await prisma.ledgerPurchaseItem.create({
++    data: {
++      dailyLedgerId: ledger.id,
++      sourceType: "MANUAL",
++      productName: "스토리2-4 권한밖 매입",
++      productCategory: "생물",
++      productSpec: "1kg",
++      unitPrice: 10000,
++      quantity: 1,
++      amount: 10000,
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await login(page);
++  await page.goto(
++    `/app/store-entry?storeId=${UNAUTHORIZED_STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=purchase`,
++  );
++
++  await expect(page).toHaveURL(/\/app\/unauthorized/);
++  await expect(
++    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
++  ).toBeVisible();
++  await expect(page.getByText("스토리2-4 권한밖 매입")).toHaveCount(0);
++});
+
+codex
+완료했습니다. Story 2.4 QA workflow를 적용해서 매입 E2E gap을 보강했고, summary도 Story 2.4 기준으로 갱신했습니다.
+
+변경:
+- [store-ledger-purchase.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-purchase.spec.ts:29): deterministic ledger fixture와 권한 밖 지점 fixture 추가
+- [store-ledger-purchase.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-purchase.spec.ts:316): stale version 저장 거부와 DB 무변경 테스트 추가
+- [store-ledger-purchase.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-purchase.spec.ts:354): `HEADQUARTERS_CLOSED`/`HOLIDAY` 매입 원본 저장 UI 차단 테스트 추가
+- [store-ledger-purchase.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-purchase.spec.ts:374): 권한 밖 지점 매입 라인 미노출 테스트 추가
+- [test-summary.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/tests/test-summary.md:1): QA checklist 결과와 검증 내역 갱신
+
+검증:
+- 통과: `tests/unit/ledger-purchase.test.mjs`
+- 통과: `tests/unit/ledger-sales.test.mjs`
+- 통과: `playwright test tests/e2e/store-ledger-purchase.spec.ts --list` 로 8개 E2E 로딩 확인
+- 통과: `pnpm typecheck`
+- 통과: `pnpm lint`
+- 통과: Prettier check, `git diff --check`
+
+실제 Playwright 브라우저 실행은 sandbox가 Next dev server의 `127.0.0.1:3104` listen을 `EPERM`으로 막아서 실행하지 못했습니다. 테스트 실패가 아니라 현재 실행 환경의 포트 바인딩 제한입니다.
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index 8c666543a803981d1a1aabe9b5dc0a8e3dfe5477..5d65d425fe20d0a5e010a42a53dc11af9553acdc
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,35 +4,36 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.3는 public API route가 없고, 장부 저장은 Next.js Server Action과 Prisma transaction 경로로 처리된다. 서버 저장 계약은 unit/source tests와 Playwright UI 흐름으로 검증한다.
++- [x] N/A - Story 2.4는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 매입 저장을 처리한다. 서버 저장 계약은 focused unit/source tests와 Playwright UI 흐름으로 검
+증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-sales.spec.ts` - 총매출/현금/카드/기타 결제수단 저장, 부호 있는 결제 합계 차액 표시, 저장 후 새로고침 유지, 단계 navigation 저장됨 표시, stale version 충돌, 권한 없는 지
+점 차단, 본사마감 입력 lock, 저장 실패 retry, 390px 터치 타깃과 overflow 방지를 검증한다.
+-- [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - 비용 항목 다중 행 추가/삭제/저장, 비용 합계와 마지막 서버 저장 합계, 비활성 과거 비용 코드 표시 보존과 신규 선택지 제외, 비용 단계 미저장 변경 dial
+og 저장 경로, 저장 실패 retry, validation focus, 390px 다중 행 layout을 검증한다.
++- [x] `tests/e2e/store-ledger-purchase.spec.ts` - 품목/매입 기준 선택 저장, 여러 매입 라인 저장 후 재방문, 매입 합계 표시, 기준 정보 없는 원문 수동 입력, 삭제 후 저장, 품목 마스터 변경 후 snapshot 표
+시 보존, 모바일 390px 입력성, 검증 오류 focus, 음수/소수 입력 보존 검증을 커버한다.
++- [x] `tests/e2e/store-ledger-purchase.spec.ts` - 추가 gap으로 stale version 저장 거부와 DB 무변경, `HEADQUARTERS_CLOSED`/`HOLIDAY` 원본 저장 UI 차단, 권한 밖 지점 매입 라인 미노출을 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-sales.test.mjs` - 매출/결제 schema edge case, KST date serialization, version guard, audit/revalidation source contract, 결제 차이 계산, OQ-1 threshold/anomaly 미구현 contrac
+t를 검증한다.
+-- [x] `tests/unit/ledger-cost-labor.test.mjs` - 비용 schema edge case, blank memo normalization, active `EXPENSE_ITEM` 서버 검증, inactive/wrong-group 직접 post 차단 source contract, fallback code no
+n-saveability, 과거 비활성 코드 표시 보존, 서버 저장 합계 표시 contract를 검증한다.
++- [x] `tests/unit/ledger-purchase.test.mjs` - 매입 schema edge case, 기준 정보 없는 raw manual input, 정수/overflow 검증, manual source migration/model contract, 서버 계산/audit/revalidation/source c
+ontract, UI wiring을 검증한다.
++- [x] `tests/unit/ledger-sales.test.mjs` - 장부 저장의 version conflict/source contract 회귀를 함께 확인한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.3 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerSalesPayment`, `saveLedgerExpenses`, authorization, version conflict, audit logging, revalidation, active expense-code validation covered by unit/source tests.
+-- UI workflows: sales/payment save and revisit, signed payment difference, cost multi-line save and revisit, inactive historical expense code behavior, unsaved navigation save path, save failure retr
+y, closed-ledger lock, unauthorized store redirect, 390px layout/touch targets.
+-- Happy path: 1단계 매출/결제 값 저장과 2단계 비용 다중 행 저장이 DB/UI에 유지된다.
+-- Critical error cases: stale version conflict, unauthorized store access, network save failure retry, validation failure focus, inactive expense code 신규 선택지 제외, headquarters-closed mutation l
+ock.
++- API endpoints: N/A. Story 2.4 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerPurchases`, `requireStoreAccess`, stale `version` conflict, editable ledger status guard, server-side amount calculation, audit logging, revalidation, manual so
+urce contract covered by unit/source tests and E2E user paths.
++- UI workflows: purchase option prefill, raw manual purchase input, multi-line save/revisit, snapshot preservation after master data change, deletion, validation focus, mobile touch targets, closed/h
+oliday lock, unauthorized store redirect, stale version save rejection.
++- Happy path: multiple purchase lines save and reload with server-calculated total.
++- Critical error cases: stale version conflict, unauthorized store access, `HEADQUARTERS_CLOSED`/`HOLIDAY` edit lock, validation failure focus, negative/decimal numeric rejection, overflow contract.
+
+ ## Validation
+
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-purchase.test.mjs` - pass.
+ - [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-sales.test.mjs` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-cost-labor.test.mjs` - pass.
+-- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts --list` - 19 tests loaded.
+-- [x] `corepack pnpm exec prettier --check tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md` - pass.
+-- [x] `corepack pnpm exec prisma generate && DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish corepack pnpm exec prisma validate` - pass.
+-- [x] `corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test:unit && corepack pnpm build` - pass; unit tests 195/195 passed.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-le
+dger-cost-labor.spec.ts` - 19/19 passed after scoping strict locators to the new common save-status UI.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-purchase.test.mjs tests/unit/ledger-sales.test.mjs` - pass.
++- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-purchase.spec.ts --list` - 8 tests loaded.
++- [x] `corepack pnpm exec prettier --check tests/e2e/store-ledger-purchase.spec.ts` - pass.
++- [x] `corepack pnpm typecheck` - pass.
++- [x] `corepack pnpm lint` - pass.
++- [ ] `PORT=3104 corepack pnpm exec playwright test tests/e2e/store-ledger-purchase.spec.ts` - blocked in this sandbox because Next dev server cannot listen on `127.0.0.1:3104` (`EPERM`). The test sp
+ec loads successfully, but browser execution requires a local environment that permits binding a dev-server port.
+
+ ## Checklist Result
+
+@@ -41,8 +42,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture assertions.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
++- All generated tests run successfully: unit/source checks pass; E2E browser execution is blocked by sandbox port binding, not by test failure.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: selected ledger/code cleanup and deterministic fixtures are used.
++- Tests are independent: deterministic ledger date, product names, and cleanup helpers are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-purchase.spec.ts b/tests/e2e/store-ledger-purchase.spec.ts
+index 132604784422c35bd13d29e25e1f86667ec6c9fe..4149ffb20ce1c89a0e4df27c7e9a42342345dc81
+--- a/tests/e2e/store-ledger-purchase.spec.ts
++++ b/tests/e2e/store-ledger-purchase.spec.ts
+@@ -1,9 +1,14 @@
+ import { randomUUID } from "node:crypto";
+ import { expect, test, type Page } from "@playwright/test";
+-import { PrismaClient } from "../../generated/prisma/index.js";
++import {
++  PrismaClient,
++  type DailyLedgerStatus,
++} from "../../generated/prisma/index.js";
+
+ const prisma = new PrismaClient();
+ const STORY_STORE_ID = "store-gangnam";
++const UNAUTHORIZED_STORE_ID = "store-hongdae";
++const SELECTED_LEDGER_DATE = "2026-06-03";
+
+ test.afterAll(async () => {
+   await cleanupStoryTwoFourData();
+@@ -21,6 +26,17 @@
+   return user!.id;
+ }

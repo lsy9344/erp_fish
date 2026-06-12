@@ -42,6 +42,13 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
     "components",
     "hq-dashboard-table.tsx",
   );
+  assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "dashboard-delayed-loading-notice.tsx",
+  );
   assertProjectFile("src", "app", "app", "dashboard", "loading.tsx");
 
   const pageSource = readProjectFile(
@@ -74,6 +81,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
   assert.doesNotMatch(tableSource, /disabled[\s\S]*상세 준비 중/);
   assert.match(tableSource, /break-words/);
+  assert.match(tableSource, /tabular-nums/);
   assert.match(tableSource, /useRouter/);
   assert.match(tableSource, /onKeyDown/);
   assert.match(tableSource, /tabIndex/);
@@ -89,7 +97,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(detailPageSource, /getHqLedgerDetail\(/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
-  assert.match(loadingSource, /grid-cols-12/);
+  assert.match(loadingSource, /repeat\(13/);
 });
 
 test("HQ ledger detail shows anomaly signal details as visible text", () => {
@@ -175,13 +183,64 @@ test("HQ dashboard query uses correction-applied server calculations by default"
   assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
   assert.match(querySource, /correctionState/);
   assert.match(querySource, /정정 확인 필요/);
-  assert.match(ledgerCalculationSource, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(
+    ledgerCalculationSource,
+    /applyCorrectionValuesToLedgerReviewInput/,
+  );
   assert.match(ledgerCalculationSource, /hasUnappliedCorrections/);
   assert.match(ledgerCalculationSource, /PAYMENT_FIELD/);
   assert.match(ledgerCalculationSource, /LOSS_ROW/);
   assert.match(ledgerCalculationSource, /INVENTORY_ROW/);
   assert.match(ledgerCalculationSource, /EXPENSE_ROW/);
   assert.match(querySource, /toCorrectedInventoryAdjustments/);
+});
+
+test("HQ dashboard row contract exposes story 4.1 operational fields", () => {
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "types.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  for (const field of [
+    "businessStatus",
+    "ledgerStatus",
+    "isHeadquartersClosed",
+    "latestReflectedAt",
+    "lastModifiedBy",
+    "salesAmount",
+    "grossMarginRate",
+    "salesDifference",
+    "hasLoss",
+    "correctionState",
+    "signals",
+  ]) {
+    assert.match(typeSource, new RegExp(`${field}:`));
+  }
+
+  assert.match(
+    querySource,
+    /latestReflectedAt:\s*getLatestReflectedAt\(ledger\.updatedAt,\s*corrections\)/,
+  );
+  assert.match(querySource, /Date\.parse\(correction\.createdAt\)/);
+  assert.match(tableSource, /최신 반영/);
+  assert.match(tableSource, /마지막 수정자/);
+  assert.doesNotMatch(typeSource, /can(Edit|Close|Correct|Mutate)|actions?:/);
+  assert.doesNotMatch(querySource, /hasActionPermission/);
 });
 
 test("HQ dashboard keeps anomaly math out of UI components", () => {
@@ -382,6 +441,39 @@ test("HQ dashboard distinguishes filtered-empty rows from no active stores", () 
 
   assert.match(tableSource, /dashboard\.summary\.totalStores === 0/);
   assert.match(tableSource, /조건에 맞는 지점이 없습니다/);
+  assert.match(tableSource, /권한이 부여된 활성 지점이 없습니다/);
+  assert.match(tableSource, /활성 지점이 없습니다/);
+  assert.match(tableSource, /emptyStateReason/);
+});
+
+test("HQ dashboard loading copy stays distinct from business empty states", () => {
+  const loadingSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "dashboard",
+    "loading.tsx",
+  );
+  const delayedLoadingSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "dashboard-delayed-loading-notice.tsx",
+  );
+
+  assert.match(loadingSource, /활성 지점 장부 상태를 불러오는 중입니다/);
+  assert.match(loadingSource, /관제판 요약 불러오기/);
+  assert.match(loadingSource, /관제판 지점 목록 불러오기/);
+  assert.match(loadingSource, /DashboardDelayedLoadingNotice/);
+  assert.match(delayedLoadingSource, /3000/);
+  assert.match(delayedLoadingSource, /부분 로드/);
+  assert.match(delayedLoadingSource, /마지막 갱신 시각/);
+  assert.match(delayedLoadingSource, /router\.refresh\(\)/);
+  assert.match(delayedLoadingSource, /재시도/);
+  assert.doesNotMatch(loadingSource, /조건에 맞는 지점이 없습니다/);
+  assert.doesNotMatch(loadingSource, /권한이 부여된 활성 지점이 없습니다/);
+  assert.doesNotMatch(loadingSource, /활성 지점이 없습니다/);
 });
 
 test("HQ dashboard preserves sort and filter state through detail links", () => {

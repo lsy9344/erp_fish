@@ -1,0 +1,200 @@
++
++Playwright uses `playwright.config.ts`. By default it expects:
++
++```text
++DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish_e2e
++PORT=3000
++```
++
++Override those when your local test database or app port differs:
++
++```bash
++PORT=3100 DATABASE_URL="postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish" pnpm test:e2e
++```
++
+ ### Stop
+
+ ```bash
+@@ -118,31 +162,13 @@
+
+ Copy the project files, but do not copy `node_modules`, `.next`, or local Docker
+ volumes. On the new PC, install Docker Desktop, Node.js, and pnpm, create a new
+-`.env` from `.env.example`, generate a fresh `AUTH_SECRET`, then run the first
+-setup commands above.
+-
+-## What's next? How do I make an app with this?
++`.env` from `.env.example`, generate a fresh `AUTH_SECRET`, set local seed
++passwords, then run the first setup commands above.
+
+-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
++## Learn More
+
+-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and a
+sk for help.
+-
++- [Create T3 App](https://create.t3.gg/)
+ - [Next.js](https://nextjs.org)
+ - [NextAuth.js](https://next-auth.js.org)
+ - [Prisma](https://prisma.io)
+-- [Drizzle](https://orm.drizzle.team)
+ - [Tailwind CSS](https://tailwindcss.com)
+-- [tRPC](https://trpc.io)
+-
+-## Learn More
+-
+-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+-
+-- [Documentation](https://create.t3.gg/)
+-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+-
+-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+-
+-## How do I deploy this?
+-
+-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for
+ more information.
+diff --git a/_bmad-output/implementation-artifacts/epic-1-doc-audit-2026-06-11.md b/_bmad-output/implementation-artifacts/epic-1-doc-audit-2026-06-11.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..79b4dd0714833a3a8753c20fd335f6f7488ef832
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/epic-1-doc-audit-2026-06-11.md
+@@ -0,0 +1,66 @@
++# Epic 1 문서 드리프트 감사
++
++생성일: 2026-06-11
++범위: Epic 1 회고 후 문서 업데이트 필요 여부 검증
++
++## 검증 방법
++
++1. Sprint status와 Epic 1 story files를 읽어 실제 완료 범위를 확정했다.
++2. PRD, architecture, README, `.env.example`, package scripts, seed script, Playwright config, Prisma schema, server auth/audit helper를 대조했다.
++3. 실제 코드와 불일치가 확인된 문서만 수정 대상으로 채택했다.
++
++## 후보별 판정
++
++| 후보 문서 | 검증한 구현 근거 | 판정 | 조치 |
++| --- | --- | --- | --- |
++| `README.md` | `.env.example`, `prisma/seed.ts`, `playwright.config.ts`, `package.json`, `docker-compose.yml` | 불일치 있음 | 수정함 |
++| `_bmad-output/planning-artifacts/architecture.md` | `src/server/authz.ts`, `src/server/audit.ts`, `src/server/sensitive-fields.ts`, Prisma schema | 현재 구현과 대체로 일치 | 수정 안 함 |
++| `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md` | 권한 profile/action, 민감 필드 차단, audit payload 구현 | 현재 구현과 대체로 일치 | 수정 안 함 |
++| `.env.example` | `src/env.js`, `prisma/seed.ts`, README 로컬 실행 흐름 | placeholder 정책이 구현과 일치 | 수정 안 함 |
++| `package.json` scripts | Story validation logs, package scripts | 명령 이름은 구현과 일치 | 수정 안 함 |
++| `sprint-status.yaml` | 회고 완료 산출물 | retrospective status 불일치 | 수정함 |
++
++## 확인된 불일치
++
++### README seed 비밀번호 안내
++
++`README.md`는 seed login password를 `AdminPassword123!`로 안내했다. 실제 `.env.example`은 `SEED_HQ_PASSWORD`와 `SEED_STORE_MANAGER_PASSWORD`를 placeholder로 두고, `prisma/seed.ts`는 해당 환경 변수가
+없으면 seed를 실패시킨다. 따라서 README의 고정 비밀번호 안내는 실제 구현과 맞지 않는다.
++
++조치:
++
++- README에서 고정 seed password를 제거했다.
++- `.env` 작성 단계에서 `AUTH_SECRET`, `SEED_HQ_PASSWORD`, `SEED_STORE_MANAGER_PASSWORD`를 채우도록 안내했다.
++- Playwright 기본 test DB URL과 `PORT` override를 문서화했다.
++- T3 기본 템플릿 안내 중 이 프로젝트에 맞지 않는 일반 안내를 ERP Fish 실행/검증 안내로 대체했다.
++
++### sprint-status retrospective 상태
++
++`epic-1-retrospective`가 `optional`이었다. 회고 문서가 생성됐으므로 `done`으로 변경했다.
++
++## 수정하지 않은 후보
++
++### Architecture
++
++Architecture 문서는 다음 구현 학습과 이미 일치한다.
++
++- Next.js App Router, Prisma, PostgreSQL, NextAuth/Auth.js, shadcn/ui 선택
++- `src/server/authz.ts` 중심 shared authorization helper
++- action-level authorization
++- sensitive response shaping
++- `src/server/audit.ts` shared audit helper
++- append-only audit/correction 전략
++
++확인된 코드 불일치가 없어 수정하지 않았다.
++
++### PRD
++
++PRD는 권한 프로파일, action matrix, 지점장 민감 필드 차단, 감사 이벤트 공통 계약을 이미 정의한다. Epic 1 구현은 이 방향을 따른다. 확인된 코드 불일치가 없어 수정하지 않았다.
++
++### `.env.example`
++
++`.env.example`은 secret placeholder와 seed password placeholder를 사용한다. 이는 seed script의 secret 미커밋 정책과 일치한다. 수정하지 않았다.
++
++## 남은 주의점
++
++- `implementation-artifacts`에는 과거 계획의 stale story files가 남아 있다. 문서 자체의 코드 불일치는 아니지만, 자동화가 story를 선택할 때 sprint-status key와 제목을 기준으로 검증해야 한다.
++- Epic 2 실행 전 현재 backlog story와 기존 구현 파일의 관계를 다시 확인해야 한다.
+diff --git a/_bmad-output/implementation-artifacts/epic-1-retro-2026-06-11.md b/_bmad-output/implementation-artifacts/epic-1-retro-2026-06-11.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ad7502d3f65291b05acd5a6a1ac2f05b1fc4665
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/epic-1-retro-2026-06-11.md
+@@ -0,0 +1,179 @@
++# Epic 1 회고: 안전한 접근과 운영 감사 기반
++
++생성일: 2026-06-11
++프로젝트: erp_fish
++진행 모드: YOLO 자동 회고
++
++## 회고 범위
++
++- 대상 Epic: Epic 1, 안전한 접근과 운영 감사 기반
++- Sprint status 기준 완료 스토리: 5/5
++- 포함 스토리:
++  - Story 1.1: 프로젝트 앱 기반과 인증 골격 초기화
++  - Story 1.2: 사용자, 지점, 권한 프로파일 모델링
++  - Story 1.3: 역할 기반 로그인과 지점 접근 제한
++  - Story 1.4: 서버 권한 헬퍼와 민감 필드 응답 차단
++  - Story 1.5: 감사 로그 기반 구축
++- 이전 회고: Epic 1이 첫 회고 대상이므로 이전 Epic 회고 없음
++- 다음 Epic: Epic 2, 지점 일일 장부 입력
++
++## 참여 관점
++
++Amelia (Developer): "이번 회고는 사용자 입력 없이 스토리 기록, sprint-status, PRD, 아키텍처, 구현 코드를 근거로 진행했습니다."
++
++Alice (Product Owner): "제품 관점의 핵심은 본사/지점장 접근 경계와 감사 가능성이 Epic 2 장부 입력의 선행 조건으로 충분한지입니다."
++
++Winston (Architect): "기술 관점의 핵심은 권한, 민감 응답, 감사 로그가 feature별 임시 구현이 아니라 shared server boundary로 고정됐는지입니다."
++
++Dana (QA Engineer): "품질 관점의 핵심은 unit/build 검증은 강해졌지만 E2E 실행 환경이 반복적으로 리스크가 됐다는 점입니다."
++
++## Epic 요약
++
++Epic 1은 인증, 사용자/지점/권한 모델, action-level authorization, 지점장 민감 필드 차단, 감사 로그 기반을 구축했다. 구현 결과는 PRD의 FR-1, FR-2, FR-3, FR-23과 아키텍처의 Authentication & Security, A
+uthorization Pattern, Audit Pattern, Sensitive Field Gate 요구에 대체로 맞는다.
++
++완료된 핵심 기반:
++
++- Create T3 App 기반 Next.js, Prisma, NextAuth/Auth.js, Tailwind, shadcn/ui 앱 골격
++- Credentials 기반 내부 계정 로그인과 보호된 `/app` 서버 가드
++- `UserRole`, `Store`, `UserStoreAssignment`, `PermissionProfile`, `PermissionAction`, `UserPermissionProfile`
++- DB 재조회 기반 `src/server/authz.ts` authorization helper
++- action별 semantic helper: report, settings, user permission, ledger edit, close, correction, export
++- 본사 `ALL_STORES`/`ASSIGNED_STORES` 지점 범위
++- 지점장 응답의 민감 회계 필드 서버 차단
++- shared `writeAuditLog()`와 사용자/지점 변경 감사 payload
++- 변경 이력 조회 화면과 필터, 상세 dialog
++
++## 잘된 점
++
++1. 권한 경계를 서버 중심으로 정착시켰다.
++   - Story 1.1에서 `/app` segment guard를 보강했고, Story 1.2~1.4에서 role-only check를 action/profile/store scope helper로 확장했다.
++   - 권한 변경 후 기존 세션이 오래된 claim을 믿지 않도록 DB의 현재 사용자, 활성 profile, action, store assignment를 다시 읽는 패턴이 반복 적용됐다.
++
++2. 보안 요구를 UI 숨김이 아니라 응답 shape까지 끌고 갔다.
++   - Story 1.4에서 지점장 review, inventory, loss 응답에서 원가, 이익, 재고금액, 조정 금액, 손실 금액 계열이 서버 응답에서 제거됐다.
++   - review 중 발견된 loss `amount` 누출을 자동 수정해 민감 필드 기준이 실제 타입과 action 응답까지 내려갔다.
++
++3. 감사 로그가 별도 형식으로 흩어지지 않았다.
++   - `src/server/audit.ts`의 shared helper와 dot notation action을 유지했다.
++   - Story 1.5에서 actor permission context, target before/after snapshot, credential exclusion을 보강했다.
++
++4. 리뷰 피드백이 실질적인 품질 개선으로 이어졌다.
++   - 각 스토리에서 senior review가 HIGH/MEDIUM 이슈를 찾아 자동 수정했다.
++   - 반복된 수정 유형은 권한 scope, 민감 응답, audit payload completeness, story file traceability였다.
++
++## 어려웠던 점
++

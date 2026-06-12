@@ -1,0 +1,200 @@
++    data: {
++      totalSalesAmount: 44444,
++      cashAmount: 14000,
++      cardAmount: 30000,
++      otherPaymentAmount: 444,
++      updatedById: managerId,
++      version: { increment: 1 },
++    },
++  });
++
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("33333");
++  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
++  await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
++  await page
++    .getByRole("textbox", { name: "기타 결제수단", exact: true })
++    .fill("333");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  const conflictDialog = page.getByRole("dialog", {
++    name: "저장 충돌이 발생했습니다",
++  });
++  await expect(conflictDialog).toBeVisible();
++  await expect(conflictDialog.getByText("내 입력값")).toBeVisible();
++  await expect(conflictDialog.getByText("서버 최신값")).toBeVisible();
++  await expect(conflictDialog.getByText("마지막 수정자:")).toBeVisible();
++  await expect(conflictDialog.getByText("총매출")).toBeVisible();
++  await expect(conflictDialog.getByText("33333")).toBeVisible();
++  await expect(conflictDialog.getByText("44444")).toBeVisible();
++  await expect(
++    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
++  ).toBeVisible();
++  await expect(
++    conflictDialog.getByRole("button", { name: "계속 편집" }),
++  ).toBeVisible();
++
++  const ledger = await prisma.dailyLedger.findFirstOrThrow({
++    where: {
++      storeId: STORE_ID,
++      closingDate: new Date(`${CONFLICT_DATE}T00:00:00.000Z`),
++    },
++    select: { totalSalesAmount: true },
++  });
++  expect(ledger.totalSalesAmount).toBe(44444);
++});
++
++test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 연다", async ({
++  page,
++}) => {
++  await page.setViewportSize({ width: 390, height: 844 });
++  await loginAsStoreManager(page);
++  await page.goto(`/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}`);
++
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("12345");
++  await page.getByRole("navigation", { name: "지점장 하단 업무" })
++    .getByRole("link", { name: "재고" })
++    .click();
++
++  const unsavedDialog = page.getByRole("dialog", {
++    name: "저장하지 않은 변경이 있습니다",
++  });
++  await expect(unsavedDialog).toBeVisible();
++  await expect(
++    unsavedDialog.getByRole("button", { name: "저장" }),
++  ).toBeVisible();
++  await expect(
++    unsavedDialog.getByRole("button", { name: "변경 버리고 이동" }),
++  ).toBeVisible();
++  await expect(
++    unsavedDialog.getByRole("button", { name: "계속 편집" }),
++  ).toBeVisible();
++
++  await unsavedDialog.getByRole("button", { name: "계속 편집" }).click();
++  await expect(
++    page.getByRole("textbox", { name: "총매출", exact: true }),
++  ).toHaveValue("12,345");
++});
+diff --git a/tests/e2e/store-ledger-purchase.spec.ts b/tests/e2e/store-ledger-purchase.spec.ts
+index 33ed7225b6d4a614a4ef4fa0f6ee98a2e26a47ab..324237dd9d9fe34d2f685d44725f93f8823ec4fa
+--- a/tests/e2e/store-ledger-purchase.spec.ts
++++ b/tests/e2e/store-ledger-purchase.spec.ts
+@@ -354,11 +354,14 @@
+   await page.getByLabel("수량").fill("1");
+   await page.getByRole("button", { name: "저장" }).click();
+
++  const conflictDialog = page.getByRole("dialog", {
++    name: "저장 충돌이 발생했습니다",
++  });
++  await expect(conflictDialog).toBeVisible();
++  await expect(conflictDialog.getByText("내 입력값")).toBeVisible();
++  await expect(conflictDialog.getByText("서버 최신값")).toBeVisible();
+   await expect(
+-    page.getByRole("alert").filter({
+-      hasText:
+-        "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+-    }),
++    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
+   ).toBeVisible();
+
+   await expect
+diff --git a/tests/e2e/store-ledger-sales.spec.ts b/tests/e2e/store-ledger-sales.spec.ts
+index a88c6b0c4ef005c3af903f9140e7e5e4ee4b3b71..34aefb7515cf66e0b7e2e1c076918d447e04884b
+--- a/tests/e2e/store-ledger-sales.spec.ts
++++ b/tests/e2e/store-ledger-sales.spec.ts
+@@ -306,7 +306,7 @@
+   expect(ledger.totalSalesAmount).toBe(77777);
+ });
+
+-test("지점장은 stale version 저장 충돌 시 새로고침 안내를 본다", async ({
++test("지점장은 stale version 저장 충돌 시 저장 충돌 dialog를 본다", async ({
+   page,
+ }) => {
+   await loginAsStoreManager(page);
+@@ -333,11 +333,17 @@
+     .fill("333");
+   await page.getByRole("button", { name: "저장" }).click();
+
++  const conflictDialog = page.getByRole("dialog", {
++    name: "저장 충돌이 발생했습니다",
++  });
++  await expect(conflictDialog).toBeVisible();
++  await expect(conflictDialog.getByText("내 입력값")).toBeVisible();
++  await expect(conflictDialog.getByText("서버 최신값")).toBeVisible();
+   await expect(
+-    page.getByRole("alert").filter({
+-      hasText:
+-        "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+-    }),
++    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
++  ).toBeVisible();
++  await expect(
++    conflictDialog.getByRole("button", { name: "계속 편집" }),
+   ).toBeVisible();
+   await expect(
+     page
+diff --git a/tests/unit/ledger-conflicts.test.mjs b/tests/unit/ledger-conflicts.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a035feafca7578601dda5dd14ef3b70de6f4a92
+--- /dev/null
++++ b/tests/unit/ledger-conflicts.test.mjs
+@@ -0,0 +1,148 @@
++import assert from "node:assert/strict";
++import { existsSync, readFileSync } from "node:fs";
++import path from "node:path";
++import { test } from "node:test";
++
++const root = process.cwd();
++
++function assertProjectFile(...segments) {
++  const filePath = path.join(root, ...segments);
++
++  assert.ok(existsSync(filePath), `${segments.join("/")} should exist`);
++
++  return filePath;
++}
++
++function readProjectFile(...segments) {
++  return readFileSync(assertProjectFile(...segments), "utf8");
++}
++
++test("ActionResult exposes structured LEDGER_CONFLICT payload", () => {
++  const source = readProjectFile("src", "lib", "action-result.ts");
++
++  assert.match(source, /export type LedgerConflictPayload/);
++  assert.match(source, /clientToken:\s*string \| number/);
++  assert.match(source, /serverToken:\s*string \| number/);
++  assert.match(source, /clientValues:\s*Record<string, ActionConflictValue>/);
++  assert.match(source, /serverValues:\s*Record<string, ActionConflictValue>/);
++  assert.match(source, /lastModifiedBy:\s*string \| null/);
++  assert.match(source, /lastModifiedAt:\s*string/);
++  assert.match(source, /reloadRequired:\s*boolean/);
++  assert.match(source, /conflict\?:\s*LedgerConflictPayload/);
++  assert.match(source, /isLedgerConflictResult/);
++});
++
++test("server actions return common structured conflict contract", () => {
++  const ledgerConflictSource = readProjectFile(
++    "src",
++    "features",
++    "ledger",
++    "conflicts.ts",
++  );
++  assert.match(ledgerConflictSource, /ledgerConflictErrorFromMeta/);
++  assert.match(ledgerConflictSource, /code:\s*"LEDGER_CONFLICT"|LEDGER_CONFLICT/);
++  assert.match(ledgerConflictSource, /updatedBy:\s*\{\s*select:/s);
++
++  for (const segments of [
++    ["src", "features", "ledger", "actions.ts"],
++    ["src", "features", "ledger", "hq-edit-actions.ts"],
++    ["src", "features", "inventory", "actions.ts"],
++    ["src", "features", "inventory", "hq-edit-actions.ts"],
++    ["src", "features", "losses", "actions.ts"],
++    ["src", "features", "losses", "hq-edit-actions.ts"],
++    ["src", "features", "ledger", "hq-close-actions.ts"],
++  ]) {
++    const source = readProjectFile(...segments);
++

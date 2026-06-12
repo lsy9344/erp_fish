@@ -1,0 +1,200 @@
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-sales.test.mjs tests/unit/ledger-cost-labor.test.mjs` - pass.
++- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts --list` - 19 tests loaded.
++- [x] `corepack pnpm lint` - pass.
++- [x] `corepack pnpm typecheck` - pass.
++- [ ] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-le
+dger-cost-labor.spec.ts` - blocked: Next dev server cannot listen in this sandbox (`listen EPERM: operation not permitted 127.0.0.1:3100`).
++
++Notes:
++
++- Project context file warning remains: no `project-context.md` was found in the repository.
++- MCP doc search was not applicable because Story 2.3 did not add or upgrade external APIs/libraries; review used pinned workspace versions and local architecture/story sources.
++- Full Playwright execution remains blocked in this sandbox by Next dev server listen permissions already recorded in the Dev Agent Record.
++
+ ### Change Log
+
+ - 2026-06-12: Story 2.3 moved to review after active expense-code guard, expense memo normalization, server-total UI display, and sales/cost regression tests were added.
++- 2026-06-12: Senior developer review completed; fixed E2E cleanup scope and File List traceability, then moved story to done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 2fa68fa8a4b4876f8e0b02456c3eaf9024bddba6..c40dd1b1f837807f9f4fdb1ce6dbb64ec1dc29ff
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T01:34:11+09:00"
++last_updated: "2026-06-12T01:44:43+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -52,7 +52,7 @@
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: done
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+-  2-3-매출-결제와-비용-입력: review
++  2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: backlog
+   2-5-재고-입력과-이월-상태-표시: backlog
+   2-6-재고-조정-기록: backlog
+diff --git a/tests/e2e/store-ledger-cost-labor.spec.ts b/tests/e2e/store-ledger-cost-labor.spec.ts
+index 51417f4d47e09e1e9d45d43512d0df04b67a481a..ade9119234a0923ff5747b68e4757d8d4e474ae7
+--- a/tests/e2e/store-ledger-cost-labor.spec.ts
++++ b/tests/e2e/store-ledger-cost-labor.spec.ts
+@@ -78,7 +78,7 @@
+   const codes = await prisma.ledgerInputCode.findMany({
+     where: {
+       name: {
+-        startsWith: "스토리2-",
++        startsWith: "스토리2-3",
+       },
+     },
+     select: { id: true },
+
+codex
+리뷰 기록에 현재 E2E 차단 로그를 반영했습니다. 마지막 포맷 확인과 상태 확인만 남았습니다.
+exec
+/bin/bash -lc 'git status --porcelain' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M .agents/skills/bmad-story-automator/data/agent-config-presets.json
+ M .gitignore
+ D "_bmad-output/implementation-artifacts/2-3-\354\247\200\354\240\220\354\236\245\354\235\264-\353\247\244\354\236\205-\355\222\210\353\252\251\354\235\204-\352\270\260\354\244\200\354\240\225\353\26
+3\264\354\227\220\354\204\234-\354\204\240\355\203\235\355\225\264-\354\236\205\353\240\245\355\225\234\353\213\244.md"
+ M _bmad-output/implementation-artifacts/sprint-status.yaml
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M _bmad-output/planning-artifacts/architecture.md
+ M _bmad-output/planning-artifacts/epics.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/.decision-log.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md
+ M src/features/ledger/actions.ts
+ M src/features/ledger/components/expense-step-client.tsx
+ M src/features/ledger/schemas.ts
+ M tests/e2e/store-ledger-cost-labor.spec.ts
+ M tests/e2e/store-ledger-sales.spec.ts
+ M tests/unit/ledger-cost-labor.test.mjs
+ M tests/unit/ledger-sales.test.mjs
+?? "_bmad-output/implementation-artifacts/2-3-\353\247\244\354\266\234-\352\262\260\354\240\234\354\231\200-\353\271\204\354\232\251-\354\236\205\353\240\245.md"
+?? _bmad-output/planning-artifacts/implementation-readiness-report-2026-06-11.md
+?? _bmad-output/story-automator/
+
+exec
+/bin/bash -lc 'rg -n "''^Status:|Senior Developer Review|Outcome:|2-3-매출-결제와-비용-입력:|store-ledger-sales|test-summary|blocked: Next dev" _bmad-output/implementation-artifacts/2-3-매출-결제와-비
+용-입력.md _bmad-output/implementation-artifacts/sprint-status.yaml' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:55:  2-3-매출-결제와-비용-입력: done
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:12:Status: done
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:70:  - [x] `tests/e2e/store-ledger-sales.spec.ts`에서 총매출/현금/카드/기타 저장, 부호 있는 차이값 표시, 새로고침 후 값 유지, 390px
+표시를 검증한다.
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:133:  - `tests/e2e/store-ledger-sales.spec.ts`
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:175:  - `PORT=31xx DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec pla
+ywright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts`
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:251:- `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts` - skipped:
+Playwright webServer exited because Next dev server cannot listen in this sandbox (`listen EPERM 127.0.0.1:3000`).
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:271:- `_bmad-output/implementation-artifacts/tests/test-summary.md`
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:277:- `tests/e2e/store-ledger-sales.spec.ts`
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:280:### Senior Developer Review (AI)
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:284:Outcome: Approve after auto-fix. No CRITICAL issues remain.
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:288:- [AI-Review][Medium] 실제 변경 파일인 `tests/e2e/store-ledger-sales.spec.ts`와 `_bmad-output/implementation-artifacts/tests/test
+-summary.md`가 Dev Agent Record File List에 누락되어 추적성이 불완전했다. File List를 갱신했다.
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:300:- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts --list`
+- 19 tests loaded.
+_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md:303:- [ ] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec p
+laywright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts` - blocked: Next dev server cannot listen in this sandbox (`listen EPERM: operation not permitted 127.0.0.
+1:3100`).
+
+exec
+/bin/bash -lc 'corepack pnpm exec prettier --check _bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md tests/e2e/store-ledger-cost-labor.spec.ts _bmad-output/implementation-artifacts/sp
+rint-status.yaml' in /home/noah/code/erp_fish
+diff --git a/_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md b/_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md
+index 346c585714bb93f2faf05431fdf7b99ad7fd6bd2..832b327c7a522b34489e488a4a9fe16995a2a77f
+--- a/_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md
++++ b/_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.3: 매출/결제와 비용 입력
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -72,7 +72,6 @@
+   - [x] 권한 없는 `storeId` 또는 stale `version` 저장 시 `LEDGER_CONFLICT` 또는 권한 오류가 반환되고 장부 데이터가 노출되지 않는지 unit/e2e 중 하나에서 확인한다.
+
+ ## Dev Notes
+-
+
+ ### Source Context
+
+@@ -269,13 +268,47 @@
+
+ - `_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md`
+ - `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `_bmad-output/implementation-artifacts/tests/test-summary.md`
+ - `src/features/ledger/actions.ts`
+ - `src/features/ledger/schemas.ts`
+ - `src/features/ledger/components/expense-step-client.tsx`
+ - `tests/unit/ledger-sales.test.mjs`
+ - `tests/unit/ledger-cost-labor.test.mjs`
++- `tests/e2e/store-ledger-sales.spec.ts`
+ - `tests/e2e/store-ledger-cost-labor.spec.ts`
+
++### Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex on 2026-06-12
++
++Outcome: Approve after auto-fix. No CRITICAL issues remain.
++
++Findings fixed:
++
++- [AI-Review][Medium] 실제 변경 파일인 `tests/e2e/store-ledger-sales.spec.ts`와 `_bmad-output/implementation-artifacts/tests/test-summary.md`가 Dev Agent Record File List에 누락되어 추적성이 불완전했
+다. File List를 갱신했다.
++- [AI-Review][Medium] `tests/e2e/store-ledger-cost-labor.spec.ts`의 입력 코드 cleanup이 `스토리2-` 전체 prefix를 삭제해 다른 Story 2 E2E의 `LedgerInputCode` fixture를 지울 수 있었다. Story 2.3 전용 `
+스토리2-3` prefix로 제한했다.
++
++AC validation:
++
++- AC 1, 2: 매출/결제 schema와 `saveLedgerSalesPayment`가 금액 정수/범위 검증, version guard, 서버 계산 결제 차이값, OQ-1 threshold 미적용 계약을 유지한다.
++- AC 3, 4: 비용 schema, `saveLedgerExpenses`, active `EXPENSE_ITEM` 서버 검증, 과거 비활성 코드 표시 보존 UI가 확인됐다.
++- AC 5, 6: 저장 action은 `requireStoreAccess`, transaction, `writeAuditLog`, version 증가, safe response shaping, revalidation 패턴을 유지한다.
++
++Validation run:
++
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-sales.test.mjs tests/unit/ledger-cost-labor.test.mjs` - pass.
++- [x] `corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts --list` - 19 tests loaded.
++- [x] `corepack pnpm lint` - pass.
++- [x] `corepack pnpm typecheck` - pass.
++- [ ] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-le
+dger-cost-labor.spec.ts` - blocked: Next dev server cannot listen in this sandbox (`listen EPERM: operation not permitted 127.0.0.1:3100`).
++
++Notes:
++
++- Project context file warning remains: no `project-context.md` was found in the repository.
++- MCP doc search was not applicable because Story 2.3 did not add or upgrade external APIs/libraries; review used pinned workspace versions and local architecture/story sources.
++- Full Playwright execution remains blocked in this sandbox by Next dev server listen permissions already recorded in the Dev Agent Record.
++
+ ### Change Log
+
+ - 2026-06-12: Story 2.3 moved to review after active expense-code guard, expense memo normalization, server-total UI display, and sales/cost regression tests were added.
++- 2026-06-12: Senior developer review completed; fixed E2E cleanup scope and File List traceability, then moved story to done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 2fa68fa8a4b4876f8e0b02456c3eaf9024bddba6..c40dd1b1f837807f9f4fdb1ce6dbb64ec1dc29ff
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T01:34:11+09:00"
++last_updated: "2026-06-12T01:44:43+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -52,7 +52,7 @@
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: done
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+-  2-3-매출-결제와-비용-입력: review
++  2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: backlog

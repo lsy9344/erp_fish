@@ -1,0 +1,200 @@
+
+ - `_bmad-output/implementation-artifacts/2-9-장부-저장-충돌과-미저장-변경-처리.md`
+@@ -307,3 +334,4 @@
+ ### Change Log
+
+ - 2026-06-12: Implemented Story 2.9 structured ledger conflict handling, conflict dialog UX, dirty-form preservation during late revalidation, unsaved navigation guard coverage, and related tests. Mo
+ved story to review after unit/type/lint/build and 52-test focused E2E validation.
++- 2026-06-12: Senior Developer Review auto-fixed closed/holiday business error preservation and `beforeunload` compatibility; moved story to done after unit/lint/typecheck/build validation. Review-ru
+n E2E was blocked by sandbox port binding.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 49c8ed64a1b4021fdf2f9ce433c475ecbadf1835..bcd2ec782032989768d01f1edc350d4217297de7
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T06:29:46+09:00
++# last_updated: 2026-06-12T06:55:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T06:29:46+09:00"
++last_updated: "2026-06-12T06:55:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -58,7 +58,7 @@
+   2-6-재고-조정-기록: done
+   2-7-손실-폐기-떨이-입력: done
+   2-8-근무인원-특이사항과-검토-제출: done
+-  2-9-장부-저장-충돌과-미저장-변경-처리: review
++  2-9-장부-저장-충돌과-미저장-변경-처리: done
+   epic-2-retrospective: optional
+   epic-3: in-progress
+   3-1-기본-계산-모듈과-상태-표현: backlog
+diff --git a/src/features/inventory/actions.ts b/src/features/inventory/actions.ts
+index b9e5b9750ed4532e96b26e09b1cb5b7a0af12398..67774ad00dcb56a095352805c6501d07e98b0ff3
+--- a/src/features/inventory/actions.ts
++++ b/src/features/inventory/actions.ts
+@@ -69,6 +69,29 @@
+   );
+ }
+
++class OriginalInventoryBlockedError extends Error {
++  constructor(
++    readonly code: "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE",
++    message: string,
++  ) {
++    super(message);
++  }
++}
++
++function originalInventoryBlockedError(
++  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
++) {
++  const message =
++    status === "HOLIDAY"
++      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
++      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
++
++  return new OriginalInventoryBlockedError(
++    status === "HEADQUARTERS_CLOSED" ? "LEDGER_CLOSED" : "LEDGER_NOT_EDITABLE",
++    message,
++  );
++}
++
+ function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
+   return Object.fromEntries(
+     data.items.map((item) => [
+@@ -187,8 +210,18 @@
+         throw new Error("LEDGER_CONFLICT");
+       }
+
++      if (
++        before.status === "HEADQUARTERS_CLOSED" ||
++        before.status === "HOLIDAY"
++      ) {
++        throw originalInventoryBlockedError(before.status);
++      }
++
+       if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
+-        throw new Error("Ledger is not editable");
++        throw new OriginalInventoryBlockedError(
++          "LEDGER_NOT_EDITABLE",
++          "수정할 수 없는 장부 상태입니다.",
++        );
+       }
+
+       const editableLedger = await tx.dailyLedger.updateMany({
+@@ -280,6 +313,10 @@
+       return await mapLedgerConflictError("inventory", parsed.data);
+     }
+
++    if (error instanceof OriginalInventoryBlockedError) {
++      return actionError(error.code, error.message);
++    }
++
+     return mapStoreActionError();
+   }
+ }
+diff --git a/src/features/ledger/actions.ts b/src/features/ledger/actions.ts
+index bd3f4ab78c970989905046e3e7ec0b2619aeeb7b..1792825ac7988e33bc38be7563ecaeea645d3d0c
+--- a/src/features/ledger/actions.ts
++++ b/src/features/ledger/actions.ts
+@@ -159,6 +159,36 @@
+   );
+ }
+
++class OriginalLedgerBlockedError extends Error {
++  constructor(
++    readonly code: "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE",
++    message: string,
++  ) {
++    super(message);
++  }
++}
++
++function originalLedgerBlockedError(status: string) {
++  if (status === "HEADQUARTERS_CLOSED") {
++    return new OriginalLedgerBlockedError(
++      "LEDGER_CLOSED",
++      "본사 마감된 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
++    );
++  }
++
++  if (status === "HOLIDAY") {
++    return new OriginalLedgerBlockedError(
++      "LEDGER_NOT_EDITABLE",
++      "휴무 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
++    );
++  }
++
++  return new OriginalLedgerBlockedError(
++    "LEDGER_NOT_EDITABLE",
++    "수정할 수 없는 장부 상태입니다.",
++  );
++}
++
+ type LedgerConflictSection = Parameters<
+   typeof ledgerConflictErrorFromMeta
+ >[0]["section"];
+@@ -633,7 +663,7 @@
+       }
+
+       if (!isEditableLedgerStatus(beforeLedger.status)) {
+-        throw new Error("Ledger is not editable");
++        throw originalLedgerBlockedError(beforeLedger.status);
+       }
+
+       await updateEditableDailyLedgerInTx(
+@@ -684,6 +714,10 @@
+       return actionOk(current);
+     }
+
++    if (error instanceof OriginalLedgerBlockedError) {
++      return actionError(error.code, error.message);
++    }
++
+     return mapStoreActionError();
+   }
+ }
+@@ -715,7 +749,7 @@
+       }
+
+       if (!isEditableLedgerStatus(beforeLedger.status)) {
+-        throw new Error("Ledger is not editable");
++        throw originalLedgerBlockedError(beforeLedger.status);
+       }
+
+       const expenseCodeValidation = await validateActiveExpenseCodesInTx(
+@@ -780,6 +814,10 @@
+       return await mapLedgerConflictError("expenses", parsed.data);
+     }
+
++    if (error instanceof OriginalLedgerBlockedError) {
++      return actionError(error.code, error.message);
++    }
++
+     return mapStoreActionError();
+   }
+ }
+@@ -809,7 +847,7 @@
+       }
+
+       if (!isEditableLedgerStatus(beforeLedger.status)) {
+-        throw new Error("Ledger is not editable");
++        throw originalLedgerBlockedError(beforeLedger.status);
+       }
+
+       await updateEditableDailyLedgerInTx(
+@@ -1036,6 +1074,10 @@
+       );
+     }
+
++    if (error instanceof OriginalLedgerBlockedError) {
++      return actionError(error.code, error.message);
++    }

@@ -1,0 +1,200 @@
+- Appended review notes in [story 2.4](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md:293) and synced [sprint-status.yaml](/home/noah/code/erp_fish/_bmad-outp
+ut/implementation-artifacts/sprint-status.yaml:56).
+
+Validation:
+- `prisma validate` passed
+- `pnpm typecheck` passed
+- `pnpm lint` passed
+- `pnpm test:unit` passed, 29/29
+- `pnpm build` passed
+- Purchase E2E could not run in this environment: Playwright webServer check fails with `connect EPERM 127.0.0.1:3104`, matching the existing local bind restriction.
+diff --git a/_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md b/_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md
+index 161ff6c6bdf621837f27018f8aeb353e762821bc..26407bddf2a07f7b196898aec02b0bd4074436b6
+--- a/_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md
++++ b/_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.4: MVP 수동 매입 입력
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -263,6 +263,9 @@
+ - 2026-06-12: `corepack pnpm test:unit` 성공, 29/29 unit test 통과.
+ - 2026-06-12: `corepack pnpm build` 성공.
+ - 2026-06-12: `PORT=3104 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-purchase.spec.ts`는 Play
+wright webServer가 `listen EPERM 127.0.0.1:3104`로 조기 종료되어 이 환경에서 실행하지 못함.
++- 2026-06-12: Senior review focused unit 재실행 성공: `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-purchase.test.mjs`.
++- 2026-06-12: Senior review 검증 성공: `corepack pnpm exec prisma validate`, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`, `corepack pnpm build`.
++- 2026-06-12: Senior review E2E 재시도 실패: `DEBUG=pw:webserver PORT=3104 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright te
+st tests/e2e/store-ledger-purchase.spec.ts`가 `connect EPERM 127.0.0.1:3104` 후 webServer early exit.
+
+ ### Completion Notes List
+
+@@ -287,6 +290,39 @@
+ - `tests/unit/ledger-purchase.test.mjs`
+ - `tests/e2e/store-ledger-purchase.spec.ts`
+
++### Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Date: 2026-06-12
++Outcome: Approve after automatic fixes
++
++#### Findings Fixed
++
++- [HIGH] `ledgerPurchaseSchema`가 `purchaseStandardId`만 있는 입력을 raw 품목명/구분/규격 누락 오류로 처리해, 기준 정보 선택만으로 매입 라인을 저장할 수 있는 AC 2 계약을 일부 깨뜨렸다. `src/features/
+ledger/schemas.ts`에서 product 또는 standard가 있으면 master/basis-backed line으로 인정하고, 둘 다 없을 때만 raw snapshot 필드를 요구하도록 수정했다.
++- [MEDIUM] 지점장 `saveLedgerPurchases`에서 비활성/잘못된 매입 기준, 기준-품목 불일치, 잘못된 품목 ID가 일반 `LEDGER_SAVE_FAILED`로 떨어질 수 있었다. `src/features/ledger/actions.ts`에 row-level vali
+dation error를 추가해 field error로 반환하게 수정했다.
++- [MEDIUM] 본사 보완용 `saveHqLedgerPurchases`도 같은 기준-품목 검증 경계가 필요했다. `src/features/ledger/hq-edit-actions.ts`에 동일한 validation branch를 추가해 store manager 저장 contract와 맞췄다
+.
++- [LOW] `tests/unit/ledger-purchase.test.mjs`가 standard-only 입력 계약과 새 validation branch를 확인하지 못했다. 실제 Zod parse 기반 coverage와 source contract assertion을 추가했다.
++
++#### Acceptance Criteria Review
++
++- AC 1: 서버 Zod 검증과 저장 action의 `unitPrice * quantity` 서버 계산, `purchaseTotal` response 경로 확인. 통과.
++- AC 2: active product/standard 선택 경로와 기준 정보 없는 raw manual 입력 경로 확인. standard-only contract gap을 수정 후 통과.
++- AC 3: `LedgerPurchaseItem` snapshot 필드와 productId nullable raw line 보존 확인. 정규화 구현 없음. 통과.
++- AC 4: 저장 transaction 안 version 증가, line 교체, audit before/after payload 확인. 통과.
++- AC 5: `requireStoreAccess`, store/date/ledger/version guard, store-manager response shaping 확인. 통과.
++- AC 6: CAP-6 upload preview/commit/reprocess 미구현, persisted `sourceType: MANUAL` 경계 확인. 통과.
++
++#### Validation Checklist
++
++- Story file loaded and Status verified as `review` before review.
++- Story key resolved: `2-4-mvp-수동-매입-입력`.
++- Architecture and epic docs loaded; no `project-context.md` present.
++- Tech stack verified from `package.json` and architecture: Next.js 15, React 19, Prisma 6, Zod, Playwright.
++- External doc search not performed because Story 2.4 adds no new dependency/API and uses pinned workspace contracts.
++- File List reviewed against git status; unrelated dirty files outside this story were left untouched.
++- Tests mapped to ACs; purchase E2E remains environment-blocked by localhost EPERM.
++
+ ### Change Log
+
+ - 2026-06-12: Story 2.4 MVP 수동 매입 입력 구현. 기준 정보 없는 raw manual purchase, snapshot/source contract, 지점장/본사 저장 action, 매입 UI, 재고 집계 호환, unit/e2e coverage를 추가했다.
++- 2026-06-12: Senior review 자동 수정. 매입 기준만 선택한 입력 계약을 허용하고, 잘못된 매입 기준/품목 조합을 field-level validation error로 반환하도록 지점장/본사 저장 action과 purchase unit coverage
+를 보강했다.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 4e8832c0205110345ae9092da483ed8530244b5b..61e9b87592f56a9b8e4219f3ad746c2610894cf6
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:14:04+09:00
++# last_updated: 2026-06-12T02:29:36+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:14:04+09:00"
++last_updated: "2026-06-12T02:29:36+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -53,7 +53,7 @@
+   2-1-지점-일자-장부-생성과-상태-관리: done
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+-  2-4-mvp-수동-매입-입력: review
++  2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: backlog
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+diff --git a/src/features/ledger/actions.ts b/src/features/ledger/actions.ts
+index 027a54ec6b05bf7360664c2daa81eac6e6bd85a4..7c10e394aa5b1b9db15c2db46e73b9e5cb08cf91
+--- a/src/features/ledger/actions.ts
++++ b/src/features/ledger/actions.ts
+@@ -154,6 +154,22 @@
+   );
+ }
+
++class LedgerPurchaseValidationError extends Error {
++  constructor(readonly fieldErrors: Record<string, string[]>) {
++    super("LEDGER_PURCHASE_VALIDATION_ERROR");
++  }
++}
++
++function ledgerPurchaseValidationError(
++  index: number,
++  field: "productId" | "purchaseStandardId",
++  message: string,
++) {
++  return new LedgerPurchaseValidationError({
++    [`purchases.${index}.${field}`]: [message],
++  });
++}
++
+ function isEditableLedgerStatus(status: string) {
+   return editableLedgerStatuses.some(
+     (editableStatus) => editableStatus === status,
+@@ -657,7 +673,7 @@
+
+       if (parsed.data.purchases.length > 0) {
+         await tx.ledgerPurchaseItem.createMany({
+-          data: parsed.data.purchases.map((purchase) => {
++          data: parsed.data.purchases.map((purchase, index) => {
+             const standard = purchase.purchaseStandardId
+               ? standardsById.get(purchase.purchaseStandardId)
+               : null;
+@@ -672,16 +688,41 @@
+
+             if (
+               purchase.purchaseStandardId &&
+-              standard?.product.id !== purchase.productId &&
++              !standard &&
+               !isExistingSnapshot
+             ) {
+-              throw new Error("Invalid purchase standard");
++              throw ledgerPurchaseValidationError(
++                index,
++                "purchaseStandardId",
++                "매입 기준을 확인해 주세요.",
++              );
+             }
+
+-            if (purchase.productId && !product && !isExistingSnapshot) {
+-              throw new Error("Invalid purchase product");
++            if (
++              standard &&
++              purchase.productId &&
++              standard.product.id !== purchase.productId
++            ) {
++              throw ledgerPurchaseValidationError(
++                index,
++                "purchaseStandardId",
++                "매입 기준과 품목이 일치하지 않습니다.",
++              );
+             }
+
++            if (
++              purchase.productId &&
++              !product &&
++              !standard &&
++              !isExistingSnapshot
++            ) {
++              throw ledgerPurchaseValidationError(
++                index,
++                "productId",
++                "품목을 확인해 주세요.",
++              );
++            }
++
+             const unitPrice = purchase.unitPrice;
+             const quantity = purchase.quantity;
+             const snapshot = standard
+@@ -776,6 +817,14 @@
+       return mapLedgerConflictError();
+     }
+
++    if (error instanceof LedgerPurchaseValidationError) {
++      return actionError(
++        "VALIDATION_ERROR",
++        "입력값을 확인해 주세요.",
++        error.fieldErrors,
++      );

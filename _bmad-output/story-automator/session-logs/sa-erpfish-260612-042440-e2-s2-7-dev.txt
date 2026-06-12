@@ -1,0 +1,1902 @@
+## Project Structure Notes
+
+- Architecture target tree는 `src/features/losses`, `src/features/inventory`, `src/features/ledger`, `src/server/authz.ts`, `src/server/audit.ts`, `src/server/calculations`, `prisma`, `tests/unit`, `t
+ests/e2e` 경계를 사용한다.
+- `src/components/ui`에는 shadcn primitive만 둔다. 손실 step-specific UI는 `src/features/losses/components`에 둔다.
+- `src/server` owns cross-cutting auth/authz/audit/db behavior. Feature actions call helpers; they do not copy auth/session/audit logic.
+- 현재 implementation artifacts에는 과거 Story 2.7 검토 화면 파일이 남아 있다. current `sprint-status.yaml` 기준 새 authoritative story 파일은 이 파일이다.
+
+### References
+
+- [Source: `_bmad-output/planning-artifacts/epics.md#Story 2.7: 손실/폐기/떨이 입력`]
+- [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#FR-11: 손실/폐기/떨이 입력`]
+- [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#FR-9: 품목 단위 재고 입력`]
+- [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#4.3 계산과 검증`]
+- [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#10 Open Questions`]
+- [Source: `_bmad-output/planning-artifacts/architecture.md#Data Architecture`]
+- [Source: `_bmad-output/planning-artifacts/architecture.md#API & Communication Patterns`]
+- [Source: `_bmad-output/planning-artifacts/architecture.md#Authorization Pattern`]
+- [Source: `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#Component Patterns`]
+- [Source: `prisma/schema.prisma`]
+- [Source: `src/features/losses/actions.ts`]
+- [Source: `src/features/losses/hq-edit-actions.ts`]
+- [Source: `src/features/losses/queries.ts`]
+- [Source: `src/features/losses/schemas.ts`]
+- [Source: `src/features/losses/components/loss-step-client.tsx`]
+- [Source: `src/features/inventory/queries.ts`]
+- [Source: `src/features/inventory/adjustment-reconciliation.ts`]
+- [Source: `src/server/calculations/inventory.ts`]
+- [Source: `tests/unit/ledger-losses.test.mjs`]
+- [Source: `tests/e2e/store-ledger-losses.spec.ts`]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+GPT-5 Codex
+
+### Debug Log References
+
+### Completion Notes List
+
+- Ultimate context engine analysis completed - comprehensive developer guide created
+
+### File List
+
+exec
+/bin/bash -lc "sed -n '260,360p' _bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..903be7f25a38df58a50b8c0a13386d23a4258531
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T00:00:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T00:00:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: in-progress
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+스토리 문서에는 Tasks/Subtasks 체크박스만 일괄 완료 처리하고, Dev Agent Record 쪽에 실제 변경 파일과 검증 결과, E2E 실행 blocker를 남기겠습니다. Dev Notes 본문은 workflow 제한 때문에 수정하지 않습니다
+.
+exec
+/bin/bash -lc "perl -pi -e 's/"'^- '"\\[ \\]/- [x]/; s/"'^  - '"\\[ \\]/  - [x]/' _bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..903be7f25a38df58a50b8c0a13386d23a4258531
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T00:00:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T00:00:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: in-progress
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+체크박스 완료 처리가 끝났습니다. 이제 상태, Debug Log, Completion Notes, File List, Change Log를 추가합니다.
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..903be7f25a38df58a50b8c0a13386d23a4258531
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T00:00:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T00:00:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: in-progress
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..903be7f25a38df58a50b8c0a13386d23a4258531
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T00:00:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T00:00:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: in-progress
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+story 파일 상태를 `review`로 업데이트했습니다. sprint status도 동일하게 `review`로 맞추고 timestamp를 실제 실행 시각으로 갱신합니다.
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T04:28:51+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T04:28:51+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: review
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T04:28:51+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T04:28:51+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: review
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+tracking 업데이트가 끝났습니다. 마지막으로 story 체크박스, sprint/story 상태, diff, 그리고 DoD checklist를 기준으로 빠진 항목이 없는지 재검사합니다.
+exec
+/bin/bash -lc 'git diff --stat -- src/features/losses/types.ts src/features/losses/queries.ts src/features/losses/components/loss-step-client.tsx tests/unit/ledger-losses.test.mjs tests/unit/sensitive
+-response-shaping.test.mjs tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/sprint-status.yaml _bmad-output/implementatio
+n-artifacts/2-7-손실-폐기-떨이-입력.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ .../implementation-artifacts/sprint-status.yaml    |  6 +--
+ .../losses/components/loss-step-client.tsx         |  2 +-
+ src/features/losses/queries.ts                     |  3 +-
+ src/features/losses/types.ts                       |  5 +--
+ .../e2e/store-ledger-inventory-adjustment.spec.ts  | 24 +++++------
+ tests/e2e/store-ledger-losses.spec.ts              | 50 +++++++++++-----------
+ tests/unit/ledger-losses.test.mjs                  | 10 ++++-
+ tests/unit/sensitive-response-shaping.test.mjs     |  5 ++-
+ 8 files changed, 56 insertions(+), 49 deletions(-)
+
+exec
+/bin/bash -lc 'rg -n "''^- '"\\[ \\]|"'^  - '"\\[ \\]|Status:|2-7-손실-폐기-떨이-입력:|File List|Change Log|Debug Log|Completion Notes\" _bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.m
+d _bmad-output/implementation-artifacts/sprint-status.yaml" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:10:# Epic Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:19:# Story Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:26:# Retrospective Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:59:  2-7-손실-폐기-떨이-입력: review
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:12:Status: review
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:234:### Debug Log References
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:240:### Completion Notes List
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:248:### File List
+_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md:260:### Change Log
+
+exec
+/bin/bash -lc 'git diff --check -- src/features/losses/types.ts src/features/losses/queries.ts src/features/losses/components/loss-step-client.tsx tests/unit/ledger-losses.test.mjs tests/unit/sensitiv
+e-response-shaping.test.mjs tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/sprint-status.yaml _bmad-output/implementati
+on-artifacts/2-7-손실-폐기-떨이-입력.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T04:28:51+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T04:28:51+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: review
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+체크박스 미완료 항목은 남지 않았고, story와 sprint status 모두 `review`입니다. `git diff --check`도 깨끗합니다. 마지막으로 전체 변경 상태를 확인한 뒤 workflow의 on_complete hook을 실행하겠습니다.
+exec
+/bin/bash -lc 'git status --short' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M .agents/skills/bmad-story-automator/data/agent-config-presets.json
+ M .gitignore
+ D "_bmad-output/implementation-artifacts/2-7-\354\236\205\353\240\245\354\236\220\352\260\200-\352\262\200\355\206\240-\355\231\224\353\251\264\354\227\220\354\204\234-\352\263\204\354\202\260\352\26
+0\222\352\263\274-\354\235\264\354\203\201-\355\233\204\353\263\264\353\245\274-\355\231\225\354\235\270\355\225\234\353\213\244.md"
+ M _bmad-output/implementation-artifacts/sprint-status.yaml
+ M _bmad-output/planning-artifacts/architecture.md
+ M _bmad-output/planning-artifacts/epics.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/.decision-log.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md
+ M src/features/losses/components/loss-step-client.tsx
+ M src/features/losses/queries.ts
+ M src/features/losses/types.ts
+ M tests/e2e/store-ledger-inventory-adjustment.spec.ts
+ M tests/e2e/store-ledger-losses.spec.ts
+ M tests/unit/ledger-losses.test.mjs
+ M tests/unit/sensitive-response-shaping.test.mjs
+?? "_bmad-output/implementation-artifacts/2-7-\354\206\220\354\213\244-\355\217\220\352\270\260-\353\226\250\354\235\264-\354\236\205\353\240\245.md"
+?? _bmad-output/planning-artifacts/implementation-readiness-report-2026-06-11.md
+?? _bmad-output/story-automator/
+
+exec
+/bin/bash -lc 'python3 _bmad/scripts/resolve_customization.py --skill .agents/skills/bmad-dev-story --key workflow.on_complete' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+{
+  "workflow.on_complete": ""
+}
+
+exec
+/bin/bash -lc "sed -n '224,270p' _bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+- [Source: `src/server/calculations/inventory.ts`]
+- [Source: `tests/unit/ledger-losses.test.mjs`]
+- [Source: `tests/e2e/store-ledger-losses.spec.ts`]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+GPT-5 Codex
+
+### Debug Log References
+
+- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
+- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could not
+ run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
+- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
+
+### Completion Notes List
+
+- Ultimate context engine analysis completed - comprehensive developer guide created
+- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
+- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
+- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/th
+reshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
+- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+### File List
+
+- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `src/features/losses/components/loss-step-client.tsx`
+- `src/features/losses/queries.ts`
+- `src/features/losses/types.ts`
+- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+- `tests/e2e/store-ledger-losses.spec.ts`
+- `tests/unit/ledger-losses.test.mjs`
+- `tests/unit/sensitive-response-shaping.test.mjs`
+
+### Change Log
+
+- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T04:28:51+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T04:28:51+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: review
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+codex
+스토리 2.7 dev-story workflow를 완료했고, story 파일과 sprint status를 모두 `review`로 업데이트했습니다.
+
+핵심 변경:
+- 지점장 손실 조회에서 사용자가 입력한 `amount`는 다시 표시되도록 유지했습니다.
+- `unitPrice`, `defaultUnitPrice`, `totalAmount`, `exceededAmount`, FIFO/lot/원가/마진/이익 파생값은 계속 제외합니다.
+- E2E marker/seed/cleanup을 `story-2-7` / `스토리2-7` 기준으로 정리했습니다.
+- 모든 Tasks/Subtasks 체크박스를 `[x]`로 갱신하고 Dev Agent Record, File List, Change Log를 업데이트했습니다.
+
+검증 결과:
+- 통과: `prisma generate`, `prisma validate`, `lint`, `typecheck`, `test:unit`, `build`
+- 통과: focused `ledger-losses`, `ledger-inventory`, `sensitive-response-shaping`
+- E2E: 실행 시도했지만 현재 sandbox에서 dev server bind가 막혀 실패했습니다: `listen EPERM: operation not permitted 127.0.0.1:3107`. 이 blocker는 story Debug Log에 기록했습니다.
+
+주요 파일:
+- [_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md)
+- [src/features/losses/queries.ts](/home/noah/code/erp_fish/src/features/losses/queries.ts)
+- [src/features/losses/types.ts](/home/noah/code/erp_fish/src/features/losses/types.ts)
+- [tests/e2e/store-ledger-losses.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-losses.spec.ts)
+
+기존 unrelated dirty worktree 변경은 그대로 두었습니다. Next step은 다른 모델/세션으로 `code-review` workflow를 돌리는 것입니다.
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+index ecdca33110ccb35210c2119903ea0be77b8f16e1..42b593475b0d91f4dcab14f5734a0b66e2f9425b
+--- a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.7: 손실/폐기/떨이 입력
+
+-Status: ready-for-dev
++Status: review
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -233,8 +233,30 @@
+
+ ### Debug Log References
+
++- 2026-06-12: Red phase confirmed new safe amount display contract failed before mapper/type implementation.
++- 2026-06-12: `PORT=3107 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts` could no
+t run because the Playwright webServer exited early; direct dev server start failed with `listen EPERM: operation not permitted 127.0.0.1:3107`.
++- 2026-06-12: Initial `corepack pnpm typecheck` failed because `.next/types/**/*.ts` files were absent; `corepack pnpm build` regenerated them, and the subsequent typecheck passed.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
++- Reconfirmed the existing loss persistence/action/inventory reconciliation implementation against Story 2.7 boundaries without adding a parallel loss model or new public API route.
++- Fixed Story 2.7 numbering drift in loss and inventory-adjustment E2E marker/seed/cleanup data.
++- Chose and implemented the AC 1/AC 6 policy that the user-entered loss `amount` is a non-sensitive field input and should re-display to store managers, while `unitPrice`, default unit price, total/t
+hreshold amount summaries, FIFO/lot/cost/margin/profit-derived fields remain excluded from store-manager responses.
++- Added/updated unit and E2E assertions for the safe amount-display contract and preserved OQ-9/FIFO exclusion through existing source-contract tests.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/losses/components/loss-step-client.tsx`
++- `src/features/losses/queries.ts`
++- `src/features/losses/types.ts`
++- `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
++- `tests/e2e/store-ledger-losses.spec.ts`
++- `tests/unit/ledger-losses.test.mjs`
++- `tests/unit/sensitive-response-shaping.test.mjs`
++
++### Change Log
++
++- 2026-06-12: Implemented Story 2.7 loss amount visibility policy and Story 2.7 test marker cleanup; moved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ede6c6ac325c8ee426796f74d0111368ee558d72..d594dba0d2f0bfe1ddaa2016e20d9ee24f99fdec
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T04:19:20+09:00
++# last_updated: 2026-06-12T04:28:51+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T04:19:20+09:00"
++last_updated: "2026-06-12T04:28:51+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: ready-for-dev
++  2-7-손실-폐기-떨이-입력: review
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 5fbbbc3492627ede6f67d765ee0c44e096a60420..7838a3ed22b88aa2ccb325f09709bb50019d6c9c
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -361,7 +361,7 @@
+         isSaving={isSaving}
+         errorMessage={formError}
+         successMessage={resultMessage}
+-        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+         onRetry={handleRetry}
+         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+       />
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index 5ad49f7ac1587f5f38dc919504b2f034208846d6..a36961d6e86e6c244fbe3058cf40720ced285037
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -180,9 +180,8 @@
+         return option;
+       },
+     ),
+-    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+       void unitPrice;
+-      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3..a936acc51251be94f463322bc5c8823feb01b593
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -66,10 +66,7 @@
+   "defaultUnitPrice"
+ >;
+
+-export type StoreManagerLossLineItem = Omit<
+-  LossLineItem,
+-  "unitPrice" | "amount"
+->;
++export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+
+ export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
+
+diff --git a/tests/e2e/store-ledger-losses.spec.ts b/tests/e2e/store-ledger-losses.spec.ts
+index a2616a998571ec73ab022ea936a43f70e84ac7fc..04a689317b52a868a89624ecd913c0faf8962961
+--- a/tests/e2e/store-ledger-losses.spec.ts
++++ b/tests/e2e/store-ledger-losses.spec.ts
+@@ -322,8 +322,8 @@
+   await expect(page.getByLabel("사유/특이사항").nth(1)).toHaveValue(
+     "떨이 판매",
+   );
+-  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("");
+-  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("");
++  await expect(page.getByLabel("손실액(원)").nth(0)).toHaveValue("5000");
++  await expect(page.getByLabel("손실액(원)").nth(1)).toHaveValue("3000");
+   await expect(page.getByText("총 손실액")).toHaveCount(0);
+   await expect(page.getByText("기준 단가")).toHaveCount(0);
+   const html = await page.content();
+@@ -333,8 +333,10 @@
+     "unitPrice",
+     "totalAmount",
+     "exceededAmount",
+-    "5000",
+-    "3000",
++    "FIFO",
++    "lot",
++    "margin",
++    "profit",
+   ]) {
+     expect(html).not.toContain(sensitiveNeedle);
+   }
+diff --git a/tests/unit/ledger-losses.test.mjs b/tests/unit/ledger-losses.test.mjs
+index b928f146275ea9fea893f9b37bcb3f0034098499..b7795e4ebfd11ed83af8265410543bf9b701c29a
+--- a/tests/unit/ledger-losses.test.mjs
++++ b/tests/unit/ledger-losses.test.mjs
+@@ -298,7 +298,7 @@
+   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+ });
+
+-test("ledger loss review fixes keep thresholds, stale guards, and loss-only inventory flow", () => {
++test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {
+   const schemaSource = readProjectFile(
+     "src",
+     "features",
+@@ -315,6 +315,14 @@
+   );
+   assert.match(lossQuerySource, /quantity:\s*0/);
+   assert.match(lossQuerySource, /amount:\s*0/);
++  assert.match(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
++  );
++  assert.doesNotMatch(
++    lossQuerySource,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++  );
+
+   const inventoryQuerySource = readProjectFile(
+     "src",
+diff --git a/tests/unit/sensitive-response-shaping.test.mjs b/tests/unit/sensitive-response-shaping.test.mjs
+index 68c2501e03fac6a448f79346bde782984342adc7..4d321c9ead545644ae674d51c93a309533436c8f
+--- a/tests/unit/sensitive-response-shaping.test.mjs
++++ b/tests/unit/sensitive-response-shaping.test.mjs
+@@ -122,7 +122,8 @@
+   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
+   assert.match(lossTypes, /StoreManagerLossStepData/);
+   assert.match(lossTypes, /StoreManagerLossLineItem/);
+-  assert.match(
++  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
++  assert.doesNotMatch(
+     lossTypes,
+     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
+   );
+@@ -145,7 +146,7 @@
+
+   assert.match(
+     lossQueries,
+-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
++    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+   );
+   assert.match(
+     lossQueries,
+
+tokens used
+137,840
+
+Pane is dead (status 0, Fri Jun 12 04:30:16 2026)

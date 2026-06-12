@@ -1,0 +1,200 @@
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T20:17:22+09:00"
++last_updated: "2026-06-11T20:35:27+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -45,7 +45,7 @@
+   epic-1: in-progress
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+   1-2-사용자-지점-권한-프로파일-모델링: done
+-  1-3-역할-기반-로그인과-지점-접근-제한: review
++  1-3-역할-기반-로그인과-지점-접근-제한: done
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: backlog
+   1-5-감사-로그-기반-구축: backlog
+   epic-1-retrospective: optional
+diff --git a/src/app/app/ledgers/[ledgerId]/page.tsx b/src/app/app/ledgers/[ledgerId]/page.tsx
+index 55842299fc2d286c38a779a4250719421519fdaa..c5b33a7da1003552348dfe05e996531f2eb9324e
+--- a/src/app/app/ledgers/[ledgerId]/page.tsx
++++ b/src/app/app/ledgers/[ledgerId]/page.tsx
+@@ -52,7 +52,8 @@
+ import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
+ import { getActiveProductOptions } from "~/features/master-data/product-queries";
+ import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
+-import { requireReportAccess } from "~/server/authz";
++import { PermissionAction } from "../../../../../generated/prisma";
++import { hasActionPermission, requireReportAccess } from "~/server/authz";
+
+ type LedgerDetailPageProps = {
+   params: Promise<{
+@@ -93,7 +94,17 @@
+   searchParams,
+ }: LedgerDetailPageProps) {
+   const user = await requireReportAccess();
+-  const navigationItems = await getHeadquartersNavigationItems(user.id);
++  const [
++    navigationItems,
++    canEditLedger,
++    canCloseLedger,
++    canCreateCorrection,
++  ] = await Promise.all([
++    getHeadquartersNavigationItems(user.id),
++    hasActionPermission(user.id, PermissionAction.LEDGER_EDIT),
++    hasActionPermission(user.id, PermissionAction.LEDGER_HQ_CLOSE),
++    hasActionPermission(user.id, PermissionAction.CORRECTION_CREATE),
++  ]);
+   const { ledgerId } = await params;
+   const query = await searchParams;
+   const dashboardPath = getDashboardPath({
+@@ -112,18 +123,12 @@
+     ledger,
+     inventoryData,
+     lossData,
+-    expenseCodeOptions,
+-    productOptions,
+-    purchaseStandardOptions,
+     correctionRecords,
+   ] = await Promise.all([
+     getHqLedgerDetail(ledgerId),
+     getLedgerCostStepDataById(ledgerId),
+     getInventoryStepDataByLedgerId(ledgerId),
+     getLossStepDataByLedgerId(ledgerId),
+-    getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
+-    getActiveProductOptions(),
+-    getActivePurchaseStandardOptions(),
+     getCorrectionRecordsForLedger(ledgerId),
+   ]);
+
+@@ -131,6 +136,14 @@
+     notFound();
+   }
+
++  const [expenseCodeOptions, productOptions, purchaseStandardOptions] =
++    canEditLedger
++      ? await Promise.all([
++          getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
++          getActiveProductOptions(),
++          getActivePurchaseStandardOptions(),
++        ])
++      : [[], [], []];
+   const isOriginalEditBlocked =
+     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+   const lastModifiedBy =
+@@ -274,7 +287,7 @@
+           </AlertDescription>
+         </Alert>
+       ) : null}
+-      {isOriginalEditBlocked ? null : (
++      {!isOriginalEditBlocked && canCloseLedger ? (
+         <section className="bg-card rounded-lg border p-4 shadow-sm">
+           <HqLedgerCloseDialog
+             ledgerId={ledger.id}
+@@ -282,8 +295,8 @@
+             status={ledger.status}
+           />
+         </section>
+-      )}
+-      {ledger.status === "HEADQUARTERS_CLOSED" ? (
++      ) : null}
++      {ledger.status === "HEADQUARTERS_CLOSED" && canCreateCorrection ? (
+         <CorrectionPanel
+           ledgerId={ledger.id}
+           targetOptions={correctionTargetOptions}
+@@ -292,102 +305,104 @@
+         />
+       ) : null}
+
+-      <Tabs defaultValue="sales" className="w-full">
+-        <TabsList
+-          variant="line"
+-          className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
+-        >
+-          <TabsTrigger value="sales" className="min-h-9 px-3">
+-            매출/결제
+-          </TabsTrigger>
+-          <TabsTrigger value="expenses" className="min-h-9 px-3">
+-            비용
+-          </TabsTrigger>
+-          <TabsTrigger value="purchases" className="min-h-9 px-3">
+-            매입
+-          </TabsTrigger>
+-          <TabsTrigger value="inventory" className="min-h-9 px-3">
+-            재고
+-          </TabsTrigger>
+-          <TabsTrigger value="losses" className="min-h-9 px-3">
+-            손실
+-          </TabsTrigger>
+-          <TabsTrigger value="work" className="min-h-9 px-3">
+-            근무
+-          </TabsTrigger>
+-        </TabsList>
++      {canEditLedger ? (
++        <Tabs defaultValue="sales" className="w-full">
++          <TabsList
++            variant="line"
++            className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
++          >
++            <TabsTrigger value="sales" className="min-h-9 px-3">
++              매출/결제
++            </TabsTrigger>
++            <TabsTrigger value="expenses" className="min-h-9 px-3">
++              비용
++            </TabsTrigger>
++            <TabsTrigger value="purchases" className="min-h-9 px-3">
++              매입
++            </TabsTrigger>
++            <TabsTrigger value="inventory" className="min-h-9 px-3">
++              재고
++            </TabsTrigger>
++            <TabsTrigger value="losses" className="min-h-9 px-3">
++              손실
++            </TabsTrigger>
++            <TabsTrigger value="work" className="min-h-9 px-3">
++              근무
++            </TabsTrigger>
++          </TabsList>
+
+-        <TabsContent value="sales" className="mt-3">
+-          <SalesPaymentStepClient
+-            key={`sales-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+-            storeName={detail.storeName}
+-            initialLedger={ledger}
+-            currentStep="sales"
+-            saveAction={saveHqLedgerSalesPayment}
+-            showStepNavigation={false}
+-            ledgerLabel={hqLedgerLabel}
+-          />
+-        </TabsContent>
+-        <TabsContent value="expenses" className="mt-3">
+-          <ExpenseStepClient
+-            key={`expenses-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+-            storeName={detail.storeName}
+-            initialLedger={ledger}
+-            expenseCodeOptions={expenseCodeOptions}
+-            currentStep="cost"
+-            saveAction={saveHqLedgerExpenses}
+-            showStepNavigation={false}
+-            showSensitiveAccountingMetrics
+-            ledgerLabel={hqLedgerLabel}
+-          />
+-        </TabsContent>
+-        <TabsContent value="purchases" className="mt-3">
+-          <PurchaseStepClient
+-            key={`purchases-${ledger.id}-${ledger.status}-${ledger.updatedAt}`}
+-            storeName={detail.storeName}
+-            initialLedger={ledger}
+-            productOptions={productOptions}
+-            purchaseStandardOptions={purchaseStandardOptions}
+-            currentStep="purchase"
+-            saveAction={saveHqLedgerPurchases}
+-            showStepNavigation={false}
+-            ledgerLabel={hqLedgerLabel}
+-          />
+-        </TabsContent>
+-        <TabsContent value="inventory" className="mt-3">
+-          <InventoryStepClient

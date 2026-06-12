@@ -1,0 +1,200 @@
+   115      await expect(page).toHaveURL(/\/login\?callbackUrl=%2Fapp/);
+   116      await expect(
+   117        page.getByRole("heading", { name: "ERP Fish 로그인" }),
+   118      ).toBeVisible();
+   119      await expect(page.getByRole("heading", { name: "관제판" })).toHaveCount(0);
+   120      await expect(page.getByText("서초점")).toHaveCount(0);
+   121    } finally {
+   122      await prisma.user.update({
+   123        where: { id: user.id },
+   124        data: { isActive: true },
+   125      });
+   126    }
+   127  });
+   128
+   129  test("DB에서 본사 프로파일 action이 제거되면 같은 세션 다음 요청에서 차단된다", async ({
+   130    page,
+   131  }) => {
+   132    const profile = await prisma.permissionProfile.findUniqueOrThrow({
+   133      where: { code: "HQ_STAFF" },
+   134      select: { id: true },
+   135    });
+
+exec
+/bin/bash -lc "nl -ba _bmad-output/implementation-artifacts/tests/test-summary.md | sed -n '1,120p'" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+     1  # Test Automation Summary
+     2
+     3  ## Generated Tests
+     4
+     5  ### API Tests
+     6
+     7  - [x] N/A - Story 1.3에는 별도 HTTP API route surface가 없으며, 서버 권한 경계는 unit test와 Prisma-backed Playwright fixture/DB 변경 시나리오로 검증한다.
+     8
+     9  ### E2E Tests
+    10
+    11  - [x] `tests/e2e/auth.spec.ts` - 비로그인 `/app`, 지점장 본사 URL 직접 접근, 지점장 store scope, 중복 `storeId`, 비활성/미배정 지점장 흐름을 검증한다.
+    12  - [x] `tests/e2e/permission-profiles.spec.ts` - 지정 지점 본사 계정의 배정 지점 접근, 미배정 지점 차단, dashboard/report scope 제한, 기준정보 직접 URL 차단, fixture 권한 구조를 검증한다.
+    13  - [x] `tests/e2e/permission-profiles.spec.ts` - Story 1.3 QA 보강으로 권한 없는 본사 메뉴 숨김과 `User.isActive=false` 변경 후 같은 세션 다음 요청 차단 테스트를 추가했다.
+    14
+    15  ## Coverage
+    16
+    17  - API endpoints: N/A. 이 스토리의 권한 경계는 Server Component, server query, Server Action, Playwright route flow 중심이다.
+    18  - UI authorization workflows: 비로그인 보호 route, 지점장 본사 URL 차단, 본사 지정 지점 scope, 권한 없는 기준정보 route 차단, 권한 없는 본사 메뉴 숨김을 커버한다.
+    19  - Critical error cases: 권한 action 제거, 지점 배정 제거, 사용자 비활성화, 중복/미배정/비활성 `storeId` 흐름을 커버한다.
+    20  - Remaining execution gap: Playwright E2E는 현재 sandbox가 `127.0.0.1:3000` listen을 막아 실제 브라우저 실행 전 차단된다.
+    21
+    22  ## Validation
+    23
+    24  - [x] `corepack pnpm exec prettier --write tests/e2e/permission-profiles.spec.ts`
+    25  - [x] `corepack pnpm exec prettier --check tests/e2e/permission-profiles.spec.ts`
+    26  - [x] `corepack pnpm lint`
+    27  - [x] `corepack pnpm test:unit` - 28/28 unit test files passed.
+    28  - [ ] `PATH=/tmp/erp-fish-bin:$PATH corepack pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` - Next dev server failed before test execution with `listen EPERM: operation not p
+ermitted 127.0.0.1:3000`.
+    29
+    30  ## Checklist Result
+    31
+    32  - API tests generated if applicable: N/A.
+    33  - E2E tests generated if UI exists: complete.
+    34  - Standard framework APIs: Playwright `test`, `expect`, semantic role/text locators.
+    35  - Happy path: assigned HQ dashboard/report/store access.
+    36  - Critical errors: unauthorized route, stale permission action, stale store assignment, stale active user.
+    37  - All generated tests run successfully: blocked for Playwright by sandbox server listen restriction; lint/unit/format pass.
+    38
+    39  ## Next Steps
+    40
+    41  - Re-run `corepack pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` in an environment that allows binding `127.0.0.1:3000`.
+
+exec
+/bin/bash -lc 'git status --short -- tests/e2e/permission-profiles.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M tests/e2e/permission-profiles.spec.ts
+
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index 376f8173d83e31a0a5e6e7568e2c5492170ab9b6..6a4fb03d9436758477ea937e27e69b1ccdddc3b9
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -3,29 +3,39 @@
+ ## Generated Tests
+
+ ### API Tests
+-- [x] N/A - Story 1.2 has no dedicated API route surface; permission data is asserted through Prisma-backed E2E fixtures.
+
++- [x] N/A - Story 1.3에는 별도 HTTP API route surface가 없으며, 서버 권한 경계는 unit test와 Prisma-backed Playwright fixture/DB 변경 시나리오로 검증한다.
++
+ ### E2E Tests
+-- [x] `tests/e2e/permission-profiles.spec.ts` - Verifies assigned-store headquarters access and Story 1.2 permission profile/action fixture data.
+-- [x] `tests/e2e/global-setup.ts` - Adds idempotent E2E fixtures for `HQ_ADMIN`, `HQ_STAFF`, `SETTINGS_ADMIN`, `STORE_MANAGER`, and `hq-assigned@example.com`.
+
++- [x] `tests/e2e/auth.spec.ts` - 비로그인 `/app`, 지점장 본사 URL 직접 접근, 지점장 store scope, 중복 `storeId`, 비활성/미배정 지점장 흐름을 검증한다.
++- [x] `tests/e2e/permission-profiles.spec.ts` - 지정 지점 본사 계정의 배정 지점 접근, 미배정 지점 차단, dashboard/report scope 제한, 기준정보 직접 URL 차단, fixture 권한 구조를 검증한다.
++- [x] `tests/e2e/permission-profiles.spec.ts` - Story 1.3 QA 보강으로 권한 없는 본사 메뉴 숨김과 `User.isActive=false` 변경 후 같은 세션 다음 요청 차단 테스트를 추가했다.
++
+ ## Coverage
+
+-- Permission profile fixtures: 4/4 Story 1.2 profiles needed by E2E covered.
+-- Action permissions: `HQ_ADMIN`, `HQ_STAFF`, `SETTINGS_ADMIN`, `STORE_MANAGER` covered at fixture level.
+-- Store access modes: `ALL_STORES` and `ASSIGNED_STORES` covered.
+-- UI workflows: assigned headquarters user can open assigned store and is blocked from unassigned store.
++- API endpoints: N/A. 이 스토리의 권한 경계는 Server Component, server query, Server Action, Playwright route flow 중심이다.
++- UI authorization workflows: 비로그인 보호 route, 지점장 본사 URL 차단, 본사 지정 지점 scope, 권한 없는 기준정보 route 차단, 권한 없는 본사 메뉴 숨김을 커버한다.
++- Critical error cases: 권한 action 제거, 지점 배정 제거, 사용자 비활성화, 중복/미배정/비활성 `storeId` 흐름을 커버한다.
++- Remaining execution gap: Playwright E2E는 현재 sandbox가 `127.0.0.1:3000` listen을 막아 실제 브라우저 실행 전 차단된다.
+
+ ## Validation
+
+-- [x] `pnpm exec prettier --write tests/e2e/global-setup.ts tests/e2e/permission-profiles.spec.ts`
+-- [x] `pnpm exec prisma validate`
+-- [x] `pnpm typecheck`
+-- [x] `pnpm lint`
+-- [x] `pnpm exec prisma generate`
+-- [x] `pnpm test:unit` - 28/28 test files passed.
+-- [ ] `pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` - blocked before test execution because Next dev server failed with `listen EPERM: operation not permitted 127.0.0.1:3000`.
++- [x] `corepack pnpm exec prettier --write tests/e2e/permission-profiles.spec.ts`
++- [x] `corepack pnpm exec prettier --check tests/e2e/permission-profiles.spec.ts`
++- [x] `corepack pnpm lint`
++- [x] `corepack pnpm test:unit` - 28/28 unit test files passed.
++- [ ] `PATH=/tmp/erp-fish-bin:$PATH corepack pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` - Next dev server failed before test execution with `listen EPERM: operation not permitte
+d 127.0.0.1:3000`.
++
++## Checklist Result
++
++- API tests generated if applicable: N/A.
++- E2E tests generated if UI exists: complete.
++- Standard framework APIs: Playwright `test`, `expect`, semantic role/text locators.
++- Happy path: assigned HQ dashboard/report/store access.
++- Critical errors: unauthorized route, stale permission action, stale store assignment, stale active user.
++- All generated tests run successfully: blocked for Playwright by sandbox server listen restriction; lint/unit/format pass.
+
+ ## Next Steps
+
+-- Re-run the Playwright command in an environment that allows binding `127.0.0.1:3000`.
++- Re-run `corepack pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` in an environment that allows binding `127.0.0.1:3000`.
+diff --git a/tests/e2e/permission-profiles.spec.ts b/tests/e2e/permission-profiles.spec.ts
+index c877f9b89d21665da6c3d6feecdd580d22c8262a..1605141704d00179bc16098fccb37c8eabc7c882
+--- a/tests/e2e/permission-profiles.spec.ts
++++ b/tests/e2e/permission-profiles.spec.ts
+@@ -48,6 +48,22 @@
+   await login(page, "hq-assigned@example.com");
+
+   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
++  await expect(page.getByRole("link", { name: "홈" })).toBeVisible();
++  await expect(page.getByRole("link", { name: "리포트" })).toBeVisible();
++  for (const hiddenMenuItem of [
++    "기준정보",
++    "품목 마스터",
++    "매입 기준",
++    "이상 신호 기준값",
++    "코드 관리",
++    "사용자/권한",
++    "변경 이력",
++    "설정",
++  ]) {
++    await expect(
++      page.getByRole("link", { name: hiddenMenuItem, exact: true }),
++    ).toHaveCount(0);
++  }
+   await expect(page.getByText("서초점")).toBeVisible();
+   await expect(page.getByText("강남점")).toHaveCount(0);
+
+@@ -77,6 +93,39 @@
+   }
+ });
+
++test("DB에서 사용자가 비활성화되면 같은 세션 다음 요청에서 로그인으로 돌아간다", async ({
++  page,
++}) => {
++  const user = await prisma.user.findUniqueOrThrow({
++    where: { email: "hq-assigned@example.com" },
++    select: { id: true },
++  });
++
++  await login(page, "hq-assigned@example.com");
++  await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
++
++  await prisma.user.update({
++    where: { id: user.id },
++    data: { isActive: false },
++  });
++
++  try {
++    await page.goto("/app/dashboard");
++
++    await expect(page).toHaveURL(/\/login\?callbackUrl=%2Fapp/);
++    await expect(
++      page.getByRole("heading", { name: "ERP Fish 로그인" }),
++    ).toBeVisible();
++    await expect(page.getByRole("heading", { name: "관제판" })).toHaveCount(0);
++    await expect(page.getByText("서초점")).toHaveCount(0);
++  } finally {
++    await prisma.user.update({
++      where: { id: user.id },
++      data: { isActive: true },
++    });
++  }
++});
++
+ test("DB에서 본사 프로파일 action이 제거되면 같은 세션 다음 요청에서 차단된다", async ({
+   page,

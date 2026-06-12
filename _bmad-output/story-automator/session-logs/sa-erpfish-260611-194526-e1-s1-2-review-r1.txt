@@ -1,0 +1,200 @@
+ export async function getAppHomePath() {
+   const currentUser = await getCurrentUserRecord();
+
+@@ -218,6 +244,7 @@
+     const store = await db.store.findFirst({
+       where: {
+         id: storeId,
++        isActive: true,
+         ...(hasAllStoreAccess
+           ? {}
+           : {
+diff --git a/tests/unit/auth-guard.test.mjs b/tests/unit/auth-guard.test.mjs
+index 8ada7ff7505956ab494ee4d7b60c65289400feb0..482b93a50c4eb352b2d9df827d77101b7e63685e
+--- a/tests/unit/auth-guard.test.mjs
++++ b/tests/unit/auth-guard.test.mjs
+@@ -74,8 +74,11 @@
+
+   assert.match(authz, /hasActionPermission/);
+   assert.match(authz, /requireActionPermission/);
++  assert.match(authz, /requireHeadquartersActionPermission/);
+   assert.match(authz, /PermissionAction/);
+   assert.match(authz, /db\.user\.(?:findUnique|findFirst)/);
++  assert.match(authz, /requiredRole\s*=\s*options\.requiredRole\s*\?\?\s*UserRole\.HEADQUARTERS/);
++  assert.match(authz, /\.\.\.\(requiredRole\s*\?\s*{\s*role:\s*requiredRole\s*}\s*:\s*{}\)/s);
+   assert.match(authz, /permissionProfiles:\s*{\s*some:/s);
+   assert.match(authz, /profile:\s*{\s*isActive:\s*true/s);
+   assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
+@@ -94,6 +97,7 @@
+   assert.match(authz, /getActivePermissionProfiles/);
+   assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ALL_STORES/);
+   assert.match(authz, /storeAccessMode\s*===\s*StoreAccessMode\.ASSIGNED_STORES/);
++  assert.match(authz, /id:\s*storeId,\s*isActive:\s*true/s);
+   assert.match(authz, /assignments:\s*{\s*some:\s*{\s*userId:\s*currentUser\.id/s);
+ });
+
+diff --git a/tests/unit/auth-model.test.mjs b/tests/unit/auth-model.test.mjs
+index 199b79439a7b0fb69564867d0312dce30763cded..3ea552e9d5bd26bd46298f31573d8353bd57342f
+--- a/tests/unit/auth-model.test.mjs
++++ b/tests/unit/auth-model.test.mjs
+@@ -125,6 +125,8 @@
+   }
+
+   assert.match(seed, /permissionProfile\.upsert/);
++  assert.match(seed, /permissionProfileAction\.deleteMany/);
++  assert.match(seed, /notIn:\s*\[\.\.\.profileDefinition\.actions\]/);
+   assert.match(seed, /permissionProfileAction\.upsert/);
+   assert.match(seed, /userPermissionProfile\.upsert/);
+   assert.match(seed, /userStoreAssignment\.upsert/);
+
+ succeeded in 512ms:
+     1  import { FlatCompat } from "@eslint/eslintrc";
+     2  import tseslint from 'typescript-eslint';
+     3
+     4  const compat = new FlatCompat({
+     5    baseDirectory: import.meta.dirname,
+     6  });
+     7
+     8  export default tseslint.config(
+     9    {
+    10                  ignores: [
+    11                          '.next',
+    12                          '.tmp',
+    13                          'generated',
+    14                          'next-env.d.ts',
+    15                          'src/components/ui',
+    16                          'test-results',
+    17                          'playwright-report'
+    18                  ]
+    19          },
+    20    ...compat.extends("next/core-web-vitals"),
+    21    {
+    22      files: ['**/*.ts', '**/*.tsx'],
+    23                  extends: [
+    24                          ...tseslint.configs.recommended,
+
+codex
+스토리 1.2 리뷰 워크플로우를 완료했고 자동 수정까지 적용했습니다. 스토리 상태는 `done`으로 바꿨고 sprint-status도 동기화했습니다: [_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-
+모델링.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md:12), [_bmad-output/implementation-artifacts/sprint-status.yaml](/home/noah/code/erp_fi
+sh/_bmad-output/implementation-artifacts/sprint-status.yaml:47).
+
+수정한 핵심 이슈:
+- 본사 `ALL_STORES` 권한이 비활성 지점까지 열 수 있던 문제 수정: [src/server/authz.ts](/home/noah/code/erp_fish/src/server/authz.ts:244)
+- action permission helper가 기본적으로 본사 role scope를 강제하도록 수정: [src/server/authz.ts](/home/noah/code/erp_fish/src/server/authz.ts:110)
+- seed 재실행 시 제거된 system profile action이 stale permission으로 남지 않게 정리: [prisma/seed.ts](/home/noah/code/erp_fish/prisma/seed.ts:163)
+- lint가 Playwright 산출물 디렉터리에 흔들리지 않도록 ignore 보강: [eslint.config.js](/home/noah/code/erp_fish/eslint.config.js:10)
+
+검증 결과:
+- 통과: `pnpm exec prisma validate`, `pnpm exec prisma generate`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `git diff --check`
+- E2E 미검증: `pnpm exec playwright test tests/e2e/permission-profiles.spec.ts`는 Next dev server가 `listen EPERM: operation not permitted 127.0.0.1:3000`로 종료되어 테스트 실행 전 실패했습니다. 이 내
+용은 Senior Developer Review에도 기록했습니다.
+diff --git a/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md b/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md
+index c55180435f684d309adca7a6c0649e2fbd21fb4c..4f214c6b1a4699b984a59ceb6f11110d18bf7cdc
+--- a/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md
++++ b/_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md
+@@ -9,7 +9,7 @@
+
+ # Story 1.2: 사용자, 지점, 권한 프로파일 모델링
+
+-Status: review
++Status: done
+
+ ## Story
+
+@@ -170,7 +170,29 @@
+ - `pnpm lint` 통과.
+ - `pnpm typecheck` 통과.
+ - `pnpm test:unit` 통과: 28/28 test files passed.
+-- `pnpm test:e2e` 실행 시 Playwright webServer가 조기 종료됨. 직접 확인한 원인: Next dev server가 `listen EPERM: operation not permitted 127.0.0.1:3000`로 포트 바인드에 실패했다. 현재 sandbox 네트워
+크/포트 제한으로 E2E는 미검증.
++- `pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` 실행 시 Playwright webServer가 조기 종료됨. 직접 확인한 원인: Next dev server가 `listen EPERM: operation not permitted 127.0.0.1:30
+00`로 포트 바인드에 실패했다. 현재 sandbox 네트워크/포트 제한으로 E2E는 미검증.
++
++### Senior Developer Review (AI)
++
++Reviewer: Codex on 2026-06-11
++
++Outcome: Approve after automatic fixes. 남은 CRITICAL/HIGH 이슈 없음.
++
++#### Findings Fixed
++
++- [HIGH] `requireStoreAccess()`의 본사 `ALL_STORES` 경로가 `Store.isActive`를 확인하지 않아 비활성 지점 직접 접근을 허용할 수 있었다. `src/server/authz.ts`의 본사 지점 조회 조건에 `isActive: true`를
+추가하고 unit test 단정을 보강했다.
++- [HIGH] action permission helper가 기본적으로 role scope 없이 profile action만 확인해서, 잘못 사용될 경우 지점장 profile의 `LEDGER_EDIT` 같은 action이 본사 전용 action gate를 통과할 수 있었다. `hasA
+ctionPermission()`/`requireActionPermission()`의 기본 required role을 `HEADQUARTERS`로 두고, 명시 override가 필요한 경우만 `requiredRole` 옵션을 쓰도록 수정했다.
++- [MEDIUM] seed가 system profile action을 upsert만 해서 정의에서 제거된 action이 DB에 stale permission으로 남을 수 있었다. profile별 허용 action 외 row를 `deleteMany`로 제거한 뒤 upsert하도록 수정했
+다.
++- [MEDIUM] 실제 변경 파일인 `tests/e2e/global-setup.ts`, `tests/e2e/permission-profiles.spec.ts`, `eslint.config.js`가 File List에 빠져 review 추적성이 부족했다. File List를 실제 변경 범위에 맞게 갱
+신했다.
++
++#### Validation
++
++- `pnpm exec prisma validate` 통과.
++- `pnpm exec prisma generate` 통과.
++- `pnpm lint` 통과.
++- `pnpm typecheck` 통과.
++- `pnpm test:unit` 통과: 28/28 test files passed.
++- `pnpm exec playwright test tests/e2e/permission-profiles.spec.ts` 미통과: sandbox가 Next dev server의 `127.0.0.1:3000` listen을 `EPERM`으로 차단해 테스트 실행 전 webServer가 종료됨.
+
+ ### Completion Notes List
+
+@@ -184,16 +206,20 @@
+ ### File List
+
+ - `.env.example`
++- `eslint.config.js`
+ - `_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md`
+ - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+ - `prisma/migrations/20260611192500_add_permission_profiles/migration.sql`
+ - `prisma/schema.prisma`
+ - `prisma/seed.ts`
+ - `src/server/authz.ts`
++- `tests/e2e/global-setup.ts`
++- `tests/e2e/permission-profiles.spec.ts`
+ - `tests/unit/auth-guard.test.mjs`
+ - `tests/unit/auth-model.test.mjs`
+ - `tests/unit/master-data-users.test.mjs`
+
+ ### Change Log
+
++- 2026-06-11: Senior Developer Review에서 본사 비활성 지점 접근 차단, 본사 action helper 기본 role scope, seed stale action 제거, lint artifact ignore와 review 추적성을 보강했다.
+ - 2026-06-11: 사용자/지점 기반을 보존하며 permission profile/action 모델, DB 기반 authz helper, idempotent seed, unit/regression 검증을 추가했다.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index e98032b3647ac288805eca7200517ff463a6a080..076c90dfb3c1735033bc8e03a8a327d149b35b26
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T19:34:01+09:00
++# last_updated: 2026-06-11T19:49:28+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T19:34:01+09:00"
++last_updated: "2026-06-11T19:49:28+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -44,7 +44,7 @@
+ development_status:
+   epic-1: in-progress
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+-  1-2-사용자-지점-권한-프로파일-모델링: review
++  1-2-사용자-지점-권한-프로파일-모델링: done
+   1-3-역할-기반-로그인과-지점-접근-제한: backlog
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: backlog
+   1-5-감사-로그-기반-구축: backlog
+diff --git a/eslint.config.js b/eslint.config.js
+index fd9c977b26dc61a9f9f88badbeaf76901579ba14..4df7db3e9931ed5c5ee4a230616638c39ef3d36b
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -7,7 +7,15 @@
+
+ export default tseslint.config(
+   {
+-               ignores: ['.next', '.tmp', 'generated', 'next-env.d.ts', 'src/components/ui']
++               ignores: [

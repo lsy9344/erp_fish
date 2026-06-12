@@ -1,0 +1,200 @@
++  return withAuditActorContext(
++    {
++      name: store.name,
++      isActive: store.isActive,
++    },
++    actorContext,
++  );
++}
++
+ function isPrismaUniqueError(error: unknown) {
+   return (
+     error instanceof Prisma.PrismaClientKnownRequestError &&
+@@ -126,10 +150,10 @@
+         targetId: created.id,
+         actorId: actor.id,
+         before: null,
+-        after: {
+-          name: created.name,
+-          isActive: created.isActive,
+-        },
++        after: toAuditStoreSnapshot(
++          created,
++          toSettingsAuditContext(actor.role),
++        ),
+       });
+
+       return {
+@@ -207,14 +231,11 @@
+         targetType: "Store",
+         targetId: updated.id,
+         actorId: actor.id,
+-        before: {
+-          name: existing.name,
+-          isActive: existing.isActive,
+-        },
+-        after: {
+-          name: updated.name,
+-          isActive: updated.isActive,
+-        },
++        before: toAuditStoreSnapshot(
++          existing,
++          toSettingsAuditContext(actor.role),
++        ),
++        after: toAuditStoreSnapshot(updated, toSettingsAuditContext(actor.role)),
+       });
+
+       return {
+@@ -284,14 +305,8 @@
+       targetType: "Store",
+       targetId: updated.id,
+       actorId: actor.id,
+-      before: {
+-        name: existing.name,
+-        isActive: existing.isActive,
+-      },
+-      after: {
+-        name: updated.name,
+-        isActive: updated.isActive,
+-      },
++      before: toAuditStoreSnapshot(existing, toSettingsAuditContext(actor.role)),
++      after: toAuditStoreSnapshot(updated, toSettingsAuditContext(actor.role)),
+     });
+
+     return {
+diff --git a/src/features/master-data/user-actions.ts b/src/features/master-data/user-actions.ts
+index 5d853bdad07bea9af2592ec31de008c068ef5b68..dcc1155c85c71aee0dab421b06314c033b1088c6
+--- a/src/features/master-data/user-actions.ts
++++ b/src/features/master-data/user-actions.ts
+@@ -2,9 +2,17 @@
+
+ import { revalidatePath } from "next/cache";
+
+-import { Prisma, UserRole } from "../../../generated/prisma/index.js";
++import {
++  PermissionAction,
++  Prisma,
++  UserRole,
++} from "../../../generated/prisma/index.js";
+ import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+-import { writeAuditLog } from "~/server/audit";
++import {
++  withAuditActorContext,
++  writeAuditLog,
++  type AuditActorContext,
++} from "~/server/audit";
+ import { requireUserPermissionAccess } from "~/server/authz";
+ import { db } from "~/server/db";
+ import { hashPassword } from "~/server/password";
+@@ -227,21 +235,37 @@
+ }
+
+ function sameStringArray(first: string[], second: string[]) {
++  const sortedFirst = [...first].sort();
++  const sortedSecond = [...second].sort();
++
+   return (
+-    first.length === second.length &&
+-    first.every((value, index) => value === second[index])
++    sortedFirst.length === sortedSecond.length &&
++    sortedFirst.every((value, index) => value === sortedSecond[index])
+   );
+ }
+
+-function toAuditUserSnapshot(snapshot: UserSnapshot) {
++function toAuditUserSnapshot(
++  snapshot: UserSnapshot,
++  actorContext: AuditActorContext,
++) {
++  return withAuditActorContext(
++    {
++      id: snapshot.id,
++      name: snapshot.name,
++      email: snapshot.email,
++      role: snapshot.role,
++      isActive: snapshot.isActive,
++      storeIds: snapshot.storeIds,
++      storeNames: snapshot.storeNames,
++    },
++    actorContext,
++  );
++}
++
++function toUserPermissionAuditContext(actorRole: UserRole) {
+   return {
+-    id: snapshot.id,
+-    name: snapshot.name,
+-    email: snapshot.email,
+-    role: snapshot.role,
+-    isActive: snapshot.isActive,
+-    storeIds: snapshot.storeIds,
+-    storeNames: snapshot.storeNames,
++    actorRole,
++    requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
+   };
+ }
+
+@@ -249,12 +273,14 @@
+   tx: Prisma.TransactionClient,
+   params: {
+     actorId: string;
++    actorRole: UserRole;
+     userId: string;
+     before: UserSnapshot | null;
+     after: UserSnapshot;
+   },
+ ) {
+-  const { actorId, userId, before, after } = params;
++  const { actorId, actorRole, userId, before, after } = params;
++  const actorContext = toUserPermissionAuditContext(actorRole);
+
+   if (!before) {
+     await writeAuditLog(tx, {
+@@ -263,7 +289,7 @@
+       targetId: userId,
+       actorId,
+       before: null,
+-      after: toAuditUserSnapshot(after),
++      after: toAuditUserSnapshot(after, actorContext),
+     });
+   } else if (
+     before.name !== after.name ||
+@@ -280,8 +306,8 @@
+       targetType: "User",
+       targetId: userId,
+       actorId,
+-      before: toAuditUserSnapshot(before),
+-      after: toAuditUserSnapshot(after),
++      before: toAuditUserSnapshot(before, actorContext),
++      after: toAuditUserSnapshot(after, actorContext),
+     });
+   }
+
+@@ -291,8 +317,8 @@
+       targetType: "User",
+       targetId: userId,
+       actorId,
+-      before: toAuditUserSnapshot(before),
+-      after: toAuditUserSnapshot(after),
++      before: toAuditUserSnapshot(before, actorContext),
++      after: toAuditUserSnapshot(after, actorContext),
+     });
+   }
+
+@@ -304,8 +330,8 @@
+       targetType: "User",
+       targetId: userId,
+       actorId,
+-      before: before ? toAuditUserSnapshot(before) : null,
+-      after: toAuditUserSnapshot(after),
++      before: before ? toAuditUserSnapshot(before, actorContext) : null,
++      after: toAuditUserSnapshot(after, actorContext),
+     });
+   }
+ }
+@@ -389,6 +415,7 @@
+
+       await writeUserChangeAudits(tx, {
+         actorId: actor.id,
++        actorRole: actor.role,
+         userId: created.id,

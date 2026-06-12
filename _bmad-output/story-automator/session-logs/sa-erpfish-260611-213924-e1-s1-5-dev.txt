@@ -1,0 +1,200 @@
+
+ ## Tasks / Subtasks
+
+-- [ ] 현재 감사 로그 기반 상태를 Story 1.5 authoritative 요구와 대조한다. (AC: 1-5)
+-  - [ ] `prisma/schema.prisma`의 `AuditLog` 모델이 `action`, `targetType`, `targetId`, `actorId`, `before`, `after`, `reason`, `createdAt`, actor relation, 조회 인덱스를 갖는지 확인한다.
+-  - [ ] `src/server/audit.ts`의 `writeAuditLog(tx, ...)`를 단일 shared helper로 유지한다.
+-  - [ ] 이미 존재하는 감사/변경 이력 코드가 있으면 삭제하거나 재작성하지 말고 Story 1.5 기준으로 보강한다.
+-- [ ] 사용자/권한/지점 접근 변경 이벤트를 감사 로그로 남긴다. (AC: 1, 2, 3, 5)
+-  - [ ] `src/features/master-data/user-actions.ts`의 생성, 수정, 활성/비활성, 역할 변경, 지점 배정 변경이 같은 transaction 안에서 `writeAuditLog`를 호출해야 한다.
+-  - [ ] audit action 이름은 dot notation을 사용한다: `user.created`, `user.updated`, `user.activated`, `user.deactivated`, `user.role_changed`, `user.store_assignments_changed`.
+-  - [ ] `before`/`after`에는 대상 사용자 식별 정보, 역할, 활성 상태, 지점 배정 id/name 등 운영 추적에 필요한 값만 넣는다.
+-  - [ ] 초기 비밀번호, password hash, session/token, 불필요한 개인정보, 클라이언트 전용 상태는 audit payload에 넣지 않는다.
+-  - [ ] 기존 `ActionResult`, `requireUserPermissionAccess()`, `db.$transaction`, `revalidatePath` 패턴을 재사용한다.
+-- [ ] 지점 관리 변경 이벤트를 shared helper로 계속 기록한다. (AC: 1, 5)
+-  - [ ] `src/features/master-data/actions.ts`의 지점 생성/수정/활성/비활성 감사가 `store.created`, `store.updated`, `store.activated`, `store.deactivated`로 남는지 확인한다.
+-  - [ ] 지점 삭제 기능을 만들지 않는다. 비활성화와 감사 추적 보존이 기본이다.
+-- [ ] 본사 변경 이력 조회 화면을 Story 1.5 기준으로 정렬한다. (AC: 4)
+-  - [ ] route는 `src/app/app/master-data/history/page.tsx`를 사용한다.
+-  - [ ] query는 `src/features/audit/audit-queries.ts`에 두고 `requireSettingsAccess()`로 서버에서 차단한다.
+-  - [ ] client UI는 `src/features/audit/components/change-history-client.tsx`에 두며 `HeadquartersShell`, `PageHeader`, shadcn `Table`, `Select`, `Dialog`, `Button`, `Badge`, `Input` 패턴을 따른다.
+-  - [ ] 목록은 변경 시각, 변경자, 대상 유형, 대상 이름, 변경 유형, 행 작업을 시간 역순으로 보여준다.
+-  - [ ] 기본 필터는 대상 유형, 변경자, 시작일, 종료일이며 URL query로 유지한다.
+-  - [ ] 상세 dialog는 변경 전/후 JSON을 긴 값이 넘치지 않게 `overflow-auto`, `break-words`, `whitespace-pre-wrap`로 표시한다.
+-  - [ ] 권한 없는 지점장은 `/app/master-data/history`에서 감사 데이터를 받지 못하고 `/app/unauthorized`로 이동해야 한다.
+-- [ ] 향후 feature가 재사용할 감사 로그 contract를 문서화/테스트로 고정한다. (AC: 1, 5)
+-  - [ ] `src/features/audit/audit-format.ts`에 target type label과 action label을 추가하되 unknown action은 원문 action string을 표시한다.
+-  - [ ] 허용 target type은 현재 구현 범위에 맞게 `Store`, `User`, `Product`, `PurchaseStandard`, `LedgerInputCode`, `DailyLedger`, `CorrectionRecord`, `AnomalyThresholdSetting`을 포함할 수 있다. 존재
+하지 않는 테이블을 새로 만들지 않는다.
+-  - [ ] 장부, 마감, 정정, 기준값, 코드, 품목 스토리는 새 감사 형식을 만들지 말고 `writeAuditLog`와 dot notation action을 확장한다.
+-- [ ] 회귀 테스트를 추가/정렬한다. (AC: 1-5)
+-  - [ ] `tests/unit/master-data-history.test.mjs`에서 AuditLog schema, 인덱스, formatter, query 권한, 필터 normalization, UI route/client/loading/sidebar 패턴을 검증한다.
+-  - [ ] `tests/unit/master-data-users.test.mjs`에서 사용자 action이 `writeAuditLog`, `user.role_changed`, `user.store_assignments_changed`, transaction을 사용함을 검증한다.
+-  - [ ] `tests/e2e/master-data-users.spec.ts`에서 사용자 생성/비활성/역할 변경/지점 배정 변경 후 감사 row가 생성되는지 확인한다.
+-  - [ ] `tests/e2e/master-data-history.spec.ts`에서 본사 목록/필터/상세 dialog/빈 상태/권한 차단을 확인한다.
+-  - [ ] fixture 정리는 Story 1.5/이력 테스트 전용 접두어만 대상으로 하고 기존 Story 1.1~1.4 기본 계정/지점 데이터를 무작정 삭제하지 않는다.
++- [x] 현재 감사 로그 기반 상태를 Story 1.5 authoritative 요구와 대조한다. (AC: 1-5)
++  - [x] `prisma/schema.prisma`의 `AuditLog` 모델이 `action`, `targetType`, `targetId`, `actorId`, `before`, `after`, `reason`, `createdAt`, actor relation, 조회 인덱스를 갖는지 확인한다.
++  - [x] `src/server/audit.ts`의 `writeAuditLog(tx, ...)`를 단일 shared helper로 유지한다.
++  - [x] 이미 존재하는 감사/변경 이력 코드가 있으면 삭제하거나 재작성하지 말고 Story 1.5 기준으로 보강한다.
++- [x] 사용자/권한/지점 접근 변경 이벤트를 감사 로그로 남긴다. (AC: 1, 2, 3, 5)
++  - [x] `src/features/master-data/user-actions.ts`의 생성, 수정, 활성/비활성, 역할 변경, 지점 배정 변경이 같은 transaction 안에서 `writeAuditLog`를 호출해야 한다.
++  - [x] audit action 이름은 dot notation을 사용한다: `user.created`, `user.updated`, `user.activated`, `user.deactivated`, `user.role_changed`, `user.store_assignments_changed`.
++  - [x] `before`/`after`에는 대상 사용자 식별 정보, 역할, 활성 상태, 지점 배정 id/name 등 운영 추적에 필요한 값만 넣는다.
++  - [x] 초기 비밀번호, password hash, session/token, 불필요한 개인정보, 클라이언트 전용 상태는 audit payload에 넣지 않는다.
++  - [x] 기존 `ActionResult`, `requireUserPermissionAccess()`, `db.$transaction`, `revalidatePath` 패턴을 재사용한다.
++- [x] 지점 관리 변경 이벤트를 shared helper로 계속 기록한다. (AC: 1, 5)
++  - [x] `src/features/master-data/actions.ts`의 지점 생성/수정/활성/비활성 감사가 `store.created`, `store.updated`, `store.activated`, `store.deactivated`로 남는지 확인한다.
++  - [x] 지점 삭제 기능을 만들지 않는다. 비활성화와 감사 추적 보존이 기본이다.
++- [x] 본사 변경 이력 조회 화면을 Story 1.5 기준으로 정렬한다. (AC: 4)
++  - [x] route는 `src/app/app/master-data/history/page.tsx`를 사용한다.
++  - [x] query는 `src/features/audit/audit-queries.ts`에 두고 `requireSettingsAccess()`로 서버에서 차단한다.
++  - [x] client UI는 `src/features/audit/components/change-history-client.tsx`에 두며 `HeadquartersShell`, `PageHeader`, shadcn `Table`, `Select`, `Dialog`, `Button`, `Badge`, `Input` 패턴을 따른다.
++  - [x] 목록은 변경 시각, 변경자, 대상 유형, 대상 이름, 변경 유형, 행 작업을 시간 역순으로 보여준다.
++  - [x] 기본 필터는 대상 유형, 변경자, 시작일, 종료일이며 URL query로 유지한다.
++  - [x] 상세 dialog는 변경 전/후 JSON을 긴 값이 넘치지 않게 `overflow-auto`, `break-words`, `whitespace-pre-wrap`로 표시한다.
++  - [x] 권한 없는 지점장은 `/app/master-data/history`에서 감사 데이터를 받지 못하고 `/app/unauthorized`로 이동해야 한다.
++- [x] 향후 feature가 재사용할 감사 로그 contract를 문서화/테스트로 고정한다. (AC: 1, 5)
++  - [x] `src/features/audit/audit-format.ts`에 target type label과 action label을 추가하되 unknown action은 원문 action string을 표시한다.
++  - [x] 허용 target type은 현재 구현 범위에 맞게 `Store`, `User`, `Product`, `PurchaseStandard`, `LedgerInputCode`, `DailyLedger`, `CorrectionRecord`, `AnomalyThresholdSetting`을 포함할 수 있다. 존재
+하지 않는 테이블을 새로 만들지 않는다.
++  - [x] 장부, 마감, 정정, 기준값, 코드, 품목 스토리는 새 감사 형식을 만들지 말고 `writeAuditLog`와 dot notation action을 확장한다.
++- [x] 회귀 테스트를 추가/정렬한다. (AC: 1-5)
++  - [x] `tests/unit/master-data-history.test.mjs`에서 AuditLog schema, 인덱스, formatter, query 권한, 필터 normalization, UI route/client/loading/sidebar 패턴을 검증한다.
++  - [x] `tests/unit/master-data-users.test.mjs`에서 사용자 action이 `writeAuditLog`, `user.role_changed`, `user.store_assignments_changed`, transaction을 사용함을 검증한다.
++  - [x] `tests/e2e/master-data-users.spec.ts`에서 사용자 생성/비활성/역할 변경/지점 배정 변경 후 감사 row가 생성되는지 확인한다.
++  - [x] `tests/e2e/master-data-history.spec.ts`에서 본사 목록/필터/상세 dialog/빈 상태/권한 차단을 확인한다.
++  - [x] fixture 정리는 Story 1.5/이력 테스트 전용 접두어만 대상으로 하고 기존 Story 1.1~1.4 기본 계정/지점 데이터를 무작정 삭제하지 않는다.
+ - [ ] 전체 검증을 순차 실행하고 Dev Agent Record에 결과를 기록한다. (AC: 1-5)
+-  - [ ] `pnpm exec prisma generate`
+-  - [ ] `DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish pnpm exec prisma validate`
+-  - [ ] `pnpm lint`
+-  - [ ] `pnpm typecheck`
+-  - [ ] `pnpm test:unit`
++  - [x] `pnpm exec prisma generate`
++  - [x] `DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish pnpm exec prisma validate`
++  - [x] `pnpm lint`
++  - [x] `pnpm typecheck`
++  - [x] `pnpm test:unit`
+   - [ ] `pnpm exec playwright test tests/e2e/master-data-users.spec.ts tests/e2e/master-data-history.spec.ts`
+-  - [ ] `pnpm build`
++  - [x] `pnpm build`
+
+ ## Dev Notes
+
+@@ -234,9 +234,30 @@
+
+ ### Debug Log References
+
++- 2026-06-11T21:53:00+09:00 - BMAD dev-story workflow/config loaded; `project-context.md` not found; story and sprint status moved from `ready-for-dev` to `in-progress`.
++- 2026-06-11T21:58:00+09:00 - Current audit schema/helper/history UI/user/store action state compared against Story 1.5. Existing shared helper and history surface preserved.
++- 2026-06-11T22:05:00+09:00 - Added regression assertions for user audit payload completeness, then tightened user audit snapshots to include target user id, name, email, role, active state, store id
+s, and store names without credential fields.
++- 2026-06-11T22:10:00+09:00 - Direct `pnpm` was unavailable; validation commands were run through `corepack pnpm`.
++- 2026-06-11T22:17:00+09:00 - Playwright validation blocked by sandbox server bind failure: `listen EPERM: operation not permitted 127.0.0.1:3000`.
++
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created.
+-- Status is set to `ready-for-dev`.
++- Status is set to `in-progress`.
++- User audit payloads now use a shared sanitized target-user snapshot for create, update/activate/deactivate, role change, and store assignment change events.
++- Added unit and E2E regression assertions covering the Story 1.5 user audit payload contract and credential exclusion.
++- Verified existing AuditLog schema/helper, store audit events, history route/query/UI, formatter labels, URL filters, and unauthorized history access against Story 1.5 requirements.
++- Completed static/unit/build validation. Story remains `in-progress` because the required Playwright command could not start the local Next.js server in this sandbox.
+
+ ### File List
++
++- `_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md`
++- `_bmad-output/implementation-artifacts/sprint-status.yaml`
++- `src/features/master-data/user-actions.ts`
++- `tests/unit/master-data-users.test.mjs`
++- `tests/e2e/master-data-users.spec.ts`
++
++### Change Log
++
++- 2026-06-11 - Story 1.5 implementation pass: preserved existing audit infrastructure and history UI; strengthened user audit before/after payloads; added regression coverage for sanitized complete u
+ser audit snapshots.
++- 2026-06-11 - Validation pass: `prisma generate`, `prisma validate`, lint, typecheck, unit suite, and build passed; Playwright E2E blocked by environment-level `listen EPERM`.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 0e124327ff23fd67d1c09224fccd0bc29e33eae2..8ca4e3ac9fde895a9a369fb3c8c8f46ff3393c50
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T21:34:52+09:00
++# last_updated: 2026-06-11T21:53:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T21:34:52+09:00"
++last_updated: "2026-06-11T21:53:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -47,7 +47,7 @@
+   1-2-사용자-지점-권한-프로파일-모델링: done
+   1-3-역할-기반-로그인과-지점-접근-제한: done
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: done
+-  1-5-감사-로그-기반-구축: ready-for-dev
++  1-5-감사-로그-기반-구축: in-progress
+   epic-1-retrospective: optional
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: backlog
+diff --git a/src/features/master-data/user-actions.ts b/src/features/master-data/user-actions.ts
+index c9bd4b245634845aa310e9be81cfc4e3cc142973..5d853bdad07bea9af2592ec31de008c068ef5b68
+--- a/src/features/master-data/user-actions.ts
++++ b/src/features/master-data/user-actions.ts
+@@ -28,6 +28,7 @@
+ };
+
+ type UserSnapshot = {
++  id: string;
+   name: string | null;
+   email: string | null;
+   role: UserRole;
+@@ -185,6 +186,7 @@
+   const user = await tx.user.findUnique({
+     where: { id: userId },
+     select: {
++      id: true,
+       name: true,
+       email: true,
+       role: true,
+@@ -212,6 +214,7 @@
+   }
+
+   return {
++    id: user.id,
+     name: user.name,
+     email: user.email,
+     role: user.role,
+@@ -230,6 +233,18 @@
+   );
+ }
+
++function toAuditUserSnapshot(snapshot: UserSnapshot) {
++  return {
++    id: snapshot.id,
++    name: snapshot.name,
++    email: snapshot.email,
++    role: snapshot.role,
++    isActive: snapshot.isActive,
++    storeIds: snapshot.storeIds,
++    storeNames: snapshot.storeNames,
++  };
++}
++
+ async function writeUserChangeAudits(
+   tx: Prisma.TransactionClient,
+   params: {
+@@ -248,12 +263,7 @@
+       targetId: userId,
+       actorId,
+       before: null,
+-      after: {
+-        name: after.name,

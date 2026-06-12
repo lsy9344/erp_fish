@@ -1,0 +1,200 @@
+검증:
+`git diff --check` 통과했고, 체크리스트 기준으로 current code 재사용, `미입력` display-state 처리, selected date gap, version/edit token 누락, duplicate-safe creation 패턴을 story에 반영했습니다.
+
+참고로 최신 기술 확인에 사용한 공식 문서:
+Next.js `revalidatePath`, Prisma transactions / `skipDuplicates`, Auth.js Credentials docs.
+diff --git a/_bmad-output/implementation-artifacts/2-1-지점-일자-장부-생성과-상태-관리.md b/_bmad-output/implementation-artifacts/2-1-지점-일자-장부-생성과-상태-관리.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aad987058a5753695a6b18b7b1d285f525261ace
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/2-1-지점-일자-장부-생성과-상태-관리.md
+@@ -0,0 +1,264 @@
++---
++story_key: 2-1-지점-일자-장부-생성과-상태-관리
++story_id: "2.1"
++epic: "2"
++created_at: "2026-06-11T23:01:59+09:00"
++source_story: "_bmad-output/planning-artifacts/epics.md"
++baseline_commit: 4d02884
++---
++
++# Story 2.1: 지점+일자 장부 생성과 상태 관리
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As a 지점장 또는 본사 사용자,
++I want 특정 지점과 날짜의 일일 장부를 열거나 만들 수 있기를 원한다,
++so that 하루 운영 기록을 하나의 기준 장부에 입력할 수 있다.
++
++## Acceptance Criteria
++
++1. Given 사용자가 자기 권한 범위 안의 지점과 날짜를 선택했을 때, when 해당 지점+일자 장부가 아직 없으면, then 시스템은 새 일일 장부를 생성할 수 있어야 한다, and 같은 지점+일자에는 하나의 장부만 존재
+해야 한다.
++2. Given 같은 지점+일자의 장부가 이미 있을 때, when 사용자가 해당 날짜 장부를 다시 연다, then 기존 장부가 열려야 한다, and 중복 장부가 생성되면 안 된다.
++3. Given 장부가 생성되거나 수정될 때, when 시스템이 장부 상태를 저장한다, then 장부는 `미입력`, `입력중`, `검토대기`, `본사마감`, `휴무` 중 하나의 상태를 가져야 한다, and 상태 배지는 UX 기준에 따라
+텍스트 pill로 표시되어야 한다.
++4. Given 지점장 사용자가 다른 지점 장부를 생성하거나 열려고 할 때, when 서버가 권한을 확인한다, then 요청은 거부되어야 한다, and 권한 밖 지점 데이터는 응답에 포함되지 않아야 한다.
++5. Given 장부가 본사 마감 상태일 때, when 사용자가 원본 입력값을 수정하려 한다, then 원본 수정은 차단되어야 한다, and 마감 후 변경은 이후 정정 기록 흐름에서만 처리되어야 한다.
++6. Given 개발자가 데이터 모델을 구현할 때, when 일일 장부 테이블을 정의한다, then `storeId + closingDate` 유일성이 보장되어야 한다, and 장부 저장 충돌 방지를 위한 version 또는 edit token 필드가 있어
+야 한다.
++
++## Tasks / Subtasks
++
++- [ ] 현재 구현 상태를 Story 2.1 요구와 대조한다. (AC: 1-6)
++  - [ ] `DailyLedger` 모델, 기존 migration, `getTodayStoreLedger*`, dashboard 상태 매핑, store-entry route, 권한 helper, ledger action guard를 먼저 읽는다.
++  - [ ] 이미 구현된 `storeId + closingDate` 유일성, duplicate-safe 생성, audit write, 상태 배지, 권한 차단을 삭제하거나 병렬 구현하지 않는다.
++  - [ ] Story 2.1의 신규 gap을 명확히 분리한다: 선택 날짜/지점 열기, 명시적 생성/열기 action contract, version/edit token, 날짜 query 유지, 휴무 전환 또는 표시 정책.
++- [ ] 일일 장부 생성/열기 서버 contract를 정리한다. (AC: 1, 2, 4, 6)
++  - [ ] `src/features/ledger/schemas.ts`에 `storeId`, `closingDate`, 선택적 `ledgerUpdatedAt` 또는 `version`을 받는 schema를 추가한다.
++  - [ ] `closingDate`는 `YYYY-MM-DD` 입력을 `Asia/Seoul` 업무일의 UTC midnight `Date`로 정규화한다. 브라우저 locale Date 파싱에 의존하지 않는다.
++  - [ ] `src/features/ledger/queries.ts`의 `getTodayKstMidnight`/`getOrCreateTodayStoreLedgerInTx` 패턴을 일반화해 `getKstBusinessDate(input)` 및 `getOrCreateStoreLedgerInTx(tx, storeId, closingDate,
+ actorId)` 형태로 재사용한다.
++  - [ ] 기존 `getTodayStoreLedger`는 오늘 기본 흐름의 호환 wrapper로 유지하고 내부에서 일반화된 helper를 호출한다.
++  - [ ] 생성은 `storeId + closingDate` unique key와 `createMany({ skipDuplicates: true })` 또는 동등한 duplicate-safe 패턴을 유지한다.
++  - [ ] 생성된 경우에만 `ledger.created` audit row를 같은 transaction 안에 쓴다. 이미 있던 장부를 연 경우 생성 audit을 중복으로 남기지 않는다.
++- [ ] 장부 version/edit token을 도입하고 저장 충돌을 차단한다. (AC: 5, 6)
++  - [ ] `DailyLedger`에 `version Int @default(1)` 또는 명시적 edit token 필드를 추가한다. 이미 동등 필드가 생겼다면 재사용한다.
++  - [ ] 새 Prisma migration을 추가한다. 기존 migration 파일은 수정하지 않는다.
++  - [ ] 장부 원본 수정 mutation은 현재 ledger id/status와 함께 version/edit token을 확인한다.
++  - [ ] 저장 성공 시 version/edit token을 갱신하고 응답 타입에 포함한다.
++  - [ ] 충돌 시 기존 `ActionResult` 패턴으로 `LEDGER_CONFLICT`와 "장부가 다른 곳에서 변경됐습니다. 새로고침 후 다시 시도해 주세요." 계열의 한국어 메시지를 반환한다.
++  - [ ] `IN_PROGRESS`와 `IN_REVIEW`만 원본 수정 가능 상태로 유지하고, `HEADQUARTERS_CLOSED`/`HOLIDAY`는 원본 수정 차단 상태로 둔다.
++- [ ] 지점장/본사 권한과 활성 지점 정책을 서버에서 강제한다. (AC: 1, 4)
++  - [ ] 지점장은 `requireStoreAccess(storeId)`를 통해 자기 활성 지점만 열거나 생성할 수 있다.
++  - [ ] 본사 사용자는 `LEDGER_CREATE` 또는 기존 정책상 허용된 `LEDGER_EDIT`/store scope를 통해 허용 지점만 열거나 생성할 수 있다. 단순 role check로 우회하지 않는다.
++  - [ ] 권한 없는 storeId, 비활성 지점, malformed query는 `/app/unauthorized` 또는 `ActionResult` 오류로 처리하고 store/ledger 세부 데이터를 응답하지 않는다.
++  - [ ] 본사 관제판은 "미입력" row 표시를 위해 장부를 자동 생성하지 않는다. 생성은 사용자가 지점+일자 장부를 명시적으로 열거나 입력 시작할 때만 발생한다.
++- [ ] 상태 모델과 상태 badge를 정합화한다. (AC: 3, 5)
++  - [ ] DB enum은 현재 `IN_PROGRESS`, `IN_REVIEW`, `HEADQUARTERS_CLOSED`, `HOLIDAY`를 사용한다. `미입력`은 DB row가 없는 상태의 display key `EMPTY`로 유지한다.
++  - [ ] `mapDashboardLedgerStatus(null)`의 `미입력` 매핑을 보존하고, store-entry에서도 같은 label helper 또는 공유 helper를 사용한다.
++  - [ ] `입력중`, `검토대기`, `본사마감`, `휴무`, `미입력` badge는 shadcn `Badge` 기반 text pill로 표시한다. custom pill markup을 새로 만들지 않는다.
++  - [ ] 휴무 상태를 이 story에서 조작 가능하게 만들 경우, 휴무 전환/해제 action도 권한, audit, version guard, revalidation을 통과해야 한다. 정책이 불명확하면 표시와 저장 차단까지만 하고 전환 UI는 후
+속으로 남긴다.
++- [ ] store-entry UI를 선택 날짜/지점 기준으로 연결한다. (AC: 1-4)
++  - [ ] `src/app/app/store-entry/page.tsx`는 `storeId`, `date`, `step` query를 정규화하고 허용된 store/date만 query/action으로 넘긴다.
++  - [ ] 기본값은 기존처럼 현재 KST 날짜와 사용자의 기본 활성 지점이다.
++  - [ ] 지점장 화면은 390px 모바일에서도 날짜 선택, 상태 badge, 단계 navigation, 저장 버튼이 겹치지 않아야 한다.
++  - [ ] 본사 사용자가 store-entry route로 접근하는 경우, 관제판으로 강제 이동해야 하는 현재 정책을 유지할지, scoped store/date 장부 열기를 허용할지 Story 2.1 기준으로 하나만 선택해 구현한다. 선택 기
+준은 권한 profile과 UX 흐름에 맞춰 Dev Agent Record에 남긴다.
++  - [ ] step navigation의 `storeId` query 보존 패턴을 `date`에도 확장해 재고/손실 하위 route 이동 시 같은 장부를 유지한다.
++- [ ] revalidation과 audit을 기존 패턴으로 통일한다. (AC: 1-6)
++  - [ ] 생성/상태 변경/저장 mutation은 `db.$transaction` 안에서 business write와 `writeAuditLog`를 함께 처리한다.
++  - [ ] mutation 성공 후 `/app/store-entry`, `/app/store-entry/inventory`, `/app/store-entry/losses`, `/app/dashboard`, `/app/reports/daily`, `/app/reports/monthly` 중 영향받는 경로를 기존 helper로 r
+evalidate한다.
++  - [ ] audit action은 dot notation을 사용한다: `ledger.created`, `ledger.status.updated`, `ledger.sales_payment.updated` 등 기존 이름을 유지/확장한다.
++- [ ] 회귀 테스트를 추가/정렬한다. (AC: 1-6)
++  - [ ] `tests/unit/ledger-sales.test.mjs` 또는 새 unit test에서 `DailyLedger.version`/edit token, unique key, duplicate-safe 생성, `Asia/Seoul` 날짜 normalization, `미입력` display mapping을 검증한
+다.
++  - [ ] action source test에서 version guard, conflict error, `requireStoreAccess`/permission helper, transaction-bound audit, path revalidation을 검증한다.
++  - [ ] `tests/e2e/store-ledger-sales.spec.ts`에 선택 날짜 장부 생성, 재방문 시 기존 장부 유지, 권한 없는 storeId 차단, 390px 날짜/상태 UI 표시를 추가한다.
++  - [ ] `tests/e2e/hq-dashboard.spec.ts`는 미입력 row 조회가 장부를 생성하지 않는 기존 계약을 계속 검증한다.
++  - [ ] 가능하면 동시 생성을 단위/통합 수준에서 두 번 호출해 장부 row가 1개이고 audit 생성도 1개인지 확인한다.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 2는 지점장 또는 본사가 하루 장부를 만들고 매출/비용/매입/재고/손실/근무 정보를 모바일 우선 7단계 흐름으로 입력하게 하는 영역이다. [Source: `_bmad-output/planning-artifacts/epics.md#Epic 2: 지
+점 일일 장부 입력`]
++- Story 2.1은 특정 지점+날짜의 장부 생성/열기, 중복 생성 방지, 상태 관리, 권한 차단, 본사 마감 후 원본 수정 차단, version/edit token을 요구한다. [Source: `_bmad-output/planning-artifacts/epics.md#Sto
+ry 2.1: 지점+일자 장부 생성과 상태 관리`]
++- PRD FR-4는 같은 지점+일자에 하나의 일일 장부만 존재하고, 장부가 없으면 입력 시작 시 생성되며, 다시 열면 기존 입력값이 유지되어야 한다고 정의한다. [Source: `_bmad-output/planning-artifacts/prds/prd-
+erp_fish-2026-05-28-2/prd.md#FR-4: 지점+일자 장부 생성`]
++- PRD 권한 표는 장부 생성/일반 수정을 본사 관리자, 허용된 본사 스텝, 해당 지점장에게만 허용한다. 지점장은 자기 지점과 본사 마감 전 장부만 가능하다. [Source: `_bmad-output/planning-artifacts/prds/prd-
+erp_fish-2026-05-28-2/prd.md#권한 프로파일 x 주요 action 기준`]
++- 감사 계약은 장부 생성/수정에 event id, 장부 id, 지점, 일자, 사용자, 권한 프로파일, 시각, 대상 필드, 변경 전/후 값이 필요하고 모바일 부분 저장과 최종 제출을 구분해야 한다. [Source: `_bmad-output/pla
+nning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#감사 이벤트 공통 계약`]
++- UX는 지점장 장부 입력이 390px 모바일 폭에서도 동작해야 하고, 본사 관제판/장부 상세은 상태 table, badge, detail panel 중심의 내부 ERP 화면이어야 한다. [Source: `_bmad-output/planning-artifacts/ux-de
+signs/ux-erp_fish-2026-05-28/EXPERIENCE.md#본사 사용자 IA`, `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md`]
++
++### Current Repository State
++
++- 현재 sprint-status의 authoritative key는 `2-1-지점-일자-장부-생성과-상태-관리`이고 상태는 이 story 생성 전 `backlog`였다. [Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`]
++- worktree에는 이전 `2-1-지점장이-오늘-장부를-열고-매출-결제를-저장한다.md` 파일 삭제가 이미 존재한다. 이 story는 그 삭제를 되돌리지 않고 current sprint-status의 새 Story 2.1 기준으로 작성한다. [Sour
+ce: `git status --short`]
++- `DailyLedger`는 이미 `storeId`, `closingDate`, `status`, 매출/결제/근무/제출/마감 필드, 생성/수정 actor relation, `@@unique([storeId, closingDate])`, status index를 갖는다. 단, version/edit token
+필드는 아직 없다. [Source: `prisma/schema.prisma`]
++- 현재 `DailyLedgerStatus` enum은 `IN_PROGRESS`, `IN_REVIEW`, `HEADQUARTERS_CLOSED`, `HOLIDAY`다. `미입력`은 row가 없을 때의 UI 표시 상태이며 DB enum으로 추가하지 않는다. [Source: `prisma/schema.pris
+ma`, `src/features/dashboard/queries.ts`]
++- `getTodayStoreLedger`는 오늘 KST 날짜만 대상으로 `getOrCreateTodayStoreLedgerInTx`를 호출한다. 이 helper는 `createMany({ skipDuplicates: true })`, unique key 조회, 생성시에만 `ledger.created` audit
+를 사용한다. [Source: `src/features/ledger/queries.ts`]
++- `saveLedgerSalesPayment`, `saveLedgerExpenses`, `saveLedgerPurchases`, `saveLedgerWorkInfo`, `submitLedgerForReview`는 `requireStoreAccess`, `db.$transaction`, `writeAuditLog`, `ActionResult`, `rev
+alidatePath` 패턴을 이미 사용한다. [Source: `src/features/ledger/actions.ts`]
++- 현재 store-entry page는 `storeId`와 `step` query만 처리하고 날짜 선택은 없다. 기본 장부는 항상 오늘 KST 장부다. [Source: `src/app/app/store-entry/page.tsx`]
++- dashboard query는 active store와 selected date ledgers를 조회하면서 row가 없는 지점은 `미입력`으로 표시하고 장부를 생성하지 않는다. 이 계약은 깨면 안 된다. [Source: `src/features/dashboard/queries.
+ts`, `tests/unit/hq-dashboard.test.mjs`]
++- `DashboardStatusBadge`는 shadcn `Badge`를 사용해 text pill 상태를 표시한다. store-entry 쪽 새 status badge도 이 패턴을 재사용하거나 공유 helper로 정리한다. [Source: `src/features/dashboard/componen
+ts/dashboard-status-badge.tsx`]
++- `StoreEntryStepNavigation`은 `storeId`를 query로 보존하지만 아직 `date`를 보존하지 않는다. selected date를 추가하면 모든 step route가 같은 장부를 유지하도록 확장해야 한다. [Source: `src/features/le
+dger/components/store-entry-step-navigation.tsx`]
++
++### Architecture Guardrails
++
++- 선택 스택은 TypeScript, Next.js App Router, Prisma, PostgreSQL, NextAuth.js/Auth.js, Tailwind CSS, shadcn/ui, Vercel이다. Story 2.1에서 ORM, auth framework, UI primitive 체계를 바꾸지 않는다. [Sour
+ce: `_bmad-output/planning-artifacts/architecture.md#Technology Stack Selection`]
++- `store_id + closing_date`는 daily ledgers에서 반드시 unique여야 한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Data Architecture`]
++- Server Components는 authenticated reads, Server Actions는 internal mutations를 담당한다. Story 2.1을 위해 public API route를 만들지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md
+#API & Communication Patterns`]
++- 모든 ledger/report/master-data/close/correction/settings action은 서버 authorization helper를 먼저 호출해야 한다. UI 숨김은 보조일 뿐 권한 경계가 아니다. [Source: `_bmad-output/planning-artifacts/a
+rchitecture.md#Authorization Architecture`]
++- 입력/수정/마감/정정/기준값 변경은 actor, timestamp, target entity, before, after, reason where applicable을 포함하는 audit record를 써야 한다. [Source: `_bmad-output/planning-artifacts/architecture
+.md#Event and Audit Patterns`]
++- 장부, 마감, 정정, 기준값, master-data 변경 후 dashboard/report가 stale하지 않도록 Next revalidation을 사용한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Caching Strategy`]
++- 검토 대기는 원본 잠금 상태가 아니다. 본사 마감만 원본 장부를 잠그며, 마감 후 변경은 정정 기록으로 처리한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Known Reconciliation Notes`]
++- Daily ledger records need a server version or edit token. stale mobile/browser saves must reload latest ledger before saving. [Source: `_bmad-output/planning-artifacts/architecture.md#2026-06-10 Co
+rrect Course Addendum`]
++
++### Data and Security Guardrails
++
++- 장부 생성/열기/저장 대상은 `storeId + closingDate`다. `id`만 믿고 저장하면 권한 밖 ledger id 주입을 놓칠 수 있으므로 server action에서 store access와 ledger store/date를 함께 확인한다.
++- `closingDate`는 `Asia/Seoul` 업무일 기준으로 normalize한다. `new Date("2026-06-11")`의 로컬/UTC 해석 차이를 UI와 서버에 섞지 않는다.
++- `미입력`은 "장부 row 없음"이다. 미입력 표시를 위해 row를 만들면 HQ dashboard summary와 morning meeting 상태가 오염된다.
++- `HEADQUARTERS_CLOSED`는 원본 수정 불가다. 기존 `CorrectionReadonlySummary`와 correction flow를 우회해 ledger 원본 필드를 업데이트하지 않는다.
++- `HOLIDAY` 원본 수정 정책은 현재 action guard에서 수정 불가로 취급한다. 휴무 전환 기능을 넣는다면 별도 status action으로 만들고 audit/version guard를 적용한다.
++- audit payload에는 ledger id, store id, closing date, status, 변경 전/후 값과 actor context를 남긴다. password/session/token/raw credential은 절대 넣지 않는다.
++
++### File Structure Requirements
++
++- 예상 UPDATE 파일:
++  - `prisma/schema.prisma`
++  - 새 migration: `prisma/migrations/*_add_daily_ledger_version*/migration.sql`
++  - `src/features/ledger/queries.ts`
++  - `src/features/ledger/actions.ts`
++  - `src/features/ledger/schemas.ts`
++  - `src/features/ledger/types.ts`
++  - `src/features/ledger/components/store-entry-step-navigation.tsx`
++  - `src/features/ledger/components/sales-payment-step-client.tsx`
++  - 필요 시 `src/features/ledger/components/expense-step-client.tsx`, `purchase-step-client.tsx`, `workstep-client.tsx`, `review-summary-client.tsx`
++  - `src/app/app/store-entry/page.tsx`
++  - `src/app/app/store-entry/inventory/page.tsx`
++  - `src/app/app/store-entry/losses/page.tsx`
++  - `src/features/inventory/actions.ts`, `src/features/losses/actions.ts` if version/date guards must be aligned
++  - `tests/unit/ledger-sales.test.mjs`
++  - `tests/unit/hq-dashboard.test.mjs`
++  - `tests/e2e/store-ledger-sales.spec.ts`
++  - `tests/e2e/hq-dashboard.spec.ts`
++- 예상 NEW 파일:
++  - Optional: `src/features/ledger/status.ts` 또는 `src/features/ledger/date.ts` if it prevents duplicating status/date mapping across dashboard and store-entry.
++  - Optional: `tests/unit/ledger-creation.test.mjs` if keeping 2.1 creation tests separate is clearer than extending `ledger-sales.test.mjs`.
++- 금지:
++  - `DailyLedger`와 별도인 parallel ledger table.
++  - dashboard 미입력 row를 위해 ledger 자동 생성.
++  - custom auth checks that bypass `requireStoreAccess`, `requireHeadquartersStoreScope`, or permission helpers.
++  - custom status pill markup when shadcn `Badge` already exists.
++  - existing migration edits.
++  - deleted prior story file 복구 or unrelated dirty worktree revert.
++
++### UX Guardrails
++
++- Store manager input remains a task surface, not a landing page. First screen should show the selected ledger entry workflow.
++- Date selector/status area must be compact and durable at 390px width. Use labels, native date input or shadcn-compatible input, and no overlapping text.
++- Status label language must be exactly aligned: `미입력`, `입력중`, `검토대기`, `본사마감`, `휴무`.
++- The date/store context must remain visible enough that a user does not enter values into the wrong business day.
++- Saving conflict should tell the user to refresh/reload latest data; do not silently overwrite with stale form data.
++
++### Previous Story Intelligence
++

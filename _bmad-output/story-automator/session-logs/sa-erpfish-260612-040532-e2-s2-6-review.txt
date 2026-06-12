@@ -1,0 +1,200 @@
++    "features",
++    "inventory",
++    "actions.ts",
++  );
++  const storeAdjustmentSource = actionSource.slice(
++    actionSource.indexOf("export async function saveLedgerInventoryAdjustment"),
++    actionSource.indexOf("const inventoryItem = await tx.ledgerInventoryItem.upsert"),
++  );
++  const zeroDifferenceGuardIndex = storeAdjustmentSource.indexOf(
++    "adjustment.differenceQuantity === 0",
++  );
++  const ledgerMutationIndex = storeAdjustmentSource.indexOf(
++    "const editableLedger = await tx.dailyLedger.updateMany",
++  );
++
++  assert.ok(
++    zeroDifferenceGuardIndex >= 0,
++    "store adjustment save should reject zero-difference adjustments",
++  );
++  assert.ok(
++    ledgerMutationIndex > zeroDifferenceGuardIndex,
++    "store adjustment save should only increment the ledger version after validation succeeds",
++  );
++});
++
+ test("inventory UI is wired to the canonical inventory route", () => {
+   const pageSource = readProjectFile(
+     "src",
+@@ -619,8 +647,11 @@
+   assert.match(componentSource, /상태\/조정/);
+   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
+   assert.match(componentSource, /정정\s+기록을 사용해 주세요/);
+-  assert.match(componentSource, /disabled={isSaving \|\| isClosed/);
+-  assert.match(componentSource, /disabled={isSaving \|\| isClosed}/);
++  assert.match(componentSource, /휴무 장부/);
++  assert.match(
++    componentSource,
++    /재고 조정 저장이 끝난 뒤 다시 저장해 주세요\./,
++  );
+   assert.match(componentSource, /reasonRefs/);
+   assert.match(componentSource, /setAdjustmentErrors\({}\)/);
+   assert.match(componentSource, /setFieldErrors\({}\)/);
+@@ -648,6 +679,7 @@
+   assert.match(
+     componentSource,
+     /disabled={isSaving \|\| isClosed \|\| isAdjustmentSavePending}/,
++    "full draft save should be disabled while an adjustment save is pending",
+   );
+   assert.match(
+     componentSource,
+
+codex
+Story 2.6 review workflow completed and auto-fixes applied.
+
+Fixed:
+- HIGH: rejected inventory adjustment requests could increment ledger `version` before validation completed. Moved the ledger mutation after validation in [actions.ts](/home/noah/code/erp_fish/src/fea
+tures/inventory/actions.ts).
+- MEDIUM: full inventory draft save could run while an adjustment save was pending. Blocked that path in [inventory-step-client.tsx](/home/noah/code/erp_fish/src/features/inventory/components/inventor
+y-step-client.tsx).
+- LOW: `HOLIDAY` ledgers showed headquarters-closed messaging. Split the blocked-edit message by status.
+
+Updated:
+- Story status set to `done` in [2-6-재고-조정-기록.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/2-6-재고-조정-기록.md).
+- Sprint status synced to `done` in [sprint-status.yaml](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml).
+- Added review notes and validation results.
+
+Verification passed:
+- `corepack pnpm exec prisma validate`
+- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs`
+- `corepack pnpm typecheck`
+- `corepack pnpm lint`
+- `corepack pnpm test:unit`
+- `corepack pnpm build`
+
+Focused Playwright E2E rerun was blocked by the sandbox: Next could not bind `127.0.0.1:3100` with `listen EPERM`. The story records the earlier orchestrator E2E pass and this sandbox blocker.
+diff --git a/_bmad-output/implementation-artifacts/2-6-재고-조정-기록.md b/_bmad-output/implementation-artifacts/2-6-재고-조정-기록.md
+index 802ba661ac1e828bef03f684695b8d0d880a0d4e..a94c0cac6e79a77413af82d2e6f88064c21b7f58
+--- a/_bmad-output/implementation-artifacts/2-6-재고-조정-기록.md
++++ b/_bmad-output/implementation-artifacts/2-6-재고-조정-기록.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.6: 재고 조정 기록
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -226,6 +226,9 @@
+ - 2026-06-12T03:44:56+09:00 직접 서버 실행 확인: `listen EPERM: operation not permitted 127.0.0.1:3106`. 현재 sandbox가 로컬 포트 listen을 막아 E2E 실행 불가.
+ - 2026-06-12T03:57:17+09:00 Orchestrator final verification on PORT=3100 passed focused adjustment E2E 4/4; typecheck, lint, full unit 196/196, and build passed.
+ - 2026-06-12T04:04:12+09:00 Automate guardrail added loss-to-adjustment recalculation E2E; orchestrator verification on PORT=3100 passed focused adjustment E2E 5/5.
++- 2026-06-12T04:10:21+09:00 Senior review auto-fix: store-manager adjustment validation now completes before ledger version mutation, and full draft save is blocked while an adjustment save is pendin
+g.
++- 2026-06-12T04:10:21+09:00 Senior review verification passed: `corepack pnpm exec prisma validate`, `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs`,
+`corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`, `corepack pnpm build`.
++- 2026-06-12T04:10:21+09:00 Senior review focused E2E attempt blocked by sandbox port restriction: direct Next server failed with `listen EPERM: operation not permitted 127.0.0.1:3100`.
+
+ ### Completion Notes List
+
+@@ -234,6 +237,7 @@
+ - 지점장 safe mapper와 UI는 수량, 상태, 사유 중심으로 조정 내역을 표시하고 조정 금액/원가 파생값을 노출하지 않는다.
+ - `HEADQUARTERS_CLOSED`와 `HOLIDAY` 원본 조정 차단, 계산 불가 기준 메시지, 조정 재계산 정책 상태 갱신을 보강했다.
+ - Story 2.6 기준 unit/E2E 테스트 계약을 갱신했다. child session에서는 PORT=3106 bind 제한으로 막혔지만, 최종 오케스트레이터 검증은 PORT=3100에서 focused adjustment E2E 5/5를 통과했다.
++- Senior review에서 실패한 조정 요청이 ledger version을 증가시키던 부작용과 조정 저장 중 전체 재고 저장이 가능하던 UI 동시성 gap을 자동 수정했다.
+
+ ### File List
+
+@@ -250,6 +254,38 @@
+ - `tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+ - `tests/unit/ledger-inventory.test.mjs`
+
++### Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Review Date: 2026-06-12
++Outcome: Approved after auto-fix
++
++Findings fixed:
++
++- HIGH: `saveLedgerInventoryAdjustment`가 품목/기준수량/0차이 validation 전에 `dailyLedger.updateMany`로 version을 증가시켜, 거부된 요청도 장부 변경으로 남을 수 있었다. Validation을 모두 통과한 뒤에
+만 version guard mutation을 수행하도록 수정했다. [Source: `src/features/inventory/actions.ts`]
++- MEDIUM: 조정 저장 중 행 입력과 조정 버튼은 잠겼지만 하단 전체 저장 버튼과 draft save 경로가 열려 있어 같은 ledger version으로 병렬 저장이 가능했다. `isAdjustmentSavePending` 동안 전체 저장을 차단하
+고 사용자 메시지와 test guard를 추가했다. [Source: `src/features/inventory/components/inventory-step-client.tsx`, `tests/unit/ledger-inventory.test.mjs`]
++- LOW: `HOLIDAY` 장부에서 재고 원본 수정 차단 alert가 본사 마감 장부 문구를 표시했다. 상태별 alert title/message를 분리했다. [Source: `src/features/inventory/components/inventory-step-client.tsx`]
++
++Validation:
++
++- Passed: `corepack pnpm exec prisma validate`
++- Passed: `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs`
++- Passed: `corepack pnpm typecheck`
++- Passed: `corepack pnpm lint`
++- Passed: `corepack pnpm test:unit`
++- Passed: `corepack pnpm build`
++- Blocked in this sandbox: `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-a
+djustment.spec.ts` because local server bind failed with `listen EPERM: operation not permitted 127.0.0.1:3100`.
++
++Checklist result:
++
++- Story status was reviewable before auto-fix.
++- Acceptance Criteria 1-6 cross-checked against implementation.
++- File List and git changes reviewed; unrelated dirty planning/agent artifacts were not reverted.
++- Tests mapped to ACs; new unit guard added for rejected adjustment version mutation and adjustment-save concurrency.
++- Code quality, security, sensitive-field exposure, status locking, audit reason, and reconciliation paths reviewed.
++- Story status set to done; sprint status synced.
++
+ ### Change Log
+
+ - 2026-06-12: Story 2.6 재고 조정 금액 정책 상태, 마감/휴무 차단, safe payload/UI 노출 정책, 테스트 계약을 보강했다. 최종 오케스트레이터 검증에서 focused E2E 5/5를 통과했다.
++- 2026-06-12: Senior review auto-fix로 rejected adjustment version mutation, 조정 저장 중 전체 저장 동시성, 휴무 장부 안내 문구를 수정하고 focused/unit/type/lint/build 검증을 통과했다.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 3217a2892cda40b5d911e62f7f77e4bf198a62a0..37669c4b0db2842392ff111b33714c926913b32b
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T03:57:17+09:00
++# last_updated: 2026-06-12T04:10:21+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T03:57:17+09:00"
++last_updated: "2026-06-12T04:10:21+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -55,7 +55,7 @@
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+-  2-6-재고-조정-기록: review
++  2-6-재고-조정-기록: done
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index 7ae4e1e2407522930f827b8ef5541a71bb9941ba..8120df067f535fe730642aa8b166ad4e1e69d826
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -33,6 +33,8 @@
+ - [x] `corepack pnpm test:unit` - 196/196 passed.
+ - [x] `corepack pnpm build` - pass.
+ - [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+5/5 passed after locator/isolation fixes and the loss-to-adjustment recalculation guardrail.
++- [x] Senior review verification: `corepack pnpm exec prisma validate`, focused `ledger-inventory.test.mjs`, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`, and `corepack
+pnpm build` passed after auto-fixes.
++- [ ] Senior review focused E2E rerun in this sandbox was blocked because the local Next.js server cannot bind to `127.0.0.1:3100` (`listen EPERM`). Previous orchestrator E2E pass above remains the l
+atest completed browser run.
+
+ ## Checklist Result
+
+diff --git a/src/features/inventory/actions.ts b/src/features/inventory/actions.ts
+index 02d03712bc5f7e23e8e5c98515c9fd29c2cb1957..3ff8c2702a39d36c824e3566583863e9da2a736e
+--- a/src/features/inventory/actions.ts
++++ b/src/features/inventory/actions.ts
+@@ -263,19 +263,6 @@

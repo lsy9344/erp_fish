@@ -1,0 +1,200 @@
+@@ -56,7 +56,7 @@
+   2-4-mvp-수동-매입-입력: done
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+-  2-7-손실-폐기-떨이-입력: backlog
++  2-7-손실-폐기-떨이-입력: ready-for-dev
+   2-8-근무인원-특이사항과-검토-제출: backlog
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+
+codex
+완료했습니다.
+
+생성한 story:
+[2-7-손실-폐기-떨이-입력.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md)
+
+업데이트:
+[sprint-status.yaml](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml)에서 `2-7-손실-폐기-떨이-입력`을 `ready-for-dev`로 변경했고 `last_updated`도 갱신했습니다.
+
+검증도 수행했습니다. 특히 기존 손실 테스트/seed가 아직 `story-2-6` 명명으로 남아 있는 점과, 지점장 손실 조회에서 입력 금액(`amount`)을 재표시할지 숨길지 AC 6과 현재 구현이 충돌할 수 있는 점을 Story 2.
+7의 핵심 dev guardrail로 명시했습니다.
+diff --git a/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f9b90f6d981d830c1600ef36e5628a40329b5bc
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/2-7-손실-폐기-떨이-입력.md
+@@ -0,0 +1,240 @@
++---
++story_key: 2-7-손실-폐기-떨이-입력
++story_id: "2.7"
++epic: "2"
++created_at: "2026-06-12T04:19:20+09:00"
++source_story: "_bmad-output/planning-artifacts/epics.md"
++baseline_commit: e2e1627
++---
++
++# Story 2.7: 손실/폐기/떨이 입력
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As a 지점장,
++I want 손실, 폐기, 떨이 항목을 품목과 사유와 함께 입력할 수 있기를 원한다,
++so that 본사가 재고 감소와 현장 손실의 원인을 확인할 수 있다.
++
++## Acceptance Criteria
++
++1. Given 사용자가 손실/폐기/떨이 단계에 있을 때, when 품목, 수량, 금액, 처리 유형, 사유/특이사항을 입력한다, then 손실 라인은 해당 장부에 저장되어야 한다, and 처리 유형은 관리 코드 기준을 따라야 한다
+.
++2. Given 사용자가 필수 값 없이 손실 라인을 저장하려 할 때, when 서버가 요청을 검증한다, then 저장은 거부되어야 한다, and UI는 누락 필드를 사용자가 고칠 수 있게 표시해야 한다.
++3. Given 손실 라인이 저장되었을 때, when 재고 흐름을 조회한다, then 손실 수량은 해당 품목의 재고 흐름에 반영되어야 한다, and 손실 리포트에서 사용할 수 있는 구조화 데이터로 보존되어야 한다.
++4. Given 희망 판매가 기준 손실액 정책 OQ-9가 아직 닫히지 않았을 때, when 이 스토리를 구현한다, then 희망 판매가 기준 손실액 계산은 포함하지 않아야 한다, and 사용자가 입력한 기존 손실 유형, 수량, 금액
+, 사유 기록에 집중해야 한다.
++5. Given 손실 라인이 수정되거나 삭제될 때, when 저장 요청이 성공한다, then 변경 전/후 값과 사유는 감사 로그에 남아야 한다, and 장부 version 또는 edit token이 갱신되어야 한다.
++6. Given 지점장 권한으로 손실 정보를 조회할 때, when 서버가 응답을 만든다, then 원가나 이익을 역추정할 수 있는 민감 필드는 제외되어야 한다, and 현장 입력에 필요한 품목, 수량, 금액, 유형, 사유 중심으
+로 표시되어야 한다.
++
++## Tasks / Subtasks
++
++- [ ] 현재 구현된 손실 입력 경로를 Story 2.7 기준으로 재검토하고 story 번호 drift를 정리한다. (AC: 1-6)
++  - [ ] 먼저 `prisma/schema.prisma`, `src/features/losses/actions.ts`, `queries.ts`, `schemas.ts`, `types.ts`, `components/loss-step-client.tsx`, `quantity-error.ts`, `hq-edit-actions.ts`, `src/app/a
+pp/store-entry/losses/page.tsx`, `src/features/inventory/queries.ts`, `src/features/inventory/adjustment-reconciliation.ts`, `src/server/calculations/inventory.ts`, `tests/unit/ledger-losses.test.mjs`
+, `tests/e2e/store-ledger-losses.spec.ts`, `tests/e2e/store-ledger-inventory-adjustment.spec.ts`를 읽는다.
++  - [ ] 이미 존재하는 `LedgerLossItem`, `saveLedgerLosses`, `saveHqLedgerLosses`, `ledgerLossesSchema`, `LossStepClient`, `getLossStepData`, `summarizeLossItems`, `getLossSignalCandidates`, `reconcil
+eLedgerInventoryAdjustments`를 삭제하거나 병렬 구현하지 않는다.
++  - [ ] 현재 `tests/e2e/store-ledger-losses.spec.ts`의 marker/seed가 `story-2-6`으로 남아 있다. 현재 authoritative source는 `epics.md`의 `Story 2.7: 손실/폐기/떨이 입력`과 `sprint-status.yaml`의 `2-7
+-손실-폐기-떨이-입력`이므로 테스트명, marker, seed prefix를 Story 2.7로 정리한다.
++- [ ] 손실 라인 persistence와 관리 코드 계약을 현재 AC에 맞게 확정한다. (AC: 1, 3, 4)
++  - [ ] `LedgerLossItem`은 품목 snapshot, `ledgerInputCodeId`, `lossTypeName`, `quantity`, 사용자가 입력한 `amount`, `reason`, `createdById`, `updatedById`, timestamps를 유지한다.
++  - [ ] 신규 손실 유형 선택지는 active `LedgerInputCode` 중 `group = LOSS_TYPE`만 노출한다. 과거 장부에 저장된 비활성 품목/손실 유형은 snapshot 이름으로 표시하되 신규 선택지에는 재노출하지 않는다.
++  - [ ] 품목명/구분/규격 정규화, CAP-6 이카운트 업로드, FIFO lot 처리는 이 story에서 추가하지 않는다.
++  - [ ] `amount`는 사용자가 입력한 현장 손실/폐기/떨이 금액 기록이다. 희망 판매가 기준 손실액, FIFO 원가 손실액, 마진/이익 파생값으로 계산하거나 명명하지 않는다.
++- [ ] 서버 action을 권한, 검증, 충돌, 감사 기준에 맞게 보강한다. (AC: 1, 2, 5)
++  - [ ] `saveLedgerLosses`는 Zod validation, `requireStoreAccess`, DB transaction, version guard, audit write, revalidation을 유지한다.
++  - [ ] `IN_PROGRESS`와 `IN_REVIEW`는 원본 손실 입력을 허용한다. `IN_REVIEW`는 본사 마감 전 상태이며 원본 잠금이 아니다.
++  - [ ] `HEADQUARTERS_CLOSED`와 `HOLIDAY`에서는 원본 손실 입력을 막고 정정 기록 흐름을 안내한다.
++  - [ ] stale `version`은 `LEDGER_CONFLICT`로 반환하고, 조용한 마지막 저장 덮어쓰기를 허용하지 않는다.
++  - [ ] 품목, 처리 유형, 수량, 금액, 사유는 서버에서 필수 검증한다. client-only required 처리에 의존하지 않는다.
++  - [ ] 삭제는 기존 라인 누락 방식으로 처리하더라도 감사 로그 `before`/`after`에서 변경 전/후 라인과 사유를 추적할 수 있어야 한다.
++  - [ ] 감사 로그 action은 `ledger.losses.saved`를 유지하고, 본사 상세 편집 경로는 `ledger.hq.losses.saved`를 유지한다.
++- [ ] 재고 흐름, 조정 재계산, 리포트 구조화 데이터를 보존한다. (AC: 3)
++  - [ ] 손실 수량은 `src/features/inventory/queries.ts`의 손실 집계에 반영되어 재고 단계의 `lossQuantity`와 `lossAmount` 소스가 된다.
++  - [ ] 손실 저장/수정/삭제 후 `reconcileLedgerInventoryAdjustments`를 호출해 기존 재고 조정의 `beforeQuantity`, `differenceQuantity`, `amountStatus`가 stale이 되지 않게 한다.
++  - [ ] `calculateSystemInventoryQuantity({ previousQuantity, purchasedQuantity, lossQuantity })`가 null을 반환하는 과다 손실이나 근거 부족 상태는 저장하지 말고 필드 오류로 돌려준다. 0으로 대체하지
+않는다.
++  - [ ] 리포트/관제판이 `LedgerLossItem`의 구조화 필드로 손실 여부, 수량, 금액, 유형별 요약, 이상 후보를 계산할 수 있게 유지한다. free-text reason만으로 리포트하지 않는다.
++- [ ] 지점장 응답과 UI의 민감 필드 경계를 명확히 한다. (AC: 1, 4, 6)
++  - [ ] 지점장 route는 `toStoreManagerLossStepData` 또는 동등한 server-side mapper를 거친다. client-only hide를 보안 경계로 삼지 않는다.
++  - [ ] 지점장 응답에서 `unitPrice`, `defaultUnitPrice`, FIFO/lot 근거, 원가, 마진, 이익 파생값, 희망 판매가 기준 손실액은 제외한다.
++  - [ ] AC 1과 AC 6은 지점장이 입력한 `amount`를 현장 입력에 필요한 금액으로 본다. 현재 mapper/test가 persisted `amount`를 지점장 재조회에서 제거해 입력칸이 비는지 확인하고, 제품 의도에 맞게 "입력 금
+액 재표시" 또는 "저장 후 비노출" 중 하나로 통일한다. 의도 변경 시 테스트와 Dev Notes에 근거를 남긴다.
++  - [ ] `LossStepClient`의 `손실액(원)` 설명은 "판매금액이 아니라 손해 본 금액" 계약을 유지한다. 이 문구를 희망 판매가 기준 손실액처럼 확장하지 않는다.
++  - [ ] 모바일 390px에서 품목, 처리 유형, 수량, 금액, 사유, 저장/삭제 버튼은 44px 이상 터치 타겟과 필드별 오류 포커스를 유지한다.
++- [ ] OQ-9/CAP-14와 FIFO/OQ-17 범위를 명확히 차단한다. (AC: 4, 6)
++  - [ ] 희망 판매가, 영업 개시 전 가격 잠금, 가격 version, 희망 판매가 미입력 closeability, 영업 중 가격 변경 정책은 구현하지 않는다.
++  - [ ] FIFO 원가, 매입 잔량, 폐기/떨이 처리 순서, 확정 손실원가 계산을 구현하지 않는다.
++  - [ ] OQ-9 또는 OQ-17 관련 계산이 필요해 보이면 `기준 확인 필요`/`계산 불가` 상태로 남기고 별도 discovery/policy story로 넘긴다.
++- [ ] 기존 7단계 흐름과 저장 안정성을 회귀 없이 유지한다. (AC: 1, 2, 5)
++  - [ ] 단계 이동 link는 `storeId`와 KST `date=YYYY-MM-DD`를 보존한다. ISO timestamp query를 재도입하지 않는다.
++  - [ ] `LedgerSaveStatus`, `UnsavedChangeDialog`, `useUnsavedStepGuard`, `notifyLedgerUpdated` 경로를 유지한다.
++  - [ ] 저장 실패는 손실 가능한 입력값, 재시도 액션, 필드별 오류를 같은 화면에서 보여준다.
++  - [ ] 저장 중 중복 제출과 삭제/저장 race가 stale UI 또는 double write로 이어지지 않게 버튼 disabled와 version guard를 확인한다.
++- [ ] 테스트를 Story 2.7 기준으로 추가/갱신한다. (AC: 1-6)
++  - [ ] `tests/unit/ledger-losses.test.mjs`에서 schema, mapper, action source contract, `summarizeLossItems`, `getLossSignalCandidates`, quantity error, OQ-9 미구현 계약을 Story 2.7 명명으로 갱신한다
+.
++  - [ ] `tests/e2e/store-ledger-losses.spec.ts`의 marker/seed/cleanup을 `story-2-7`로 정리하고, 여러 손실 저장, 재방문, 비활성 코드 보존, 필수 오류 포커스, 390px 터치 타겟, 과다 손실 차단, 재고 반영,
+ 민감 필드 미노출을 검증한다.
++  - [ ] AC 6의 지점장 금액 표시 정책을 테스트로 고정한다. 입력 금액을 재표시하기로 하면 `amount`는 보여주되 `unitPrice`, `defaultUnitPrice`, `totalAmount`, `exceededAmount`, FIFO/lot/원가 파생값은 HT
+ML/serialized payload에 없어야 한다.
++  - [ ] 손실 저장/수정/삭제가 기존 재고 조정 before/difference를 재계산하는 회귀를 `tests/e2e/store-ledger-inventory-adjustment.spec.ts` 또는 focused unit test로 유지한다.
++  - [ ] focused verification: `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-losses.test.mjs`, `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledg
+er-inventory.test.mjs`, `PORT=31xx DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-losses.spec.ts`
+.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 2는 지점장 또는 본사가 하루 장부를 만들고 매출/비용/매입/재고/손실/근무 정보를 모바일 우선 7단계 흐름으로 입력하는 영역이다. [Source: `_bmad-output/planning-artifacts/epics.md#Epic 2: 지점 일
+일 장부 입력`]
++- Story 2.7은 품목, 수량, 금액, 처리 유형, 사유/특이사항을 가진 손실/폐기/떨이 라인을 장부에 저장하고, 재고 흐름과 손실 리포트에 구조화 데이터로 남기라고 요구한다. [Source: `_bmad-output/planning-art
+ifacts/epics.md#Story 2.7: 손실/폐기/떨이 입력`]
++- PRD FR-11은 손실 항목이 재고 흐름과 손실 리포트에 반영되고, 손실액 또는 손실 수량이 본사 기준값을 넘으면 이상 신호 후보로 표시된다고 정의한다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp
+_fish-2026-05-28-2/prd.md#FR-11: 손실/폐기/떨이 입력`]
++- PRD FR-9는 재고 흐름이 전일재고, 매입, 판매/차감, 손실, 당일재고를 일자별로 추적해야 한다고 정의한다. 손실 수량은 재고 단계의 시스템 수량 계산에 들어가야 한다. [Source: `_bmad-output/planning-artif
+acts/prds/prd-erp_fish-2026-05-28-2/prd.md#FR-9: 품목 단위 재고 입력`]
++- PRD 계산 공통 규칙은 매출차액을 `총매출 - 상품별 판매금액 합계 - 손실/당일 조정 반영액`으로 정의하지만, OQ-1 전에는 임계값 판정을 확정하지 않는다. Story 2.7은 손실 반영액의 구조화 입력까지 다루고
+이상 임계값 정책 확정은 하지 않는다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#4.3 계산과 검증`]
++- OQ-9가 열려 있으므로 희망 판매가 기준 손실액 계산은 이 story에서 구현하면 안 된다. CAP-14는 OQ-9 확정 후 별도 범위다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md
+#10 Open Questions`]
++- OQ-17이 열려 있으므로 FIFO 원가와 반품/조정/폐기/떨이 처리 순서는 확정 계산으로 표시하지 않는다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#CAP-7: FIFO 재고 금
+액 계산과 매입 잔량 이력`]
++- UX는 7단계 입력 흐름에서 손실/폐기/떨이를 5단계로 두고, 단계 이동 중 미저장 변경 dialog와 모바일 오류/재시도를 요구한다. [Source: `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/
+EXPERIENCE.md#Component Patterns`]
++
++### Current Repository State
++
++- Sprint status의 authoritative key는 `2-7-손실-폐기-떨이-입력`이며 생성 전 상태는 `backlog`였다. [Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`]
++- `_bmad-output/implementation-artifacts/2-7-입력자가-검토-화면에서-계산값과-이상-후보를-확인한다.md`는 현재 sprint status와 맞지 않는 과거 artifact다. 새 authoritative Story 2.7 파일은 이 파일이다.
++- 현재 `prisma/schema.prisma`에는 이미 `LedgerLossItem`이 있으며 `productId`, `ledgerInputCodeId`, 품목 snapshot, `unitPrice`, `lossTypeName`, `quantity`, `amount`, `reason`, created/updated actor를
+가진다. [Source: `prisma/schema.prisma`]
++- 현재 `src/features/losses/actions.ts`는 `saveLedgerLosses`를 제공하고, Zod validation, `requireStoreAccess`, transaction, version guard, `IN_PROGRESS`/`IN_REVIEW` 허용, `HEADQUARTERS_CLOSED` 차단,
+과다 손실 수량 방어, `reconcileLedgerInventoryAdjustments`, `ledger.losses.saved` audit, revalidation을 이미 갖고 있다. [Source: `src/features/losses/actions.ts`]
++- 현재 `src/features/losses/queries.ts`는 active product와 active `LOSS_TYPE` 옵션, 저장된 loss items, summary, signal candidates를 조회하고 `toStoreManagerLossStepData`로 지점장 응답에서 `unitPrice`
+, `amount`, `totalAmount`, `exceededAmount`를 제거한다. AC 6의 "금액 중심 표시"와 이 mapper/test 계약을 재검토해야 한다. [Source: `src/features/losses/queries.ts`]
++- 현재 `LossStepClient`는 품목, 처리 유형, 수량, `손실액(원)`, 사유 입력, 미저장 변경 guard, 저장 상태, 44px 이상 입력 컨트롤을 갖고 있다. 지점장 응답에서 amount가 제거되면 저장 후 재방문 시 금액 입
+력칸이 빈 값으로 표시된다. [Source: `src/features/losses/components/loss-step-client.tsx`]
++- 현재 `src/features/losses/hq-edit-actions.ts`는 본사 장부 상세 탭에서 손실 수정 경로를 제공한다. HQ 경로도 같은 validation, editable status, inventory reconciliation, audit 원칙을 따라야 한다. [Sou
+rce: `src/features/losses/hq-edit-actions.ts`]
++- 현재 `tests/e2e/store-ledger-losses.spec.ts`는 기능 대부분을 검증하지만 story marker와 seed prefix가 `story-2-6`이다. Current Story 2.7로 정리해야 dev agent와 report가 혼동하지 않는다. [Source: `te
+sts/e2e/store-ledger-losses.spec.ts`]
++- 현재 `tests/e2e/store-ledger-losses.spec.ts`는 지점장 HTML/serialized payload에 `defaultUnitPrice`, `unitPrice`, `totalAmount`, `exceededAmount`, 저장한 amount 숫자들이 없다고 검증한다. AC 6과 충돌
+ 가능성이 있으므로 입력 금액 표시 정책을 고정한 뒤 테스트를 맞춘다. [Source: `tests/e2e/store-ledger-losses.spec.ts`]
++
++### Architecture Guardrails
++
++- 선택 스택은 Create T3 App 기반 Next.js App Router, TypeScript, Prisma, PostgreSQL, NextAuth/Auth.js, Tailwind CSS, shadcn/ui, Vercel이다. Story 2.7에서 ORM, auth framework, UI primitive 체계를 바꾸
+지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#Starter Template Evaluation`]
++- Prisma schema and migrations are the source of truth for persisted data. schema 변경은 새 migration으로 반영하고 기존 migration을 수정하지 않는다. [Source: `_bmad-output/planning-artifacts/architec
+ture.md#Data Architecture`]
++- 대부분의 제품 동작은 Server Components와 Server Actions를 사용한다. 손실 저장을 위해 public API route를 만들지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#API & Communication
+Patterns`]
++- 모든 mutation은 Zod validation, shared authorization helper, transaction, audit, revalidation을 따라야 한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Process Patterns`]
++- Store manager responses must omit sensitive accounting fields. Story 2.7은 지점장에게 원가/이익/마진/FIFO 근거를 보내면 안 되지만, 사용자가 입력한 손실 금액은 AC상 현장 입력 필드이므로 노출 정책을
+명확히 해야 한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Authorization Pattern`]
++- `확인 필요`, `계산 불가`, `데이터 부족`은 shared status enum 또는 display helper로 맞춰야 하며 각 화면이 다른 라벨을 임의로 만들면 안 된다. [Source: `_bmad-output/planning-artifacts/architecture.md
+#Error Handling Pattern`]
++
++### Previous Story Intelligence
++
++- Story 2.1의 `version` guard와 `LEDGER_CONFLICT` message를 유지한다. 손실 저장은 stale form 값을 조용히 덮어쓰면 안 된다. [Source: `_bmad-output/implementation-artifacts/2-1-지점-일자-장부-생성과-상
+태-관리.md`]
++- Story 2.2의 `LedgerSaveStatus`, `UnsavedChangeDialog`, `useUnsavedStepGuard`가 단계별 저장 안정성 표면이다. 손실 단계에서 별도 modal/status 패턴을 새로 만들지 않는다. [Source: `_bmad-output/impleme
+ntation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md`]
++- Story 2.3은 `IN_PROGRESS`와 `IN_REVIEW` 원본 수정 허용, `HEADQUARTERS_CLOSED`/`HOLIDAY` 차단, server validation, audit, revalidation, KST date 보존을 강화했다. 손실 저장도 같은 원칙을 따른다. [Sour
+ce: `_bmad-output/implementation-artifacts/2-3-매출-결제와-비용-입력.md`]
++- Story 2.4는 수동 매입 입력을 완료했다. 손실 수량 검증은 매입 집계와 전일재고를 함께 반영해야 한다. [Source: `_bmad-output/implementation-artifacts/2-4-mvp-수동-매입-입력.md`]
++- Story 2.5는 `InventoryCarryoverStatus`, `PREVIOUS_SAVED_LEDGER`, 50행 paging, 지점장 safe response shaping을 완료했다. 손실 변경은 이 재고 흐름의 `lossQuantity`와 `lossAmount` 집계에 반영되어야 한
+다. [Source: `_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md`]
++- Story 2.6은 재고 조정 금액을 `POLICY_UNCONFIRMED`로 분리하고 손실 저장 후 기존 조정 before/difference 재계산 회귀를 보강했다. Story 2.7은 이 재계산 경로를 깨면 안 된다. [Source: `_bmad-output/imple
+mentation-artifacts/2-6-재고-조정-기록.md`]
++- Recent git history includes `e2e1627 feat(story-2.6): 재고 조정 기록 보강`, `36a8c66 feat(story-2.5): 재고 이월 상태 입력 보강`, `a7fb571 feat(story-2.4): 수동 매입 입력 지원`. Current implementati
+on should be read from files, but these commits confirm story order. [Source: `git log --oneline -5`]
++
++### File Structure Requirements
++
++- 예상 UPDATE 파일:
++  - `src/features/losses/actions.ts`
++  - `src/features/losses/hq-edit-actions.ts`
++  - `src/features/losses/queries.ts`
++  - `src/features/losses/schemas.ts`
++  - `src/features/losses/types.ts`
++  - `src/features/losses/components/loss-step-client.tsx`
++  - `src/features/losses/quantity-error.ts`
++  - `src/app/app/store-entry/losses/page.tsx` only if route-level query/props need adjustment
++  - `src/features/inventory/queries.ts`
++  - `src/features/inventory/adjustment-reconciliation.ts`

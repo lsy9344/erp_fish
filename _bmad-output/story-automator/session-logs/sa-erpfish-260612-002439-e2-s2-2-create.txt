@@ -1,0 +1,200 @@
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As a 지점장,
++I want 하루 장부를 7단계 흐름으로 입력하고 작성자 표시명이 유지되기를 원한다,
++so that 모바일에서도 빠뜨리지 않고 장부를 끝까지 작성할 수 있다.
++
++## Acceptance Criteria
++
++1. Given 지점장이 작성 가능한 장부를 열었을 때, when 장부 입력 화면이 표시된다, then 입력 흐름은 매출/결제, 비용, 매입, 재고, 손실/폐기/떨이, 근무인원/특이사항, 검토/제출의 7단계로 구성되어야 한다, a
+nd 현재 단계와 저장 상태를 사용자가 알 수 있어야 한다.
++2. Given 사용자가 1단계에서 작성자 표시명을 입력했을 때, when 2~7단계로 이동하거나 부분 저장을 수행한다, then 작성자 표시명은 같은 장부 입력 흐름 안에서 유지되어야 한다, and 최종 저장 데이터에서 누락
+되면 안 된다.
++3. Given 작성자 표시명과 인증 계정이 다를 때, when 장부 상세 또는 감사 관련 정보가 표시된다, then 작성자 표시명과 인증 계정 actor는 구분되어야 한다, and 작성자 표시명이 감사 로그 실행자를 대체하면 안
+ 된다.
++4. Given 모바일 390px 폭 화면에서 입력할 때, when 사용자가 각 단계를 이동한다, then 핵심 입력 필드와 단계 이동 버튼은 겹치지 않아야 한다, and 터치 대상은 최소 44x44px을 만족해야 한다.
++5. Given 사용자가 단계 이동 중 미저장 변경을 가진 상태일 때, when 다음 단계로 이동하려 한다, then 저장, 취소, 계속 편집 중 하나를 선택하게 해야 한다, and 사용자가 선택하기 전에는 입력값을 조용히 버리
+면 안 된다.
++6. Given 네트워크 오류나 저장 실패가 발생했을 때, when 사용자가 현재 단계에 머문다, then 마지막 저장 시각, 저장되지 않았을 수 있는 단계/필드, 재시도 액션을 보여줘야 한다, and 사용자가 입력값 손실 가
+능성을 이해할 수 있어야 한다.
++
++## Tasks / Subtasks
++
++- [ ] 현재 7단계 장부 입력 구현 상태를 Story 2.2 요구와 대조한다. (AC: 1-6)
++  - [ ] `src/app/app/store-entry/page.tsx`, `inventory/page.tsx`, `losses/page.tsx`, `StoreEntryStepNavigation`, `LedgerContextHeader`, 각 step client, ledger/inventory/loss actions와 schemas를 먼저
+읽는다.
++  - [ ] 이미 구현된 단계 route, `storeId + date` query 유지, `version` conflict guard, `LedgerStatusBadge`, 저장 성공/실패 toast, `ActionResult` 패턴을 삭제하거나 병렬 구현하지 않는다.
++  - [ ] 신규 gap을 분리한다: 작성자 표시명 저장/조회/전파, 공통 저장 상태 표면, 단계 이동 전 미저장 변경 보호, 390px 레이아웃 회귀 테스트.
++- [ ] 작성자 표시명 persistence contract를 추가한다. (AC: 2, 3)
++  - [ ] `DailyLedger`에 화면 표시용 작성자 이름 필드를 추가한다. 권장명은 `authorDisplayName String?` 또는 기존 naming과 맞춘 동등 필드다.
++  - [ ] 새 Prisma migration을 추가한다. 기존 migration 파일은 수정하지 않는다.
++  - [ ] 작성자 표시명은 인증 계정 `User.name`, `createdById`, `updatedById`, audit `actorId`와 별도 값으로 유지한다.
++  - [ ] 작성자 표시명은 1단계 매출/결제 화면에서 입력 가능해야 하며, 2~7단계 화면 header 또는 저장 상태 영역에서 읽기/확인 가능해야 한다.
++  - [ ] 표시명 입력값은 trim하고 빈 문자열은 `null` 또는 정책상 "미입력" 표시로 정리한다. 서버 스키마에서 길이 제한을 둔다. 권장 최대 길이는 50자다.
++  - [ ] 저장 성공 후 모든 step data shape에 최신 `authorDisplayName`, `updatedAt`, `version`을 포함한다.
++- [ ] 기존 ledger query/response shape에 작성자 표시명과 저장 상태 정보를 포함한다. (AC: 1-3, 6)
++  - [ ] `ledgerSelect`, `toLedgerSalesStepData`, `toLedgerCostStepData`, `toStoreManagerLedgerCostStepData`, review/inventory/loss response shape에 작성자 표시명이 필요한 경로를 추가한다.
++  - [ ] 지점장 응답에는 민감 회계 지표를 계속 제거한다. 작성자 표시명 추가가 `grossProfit`, `productivity`, 원가, 재고금액을 다시 노출하는 구실이 되면 안 된다.
++  - [ ] `toLedgerAuditPayload`에는 작성자 표시명을 포함해 변경 전/후 확인이 가능하게 하되, audit 실행자는 계속 `actorId`로 기록한다.
++- [ ] 1단계 저장 action과 schema를 확장한다. (AC: 2, 3, 6)
++  - [ ] `ledgerSalesPaymentSchema`에 작성자 표시명 필드를 추가하거나 별도 `ledgerAuthorDisplayNameSchema`를 합성한다.
++  - [ ] `saveLedgerSalesPayment`는 기존 transaction, `requireStoreAccess`, `version`, `status in IN_PROGRESS/IN_REVIEW`, audit, revalidation 패턴을 유지한 채 작성자 표시명을 같은 `DailyLedger` row에
+저장한다.
++  - [ ] 작성자 표시명만 바뀌어도 `version`은 증가하고 audit row가 남아야 한다.
++  - [ ] `HEADQUARTERS_CLOSED`와 `HOLIDAY`에서는 작성자 표시명을 포함한 원본 장부 수정이 차단되어야 한다.
++- [ ] 공통 저장 상태 UI를 만들어 각 단계에 일관 적용한다. (AC: 1, 5, 6)
++  - [ ] 새 공통 컴포넌트는 `src/features/ledger/components` 아래에 둔다. 예: `ledger-save-status.tsx`, `unsaved-change-dialog.tsx`.
++  - [ ] 각 step client가 이미 가진 `resultMessage`, `formError`, `isSaving`, `updatedAt`, retry handler를 공통 표시로 정리하되, 기존 필드 오류 focus 동작은 보존한다.
++  - [ ] 저장 상태는 최소한 현재 단계, 저장됨/저장 중/저장 실패, 마지막 저장 시각, 재시도 액션, 저장되지 않았을 수 있는 필드 또는 섹션명을 보여준다.
++  - [ ] 날짜는 사용자 표시에서 `Asia/Seoul` 기준 한국어 형식으로 보여주고, mutation payload는 기존 `YYYY-MM-DD` date param을 유지한다.
++  - [ ] 성공 toast는 유지하되, toast만 저장 상태의 유일한 증거가 되면 안 된다.
++- [ ] 단계 이동 전 미저장 변경 보호를 구현한다. (AC: 5)
++  - [ ] `StoreEntryStepNavigation`의 anchor 이동과 각 step의 "다음 단계로" link에서 dirty state를 확인한다.
++  - [ ] 미저장 변경이 있으면 `Dialog` 또는 동등 shadcn primitive로 저장, 취소, 계속 편집을 제공한다.
++  - [ ] "저장"은 현재 step form을 submit하고 성공 시 원래 목적지로 이동한다. 저장 실패 시 같은 화면에 머물며 입력값을 유지한다.
++  - [ ] "취소"는 현재 draft를 버리고 목적지로 이동한다. "계속 편집"은 이동하지 않는다.
++  - [ ] Dialog는 1단계만 사용하고 focus trap, 닫힌 뒤 trigger focus 복귀, `aria-labelledby`를 지킨다.
++  - [ ] 브라우저 탭 닫기/새로고침의 dirty guard는 가능하면 `beforeunload`로 보조하되, SPA 단계 이동 guard가 우선이다.
++- [ ] 7단계 navigation과 mobile layout을 390px 기준으로 보강한다. (AC: 1, 4)
++  - [ ] `StoreEntryStepNavigation`은 현재 단계 `aria-current="step"`와 저장 완료 텍스트를 유지한다.
++  - [ ] 단계 label, 저장 상태, 작성자 표시명, 날짜/상태 header가 390px에서 서로 겹치지 않아야 한다.
++  - [ ] 버튼과 주요 입력은 최소 44px 터치 대상 높이를 유지한다.
++  - [ ] 숫자 입력은 기존 `inputMode="numeric"`과 `tabular-nums` 패턴을 유지한다.
++  - [ ] 장부 입력 폼은 현재 구현의 `max-w-4xl` 사용 여부를 UX `max-w-2xl` 기준과 비교하고, 변경한다면 재고/손실처럼 넓은 표면이 필요한 단계와 일반 form 단계를 구분한다.
++- [ ] inventory/loss/review 단계에도 작성자 표시명과 저장 상태 계약을 연결한다. (AC: 1-6)
++  - [ ] `getInventoryStepData`, `getLossStepData`, `getStoreManagerLedgerReviewStepData`가 필요한 작성자 표시명과 `updatedAt`을 반환하도록 확장한다.
++  - [ ] `InventoryStepClient`, `LossStepClient`, `ReviewSummaryClient`의 header/status 영역에서 작성자 표시명을 일관되게 보여준다.
++  - [ ] inventory adjustment author와 ledger author display name을 혼동하지 않는다. 조정/손실/비용/매입 라인의 `createdById`/`updatedById` actor는 계속 인증 계정 기준이다.
++- [ ] 감사와 revalidation 회귀를 보존한다. (AC: 2, 3, 6)
++  - [ ] 모든 business write는 기존처럼 `db.$transaction` 안에서 business update와 `writeAuditLog`를 함께 처리한다.
++  - [ ] audit action 이름은 기존 dot notation을 유지한다. 예: `ledger.sales_payment.updated`, `ledger.expenses.saved`, `ledger.purchases.saved`, `ledger.work_info.saved`, `ledger.review.submitted`.
++  - [ ] 작성자 표시명 변경이 포함된 audit payload에는 before/after author display name이 들어가야 한다.
++  - [ ] mutation 성공 후 `/app/store-entry`, `/app/store-entry/inventory`, `/app/store-entry/losses`, `/app/dashboard`, `/app/reports/daily`, `/app/reports/monthly` 중 기존 helper가 revalidate하던 경
+로를 유지한다.
++- [ ] 테스트를 추가/갱신한다. (AC: 1-6)
++  - [ ] `tests/unit/ledger-sales.test.mjs`에서 `DailyLedger.authorDisplayName` migration/schema, sales schema trim/length/blank handling, audit payload 포함을 검증한다.
++  - [ ] `tests/unit/ledger-step-navigation.test.mjs` 또는 새 unit test에서 7단계 목록, `storeId/date` query 보존, `aria-current`, 저장 상태 label을 검증한다.
++  - [ ] `tests/unit/ledger-cost-labor.test.mjs`, `ledger-purchase.test.mjs`, `ledger-inventory.test.mjs`, `ledger-losses.test.mjs`, `ledger-review.test.mjs` 중 영향받는 data shape를 갱신한다.
++  - [ ] `tests/e2e/store-ledger-sales.spec.ts`에 1단계 작성자 표시명 입력 후 2~7단계 이동/재방문/부분 저장에서도 표시명이 유지되는 시나리오를 추가한다.
++  - [ ] E2E에서 작성자 표시명과 로그인 사용자명이 달라도 audit actor가 바뀌지 않는 DB assertion 또는 화면 assertion을 추가한다.
++  - [ ] E2E에서 미저장 변경 상태로 단계 이동 시 저장/취소/계속 편집 선택지가 나오고, 선택 전 draft가 버려지지 않는지 검증한다.
++  - [ ] 390px viewport에서 header, step navigation, 저장/다음 버튼, 작성자 표시명이 겹치지 않는지 검증한다.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 2는 지점장 또는 본사가 하루 장부를 만들고 매출/비용/매입/재고/손실/근무 정보를 모바일 우선 7단계 흐름으로 입력하는 영역이다. [Source: `_bmad-output/planning-artifacts/epics.md#Epic 2: 지점 일
+일 장부 입력`]
++- Story 2.2는 7단계 흐름, 작성자 표시명 유지, 인증 actor와 표시명 분리, 390px 모바일 입력성, 미저장 변경 보호, 저장 실패 시 마지막 저장 시각/재시도/손실 가능 필드 표시를 요구한다. [Source: `_bmad-out
+put/planning-artifacts/epics.md#Story 2.2: 장부 입력 7단계 폼과 작성자 표시명 유지`]
++- PRD FR-5는 일일 장부 입력을 매출/결제, 비용, 매입, 재고, 손실/폐기/떨이, 근무인원/특이사항, 검토/제출 순서의 7단계 흐름으로 정의한다. [Source: `_bmad-output/planning-artifacts/epics.md#Functional R
+equirements`]
++- UX-DR6은 단계 이동 또는 하단 탭 이동 전에 미저장 변경이 있으면 저장, 취소, 계속 편집을 선택하게 해야 한다고 정의한다. [Source: `_bmad-output/planning-artifacts/epics.md#UX Design Requirements`]
++- UX-DR7과 Experience의 `AuthorDisplayName`은 작성자 표시명을 인증 계정 및 감사 로그 actor와 분리하고 장부 입력 흐름 전체에서 유지해야 한다고 정의한다. [Source: `_bmad-output/planning-artifacts/ux-de
+signs/ux-erp_fish-2026-05-28/EXPERIENCE.md#Component Patterns`]
++- UX는 지점장 주 서피스를 모바일 390px+로 보고, 터치 타겟 최소 44x44px, 모바일 네트워크 오류 시 마지막 저장 시각/저장되지 않았을 수 있는 필드/재시도 버튼 표시를 요구한다. [Source: `_bmad-output/plann
+ing-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#Interaction Primitives`]
++
++### Current Repository State
++
++- `sprint-status.yaml`의 authoritative key는 `2-2-장부-입력-7단계-폼과-작성자-표시명-유지`이고 story 생성 전 상태는 `backlog`였다. [Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`]
++- worktree에는 사용자가 수정한 planning/skill 파일과 삭제된 이전 `2-2-*` story 파일이 있다. 이 story는 그 변경을 되돌리지 않는다. [Source: `git status --short`]
++- Story 2.1은 완료 상태이며 selected date ledger, duplicate-safe creation, `DailyLedger.version`, date query 보존, status badge, stale save conflict handling을 이미 구현했다. [Source: `_bmad-output/i
+mplementation-artifacts/2-1-지점-일자-장부-생성과-상태-관리.md`]
++- 현재 `DailyLedger`에는 `version`, 매출/결제/근무/제출/마감/actor 필드가 있으나 작성자 표시명 전용 필드는 없다. [Source: `prisma/schema.prisma`]
++- 현재 7단계 route는 `src/app/app/store-entry/page.tsx`에서 `sales`, `cost`, `purchase`, `work`, `review`를 query step으로 처리하고, `inventory`와 `losses`는 하위 route로 처리한다. [Source: `src/app/
+app/store-entry/page.tsx`, `src/app/app/store-entry/inventory/page.tsx`, `src/app/app/store-entry/losses/page.tsx`]
++- `StoreEntryStepNavigation`은 7단계 label, `aria-current="step"`, 저장됨 label, `storeId/date` query 보존을 이미 제공한다. [Source: `src/features/ledger/components/store-entry-step-navigation.tsx`]
++- `LedgerContextHeader`는 날짜 선택, 상태 badge, store/date context를 제공하지만 작성자 표시명은 표시하지 않는다. [Source: `src/features/ledger/components/ledger-context-header.tsx`]
++- sales/cost/purchase/work/inventory/loss clients는 각각 local form state, 저장 중 상태, 저장 성공 메시지, 실패 메시지, retry handler 일부를 갖고 있지만 공통 "마지막 저장 시각/손실 가능 필드" 표시와
+미저장 변경 이동 guard는 아직 없다. [Source: `src/features/ledger/components/*step-client.tsx`, `src/features/inventory/components/inventory-step-client.tsx`, `src/features/losses/components/loss-step
+-client.tsx`]
++- `useLedgerUpdatedAtSync`는 ledger id별 최신 `updatedAt` 동기화 이벤트만 제공한다. 작성자 표시명이나 dirty state guard는 제공하지 않는다. [Source: `src/features/ledger/components/ledger-updated-at-s
+ync.ts`]
++- 현재 `getStoreEntryStepCompletion`은 매출/비용/매입/재고/손실/근무 데이터 존재 여부로 저장됨 상태를 계산한다. 작성자 표시명이나 저장 실패 상태는 포함하지 않는다. [Source: `src/features/ledger/step-
+completion.ts`]
++
++### Architecture Guardrails
++
++- 선택 스택은 Create T3 App 기반 Next.js App Router, TypeScript, Prisma, PostgreSQL, NextAuth/Auth.js, Tailwind CSS, shadcn/ui, Vercel이다. Story 2.2에서 ORM, auth framework, UI primitive 체계를 바꾸
+지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#Starter Template Evaluation`]
++- Prisma schema and migrations are the source of truth for persisted data. 작성자 표시명 persistence는 Prisma migration으로 반영한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Data Ar
+chitecture`]
++- 대부분의 제품 동작은 Server Components와 Server Actions를 사용한다. Story 2.2를 위해 public API route를 만들지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#API Boundaries`]
++- 모든 ledger mutation은 Zod validation, shared authorization helper, transaction, audit, revalidation을 따라야 한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Process Patterns`]
++- Store managers must not receive sensitive accounting fields. 작성자 표시명 추가는 response shaping을 우회하지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#Sensitive Field Gate`
+]
++- Daily ledger records need a server version or edit token. Story 2.2의 모든 저장은 Story 2.1의 `version` guard를 계속 사용한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Concurrent E
+diting And Save Conflicts`]
++- CAP-16 guardrail은 display author name을 whole ledger entry flow에 저장하되 authenticated account와 audit actor와 분리하라고 요구한다. [Source: `_bmad-output/planning-artifacts/architecture.md#Addi
+tional Data And UI Guardrails`]
++
++### Data and Security Guardrails
++
++- 작성자 표시명은 화면 표시용 업무 값이다. 감사 로그 실행자, 권한 판단, `createdById`, `updatedById`, `submittedById`, `closedById`를 대체하지 않는다.
++- 작성자 표시명을 session/localStorage-only 값으로만 두면 AC 2의 "최종 저장 데이터에서 누락되면 안 된다"를 만족하지 못한다. DB에 저장하고 query response로 재hydration해야 한다.
++- 작성자 표시명은 외부 credential, session token, password, permission profile처럼 보안 경계에 쓰면 안 된다.
++- `storeId + closingDate + version` 확인을 유지한다. `ledgerId`만 믿고 author display name을 저장하면 권한 밖 ledger id 주입을 놓칠 수 있다.
++- `IN_PROGRESS`와 `IN_REVIEW`만 원본 장부 수정 가능 상태다. `HEADQUARTERS_CLOSED`와 `HOLIDAY`에서는 작성자 표시명도 원본 장부 필드로 보고 수정 차단한다.
++- 미저장 변경 guard는 UX 보호 장치다. 서버 conflict guard를 대체하지 않는다.
++- 작성자 표시명은 지점장에게 보여도 되는 비민감 업무 표시값이지만, 장부 상세/감사 정보에서 인증 actor와 나란히 표기할 때 두 값의 의미를 명확히 구분한다.
++
++### File Structure Requirements
++
++- 예상 UPDATE 파일:
++  - `prisma/schema.prisma`
++  - 새 migration: `prisma/migrations/*_add_daily_ledger_author_display_name*/migration.sql`
++  - `src/features/ledger/schemas.ts`
++  - `src/features/ledger/types.ts`
++  - `src/features/ledger/queries.ts`
++  - `src/features/ledger/actions.ts`
++  - `src/features/ledger/review-queries.ts`
++  - `src/features/ledger/review-types.ts`
++  - `src/features/ledger/response-shaping.ts`
++  - `src/features/ledger/components/ledger-context-header.tsx`
++  - `src/features/ledger/components/store-entry-step-navigation.tsx`
++  - `src/features/ledger/components/sales-payment-step-client.tsx`
++  - `src/features/ledger/components/expense-step-client.tsx`
++  - `src/features/ledger/components/purchase-step-client.tsx`
++  - `src/features/ledger/components/workstep-client.tsx`
++  - `src/features/ledger/components/review-summary-client.tsx`
++  - `src/features/inventory/queries.ts`
++  - `src/features/inventory/types.ts`
++  - `src/features/inventory/components/inventory-step-client.tsx`
++  - `src/features/losses/queries.ts`
++  - `src/features/losses/types.ts`
++  - `src/features/losses/components/loss-step-client.tsx`
++  - focused unit/e2e tests under `tests/unit` and `tests/e2e/store-ledger-*.spec.ts`
++- 예상 NEW 파일:
++  - Optional: `src/features/ledger/components/ledger-save-status.tsx`
++  - Optional: `src/features/ledger/components/unsaved-change-dialog.tsx`
++  - Optional: `src/features/ledger/components/use-unsaved-step-guard.ts`
++  - Optional: `tests/unit/ledger-author-display-name.test.mjs` if source-level tests become clearer than extending existing files.
++- 금지:
++  - `DailyLedger`와 별도 parallel author/session table for this story.
++  - 작성자 표시명을 browser localStorage/sessionStorage에만 저장.
++  - audit actor를 작성자 표시명으로 대체.
++  - client-side hiding으로 민감 필드 차단을 처리.
++  - new public API route for internal step saves.
++  - existing migration edits.
++  - unrelated dirty worktree revert.
++
++### UX Guardrails
++
++- 장부 입력은 landing page가 아니라 반복 업무 task surface다. 첫 화면은 selected ledger entry workflow를 보여준다.
++- 7단계 순서와 label은 요구사항 순서를 유지한다: 매출/결제, 비용, 매입, 재고, 손실/폐기/떨이, 근무인원/특이사항, 검토/제출.
++- 작성자 표시명 input은 1단계에서 눈에 보이고, 나머지 단계에서는 읽기 가능한 표시 또는 요약으로 유지 상태를 알 수 있어야 한다.
++- 저장 상태는 색상만으로 전달하지 않는다. "저장됨", "저장 중", "저장 실패", "마지막 저장" 같은 텍스트를 포함한다.
++- 미저장 변경 Dialog는 1단계 modal만 사용한다. Dialog 위 Dialog, hover-only affordance, text overflow, 390px 겹침을 만들지 않는다.
++- 버튼/입력은 최소 44px 터치 목표를 유지한다. 현재 구현의 `min-h-11` 패턴을 보존한다.
++- 숫자 값은 `tabular-nums`를 유지한다.
++- 지점장에게 민감 회계 지표, 원가, 재고금액, 이익/마진 파생값을 노출하지 않는다.
++
++### Previous Story Intelligence
++
++- Story 2.1 completed selected-date daily ledger opening/creation, duplicate-safe creation reuse, date preservation across store-entry routes, `DailyLedger.version`, conflict handling, shared status
+helpers, and a date/status header. Story 2.2 must build on those files instead of rebuilding the ledger foundation. [Source: `_bmad-output/implementation-artifacts/2-1-지점-일자-장부-생성과-상태-관리.

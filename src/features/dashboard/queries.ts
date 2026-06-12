@@ -1,4 +1,5 @@
-import type { DailyLedgerStatus } from "../../../generated/prisma";
+import { StoreAccessMode } from "../../../generated/prisma/index.js";
+import type { DailyLedgerStatus } from "../../../generated/prisma/index.js";
 import {
   applyCorrectionValuesToLedgerReviewInput,
   calculateExpenseTotal,
@@ -22,6 +23,7 @@ import { mapLedgerStatus } from "../ledger/status.ts";
 import type {
   DashboardBusinessStatus,
   DashboardDatePreset,
+  DashboardEmptyStateReason,
   DashboardFilterMode,
   DashboardLedgerStatus,
   DashboardSortMode,
@@ -303,6 +305,11 @@ export async function getHqDashboardRows({
     closingDate: closingDate.toISOString(),
     rows,
     summary: summarizeDashboardRows(allRows),
+    emptyStateReason: getDashboardEmptyStateReason({
+      storeScopeMode: storeScope.mode,
+      totalStoreCount: allRows.length,
+      rowCount: rows.length,
+    }),
   };
 }
 
@@ -435,6 +442,7 @@ function toDashboardRow(
       grossMarginRate: metrics.grossMarginRate,
       salesDifference: metrics.salesDifference,
       hasLoss: null,
+      latestReflectedAt: null,
       lastModifiedBy: null,
       lastModifiedAt: null,
       isHeadquartersClosed: false,
@@ -514,6 +522,7 @@ function toDashboardRow(
     grossMarginRate: reviewSummary.grossMarginRate,
     salesDifference: reviewSummary.salesDifference,
     hasLoss,
+    latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
@@ -678,6 +687,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     salesDifference: correctedReviewSummary.salesDifference,
     hasLoss: hasCorrectedLoss(correctionOverlay.lossItems),
+    latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
@@ -837,6 +847,23 @@ function hasCorrectedLoss(lossItems: { quantity: number; amount: number }[]) {
   return lossItems.some((item) => item.quantity > 0 || item.amount > 0);
 }
 
+function getLatestReflectedAt(
+  ledgerUpdatedAt: Date,
+  corrections?: Map<string, CorrectionAppliedValue>,
+) {
+  let latestTime = ledgerUpdatedAt.getTime();
+
+  for (const correction of corrections?.values() ?? []) {
+    const correctionTime = Date.parse(correction.createdAt);
+
+    if (Number.isFinite(correctionTime) && correctionTime > latestTime) {
+      latestTime = correctionTime;
+    }
+  }
+
+  return new Date(latestTime).toISOString();
+}
+
 export function summarizeDashboardRows(
   rows: HqDashboardRow[],
 ): HqDashboardSummary {
@@ -848,6 +875,28 @@ export function summarizeDashboardRows(
     emptyCount: rows.filter((row) => row.ledgerStatus.key === "EMPTY").length,
     lossCount: rows.filter((row) => row.hasLoss === true).length,
   };
+}
+
+function getDashboardEmptyStateReason({
+  storeScopeMode,
+  totalStoreCount,
+  rowCount,
+}: {
+  storeScopeMode: StoreAccessMode;
+  totalStoreCount: number;
+  rowCount: number;
+}): DashboardEmptyStateReason {
+  if (rowCount > 0) {
+    return null;
+  }
+
+  if (totalStoreCount > 0) {
+    return "filtered-empty";
+  }
+
+  return storeScopeMode === StoreAccessMode.ASSIGNED_STORES
+    ? "no-authorized-stores"
+    : "no-active-stores";
 }
 
 function dataInsufficient(reason: string): LedgerReviewMetric {

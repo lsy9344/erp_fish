@@ -1,0 +1,200 @@
++
++    await assignPermissionProfile(headquartersUser.id, profile.id);
++  }
++
++  const existingStoreManager = await prisma.user.findUnique({
++    where: { email: storeManagerEmail },
++  });
++
++  if (
++    existingStoreManager?.role &&
++    existingStoreManager.role !== UserRole.STORE_MANAGER
++  ) {
++    throw new Error(
++      "SEED_STORE_MANAGER_EMAIL already belongs to a non-store-manager account.",
++    );
++  }
++
++  const storeManagerPasswordHash =
++    !existingStoreManager?.passwordHash || allowPasswordRotation
++      ? await hashPassword(storeManagerPassword)
++      : existingStoreManager.passwordHash;
++
++  const storeManager = await prisma.user.upsert({
++    where: { email: storeManagerEmail },
++    create: {
++      email: storeManagerEmail,
++      name: storeManagerName,
++      passwordHash: storeManagerPasswordHash,
++      role: UserRole.STORE_MANAGER,
++      isActive: true,
++    },
++    update: {
++      name: storeManagerName,
++      role: UserRole.STORE_MANAGER,
++      isActive: true,
++      ...(!existingStoreManager?.passwordHash || allowPasswordRotation
++        ? { passwordHash: storeManagerPasswordHash }
++        : {}),
++    },
++  });
++
++  const storeManagerProfile = profilesByCode.get("STORE_MANAGER");
++
++  if (!storeManagerProfile) {
++    throw new Error("Missing system permission profile: STORE_MANAGER");
++  }
++
++  await assignPermissionProfile(storeManager.id, storeManagerProfile.id);
++
++  const sampleStore = await prisma.store.upsert({
++    where: { name: sampleStoreName },
++    create: {
++      name: sampleStoreName,
++      isActive: true,
++    },
++    update: {
++      isActive: true,
++    },
++  });
++
++  await prisma.userStoreAssignment.upsert({
++    where: {
++      userId_storeId: {
++        userId: storeManager.id,
++        storeId: sampleStore.id,
++      },
++    },
++    create: {
++      userId: storeManager.id,
++      storeId: sampleStore.id,
++    },
++    update: {},
++  });
+ }
+
+ void main()
+diff --git a/src/server/authz.ts b/src/server/authz.ts
+index 8748e364e9f534a0d136f2522b38d58349089ba0..5330c13f5e48f90ee2f8d2ef4becd6e382cf8c28
+--- a/src/server/authz.ts
++++ b/src/server/authz.ts
+@@ -1,7 +1,8 @@
+ import { redirect } from "next/navigation";
+ import { unstable_noStore as noStore } from "next/cache";
+
+-import { UserRole } from "../../generated/prisma";
++import { StoreAccessMode, UserRole } from "../../generated/prisma";
++import type { PermissionAction } from "../../generated/prisma";
+ import { auth } from "~/server/auth";
+ import { db } from "~/server/db";
+
+@@ -21,6 +22,17 @@
+   isActive: true,
+ };
+
++const permissionProfileSelect = {
++  id: true,
++  code: true,
++  storeAccessMode: true,
++  actions: {
++    select: {
++      action: true,
++    },
++  },
++};
++
+ export type StoreIdParam = string | string[] | undefined;
+
+ export function normalizeStoreIdParam(value: StoreIdParam) {
+@@ -75,6 +87,62 @@
+   return currentUser;
+ }
+
++export async function getActivePermissionProfiles(userId: string) {
++  return db.userPermissionProfile.findMany({
++    where: {
++      userId,
++      profile: {
++        isActive: true,
++      },
++    },
++    select: {
++      profile: {
++        select: permissionProfileSelect,
++      },
++    },
++  });
++}
++
++export async function hasActionPermission(
++  userId: string,
++  action: PermissionAction,
++) {
++  const user = await db.user.findFirst({
++    where: {
++      id: userId,
++      isActive: true,
++      permissionProfiles: {
++        some: {
++          profile: {
++            isActive: true,
++            actions: {
++              some: {
++                action,
++              },
++            },
++          },
++        },
++      },
++    },
++    select: {
++      id: true,
++    },
++  });
++
++  return Boolean(user);
++}
++
++export async function requireActionPermission(action: PermissionAction) {
++  const currentUser = await requireAppUser();
++  const hasPermission = await hasActionPermission(currentUser.id, action);
++
++  if (!hasPermission) {
++    redirect("/app/unauthorized");
++  }
++
++  return currentUser;
++}
++
+ export async function getAppHomePath() {
+   const currentUser = await getCurrentUserRecord();
+
+@@ -134,8 +202,32 @@
+   const currentUser = await requireAppUser();
+
+   if (currentUser.role === UserRole.HEADQUARTERS) {
++    const activeProfiles = await getActivePermissionProfiles(currentUser.id);
++    const hasAllStoreAccess = activeProfiles.some(
++      ({ profile }) => profile.storeAccessMode === StoreAccessMode.ALL_STORES,
++    );
++    const hasAssignedStoreAccess = activeProfiles.some(
++      ({ profile }) =>
++        profile.storeAccessMode === StoreAccessMode.ASSIGNED_STORES,
++    );
++
++    if (!hasAllStoreAccess && !hasAssignedStoreAccess) {
++      redirect("/app/unauthorized");
++    }
++
+     const store = await db.store.findFirst({
+-      where: { id: storeId },
++      where: {
++        id: storeId,
++        ...(hasAllStoreAccess
++          ? {}
++          : {
++              assignments: {
++                some: {
++                  userId: currentUser.id,
++                },
++              },

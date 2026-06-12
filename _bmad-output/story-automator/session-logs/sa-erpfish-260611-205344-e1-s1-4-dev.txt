@@ -1,0 +1,200 @@
+  duration_ms: 185.628222
+  type: 'test'
+  ...
+# Subtest: tests/unit/master-data-products.test.mjs
+ok 22 - tests/unit/master-data-products.test.mjs
+  ---
+  duration_ms: 199.316178
+  type: 'test'
+  ...
+# Subtest: tests/unit/master-data-stores.test.mjs
+ok 23 - tests/unit/master-data-stores.test.mjs
+  ---
+  duration_ms: 191.508318
+  type: 'test'
+  ...
+# Subtest: tests/unit/master-data-users.test.mjs
+ok 24 - tests/unit/master-data-users.test.mjs
+  ---
+  duration_ms: 209.463053
+  type: 'test'
+  ...
+# Subtest: tests/unit/password.test.mjs
+ok 25 - tests/unit/password.test.mjs
+  ---
+  duration_ms: 278.402362
+  type: 'test'
+  ...
+# Subtest: tests/unit/scaffold.test.mjs
+ok 26 - tests/unit/scaffold.test.mjs
+  ---
+  duration_ms: 96.116184
+  type: 'test'
+  ...
+# Subtest: tests/unit/sensitive-response-shaping.test.mjs
+ok 27 - tests/unit/sensitive-response-shaping.test.mjs
+  ---
+  duration_ms: 139.095994
+  type: 'test'
+  ...
+# Subtest: tests/unit/shadcn.test.mjs
+ok 28 - tests/unit/shadcn.test.mjs
+  ---
+  duration_ms: 92.079644
+  type: 'test'
+  ...
+# Subtest: tests/unit/ui-mockup-alignment.test.mjs
+ok 29 - tests/unit/ui-mockup-alignment.test.mjs
+  ---
+  duration_ms: 90.829709
+  type: 'test'
+  ...
+1..29
+# tests 29
+# suites 0
+# pass 29
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 592.573782
+
+codex
+unit은 다시 통과했습니다. 마지막으로 lint/typecheck를 재확인하고 스토리 기록을 갱신합니다.
+exec
+/bin/bash -lc 'date -Iseconds' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+2026-06-11T21:06:03+09:00
+
+exec
+/bin/bash -lc 'corepack pnpm lint' in /home/noah/code/erp_fish
+exec
+/bin/bash -lc 'corepack pnpm typecheck' in /home/noah/code/erp_fish
+ succeeded in 2858ms:
+
+> erp-fish@0.1.0 typecheck /home/noah/code/erp_fish
+> tsc --noEmit
+
+
+ succeeded in 16228ms:
+
+> erp-fish@0.1.0 lint /home/noah/code/erp_fish
+> eslint .
+
+
+codex
+스토리 파일의 허용 섹션만 갱신합니다: Status, Tasks/Subtasks 체크박스, Dev Agent Record, File List, Change Log. E2E는 sandbox 포트 바인딩 제한으로 실행 불가였음을 기록합니다.
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md
+codex
+스토리 파일은 review 상태로 갱신했습니다. sprint-status도 같은 상태로 맞춥니다.
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml
+codex
+스토리 체크박스와 상태를 재스캔해서 빠진 항목이 없는지 확인합니다.
+exec
+/bin/bash -lc "rg \"\\[ \\]|Status:|1-4-서버-권한-헬퍼\" _bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md _bmad-output/implementation-artifacts/sprint-status.yaml" in
+/home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:# Epic Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:# Story Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:# Retrospective Status:
+_bmad-output/implementation-artifacts/sprint-status.yaml:  1-4-서버-권한-헬퍼와-민감-필드-응답-차단: review
+_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md:story_key: 1-4-서버-권한-헬퍼와-민감-필드-응답-차단
+_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md:Status: review
+_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md:- 기존 `_bmad-output/implementation-artifacts/1-4-본사가-사용자-계정과-지점-접근-권한을-관리한다.md`는 이전 계획의 완
+료된 Story 1.4다. 현재 sprint-status의 authoritative Story 1.4는 `1-4-서버-권한-헬퍼와-민감-필드-응답-차단`이다.
+_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md:- _bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md
+
+exec
+/bin/bash -lc "sed -n '1,130p' _bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md && sed -n '310,420p' _bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필
+드-응답-차단.md" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+---
+story_key: 1-4-서버-권한-헬퍼와-민감-필드-응답-차단
+story_id: "1.4"
+epic: "1"
+created_at: "2026-06-11T20:49:02+09:00"
+source_story: "_bmad-output/planning-artifacts/epics.md"
+baseline_commit: bb443c3
+---
+
+# Story 1.4: 서버 권한 헬퍼와 민감 필드 응답 차단
+
+Status: review
+
+## Story
+
+As a 개발자,
+I want 권한 확인과 민감 필드 차단을 공통 서버 헬퍼로 사용할 수 있기를 원한다,
+so that 이후 장부, 리포트, export 기능이 각자 다른 방식으로 보안을 구현하지 않는다.
+
+## Acceptance Criteria
+
+1. Given 서버 코드가 사용자 권한을 확인해야 할 때, when 기능 코드가 공통 authorization helper를 호출한다, then helper는 로그인 여부, 권한 프로파일, 지점 접근 범위, action 권한을 함께 확인해야 한다, an
+d 권한 없는 요청은 업무 로직 실행 전에 중단되어야 한다.
+2. Given 본사 action 권한이 필요한 요청이 있을 때, when close, correction, upload, settings, report/export 같은 action을 검사한다, then 각 action은 명시된 permission key 또는 동등한 구조로 확인되어야
+한다, and 단순히 `본사 사용자`라는 큰 역할만으로 모든 action을 허용하면 안 된다.
+3. Given 지점장 경로에서 장부나 리포트 데이터를 조회할 때, when 서버가 응답 데이터를 만든다, then 매출원가, 매출이익, 영업이익, 이익률, 인당생산성, 재고금액, lot 근거, 본사 고정비, 타 지점 비교 같은
+민감 필드는 응답에서 제거되어야 한다, and 클라이언트에서 숨기는 방식에 의존하면 안 된다.
+4. Given 본사 조회 전용 권한이 있는 사용자가 리포트나 export를 요청할 때, when 서버가 응답 필드와 대상 지점을 결정한다, then 허용된 지점/기간/컬럼만 포함해야 한다, and 권한 밖 지점이나 권한 없는 민감
+컬럼은 반환하지 않아야 한다.
+5. Given 새로운 feature action이 추가될 때, when 개발자가 권한 검사를 구현한다, then 기존 공통 helper 패턴을 재사용해야 한다, and one-off role check를 만들면 코드 리뷰에서 차단할 수 있어야 한다.
+
+## Tasks / Subtasks
+
+- [x] RED: Story 1.4 권한/민감 필드 회귀 테스트를 먼저 추가한다. (AC: 1-5)
+  - [x] `tests/unit/auth-guard.test.mjs`에 action별 semantic gate가 `requireHeadquartersUser()` 단독 통과가 아니라 `PermissionAction`과 store scope를 함께 요구한다는 문자열/구조 검증을 보강한다.
+  - [x] 새 `tests/unit/sensitive-response-shaping.test.mjs`를 추가해 store-manager용 response shaping 결과 JSON에 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity`
+, `inventoryAmount`, `unitPrice`, `beforeAmount`, `afterAmount`, `differenceAmount`, `lot`, `fixedCost`, `comparisonStore` 계열 key가 없음을 검증한다.
+  - [x] `tests/e2e/store-ledger-review.spec.ts` 또는 새 `tests/e2e/sensitive-fields.spec.ts`에서 지점장 검토/재고/손실 화면 응답과 페이지 본문에 원가·이익·재고금액·마진율·인당생산성 텍스트/값이 노출되
+지 않는지 검증한다.
+  - [x] `tests/e2e/permission-profiles.spec.ts` 또는 report subset에서 `hq-assigned@example.com`이 허용 지점만 조회하고 권한 밖 지점 row/export 후보를 받지 않는지 검증한다.
+  - [x] 테스트는 UI 텍스트 숨김만 보지 말고 server query가 넘긴 serialized data 또는 페이지 HTML에 민감 key/value가 없는지도 확인한다.
+- [x] `src/server/authz.ts`의 Story 1.3 helper를 재사용하고 부족한 semantic action helper만 보완한다. (AC: 1, 2, 4, 5)
+  - [x] 기존 `requireAppUser()`, `requireHeadquartersActionPermission()`, `requireReportAccess()`, `requireExportCreateAccess()`, `getHeadquartersStoreScope()`, `requireHeadquartersLedgerScope()`, `re
+quireStoreAccess()`를 유지한다.
+  - [x] close/correction/upload/settings/report/export에 필요한 helper가 빠져 있으면 `src/server/authz.ts`에 추가한다. helper는 매 요청 DB의 `User.isActive`, active `PermissionProfile`, `PermissionPro
+fileAction`, `UserStoreAssignment`, `Store.isActive`를 다시 확인해야 한다.
+  - [x] `REPORT_VIEW`와 `EXPORT_CREATE`는 별도 action으로 유지한다. 화면 조회 권한이 export 생성 권한을 자동으로 뜻하지 않는다.
+  - [x] 권한 실패는 업무 query/mutation 전에 `/app/unauthorized` redirect 또는 `ActionResult` error로 중단한다.
+  - [x] feature 파일에 새 one-off `user.role === "HEADQUARTERS"` 검사나 profile code 문자열 비교를 추가하지 않는다.
+- [x] 공통 민감 필드 정책과 response shaping helper를 정리한다. (AC: 3, 4, 5)
+  - [x] 기존 `src/features/ledger/response-shaping.ts`를 확장하거나, 여러 feature가 공유해야 하면 `src/server/response-shaping.ts` 또는 `src/server/sensitive-fields.ts` 같은 server-only helper로 이동/
+분리한다.
+  - [x] 지점장 기본 차단 필드는 최소 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity`, `inventoryAmount`, `unitPrice`, 원가 lot/단가 근거, 본사 고정비, 타 지점 비
+교 필드다.
+  - [x] 재고 조정 금액(`beforeAmount`, `afterAmount`, `differenceAmount`)과 loss/inventory 금액이 원가·재고금액을 역추정하게 만들면 지점장 응답에서 수량/상태/사유 중심으로 shape한다.
+  - [x] 지점장에게 허용되는 값은 자기 지점의 입력값, 장부 상태, 제출/마감 여부, 현장 전달사항, 비민감 검증 메시지, 결제 차이처럼 원가·이익을 역추정하지 않는 값으로 제한한다.
+  - [x] shaping helper는 shallow omit만 하지 말고 nested summary, metric evidence, inventory rows, adjustment rows, export rows까지 재귀 또는 명시 mapper로 처리한다.
+- [x] 지점장 장부 입력/검토 query가 shaping helper를 통과하게 한다. (AC: 3)
+  - [x] `src/features/ledger/queries.ts`의 `toStoreManagerLedgerCostStepData()`는 기존 `grossProfit`, `productivity` 제거를 유지하고 purchase `unitPrice`, `amount`가 지점장에게 필요한 입력값인지 민감
+원가 근거인지 PRD 기준으로 검토한다. 노출해야 한다면 PRD상 직접 입력값이라는 근거를 주석/테스트로 남긴다.
+  - [x] `src/features/ledger/review-types.ts`의 `StoreManagerLedgerReviewSummary`에서 `grossMarginRate`와 `inventoryAmount`를 제거한다. 지점장 검토 화면은 `totalSales`, `paymentDifference`, missing/wa
+rning 상태 같은 비민감 요약으로 구성한다.
+  - [x] `src/features/ledger/response-shaping.ts`의 `toStoreManagerLedgerReviewStepData()`가 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity`, `inventoryAmount`를
+ 모두 제거함을 테스트한다.
+  - [x] `src/features/inventory/queries.ts`와 `src/features/inventory/types.ts`는 지점장 응답에서 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, adjustment amount 필드를 제거하거나 본
+사 전용 query와 분리한다.
+  - [x] `src/features/losses/queries.ts`와 `src/features/losses/types.ts`는 지점장 손실 입력에 꼭 필요한 현장 입력값과 본사 전용 원가/손실액 근거를 분리한다.
+- [x] 본사 dashboard/report/export 조회는 권한과 지점 scope를 함께 적용한다. (AC: 2, 4)
+  - [x] `src/features/dashboard/queries.ts`와 `src/features/reports/queries.ts`는 현재처럼 `requireReportAccess()`와 `getHeadquartersStoreScope()`를 data read 전에 호출해야 한다. 이 순서를 깨지 않는다
+.
+  - [x] `ASSIGNED_STORES` 본사는 `storeScope.storeIds`에 포함된 지점만 row, detail href, metric evidence, anomaly item, monthly store option으로 받아야 한다.
+  - [x] export entrypoint가 있거나 추가되면 반드시 `requireExportCreateAccess()`와 `getHeadquartersStoreScope()`를 호출하고, 화면 row를 재사용하더라도 export 생성 시점 권한을 다시 확인한다.
+  - [x] 본사 조회 전용 profile에는 설정 mutation, close, correction, user permission mutation을 허용하지 않는다.
+  - [x] 캐시나 shared-link 성격의 재사용 응답이 생기면 권한별 cache key를 분리하거나 `noStore()`/서버 재조회로 stale 권한 노출을 막는다.
+- [x] 기존 feature action/query의 broad role check 회귀를 막는다. (AC: 1, 2, 5)
+  - [x] `rg "requireHeadquartersUser|UserRole\\.HEADQUARTERS|role ===" src`로 broad role-only gate를 점검한다.
+  - [x] master-data read/mutation은 `requireSettingsAccess()` 또는 `requireUserPermissionAccess()`를 사용한다.
+  - [x] ledger HQ edit, inventory HQ edit, losses HQ edit는 `requireLedgerHqEditAccess()`와 ledger/store scope를 사용한다.
+  - [x] close는 `requireLedgerHqCloseAccess()`, correction은 `requireCorrectionCreateAccess()`, report는 `requireReportAccess()`, export는 `requireExportCreateAccess()`를 사용한다.
+  - [x] URL 직접 접근, Server Component read, Server Action mutation, Route Handler/export 모두 같은 helper contract를 따른다.
+- [x] 전체 검증을 실행하고 Dev Agent Record에 결과를 기록한다. (AC: 1-5)
+  - [x] `pnpm exec prisma generate`
+  - [x] `pnpm exec prisma validate`
+  - [x] `pnpm lint`
+  - [x] `pnpm typecheck`
+  - [x] `pnpm test:unit`

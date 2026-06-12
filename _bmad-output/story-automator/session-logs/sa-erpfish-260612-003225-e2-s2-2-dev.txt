@@ -1,0 +1,200 @@
+       ) : null}
+
++      <LedgerSaveStatus
++        stepLabel="5단계 손실/폐기/떨이"
++        authorDisplayName={data.authorDisplayName}
++        updatedAt={data.updatedAt}
++        isSaving={isSaving}
++        errorMessage={formError}
++        successMessage={resultMessage}
++        unsavedFields={["손실 품목", "손실 유형", "수량", "사유"]}
++        onRetry={handleRetry}
++        retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
++      />
++
+       <section className="bg-card text-card-foreground rounded-lg border p-4">
+         <div className="grid gap-3 sm:grid-cols-2">
+           <div className="bg-muted/40 rounded-md p-3">
+@@ -702,8 +742,14 @@
+               {isSaving ? "저장 중..." : "저장"}
+             </Button>
+             {resultMessage ? (
+-              <Button asChild className="min-h-11 w-full sm:w-auto">
+-                <a href={nextStepHref}>다음 단계로 →</a>
++              <Button
++                type="button"
++                className="min-h-11 w-full sm:w-auto"
++                onClick={(event) =>
++                  guard.requestNavigation(nextStepHref, event.currentTarget)
++                }
++              >
++                다음 단계로 →
+               </Button>
+             ) : null}
+           </div>
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index e854040a0e52a5c441b58c683ad6758f752fa2f5..5ad49f7ac1587f5f38dc919504b2f034208846d6
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -39,6 +39,7 @@
+   closingDate: true,
+   updatedAt: true,
+   version: true,
++  authorDisplayName: true,
+   status: true,
+   totalSalesAmount: true,
+   workerCount: true,
+@@ -102,6 +103,7 @@
+     closingDate: ledger.closingDate.toISOString(),
+     updatedAt: ledger.updatedAt.toISOString(),
+     version: ledger.version,
++    authorDisplayName: ledger.authorDisplayName ?? null,
+     status: ledger.status,
+     stepCompletion: getStoreEntryStepCompletion({
+       ...ledger,
+diff --git a/src/features/losses/types.ts b/src/features/losses/types.ts
+index 9cfa9f770d461c628dc3fa155908e191246b3431..67299a4c40e568a2bed0e3d6fb94c72e2eb5d8a3
+--- a/src/features/losses/types.ts
++++ b/src/features/losses/types.ts
+@@ -47,6 +47,7 @@
+   closingDate: string;
+   updatedAt: string;
+   version: number;
++  authorDisplayName: string | null;
+   status: DailyLedgerStatus;
+   stepCompletion: StoreEntryStepCompletion;
+   productOptions: LossProductOption[];
+diff --git a/tests/e2e/store-ledger-sales.spec.ts b/tests/e2e/store-ledger-sales.spec.ts
+index 2b5bbd50cf2d33ef149f3c6a6004ac9f62d4157f..4a66a3fd3f54a2f2d07848a8bb1617914ce5e000
+--- a/tests/e2e/store-ledger-sales.spec.ts
++++ b/tests/e2e/store-ledger-sales.spec.ts
+@@ -151,6 +151,124 @@
+   ).toHaveAttribute("href", new RegExp(`date=${SELECTED_LEDGER_DATE}`));
+ });
+
++test("작성자 표시명은 저장 후 2~7단계와 재방문에서도 유지되고 audit actor와 분리된다", async ({
++  page,
++}) => {
++  await loginAsStoreManager(page);
++  await page.goto(
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++  );
++
++  await page
++    .getByRole("textbox", { name: "작성자 표시명", exact: true })
++    .fill("  현장 김팀장  ");
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("45678");
++  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
++  await page.getByRole("textbox", { name: "카드", exact: true }).fill("30000");
++  await page
++    .getByRole("textbox", { name: "기타 결제수단", exact: true })
++    .fill("3678");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  await expect(page.getByText("작성자 표시명: 현장 김팀장")).toBeVisible();
++
++  const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
++  const ledger = await prisma.dailyLedger.findUniqueOrThrow({
++    where: {
++      storeId_closingDate: {
++        storeId: STORE_ID,
++        closingDate,
++      },
++    },
++    select: { id: true, authorDisplayName: true },
++  });
++  expect(ledger.authorDisplayName).toBe("현장 김팀장");
++
++  const auditLog = await prisma.auditLog.findFirst({
++    where: {
++      targetType: "DailyLedger",
++      targetId: ledger.id,
++      action: "ledger.sales_payment.updated",
++    },
++    orderBy: { createdAt: "desc" },
++  });
++  const managerUserId = await getManagerUserId();
++  expect(auditLog?.actorId).toBe(managerUserId);
++  expect(auditLog?.actorId).not.toBe("현장 김팀장");
++  expect(auditLog?.after).toMatchObject({
++    authorDisplayName: "현장 김팀장",
++  });
++
++  for (const href of [
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=cost`,
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=purchase`,
++    `/app/store-entry/inventory?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++    `/app/store-entry/losses?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=work`,
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=review`,
++  ]) {
++    await page.goto(href);
++    await expect(
++      page.getByText("작성자 표시명: 현장 김팀장").first(),
++    ).toBeVisible();
++    await expect(page.getByText("마지막 저장:").first()).toBeVisible();
++  }
++
++  await page.goto(
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++  );
++  await expect(
++    page.getByRole("textbox", { name: "작성자 표시명", exact: true }),
++  ).toHaveValue("현장 김팀장");
++});
++
++test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편집을 선택한다", async ({
++  page,
++}) => {
++  await loginAsStoreManager(page);
++  await page.goto(
++    `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
++  );
++
++  await page
++    .getByRole("textbox", { name: "작성자 표시명", exact: true })
++    .fill("미저장 작성자");
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("77777");
++
++  await page.getByRole("link", { name: /2단계: 비용/ }).click();
++  await expect(
++    page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
++  ).toBeVisible();
++  await page.getByRole("button", { name: "계속 편집" }).click();
++  await expect(page).toHaveURL(/step=sales|\/app\/store-entry\?/);
++  await expect(
++    page.getByRole("textbox", { name: "작성자 표시명", exact: true }),
++  ).toHaveValue("미저장 작성자");
++
++  await page.getByRole("link", { name: /2단계: 비용/ }).click();
++  await page
++    .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
++    .getByRole("button", { name: "저장" })
++    .click();
++  await expect(page).toHaveURL(/step=cost/);
++
++  const ledger = await prisma.dailyLedger.findUniqueOrThrow({
++    where: {
++      storeId_closingDate: {
++        storeId: STORE_ID,
++        closingDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
++      },
++    },
++    select: { authorDisplayName: true, totalSalesAmount: true },
++  });
++  expect(ledger.authorDisplayName).toBe("미저장 작성자");
++  expect(ledger.totalSalesAmount).toBe(77777);
++});
++
+ test("지점장은 stale version 저장 충돌 시 새로고침 안내를 본다", async ({
+   page,
+ }) => {
+@@ -308,11 +426,29 @@
+   expect(submitBox?.height).toBeGreaterThanOrEqual(44);
+   expect(submitBox?.width).toBeGreaterThanOrEqual(44);
+
++  const authorInput = page.getByRole("textbox", {

@@ -2234,6 +2234,7 @@ function toEmptyReportRow({
     grossMarginRate: metrics.grossMarginRate,
     salesDifference: metrics.salesDifference,
     hasLoss: null,
+    latestReflectedAt: null,
     lastModifiedBy: null,
     lastModifiedAt: null,
     isHeadquartersClosed: false,
@@ -2378,6 +2379,7 @@ function toLedgerReportRow({
     grossMarginRate: reviewSummary.grossMarginRate,
     salesDifference: reviewSummary.salesDifference,
     hasLoss: appliedHasLoss,
+    latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
@@ -2564,6 +2566,23 @@ function matchesMetricCorrectionKey(
     ({ targetType, fieldKey }) =>
       key.includes(`:${targetType}:`) && key.endsWith(`:${fieldKey}`),
   );
+}
+
+function getLatestReflectedAt(
+  ledgerUpdatedAt: Date,
+  corrections?: Map<string, CorrectionAppliedValue>,
+) {
+  let latestTime = ledgerUpdatedAt.getTime();
+
+  for (const correction of corrections?.values() ?? []) {
+    const correctionTime = Date.parse(correction.createdAt);
+
+    if (Number.isFinite(correctionTime) && correctionTime > latestTime) {
+      latestTime = correctionTime;
+    }
+  }
+
+  return new Date(latestTime).toISOString();
 }
 
 function getMetricStatus({

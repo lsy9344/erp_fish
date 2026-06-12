@@ -1,0 +1,200 @@
+           differenceQuantity: adjustment.differenceQuantity,
+           differenceAmount: adjustment.differenceAmount,
++          amountStatus: "POLICY_UNCONFIRMED",
+           reason: parsed.data.reason,
+           updatedById: actor.user.id,
+         },
+diff --git a/src/features/inventory/adjustment-reconciliation.ts b/src/features/inventory/adjustment-reconciliation.ts
+index 73c855b6ac5838bf614dc20a36887263628dac2b..cfd4541583df377d338c15a2841027ffcd8b54b4
+--- a/src/features/inventory/adjustment-reconciliation.ts
++++ b/src/features/inventory/adjustment-reconciliation.ts
+@@ -162,6 +162,7 @@
+         afterAmount: nextAdjustment.afterAmount,
+         differenceQuantity: nextAdjustment.differenceQuantity,
+         differenceAmount: nextAdjustment.differenceAmount,
++        amountStatus: "POLICY_UNCONFIRMED",
+         reason: adjustment.reason,
+         updatedById: actorId,
+       },
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index b95737631e69259bf922c662be796e69785af7dd..f051d99b59f62fc5ce0915aa4bd321ed995fd541
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -109,7 +109,11 @@
+ function hasSensitiveAdjustmentAmounts(
+   adjustment: InventoryLineState["adjustment"],
+ ): adjustment is InventoryAdjustmentView {
+-  return Boolean(adjustment && "differenceAmount" in adjustment);
++  return Boolean(
++    adjustment &&
++      "differenceAmount" in adjustment &&
++      adjustment.amountStatus === "CONFIRMED",
++  );
+ }
+
+ function getInventoryAmount(value: string, unitPrice: number) {
+@@ -224,6 +228,10 @@
+   const isOriginalEditBlocked =
+     data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
+   const isClosed = isOriginalEditBlocked;
++  const originalEditBlockedMessage =
++    data.status === "HOLIDAY"
++      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
++      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
+     storeId: data.storeId,
+     date: getKstLedgerDateParam(data.closingDate),
+@@ -301,11 +309,9 @@
+   async function saveCurrentDraft() {
+     if (isClosed) {
+       setResultMessage(null);
+-      const message =
+-        "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+-      setFormError(message);
++      setFormError(originalEditBlockedMessage);
+       setAdjustmentErrors({});
+-      toast.error(message);
++      toast.error(originalEditBlockedMessage);
+       return false;
+     }
+
+@@ -716,6 +722,8 @@
+         savingAdjustmentProductId === item.productId;
+       const sourceBadges = getSourceBadges(item);
+       const adjustmentActionLabel = adjusted ? "수정" : "조정";
++      const adjustmentAmountPolicyUnconfirmed =
++        item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
+
+       return (
+         <TableRow
+@@ -870,6 +878,9 @@
+                           : ""}
+                       </span>
+                     </p>
++                    {adjustmentAmountPolicyUnconfirmed ? (
++                      <p>금액 기준 확인 필요</p>
++                    ) : null}
+                   </div>
+                 ) : null}
+                 <div className="flex items-center gap-1.5">
+diff --git a/src/features/inventory/hq-edit-actions.ts b/src/features/inventory/hq-edit-actions.ts
+index c42a76246f41107733fe3b2c78e0755c92a855ca..e80f6f85438bd264d04d696fed577a65ca6d7bbb
+--- a/src/features/inventory/hq-edit-actions.ts
++++ b/src/features/inventory/hq-edit-actions.ts
+@@ -345,8 +345,12 @@
+         if (beforeQuantity === null || beforeAmount === null) {
+           return actionError<InventoryStepData>(
+             "VALIDATION_ERROR",
+-            "재고 금액을 계산할 수 없습니다.",
+-            { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
++            "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
++            {
++              actualQuantity: [
++                "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
++              ],
++            },
+           );
+         }
+
+@@ -360,8 +364,12 @@
+         if (!adjustment) {
+           return actionError<InventoryStepData>(
+             "VALIDATION_ERROR",
+-            "재고 금액을 계산할 수 없습니다.",
+-            { actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."] },
++            "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
++            {
++              actualQuantity: [
++                "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
++              ],
++            },
+           );
+         }
+
+@@ -456,6 +464,7 @@
+             afterAmount: adjustment.afterAmount,
+             differenceQuantity: adjustment.differenceQuantity,
+             differenceAmount: adjustment.differenceAmount,
++            amountStatus: "POLICY_UNCONFIRMED",
+             reason: parsed.data.reason,
+             createdById: actor.user.id,
+             updatedById: actor.user.id,
+@@ -472,6 +481,7 @@
+             afterAmount: adjustment.afterAmount,
+             differenceQuantity: adjustment.differenceQuantity,
+             differenceAmount: adjustment.differenceAmount,
++            amountStatus: "POLICY_UNCONFIRMED",
+             reason: parsed.data.reason,
+             updatedById: actor.user.id,
+           },
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index e3fd4f46b4c48c664f844f64c443db6ffb4dcc62..97dace3eebecf6f248ef13fe5b71c838daab6e04
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -46,6 +46,7 @@
+   afterAmount: true,
+   differenceQuantity: true,
+   differenceAmount: true,
++  amountStatus: true,
+   reason: true,
+   createdAt: true,
+   updatedAt: true,
+@@ -237,6 +238,7 @@
+     afterAmount: adjustment.afterAmount,
+     differenceQuantity: adjustment.differenceQuantity,
+     differenceAmount: adjustment.differenceAmount,
++    amountStatus: adjustment.amountStatus,
+     reason: adjustment.reason,
+     createdByName: adjustment.createdBy.name ?? adjustment.createdBy.email,
+     createdAt: adjustment.createdAt.toISOString(),
+@@ -868,6 +870,7 @@
+                 beforeQuantity: adjustment.beforeQuantity,
+                 afterQuantity: adjustment.afterQuantity,
+                 differenceQuantity: adjustment.differenceQuantity,
++                amountStatus: adjustment.amountStatus,
+                 reason: adjustment.reason,
+                 createdByName: adjustment.createdByName,
+                 createdAt: adjustment.createdAt,
+diff --git a/src/features/inventory/types.ts b/src/features/inventory/types.ts
+index c1e2e74475eda0c4be46061753b4308b2e134aba..56996df8a085455241537c2b617ff937ae2c8d33
+--- a/src/features/inventory/types.ts
++++ b/src/features/inventory/types.ts
+@@ -1,5 +1,6 @@
+ import {
+   type DailyLedgerStatus,
++  type InventoryAdjustmentAmountStatus,
+   type InventoryCarryoverSource,
+   type InventoryCarryoverStatus,
+ } from "../../../generated/prisma";
+@@ -35,6 +36,7 @@
+   afterAmount: number;
+   differenceQuantity: number;
+   differenceAmount: number;
++  amountStatus: InventoryAdjustmentAmountStatus;
+   reason: string;
+   createdByName: string | null;
+   createdAt: string;
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index 5c2e98079eaca74bfe5863abe064d708c854c414..01033b20b5b67b0adc454d1362a609927dccdf8c
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -212,6 +212,43 @@
+   await expect(updatedRow.getByText("차이").first()).toBeVisible();
+   await expect(updatedRow.getByText("+2")).toBeVisible();
+   await expect(updatedRow.getByText("실사 재고 차이")).toBeVisible();
++  await expect(updatedRow.getByText("금액 기준 확인 필요")).toBeVisible();
++
++  const adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++    },
++  });

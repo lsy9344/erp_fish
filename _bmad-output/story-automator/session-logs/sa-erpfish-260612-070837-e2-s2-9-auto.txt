@@ -1,0 +1,200 @@
++    where: { id: ledger.id },
++    select: { status: true, closedById: true, closedAt: true },
++  });
++  expect(current).toEqual({
++    status: "IN_REVIEW",
++    closedById: null,
++    closedAt: null,
++  });
++  await expect
++    .poll(async () =>
++      prisma.auditLog.count({
++        where: {
++          targetType: "DailyLedger",
++          targetId: ledger.id,
++          action: "ledger.hq.closed",
++        },
++      }),
++    )
++    .toBe(0);
++});
+diff --git a/tests/e2e/store-ledger-conflicts.spec.ts b/tests/e2e/store-ledger-conflicts.spec.ts
+index 053516f09fc0e654494d717a0842e14c51747646..a8515bad2e4c3f26f82ca4f6e236d12e354653c7
+--- a/tests/e2e/store-ledger-conflicts.spec.ts
++++ b/tests/e2e/store-ledger-conflicts.spec.ts
+@@ -129,6 +129,142 @@
+   expect(ledger.totalSalesAmount).toBe(44444);
+ });
+
++test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두 번째 저장을 거부한다", async ({
++  browser,
++}) => {
++  const firstContext = await browser.newContext();
++  const secondContext = await browser.newContext();
++  const firstPage = await firstContext.newPage();
++  const secondPage = await secondContext.newPage();
++  const ledgerPath = `/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}`;
++
++  try {
++    await Promise.all([
++      loginAsStoreManager(firstPage),
++      loginAsStoreManager(secondPage),
++    ]);
++    await Promise.all([firstPage.goto(ledgerPath), secondPage.goto(ledgerPath)]);
++    await Promise.all([
++      expect(firstPage.getByLabel("영업일")).toHaveValue(CONFLICT_DATE),
++      expect(secondPage.getByLabel("영업일")).toHaveValue(CONFLICT_DATE),
++    ]);
++
++    await firstPage
++      .getByRole("textbox", { name: "총매출", exact: true })
++      .fill("55555");
++    await firstPage
++      .getByRole("textbox", { name: "현금", exact: true })
++      .fill("15000");
++    await firstPage
++      .getByRole("textbox", { name: "카드", exact: true })
++      .fill("40000");
++    await firstPage
++      .getByRole("textbox", { name: "기타 결제수단", exact: true })
++      .fill("555");
++    await firstPage.getByRole("button", { name: "저장" }).click();
++    await expect(
++      firstPage.getByRole("status").filter({ hasText: "저장됐습니다." }),
++    ).toBeVisible();
++
++    await secondPage
++      .getByRole("textbox", { name: "총매출", exact: true })
++      .fill("66666");
++    await secondPage
++      .getByRole("textbox", { name: "현금", exact: true })
++      .fill("16000");
++    await secondPage
++      .getByRole("textbox", { name: "카드", exact: true })
++      .fill("50000");
++    await secondPage
++      .getByRole("textbox", { name: "기타 결제수단", exact: true })
++      .fill("666");
++    await secondPage.getByRole("button", { name: "저장" }).click();
++
++    const conflictDialog = secondPage.getByRole("dialog", {
++      name: "저장 충돌이 발생했습니다",
++    });
++    await expect(conflictDialog).toBeVisible();
++    await expect(conflictDialog.getByText("총매출")).toBeVisible();
++    await expect(conflictDialog.getByText("66666")).toBeVisible();
++    await expect(conflictDialog.getByText("55555")).toBeVisible();
++
++    const ledger = await prisma.dailyLedger.findFirstOrThrow({
++      where: {
++        storeId: STORE_ID,
++        closingDate: new Date(`${CONFLICT_DATE}T00:00:00.000Z`),
++      },
++      select: { totalSalesAmount: true, cashAmount: true, cardAmount: true },
++    });
++    expect(ledger).toEqual({
++      totalSalesAmount: 55555,
++      cashAmount: 15000,
++      cardAmount: 40000,
++    });
++  } finally {
++    await firstContext.close();
++    await secondContext.close();
++  }
++});
++
++test("서로 다른 섹션 변경도 안전 병합 없이 stale 저장으로 명시 거부한다", async ({
++  page,
++}) => {
++  const managerId = await getManagerUserId();
++
++  await loginAsStoreManager(page);
++  await page.goto(`/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}`);
++  await expect(page.getByLabel("영업일")).toHaveValue(CONFLICT_DATE);
++
++  const ledgerBefore = await prisma.dailyLedger.findUniqueOrThrow({
++    where: {
++      storeId_closingDate: {
++        storeId: STORE_ID,
++        closingDate: new Date(`${CONFLICT_DATE}T00:00:00.000Z`),
++      },
++    },
++    select: { id: true },
++  });
++
++  await prisma.dailyLedger.update({
++    where: { id: ledgerBefore.id },
++    data: {
++      workerCount: 7,
++      workMemo: "다른 섹션 선저장",
++      updatedById: managerId,
++      version: { increment: 1 },
++    },
++  });
++
++  await page
++    .getByRole("textbox", { name: "총매출", exact: true })
++    .fill("22222");
++  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
++  await page.getByRole("textbox", { name: "카드", exact: true }).fill("10000");
++  await page
++    .getByRole("textbox", { name: "기타 결제수단", exact: true })
++    .fill("222");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  const conflictDialog = page.getByRole("dialog", {
++    name: "저장 충돌이 발생했습니다",
++  });
++  await expect(conflictDialog).toBeVisible();
++  await expect(conflictDialog.getByText("최신 상태 재확인 필요")).toBeVisible();
++  await expect(
++    conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
++  ).toBeVisible();
++
++  const ledgerAfter = await prisma.dailyLedger.findUniqueOrThrow({
++    where: { id: ledgerBefore.id },
++    select: { totalSalesAmount: true, workerCount: true, workMemo: true },
++  });
++  expect(ledgerAfter).toEqual({
++    totalSalesAmount: 0,
++    workerCount: 7,
++    workMemo: "다른 섹션 선저장",
++  });
++});
++
+ test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 연다", async ({
+   page,
+ }) => {
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index c6497fa958c315a57caa5ba41fa92ffb4678ed0c..7d6febbd9eff5eee566888dfe31e012a6871723f
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -601,3 +601,55 @@
+   expect(inputBox?.height).toBeGreaterThanOrEqual(44);
+   expect(saveBox?.height).toBeGreaterThanOrEqual(44);
+ });
++
++test("stale version 재고 저장은 conflict dialog를 보여주고 입력값을 쓰지 않는다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 stale 재고 방어", "냉동", 7000);
++  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentKstYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 5,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`);
++  await expect(currentQuantityInput).toBeVisible();

@@ -1,0 +1,200 @@
+-last_updated: "2026-06-11T19:49:28+09:00"
++last_updated: "2026-06-11T20:01:55+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -45,7 +45,7 @@
+   epic-1: in-progress
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+   1-2-사용자-지점-권한-프로파일-모델링: done
+-  1-3-역할-기반-로그인과-지점-접근-제한: backlog
++  1-3-역할-기반-로그인과-지점-접근-제한: ready-for-dev
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: backlog
+   1-5-감사-로그-기반-구축: backlog
+   epic-1-retrospective: optional
+
+ succeeded in 278ms:
+/home/noah/code/erp_fish
+
+codex
+BMAD create-story workflow for Story 1.3 completed.
+
+Created: [1-3-역할-기반-로그인과-지점-접근-제한.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-3-역할-기반-로그인과-지점-접근-제한.md:1)
+
+Updated sprint tracker: [sprint-status.yaml](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml:48) now marks `1-3-역할-기반-로그인과-지점-접근-제한` as `ready-for-dev`.
+
+Validation pass completed against the checklist by checking source coverage, PRD/architecture/UX context, previous Story 1.2 intelligence, current repository guardrails, and sprint-status consistency.
+ I did not run app test suites because this was a story-document generation workflow, not implementation code. Note: the older `1-3-본사가-지점-정보를-관리한다.md` file remains in the folder as a prio
+r-plan completed story; the new file matches the current sprint-status Story 1.3 key.
+diff --git a/_bmad-output/implementation-artifacts/1-3-역할-기반-로그인과-지점-접근-제한.md b/_bmad-output/implementation-artifacts/1-3-역할-기반-로그인과-지점-접근-제한.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0cd23c320613bc0c7e5395228f865724e34bb31
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/1-3-역할-기반-로그인과-지점-접근-제한.md
+@@ -0,0 +1,233 @@
++---
++story_key: 1-3-역할-기반-로그인과-지점-접근-제한
++story_id: "1.3"
++epic: "1"
++created_at: "2026-06-11T20:01:55+09:00"
++source_story: "_bmad-output/planning-artifacts/epics.md"
++baseline_commit: 19db505
++---
++
++# Story 1.3: 역할 기반 로그인과 지점 접근 제한
++
++Status: ready-for-dev
++
++## Story
++
++As a 지점장 또는 본사 사용자,
++I want 로그인 후 내 권한에 맞는 메뉴와 데이터만 볼 수 있기를 원한다,
++so that 지점 데이터와 본사 운영 정보가 잘못 노출되지 않는다.
++
++## Acceptance Criteria
++
++1. Given 로그인하지 않은 사용자가 보호된 `/app` 영역에 접근할 때, when 서버가 세션을 확인한다, then 사용자는 로그인 화면 또는 인증 흐름으로 이동해야 한다, and 보호 데이터는 서버 응답에 포함되지 않아
+야 한다.
++2. Given 지점장 계정이 로그인되어 있을 때, when 지점장 앱 영역을 연다, then 연결된 지점의 장부 입력/조회 메뉴만 접근 가능해야 한다, and 타 지점 장부, 본사 설정, 본사 리포트 메뉴는 접근할 수 없어야 한
+다.
++3. Given 본사 계정이 로그인되어 있을 때, when 본사 앱 영역을 연다, then 권한 프로파일에 맞는 본사 메뉴가 표시되어야 한다, and 권한이 없는 설정, 마감, export 같은 action은 UI와 서버에서 모두 차단되어
+야 한다.
++4. Given 사용자가 URL을 직접 입력해 권한 밖 지점 또는 본사 화면에 접근할 때, when 서버 컴포넌트, 서버 액션, 또는 라우트 핸들러가 요청을 처리한다, then 접근은 거부되어야 한다, and 권한 없는 데이터가
+클라이언트로 전달되지 않아야 한다.
++5. Given 계정의 지점 접근권이나 권한 프로파일이 변경되었을 때, when 사용자가 다음 요청을 보낸다, then 변경된 권한이 서버 기준으로 즉시 반영되어야 한다, and 오래된 클라이언트 UI 상태만 믿고 접근을 허
+용하면 안 된다.
++
++## Tasks / Subtasks
++
++- [ ] RED: Story 1.3 권한 회귀 테스트를 먼저 추가한다. (AC: 1-5)
++  - [ ] `tests/unit/auth-guard.test.mjs` 또는 새 `tests/unit/role-access.test.mjs`에 profile-aware navigation, action helper mapping, HQ store scope filtering, stale session re-check 구조 검증을 추가
+한다.
++  - [ ] `tests/e2e/auth.spec.ts` 또는 새 `tests/e2e/role-access.spec.ts`에 비로그인 `/app`, 지점장 본사 URL 직접 접근, 본사 권한 없는 메뉴/URL/action 차단, 지정 지점 본사 계정의 지점 범위 차단 시나리
+오를 추가한다.
++  - [ ] 기존 `tests/e2e/permission-profiles.spec.ts`의 `hq-assigned@example.com` fixture를 활용해 `ASSIGNED_STORES` 본사 계정이 `store-seocho`만 조회하고 `store-gangnam` 데이터는 받지 않는지 검증한다
+.
++  - [ ] E2E에서 "메뉴가 숨겨졌다"만 검증하지 말고, 직접 URL 접근 후 본문에 보호 데이터가 없는지 함께 검증한다.
++- [ ] `src/server/authz.ts`를 Story 1.2 기반에서 profile-aware access contract로 확장한다. (AC: 3, 4, 5)
++  - [ ] 기존 `requireAppUser()`, `requireHeadquartersUser()`, `requireStoreAccess()`, `hasActionPermission()`, `requireHeadquartersActionPermission()`를 재사용한다. 새 role/profile/store checker를 각
+ feature 파일에 흩뿌리지 않는다.
++  - [ ] `PermissionAction`별 semantic helper 또는 mapping을 추가한다. 최소: settings mutation/read는 `SETTINGS_MANAGE`, 사용자/권한 관리는 `USER_PERMISSION_MANAGE`, report/dashboard read는 `REPORT_VI
+EW`, ledger HQ edit는 `LEDGER_EDIT`, close는 `LEDGER_HQ_CLOSE`, correction은 `CORRECTION_CREATE`, export는 `EXPORT_CREATE`.
++  - [ ] 본사 `ASSIGNED_STORES` profile은 `UserStoreAssignment`에 연결된 활성 지점만 조회/수정할 수 있도록 공통 helper를 제공한다. `ALL_STORES`는 활성 지점 전체를 허용하되 비활성 지점 직접 접근은 계속
+ 차단한다.
++  - [ ] helper는 세션/JWT의 role claim만 믿지 않고 매 요청마다 DB의 `User.isActive`, active `PermissionProfile`, `PermissionProfileAction`, `UserStoreAssignment`, `Store.isActive`를 다시 확인한다.
++  - [ ] 권한 없는 요청은 `/app/unauthorized`로 redirect하거나 action error를 반환하되, 업무 query를 실행하기 전에 중단한다.
++- [ ] 본사 shell/navigation을 권한 프로파일 기준으로 렌더링한다. (AC: 3, 5)
++  - [ ] `src/components/app-sidebar.tsx`의 static `navigationItems`를 profile-aware server-derived items로 바꾸거나, `HeadquartersShell`에서 user permission context를 받아 필터링한다.
++  - [ ] `홈`/관제판과 `리포트`는 `REPORT_VIEW`, `기준정보`/지점/품목/매입 기준/코드/이상 신호 기준값은 `SETTINGS_MANAGE`, `사용자/권한`과 설정 진입은 `USER_PERMISSION_MANAGE`를 요구한다.
++  - [ ] 권한 없는 항목은 지점장과 본사 모두에게 링크/프리패치가 생기지 않아야 한다. 단, 서버 차단이 최종 보안 경계다.
++  - [ ] 현재 `StoreManagerShell`의 `장부`, `재고`, `손실` 하단 탭과 `storeId` 유지 로직을 보존한다.
++- [ ] 기존 본사 페이지와 feature query/action을 action permission 및 store scope로 강화한다. (AC: 3, 4, 5)
++  - [ ] `src/app/app/dashboard/page.tsx`와 `src/features/dashboard/queries.ts`는 `REPORT_VIEW`와 HQ store scope를 적용한다. `ASSIGNED_STORES` 본사는 배정 지점 row만 받아야 한다.
++  - [ ] `src/app/app/reports/*`와 `src/features/reports/queries.ts`는 `REPORT_VIEW`를 요구하고 store list/row/result를 HQ store scope로 제한한다.
++  - [ ] `src/app/app/master-data/stores|products|purchase-standards|codes|anomaly-thresholds/*`와 관련 queries/actions는 `SETTINGS_MANAGE`를 요구한다.
++  - [ ] `src/app/app/master-data/users/page.tsx`, `src/features/master-data/user-queries.ts`, `src/features/master-data/user-actions.ts`는 `USER_PERMISSION_MANAGE`를 요구한다.
++  - [ ] `src/features/ledger/hq-edit-actions.ts`, `src/features/inventory/hq-edit-actions.ts`, `src/features/losses/hq-edit-actions.ts`는 broad `requireHeadquartersUser()`만으로 통과하지 말고 `LEDGER
+_EDIT`을 요구한다.
++  - [ ] `src/features/ledger/hq-close-actions.ts`는 `LEDGER_HQ_CLOSE`, `src/features/corrections/actions.ts`는 `CORRECTION_CREATE`를 요구한다.
++  - [ ] action helper로 통과한 뒤에도 store-specific operation은 HQ store scope 또는 ledger의 store scope를 확인한다.
++- [ ] 지점장 접근 제한을 보존하고 직접 URL 방어를 강화한다. (AC: 2, 4)
++  - [ ] `/app/store-entry`, `/app/store-entry/inventory`, `/app/store-entry/losses`의 `storeId` query 처리와 `normalizeStoreIdParam()` 회귀를 유지한다.
++  - [ ] 지점장이 여러 지점에 배정된 경우 선택된 `storeId`만 유지하고, 미배정/비활성/반복 query 값은 unauthorized 또는 no-active-store 흐름으로 처리한다.
++  - [ ] 지점장 응답에는 본사 sidebar, 본사 리포트, 기준정보, 민감 회계 지표, 타 지점 이름/row가 포함되지 않아야 한다.
++- [ ] 권한 변경 즉시 반영과 stale UI 방어를 검증한다. (AC: 5)
++  - [ ] 테스트 중 DB에서 profile action 또는 store assignment를 제거한 뒤 같은 브라우저 세션의 다음 요청이 차단되는지 확인한다.
++  - [ ] 클라이언트 메뉴 상태나 기존 session token claim이 남아 있어도 서버 query/action이 DB 최신 권한으로 재확인한다.
++  - [ ] `prefetch={false}`가 필요한 store-manager 링크의 stale 데이터 방지 의도는 유지한다.
++- [ ] 전체 검증을 실행하고 결과를 Dev Agent Record에 기록한다. (AC: 1-5)
++  - [ ] `pnpm exec prisma generate`
++  - [ ] `pnpm exec prisma validate`
++  - [ ] `pnpm lint`
++  - [ ] `pnpm typecheck`
++  - [ ] `pnpm test:unit`
++  - [ ] `pnpm exec playwright test tests/e2e/auth.spec.ts tests/e2e/permission-profiles.spec.ts` 또는 새 권한 E2E subset
++  - [ ] 가능하면 `pnpm test:e2e` 전체 실행. DB/포트/sandbox 문제로 실패하면 실패 원인과 미검증 범위를 정확히 기록한다.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 1 목표는 본사와 지점장이 권한에 맞게 로그인하고 모든 주요 변경이 추적 가능한 운영 기반을 갖추는 것이다. [Source: `_bmad-output/planning-artifacts/epics.md#Epic 1: 안전한 접근과 운영 감사 기반`
+]
++- Story 1.3 원문은 로그인 후 권한에 맞는 메뉴와 데이터만 볼 수 있게 하여 지점 데이터와 본사 운영 정보 오노출을 막는 것이다. [Source: `_bmad-output/planning-artifacts/epics.md#Story 1.3: 역할 기반 로
+그인과 지점 접근 제한`]
++- FR1/FR2는 역할별 로그인, 접근 메뉴, 지점 범위 데이터 제한을 요구한다. NFR1은 UI 숨김이 아니라 서버 응답, export, 캐시 응답, 알림 템플릿, mutation 권한에서 제한을 강제해야 한다. [Source: `_bmad-outp
+ut/planning-artifacts/epics.md#Functional Requirements`]
++- PRD FR-1은 계정 비활성화가 신규 로그인뿐 아니라 기존 활성 세션의 저장/변경 요청도 차단해야 한다고 명시한다. Story 1.3의 stale session 테스트는 이 요구를 포함한다. [Source: `_bmad-output/planning-ar
+tifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#FR-1: 역할 기반 로그인`]
++- PRD FR-2는 지점 접근 제한이 목록 화면, 상세 화면, 리포트, export, API 응답, mutation 요청에서 동일하게 적용되어야 한다고 명시한다. Story 1.3은 dashboard/report/master-data/ledger HQ paths를 이 기준
+으로 점검한다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#FR-2: 지점 접근 제한`]
++- PRD의 권한 profile x action 기준은 `본사 사용자`를 요구사항 설명용 상위 표현으로만 쓰고, 실제 구현 권한은 장부 생성/수정, 본사 강제 수정, 마감, 정정, 업로드, 지점/사용자/권한/코드 관리, 리포트/expo
+rt action 단위로 판단하라고 요구한다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#권한 프로파일 x 주요 action 기준`]
++- Story 1.2는 사용자, 지점, 지점 접근권, 권한 프로파일의 기본 데이터 구조를 준비했다. Story 1.3은 그 구조를 모든 실제 화면/서버 경계에 적용하는 스토리다. [Source: `_bmad-output/implementation-artifac
+ts/1-2-사용자-지점-권한-프로파일-모델링.md`]
++
++### Architecture Guardrails
++
++- 인증 기반은 Create T3 App + NextAuth.js/Auth.js + Prisma-backed user/session persistence를 유지한다. 공개 self-signup은 만들지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md#Auth
+entication & Security`]
++- 모든 ledger, report, master-data, close, correction, settings action은 서버에서 authorization을 강제해야 한다. UI 숨김은 보조 수단일 뿐 보안 경계가 아니다. [Source: `_bmad-output/planning-artifacts
+/architecture.md#Authorization Pattern`]
++- `src/server`는 auth session loading, authorization, audit logging, transactions, calculations 같은 cross-cutting server behavior의 소유 경계다. one-off 권한 검사를 feature 파일마다 만들지 않는다. [
+Source: `_bmad-output/planning-artifacts/architecture.md#Cross-Cutting Concerns`]
++- 2026-06-11 authorization update는 `본사 사용자`를 unrestricted role이 아닌 umbrella term으로 보고, close/correction/upload/settings/report/export/store access에 명시적 action helper를 요구한다. [So
+urce: `_bmad-output/planning-artifacts/architecture.md#Authorization Update`]
++- App Router는 Server Components for reads, Server Actions for internal mutations, Route Handlers only for true HTTP endpoints 패턴을 따른다. [Source: `_bmad-output/planning-artifacts/architecture.md
+#API & Communication Patterns`]
++
++### UX Guardrails
++
++- UX 문서는 대표/소유자, 본사 관리자, 본사 스텝, 업로드 담당자, 마감 담당자, 설정 관리자, 조회 전용 본사, 지점장으로 화면 표시와 저장/변경 권한을 세분화한다. 역할 분기는 서버에서 강제하며 클라이언트
+분기에 의존하지 않는다. [Source: `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#권한 프로파일`]
++- 본사 데스크탑 IA는 홈, 장부 상세, 감사 로그, 리포트, 기준정보, 설정류를 sidebar로 제공한다. 메뉴는 권한 프로파일에 따라 숨김 또는 비활성 상태가 될 수 있다. [Source: `_bmad-output/planning-artifacts
+/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#본사 사용자 IA`]
++- 지점장 주 서피스는 모바일/태블릿이며 하단 탭은 `장부`, `재고`, `손실`이다. 본사 설정/리포트 메뉴는 노출하지 않는다. [Source: `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPER
+IENCE.md#모바일·태블릿`]
++- 직접 URL 접근 권한 없음은 빈 오류 화면이 아니라 "접근 권한이 없습니다." 같은 한국어 안내로 처리한다. 보호 데이터는 클라이언트로 전달하지 않는다. [Source: `_bmad-output/planning-artifacts/ux-designs
+/ux-erp_fish-2026-05-28/EXPERIENCE.md#상태/빈 상태/오류`]
++
++### Current Repository State
++
++- 현재 `prisma/schema.prisma`에는 `UserRole`, `StoreAccessMode`, `PermissionAction`, `PermissionProfile`, `PermissionProfileAction`, `UserPermissionProfile`, `Store`, `UserStoreAssignment`가 이미 있
+다. 새 권한 구조를 다시 만들지 않는다. [Source: `prisma/schema.prisma`]
++- 현재 `PermissionAction`은 `LEDGER_CREATE`, `LEDGER_EDIT`, `LEDGER_HQ_CLOSE`, `CORRECTION_CREATE`, `UPLOAD_PREVIEW`, `UPLOAD_COMMIT`, `SETTINGS_MANAGE`, `REPORT_VIEW`, `EXPORT_CREATE`, `USER_PERMISS
+ION_MANAGE`를 포함한다. 이 enum을 action gate의 source of truth로 사용한다. [Source: `prisma/schema.prisma`]
++- `src/server/authz.ts`는 `requireAppUser()`, `requireHeadquartersUser()`, `getActivePermissionProfiles()`, `hasActionPermission()`, `requireActionPermission()`, `requireHeadquartersActionPermission(
+)`, `requireStoreAccess()`를 제공한다. 이 파일을 확장하되 기존 함수 의미를 깨지 않는다. [Source: `src/server/authz.ts`]
++- `requireStoreAccess()`는 본사 `ALL_STORES`/`ASSIGNED_STORES` profile mode와 지점장 assignment를 DB에서 다시 확인한다. 이 패턴을 dashboard/report/master-data/ledger HQ flows에도 일관되게 적용한다. [
+Source: `src/server/authz.ts`]
++- `src/app/app/layout.tsx`는 `/app` 전체에서 `requireAppUser()`를 호출한다. 개별 본사/지점장/page/action은 이것만으로 충분하지 않고 추가 role/action/store gate를 가져야 한다. [Source: `src/app/app/la
+yout.tsx`]
++- `src/app/app/page.tsx`와 `src/app/login/page.tsx`는 `getAppHomePath()`로 로그인 후 목적지를 정한다. 지점장은 `/app/store-entry`, 본사는 `/app/dashboard`로 이동하는 기존 UX를 유지한다. [Source: `src
+/app/app/page.tsx`, `src/app/login/page.tsx`]
++- `src/components/app-sidebar.tsx`는 현재 static 본사 메뉴를 렌더링한다. Story 1.3 구현자는 이 지점을 profile-aware navigation의 주요 UPDATE 대상으로 본다. [Source: `src/components/app-sidebar.tsx`]
++- `src/components/store-manager-shell.tsx`는 지점장 `장부`, `재고`, `손실` 탭과 선택 `storeId` 유지, `prefetch={false}`를 이미 구현한다. 본사 메뉴가 여기에 섞이면 안 된다. [Source: `src/components/st
+ore-manager-shell.tsx`]
++- dashboard/report/master-data/user/ledger HQ action 대부분은 현재 `requireHeadquartersUser()`만 호출한다. Story 1.3은 이를 action permission과 store scope까지 검증하도록 강화한다. [Source: `rg requi
+reHeadquartersUser src`]
++- 현재 `tests/unit/auth-guard.test.mjs`, `tests/unit/auth-model.test.mjs`, `tests/e2e/auth.spec.ts`, `tests/e2e/permission-profiles.spec.ts`가 Story 1.3에 가장 가까운 회귀 테스트 기반이다. 새 테스트
+는 이 패턴을 재사용한다. [Source: `tests/unit/auth-guard.test.mjs`, `tests/e2e/auth.spec.ts`, `tests/e2e/permission-profiles.spec.ts`]
++
++### Previous Story Intelligence
++
++- Story 1.2는 `PermissionProfile`, explicit profile-action/user-profile join, `StoreAccessMode`, DB 기반 action permission helper, seed profile fixture를 구현했고 review에서 본사 `ALL_STORES` 비활성
+지점 접근과 action helper 기본 role scope 문제를 수정했다. 이를 되돌리지 않는다. [Source: `_bmad-output/implementation-artifacts/1-2-사용자-지점-권한-프로파일-모델링.md#Senior Developer Review (AI)`]
++- Story 1.2의 E2E fixture는 `hq@example.com`에 `HQ_ADMIN` + `SETTINGS_ADMIN`, `hq-assigned@example.com`에 `HQ_STAFF` + `ASSIGNED_STORES(store-seocho)`, `manager@example.com`에 `STORE_MANAGER`를 만든
+다. Story 1.3 권한 테스트는 이 fixture를 적극 재사용한다. [Source: `tests/e2e/global-setup.ts`, `tests/e2e/permission-profiles.spec.ts`]
++- Story 1.1/1.2에서 JWT role만 믿는 문제가 이미 발견됐다. 이번 스토리에서도 menu, page, query, action 모두 DB 최신 권한을 다시 확인해야 한다. [Source: `_bmad-output/implementation-artifacts/1-2-사용
+자-지점-권한-프로파일-모델링.md#Previous Story Intelligence`]
++
++### File Structure Requirements
++
++- 예상 UPDATE 파일:
++  - `src/server/authz.ts`
++  - `src/components/app-sidebar.tsx`
++  - `src/components/headquarters-shell.tsx` if sidebar data must become dynamic
++  - `src/app/app/dashboard/page.tsx`
++  - `src/features/dashboard/queries.ts`
++  - `src/app/app/reports/daily/page.tsx`
++  - `src/app/app/reports/comparison/page.tsx`

@@ -42,17 +42,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 
 export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   const router = useRouter();
-  const hasNoActiveStores = dashboard.summary.totalStores === 0;
 
   if (dashboard.rows.length === 0) {
     return (
       <section
+        data-testid="hq-dashboard-empty-state"
         className="bg-card text-muted-foreground rounded-lg border p-6 text-sm shadow-sm"
         aria-label="관제판 지점 목록"
       >
-        {hasNoActiveStores
-          ? "활성 지점이 없습니다. 기준정보에서 지점을 먼저 등록해 주세요."
-          : "조건에 맞는 지점이 없습니다. 필터를 전체로 바꾸면 모든 지점을 볼 수 있습니다."}
+        {getDashboardEmptyStateMessage(dashboard)}
       </section>
     );
   }
@@ -66,19 +64,22 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   return (
     <section className="flex flex-col gap-3" aria-label="관제판 지점 목록">
       <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
-        <Table className="min-w-[1200px]">
+        <Table className="min-w-[1280px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">지점</TableHead>
               <TableHead>확인 순서</TableHead>
               <TableHead>영업 상태</TableHead>
               <TableHead>장부 상태</TableHead>
-              <TableHead className="text-right">매출</TableHead>
-              <TableHead className="text-right">매출 차이</TableHead>
-              <TableHead className="text-right">마진율</TableHead>
+              <TableHead className="text-right tabular-nums">매출</TableHead>
+              <TableHead className="text-right tabular-nums">
+                매출 차이
+              </TableHead>
+              <TableHead className="text-right tabular-nums">마진율</TableHead>
               <TableHead>손실</TableHead>
               <TableHead>신호</TableHead>
-              <TableHead>최종 수정</TableHead>
+              <TableHead className="tabular-nums">최신 반영</TableHead>
+              <TableHead>마지막 수정자</TableHead>
               <TableHead>본사 마감</TableHead>
               <TableHead>상세</TableHead>
             </TableRow>
@@ -99,20 +100,23 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                 <TableCell>
                   <DashboardStatusBadge status={row.ledgerStatus} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {formatKrw(row.salesAmount.value)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {formatKrwMetric(row.salesDifference)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {formatPercentMetric(row.grossMarginRate)}
                 </TableCell>
                 <TableCell>{formatLoss(row)}</TableCell>
                 <TableCell>
                   <DashboardSignalSummary signals={row.signals} />
                 </TableCell>
-                <TableCell>{formatLastModified(row)}</TableCell>
+                <TableCell className="tabular-nums">
+                  {formatLatestReflected(row)}
+                </TableCell>
+                <TableCell>{formatLastModifiedBy(row)}</TableCell>
                 <TableCell>{formatHeadquartersClosed(row)}</TableCell>
                 <TableCell>
                   <DetailLink row={row} dashboard={dashboard} />
@@ -143,7 +147,8 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                   {row.storeName}
                 </h2>
                 <p className="text-muted-foreground text-sm break-words">
-                  {row.businessStatus.label} · {formatLastModified(row)}
+                  {row.businessStatus.label} · {formatLatestReflected(row)} ·{" "}
+                  {formatLastModifiedBy(row)}
                 </p>
               </div>
               <DashboardStatusBadge
@@ -158,7 +163,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               <div>
                 <dt className="text-muted-foreground">매출</dt>
-                <dd className="font-medium">
+                <dd className="font-medium tabular-nums">
                   {formatKrw(row.salesAmount.value)}
                 </dd>
               </div>
@@ -168,14 +173,26 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               </div>
               <div>
                 <dt className="text-muted-foreground">매출 차이</dt>
-                <dd className="font-medium">
+                <dd className="font-medium tabular-nums">
                   {formatKrwMetric(row.salesDifference)}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">마진율</dt>
-                <dd className="font-medium">
+                <dd className="font-medium tabular-nums">
                   {formatPercentMetric(row.grossMarginRate)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">최신 반영</dt>
+                <dd className="font-medium tabular-nums">
+                  {formatLatestReflected(row)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">마지막 수정자</dt>
+                <dd className="font-medium break-words">
+                  {formatLastModifiedBy(row)}
                 </dd>
               </div>
               <div>
@@ -377,13 +394,33 @@ function formatHeadquartersClosed(row: HqDashboardRow) {
   return row.isHeadquartersClosed ? "마감" : "미마감";
 }
 
-function formatLastModified(row: HqDashboardRow) {
-  if (row.lastModifiedAt === null) {
+function formatLatestReflected(row: HqDashboardRow) {
+  if (row.latestReflectedAt === null) {
     return "입력 전";
   }
 
-  const actor =
-    row.lastModifiedBy?.name ?? row.lastModifiedBy?.email ?? "수정자 없음";
+  return dateTimeFormatter.format(new Date(row.latestReflectedAt));
+}
 
-  return `${dateTimeFormatter.format(new Date(row.lastModifiedAt))} · ${actor}`;
+function formatLastModifiedBy(row: HqDashboardRow) {
+  if (row.lastModifiedBy === null) {
+    return "입력 전";
+  }
+
+  return row.lastModifiedBy.name ?? row.lastModifiedBy.email ?? "수정자 없음";
+}
+
+function getDashboardEmptyStateMessage(dashboard: HqDashboardData) {
+  if (dashboard.emptyStateReason === "no-authorized-stores") {
+    return "권한이 부여된 활성 지점이 없습니다. 사용자/권한에서 지점 배정을 확인해 주세요.";
+  }
+
+  if (
+    dashboard.emptyStateReason === "no-active-stores" ||
+    dashboard.summary.totalStores === 0
+  ) {
+    return "활성 지점이 없습니다. 기준정보에서 지점을 먼저 등록해 주세요.";
+  }
+
+  return "조건에 맞는 지점이 없습니다. 필터를 전체로 바꾸면 모든 지점을 볼 수 있습니다.";
 }

@@ -1,0 +1,200 @@
++}) => {
++  const user = await prisma.user.findUniqueOrThrow({
++    where: { email: "hq-assigned@example.com" },
++    select: { id: true },
++  });
++
++  await login(page, "hq-assigned@example.com");
++  await page.goto("/app/store-entry?storeId=store-seocho");
++  await expect(page.getByRole("heading", { name: "서초점" })).toBeVisible();
++
++  await prisma.userStoreAssignment.delete({
++    where: {
++      userId_storeId: {
++        userId: user.id,
++        storeId: "store-seocho",
++      },
++    },
++  });
++
++  try {
++    await page.goto("/app/store-entry?storeId=store-seocho");
++
++    await expect(page).toHaveURL(/\/app\/unauthorized/);
++    await expect(
++      page.getByRole("heading", { name: "접근 권한이 없습니다." }),
++    ).toBeVisible();
++    await expect(page.getByText("서초점")).toHaveCount(0);
++  } finally {
++    await prisma.userStoreAssignment.upsert({
++      where: {
++        userId_storeId: {
++          userId: user.id,
++          storeId: "store-seocho",
++        },
++      },
++      create: {
++        userId: user.id,
++        storeId: "store-seocho",
++      },
++      update: {},
++    });
++  }
++});
++
+ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만든다", async () => {
+   const users = await prisma.user.findMany({
+     where: {
+diff --git a/tests/unit/anomaly-thresholds.test.mjs b/tests/unit/anomaly-thresholds.test.mjs
+index 0af3a6d84bacd2a1d1c061144cd9b6ebf6d24c3c..a592632142e1f1450999eff18d68154eb952a4a6
+--- a/tests/unit/anomaly-thresholds.test.mjs
++++ b/tests/unit/anomaly-thresholds.test.mjs
+@@ -280,7 +280,7 @@
+   assert.match(querySource, /requireSettingsAccess\(\)/);
+   assert.match(
+     querySource,
+-    /getAnomalyThresholdSettingsForSignals[\s\S]*requireSettingsAccess\(\)/,
++    /getAnomalyThresholdSettingsForSignals[\s\S]*requireReportAccess\(\)/,
+   );
+   assert.match(querySource, /anomalyThresholdSetting\.findUnique/);
+   assert.match(querySource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
+diff --git a/tests/unit/auth-guard.test.mjs b/tests/unit/auth-guard.test.mjs
+index 482b93a50c4eb352b2d9df827d77101b7e63685e..a5325a6305db57cd802fbe52c1bf3f89c1d5345f
+--- a/tests/unit/auth-guard.test.mjs
++++ b/tests/unit/auth-guard.test.mjs
+@@ -101,6 +101,128 @@
+   assert.match(authz, /assignments:\s*{\s*some:\s*{\s*userId:\s*currentUser\.id/s);
+ });
+
++test("server authorization helper exposes profile-aware semantic gates", () => {
++  const authz = readFileSync(
++    path.join(root, "src", "server", "authz.ts"),
++    "utf8",
++  );
++
++  for (const helper of [
++    "requireSettingsAccess",
++    "requireUserPermissionAccess",
++    "requireReportAccess",
++    "requireLedgerHqEditAccess",
++    "requireLedgerHqCloseAccess",
++    "requireCorrectionCreateAccess",
++    "requireExportCreateAccess",
++    "getHeadquartersStoreScope",
++    "requireHeadquartersStoreScope",
++  ]) {
++    assert.match(authz, new RegExp(`export async function ${helper}\\(`));
++  }
++
++  for (const action of [
++    "SETTINGS_MANAGE",
++    "USER_PERMISSION_MANAGE",
++    "REPORT_VIEW",
++    "LEDGER_EDIT",
++    "LEDGER_HQ_CLOSE",
++    "CORRECTION_CREATE",
++    "EXPORT_CREATE",
++  ]) {
++    assert.match(authz, new RegExp(`PermissionAction\\.${action}`));
++  }
++
++  assert.match(authz, /db\.user\.findFirst\(/);
++  assert.match(authz, /isActive:\s*true/);
++  assert.match(authz, /permissionProfiles:\s*{\s*some:/s);
++  assert.match(authz, /profile:\s*{\s*isActive:\s*true/s);
++  assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
++  assert.match(authz, /StoreAccessMode\.ASSIGNED_STORES/);
++  assert.match(authz, /StoreAccessMode\.ALL_STORES/);
++});
++
++test("headquarters navigation is derived from database-backed permissions", () => {
++  const appSidebar = readFileSync(
++    path.join(root, "src", "components", "app-sidebar.tsx"),
++    "utf8",
++  );
++  const hqShell = readFileSync(
++    path.join(root, "src", "components", "headquarters-shell.tsx"),
++    "utf8",
++  );
++  const dashboardPage = readFileSync(
++    path.join(root, "src", "app", "app", "dashboard", "page.tsx"),
++    "utf8",
++  );
++
++  assert.match(appSidebar, /navigationItems/);
++  assert.match(appSidebar, /requiredAction/);
++  assert.match(appSidebar, /PermissionAction\.REPORT_VIEW/);
++  assert.match(appSidebar, /PermissionAction\.SETTINGS_MANAGE/);
++  assert.match(appSidebar, /PermissionAction\.USER_PERMISSION_MANAGE/);
++  assert.match(appSidebar, /filterHeadquartersNavigationItems/);
++  assert.doesNotMatch(appSidebar, /const navigationItems = \[[\s\S]*\] satisfies AppSidebarNavigationItem\[\];/);
++
++  assert.match(hqShell, /navigationItems/);
++  assert.match(hqShell, /<AppSidebar[\s\S]*navigationItems={navigationItems}/);
++  assert.match(dashboardPage, /getHeadquartersNavigationItems/);
++});
++
++test("headquarters pages and queries use semantic action gates before data reads", () => {
++  const expected = [
++    {
++      file: path.join(root, "src", "app", "app", "dashboard", "page.tsx"),
++      gate: "requireReportAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "dashboard", "queries.ts"),
++      gate: "requireReportAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "reports", "queries.ts"),
++      gate: "requireReportAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "master-data", "queries.ts"),
++      gate: "requireSettingsAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "master-data", "user-queries.ts"),
++      gate: "requireUserPermissionAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "master-data", "user-actions.ts"),
++      gate: "requireUserPermissionAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "ledger", "hq-edit-actions.ts"),
++      gate: "requireLedgerHqEditAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "inventory", "hq-edit-actions.ts"),
++      gate: "requireLedgerHqEditAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "losses", "hq-edit-actions.ts"),
++      gate: "requireLedgerHqEditAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "ledger", "hq-close-actions.ts"),
++      gate: "requireLedgerHqCloseAccess",
++    },
++    {
++      file: path.join(root, "src", "features", "corrections", "actions.ts"),
++      gate: "requireCorrectionCreateAccess",
++    },
++  ];
++
++  for (const { file, gate } of expected) {
++    const source = readFileSync(file, "utf8");
++    assert.match(source, new RegExp(gate));
++  }
++});
++
+ test("store entry routes reject repeated storeId query values before authorization", () => {
+   const authz = readFileSync(
+     path.join(root, "src", "server", "authz.ts"),
+diff --git a/tests/unit/hq-dashboard.test.mjs b/tests/unit/hq-dashboard.test.mjs
+index cb21d983e646bdb3d9a3403e4d487d7f9f87cf1e..071b4fcda845f0e5e1098f2a8f1b1771d2736124
+--- a/tests/unit/hq-dashboard.test.mjs
++++ b/tests/unit/hq-dashboard.test.mjs
+@@ -65,7 +65,7 @@
+     "dashboard",
+     "loading.tsx",

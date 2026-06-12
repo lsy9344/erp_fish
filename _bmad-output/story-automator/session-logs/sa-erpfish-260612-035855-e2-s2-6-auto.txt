@@ -1,0 +1,1955 @@
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+ succeeded in 917ms:
+tests/e2e/store-ledger-inventory-adjustment.spec.ts 163ms
+_bmad-output/implementation-artifacts/tests/test-summary.md 37ms (unchanged)
+
+exec
+/bin/bash -lc 'git diff -- tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806..9266ad1 100644
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
+-- [x] `corepack pnpm typecheck` - pass.
+ - [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
++- [x] `corepack pnpm typecheck` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index 095657a..1c48ba2 100644
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -8,10 +8,10 @@ import {
+
+ const prisma = new PrismaClient();
+ const STORY_STORE_ID = "store-gangnam";
+-const STORY_MARKER = "story-2-5-test";
++const STORY_MARKER = "story-2-6-test";
+
+ test.afterAll(async () => {
+-  await cleanupStoryTwoFiveData();
++  await cleanupStoryTwoSixAdjustmentData();
+   await prisma.$disconnect();
+ });
+
+@@ -34,6 +34,16 @@ async function login(page: Page) {
+   await expect(page).toHaveURL(/\/app\//);
+ }
+
++function getAdjustmentButton(page: Page, productName: string) {
++  return page.getByRole("button", { name: `${productName} 조정 조정` });
++}
++
++async function expectAdjustmentSaveSucceeded(page: Page) {
++  await expect(
++    page.getByRole("status").filter({ hasText: "조정이 저장됐습니다." }),
++  ).toBeVisible();
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -49,6 +59,21 @@ async function seedProduct(name: string, category = "냉동", unitPrice = 12000)
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -99,14 +124,22 @@ async function seedTodayLedger(status: DailyLedgerStatus = "IN_PROGRESS") {
+   });
+ }
+
+-async function cleanupStoryTwoFiveData() {
++async function cleanupStoryTwoSixAdjustmentData() {
+   const products = await prisma.product.findMany({
+     where: {
+-      name: { startsWith: "스토리2-5" },
++      name: { startsWith: "스토리2-6" },
+     },
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -153,6 +186,12 @@ async function cleanupStoryTwoFiveData() {
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -164,17 +203,23 @@ async function cleanupStoryTwoFiveData() {
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+-  await cleanupStoryTwoFiveData();
++  await cleanupStoryTwoSixAdjustmentData();
+ });
+
+ test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시 표시한다", async ({
+   page,
+ }) => {
+   await login(page);
+-  const product = await seedProduct("스토리2-5 조정 광어", "냉동", 12000);
++  const product = await seedProduct("스토리2-6 조정 광어", "냉동", 12000);
+   const ledger = await seedTodayLedger();
+
+   await prisma.inventoryOpeningSnapshot.create({
+@@ -197,9 +242,9 @@ test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시
+   await expect(row.getByText("조정 필요").first()).toBeVisible();
+
+   await page.getByLabel(`${product.name} 조정 사유`).fill("실사 재고 차이");
+-  await page.getByRole("button", { name: `${product.name} 조정 기록` }).click();
++  await getAdjustmentButton(page, product.name).click();
+
+-  await expect(page.getByText("조정이 저장됐습니다.")).toBeVisible();
++  await expectAdjustmentSaveSucceeded(page);
+   await page.reload();
+
+   const updatedRow = page.locator("tr").filter({ hasText: product.name });
+@@ -210,8 +255,37 @@ test("실제 재고 차이를 조정 사유와 함께 저장하고 재방문 시
+   await expect(updatedRow.getByText("조정 후")).toBeVisible();
+   await expect(updatedRow.getByText("9").first()).toBeVisible();
+   await expect(updatedRow.getByText("차이").first()).toBeVisible();
+-  await expect(updatedRow.getByText("+2")).toBeVisible();
+-  await expect(updatedRow.getByText("실사 재고 차이")).toBeVisible();
++  await expect(updatedRow.getByText("+2", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "실사 재고 차이",
++  );
++  await expect(updatedRow.getByText("금액 기준 확인 필요")).toBeVisible();
++
++  const adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 9,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++  });
++
++  await expect(updatedRow).not.toContainText(
++    /unitPrice|purchaseAmount|lossAmount|inventoryAmount|beforeAmount|afterAmount|differenceAmount|FIFO/,
++  );
+
+   const auditLog = await prisma.auditLog.findFirst({
+     where: {
+@@ -234,7 +308,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
+ }) => {
+   await page.setViewportSize({ width: 390, height: 844 });
+   await login(page);
+-  const product = await seedProduct("스토리2-5 사유 우럭", "냉동", 8000);
++  const product = await seedProduct("스토리2-6 사유 우럭", "냉동", 8000);
+   await seedTodayLedger();
+
+   await prisma.inventoryOpeningSnapshot.create({
+@@ -254,9 +328,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
+
+   await page.getByLabel(`${product.name} 당일재고`).fill("6");
+   const reasonInput = page.getByLabel(`${product.name} 조정 사유`);
+-  const saveButton = page.getByRole("button", {
+-    name: `${product.name} 조정 기록`,
+-  });
++  const saveButton = getAdjustmentButton(page, product.name);
+
+   await saveButton.click();
+
+@@ -273,7 +345,7 @@ test("조정 사유가 비어 있으면 저장을 막고 사유 필드에 포커
+ test("본사 마감 장부는 원본 재고 조정을 막고 정정 기록 안내를 보여준다", async ({
+   page,
+ }) => {
+-  const product = await seedProduct("스토리2-5 마감 참돔", "냉동", 7000);
++  const product = await seedProduct("스토리2-6 마감 참돔", "냉동", 7000);
+   await seedTodayLedger("HEADQUARTERS_CLOSED");
+
+   await prisma.inventoryOpeningSnapshot.create({
+@@ -299,16 +371,15 @@ test("본사 마감 장부는 원본 재고 조정을 막고 정정 기록 안
+       )
+       .first(),
+   ).toBeVisible();
+-  await expect(
+-    page.getByRole("button", { name: `${product.name} 조정 기록` }),
+-  ).toBeDisabled();
++  await expect(page.getByText("정정 기록 사용").first()).toBeVisible();
++  await expect(getAdjustmentButton(page, product.name)).toHaveCount(0);
+ });
+
+ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조정을 저장한다", async ({
+   page,
+ }) => {
+   await login(page);
+-  const product = await seedProduct("스토리2-5 검토 농어", "생물", 9000);
++  const product = await seedProduct("스토리2-6 검토 농어", "생물", 9000);
+   await seedTodayLedger("IN_REVIEW");
+
+   await prisma.inventoryOpeningSnapshot.create({
+@@ -328,9 +399,9 @@ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조
+   await page.getByRole("tab", { name: "생물" }).click();
+   await page.getByLabel(`${product.name} 당일재고`).fill("4");
+   await page.getByLabel(`${product.name} 조정 사유`).fill("검토 중 실사 차이");
+-  await page.getByRole("button", { name: `${product.name} 조정 기록` }).click();
++  await getAdjustmentButton(page, product.name).click();
+
+-  await expect(page.getByText("조정이 저장됐습니다.")).toBeVisible();
++  await expectAdjustmentSaveSucceeded(page);
+   await expect(
+     page
+       .locator("tr")
+@@ -339,3 +410,112 @@ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct(
++    "스토리2-6 손실 재계산 방어",
++    "냉동",
++    11000,
++  );
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page.getByLabel(`${product.name} 조정 사유`).fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+exec
+/bin/bash -lc 'git status --short tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M tests/e2e/store-ledger-inventory-adjustment.spec.ts
+
+exec
+/bin/bash -lc 'corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs' in /home/noah/code/erp_fish
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806fb2f6419aa1a4a5483a0152cce0138cd7..9266ad1eb1fa488e50c765601f991b01611bdc00
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm typecheck` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index fdee8fc2666e056043eaf4cdba9239c8de0bb919..8daae4986ca5af72e5a9c1914ac4da8136ecfbdc
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -59,6 +59,21 @@
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -117,6 +132,14 @@
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+ succeeded in 413ms:
+TAP version 13
+# Subtest: tests/unit/ledger-inventory.test.mjs
+ok 1 - tests/unit/ledger-inventory.test.mjs
+  ---
+  duration_ms: 105.847196
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 112.287678
+
+codex
+포맷 후 focused unit도 다시 통과했습니다. BMAD `on_complete` 설정을 확인해 후속 터미널 지시가 있는지 마무리 확인하겠습니다.
+exec
+/bin/bash -lc 'python3 _bmad/scripts/resolve_customization.py --skill .agents/skills/bmad-qa-generate-e2e-tests --key workflow.on_complete' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+{
+  "workflow.on_complete": ""
+}
+
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806fb2f6419aa1a4a5483a0152cce0138cd7..9266ad1eb1fa488e50c765601f991b01611bdc00
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm typecheck` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index fdee8fc2666e056043eaf4cdba9239c8de0bb919..8daae4986ca5af72e5a9c1914ac4da8136ecfbdc
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -59,6 +59,21 @@
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -117,6 +132,14 @@
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+codex
+`on_complete`는 비어 있어 추가 BMAD 종료 지시는 없습니다. 마지막으로 변경 파일 목록만 확인하고 결과를 정리하겠습니다.
+exec
+/bin/bash -lc 'git status --short && git diff --stat -- tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M .agents/skills/bmad-story-automator/data/agent-config-presets.json
+ M .gitignore
+ D "_bmad-output/implementation-artifacts/2-6-\354\247\200\354\240\220\354\236\245\354\235\264-\354\206\220\354\213\244-\355\217\220\352\270\260-\353\226\250\354\235\264\353\245\274-\354\236\205\353\2
+40\245\355\225\230\352\263\240-\354\236\254\352\263\240-\355\235\220\353\246\204\354\227\220-\353\260\230\354\230\201\355\225\234\353\213\244.md"
+ M _bmad-output/implementation-artifacts/sprint-status.yaml
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M _bmad-output/planning-artifacts/architecture.md
+ M _bmad-output/planning-artifacts/epics.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/.decision-log.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md
+ M prisma/schema.prisma
+ M src/features/inventory/actions.ts
+ M src/features/inventory/adjustment-reconciliation.ts
+ M src/features/inventory/components/inventory-step-client.tsx
+ M src/features/inventory/hq-edit-actions.ts
+ M src/features/inventory/queries.ts
+ M src/features/inventory/types.ts
+ M tests/e2e/store-ledger-inventory-adjustment.spec.ts
+ M tests/unit/ledger-inventory.test.mjs
+?? "_bmad-output/implementation-artifacts/2-6-\354\236\254\352\263\240-\354\241\260\354\240\225-\352\270\260\353\241\235.md"
+?? _bmad-output/planning-artifacts/implementation-readiness-report-2026-06-11.md
+?? _bmad-output/story-automator/
+?? prisma/migrations/20260612034000_inventory_adjustment_amount_status/
+ .../implementation-artifacts/tests/test-summary.md |  30 +--
+ .../e2e/store-ledger-inventory-adjustment.spec.ts  | 222 +++++++++++++++++++--
+ 2 files changed, 217 insertions(+), 35 deletions(-)
+
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806fb2f6419aa1a4a5483a0152cce0138cd7..9266ad1eb1fa488e50c765601f991b01611bdc00
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm typecheck` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index fdee8fc2666e056043eaf4cdba9239c8de0bb919..8daae4986ca5af72e5a9c1914ac4da8136ecfbdc
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -59,6 +59,21 @@
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -117,6 +132,14 @@
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+exec
+/bin/bash -lc 'rg -n "손실 저장 후 기존 재고 조정|seedLossType|Test Automation Summary" tests/e2e/store-ledger-inventory-adjustment.spec.ts _bmad-output/implementation-artifacts/tests/test-summary.md'
+ in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/tests/test-summary.md:1:# Test Automation Summary
+tests/e2e/store-ledger-inventory-adjustment.spec.ts:62:async function seedLossType(name: string) {
+tests/e2e/store-ledger-inventory-adjustment.spec.ts:414:test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
+tests/e2e/store-ledger-inventory-adjustment.spec.ts:423:  const lossType = await seedLossType("스토리2-6 재계산 폐기");
+
+exec
+/bin/bash -lc 'rg -n "blocked|Validation|Generated Tests" _bmad-output/implementation-artifacts/tests/test-summary.md' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+3:## Generated Tests
+27:## Validation
+34:- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts`
+- blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+43:- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806fb2f6419aa1a4a5483a0152cce0138cd7..9266ad1eb1fa488e50c765601f991b01611bdc00
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm typecheck` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index fdee8fc2666e056043eaf4cdba9239c8de0bb919..8daae4986ca5af72e5a9c1914ac4da8136ecfbdc
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -59,6 +59,21 @@
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -117,6 +132,14 @@
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+codex
+BMAD QA E2E workflow for Story 2.6 실행 완료했습니다.
+
+변경:
+- [store-ledger-inventory-adjustment.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-inventory-adjustment.spec.ts:414)에 손실 저장 후 기존 재고 조정의 `beforeQuantity`/`differenceQuantity`가
+재계산되는 E2E 회귀 테스트를 추가했습니다.
+- [test-summary.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/tests/test-summary.md:1)를 Story 2.6 기준으로 갱신했습니다.
+
+검증:
+- `ledger-inventory.test.mjs` focused unit: pass
+- `pnpm typecheck`: pass
+- `pnpm lint`: pass
+- `prisma validate`: pass
+- `pnpm test:unit`: 29/29 pass
+- Playwright focused E2E는 현재 sandbox가 로컬 포트 listen을 막아 실행 불가: `listen EPERM: operation not permitted 127.0.0.1:3106`
+
+BMAD `on_complete`는 비어 있어 추가 종료 지시는 없었습니다.
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index a820806fb2f6419aa1a4a5483a0152cce0138cd7..9266ad1eb1fa488e50c765601f991b01611bdc00
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -4,32 +4,34 @@
+
+ ### API Tests
+
+-- [x] N/A - Story 2.5는 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI 흐름으
+로 검증한다.
++- [x] N/A - Story 2.6은 public API route를 추가하지 않고 Next.js Server Action과 Prisma transaction 경로로 재고 조정 저장/조회 계약을 처리한다. 서버 계약은 focused unit/source tests와 Playwright UI
+흐름으로 검증한다.
+
+ ### E2E Tests
+
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면의 민감 금액 직렬화 차단, 월초 스냅샷 이월, 직전 본사 마감 장부 이월, 직전 미마감 장부 `검토 필요`, 이월 근거 없음 `이월 공백`, 30개
+ 이상 행 paging, 390px 모바일 입력성을 검증한다.
+-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 추가 gap으로 월초 스냅샷에 누락된 활성 품목의 `데이터 부족` 상태와, 마감 후 이월 기준이 바뀐 기존 저장 행의 `이월 재확인 필요` 및 자동 덮어쓰기 방지
+를 보강했다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 실제 재고 차이 저장, 조정 전/후/차이 수량 표시, 조정 사유 persistence, audit reason, 금액 정책 `POLICY_UNCONFIRMED`, 지점장 민감 금액 미
+노출을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 조정 사유 누락 시 필드 오류와 focus, 본사 마감 장부 원본 조정 차단, `IN_REVIEW` 원본 조정 허용을 검증한다.
++- [x] `tests/e2e/store-ledger-inventory-adjustment.spec.ts` - 추가 gap으로 기존 조정 저장 후 손실 입력을 저장하면 조정 전 기준 수량과 차이 수량이 재계산되고 기존 사유와 금액 정책 상태가 보존되는 회귀
+ 테스트를 보강했다.
+
+ ### Unit Tests
+
+-- [x] `tests/unit/ledger-inventory.test.mjs` - carryover source/status schema and migration contract, 재고 schema, 재고 계산, safe store manager response, query/action/audit/UI wiring을 검증한다.
++- [x] `tests/unit/ledger-inventory.test.mjs` - adjustment model/migration, amount policy status, reason validation, calculation contract, query/action/audit wiring, safe store manager response, adjus
+tment reconciliation source contracts를 검증한다.
+
+ ## Coverage
+
+-- API endpoints: N/A. Story 2.5 범위에는 별도 public API endpoint가 없다.
+-- Server actions/contracts: `saveLedgerInventoryItems`, `saveLedgerInventoryAdjustment`, `requireStoreAccess`, editable ledger status guard, stale `version` conflict, audit logging, revalidation, adj
+ustment reconciliation, safe store manager response covered by unit/source tests and E2E user paths.
+-- UI workflows: 냉동/생물 탭, 전일재고 후보 표시, 재고 수량 저장/재방문, source/status badge, sticky/paged large inventory table, mobile validation focus, closed-ledger edit lock messaging, sensitive
+ field omission.
+-- Happy path: 월초/전일 이월 후보 표시 후 당일재고 저장과 reload persistence.
+-- Critical error/status cases: `검토 필요`, `이월 공백`, `데이터 부족`, `이월 재확인 필요`, sensitive amount omission, invalid quantity focus, 30+ row paging.
++- API endpoints: N/A. Story 2.6 범위에는 별도 public API endpoint가 없다.
++- Server actions/contracts: `saveLedgerInventoryAdjustment`, `saveLedgerInventoryItems`, `saveLedgerLosses`, `reconcileLedgerInventoryAdjustments`, editable ledger status guard, stale `version` confl
+ict, audit reason, amount policy status, safe store manager response covered by unit/source tests and E2E user paths.
++- UI workflows: 재고 조정 저장/재방문, 사유 필수 오류, 마감 후 정정 기록 안내, 검토 대기 상태 조정, 손실 저장 후 재고 조정 재계산.
++- Happy path: 시스템 기준 수량과 실제 수량 차이를 사유와 함께 저장하고 재방문 시 조정 전/후/차이를 표시한다.
++- Critical error/status cases: 사유 누락, 본사 마감 차단, `IN_REVIEW` 허용, 민감 금액 미노출, 손실 변경 후 stale adjustment 방지.
+
+ ## Validation
+
+-- [x] `corepack pnpm exec prettier --write tests/e2e/store-ledger-inventory.spec.ts` - pass.
++- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm typecheck` - pass.
+-- [x] `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` - pass.
+ - [x] `corepack pnpm lint` - pass.
+-- [x] `PORT=3100 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` - 10/10 passe
+d after scoping save/status locators and using isolated today-ledger upserts.
++- [x] `corepack pnpm exec prisma validate` - pass.
++- [x] `corepack pnpm test:unit` - 29/29 passed.
++- [ ] `PORT=3106 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory-adjustment.spec.ts` -
+blocked in this sandbox because Next.js cannot bind local ports: `listen EPERM: operation not permitted 127.0.0.1:3106`.
+
+ ## Checklist Result
+
+@@ -38,9 +40,9 @@
+ - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label/text locators, Node test runner, and Prisma fixture setup.
+ - Happy path covered: complete.
+ - Critical error cases covered: complete.
+-- All generated tests run successfully: unit/source checks pass and focused inventory E2E passes on PORT=3100.
++- All generated tests run successfully: unit/source checks pass; focused E2E is blocked by local port sandbox restriction, not by test assertion output.
+ - Proper locators: complete.
+ - Clear descriptions: complete.
+ - No hardcoded waits or sleeps: complete.
+-- Tests are independent: Story 2.5 product prefixes, per-test cleanup, and isolated ledger fixtures are used.
++- Tests are independent: Story 2.6 product/loss-type prefixes, per-test cleanup, and isolated today-ledger upserts are used.
+ - Summary includes coverage metrics: complete.
+diff --git a/tests/e2e/store-ledger-inventory-adjustment.spec.ts b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+index fdee8fc2666e056043eaf4cdba9239c8de0bb919..8daae4986ca5af72e5a9c1914ac4da8136ecfbdc
+--- a/tests/e2e/store-ledger-inventory-adjustment.spec.ts
++++ b/tests/e2e/store-ledger-inventory-adjustment.spec.ts
+@@ -59,6 +59,21 @@
+   });
+ }
+
++async function seedLossType(name: string) {
++  const actorId = await getHeadquartersUserId();
++  const suffix = randomUUID().slice(0, 8);
++
++  return prisma.ledgerInputCode.create({
++    data: {
++      group: "LOSS_TYPE",
++      name: `${name} ${suffix}`,
++      displayOrder: 500,
++      isActive: true,
++      updatedById: actorId,
++    },
++  });
++}
++
+ function getTodayKstMidnight(inputDate = new Date()) {
+   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+     timeZone: "Asia/Seoul",
+@@ -117,6 +132,14 @@
+     select: { id: true },
+   });
+   const productIds = products.map((product) => product.id);
++  const lossTypes = await prisma.ledgerInputCode.findMany({
++    where: {
++      group: "LOSS_TYPE",
++      name: { startsWith: "스토리2-6" },
++    },
++    select: { id: true },
++  });
++  const lossTypeIds = lossTypes.map((lossType) => lossType.id);
+   const ledgerFilters: Prisma.DailyLedgerWhereInput[] = [
+     { workMemo: { startsWith: STORY_MARKER } },
+   ];
+@@ -163,6 +186,12 @@
+     });
+   }
+
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerLossItem.deleteMany({
++      where: { ledgerInputCodeId: { in: lossTypeIds } },
++    });
++  }
++
+   if (productIds.length > 0) {
+     await prisma.inventoryOpeningSnapshot.deleteMany({
+       where: { productId: { in: productIds } },
+@@ -174,6 +203,12 @@
+       where: { id: { in: productIds } },
+     });
+   }
++
++  if (lossTypeIds.length > 0) {
++    await prisma.ledgerInputCode.deleteMany({
++      where: { id: { in: lossTypeIds } },
++    });
++  }
+ }
+
+ test.beforeEach(async () => {
+@@ -375,3 +410,110 @@
+       .first(),
+   ).toBeVisible();
+ });
++
++test("손실 저장 후 기존 재고 조정의 기준 수량과 차이를 재계산한다", async ({
++  page,
++}) => {
++  await login(page);
++  const product = await seedProduct("스토리2-6 손실 재계산 방어", "냉동", 11000);
++  const lossType = await seedLossType("스토리2-6 재계산 폐기");
++  const ledger = await seedTodayLedger();
++
++  await prisma.inventoryOpeningSnapshot.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      yearMonth: getCurrentYearMonth(),
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      quantity: 10,
++    },
++  });
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  await page.getByLabel(`${product.name} 당일재고`).fill("12");
++  await page
++    .getByLabel(`${product.name} 조정 사유`)
++    .fill("손실 반영 전 실사");
++  await getAdjustmentButton(page, product.name).click();
++  await expectAdjustmentSaveSucceeded(page);
++
++  let adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 10,
++    afterQuantity: 12,
++    differenceQuantity: 2,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++
++  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
++  await page.getByRole("button", { name: "항목 추가" }).click();
++  await page.getByLabel("품목").selectOption(product.id);
++  await page.getByLabel("처리 유형").selectOption(lossType.id);
++  await page.getByLabel("수량").fill("3");
++  await page.getByLabel("손실액(원)").fill("33000");
++  await page.getByLabel("사유/특이사항").fill("조정 후 폐기 발견");
++  await page.getByRole("button", { name: "저장" }).click();
++  await expect(
++    page
++      .getByRole("status")
++      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
++  ).toBeVisible();
++
++  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
++  const updatedRow = page.locator("tr").filter({ hasText: product.name });
++
++  await expect(updatedRow.getByText("조정됨").first()).toBeVisible();
++  await expect(updatedRow.getByText("기준 7")).toBeVisible();
++  await expect(updatedRow.getByText("조정 전")).toBeVisible();
++  await expect(updatedRow.getByText("7").first()).toBeVisible();
++  await expect(updatedRow.getByText("조정 후")).toBeVisible();
++  await expect(updatedRow.getByText("12").first()).toBeVisible();
++  await expect(updatedRow.getByText("차이").first()).toBeVisible();
++  await expect(updatedRow.getByText("+5", { exact: true })).toBeVisible();
++  await expect(page.getByLabel(`${product.name} 조정 사유`)).toHaveValue(
++    "손실 반영 전 실사",
++  );
++
++  adjustment = await prisma.ledgerInventoryAdjustment.findUnique({
++    where: {
++      dailyLedgerId_productId: {
++        dailyLedgerId: ledger.id,
++        productId: product.id,
++      },
++    },
++    select: {
++      beforeQuantity: true,
++      afterQuantity: true,
++      differenceQuantity: true,
++      amountStatus: true,
++      reason: true,
++    },
++  });
++
++  expect(adjustment).toMatchObject({
++    beforeQuantity: 7,
++    afterQuantity: 12,
++    differenceQuantity: 5,
++    amountStatus: "POLICY_UNCONFIRMED",
++    reason: "손실 반영 전 실사",
++  });
++});
+
+tokens used
+124,028
+
+Pane is dead (status 0, Fri Jun 12 04:02:53 2026)

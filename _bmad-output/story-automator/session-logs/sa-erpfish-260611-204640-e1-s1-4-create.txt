@@ -1,0 +1,200 @@
++### Project Structure Notes
++
++- Shared authorization은 `src/server/authz.ts` 중심으로 둔다.
++- Shared sensitive-field policy는 feature-local mapper가 중복되기 시작하면 `src/server`의 server-only helper로 올린다.
++- Feature reads는 `src/features/{domain}/queries.ts`, mutations는 `src/features/{domain}/actions.ts`에서 shared helper를 호출한다.
++- UI navigation filtering은 사용자 편의 기능이고, 실제 보안은 page/query/action/route handler/export의 서버 gate와 response shaping에서 완성한다.
++
++### References
++
++- [Source: `_bmad-output/planning-artifacts/epics.md#Story 1.4: 서버 권한 헬퍼와 민감 필드 응답 차단`]
++- [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#MVP 민감 데이터 노출 최소 기준`]
++- [Source: `_bmad-output/planning-artifacts/architecture.md#Authorization Pattern`]
++- [Source: `_bmad-output/planning-artifacts/architecture.md#Sensitive Field Gate`]
++- [Source: `_bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#SensitiveMetricGuard`]
++- [Source: `_bmad-output/implementation-artifacts/1-3-역할-기반-로그인과-지점-접근-제한.md`]
++- [Source: `src/server/authz.ts`]
++- [Source: `src/features/ledger/response-shaping.ts`]
++- [Source: `src/features/ledger/review-types.ts`]
++- [Source: `src/features/inventory/types.ts`]
++- [Source: `src/features/dashboard/queries.ts`]
++- [Source: `src/features/reports/queries.ts`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++GPT-5 Codex
++
++### Debug Log References
++
++### Completion Notes List
++
++- Ultimate context engine analysis completed - comprehensive developer guide created.
++- Story status set to `ready-for-dev`.
++
++### File List
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 30c51956b81ae437986235bf0024281eb990c886..49207eea5e50af6690057303b89b77e5c40cb5db
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T20:35:27+09:00
++# last_updated: 2026-06-11T20:49:02+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T20:35:27+09:00"
++last_updated: "2026-06-11T20:49:02+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -46,7 +46,7 @@
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+   1-2-사용자-지점-권한-프로파일-모델링: done
+   1-3-역할-기반-로그인과-지점-접근-제한: done
+-  1-4-서버-권한-헬퍼와-민감-필드-응답-차단: backlog
++  1-4-서버-권한-헬퍼와-민감-필드-응답-차단: ready-for-dev
+   1-5-감사-로그-기반-구축: backlog
+   epic-1-retrospective: optional
+   epic-2: in-progress
+
+codex
+완료했습니다.
+
+새 canonical Story 1.4 파일을 생성했습니다: [_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-4-서버-
+권한-헬퍼와-민감-필드-응답-차단.md:1)
+
+`sprint-status.yaml`도 갱신했습니다: [_bmad-output/implementation-artifacts/sprint-status.yaml](/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml:49)
+
+상태는 `ready-for-dev`로 설정했습니다. 기존의 오래된 `1-4-본사가-사용자-계정과-지점-접근-권한을-관리한다.md`는 현재 sprint key와 다른 과거 scope라 삭제하지 않았습니다.
+
+검증: BMAD checklist 기준으로 story/source alignment, 이전 Story 1.3 반영, 현재 코드 gap, 파일 위치, 테스트 요구사항, sprint status 일치를 확인했습니다. 코드 테스트는 실행하지 않았습니다.
+diff --git a/_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md b/_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca5622ca3f196e3f321b3560472f657fee3c36d4
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md
+@@ -0,0 +1,194 @@
++---
++story_key: 1-4-서버-권한-헬퍼와-민감-필드-응답-차단
++story_id: "1.4"
++epic: "1"
++created_at: "2026-06-11T20:49:02+09:00"
++source_story: "_bmad-output/planning-artifacts/epics.md"
++baseline_commit: bb443c3
++---
++
++# Story 1.4: 서버 권한 헬퍼와 민감 필드 응답 차단
++
++Status: ready-for-dev
++
++## Story
++
++As a 개발자,
++I want 권한 확인과 민감 필드 차단을 공통 서버 헬퍼로 사용할 수 있기를 원한다,
++so that 이후 장부, 리포트, export 기능이 각자 다른 방식으로 보안을 구현하지 않는다.
++
++## Acceptance Criteria
++
++1. Given 서버 코드가 사용자 권한을 확인해야 할 때, when 기능 코드가 공통 authorization helper를 호출한다, then helper는 로그인 여부, 권한 프로파일, 지점 접근 범위, action 권한을 함께 확인해야 한다, a
+nd 권한 없는 요청은 업무 로직 실행 전에 중단되어야 한다.
++2. Given 본사 action 권한이 필요한 요청이 있을 때, when close, correction, upload, settings, report/export 같은 action을 검사한다, then 각 action은 명시된 permission key 또는 동등한 구조로 확인되어야
+ 한다, and 단순히 `본사 사용자`라는 큰 역할만으로 모든 action을 허용하면 안 된다.
++3. Given 지점장 경로에서 장부나 리포트 데이터를 조회할 때, when 서버가 응답 데이터를 만든다, then 매출원가, 매출이익, 영업이익, 이익률, 인당생산성, 재고금액, lot 근거, 본사 고정비, 타 지점 비교 같은
+민감 필드는 응답에서 제거되어야 한다, and 클라이언트에서 숨기는 방식에 의존하면 안 된다.
++4. Given 본사 조회 전용 권한이 있는 사용자가 리포트나 export를 요청할 때, when 서버가 응답 필드와 대상 지점을 결정한다, then 허용된 지점/기간/컬럼만 포함해야 한다, and 권한 밖 지점이나 권한 없는 민감
+ 컬럼은 반환하지 않아야 한다.
++5. Given 새로운 feature action이 추가될 때, when 개발자가 권한 검사를 구현한다, then 기존 공통 helper 패턴을 재사용해야 한다, and one-off role check를 만들면 코드 리뷰에서 차단할 수 있어야 한다.
++
++## Tasks / Subtasks
++
++- [ ] RED: Story 1.4 권한/민감 필드 회귀 테스트를 먼저 추가한다. (AC: 1-5)
++  - [ ] `tests/unit/auth-guard.test.mjs`에 action별 semantic gate가 `requireHeadquartersUser()` 단독 통과가 아니라 `PermissionAction`과 store scope를 함께 요구한다는 문자열/구조 검증을 보강한다.
++  - [ ] 새 `tests/unit/sensitive-response-shaping.test.mjs`를 추가해 store-manager용 response shaping 결과 JSON에 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity
+`, `inventoryAmount`, `unitPrice`, `beforeAmount`, `afterAmount`, `differenceAmount`, `lot`, `fixedCost`, `comparisonStore` 계열 key가 없음을 검증한다.
++  - [ ] `tests/e2e/store-ledger-review.spec.ts` 또는 새 `tests/e2e/sensitive-fields.spec.ts`에서 지점장 검토/재고/손실 화면 응답과 페이지 본문에 원가·이익·재고금액·마진율·인당생산성 텍스트/값이 노출
+되지 않는지 검증한다.
++  - [ ] `tests/e2e/permission-profiles.spec.ts` 또는 report subset에서 `hq-assigned@example.com`이 허용 지점만 조회하고 권한 밖 지점 row/export 후보를 받지 않는지 검증한다.
++  - [ ] 테스트는 UI 텍스트 숨김만 보지 말고 server query가 넘긴 serialized data 또는 페이지 HTML에 민감 key/value가 없는지도 확인한다.
++- [ ] `src/server/authz.ts`의 Story 1.3 helper를 재사용하고 부족한 semantic action helper만 보완한다. (AC: 1, 2, 4, 5)
++  - [ ] 기존 `requireAppUser()`, `requireHeadquartersActionPermission()`, `requireReportAccess()`, `requireExportCreateAccess()`, `getHeadquartersStoreScope()`, `requireHeadquartersLedgerScope()`, `r
+equireStoreAccess()`를 유지한다.
++  - [ ] close/correction/upload/settings/report/export에 필요한 helper가 빠져 있으면 `src/server/authz.ts`에 추가한다. helper는 매 요청 DB의 `User.isActive`, active `PermissionProfile`, `PermissionPr
+ofileAction`, `UserStoreAssignment`, `Store.isActive`를 다시 확인해야 한다.
++  - [ ] `REPORT_VIEW`와 `EXPORT_CREATE`는 별도 action으로 유지한다. 화면 조회 권한이 export 생성 권한을 자동으로 뜻하지 않는다.
++  - [ ] 권한 실패는 업무 query/mutation 전에 `/app/unauthorized` redirect 또는 `ActionResult` error로 중단한다.
++  - [ ] feature 파일에 새 one-off `user.role === "HEADQUARTERS"` 검사나 profile code 문자열 비교를 추가하지 않는다.
++- [ ] 공통 민감 필드 정책과 response shaping helper를 정리한다. (AC: 3, 4, 5)
++  - [ ] 기존 `src/features/ledger/response-shaping.ts`를 확장하거나, 여러 feature가 공유해야 하면 `src/server/response-shaping.ts` 또는 `src/server/sensitive-fields.ts` 같은 server-only helper로 이동
+/분리한다.
++  - [ ] 지점장 기본 차단 필드는 최소 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity`, `inventoryAmount`, `unitPrice`, 원가 lot/단가 근거, 본사 고정비, 타 지점
+비교 필드다.
++  - [ ] 재고 조정 금액(`beforeAmount`, `afterAmount`, `differenceAmount`)과 loss/inventory 금액이 원가·재고금액을 역추정하게 만들면 지점장 응답에서 수량/상태/사유 중심으로 shape한다.
++  - [ ] 지점장에게 허용되는 값은 자기 지점의 입력값, 장부 상태, 제출/마감 여부, 현장 전달사항, 비민감 검증 메시지, 결제 차이처럼 원가·이익을 역추정하지 않는 값으로 제한한다.
++  - [ ] shaping helper는 shallow omit만 하지 말고 nested summary, metric evidence, inventory rows, adjustment rows, export rows까지 재귀 또는 명시 mapper로 처리한다.
++- [ ] 지점장 장부 입력/검토 query가 shaping helper를 통과하게 한다. (AC: 3)
++  - [ ] `src/features/ledger/queries.ts`의 `toStoreManagerLedgerCostStepData()`는 기존 `grossProfit`, `productivity` 제거를 유지하고 purchase `unitPrice`, `amount`가 지점장에게 필요한 입력값인지 민감
+ 원가 근거인지 PRD 기준으로 검토한다. 노출해야 한다면 PRD상 직접 입력값이라는 근거를 주석/테스트로 남긴다.
++  - [ ] `src/features/ledger/review-types.ts`의 `StoreManagerLedgerReviewSummary`에서 `grossMarginRate`와 `inventoryAmount`를 제거한다. 지점장 검토 화면은 `totalSales`, `paymentDifference`, missing/w
+arning 상태 같은 비민감 요약으로 구성한다.
++  - [ ] `src/features/ledger/response-shaping.ts`의 `toStoreManagerLedgerReviewStepData()`가 `costOfGoodsSold`, `grossProfit`, `grossMarginRate`, `operatingProfit`, `productivity`, `inventoryAmount`
+를 모두 제거함을 테스트한다.
++  - [ ] `src/features/inventory/queries.ts`와 `src/features/inventory/types.ts`는 지점장 응답에서 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, adjustment amount 필드를 제거하거나
+본사 전용 query와 분리한다.
++  - [ ] `src/features/losses/queries.ts`와 `src/features/losses/types.ts`는 지점장 손실 입력에 꼭 필요한 현장 입력값과 본사 전용 원가/손실액 근거를 분리한다.
++- [ ] 본사 dashboard/report/export 조회는 권한과 지점 scope를 함께 적용한다. (AC: 2, 4)
++  - [ ] `src/features/dashboard/queries.ts`와 `src/features/reports/queries.ts`는 현재처럼 `requireReportAccess()`와 `getHeadquartersStoreScope()`를 data read 전에 호출해야 한다. 이 순서를 깨지 않는
+다.
++  - [ ] `ASSIGNED_STORES` 본사는 `storeScope.storeIds`에 포함된 지점만 row, detail href, metric evidence, anomaly item, monthly store option으로 받아야 한다.
++  - [ ] export entrypoint가 있거나 추가되면 반드시 `requireExportCreateAccess()`와 `getHeadquartersStoreScope()`를 호출하고, 화면 row를 재사용하더라도 export 생성 시점 권한을 다시 확인한다.
++  - [ ] 본사 조회 전용 profile에는 설정 mutation, close, correction, user permission mutation을 허용하지 않는다.
++  - [ ] 캐시나 shared-link 성격의 재사용 응답이 생기면 권한별 cache key를 분리하거나 `noStore()`/서버 재조회로 stale 권한 노출을 막는다.
++- [ ] 기존 feature action/query의 broad role check 회귀를 막는다. (AC: 1, 2, 5)
++  - [ ] `rg "requireHeadquartersUser|UserRole\\.HEADQUARTERS|role ===" src`로 broad role-only gate를 점검한다.
++  - [ ] master-data read/mutation은 `requireSettingsAccess()` 또는 `requireUserPermissionAccess()`를 사용한다.
++  - [ ] ledger HQ edit, inventory HQ edit, losses HQ edit는 `requireLedgerHqEditAccess()`와 ledger/store scope를 사용한다.
++  - [ ] close는 `requireLedgerHqCloseAccess()`, correction은 `requireCorrectionCreateAccess()`, report는 `requireReportAccess()`, export는 `requireExportCreateAccess()`를 사용한다.
++  - [ ] URL 직접 접근, Server Component read, Server Action mutation, Route Handler/export 모두 같은 helper contract를 따른다.
++- [ ] 전체 검증을 실행하고 Dev Agent Record에 결과를 기록한다. (AC: 1-5)
++  - [ ] `pnpm exec prisma generate`
++  - [ ] `pnpm exec prisma validate`
++  - [ ] `pnpm lint`
++  - [ ] `pnpm typecheck`
++  - [ ] `pnpm test:unit`
++  - [ ] `pnpm exec playwright test tests/e2e/permission-profiles.spec.ts tests/e2e/store-ledger-review.spec.ts`
++  - [ ] 가능하면 `pnpm test:e2e` 전체 실행. DB/포트/sandbox 문제로 실패하면 실패 원인과 미검증 범위를 정확히 기록한다.
++
++## Dev Notes
++
++### Source Context
++
++- Epic 1의 목표는 본사와 지점장이 권한에 맞게 로그인하고 모든 주요 변경이 추적 가능한 운영 기반을 갖추는 것이다. [Source: `_bmad-output/planning-artifacts/epics.md#Epic 1: 안전한 접근과 운영 감사 기
+반`]
++- Story 1.4 원문은 공통 authorization helper와 민감 필드 차단을 만들어 후속 장부, 리포트, export 기능이 서로 다른 보안 방식을 만들지 않게 하는 것이다. [Source: `_bmad-output/planning-artifacts/epics.
+md#Story 1.4: 서버 권한 헬퍼와 민감 필드 응답 차단`]
++- PRD는 `본사 사용자`를 단일 unrestricted role이 아니라 여러 권한 프로파일의 상위 표현으로 정의한다. 구현 권한은 action 단위로 판단해야 한다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fi
+sh-2026-05-28-2/prd.md#권한 프로파일 기준`]
++- MVP 민감 데이터 최소 기준은 지점장 화면, 서버 응답, export, 공유 링크, 캐시 데이터에 매출원가, 매출이익, 영업이익, 이익률, 인당생산성, 재고금액, 원가 근거, 본사 고정비, 타 지점 비교를 기본 노출하지
+ 않는 것이다. [Source: `_bmad-output/planning-artifacts/prds/prd-erp_fish-2026-05-28-2/prd.md#MVP 민감 데이터 노출 최소 기준`]
++- OQ-10A 승인 전에는 애매한 파생 지표를 지점장 경로에서 숨김으로 본다. OQ-10B 전에는 user-configurable 민감 필드 노출 정책을 구현하지 않는다. [Source: `_bmad-output/planning-artifacts/architecture.md
+#Sensitive Field Gate`]
++- UX의 `SensitiveMetricGuard`는 지점장 화면/API/export/캐시/알림에서 원가·이익·마진율·재고금액·원가 lot 근거·본사 고정비·타 지점 비교를 서버 응답부터 차단해야 한다고 정의한다. [Source: `_bmad-output/
+planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md#컴포넌트/패턴 인벤토리`]
++
++### Current Repository State
++
++- `src/server/authz.ts`는 Story 1.3 이후 `requireAppUser()`, `requireHeadquartersActionPermission()`, `requireSettingsAccess()`, `requireUserPermissionAccess()`, `requireReportAccess()`, `requireLedg
+erHqEditAccess()`, `requireLedgerHqCloseAccess()`, `requireCorrectionCreateAccess()`, `requireExportCreateAccess()`, `getHeadquartersStoreScope()`, `requireHeadquartersLedgerScope()`, `requireStoreAcc
+ess()`를 제공한다. 새 auth layer를 만들지 말고 이 파일을 기준으로 확장한다. [Source: `src/server/authz.ts`]
++- `src/features/ledger/response-shaping.ts`는 현재 지점장 cost step에서 `grossProfit`, `productivity`를 제거하지만 review summary에서는 `grossMarginRate`, `inventoryAmount`를 남긴다. Story 1.4의 핵심
+ 수정 대상이다. [Source: `src/features/ledger/response-shaping.ts`]
++- `src/features/ledger/review-types.ts`의 `StoreManagerLedgerReviewSummary`가 `grossMarginRate`와 `inventoryAmount`를 포함한다. PRD/UX 기준상 지점장 응답에서 제거해야 한다. [Source: `src/features/led
+ger/review-types.ts`]
++- `src/features/inventory/types.ts`의 `InventoryStepLine`은 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, adjustment amount 계열을 포함한다. 지점장 응답과 본사 응답을 분리하거나 ser
+ver shaping을 적용해야 한다. [Source: `src/features/inventory/types.ts`, `src/features/inventory/queries.ts`]

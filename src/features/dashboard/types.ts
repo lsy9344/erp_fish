@@ -7,6 +7,12 @@ export type DashboardSortMode = "priority" | "store-name";
 
 export type DashboardFilterMode = "all" | "needs-attention";
 
+export type DashboardEmptyStateReason =
+  | "no-active-stores"
+  | "no-authorized-stores"
+  | "filtered-empty"
+  | null;
+
 export type DashboardLedgerStatusKey = DailyLedgerStatus | "EMPTY";
 
 export type DashboardLedgerStatus = {
@@ -59,6 +65,7 @@ export type HqDashboardRow = {
   grossMarginRate: LedgerReviewMetric;
   salesDifference: LedgerReviewMetric;
   hasLoss: boolean | null;
+  latestReflectedAt: string | null;
   lastModifiedBy: {
     name: string | null;
     email: string | null;
@@ -85,4 +92,5 @@ export type HqDashboardData = {
   closingDate: string;
   rows: HqDashboardRow[];
   summary: HqDashboardSummary;
+  emptyStateReason: DashboardEmptyStateReason;
 };

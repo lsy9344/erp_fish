@@ -1,0 +1,200 @@
++
++- HIGH fixed: `StoreManagerLossLineItem` omitted only `unitPrice`, so store-manager loss responses still returned persisted per-line `amount`. This violated AC3 and the sensitive response shaping tas
+k for loss amounts. Fixed in `src/features/losses/types.ts`, `src/features/losses/queries.ts`, `src/features/losses/actions.ts`, `src/features/losses/schemas.ts`, `src/features/losses/hq-edit-actions.
+ts`, and `src/features/losses/components/loss-step-client.tsx`.
++- MEDIUM fixed: Story File List did not include all changed review-surface files. Added `src/features/losses/schemas.ts`, `src/features/losses/hq-edit-actions.ts`, `tests/e2e/store-ledger-inventory.s
+pec.ts`, and `tests/e2e/store-ledger-losses.spec.ts`.
++
++Residual risk:
++
++- Playwright E2E execution is still blocked by sandbox networking (`listen EPERM` on `127.0.0.1:3000`). The four targeted E2E files load 20 tests, but browser execution must be rerun in an environmen
+t that permits local port binding.
++
+ ### File List
+
+ - _bmad-output/implementation-artifacts/1-4-서버-권한-헬퍼와-민감-필드-응답-차단.md
+@@ -221,12 +247,17 @@
+ - src/features/losses/types.ts
+ - src/features/losses/queries.ts
+ - src/features/losses/actions.ts
++- src/features/losses/schemas.ts
++- src/features/losses/hq-edit-actions.ts
+ - src/features/losses/components/loss-step-client.tsx
+ - tests/unit/auth-guard.test.mjs
+ - tests/unit/ledger-review.test.mjs
+ - tests/unit/sensitive-response-shaping.test.mjs
++- tests/e2e/store-ledger-inventory.spec.ts
++- tests/e2e/store-ledger-losses.spec.ts
+ - tests/e2e/store-ledger-review.spec.ts
+
+ ### Change Log
+
++- 2026-06-11: Senior review fixed store-manager loss amount response leak, preserved existing hidden loss amounts on later saves, strengthened tests, and moved story to done.
+ - 2026-06-11: Implemented server-side sensitive response shaping for store-manager ledger review, inventory, and losses; preserved action-level authorization helpers and added regression coverage; mo
+ved story to review.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index db15db479709e2e906fe17c48328be89e069b5be..0081ef205a0767ec3845a2b586e217908ae0a2bf
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T21:06:03+09:00
++# last_updated: 2026-06-11T21:24:37+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T21:06:03+09:00"
++last_updated: "2026-06-11T21:24:37+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -46,7 +46,7 @@
+   1-1-프로젝트-앱-기반과-인증-골격-초기화: done
+   1-2-사용자-지점-권한-프로파일-모델링: done
+   1-3-역할-기반-로그인과-지점-접근-제한: done
+-  1-4-서버-권한-헬퍼와-민감-필드-응답-차단: review
++  1-4-서버-권한-헬퍼와-민감-필드-응답-차단: done
+   1-5-감사-로그-기반-구축: backlog
+   epic-1-retrospective: optional
+   epic-2: in-progress
+diff --git a/src/features/losses/actions.ts b/src/features/losses/actions.ts
+index 181d84ad234240a9e9ed997e37157194632b85a7..80714943bec766cadc2aa29dd4c844cfbdd6f5d6
+--- a/src/features/losses/actions.ts
++++ b/src/features/losses/actions.ts
+@@ -105,7 +105,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount,
++      amount: loss.amount ?? existing.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -124,7 +124,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount,
++    amount: loss.amount ?? existing?.amount ?? 0,
+     reason: loss.reason,
+   };
+ }
+@@ -212,9 +212,23 @@
+
+       for (let index = 0; index < parsed.data.losses.length; index += 1) {
+         const loss = parsed.data.losses[index]!;
++        const existing = existingById.get(loss.id);
++
++        if (loss.amount === null && !existing) {
++          return actionError<StoreManagerLossStepData>(
++            "VALIDATION_ERROR",
++            "입력값을 확인해 주세요.",
++            {
++              [`losses.${index}.amount`]: [
++                "손실 금액은 0원 이상의 정수여야 합니다.",
++              ],
++            },
++          );
++        }
++
+         const normalized = normalizeLossItem({
+           loss,
+-          existing: existingById.get(loss.id),
++          existing,
+           product: productsById.get(loss.productId),
+           lossType: lossTypesById.get(loss.ledgerInputCodeId),
+         });
+diff --git a/src/features/losses/components/loss-step-client.tsx b/src/features/losses/components/loss-step-client.tsx
+index 508779e9ef7931217fabd8527d58d11092767227..235dea14b55a92aaa03dd8bae8812dd6d92425ec
+--- a/src/features/losses/components/loss-step-client.tsx
++++ b/src/features/losses/components/loss-step-client.tsx
+@@ -106,7 +106,7 @@
+     unitPrice: "unitPrice" in item ? item.unitPrice : undefined,
+     lossTypeName: item.lossTypeName,
+     quantity: String(item.quantity),
+-    amount: String(item.amount),
++    amount: "amount" in item ? String(item.amount) : "",
+     reason: item.reason,
+   }));
+ }
+diff --git a/src/features/losses/hq-edit-actions.ts b/src/features/losses/hq-edit-actions.ts
+index 12246990981a678b5189a2c429c877c632749090..cdec1b687488a33fdb5db122b2587a1a6a356350
+--- a/src/features/losses/hq-edit-actions.ts
++++ b/src/features/losses/hq-edit-actions.ts
+@@ -170,7 +170,7 @@
+       unitPrice: existing.unitPrice,
+       lossTypeName: existing.lossTypeName,
+       quantity: loss.quantity,
+-      amount: loss.amount,
++      amount: loss.amount ?? existing.amount,
+       reason: loss.reason,
+     };
+   }
+@@ -189,7 +189,7 @@
+     unitPrice: product.defaultUnitPrice,
+     lossTypeName: lossType.name,
+     quantity: loss.quantity,
+-    amount: loss.amount,
++    amount: loss.amount ?? existing?.amount ?? 0,
+     reason: loss.reason,
+   };
+ }
+@@ -271,9 +271,23 @@
+
+         for (let index = 0; index < parsed.data.losses.length; index += 1) {
+           const loss = parsed.data.losses[index]!;
++          const existing = existingById.get(loss.id);
++
++          if (loss.amount === null && !existing) {
++            return actionError<LossStepData>(
++              "VALIDATION_ERROR",
++              "입력값을 확인해 주세요.",
++              {
++                [`losses.${index}.amount`]: [
++                  "손실 금액은 0원 이상의 정수여야 합니다.",
++                ],
++              },
++            );
++          }
++
+           const normalized = normalizeLossItem({
+             loss,
+-            existing: existingById.get(loss.id),
++            existing,
+             product: productsById.get(loss.productId),
+             lossType: lossTypesById.get(loss.ledgerInputCodeId),
+           });
+diff --git a/src/features/losses/queries.ts b/src/features/losses/queries.ts
+index c297385c5762b830459971c65418ad6bdc9f44b4..498a7bcb9a69abd68bb34c085b5f05cb95a861b2
+--- a/src/features/losses/queries.ts
++++ b/src/features/losses/queries.ts
+@@ -169,8 +169,9 @@
+
+       return option;
+     }),
+-    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
++    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
+       void unitPrice;
++      void amount;
+
+       return item;
+     }),
+diff --git a/src/features/losses/schemas.ts b/src/features/losses/schemas.ts
+index 39e869335bd8b1eba6319a2ed5e9a7feadd2f708..1b306addac39b4f01596ee0ec6d6cfe801ffbbb0
+--- a/src/features/losses/schemas.ts
++++ b/src/features/losses/schemas.ts
+@@ -41,6 +41,43 @@
+   return z.NEVER;
+ }
+
++function parseOptionalInteger(
++  value: unknown,
++  context: z.RefinementCtx,
++  errorMessage: string,
++) {
++  if (value === null || value === undefined) {
++    return null;

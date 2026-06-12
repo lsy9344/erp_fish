@@ -67,3 +67,5 @@ venv/
 
 # Large local source media
 audio_concept.m4a
+.agents\.story-automator-active
+.agents/.story-automator-active

@@ -1,0 +1,2046 @@
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+diff --git a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+index 1c7bee85aa1aae387343684071f6d9065eaeac92..fead5cf7f6c5ac77185c912f570cefe95130eb3b
+--- a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
++++ b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.5: 재고 입력과 이월 상태 표시
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -214,6 +214,39 @@
+ - [Source: `tests/unit/ledger-inventory.test.mjs`]
+ - [Source: `tests/e2e/store-ledger-inventory.spec.ts`]
+
++## Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Reviewed At: 2026-06-12T03:15:01+09:00
++Outcome: Approved after automatic fixes
++
++### Findings and Fixes
++
++- [HIGH][Fixed] `getCarryoverBases` only considered prior ledgers from the same month, so the required "most recent saved ledger candidate with 이월 공백" path was missing when no month-opening snaps
+hot existed. Fixed `src/features/inventory/queries.ts` to prefer same-month prior ledgers, then month snapshots, then older saved ledgers as `CARRYOVER_EMPTY` candidates without treating the value as
+confirmed.
++- [HIGH][Fixed] The new `carryoverStatus` migration defaulted existing inventory rows to `DATA_INSUFFICIENT`, which could make previously saved `OPENING_SNAPSHOT` or `PREVIOUS_CLOSED_LEDGER` rows dis
+play the wrong status after migration. Fixed `prisma/migrations/20260612025000_inventory_carryover_status/migration.sql` with source-based backfill.
++- [MEDIUM][Fixed] The 390px mobile E2E expected touch-sized inventory inputs, but the current row inputs used `h-8`. Fixed `src/features/inventory/components/inventory-step-client.tsx` so mobile quan
+tity and adjustment controls use `h-11` and compact back to `h-8` at `sm`.
++- [MEDIUM][Fixed] Test coverage did not exercise the older saved ledger fallback or migration backfill. Updated `tests/unit/ledger-inventory.test.mjs` and `tests/e2e/store-ledger-inventory.spec.ts` t
+o lock those contracts.
++
++### Checklist Result
++
++- Story file loaded and status verified as reviewable.
++- Acceptance Criteria 1-7 cross-checked against source, tests, and story File List.
++- File List matched the relevant app source changes; unrelated `_bmad-output`, planning, and local automation changes were not treated as source review targets.
++- Security review confirmed store-manager inventory shaping still strips `unitPrice`, amount fields, adjustment amount fields, FIFO/lot evidence, and inventory amount fields.
++- Code quality review completed for inventory query/action/type/UI/schema/test/migration files.
++- Sprint tracking synced to `done`.
++
++### Verification
++
++- `corepack pnpm exec prisma generate` passed.
++- `corepack pnpm exec prisma validate` passed.
++- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` passed.
++- `corepack pnpm typecheck` passed.
++- `corepack pnpm lint` passed.
++- `corepack pnpm test:unit` passed.
++- `corepack pnpm build` passed.
++- `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` was attempted but
+ blocked because the sandbox rejects local server bind with `listen EPERM: operation not permitted 127.0.0.1:3135`.
++
+ ## Dev Agent Record
+
+ ### Agent Model Used
+@@ -234,15 +267,19 @@
+ - 2026-06-12T02:58+09:00: `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.sp
+ec.ts` 실행 시도. Playwright webServer가 조기 종료되어 실패.
+ - 2026-06-12T02:58+09:00: 동일 환경에서 `corepack pnpm dev --hostname 127.0.0.1 --port 3135` 직접 실행 결과 `listen EPERM: operation not permitted 127.0.0.1:3135`. 현재 샌드박스에서 로컬 서버 bind가
+차단되어 E2E는 미실행.
+ - 2026-06-12T02:58+09:00: `corepack pnpm exec prisma format` 및 재검증 `corepack pnpm exec prisma validate` 통과.
++- 2026-06-12T03:15+09:00: Senior review 자동 수정 적용. migration backfill, 이전월 저장 장부 fallback, 모바일 입력 높이, unit/e2e coverage를 보강.
++- 2026-06-12T03:15+09:00: 재검증 `corepack pnpm exec prisma generate`, `corepack pnpm exec prisma validate`, focused unit, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`,
+`corepack pnpm build` 통과. Playwright E2E는 `listen EPERM`으로 재차 차단.
+
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
+ - 기존 재고 저장/조회 경로를 유지하면서 `InventoryCarryoverStatus` row 상태와 `PREVIOUS_SAVED_LEDGER` source를 추가해 `전일 이월`, `검토 필요`, `이월 공백`, `이월 재확인 필요`, `월초 이월`, `데이터
+부족`, `기준 확인 필요`를 구조화했다.
+ - `getCarryoverBases`가 직전 저장 장부의 당일재고 후보를 사용하고, 본사 마감 전 장부는 `검토 필요`, 누락 기간/근거 부족은 `이월 공백`, 마감/정정으로 기준이 바뀔 수 있는 기존 행은 `이월 재확인 필요`로
+ 표시한다. 기존 입력값은 자동 덮어쓰지 않는다.
++- Senior review에서 `getCarryoverBases`가 같은 달 이전 장부만 보던 gap을 보완했다. 월초 스냅샷이 없으면 더 과거 저장 장부 후보를 `이월 공백`으로 표시하고, 월초 스냅샷이 있으면 이전월 장부보다 우선한
+다.
++- Senior review에서 `carryoverStatus` migration backfill을 추가해 기존 저장 행의 `OPENING_SNAPSHOT`, `PREVIOUS_CLOSED_LEDGER`, `MANUAL` source가 각각 적절한 상태로 표시되도록 했다.
+ - 지점장 응답은 계속 `toStoreManagerInventoryStepData`를 거쳐 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, 조정 금액 필드를 제거한다. FIFO lot, `30%단가`, 확정 재고금액 계산은 추가
+하지 않았다.
+-- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리와
+모바일 focus scroll 보정을 추가했다.
+-- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playwright 실행은 샌드박스의 `127.0.0.1` bind 권
+한 차단으로 수행되지 못했다.
++- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리,
+모바일 focus scroll 보정, 모바일 touch-sized inventory inputs를 추가했다.
++- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 월초 스냅샷 누락/이전월 저장 장부 fallback, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playw
+right 실행은 샌드박스의 `127.0.0.1` bind 권한 차단으로 수행되지 못했다.
+
+ ### File List
+
+@@ -264,3 +301,4 @@
+ - 2026-06-12: Updated carryover query behavior for previous saved ledgers, opening snapshots, missing carryover basis, and recheck-needed conditions.
+ - 2026-06-12: Updated inventory UI badges, accessible status text, 50-row paging, mobile focus behavior, and `상태/조정` column label.
+ - 2026-06-12: Updated unit and E2E coverage for Story 2.5 carryover statuses, sensitive field blocking, and mobile/large-row behavior.
++- 2026-06-12: Senior review fixed carryover status migration backfill, older saved ledger fallback, mobile row control height, and regression coverage.
+diff --git a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+index 53817131aea7e2d032dc0c8be8993c04adb30f4f..680d867b0558b35abc3bfa898405a9f3f90f82b7
+--- a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
++++ b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+@@ -14,3 +14,10 @@
+
+ ALTER TABLE "LedgerInventoryItem"
+   ADD COLUMN "carryoverStatus" "InventoryCarryoverStatus" NOT NULL DEFAULT 'DATA_INSUFFICIENT';
++
++UPDATE "LedgerInventoryItem"
++SET "carryoverStatus" = CASE
++  WHEN "carryoverSource" = 'OPENING_SNAPSHOT' THEN 'OPENING_CARRYOVER'::"InventoryCarryoverStatus"
++  WHEN "carryoverSource" = 'PREVIOUS_CLOSED_LEDGER' THEN 'PREVIOUS_CARRYOVER'::"InventoryCarryoverStatus"
++  ELSE 'CARRYOVER_EMPTY'::"InventoryCarryoverStatus"
++END;
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index e833e8044da6daaf4e39ea5c60c4db531bb3cda4..b95737631e69259bf922c662be796e69785af7dd
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -806,7 +806,7 @@
+                 updateCurrentQuantity(item.productId, event.currentTarget.value)
+               }
+               disabled={isSaving || isClosed || isAdjustmentSavePending}
+-              className="h-8 tabular-nums"
++              className="h-11 tabular-nums sm:h-8"
+             />
+             {quantityError ? (
+               <p
+@@ -893,7 +893,7 @@
+                       )
+                     }
+                     disabled={isAdjustmentSavePending}
+-                    className="h-8 min-w-0 flex-1"
++                    className="h-11 min-w-0 flex-1 sm:h-8"
+                     placeholder="조정 사유"
+                   />
+                   <Button
+@@ -903,7 +903,7 @@
+                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                     onClick={() => handleAdjustmentSave(item)}
+                     disabled={savingAdjustmentProductId !== null}
+-                    className="h-8 shrink-0 px-2 text-xs"
++                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                   >
+                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
+                   </Button>
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index 0fe1209492ea0acd37e012e4d680a077b5110e2a..a7d8dfcdf6009ac47bb88c1b07bd0c0e8ff4f955
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -125,12 +125,6 @@
+   }).format(date);
+ }
+
+-function getMonthStart(date: Date) {
+-  const [year, month] = getYearMonth(date).split("-");
+-
+-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
+-}
+-
+ function aggregatePurchases(purchases: PurchasePayload[]) {
+   const aggregates = new Map<string, PurchaseAggregate>();
+
+@@ -510,14 +504,12 @@
+   closingDate: Date,
+ ) {
+   const yearMonth = getYearMonth(closingDate);
+-  const monthStart = getMonthStart(closingDate);
+
+   const priorLedger = await tx.dailyLedger.findFirst({
+     where: {
+       storeId,
+       closingDate: {
+         lt: closingDate,
+-        gte: monthStart,
+       },
+       status: { not: "HOLIDAY" },
+       ledgerInventoryItems: {
+@@ -538,7 +530,7 @@
+     },
+   });
+
+-  if (priorLedger) {
++  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+     const isDirectPrevious = isPreviousCalendarDate(
+       closingDate,
+       priorLedger.closingDate,
+@@ -554,7 +546,10 @@
+       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
+     return {
+-      status: "loaded" as const,
++      status:
++        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
++          ? ("manual" as const)
++          : ("loaded" as const),
+       source,
+       message: isDirectPrevious
+         ? isHeadquartersClosed
+@@ -629,6 +624,33 @@
+     };
+   }
+
++  if (priorLedger) {
++    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
++    const source = isHeadquartersClosed
++      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
++      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
++
++    return {
++      status: "manual" as const,
++      source,
++      message:
++        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
++      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
++        (item) => ({
++          productId: item.productId,
++          productName: item.productName,
++          productCategory: item.productCategory,
++          productSpec: item.productSpec,
++          unitPrice: item.unitPrice,
++          previousQuantity: toPreviousQuantity(item),
++          carryoverSource: source,
++          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
++          carryoverLedgerId: priorLedger.id,
++        }),
++      ),
++    };
++  }
++
+   return {
+     status: "manual" as const,
+     source: InventoryCarryoverSource.MANUAL,
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index b78416b90d00c25de8c0a47aef8d8688ace3977a..fc4fbb251d858aa3b5424d7e47ef702414183e92
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -46,6 +46,12 @@
+   return getTodayKstMidnight().toISOString().slice(0, 7);
+ }
+
++function getCurrentKstMonthStart() {
++  const [year, month] = getCurrentKstYearMonth().split("-");
++
++  return new Date(Date.UTC(Number(year), Number(month) - 1, 1));
++}
++
+ function getCurrentKstDayOfMonth() {
+   return getTodayKstMidnight().getUTCDate();
+ }
+@@ -57,6 +63,13 @@
+   return date;
+ }
+
++function getPreviousMonthLastKstMidnight() {
++  const date = getCurrentKstMonthStart();
++  date.setUTCDate(date.getUTCDate() - 1);
++
++  return date;
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -412,6 +425,53 @@
+   await expect(missingRow.getByLabel(/데이터 부족/)).toBeVisible();
+ });
+
++test("월초 스냅샷이 없으면 더 과거 저장 장부 후보를 이월 공백으로 표시한다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 이전월 후보 갈치", "생물", 6000);
++  const previousLedger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate: getPreviousMonthLastKstMidnight(),
++      status: "HEADQUARTERS_CLOSED",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerInventoryItem.create({
++    data: {
++      dailyLedgerId: previousLedger.id,
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      previousQuantity: 0,
++      purchasedQuantity: 0,
++      currentQuantity: 12,
++      quantity: 12,
++      inventoryAmount: 72000,
++      carryoverSource: "MANUAL",
++      carryoverStatus: "DATA_INSUFFICIENT",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}&date=${getCurrentKstYearMonth()}-01`,
++  );
++  await page.getByRole("tab", { name: "생물" }).click();
++
++  await expect(page.getByText(/가장 최근 저장 장부/)).toBeVisible();
++  const row = page.locator("tr").filter({ hasText: product.name });
++  await expect(row.getByText("이월 공백").first()).toBeVisible();
++  await expect(row).toContainText("12");
++});
++
+ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고 재확인 상태를 표시한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/sprint-status.yaml
+diff --git a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+index 1c7bee85aa1aae387343684071f6d9065eaeac92..fead5cf7f6c5ac77185c912f570cefe95130eb3b
+--- a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
++++ b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.5: 재고 입력과 이월 상태 표시
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -214,6 +214,39 @@
+ - [Source: `tests/unit/ledger-inventory.test.mjs`]
+ - [Source: `tests/e2e/store-ledger-inventory.spec.ts`]
+
++## Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Reviewed At: 2026-06-12T03:15:01+09:00
++Outcome: Approved after automatic fixes
++
++### Findings and Fixes
++
++- [HIGH][Fixed] `getCarryoverBases` only considered prior ledgers from the same month, so the required "most recent saved ledger candidate with 이월 공백" path was missing when no month-opening snaps
+hot existed. Fixed `src/features/inventory/queries.ts` to prefer same-month prior ledgers, then month snapshots, then older saved ledgers as `CARRYOVER_EMPTY` candidates without treating the value as
+confirmed.
++- [HIGH][Fixed] The new `carryoverStatus` migration defaulted existing inventory rows to `DATA_INSUFFICIENT`, which could make previously saved `OPENING_SNAPSHOT` or `PREVIOUS_CLOSED_LEDGER` rows dis
+play the wrong status after migration. Fixed `prisma/migrations/20260612025000_inventory_carryover_status/migration.sql` with source-based backfill.
++- [MEDIUM][Fixed] The 390px mobile E2E expected touch-sized inventory inputs, but the current row inputs used `h-8`. Fixed `src/features/inventory/components/inventory-step-client.tsx` so mobile quan
+tity and adjustment controls use `h-11` and compact back to `h-8` at `sm`.
++- [MEDIUM][Fixed] Test coverage did not exercise the older saved ledger fallback or migration backfill. Updated `tests/unit/ledger-inventory.test.mjs` and `tests/e2e/store-ledger-inventory.spec.ts` t
+o lock those contracts.
++
++### Checklist Result
++
++- Story file loaded and status verified as reviewable.
++- Acceptance Criteria 1-7 cross-checked against source, tests, and story File List.
++- File List matched the relevant app source changes; unrelated `_bmad-output`, planning, and local automation changes were not treated as source review targets.
++- Security review confirmed store-manager inventory shaping still strips `unitPrice`, amount fields, adjustment amount fields, FIFO/lot evidence, and inventory amount fields.
++- Code quality review completed for inventory query/action/type/UI/schema/test/migration files.
++- Sprint tracking synced to `done`.
++
++### Verification
++
++- `corepack pnpm exec prisma generate` passed.
++- `corepack pnpm exec prisma validate` passed.
++- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` passed.
++- `corepack pnpm typecheck` passed.
++- `corepack pnpm lint` passed.
++- `corepack pnpm test:unit` passed.
++- `corepack pnpm build` passed.
++- `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` was attempted but
+ blocked because the sandbox rejects local server bind with `listen EPERM: operation not permitted 127.0.0.1:3135`.
++
+ ## Dev Agent Record
+
+ ### Agent Model Used
+@@ -234,15 +267,19 @@
+ - 2026-06-12T02:58+09:00: `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.sp
+ec.ts` 실행 시도. Playwright webServer가 조기 종료되어 실패.
+ - 2026-06-12T02:58+09:00: 동일 환경에서 `corepack pnpm dev --hostname 127.0.0.1 --port 3135` 직접 실행 결과 `listen EPERM: operation not permitted 127.0.0.1:3135`. 현재 샌드박스에서 로컬 서버 bind가
+차단되어 E2E는 미실행.
+ - 2026-06-12T02:58+09:00: `corepack pnpm exec prisma format` 및 재검증 `corepack pnpm exec prisma validate` 통과.
++- 2026-06-12T03:15+09:00: Senior review 자동 수정 적용. migration backfill, 이전월 저장 장부 fallback, 모바일 입력 높이, unit/e2e coverage를 보강.
++- 2026-06-12T03:15+09:00: 재검증 `corepack pnpm exec prisma generate`, `corepack pnpm exec prisma validate`, focused unit, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`,
+`corepack pnpm build` 통과. Playwright E2E는 `listen EPERM`으로 재차 차단.
+
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
+ - 기존 재고 저장/조회 경로를 유지하면서 `InventoryCarryoverStatus` row 상태와 `PREVIOUS_SAVED_LEDGER` source를 추가해 `전일 이월`, `검토 필요`, `이월 공백`, `이월 재확인 필요`, `월초 이월`, `데이터
+부족`, `기준 확인 필요`를 구조화했다.
+ - `getCarryoverBases`가 직전 저장 장부의 당일재고 후보를 사용하고, 본사 마감 전 장부는 `검토 필요`, 누락 기간/근거 부족은 `이월 공백`, 마감/정정으로 기준이 바뀔 수 있는 기존 행은 `이월 재확인 필요`로
+ 표시한다. 기존 입력값은 자동 덮어쓰지 않는다.
++- Senior review에서 `getCarryoverBases`가 같은 달 이전 장부만 보던 gap을 보완했다. 월초 스냅샷이 없으면 더 과거 저장 장부 후보를 `이월 공백`으로 표시하고, 월초 스냅샷이 있으면 이전월 장부보다 우선한
+다.
++- Senior review에서 `carryoverStatus` migration backfill을 추가해 기존 저장 행의 `OPENING_SNAPSHOT`, `PREVIOUS_CLOSED_LEDGER`, `MANUAL` source가 각각 적절한 상태로 표시되도록 했다.
+ - 지점장 응답은 계속 `toStoreManagerInventoryStepData`를 거쳐 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, 조정 금액 필드를 제거한다. FIFO lot, `30%단가`, 확정 재고금액 계산은 추가
+하지 않았다.
+-- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리와
+모바일 focus scroll 보정을 추가했다.
+-- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playwright 실행은 샌드박스의 `127.0.0.1` bind 권
+한 차단으로 수행되지 못했다.
++- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리,
+모바일 focus scroll 보정, 모바일 touch-sized inventory inputs를 추가했다.
++- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 월초 스냅샷 누락/이전월 저장 장부 fallback, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playw
+right 실행은 샌드박스의 `127.0.0.1` bind 권한 차단으로 수행되지 못했다.
+
+ ### File List
+
+@@ -264,3 +301,4 @@
+ - 2026-06-12: Updated carryover query behavior for previous saved ledgers, opening snapshots, missing carryover basis, and recheck-needed conditions.
+ - 2026-06-12: Updated inventory UI badges, accessible status text, 50-row paging, mobile focus behavior, and `상태/조정` column label.
+ - 2026-06-12: Updated unit and E2E coverage for Story 2.5 carryover statuses, sensitive field blocking, and mobile/large-row behavior.
++- 2026-06-12: Senior review fixed carryover status migration backfill, older saved ledger fallback, mobile row control height, and regression coverage.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ae2e207264a447c711fdf260453d98339017011a..86eaf9eb0daf6c894fff11f1d792cdd175efac9f
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:58:32+09:00
++# last_updated: 2026-06-12T03:15:01+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:58:32+09:00"
++last_updated: "2026-06-12T03:15:01+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -54,7 +54,7 @@
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+-  2-5-재고-입력과-이월-상태-표시: review
++  2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+diff --git a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+index 53817131aea7e2d032dc0c8be8993c04adb30f4f..680d867b0558b35abc3bfa898405a9f3f90f82b7
+--- a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
++++ b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+@@ -14,3 +14,10 @@
+
+ ALTER TABLE "LedgerInventoryItem"
+   ADD COLUMN "carryoverStatus" "InventoryCarryoverStatus" NOT NULL DEFAULT 'DATA_INSUFFICIENT';
++
++UPDATE "LedgerInventoryItem"
++SET "carryoverStatus" = CASE
++  WHEN "carryoverSource" = 'OPENING_SNAPSHOT' THEN 'OPENING_CARRYOVER'::"InventoryCarryoverStatus"
++  WHEN "carryoverSource" = 'PREVIOUS_CLOSED_LEDGER' THEN 'PREVIOUS_CARRYOVER'::"InventoryCarryoverStatus"
++  ELSE 'CARRYOVER_EMPTY'::"InventoryCarryoverStatus"
++END;
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index e833e8044da6daaf4e39ea5c60c4db531bb3cda4..b95737631e69259bf922c662be796e69785af7dd
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -806,7 +806,7 @@
+                 updateCurrentQuantity(item.productId, event.currentTarget.value)
+               }
+               disabled={isSaving || isClosed || isAdjustmentSavePending}
+-              className="h-8 tabular-nums"
++              className="h-11 tabular-nums sm:h-8"
+             />
+             {quantityError ? (
+               <p
+@@ -893,7 +893,7 @@
+                       )
+                     }
+                     disabled={isAdjustmentSavePending}
+-                    className="h-8 min-w-0 flex-1"
++                    className="h-11 min-w-0 flex-1 sm:h-8"
+                     placeholder="조정 사유"
+                   />
+                   <Button
+@@ -903,7 +903,7 @@
+                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                     onClick={() => handleAdjustmentSave(item)}
+                     disabled={savingAdjustmentProductId !== null}
+-                    className="h-8 shrink-0 px-2 text-xs"
++                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                   >
+                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
+                   </Button>
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index 0fe1209492ea0acd37e012e4d680a077b5110e2a..a7d8dfcdf6009ac47bb88c1b07bd0c0e8ff4f955
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -125,12 +125,6 @@
+   }).format(date);
+ }
+
+-function getMonthStart(date: Date) {
+-  const [year, month] = getYearMonth(date).split("-");
+-
+-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
+-}
+-
+ function aggregatePurchases(purchases: PurchasePayload[]) {
+   const aggregates = new Map<string, PurchaseAggregate>();
+
+@@ -510,14 +504,12 @@
+   closingDate: Date,
+ ) {
+   const yearMonth = getYearMonth(closingDate);
+-  const monthStart = getMonthStart(closingDate);
+
+   const priorLedger = await tx.dailyLedger.findFirst({
+     where: {
+       storeId,
+       closingDate: {
+         lt: closingDate,
+-        gte: monthStart,
+       },
+       status: { not: "HOLIDAY" },
+       ledgerInventoryItems: {
+@@ -538,7 +530,7 @@
+     },
+   });
+
+-  if (priorLedger) {
++  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+     const isDirectPrevious = isPreviousCalendarDate(
+       closingDate,
+       priorLedger.closingDate,
+@@ -554,7 +546,10 @@
+       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
+     return {
+-      status: "loaded" as const,
++      status:
++        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
++          ? ("manual" as const)
++          : ("loaded" as const),
+       source,
+       message: isDirectPrevious
+         ? isHeadquartersClosed
+@@ -629,6 +624,33 @@
+     };
+   }
+
++  if (priorLedger) {
++    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
++    const source = isHeadquartersClosed
++      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
++      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
++
++    return {
++      status: "manual" as const,
++      source,
++      message:
++        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
++      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
++        (item) => ({
++          productId: item.productId,
++          productName: item.productName,
++          productCategory: item.productCategory,
++          productSpec: item.productSpec,
++          unitPrice: item.unitPrice,
++          previousQuantity: toPreviousQuantity(item),
++          carryoverSource: source,
++          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
++          carryoverLedgerId: priorLedger.id,
++        }),
++      ),
++    };
++  }
++
+   return {
+     status: "manual" as const,
+     source: InventoryCarryoverSource.MANUAL,
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index b78416b90d00c25de8c0a47aef8d8688ace3977a..fc4fbb251d858aa3b5424d7e47ef702414183e92
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -46,6 +46,12 @@
+   return getTodayKstMidnight().toISOString().slice(0, 7);
+ }
+
++function getCurrentKstMonthStart() {
++  const [year, month] = getCurrentKstYearMonth().split("-");
++
++  return new Date(Date.UTC(Number(year), Number(month) - 1, 1));
++}
++
+ function getCurrentKstDayOfMonth() {
+   return getTodayKstMidnight().getUTCDate();
+ }
+@@ -57,6 +63,13 @@
+   return date;
+ }
+
++function getPreviousMonthLastKstMidnight() {
++  const date = getCurrentKstMonthStart();
++  date.setUTCDate(date.getUTCDate() - 1);
++
++  return date;
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -412,6 +425,53 @@
+   await expect(missingRow.getByLabel(/데이터 부족/)).toBeVisible();
+ });
+
++test("월초 스냅샷이 없으면 더 과거 저장 장부 후보를 이월 공백으로 표시한다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 이전월 후보 갈치", "생물", 6000);
++  const previousLedger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate: getPreviousMonthLastKstMidnight(),
++      status: "HEADQUARTERS_CLOSED",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerInventoryItem.create({
++    data: {
++      dailyLedgerId: previousLedger.id,
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      previousQuantity: 0,
++      purchasedQuantity: 0,
++      currentQuantity: 12,
++      quantity: 12,
++      inventoryAmount: 72000,
++      carryoverSource: "MANUAL",
++      carryoverStatus: "DATA_INSUFFICIENT",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}&date=${getCurrentKstYearMonth()}-01`,
++  );
++  await page.getByRole("tab", { name: "생물" }).click();
++
++  await expect(page.getByText(/가장 최근 저장 장부/)).toBeVisible();
++  const row = page.locator("tr").filter({ hasText: product.name });
++  await expect(row.getByText("이월 공백").first()).toBeVisible();
++  await expect(row).toContainText("12");
++});
++
+ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고 재확인 상태를 표시한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+diff --git a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+index 1c7bee85aa1aae387343684071f6d9065eaeac92..fead5cf7f6c5ac77185c912f570cefe95130eb3b
+--- a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
++++ b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.5: 재고 입력과 이월 상태 표시
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -214,6 +214,39 @@
+ - [Source: `tests/unit/ledger-inventory.test.mjs`]
+ - [Source: `tests/e2e/store-ledger-inventory.spec.ts`]
+
++## Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Reviewed At: 2026-06-12T03:15:01+09:00
++Outcome: Approved after automatic fixes
++
++### Findings and Fixes
++
++- [HIGH][Fixed] `getCarryoverBases` only considered prior ledgers from the same month, so the required "most recent saved ledger candidate with 이월 공백" path was missing when no month-opening snaps
+hot existed. Fixed `src/features/inventory/queries.ts` to prefer same-month prior ledgers, then month snapshots, then older saved ledgers as `CARRYOVER_EMPTY` candidates without treating the value as
+confirmed.
++- [HIGH][Fixed] The new `carryoverStatus` migration defaulted existing inventory rows to `DATA_INSUFFICIENT`, which could make previously saved `OPENING_SNAPSHOT` or `PREVIOUS_CLOSED_LEDGER` rows dis
+play the wrong status after migration. Fixed `prisma/migrations/20260612025000_inventory_carryover_status/migration.sql` with source-based backfill.
++- [MEDIUM][Fixed] The 390px mobile E2E expected touch-sized inventory inputs, but the current row inputs used `h-8`. Fixed `src/features/inventory/components/inventory-step-client.tsx` so mobile quan
+tity and adjustment controls use `h-11` and compact back to `h-8` at `sm`.
++- [MEDIUM][Fixed] Test coverage did not exercise the older saved ledger fallback or migration backfill. Updated `tests/unit/ledger-inventory.test.mjs` and `tests/e2e/store-ledger-inventory.spec.ts` t
+o lock those contracts.
++
++### Checklist Result
++
++- Story file loaded and status verified as reviewable.
++- Acceptance Criteria 1-7 cross-checked against source, tests, and story File List.
++- File List matched the relevant app source changes; unrelated `_bmad-output`, planning, and local automation changes were not treated as source review targets.
++- Security review confirmed store-manager inventory shaping still strips `unitPrice`, amount fields, adjustment amount fields, FIFO/lot evidence, and inventory amount fields.
++- Code quality review completed for inventory query/action/type/UI/schema/test/migration files.
++- Sprint tracking synced to `done`.
++
++### Verification
++
++- `corepack pnpm exec prisma generate` passed.
++- `corepack pnpm exec prisma validate` passed.
++- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` passed.
++- `corepack pnpm typecheck` passed.
++- `corepack pnpm lint` passed.
++- `corepack pnpm test:unit` passed.
++- `corepack pnpm build` passed.
++- `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` was attempted but
+ blocked because the sandbox rejects local server bind with `listen EPERM: operation not permitted 127.0.0.1:3135`.
++
+ ## Dev Agent Record
+
+ ### Agent Model Used
+@@ -234,15 +267,19 @@
+ - 2026-06-12T02:58+09:00: `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.sp
+ec.ts` 실행 시도. Playwright webServer가 조기 종료되어 실패.
+ - 2026-06-12T02:58+09:00: 동일 환경에서 `corepack pnpm dev --hostname 127.0.0.1 --port 3135` 직접 실행 결과 `listen EPERM: operation not permitted 127.0.0.1:3135`. 현재 샌드박스에서 로컬 서버 bind가
+차단되어 E2E는 미실행.
+ - 2026-06-12T02:58+09:00: `corepack pnpm exec prisma format` 및 재검증 `corepack pnpm exec prisma validate` 통과.
++- 2026-06-12T03:15+09:00: Senior review 자동 수정 적용. migration backfill, 이전월 저장 장부 fallback, 모바일 입력 높이, unit/e2e coverage를 보강.
++- 2026-06-12T03:15+09:00: 재검증 `corepack pnpm exec prisma generate`, `corepack pnpm exec prisma validate`, focused unit, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`,
+`corepack pnpm build` 통과. Playwright E2E는 `listen EPERM`으로 재차 차단.
+
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
+ - 기존 재고 저장/조회 경로를 유지하면서 `InventoryCarryoverStatus` row 상태와 `PREVIOUS_SAVED_LEDGER` source를 추가해 `전일 이월`, `검토 필요`, `이월 공백`, `이월 재확인 필요`, `월초 이월`, `데이터
+부족`, `기준 확인 필요`를 구조화했다.
+ - `getCarryoverBases`가 직전 저장 장부의 당일재고 후보를 사용하고, 본사 마감 전 장부는 `검토 필요`, 누락 기간/근거 부족은 `이월 공백`, 마감/정정으로 기준이 바뀔 수 있는 기존 행은 `이월 재확인 필요`로
+ 표시한다. 기존 입력값은 자동 덮어쓰지 않는다.
++- Senior review에서 `getCarryoverBases`가 같은 달 이전 장부만 보던 gap을 보완했다. 월초 스냅샷이 없으면 더 과거 저장 장부 후보를 `이월 공백`으로 표시하고, 월초 스냅샷이 있으면 이전월 장부보다 우선한
+다.
++- Senior review에서 `carryoverStatus` migration backfill을 추가해 기존 저장 행의 `OPENING_SNAPSHOT`, `PREVIOUS_CLOSED_LEDGER`, `MANUAL` source가 각각 적절한 상태로 표시되도록 했다.
+ - 지점장 응답은 계속 `toStoreManagerInventoryStepData`를 거쳐 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, 조정 금액 필드를 제거한다. FIFO lot, `30%단가`, 확정 재고금액 계산은 추가
+하지 않았다.
+-- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리와
+모바일 focus scroll 보정을 추가했다.
+-- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playwright 실행은 샌드박스의 `127.0.0.1` bind 권
+한 차단으로 수행되지 못했다.
++- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리,
+모바일 focus scroll 보정, 모바일 touch-sized inventory inputs를 추가했다.
++- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 월초 스냅샷 누락/이전월 저장 장부 fallback, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playw
+right 실행은 샌드박스의 `127.0.0.1` bind 권한 차단으로 수행되지 못했다.
+
+ ### File List
+
+@@ -264,3 +301,4 @@
+ - 2026-06-12: Updated carryover query behavior for previous saved ledgers, opening snapshots, missing carryover basis, and recheck-needed conditions.
+ - 2026-06-12: Updated inventory UI badges, accessible status text, 50-row paging, mobile focus behavior, and `상태/조정` column label.
+ - 2026-06-12: Updated unit and E2E coverage for Story 2.5 carryover statuses, sensitive field blocking, and mobile/large-row behavior.
++- 2026-06-12: Senior review fixed carryover status migration backfill, older saved ledger fallback, mobile row control height, and regression coverage.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ae2e207264a447c711fdf260453d98339017011a..86eaf9eb0daf6c894fff11f1d792cdd175efac9f
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:58:32+09:00
++# last_updated: 2026-06-12T03:15:01+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:58:32+09:00"
++last_updated: "2026-06-12T03:15:01+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -54,7 +54,7 @@
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+-  2-5-재고-입력과-이월-상태-표시: review
++  2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+diff --git a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+index 53817131aea7e2d032dc0c8be8993c04adb30f4f..680d867b0558b35abc3bfa898405a9f3f90f82b7
+--- a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
++++ b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+@@ -14,3 +14,10 @@
+
+ ALTER TABLE "LedgerInventoryItem"
+   ADD COLUMN "carryoverStatus" "InventoryCarryoverStatus" NOT NULL DEFAULT 'DATA_INSUFFICIENT';
++
++UPDATE "LedgerInventoryItem"
++SET "carryoverStatus" = CASE
++  WHEN "carryoverSource" = 'OPENING_SNAPSHOT' THEN 'OPENING_CARRYOVER'::"InventoryCarryoverStatus"
++  WHEN "carryoverSource" = 'PREVIOUS_CLOSED_LEDGER' THEN 'PREVIOUS_CARRYOVER'::"InventoryCarryoverStatus"
++  ELSE 'CARRYOVER_EMPTY'::"InventoryCarryoverStatus"
++END;
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index e833e8044da6daaf4e39ea5c60c4db531bb3cda4..b95737631e69259bf922c662be796e69785af7dd
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -806,7 +806,7 @@
+                 updateCurrentQuantity(item.productId, event.currentTarget.value)
+               }
+               disabled={isSaving || isClosed || isAdjustmentSavePending}
+-              className="h-8 tabular-nums"
++              className="h-11 tabular-nums sm:h-8"
+             />
+             {quantityError ? (
+               <p
+@@ -893,7 +893,7 @@
+                       )
+                     }
+                     disabled={isAdjustmentSavePending}
+-                    className="h-8 min-w-0 flex-1"
++                    className="h-11 min-w-0 flex-1 sm:h-8"
+                     placeholder="조정 사유"
+                   />
+                   <Button
+@@ -903,7 +903,7 @@
+                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                     onClick={() => handleAdjustmentSave(item)}
+                     disabled={savingAdjustmentProductId !== null}
+-                    className="h-8 shrink-0 px-2 text-xs"
++                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                   >
+                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
+                   </Button>
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index 0fe1209492ea0acd37e012e4d680a077b5110e2a..a7d8dfcdf6009ac47bb88c1b07bd0c0e8ff4f955
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -125,12 +125,6 @@
+   }).format(date);
+ }
+
+-function getMonthStart(date: Date) {
+-  const [year, month] = getYearMonth(date).split("-");
+-
+-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
+-}
+-
+ function aggregatePurchases(purchases: PurchasePayload[]) {
+   const aggregates = new Map<string, PurchaseAggregate>();
+
+@@ -510,14 +504,12 @@
+   closingDate: Date,
+ ) {
+   const yearMonth = getYearMonth(closingDate);
+-  const monthStart = getMonthStart(closingDate);
+
+   const priorLedger = await tx.dailyLedger.findFirst({
+     where: {
+       storeId,
+       closingDate: {
+         lt: closingDate,
+-        gte: monthStart,
+       },
+       status: { not: "HOLIDAY" },
+       ledgerInventoryItems: {
+@@ -538,7 +530,7 @@
+     },
+   });
+
+-  if (priorLedger) {
++  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+     const isDirectPrevious = isPreviousCalendarDate(
+       closingDate,
+       priorLedger.closingDate,
+@@ -554,7 +546,10 @@
+       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
+     return {
+-      status: "loaded" as const,
++      status:
++        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
++          ? ("manual" as const)
++          : ("loaded" as const),
+       source,
+       message: isDirectPrevious
+         ? isHeadquartersClosed
+@@ -629,6 +624,33 @@
+     };
+   }
+
++  if (priorLedger) {
++    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
++    const source = isHeadquartersClosed
++      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
++      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
++
++    return {
++      status: "manual" as const,
++      source,
++      message:
++        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
++      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
++        (item) => ({
++          productId: item.productId,
++          productName: item.productName,
++          productCategory: item.productCategory,
++          productSpec: item.productSpec,
++          unitPrice: item.unitPrice,
++          previousQuantity: toPreviousQuantity(item),
++          carryoverSource: source,
++          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
++          carryoverLedgerId: priorLedger.id,
++        }),
++      ),
++    };
++  }
++
+   return {
+     status: "manual" as const,
+     source: InventoryCarryoverSource.MANUAL,
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index b78416b90d00c25de8c0a47aef8d8688ace3977a..fc4fbb251d858aa3b5424d7e47ef702414183e92
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -46,6 +46,12 @@
+   return getTodayKstMidnight().toISOString().slice(0, 7);
+ }
+
++function getCurrentKstMonthStart() {
++  const [year, month] = getCurrentKstYearMonth().split("-");
++
++  return new Date(Date.UTC(Number(year), Number(month) - 1, 1));
++}
++
+ function getCurrentKstDayOfMonth() {
+   return getTodayKstMidnight().getUTCDate();
+ }
+@@ -57,6 +63,13 @@
+   return date;
+ }
+
++function getPreviousMonthLastKstMidnight() {
++  const date = getCurrentKstMonthStart();
++  date.setUTCDate(date.getUTCDate() - 1);
++
++  return date;
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -412,6 +425,53 @@
+   await expect(missingRow.getByLabel(/데이터 부족/)).toBeVisible();
+ });
+
++test("월초 스냅샷이 없으면 더 과거 저장 장부 후보를 이월 공백으로 표시한다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 이전월 후보 갈치", "생물", 6000);
++  const previousLedger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate: getPreviousMonthLastKstMidnight(),
++      status: "HEADQUARTERS_CLOSED",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerInventoryItem.create({
++    data: {
++      dailyLedgerId: previousLedger.id,
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      previousQuantity: 0,
++      purchasedQuantity: 0,
++      currentQuantity: 12,
++      quantity: 12,
++      inventoryAmount: 72000,
++      carryoverSource: "MANUAL",
++      carryoverStatus: "DATA_INSUFFICIENT",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}&date=${getCurrentKstYearMonth()}-01`,
++  );
++  await page.getByRole("tab", { name: "생물" }).click();
++
++  await expect(page.getByText(/가장 최근 저장 장부/)).toBeVisible();
++  const row = page.locator("tr").filter({ hasText: product.name });
++  await expect(row.getByText("이월 공백").first()).toBeVisible();
++  await expect(row).toContainText("12");
++});
++
+ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고 재확인 상태를 표시한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+codex
+스토리 상태와 sprint-status를 `done`으로 동기화했습니다. 문서 변경만 남았으므로 마지막으로 상태/핵심 diff/검증 목록을 확인하고 마무리하겠습니다.
+exec
+/bin/bash -lc 'rg -n "''^Status:|''^## Senior Developer Review|Outcome:|2-5-재고-입력과-이월-상태-표시:|last_updated" _bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md _bmad-outp
+ut/implementation-artifacts/sprint-status.yaml' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:2:# last_updated: 2026-06-12T03:15:01+09:00
+_bmad-output/implementation-artifacts/sprint-status.yaml:38:last_updated: "2026-06-12T03:15:01+09:00"
+_bmad-output/implementation-artifacts/sprint-status.yaml:57:  2-5-재고-입력과-이월-상태-표시: done
+_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md:12:Status: done
+_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md:217:## Senior Developer Review (AI)
+_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md:221:Outcome: Approved after automatic fixes
+
+exec
+/bin/bash -lc "git diff -- _bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md _bmad-output/implementation-artifacts/sprint-status.yaml | sed -n '1,260p'" in /home/noah/code/erp_fi
+sh
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 61e9b87..86eaf9e 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:29:36+09:00
++# last_updated: 2026-06-12T03:15:01+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:29:36+09:00"
++last_updated: "2026-06-12T03:15:01+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -54,7 +54,7 @@ development_status:
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+-  2-5-재고-입력과-이월-상태-표시: backlog
++  2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+
+exec
+/bin/bash -lc 'git diff --stat' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ .../data/agent-config-presets.json                 |   14 +-
+ .gitignore                                         |    2 +
+ ...270\260\353\241\235\355\225\234\353\213\244.md" |  337 ---
+ .../implementation-artifacts/sprint-status.yaml    |    6 +-
+ .../implementation-artifacts/tests/test-summary.md |   36 +-
+ _bmad-output/planning-artifacts/architecture.md    |   98 +-
+ _bmad-output/planning-artifacts/epics.md           | 3052 +++++++++-----------
+ .../ux-erp_fish-2026-05-28/.decision-log.md        |   46 +
+ .../ux-designs/ux-erp_fish-2026-05-28/DESIGN.md    |   81 +-
+ .../ux-erp_fish-2026-05-28/EXPERIENCE.md           |  309 +-
+ prisma/schema.prisma                               |   12 +
+ src/features/inventory/actions.ts                  |    3 +
+ .../inventory/components/inventory-step-client.tsx |  212 +-
+ src/features/inventory/hq-edit-actions.ts          |    3 +
+ src/features/inventory/queries.ts                  |  324 ++-
+ src/features/inventory/types.ts                    |    2 +
+ tests/e2e/store-ledger-inventory.spec.ts           |  279 +-
+ tests/unit/ledger-inventory.test.mjs               |   71 +-
+ 18 files changed, 2646 insertions(+), 2241 deletions(-)
+
+diff --git a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+index 1c7bee85aa1aae387343684071f6d9065eaeac92..fead5cf7f6c5ac77185c912f570cefe95130eb3b
+--- a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
++++ b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.5: 재고 입력과 이월 상태 표시
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -214,6 +214,39 @@
+ - [Source: `tests/unit/ledger-inventory.test.mjs`]
+ - [Source: `tests/e2e/store-ledger-inventory.spec.ts`]
+
++## Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Reviewed At: 2026-06-12T03:15:01+09:00
++Outcome: Approved after automatic fixes
++
++### Findings and Fixes
++
++- [HIGH][Fixed] `getCarryoverBases` only considered prior ledgers from the same month, so the required "most recent saved ledger candidate with 이월 공백" path was missing when no month-opening snaps
+hot existed. Fixed `src/features/inventory/queries.ts` to prefer same-month prior ledgers, then month snapshots, then older saved ledgers as `CARRYOVER_EMPTY` candidates without treating the value as
+confirmed.
++- [HIGH][Fixed] The new `carryoverStatus` migration defaulted existing inventory rows to `DATA_INSUFFICIENT`, which could make previously saved `OPENING_SNAPSHOT` or `PREVIOUS_CLOSED_LEDGER` rows dis
+play the wrong status after migration. Fixed `prisma/migrations/20260612025000_inventory_carryover_status/migration.sql` with source-based backfill.
++- [MEDIUM][Fixed] The 390px mobile E2E expected touch-sized inventory inputs, but the current row inputs used `h-8`. Fixed `src/features/inventory/components/inventory-step-client.tsx` so mobile quan
+tity and adjustment controls use `h-11` and compact back to `h-8` at `sm`.
++- [MEDIUM][Fixed] Test coverage did not exercise the older saved ledger fallback or migration backfill. Updated `tests/unit/ledger-inventory.test.mjs` and `tests/e2e/store-ledger-inventory.spec.ts` t
+o lock those contracts.
++
++### Checklist Result
++
++- Story file loaded and status verified as reviewable.
++- Acceptance Criteria 1-7 cross-checked against source, tests, and story File List.
++- File List matched the relevant app source changes; unrelated `_bmad-output`, planning, and local automation changes were not treated as source review targets.
++- Security review confirmed store-manager inventory shaping still strips `unitPrice`, amount fields, adjustment amount fields, FIFO/lot evidence, and inventory amount fields.
++- Code quality review completed for inventory query/action/type/UI/schema/test/migration files.
++- Sprint tracking synced to `done`.
++
++### Verification
++
++- `corepack pnpm exec prisma generate` passed.
++- `corepack pnpm exec prisma validate` passed.
++- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` passed.
++- `corepack pnpm typecheck` passed.
++- `corepack pnpm lint` passed.
++- `corepack pnpm test:unit` passed.
++- `corepack pnpm build` passed.
++- `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` was attempted but
+ blocked because the sandbox rejects local server bind with `listen EPERM: operation not permitted 127.0.0.1:3135`.
++
+ ## Dev Agent Record
+
+ ### Agent Model Used
+@@ -234,15 +267,19 @@
+ - 2026-06-12T02:58+09:00: `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.sp
+ec.ts` 실행 시도. Playwright webServer가 조기 종료되어 실패.
+ - 2026-06-12T02:58+09:00: 동일 환경에서 `corepack pnpm dev --hostname 127.0.0.1 --port 3135` 직접 실행 결과 `listen EPERM: operation not permitted 127.0.0.1:3135`. 현재 샌드박스에서 로컬 서버 bind가
+차단되어 E2E는 미실행.
+ - 2026-06-12T02:58+09:00: `corepack pnpm exec prisma format` 및 재검증 `corepack pnpm exec prisma validate` 통과.
++- 2026-06-12T03:15+09:00: Senior review 자동 수정 적용. migration backfill, 이전월 저장 장부 fallback, 모바일 입력 높이, unit/e2e coverage를 보강.
++- 2026-06-12T03:15+09:00: 재검증 `corepack pnpm exec prisma generate`, `corepack pnpm exec prisma validate`, focused unit, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`,
+`corepack pnpm build` 통과. Playwright E2E는 `listen EPERM`으로 재차 차단.
+
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
+ - 기존 재고 저장/조회 경로를 유지하면서 `InventoryCarryoverStatus` row 상태와 `PREVIOUS_SAVED_LEDGER` source를 추가해 `전일 이월`, `검토 필요`, `이월 공백`, `이월 재확인 필요`, `월초 이월`, `데이터
+부족`, `기준 확인 필요`를 구조화했다.
+ - `getCarryoverBases`가 직전 저장 장부의 당일재고 후보를 사용하고, 본사 마감 전 장부는 `검토 필요`, 누락 기간/근거 부족은 `이월 공백`, 마감/정정으로 기준이 바뀔 수 있는 기존 행은 `이월 재확인 필요`로
+ 표시한다. 기존 입력값은 자동 덮어쓰지 않는다.
++- Senior review에서 `getCarryoverBases`가 같은 달 이전 장부만 보던 gap을 보완했다. 월초 스냅샷이 없으면 더 과거 저장 장부 후보를 `이월 공백`으로 표시하고, 월초 스냅샷이 있으면 이전월 장부보다 우선한
+다.
++- Senior review에서 `carryoverStatus` migration backfill을 추가해 기존 저장 행의 `OPENING_SNAPSHOT`, `PREVIOUS_CLOSED_LEDGER`, `MANUAL` source가 각각 적절한 상태로 표시되도록 했다.
+ - 지점장 응답은 계속 `toStoreManagerInventoryStepData`를 거쳐 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, 조정 금액 필드를 제거한다. FIFO lot, `30%단가`, 확정 재고금액 계산은 추가
+하지 않았다.
+-- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리와
+모바일 focus scroll 보정을 추가했다.
+-- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playwright 실행은 샌드박스의 `127.0.0.1` bind 권
+한 차단으로 수행되지 못했다.
++- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리,
+모바일 focus scroll 보정, 모바일 touch-sized inventory inputs를 추가했다.
++- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 월초 스냅샷 누락/이전월 저장 장부 fallback, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playw
+right 실행은 샌드박스의 `127.0.0.1` bind 권한 차단으로 수행되지 못했다.
+
+ ### File List
+
+@@ -264,3 +301,4 @@
+ - 2026-06-12: Updated carryover query behavior for previous saved ledgers, opening snapshots, missing carryover basis, and recheck-needed conditions.
+ - 2026-06-12: Updated inventory UI badges, accessible status text, 50-row paging, mobile focus behavior, and `상태/조정` column label.
+ - 2026-06-12: Updated unit and E2E coverage for Story 2.5 carryover statuses, sensitive field blocking, and mobile/large-row behavior.
++- 2026-06-12: Senior review fixed carryover status migration backfill, older saved ledger fallback, mobile row control height, and regression coverage.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ae2e207264a447c711fdf260453d98339017011a..86eaf9eb0daf6c894fff11f1d792cdd175efac9f
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:58:32+09:00
++# last_updated: 2026-06-12T03:15:01+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:58:32+09:00"
++last_updated: "2026-06-12T03:15:01+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -54,7 +54,7 @@
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+-  2-5-재고-입력과-이월-상태-표시: review
++  2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+diff --git a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+index 53817131aea7e2d032dc0c8be8993c04adb30f4f..680d867b0558b35abc3bfa898405a9f3f90f82b7
+--- a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
++++ b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+@@ -14,3 +14,10 @@
+
+ ALTER TABLE "LedgerInventoryItem"
+   ADD COLUMN "carryoverStatus" "InventoryCarryoverStatus" NOT NULL DEFAULT 'DATA_INSUFFICIENT';
++
++UPDATE "LedgerInventoryItem"
++SET "carryoverStatus" = CASE
++  WHEN "carryoverSource" = 'OPENING_SNAPSHOT' THEN 'OPENING_CARRYOVER'::"InventoryCarryoverStatus"
++  WHEN "carryoverSource" = 'PREVIOUS_CLOSED_LEDGER' THEN 'PREVIOUS_CARRYOVER'::"InventoryCarryoverStatus"
++  ELSE 'CARRYOVER_EMPTY'::"InventoryCarryoverStatus"
++END;
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index e833e8044da6daaf4e39ea5c60c4db531bb3cda4..b95737631e69259bf922c662be796e69785af7dd
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -806,7 +806,7 @@
+                 updateCurrentQuantity(item.productId, event.currentTarget.value)
+               }
+               disabled={isSaving || isClosed || isAdjustmentSavePending}
+-              className="h-8 tabular-nums"
++              className="h-11 tabular-nums sm:h-8"
+             />
+             {quantityError ? (
+               <p
+@@ -893,7 +893,7 @@
+                       )
+                     }
+                     disabled={isAdjustmentSavePending}
+-                    className="h-8 min-w-0 flex-1"
++                    className="h-11 min-w-0 flex-1 sm:h-8"
+                     placeholder="조정 사유"
+                   />
+                   <Button
+@@ -903,7 +903,7 @@
+                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                     onClick={() => handleAdjustmentSave(item)}
+                     disabled={savingAdjustmentProductId !== null}
+-                    className="h-8 shrink-0 px-2 text-xs"
++                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                   >
+                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
+                   </Button>
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index 0fe1209492ea0acd37e012e4d680a077b5110e2a..a7d8dfcdf6009ac47bb88c1b07bd0c0e8ff4f955
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -125,12 +125,6 @@
+   }).format(date);
+ }
+
+-function getMonthStart(date: Date) {
+-  const [year, month] = getYearMonth(date).split("-");
+-
+-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
+-}
+-
+ function aggregatePurchases(purchases: PurchasePayload[]) {
+   const aggregates = new Map<string, PurchaseAggregate>();
+
+@@ -510,14 +504,12 @@
+   closingDate: Date,
+ ) {
+   const yearMonth = getYearMonth(closingDate);
+-  const monthStart = getMonthStart(closingDate);
+
+   const priorLedger = await tx.dailyLedger.findFirst({
+     where: {
+       storeId,
+       closingDate: {
+         lt: closingDate,
+-        gte: monthStart,
+       },
+       status: { not: "HOLIDAY" },
+       ledgerInventoryItems: {
+@@ -538,7 +530,7 @@
+     },
+   });
+
+-  if (priorLedger) {
++  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+     const isDirectPrevious = isPreviousCalendarDate(
+       closingDate,
+       priorLedger.closingDate,
+@@ -554,7 +546,10 @@
+       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
+     return {
+-      status: "loaded" as const,
++      status:
++        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
++          ? ("manual" as const)
++          : ("loaded" as const),
+       source,
+       message: isDirectPrevious
+         ? isHeadquartersClosed
+@@ -629,6 +624,33 @@
+     };
+   }
+
++  if (priorLedger) {
++    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
++    const source = isHeadquartersClosed
++      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
++      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
++
++    return {
++      status: "manual" as const,
++      source,
++      message:
++        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
++      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
++        (item) => ({
++          productId: item.productId,
++          productName: item.productName,
++          productCategory: item.productCategory,
++          productSpec: item.productSpec,
++          unitPrice: item.unitPrice,
++          previousQuantity: toPreviousQuantity(item),
++          carryoverSource: source,
++          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
++          carryoverLedgerId: priorLedger.id,
++        }),
++      ),
++    };
++  }
++
+   return {
+     status: "manual" as const,
+     source: InventoryCarryoverSource.MANUAL,
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index b78416b90d00c25de8c0a47aef8d8688ace3977a..fc4fbb251d858aa3b5424d7e47ef702414183e92
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -46,6 +46,12 @@
+   return getTodayKstMidnight().toISOString().slice(0, 7);
+ }
+
++function getCurrentKstMonthStart() {
++  const [year, month] = getCurrentKstYearMonth().split("-");
++
++  return new Date(Date.UTC(Number(year), Number(month) - 1, 1));
++}
++
+ function getCurrentKstDayOfMonth() {
+   return getTodayKstMidnight().getUTCDate();
+ }
+@@ -57,6 +63,13 @@
+   return date;
+ }
+
++function getPreviousMonthLastKstMidnight() {
++  const date = getCurrentKstMonthStart();
++  date.setUTCDate(date.getUTCDate() - 1);
++
++  return date;
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -412,6 +425,53 @@
+   await expect(missingRow.getByLabel(/데이터 부족/)).toBeVisible();
+ });
+
++test("월초 스냅샷이 없으면 더 과거 저장 장부 후보를 이월 공백으로 표시한다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 이전월 후보 갈치", "생물", 6000);
++  const previousLedger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate: getPreviousMonthLastKstMidnight(),
++      status: "HEADQUARTERS_CLOSED",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerInventoryItem.create({
++    data: {
++      dailyLedgerId: previousLedger.id,
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      previousQuantity: 0,
++      purchasedQuantity: 0,
++      currentQuantity: 12,
++      quantity: 12,
++      inventoryAmount: 72000,
++      carryoverSource: "MANUAL",
++      carryoverStatus: "DATA_INSUFFICIENT",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}&date=${getCurrentKstYearMonth()}-01`,
++  );
++  await page.getByRole("tab", { name: "생물" }).click();
++
++  await expect(page.getByText(/가장 최근 저장 장부/)).toBeVisible();
++  const row = page.locator("tr").filter({ hasText: product.name });
++  await expect(row.getByText("이월 공백").first()).toBeVisible();
++  await expect(row).toContainText("12");
++});
++
+ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고 재확인 상태를 표시한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+codex
+Story 2.5 리뷰 워크플로우를 완료했고, 자동 수정까지 반영했습니다. 스토리 상태는 `done`, sprint-status도 `2-5-재고-입력과-이월-상태-표시: done`으로 동기화했습니다.
+
+수정한 핵심 이슈:
+- [queries.ts](/home/noah/code/erp_fish/src/features/inventory/queries.ts): 같은 달 이전 장부만 보던 이월 후보 로직을 보완해, 월초 스냅샷이 없으면 더 과거 저장 장부를 `이월 공백` 후보로 표시.
+- [migration.sql](/home/noah/code/erp_fish/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql): 기존 재고 행의 `carryoverStatus` backfill 추가.
+- [inventory-step-client.tsx](/home/noah/code/erp_fish/src/features/inventory/components/inventory-step-client.tsx): 390px 모바일에서 재고 입력/조정 컨트롤이 44px 터치 높이를 갖도록 조정.
+- [ledger-inventory.test.mjs](/home/noah/code/erp_fish/tests/unit/ledger-inventory.test.mjs), [store-ledger-inventory.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-inventory.spec.ts): migra
+tion backfill, 이전월 저장 장부 fallback, 모바일 입력 높이 검증 보강.
+
+검증 결과:
+- `prisma generate` 통과
+- `prisma validate` 통과
+- focused unit 통과
+- `typecheck` 통과
+- `lint` 통과
+- `test:unit` 통과
+- `build` 통과
+- Playwright E2E는 실행 시도했지만 현재 샌드박스가 `127.0.0.1:3135` bind를 `listen EPERM`으로 차단해서 미실행입니다.
+diff --git a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+index 1c7bee85aa1aae387343684071f6d9065eaeac92..fead5cf7f6c5ac77185c912f570cefe95130eb3b
+--- a/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
++++ b/_bmad-output/implementation-artifacts/2-5-재고-입력과-이월-상태-표시.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.5: 재고 입력과 이월 상태 표시
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -214,6 +214,39 @@
+ - [Source: `tests/unit/ledger-inventory.test.mjs`]
+ - [Source: `tests/e2e/store-ledger-inventory.spec.ts`]
+
++## Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex
++Reviewed At: 2026-06-12T03:15:01+09:00
++Outcome: Approved after automatic fixes
++
++### Findings and Fixes
++
++- [HIGH][Fixed] `getCarryoverBases` only considered prior ledgers from the same month, so the required "most recent saved ledger candidate with 이월 공백" path was missing when no month-opening snaps
+hot existed. Fixed `src/features/inventory/queries.ts` to prefer same-month prior ledgers, then month snapshots, then older saved ledgers as `CARRYOVER_EMPTY` candidates without treating the value as
+confirmed.
++- [HIGH][Fixed] The new `carryoverStatus` migration defaulted existing inventory rows to `DATA_INSUFFICIENT`, which could make previously saved `OPENING_SNAPSHOT` or `PREVIOUS_CLOSED_LEDGER` rows dis
+play the wrong status after migration. Fixed `prisma/migrations/20260612025000_inventory_carryover_status/migration.sql` with source-based backfill.
++- [MEDIUM][Fixed] The 390px mobile E2E expected touch-sized inventory inputs, but the current row inputs used `h-8`. Fixed `src/features/inventory/components/inventory-step-client.tsx` so mobile quan
+tity and adjustment controls use `h-11` and compact back to `h-8` at `sm`.
++- [MEDIUM][Fixed] Test coverage did not exercise the older saved ledger fallback or migration backfill. Updated `tests/unit/ledger-inventory.test.mjs` and `tests/e2e/store-ledger-inventory.spec.ts` t
+o lock those contracts.
++
++### Checklist Result
++
++- Story file loaded and status verified as reviewable.
++- Acceptance Criteria 1-7 cross-checked against source, tests, and story File List.
++- File List matched the relevant app source changes; unrelated `_bmad-output`, planning, and local automation changes were not treated as source review targets.
++- Security review confirmed store-manager inventory shaping still strips `unitPrice`, amount fields, adjustment amount fields, FIFO/lot evidence, and inventory amount fields.
++- Code quality review completed for inventory query/action/type/UI/schema/test/migration files.
++- Sprint tracking synced to `done`.
++
++### Verification
++
++- `corepack pnpm exec prisma generate` passed.
++- `corepack pnpm exec prisma validate` passed.
++- `corepack pnpm exec node --experimental-strip-types --test tests/unit/ledger-inventory.test.mjs` passed.
++- `corepack pnpm typecheck` passed.
++- `corepack pnpm lint` passed.
++- `corepack pnpm test:unit` passed.
++- `corepack pnpm build` passed.
++- `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts` was attempted but
+ blocked because the sandbox rejects local server bind with `listen EPERM: operation not permitted 127.0.0.1:3135`.
++
+ ## Dev Agent Record
+
+ ### Agent Model Used
+@@ -234,15 +267,19 @@
+ - 2026-06-12T02:58+09:00: `PORT=3135 DATABASE_URL=postgresql://postgres:erp_fish_local_pw@host.docker.internal:5432/erp_fish_e2e corepack pnpm exec playwright test tests/e2e/store-ledger-inventory.sp
+ec.ts` 실행 시도. Playwright webServer가 조기 종료되어 실패.
+ - 2026-06-12T02:58+09:00: 동일 환경에서 `corepack pnpm dev --hostname 127.0.0.1 --port 3135` 직접 실행 결과 `listen EPERM: operation not permitted 127.0.0.1:3135`. 현재 샌드박스에서 로컬 서버 bind가
+차단되어 E2E는 미실행.
+ - 2026-06-12T02:58+09:00: `corepack pnpm exec prisma format` 및 재검증 `corepack pnpm exec prisma validate` 통과.
++- 2026-06-12T03:15+09:00: Senior review 자동 수정 적용. migration backfill, 이전월 저장 장부 fallback, 모바일 입력 높이, unit/e2e coverage를 보강.
++- 2026-06-12T03:15+09:00: 재검증 `corepack pnpm exec prisma generate`, `corepack pnpm exec prisma validate`, focused unit, `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test:unit`,
+`corepack pnpm build` 통과. Playwright E2E는 `listen EPERM`으로 재차 차단.
+
+ ### Completion Notes List
+
+ - Ultimate context engine analysis completed - comprehensive developer guide created
+ - 기존 재고 저장/조회 경로를 유지하면서 `InventoryCarryoverStatus` row 상태와 `PREVIOUS_SAVED_LEDGER` source를 추가해 `전일 이월`, `검토 필요`, `이월 공백`, `이월 재확인 필요`, `월초 이월`, `데이터
+부족`, `기준 확인 필요`를 구조화했다.
+ - `getCarryoverBases`가 직전 저장 장부의 당일재고 후보를 사용하고, 본사 마감 전 장부는 `검토 필요`, 누락 기간/근거 부족은 `이월 공백`, 마감/정정으로 기준이 바뀔 수 있는 기존 행은 `이월 재확인 필요`로
+ 표시한다. 기존 입력값은 자동 덮어쓰지 않는다.
++- Senior review에서 `getCarryoverBases`가 같은 달 이전 장부만 보던 gap을 보완했다. 월초 스냅샷이 없으면 더 과거 저장 장부 후보를 `이월 공백`으로 표시하고, 월초 스냅샷이 있으면 이전월 장부보다 우선한
+다.
++- Senior review에서 `carryoverStatus` migration backfill을 추가해 기존 저장 행의 `OPENING_SNAPSHOT`, `PREVIOUS_CLOSED_LEDGER`, `MANUAL` source가 각각 적절한 상태로 표시되도록 했다.
+ - 지점장 응답은 계속 `toStoreManagerInventoryStepData`를 거쳐 `unitPrice`, `purchaseAmount`, `lossAmount`, `inventoryAmount`, 조정 금액 필드를 제거한다. FIFO lot, `30%단가`, 확정 재고금액 계산은 추가
+하지 않았다.
+-- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리와
+모바일 focus scroll 보정을 추가했다.
+-- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playwright 실행은 샌드박스의 `127.0.0.1` bind 권
+한 차단으로 수행되지 못했다.
++- `InventoryStepClient`는 기존 냉동/생물 탭, sticky header, horizontal overflow, numeric input, `LedgerSaveStatus`, `UnsavedChangeDialog`, sticky 저장 버튼을 유지하며 30행 초과 시 50행 페이지 처리,
+모바일 focus scroll 보정, 모바일 touch-sized inventory inputs를 추가했다.
++- Focused E2E spec은 Story 2.5 seed 명명, 미마감 직전 장부 `검토 필요`, 전일 근거 없음 `이월 공백`, 월초 스냅샷 누락/이전월 저장 장부 fallback, 30행 초과 paging 검증을 포함하도록 갱신했다. 실제 Playw
+right 실행은 샌드박스의 `127.0.0.1` bind 권한 차단으로 수행되지 못했다.
+
+ ### File List
+
+@@ -264,3 +301,4 @@
+ - 2026-06-12: Updated carryover query behavior for previous saved ledgers, opening snapshots, missing carryover basis, and recheck-needed conditions.
+ - 2026-06-12: Updated inventory UI badges, accessible status text, 50-row paging, mobile focus behavior, and `상태/조정` column label.
+ - 2026-06-12: Updated unit and E2E coverage for Story 2.5 carryover statuses, sensitive field blocking, and mobile/large-row behavior.
++- 2026-06-12: Senior review fixed carryover status migration backfill, older saved ledger fallback, mobile row control height, and regression coverage.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index ae2e207264a447c711fdf260453d98339017011a..86eaf9eb0daf6c894fff11f1d792cdd175efac9f
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T02:58:32+09:00
++# last_updated: 2026-06-12T03:15:01+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T02:58:32+09:00"
++last_updated: "2026-06-12T03:15:01+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -54,7 +54,7 @@
+   2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: done
+   2-4-mvp-수동-매입-입력: done
+-  2-5-재고-입력과-이월-상태-표시: review
++  2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: backlog
+   2-7-손실-폐기-떨이-입력: backlog
+   2-8-근무인원-특이사항과-검토-제출: backlog
+diff --git a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+index 53817131aea7e2d032dc0c8be8993c04adb30f4f..680d867b0558b35abc3bfa898405a9f3f90f82b7
+--- a/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
++++ b/prisma/migrations/20260612025000_inventory_carryover_status/migration.sql
+@@ -14,3 +14,10 @@
+
+ ALTER TABLE "LedgerInventoryItem"
+   ADD COLUMN "carryoverStatus" "InventoryCarryoverStatus" NOT NULL DEFAULT 'DATA_INSUFFICIENT';
++
++UPDATE "LedgerInventoryItem"
++SET "carryoverStatus" = CASE
++  WHEN "carryoverSource" = 'OPENING_SNAPSHOT' THEN 'OPENING_CARRYOVER'::"InventoryCarryoverStatus"
++  WHEN "carryoverSource" = 'PREVIOUS_CLOSED_LEDGER' THEN 'PREVIOUS_CARRYOVER'::"InventoryCarryoverStatus"
++  ELSE 'CARRYOVER_EMPTY'::"InventoryCarryoverStatus"
++END;
+diff --git a/src/features/inventory/components/inventory-step-client.tsx b/src/features/inventory/components/inventory-step-client.tsx
+index e833e8044da6daaf4e39ea5c60c4db531bb3cda4..b95737631e69259bf922c662be796e69785af7dd
+--- a/src/features/inventory/components/inventory-step-client.tsx
++++ b/src/features/inventory/components/inventory-step-client.tsx
+@@ -806,7 +806,7 @@
+                 updateCurrentQuantity(item.productId, event.currentTarget.value)
+               }
+               disabled={isSaving || isClosed || isAdjustmentSavePending}
+-              className="h-8 tabular-nums"
++              className="h-11 tabular-nums sm:h-8"
+             />
+             {quantityError ? (
+               <p
+@@ -893,7 +893,7 @@
+                       )
+                     }
+                     disabled={isAdjustmentSavePending}
+-                    className="h-8 min-w-0 flex-1"
++                    className="h-11 min-w-0 flex-1 sm:h-8"
+                     placeholder="조정 사유"
+                   />
+                   <Button
+@@ -903,7 +903,7 @@
+                     aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                     onClick={() => handleAdjustmentSave(item)}
+                     disabled={savingAdjustmentProductId !== null}
+-                    className="h-8 shrink-0 px-2 text-xs"
++                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                   >
+                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
+                   </Button>
+diff --git a/src/features/inventory/queries.ts b/src/features/inventory/queries.ts
+index 0fe1209492ea0acd37e012e4d680a077b5110e2a..a7d8dfcdf6009ac47bb88c1b07bd0c0e8ff4f955
+--- a/src/features/inventory/queries.ts
++++ b/src/features/inventory/queries.ts
+@@ -125,12 +125,6 @@
+   }).format(date);
+ }
+
+-function getMonthStart(date: Date) {
+-  const [year, month] = getYearMonth(date).split("-");
+-
+-  return new Date(Date.UTC(Number(year), Number(month) - 1, 1, 0, 0, 0));
+-}
+-
+ function aggregatePurchases(purchases: PurchasePayload[]) {
+   const aggregates = new Map<string, PurchaseAggregate>();
+
+@@ -510,14 +504,12 @@
+   closingDate: Date,
+ ) {
+   const yearMonth = getYearMonth(closingDate);
+-  const monthStart = getMonthStart(closingDate);
+
+   const priorLedger = await tx.dailyLedger.findFirst({
+     where: {
+       storeId,
+       closingDate: {
+         lt: closingDate,
+-        gte: monthStart,
+       },
+       status: { not: "HOLIDAY" },
+       ledgerInventoryItems: {
+@@ -538,7 +530,7 @@
+     },
+   });
+
+-  if (priorLedger) {
++  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+     const isDirectPrevious = isPreviousCalendarDate(
+       closingDate,
+       priorLedger.closingDate,
+@@ -554,7 +546,10 @@
+       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+
+     return {
+-      status: "loaded" as const,
++      status:
++        status === InventoryCarryoverStatus.CARRYOVER_EMPTY
++          ? ("manual" as const)
++          : ("loaded" as const),
+       source,
+       message: isDirectPrevious
+         ? isHeadquartersClosed
+@@ -629,6 +624,33 @@
+     };
+   }
+
++  if (priorLedger) {
++    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
++    const source = isHeadquartersClosed
++      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
++      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
++
++    return {
++      status: "manual" as const,
++      source,
++      message:
++        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
++      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
++        (item) => ({
++          productId: item.productId,
++          productName: item.productName,
++          productCategory: item.productCategory,
++          productSpec: item.productSpec,
++          unitPrice: item.unitPrice,
++          previousQuantity: toPreviousQuantity(item),
++          carryoverSource: source,
++          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
++          carryoverLedgerId: priorLedger.id,
++        }),
++      ),
++    };
++  }
++
+   return {
+     status: "manual" as const,
+     source: InventoryCarryoverSource.MANUAL,
+diff --git a/tests/e2e/store-ledger-inventory.spec.ts b/tests/e2e/store-ledger-inventory.spec.ts
+index b78416b90d00c25de8c0a47aef8d8688ace3977a..fc4fbb251d858aa3b5424d7e47ef702414183e92
+--- a/tests/e2e/store-ledger-inventory.spec.ts
++++ b/tests/e2e/store-ledger-inventory.spec.ts
+@@ -46,6 +46,12 @@
+   return getTodayKstMidnight().toISOString().slice(0, 7);
+ }
+
++function getCurrentKstMonthStart() {
++  const [year, month] = getCurrentKstYearMonth().split("-");
++
++  return new Date(Date.UTC(Number(year), Number(month) - 1, 1));
++}
++
+ function getCurrentKstDayOfMonth() {
+   return getTodayKstMidnight().getUTCDate();
+ }
+@@ -57,6 +63,13 @@
+   return date;
+ }
+
++function getPreviousMonthLastKstMidnight() {
++  const date = getCurrentKstMonthStart();
++  date.setUTCDate(date.getUTCDate() - 1);
++
++  return date;
++}
++
+ async function seedProduct(name: string, category = "냉동", unitPrice = 12000) {
+   const actorId = await getHeadquartersUserId();
+   const suffix = randomUUID().slice(0, 8);
+@@ -412,6 +425,53 @@
+   await expect(missingRow.getByLabel(/데이터 부족/)).toBeVisible();
+ });
+
++test("월초 스냅샷이 없으면 더 과거 저장 장부 후보를 이월 공백으로 표시한다", async ({
++  page,
++}) => {
++  await login(page);
++  const actorId = await getHeadquartersUserId();
++  const product = await seedProduct("스토리2-5 이전월 후보 갈치", "생물", 6000);
++  const previousLedger = await prisma.dailyLedger.create({
++    data: {
++      storeId: STORY_STORE_ID,
++      closingDate: getPreviousMonthLastKstMidnight(),
++      status: "HEADQUARTERS_CLOSED",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await prisma.ledgerInventoryItem.create({
++    data: {
++      dailyLedgerId: previousLedger.id,
++      productId: product.id,
++      productName: product.name,
++      productCategory: product.category,
++      productSpec: product.spec,
++      unitPrice: product.defaultUnitPrice,
++      previousQuantity: 0,
++      purchasedQuantity: 0,
++      currentQuantity: 12,
++      quantity: 12,
++      inventoryAmount: 72000,
++      carryoverSource: "MANUAL",
++      carryoverStatus: "DATA_INSUFFICIENT",
++      createdById: actorId,
++      updatedById: actorId,
++    },
++  });
++
++  await page.goto(
++    `/app/store-entry/inventory?storeId=${STORY_STORE_ID}&date=${getCurrentKstYearMonth()}-01`,
++  );
++  await page.getByRole("tab", { name: "생물" }).click();
++
++  await expect(page.getByText(/가장 최근 저장 장부/)).toBeVisible();
++  const row = page.locator("tr").filter({ hasText: product.name });
++  await expect(row.getByText("이월 공백").first()).toBeVisible();
++  await expect(row).toContainText("12");
++});
++
+ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고 재확인 상태를 표시한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-inventory.test.mjs b/tests/unit/ledger-inventory.test.mjs
+index ea09c426497c882df3c0f4614179e971fb3a0d4f..43f32e40c4cb5962269a1a0d3ffdd2a187cc3229
+--- a/tests/unit/ledger-inventory.test.mjs
++++ b/tests/unit/ledger-inventory.test.mjs
+@@ -98,7 +98,11 @@
+   assert.ok(
+     statusMigration.includes('ADD VALUE \'PREVIOUS_SAVED_LEDGER\'') &&
+       statusMigration.includes('CREATE TYPE "InventoryCarryoverStatus"') &&
+-      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"'),
++      statusMigration.includes('"carryoverStatus" "InventoryCarryoverStatus"') &&
++      statusMigration.includes('UPDATE "LedgerInventoryItem"') &&
++      statusMigration.includes("'OPENING_CARRYOVER'::") &&
++      statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
++      statusMigration.includes("'CARRYOVER_EMPTY'::"),
+     "migration should add previous saved ledger source and row carryover status",
+   );
+ });
+@@ -369,6 +373,16 @@
+   assert.match(querySource, /CARRYOVER_RECHECK_REQUIRED/);
+   assert.match(querySource, /DATA_INSUFFICIENT/);
+   assert.match(querySource, /isPreviousCalendarDate/);
++  assert.match(
++    querySource,
++    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
++    "same-month prior ledgers should be used before month opening snapshots",
++  );
++  assert.match(
++    querySource,
++    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
++    "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
++  );
+   assert.match(querySource, /ledgerPurchaseItems/);
+   assert.match(querySource, /purchasedQuantity/);
+   assert.match(querySource, /purchaseAmount/);
+@@ -529,6 +543,7 @@
+   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
+   assert.match(componentSource, /scrollIntoView/);
+   assert.match(componentSource, /inputMode="numeric"/);
++  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+   assert.match(componentSource, /tabular-nums/);
+   assert.match(componentSource, /overflow-x-auto/);
+   assert.match(
+
+tokens used
+182,229
+
+Pane is dead (status 0, Fri Jun 12 03:16:18 2026)

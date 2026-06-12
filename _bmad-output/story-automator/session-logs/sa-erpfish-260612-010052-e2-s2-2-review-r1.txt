@@ -1,0 +1,200 @@
++Outcome: Approve
++
++Findings:
++
++- Critical: 없음.
++- High: 없음.
++- Medium: 없음.
++- Low: 없음.
++
++Validation Notes:
++
++- Story Status가 review였고 Story 2.2 key는 `2-2-장부-입력-7단계-폼과-작성자-표시명-유지`로 확인했다.
++- `project-context.md`는 repository에서 찾을 수 없어 story의 기존 warning을 유지했다.
++- Epic story source, architecture, UX guardrail, package versions, implementation File List를 대조했다.
++- MCP doc search/web fallback은 실행하지 않았다. Story 2.2는 새 외부 API/library를 도입하지 않고 pinned workspace API 및 기존 공식-doc 조사 결과를 그대로 사용한다.
++- File List의 source/test 변경은 git 변경과 일치했다. 별도 git 변경에 planning/skill/stale artifact 문서 변경이 섞여 있으나 application source review 범위에서 제외했다.
++- AC 1-6을 구현 경로와 대조했다. 7단계 navigation, 작성자 표시명 DB persistence/전파, audit actor 분리, 390px 회귀 테스트, 미저장 변경 dialog, 저장 실패 상태 표면이 확인됐다.
++- Store-manager response shaping이 `grossProfit`, `productivity`, inventory/loss amount 계열 민감 값을 계속 제거하는 것을 확인했다.
++- 자동 수정이 필요한 검증된 code issue는 발견되지 않았다.
++
++Review Verification:
++
++- `corepack pnpm exec prisma validate` 통과.
++- Focused unit 통과: `ledger-sales`, `ledger-step-navigation`, `ledger-cost-labor`, `ledger-purchase`, `ledger-inventory`, `ledger-losses`, `ledger-review`.
++- `corepack pnpm lint` 통과.
++- `corepack pnpm typecheck` 통과.
++- `corepack pnpm test:unit` 통과. 29/29 tests passed.
++- `corepack pnpm build` 통과.
++- Focused E2E 재시도는 sandbox port binding 제한으로 실행되지 못했다. 단독 dev server 확인 결과 `listen EPERM: operation not permitted 127.0.0.1:3102`.
++
+ ### Change Log
+
+ - 2026-06-12: Story 2.2 구현 완료. 작성자 표시명 persistence, 7단계 저장 상태 UI, 미저장 변경 guard, audit payload, unit/E2E coverage를 추가하고 story 상태를 review로 변경했다.
++- 2026-06-12: Senior Developer Review 완료. 검증된 code issue 없음, unit/lint/typecheck/build 통과, E2E는 sandbox port binding 제한으로 미실행, story 상태를 done으로 변경했다.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 7b63babd8c327374d1e0f2f795ed2ac0d68032e1..f0a788dbd500583fdf294f9e1acfa4cae1e85c8e
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T01:00:00+09:00
++# last_updated: 2026-06-12T01:04:50+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T01:00:00+09:00"
++last_updated: "2026-06-12T01:04:50+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -51,7 +51,7 @@
+   epic-1-retrospective: done
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: done
+-  2-2-장부-입력-7단계-폼과-작성자-표시명-유지: review
++  2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: backlog
+   2-4-mvp-수동-매입-입력: backlog
+   2-5-재고-입력과-이월-상태-표시: backlog
+
+codex
+review 기록과 status sync를 적용했습니다. 마지막으로 story/sprint 상태와 worktree 요약을 확인해, 제가 건드린 범위가 의도대로인지 점검합니다.
+exec
+/bin/bash -lc 'git status --porcelain' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+ M .agents/skills/bmad-story-automator/data/agent-config-presets.json
+ M .gitignore
+ D "_bmad-output/implementation-artifacts/2-2-\354\247\200\354\240\220\354\236\245\354\235\264-\353\271\204\354\232\251\352\263\274-\352\267\274\353\254\264-\354\240\225\353\263\264\353\245\274-\354\2
+40\200\354\236\245\355\225\230\352\263\240-\352\270\260\353\263\270-\352\263\204\354\202\260\354\235\204-\353\263\270\353\213\244.md"
+ M _bmad-output/implementation-artifacts/sprint-status.yaml
+ M _bmad-output/implementation-artifacts/tests/test-summary.md
+ M _bmad-output/planning-artifacts/architecture.md
+ M _bmad-output/planning-artifacts/epics.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/.decision-log.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/DESIGN.md
+ M _bmad-output/planning-artifacts/ux-designs/ux-erp_fish-2026-05-28/EXPERIENCE.md
+ M prisma/schema.prisma
+ M src/features/inventory/components/inventory-step-client.tsx
+ M src/features/inventory/queries.ts
+ M src/features/inventory/types.ts
+ M src/features/ledger/actions.ts
+ M src/features/ledger/components/expense-step-client.tsx
+ M src/features/ledger/components/ledger-context-header.tsx
+ M src/features/ledger/components/purchase-step-client.tsx
+ M src/features/ledger/components/review-summary-client.tsx
+ M src/features/ledger/components/sales-payment-step-client.tsx
+ M src/features/ledger/components/store-entry-step-navigation.tsx
+ M src/features/ledger/components/workstep-client.tsx
+ M src/features/ledger/queries.ts
+ M src/features/ledger/review-queries.ts
+ M src/features/ledger/review-types.ts
+ M src/features/ledger/schemas.ts
+ M src/features/ledger/types.ts
+ M src/features/losses/components/loss-step-client.tsx
+ M src/features/losses/queries.ts
+ M src/features/losses/types.ts
+ M tests/e2e/store-ledger-sales.spec.ts
+ M tests/unit/ledger-sales.test.mjs
+ M tests/unit/ledger-step-navigation.test.mjs
+?? "_bmad-output/implementation-artifacts/2-2-\354\236\245\353\266\200-\354\236\205\353\240\245-7\353\213\250\352\263\204-\355\217\274\352\263\274-\354\236\221\354\204\261\354\236\220-\355\221\234\354
+\213\234\353\252\205-\354\234\240\354\247\200.md"
+?? _bmad-output/planning-artifacts/implementation-readiness-report-2026-06-11.md
+?? _bmad-output/story-automator/
+?? prisma/migrations/20260612010000_add_daily_ledger_author_display_name/
+?? src/features/ledger/components/ledger-save-status.tsx
+?? src/features/ledger/components/unsaved-change-dialog.tsx
+?? src/features/ledger/components/use-unsaved-step-guard.ts
+
+exec
+/bin/bash -lc 'rg -n "''^Status:|Senior Developer Review|Outcome:|2-2-장부-입력-7단계-폼과-작성자-표시명-유지" '"'_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md'
+_bmad-output/implementation-artifacts/sprint-status.yaml" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+_bmad-output/implementation-artifacts/sprint-status.yaml:54:  2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:2:story_key: 2-2-장부-입력-7단계-폼과-작성자-표시명-유지
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:12:Status: done
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:103:- `sprint-status.yaml`의 authoritative key는 `2-2-장부-입력-7단계-폼과-작성자-표시명-유지`이고 story 생성 전 상
+태는 `backlog`였다. [Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`]
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:337:### Senior Developer Review (AI)
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:341:Outcome: Approve
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:352:- Story Status가 review였고 Story 2.2 key는 `2-2-장부-입력-7단계-폼과-작성자-표시명-유지`로 확인했다.
+_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md:374:- 2026-06-12: Senior Developer Review 완료. 검증된 code issue 없음, unit/lint/typecheck/build 통과, E2E는 sandb
+ox port binding 제한으로 미실행, story 상태를 done으로 변경했다.
+
+exec
+/bin/bash -lc "git diff -- '_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md' _bmad-output/implementation-artifacts/sprint-status.yaml" in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 39a7c0c..f0a788d 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T23:52:48+09:00
++# last_updated: 2026-06-12T01:04:50+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T23:52:48+09:00"
++last_updated: "2026-06-12T01:04:50+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -51,7 +51,7 @@ development_status:
+   epic-1-retrospective: done
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: done
+-  2-2-장부-입력-7단계-폼과-작성자-표시명-유지: backlog
++  2-2-장부-입력-7단계-폼과-작성자-표시명-유지: done
+   2-3-매출-결제와-비용-입력: backlog
+   2-4-mvp-수동-매입-입력: backlog
+   2-5-재고-입력과-이월-상태-표시: backlog
+
+diff --git a/_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md b/_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md
+index bcb1cd4ed7078c572100f7da4d09c3954c2177a8..37d1ad8d61f6b5c830d43306c9d91064c26a3ca2
+--- a/_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md
++++ b/_bmad-output/implementation-artifacts/2-2-장부-입력-7단계-폼과-작성자-표시명-유지.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.2: 장부 입력 7단계 폼과 작성자 표시명 유지
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -334,6 +334,41 @@
+ - `tests/unit/ledger-step-navigation.test.mjs`
+ - `tests/e2e/store-ledger-sales.spec.ts`
+
++### Senior Developer Review (AI)
++
++Reviewer: Codex (GPT-5) on 2026-06-12
++
++Outcome: Approve
++
++Findings:
++
++- Critical: 없음.
++- High: 없음.
++- Medium: 없음.
++- Low: 없음.
++
++Validation Notes:
++
++- Story Status가 review였고 Story 2.2 key는 `2-2-장부-입력-7단계-폼과-작성자-표시명-유지`로 확인했다.
++- `project-context.md`는 repository에서 찾을 수 없어 story의 기존 warning을 유지했다.
++- Epic story source, architecture, UX guardrail, package versions, implementation File List를 대조했다.
++- MCP doc search/web fallback은 실행하지 않았다. Story 2.2는 새 외부 API/library를 도입하지 않고 pinned workspace API 및 기존 공식-doc 조사 결과를 그대로 사용한다.
++- File List의 source/test 변경은 git 변경과 일치했다. 별도 git 변경에 planning/skill/stale artifact 문서 변경이 섞여 있으나 application source review 범위에서 제외했다.
++- AC 1-6을 구현 경로와 대조했다. 7단계 navigation, 작성자 표시명 DB persistence/전파, audit actor 분리, 390px 회귀 테스트, 미저장 변경 dialog, 저장 실패 상태 표면이 확인됐다.
++- Store-manager response shaping이 `grossProfit`, `productivity`, inventory/loss amount 계열 민감 값을 계속 제거하는 것을 확인했다.
++- 자동 수정이 필요한 검증된 code issue는 발견되지 않았다.

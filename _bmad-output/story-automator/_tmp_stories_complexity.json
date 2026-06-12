@@ -1,0 +1,546 @@
+[
+  {
+    "storyId": "1.1",
+    "title": "프로젝트 앱 기반과 인증 골격 초기화",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "1.2",
+    "title": "사용자, 지점, 권한 프로파일 모델링",
+    "complexity": {
+      "score": 4,
+      "level": "Medium",
+      "reasons": [
+        "Authorization/permissions",
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "1.3",
+    "title": "역할 기반 로그인과 지점 접근 제한",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "1.4",
+    "title": "서버 권한 헬퍼와 민감 필드 응답 차단",
+    "complexity": {
+      "score": 4,
+      "level": "Medium",
+      "reasons": [
+        "Authorization/permissions",
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "1.5",
+    "title": "감사 로그 기반 구축",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.1",
+    "title": "지점+일자 장부 생성과 상태 관리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.2",
+    "title": "장부 입력 7단계 폼과 작성자 표시명 유지",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.3",
+    "title": "매출/결제와 비용 입력",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.4",
+    "title": "MVP 수동 매입 입력",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.5",
+    "title": "재고 입력과 이월 상태 표시",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (28)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.6",
+    "title": "재고 조정 기록",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.7",
+    "title": "손실/폐기/떨이 입력",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.8",
+    "title": "근무인원/특이사항과 검토 제출",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "2.9",
+    "title": "장부 저장 충돌과 미저장 변경 처리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "3.1",
+    "title": "기본 계산 모듈과 상태 표현",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "3.2",
+    "title": "장부 단계별 입력 검증",
+    "complexity": {
+      "score": 3,
+      "level": "Low",
+      "reasons": [
+        "Accessibility requirements",
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "3.3",
+    "title": "검토 화면의 계산/검증 요약",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "3.4",
+    "title": "계산 정책 미정 항목 차단과 테스트 기준",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.1",
+    "title": "본사 전체 지점 관제판 조회",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.2",
+    "title": "관제판 이상 상태와 기준 확인 필요 표시",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.3",
+    "title": "본사 마감 전 장부 보완 수정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.4",
+    "title": "마감 전 ClosePreflight 검토",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.5",
+    "title": "본사 마감과 원본 잠금",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "4.6",
+    "title": "마감 후 정정 기록과 정정 반영값",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "5.1",
+    "title": "지점 마스터 관리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "5.2",
+    "title": "품목 마스터 기본 관리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "5.3",
+    "title": "매입 기준 관리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "5.4",
+    "title": "장부 입력 코드 관리",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "5.5",
+    "title": "이상 신호 기준값 설정 구조",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "6.1",
+    "title": "일별 아침 회의 리포트",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "6.2",
+    "title": "지점별 기간 비교 리포트",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "6.3",
+    "title": "월간 지점 요약 리포트",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "6.4",
+    "title": "본사 전용 Export와 권한 차단",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.1",
+    "title": "매출차액과 이상 신호 기준 정책 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.2",
+    "title": "`30%단가` 의미와 화면 노출 정책 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.3",
+    "title": "품목명/구분/규격 정규화 기준 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.4",
+    "title": "FIFO 적용 범위와 재고 원가 처리 순서 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.5",
+    "title": "희망 판매가 기준 손실액 정책 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.6",
+    "title": "지점장 민감 필드 노출 차단 매트릭스 승인",
+    "complexity": {
+      "score": 4,
+      "level": "Medium",
+      "reasons": [
+        "Backend + Frontend combined",
+        "High AC count (24)"
+      ]
+    }
+  },
+  {
+    "storyId": "7.7",
+    "title": "`차이` → `당일 판매량` 의미 변경 범위 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (20)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.1",
+    "title": "직원/근무/급여 참고 범위와 개인정보 기준 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (16)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.2",
+    "title": "품목 정규화와 이카운트 업로드 계약 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (16)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.3",
+    "title": "FIFO 원가, 통합 재고, 상품 분석 선행 정책 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (16)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.4",
+    "title": "민감 지표 고도화와 희망 판매가 손실액 정책 확정",
+    "complexity": {
+      "score": 4,
+      "level": "Medium",
+      "reasons": [
+        "Backend + Frontend combined",
+        "High AC count (16)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.5",
+    "title": "마감 운영, 작성자 표시명, 재고 용어, 그리드 리사이징 완료 기준 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (19)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.6",
+    "title": "특수기간, 엑셀 매핑, 월 손익 리포트 계약 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (16)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.7",
+    "title": "외부 알림 채널과 템플릿 정책 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (15)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.8",
+    "title": "AI 기능 제외와 구조화 데이터 경계 확정",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (15)"
+      ]
+    }
+  },
+  {
+    "storyId": "8.9",
+    "title": "CAP-19 운영 계약 범위 분리 확인",
+    "complexity": {
+      "score": 2,
+      "level": "Low",
+      "reasons": [
+        "High AC count (15)"
+      ]
+    }
+  }
+]

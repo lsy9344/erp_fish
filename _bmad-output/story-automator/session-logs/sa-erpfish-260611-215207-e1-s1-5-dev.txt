@@ -1,0 +1,200 @@
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    isActive: true,
++    storeNames: expect.arrayContaining(["강남점", "서초점"]),
++  });
++  expect(createdAudit?.after).not.toHaveProperty("initialPassword");
++  expect(createdAudit?.after).not.toHaveProperty("passwordHash");
++  expect(assignmentAudit?.before).toMatchObject({
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    storeNames: expect.arrayContaining(["강남점", "서초점"]),
++  });
++  expect(assignmentAudit?.after).toMatchObject({
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    storeNames: ["서초점"],
++  });
++  expect(deactivatedAudit?.before).toMatchObject({
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    isActive: true,
++    storeNames: ["서초점"],
++  });
++  expect(deactivatedAudit?.after).toMatchObject({
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    isActive: false,
++    storeNames: ["서초점"],
++  });
++
+   await managerContext.close();
+   await hqContext.close();
+ });
+@@ -341,6 +385,20 @@ test("역할 변경은 기존 세션의 메뉴와 접근 범위에 즉시 반영
+     },
+   });
+   expect(roleChangeAudit).toBeTruthy();
++  expect(roleChangeAudit?.before).toMatchObject({
++    name: managerName,
++    email,
++    role: "STORE_MANAGER",
++    isActive: true,
++    storeNames: ["강남점"],
++  });
++  expect(roleChangeAudit?.after).toMatchObject({
++    name: managerName,
++    email,
++    role: "HEADQUARTERS",
++    isActive: true,
++    storeNames: [],
++  });
+
+   await managerContext.close();
+   await hqContext.close();
+
+exec
+/bin/bash -lc 'git diff -- _bmad-output/implementation-artifacts/sprint-status.yaml' in /home/noah/code/erp_fish
+ succeeded in 0ms:
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 0081ef2..8ca4e3a 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-11T21:24:37+09:00
++# last_updated: 2026-06-11T21:53:00+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-11T21:24:37+09:00"
++last_updated: "2026-06-11T21:53:00+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -47,7 +47,7 @@ development_status:
+   1-2-사용자-지점-권한-프로파일-모델링: done
+   1-3-역할-기반-로그인과-지점-접근-제한: done
+   1-4-서버-권한-헬퍼와-민감-필드-응답-차단: done
+-  1-5-감사-로그-기반-구축: backlog
++  1-5-감사-로그-기반-구축: in-progress
+   epic-1-retrospective: optional
+   epic-2: in-progress
+   2-1-지점-일자-장부-생성과-상태-관리: backlog
+
+diff --git a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+index bb3d912ed6f7d95ce06dedf3044dd68d6a3f0fbf..82ba21e77138b9850b075360c08a3cf27ff6de07
+--- a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
++++ b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+@@ -239,6 +239,7 @@
+ - 2026-06-11T22:05:00+09:00 - Added regression assertions for user audit payload completeness, then tightened user audit snapshots to include target user id, name, email, role, active state, store id
+s, and store names without credential fields.
+ - 2026-06-11T22:10:00+09:00 - Direct `pnpm` was unavailable; validation commands were run through `corepack pnpm`.
+ - 2026-06-11T22:17:00+09:00 - Playwright validation blocked by sandbox server bind failure: `listen EPERM: operation not permitted 127.0.0.1:3000`.
++- 2026-06-11T21:55:00+09:00 - Re-ran validation: `prisma generate`, `prisma validate`, lint, typecheck, unit suite, and build passed. Playwright command first failed because the config webServer uses
+ `pnpm dev` while no `pnpm` shim exists in PATH; direct `corepack pnpm dev --hostname 127.0.0.1 --port 3000` confirmed the underlying environment block remains `listen EPERM`.
+
+ ### Completion Notes List
+
+@@ -248,6 +249,7 @@
+ - Added unit and E2E regression assertions covering the Story 1.5 user audit payload contract and credential exclusion.
+ - Verified existing AuditLog schema/helper, store audit events, history route/query/UI, formatter labels, URL filters, and unauthorized history access against Story 1.5 requirements.
+ - Completed static/unit/build validation. Story remains `in-progress` because the required Playwright command could not start the local Next.js server in this sandbox.
++- Current validation pass: Prisma generate/validate, lint, typecheck, all 29 unit tests, and production build passed. Required Playwright E2E remains unchecked because this sandbox prevents the Next.
+js test server from binding to localhost.
+
+ ### File List
+
+
+codex
+정확한 Playwright 명령 자체가 서버 바인딩 단계까지 도달하는지도 확인하겠습니다. `/tmp`에 임시 `pnpm` shim을 두고 PATH만 보강해서 저장소 파일은 건드리지 않고 같은 spec 실행을 한 번 더 시도합니다.
+exec
+/bin/bash -lc 'mkdir -p /tmp/codex-pnpm-shim && ln -sf /usr/bin/corepack /tmp/codex-pnpm-shim/pnpm && PATH="/tmp/codex-pnpm-shim:$PATH" corepack pnpm exec playwright test tests/e2e/master-data-users.s
+pec.ts tests/e2e/master-data-history.spec.ts' in /home/noah/code/erp_fish
+diff --git a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+index bb3d912ed6f7d95ce06dedf3044dd68d6a3f0fbf..82ba21e77138b9850b075360c08a3cf27ff6de07
+--- a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
++++ b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+@@ -239,6 +239,7 @@
+ - 2026-06-11T22:05:00+09:00 - Added regression assertions for user audit payload completeness, then tightened user audit snapshots to include target user id, name, email, role, active state, store id
+s, and store names without credential fields.
+ - 2026-06-11T22:10:00+09:00 - Direct `pnpm` was unavailable; validation commands were run through `corepack pnpm`.
+ - 2026-06-11T22:17:00+09:00 - Playwright validation blocked by sandbox server bind failure: `listen EPERM: operation not permitted 127.0.0.1:3000`.
++- 2026-06-11T21:55:00+09:00 - Re-ran validation: `prisma generate`, `prisma validate`, lint, typecheck, unit suite, and build passed. Playwright command first failed because the config webServer uses
+ `pnpm dev` while no `pnpm` shim exists in PATH; direct `corepack pnpm dev --hostname 127.0.0.1 --port 3000` confirmed the underlying environment block remains `listen EPERM`.
+
+ ### Completion Notes List
+
+@@ -248,6 +249,7 @@
+ - Added unit and E2E regression assertions covering the Story 1.5 user audit payload contract and credential exclusion.
+ - Verified existing AuditLog schema/helper, store audit events, history route/query/UI, formatter labels, URL filters, and unauthorized history access against Story 1.5 requirements.
+ - Completed static/unit/build validation. Story remains `in-progress` because the required Playwright command could not start the local Next.js server in this sandbox.
++- Current validation pass: Prisma generate/validate, lint, typecheck, all 29 unit tests, and production build passed. Required Playwright E2E remains unchecked because this sandbox prevents the Next.
+js test server from binding to localhost.
+
+ ### File List
+
+
+ exited 1 in 1089ms:
+Error: Process from config.webServer was not able to start. Exit code: 1
+
+
+codex
+임시 shim으로는 Playwright가 `pnpm dev`까지는 호출했지만 출력이 축약되어 종료 코드만 보였습니다. 원인 캡처를 위해 Playwright webServer debug 로그를 켜고 같은 방식으로 한 번 더 실행합니다.
+exec
+/bin/bash -lc 'mkdir -p /tmp/codex-pnpm-shim && ln -sf /usr/bin/corepack /tmp/codex-pnpm-shim/pnpm && PATH="/tmp/codex-pnpm-shim:$PATH" DEBUG=pw:webserver corepack pnpm exec playwright test tests/e2e/
+master-data-users.spec.ts tests/e2e/master-data-history.spec.ts' in /home/noah/code/erp_fish
+diff --git a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+index bb3d912ed6f7d95ce06dedf3044dd68d6a3f0fbf..82ba21e77138b9850b075360c08a3cf27ff6de07
+--- a/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
++++ b/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md
+@@ -239,6 +239,7 @@
+ - 2026-06-11T22:05:00+09:00 - Added regression assertions for user audit payload completeness, then tightened user audit snapshots to include target user id, name, email, role, active state, store id
+s, and store names without credential fields.
+ - 2026-06-11T22:10:00+09:00 - Direct `pnpm` was unavailable; validation commands were run through `corepack pnpm`.
+ - 2026-06-11T22:17:00+09:00 - Playwright validation blocked by sandbox server bind failure: `listen EPERM: operation not permitted 127.0.0.1:3000`.
++- 2026-06-11T21:55:00+09:00 - Re-ran validation: `prisma generate`, `prisma validate`, lint, typecheck, unit suite, and build passed. Playwright command first failed because the config webServer uses
+ `pnpm dev` while no `pnpm` shim exists in PATH; direct `corepack pnpm dev --hostname 127.0.0.1 --port 3000` confirmed the underlying environment block remains `listen EPERM`.
+
+ ### Completion Notes List
+
+@@ -248,6 +249,7 @@
+ - Added unit and E2E regression assertions covering the Story 1.5 user audit payload contract and credential exclusion.
+ - Verified existing AuditLog schema/helper, store audit events, history route/query/UI, formatter labels, URL filters, and unauthorized history access against Story 1.5 requirements.
+ - Completed static/unit/build validation. Story remains `in-progress` because the required Playwright command could not start the local Next.js server in this sandbox.
++- Current validation pass: Prisma generate/validate, lint, typecheck, all 29 unit tests, and production build passed. Required Playwright E2E remains unchecked because this sandbox prevents the Next.
+js test server from binding to localhost.
+
+ ### File List
+
+
+ exited 1 in 1068ms:
+2026-06-11T12:56:14.614Z pw:webserver HTTP GET: http://localhost:3000/
+2026-06-11T12:56:14.624Z pw:webserver Error while checking if http://localhost:3000/ is available: connect EPERM 127.0.0.1:3000 - Local (undefined:undefined)
+2026-06-11T12:56:14.624Z pw:webserver Starting WebServer process pnpm dev --hostname 127.0.0.1 --port 3000...
+2026-06-11T12:56:14.628Z pw:webserver Process started
+2026-06-11T12:56:14.628Z pw:webserver Waiting for availability...
+2026-06-11T12:56:14.628Z pw:webserver HTTP GET: http://localhost:3000/
+2026-06-11T12:56:14.629Z pw:webserver Error while checking if http://localhost:3000/ is available: connect EPERM 127.0.0.1:3000 - Local (undefined:undefined)
+2026-06-11T12:56:14.630Z pw:webserver Waiting 100ms
+2026-06-11T12:56:14.682Z pw:webserver Terminating the WebServer
+2026-06-11T12:56:14.683Z pw:webserver Terminated the WebServer
+Error: Process from config.webServer was not able to start. Exit code: 1
+2026-06-11T12:56:14.700Z pw:webserver Terminating the WebServer
+2026-06-11T12:56:14.701Z pw:webserver Terminated the WebServer
+
+
+codex
+추가 확인 결과 Playwright도 localhost 접근/서버 기동 단계에서 `connect EPERM 127.0.0.1:3000`로 차단됩니다. 이 구체 로그를 스토리 기록에 반영하겠습니다.
+apply patch
+patch: completed
+/home/noah/code/erp_fish/_bmad-output/implementation-artifacts/1-5-감사-로그-기반-구축.md

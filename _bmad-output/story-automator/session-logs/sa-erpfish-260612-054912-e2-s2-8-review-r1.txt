@@ -1,0 +1,200 @@
++  expect(ledgerAfterComma.workMemo).toBeNull();
++
++  await workerInput.fill("3.2");
++  await page.getByRole("button", { name: "저장" }).click();
++
++  await expect(workerInput).toHaveValue("3.2");
++  await expect(
++    page.getByText("근무인원은 0 이상의 정수여야 합니다."),
++  ).toBeVisible();
++});
++
+ test("비용 단계 검증 실패 시 첫 오류 필드로 포커스가 이동한다", async ({
+   page,
+ }) => {
+diff --git a/tests/unit/ledger-cost-labor.test.mjs b/tests/unit/ledger-cost-labor.test.mjs
+index 754c2379cddb7feac0e768929fe1e94306c5f8b9..c1c6b585f78a03f5c87648c1bb94bd61b6797cd3
+--- a/tests/unit/ledger-cost-labor.test.mjs
++++ b/tests/unit/ledger-cost-labor.test.mjs
+@@ -192,6 +192,23 @@
+   ]);
+ });
+
++test("work step client preserves invalid worker count text for server validation", () => {
++  const componentSource = readProjectFile(
++    "src",
++    "features",
++    "ledger",
++    "components",
++    "workstep-client.tsx",
++  );
++
++  assert.match(
++    componentSource,
++    /onChange=\{\(event\)\s*=>\s*setWorkerCount\(event\.currentTarget\.value\)\}/,
++  );
++  assert.doesNotMatch(componentSource, /replace\(\s*\/\[\^\\d\]\//);
++  assert.doesNotMatch(componentSource, /sanitizeAmount/);
++});
++
+ test("ledger cost calculation helpers validate edge cases", async () => {
+   const calcPath = assertProjectFile(
+     "src",
+diff --git a/tests/unit/ledger-review.test.mjs b/tests/unit/ledger-review.test.mjs
+index 84cecac0a6a7380d1dfd35668d7107c604f628d1..2c1bd4c5c03deb67b01ac7e02e823097cc15bcf2
+--- a/tests/unit/ledger-review.test.mjs
++++ b/tests/unit/ledger-review.test.mjs
+@@ -347,6 +347,10 @@
+     missingItems.find((item) => item.id === "losses")?.detail,
+     "손실 항목 없음으로 검토할 수 있습니다.",
+   );
++  assert.equal(
++    missingItems.find((item) => item.id === "work")?.detail,
++    "근무인원은 1명 이상이어야 제출할 수 있습니다.",
++  );
+ });
+
+ test("store manager ledger review response omits sensitive accounting metrics", async () => {
+
+codex
+완료했습니다. Story 2.8 리뷰 워크플로우를 실행했고, 발견한 3개 이슈를 자동 수정했습니다.
+
+수정 사항:
+- [workstep-client.tsx](/home/noah/code/erp_fish/src/features/ledger/components/workstep-client.tsx): 근무인원 입력에서 콤마/소수/음수를 조용히 숫자로 바꾸던 클라이언트 보정을 제거했습니다.
+- [review-validation.ts](/home/noah/code/erp_fish/src/features/ledger/review-validation.ts): `0명` 제출 오류를 “미입력”이 아니라 “1명 이상이어야 제출 가능”으로 명확히 했습니다.
+- [ledger-cost-labor.test.mjs](/home/noah/code/erp_fish/tests/unit/ledger-cost-labor.test.mjs), [store-ledger-cost-labor.spec.ts](/home/noah/code/erp_fish/tests/e2e/store-ledger-cost-labor.spec.ts): i
+nvalid 근무인원 입력 회귀 테스트를 추가했습니다.
+- Story 파일, test summary, sprint status를 갱신했고 Story 2.8 상태를 `done`으로 동기화했습니다.
+
+검증:
+- `prisma validate` pass
+- `prisma generate` pass
+- focused unit pass
+- `pnpm lint` pass
+- `pnpm typecheck` pass
+- `pnpm test:unit` pass, 29/29 unit files
+- `pnpm build` pass
+- `git diff --check` pass
+
+Focused Playwright E2E는 시도했지만 이 샌드박스에서 Next dev server가 `127.0.0.1:3100` listen 권한 문제로 시작하지 못해 실행 전 차단됐습니다: `listen EPERM`.
+diff --git a/_bmad-output/implementation-artifacts/2-8-근무인원-특이사항과-검토-제출.md b/_bmad-output/implementation-artifacts/2-8-근무인원-특이사항과-검토-제출.md
+index d53c9586e60f3a524a59611de2abf56f7a63b4b5..bd3407ab87739b2a31668d9f62819a5665b9c3e3
+--- a/_bmad-output/implementation-artifacts/2-8-근무인원-특이사항과-검토-제출.md
++++ b/_bmad-output/implementation-artifacts/2-8-근무인원-특이사항과-검토-제출.md
+@@ -9,7 +9,7 @@
+
+ # Story 2.8: 근무인원/특이사항과 검토 제출
+
+-Status: review
++Status: done
+
+ <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+@@ -251,6 +251,7 @@
+ - 2026-06-12T05:23+09:00 - Completed available verification: focused unit, full unit, Prisma generate/validate, lint, typecheck, and build all passed.
+ - 2026-06-12T05:35:26+09:00 - Orchestrator narrowed Story 2.8 E2E assertions to visible review/submit regions and completed final verification: Prisma validate, focused unit 23/23, typecheck, lint, f
+ocused cost-labor/review E2E 12/12 on `PORT=3100`, full unit 198/198, and build.
+ - 2026-06-12T05:48:05+09:00 - QA automation added work-input normalization and post-submit work-edit regression coverage; orchestrator completed final verification: Prisma validate, focused unit 23/2
+3, typecheck, lint, focused cost-labor/review E2E 12/12 on `PORT=3100`, full unit 198/198, and build.
++- 2026-06-12T05:53:56+09:00 - Senior Developer Review found and auto-fixed 3 issues: work input UI silently normalized invalid formats, `workerCount=0` submit guidance was ambiguous, and UI regressio
+n coverage did not assert invalid work input is preserved for server validation. Available verification passed: focused unit, full unit 29/29 files, Prisma generate/validate, lint, typecheck, and buil
+d. Focused Playwright execution was blocked by sandbox `listen EPERM` on `127.0.0.1:3100`.
+
+ ### Completion Notes List
+
+@@ -260,8 +261,29 @@
+ - Story 2.8 E2E marker/store/seed names were updated. Review E2E now covers missing-submit rejection, resolving missing inputs, successful submit, duplicate submit audit idempotency, 390px submit UX,
+ and sensitive field non-exposure.
+ - Story 2.8 E2E assertions were scoped to visible review/submit regions so Next.js dev scripts and the global save status do not create false sensitive-field or strict locator failures.
+ - QA automation added regression coverage for work-input string normalization, empty-to-null handling, comma-format rejection, and post-submit `IN_REVIEW` work-info edits without resetting submitted
+metadata.
++- Senior Developer Review removed client-side work-count digit stripping so comma, decimal, and negative inputs reach the server validator instead of being silently converted. Review missing-item gui
+dance now distinguishes null work count from `0명`, and tests cover the UI/server validation contract.
+ - Existing `workerCount`, `workMemo`, submission metadata, work save action, review query/action, `WorkStepClient`, and `ReviewSummaryClient` were preserved rather than replaced.
+
++### Senior Developer Review (AI)
++
++Reviewer: GPT-5 Codex on 2026-06-12
++
++Outcome: Approved after automatic fixes. No CRITICAL issues remain.
++
++#### Findings Fixed
++
++- [HIGH] `WorkStepClient` stripped every non-digit from 근무인원 before submit, so inputs like `1,000`, `3.2`, or `-3` could be silently converted and saved instead of being rejected by `ledgerWorkIn
+foSchema`. Fixed by preserving raw input text and relying on server validation. [Source: `src/features/ledger/components/workstep-client.tsx`]
++- [MEDIUM] Review/submit missing-item guidance reported `workerCount=0` as "not entered", even though `0` is saved input but not submit-ready. Fixed the helper to say 근무인원 must be at least 1 for
+submission. [Source: `src/features/ledger/review-validation.ts`]
++- [MEDIUM] Regression coverage did not prove the work-step UI preserves invalid worker-count text through to server validation. Added unit/source and E2E coverage for comma/decimal work-count rejecti
+on without database mutation. [Source: `tests/unit/ledger-cost-labor.test.mjs`; `tests/e2e/store-ledger-cost-labor.spec.ts`]
++
++#### Checklist Notes
++
++- Story status was reviewable and is now `done`.
++- Acceptance Criteria 1-6 were cross-checked against implementation and focused tests.
++- File List was updated to include the review-touched `WorkStepClient`.
++- MCP doc search was not needed; Story 2.8 adds no external API/library and uses pinned workspace versions.
++- Focused Playwright execution in this sandbox was attempted but blocked before tests by Next dev server `listen EPERM: operation not permitted 127.0.0.1:3100`.
++
+ ### File List
+
+ - `_bmad-output/implementation-artifacts/2-8-근무인원-특이사항과-검토-제출.md`
+@@ -269,6 +291,7 @@
+ - `_bmad-output/implementation-artifacts/tests/test-summary.md`
+ - `src/features/ledger/actions.ts`
+ - `src/features/ledger/components/review-summary-client.tsx`
++- `src/features/ledger/components/workstep-client.tsx`
+ - `src/features/ledger/review-queries.ts`
+ - `src/features/ledger/review-validation.ts`
+ - `tests/e2e/store-ledger-cost-labor.spec.ts`
+@@ -282,3 +305,4 @@
+ - 2026-06-12: Implemented Story 2.8 submit missing-item server validation, shared review validation helper, structured review submit error display, Story 2.8 E2E naming, and focused submit/review tes
+t coverage.
+ - 2026-06-12: Orchestrator verified Story 2.8 with Prisma validate, focused unit 23/23, typecheck, lint, focused cost-labor/review E2E 12/12 on `PORT=3100`, full unit 198/198, and build.
+ - 2026-06-12: QA automation added Story 2.8 normalization and post-submit edit regression coverage; orchestrator re-verified focused E2E 12/12, focused unit 23/23, full unit 198/198, typecheck, lint,
+ Prisma validate, and build.
++- 2026-06-12: Senior Developer Review auto-fixed work-count client validation bypass, clarified `0명` submit guidance, added regression coverage, and marked Story 2.8 done.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index fcf34a1a6a47ea2604e93a1ae3af9e6e111f7e57..3ac7c7a3c63f9bc91bccdb67422d17826a9f6039
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-11T19:07:09+09:00
+-# last_updated: 2026-06-12T05:23:46+09:00
++# last_updated: 2026-06-12T05:53:56+09:00
+ # project: erp_fish
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -35,7 +35,7 @@
+ # - Dev moves story to review, then runs code-review
+
+ generated: "2026-06-11T19:07:09+09:00"
+-last_updated: "2026-06-12T05:23:46+09:00"
++last_updated: "2026-06-12T05:53:56+09:00"
+ project: erp_fish
+ project_key: NOKEY
+ tracking_system: file-system
+@@ -57,7 +57,7 @@
+   2-5-재고-입력과-이월-상태-표시: done
+   2-6-재고-조정-기록: done
+   2-7-손실-폐기-떨이-입력: done
+-  2-8-근무인원-특이사항과-검토-제출: review
++  2-8-근무인원-특이사항과-검토-제출: done
+   2-9-장부-저장-충돌과-미저장-변경-처리: backlog
+   epic-2-retrospective: optional
+   epic-3: in-progress
+diff --git a/_bmad-output/implementation-artifacts/tests/test-summary.md b/_bmad-output/implementation-artifacts/tests/test-summary.md
+index 8d70bff9e40840d39671ac71f0a489254f8dbd11..f2ee60b9e4af9841aeb5629eca258dc3e58b3dd8
+--- a/_bmad-output/implementation-artifacts/tests/test-summary.md
++++ b/_bmad-output/implementation-artifacts/tests/test-summary.md
+@@ -10,6 +10,7 @@
+
+ - [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - 비용/근무 단계 저장, 재방문 유지, 비활성 비용 코드 snapshot, 미저장 이동 dialog, 저장 실패 retry, 모바일 터치 타겟을 검증한다.
+ - [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - Story 2.8 근무인원/특이사항 저장과 지점장 민감 회계 지표 미노출, 근무인원 0 저장 시 인당생산성 라벨 미노출을 검증한다.
++- [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - Senior review 추가 회귀로 근무인원 콤마/소수 입력을 조용히 보정하지 않고 서버 검증 오류와 focus를 표시하며 DB 값을 변경하지 않는지 검증한다.
+ - [x] `tests/e2e/store-ledger-review.spec.ts` - 검토 화면의 총매출/결제 차액, 누락 항목 링크, 기준 확인 필요/계산 불가 상태, 손실 항목 없음, 모바일 읽기 상태, 지점장 민감 필드 미노출을 검증한다.
+ - [x] `tests/e2e/store-ledger-review.spec.ts` - 제출 시 필수 누락 서버 거부, 누락 해결 후 제출 성공, 중복 제출 audit idempotency, 네트워크 실패 retry를 검증한다.
+ - [x] `tests/e2e/store-ledger-review.spec.ts` - 추가 gap으로 제출 후 `IN_REVIEW` 장부의 근무정보 수정 가능성, 제출 metadata 유지, `ledger.work_info.saved` audit 생성을 검증한다.
+@@ -25,9 +26,9 @@
+
+ - API endpoints: N/A. Story 2.8 범위에는 별도 public API endpoint가 없다.
+ - Server actions/contracts: `saveLedgerWorkInfo`, `submitLedgerForReview`, submit server validation, editable `IN_PROGRESS`/`IN_REVIEW` status guard, stale `version` conflict, audit write, submitted
