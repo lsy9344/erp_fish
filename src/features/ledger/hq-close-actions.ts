@@ -79,6 +79,7 @@ function revalidateHqLedgerPaths(ledgerId: string) {
   revalidatePath(`/app/ledgers/${ledgerId}`);
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
   revalidatePath("/app/reports/monthly");
 }
 

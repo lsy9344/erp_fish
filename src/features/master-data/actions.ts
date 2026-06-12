@@ -35,6 +35,7 @@ function revalidateStorePaths() {
   revalidatePath("/app/master-data/stores");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
   revalidatePath("/app/reports/monthly");
 }
 

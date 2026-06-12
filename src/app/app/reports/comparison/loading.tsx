@@ -29,6 +29,7 @@ export default function StoreComparisonReportLoading() {
         <div className="flex flex-wrap items-end gap-2">
           <Skeleton className="h-9 w-36" />
           <Skeleton className="h-9 w-36" />
+          <Skeleton className="h-9 w-40" />
           <Skeleton className="h-8 w-14" />
         </div>
       </div>

@@ -77,6 +77,11 @@ export type StoreComparisonReportDateRange = {
   errorMessage: string | null;
 };
 
+export type StoreComparisonReportStoreOption = {
+  id: string;
+  name: string;
+};
+
 export type StoreComparisonStatusCounts = {
   missingDayCount: number;
   inProgressCount: number;
@@ -116,6 +121,10 @@ export type StoreComparisonReportRow = {
 
 export type StoreComparisonReportData = {
   range: StoreComparisonReportDateRange;
+  stores: StoreComparisonReportStoreOption[];
+  selectedStoreId: string | null;
+  selectedStoreName: string | null;
+  errorMessages: string[];
   rows: StoreComparisonReportRow[];
 };
 

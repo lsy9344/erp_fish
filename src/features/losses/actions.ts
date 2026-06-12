@@ -101,6 +101,7 @@ function revalidateLossPaths() {
   revalidatePath("/app/store-entry");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
   revalidatePath("/app/reports/monthly");
 }
 

@@ -198,6 +198,7 @@ function revalidateInventoryPaths() {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/dashboard");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
   revalidatePath("/app/reports/monthly");
 }
 

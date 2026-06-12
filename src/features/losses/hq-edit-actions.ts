@@ -205,6 +205,7 @@ function revalidateHqLossPaths(ledgerId: string) {
   revalidatePath("/app/store-entry/inventory");
   revalidatePath("/app/store-entry/losses");
   revalidatePath("/app/reports/daily");
+  revalidatePath("/app/reports/comparison");
   revalidatePath("/app/reports/monthly");
 }
 

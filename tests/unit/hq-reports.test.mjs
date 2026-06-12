@@ -133,7 +133,7 @@ test("correction creation revalidates daily reports after correction values chan
   assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
 });
 
-test("HQ store comparison report source files follow story 5.3 boundaries", () => {
+test("HQ store comparison report source files follow story 6.2 boundaries", () => {
   assertProjectFile("src", "app", "app", "reports", "comparison", "page.tsx");
   assertProjectFile(
     "src",
@@ -181,6 +181,9 @@ test("HQ store comparison report source files follow story 5.3 boundaries", () =
   assert.match(pageSource, /기간 비교 리포트/);
   assert.match(pageSource, /startDate/);
   assert.match(pageSource, /endDate/);
+  assert.match(pageSource, /storeId/);
+  assert.match(pageSource, /<select/);
+  assert.match(pageSource, /전체 활성 지점/);
   assert.match(loadingSource, /Skeleton/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
@@ -218,6 +221,10 @@ test("HQ store comparison report query reuses report calculation contracts", () 
   assert.match(querySource, /requireReportAccess\(\)/);
   assert.match(querySource, /getHeadquartersStoreScope\(\)/);
   assert.match(querySource, /storeScope\.stores/);
+  assert.match(querySource, /normalizedStoreId/);
+  assert.match(querySource, /matchedStore/);
+  assert.match(querySource, /selectedStores/);
+  assert.match(querySource, /storeErrorMessage/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /closingDate:\s*\{\s*gte:/s);
   assert.match(querySource, /lte:/);
@@ -232,8 +239,38 @@ test("HQ store comparison report query reuses report calculation contracts", () 
   assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
   assert.match(typeSource, /export type StoreComparisonReportData/);
   assert.match(typeSource, /export type StoreComparisonReportRow/);
+  assert.match(typeSource, /StoreComparisonReportStoreOption/);
+  assert.match(typeSource, /selectedStoreId/);
+  assert.match(typeSource, /errorMessages/);
   assert.match(typeSource, /metricEvidence/);
+  assert.match(querySource, /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*null/);
+  assert.doesNotMatch(
+    querySource,
+    /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*normalizedStoreId/,
+  );
   assert.match(actionSource, /revalidatePath\("\/app\/reports\/comparison"\)/);
+});
+
+test("ledger and master data writes revalidate store comparison reports", () => {
+  const files = [
+    ["src", "features", "ledger", "actions.ts"],
+    ["src", "features", "inventory", "actions.ts"],
+    ["src", "features", "losses", "actions.ts"],
+    ["src", "features", "ledger", "hq-edit-actions.ts"],
+    ["src", "features", "inventory", "hq-edit-actions.ts"],
+    ["src", "features", "losses", "hq-edit-actions.ts"],
+    ["src", "features", "ledger", "hq-close-actions.ts"],
+    ["src", "features", "master-data", "actions.ts"],
+    ["src", "features", "dashboard", "threshold-actions.ts"],
+  ];
+
+  for (const segments of files) {
+    assert.match(
+      readProjectFile(...segments),
+      /revalidatePath\("\/app\/reports\/comparison"\)/,
+      `${segments.join("/")} should revalidate store comparison reports`,
+    );
+  }
 });
 
 test("HQ monthly closing anomaly report source files follow story 5.4 boundaries", () => {
@@ -1268,6 +1305,10 @@ test("HQ store comparison report date range helper keeps valid URL state", async
     getStoreComparisonReportPath(range),
     "/app/reports/comparison?startDate=2026-05-30&endDate=2026-06-02",
   );
+  assert.equal(
+    getStoreComparisonReportPath({ ...range, storeId: "store-1" }),
+    "/app/reports/comparison?startDate=2026-05-30&endDate=2026-06-02&storeId=store-1",
+  );
 
   const reversed = getStoreComparisonReportDateRange({
     startDate: "2026-06-03",
@@ -1288,6 +1329,76 @@ test("HQ store comparison report date range helper keeps valid URL state", async
   assert.equal(missingEndDate.startDateInput, "2026-05-27");
   assert.equal(missingEndDate.endDateInput, "2026-06-02");
   assert.match(missingEndDate.errorMessage, /기본 7일/);
+});
+
+test("HQ store comparison report keeps single-period scope explicit and sorts by selected-period sales", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { sortStoreComparisonReportRowsForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const metricEvidence = {
+    label: "매출",
+    kind: "money",
+    original: { value: 0, kind: "money" },
+    applied: { value: 0, kind: "money" },
+    isCorrected: false,
+    status: "zero",
+    statusLabel: "0",
+    unavailableReason: null,
+    ledgerDetailHref: null,
+    correctionTimelineHref: null,
+  };
+  const row = (storeId, storeName, salesAmount, missingDayCount = 0) => ({
+    storeId,
+    storeName,
+    statusCounts: {
+      missingDayCount,
+      inProgressCount: 0,
+      reviewCount: 0,
+      closedCount: 1,
+      holidayCount: 0,
+    },
+    salesAmount: { value: salesAmount },
+    grossProfit: { value: null, unavailableReason: "계산 기준 확인 필요" },
+    grossMarginRate: { value: null, unavailableReason: "계산 기준 확인 필요" },
+    operatingProfit: { value: null, unavailableReason: "계산 기준 확인 필요" },
+    productivity: { value: null, unavailableReason: "계산 기준 확인 필요" },
+    averageInventory: { value: null, unavailableReason: "계산 기준 확인 필요" },
+    averageSales: { value: salesAmount },
+    inventoryToSalesRatio: {
+      value: null,
+      unavailableReason: "계산 기준 확인 필요",
+    },
+    hasLoss: false,
+    hasUnappliedCorrections: false,
+    metricEvidence: {
+      salesAmount: metricEvidence,
+      grossProfit: metricEvidence,
+      grossMarginRate: metricEvidence,
+      operatingProfit: metricEvidence,
+      productivity: metricEvidence,
+      averageInventory: metricEvidence,
+      averageSales: metricEvidence,
+      inventoryToSalesRatio: metricEvidence,
+      loss: metricEvidence,
+    },
+  });
+
+  const sorted = sortStoreComparisonReportRowsForTest([
+    row("store-b", "나지점", 300000),
+    row("store-c", "다지점", 300000, 1),
+    row("store-a", "가지점", 500000),
+  ]);
+
+  assert.deepEqual(
+    sorted.map((item) => item.storeId),
+    ["store-a", "store-c", "store-b"],
+  );
 });
 
 test("HQ store comparison report aggregation distinguishes missing holiday zero and corrected values", async () => {
@@ -1572,6 +1683,88 @@ test("HQ store comparison report keeps data-insufficient aggregate states", asyn
   assert.equal(row.averageInventory.value, null);
   assert.equal(row.inventoryToSalesRatio.value, null);
   assert.equal(row.metricEvidence.grossProfit.statusLabel, "데이터 부족");
+});
+
+test("HQ store comparison report keeps OQ-gated metrics as needs-review instead of finalized numbers", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 1,
+    ledgerSummaries: [
+      {
+        ledgerId: "ledger-policy",
+        status: "HEADQUARTERS_CLOSED",
+        original: {
+          totalSales: { value: 100000 },
+          grossProfit: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          grossMarginRate: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          operatingProfit: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          productivity: { value: 100000 },
+          inventoryAmount: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+        },
+        applied: {
+          totalSales: { value: 100000 },
+          grossProfit: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          grossMarginRate: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          operatingProfit: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+          productivity: { value: 100000 },
+          inventoryAmount: {
+            value: null,
+            status: "policy-unconfirmed",
+            unavailableReason: "계산 기준 확인 필요",
+          },
+        },
+        workerCount: 1,
+        hasLoss: false,
+        hasUnappliedCorrections: false,
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set(),
+      },
+    ],
+  });
+
+  assert.equal(row.grossProfit.value, null);
+  assert.equal(row.grossProfit.unavailableReason, "계산 기준 확인 필요");
+  assert.equal(row.metricEvidence.grossProfit.status, "needs-review");
+  assert.equal(row.metricEvidence.grossProfit.statusLabel, "계산 기준 확인 필요");
+  assert.equal(row.metricEvidence.averageInventory.status, "needs-review");
 });
 
 test("HQ store comparison report loss evidence matches missing-ledger rows", async () => {

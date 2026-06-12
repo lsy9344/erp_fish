@@ -37,8 +37,9 @@ export function StoreComparisonReportTable({
   if (report.rows.length === 0) {
     return (
       <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm shadow-sm">
-        표시할 지점 데이터가 없습니다. 기준정보에서 활성 지점을 먼저 확인해
-        주세요.
+        {report.stores.length === 0
+          ? "표시할 지점 데이터가 없습니다. 기준정보에서 활성 지점을 먼저 확인해 주세요."
+          : "선택한 조건에 표시할 지점 데이터가 없습니다. 지점 권한과 활성 상태를 확인해 주세요."}
       </section>
     );
   }
@@ -247,6 +248,8 @@ function StatusSummary({
     ["미입력", row.statusCounts.missingDayCount],
     ["휴무", row.statusCounts.holidayCount],
   ].filter(([, count]) => Number(count) > 0);
+  const hasUnclosedLedgers =
+    row.statusCounts.inProgressCount + row.statusCounts.reviewCount > 0;
 
   if (items.length === 0 && !row.hasUnappliedCorrections) {
     return <span className="text-muted-foreground text-sm">데이터 없음</span>;
@@ -254,6 +257,7 @@ function StatusSummary({
 
   return (
     <div className={cn("flex flex-wrap gap-1", className)}>
+      {hasUnclosedLedgers ? <Badge variant="outline">미마감 포함</Badge> : null}
       {items.map(([label, count]) => (
         <Badge key={label} variant="outline">
           {label} {Number(count).toLocaleString("ko-KR")}일

@@ -236,10 +236,20 @@ export function getStoreComparisonReportDateRange(
 export function getStoreComparisonReportPath({
   startDateInput,
   endDateInput,
-}: Pick<StoreComparisonReportDateRange, "startDateInput" | "endDateInput">) {
-  return `/app/reports/comparison?startDate=${encodeURIComponent(
-    startDateInput,
-  )}&endDate=${encodeURIComponent(endDateInput)}`;
+  storeId,
+}: Pick<StoreComparisonReportDateRange, "startDateInput" | "endDateInput"> & {
+  storeId?: string | null;
+}) {
+  const params = new URLSearchParams({
+    startDate: startDateInput,
+    endDate: endDateInput,
+  });
+
+  if (storeId) {
+    params.set("storeId", storeId);
+  }
+
+  return `/app/reports/comparison?${params.toString()}`;
 }
 
 export function getMonthlyClosingAnomalyReportMonthRange(
@@ -426,9 +436,11 @@ export async function getHqDailyMeetingReport({
 export async function getHqStoreComparisonReport({
   startDate,
   endDate,
+  storeId,
 }: {
   startDate?: unknown;
   endDate?: unknown;
+  storeId?: unknown;
 } = {}): Promise<StoreComparisonReportData> {
   const { getHeadquartersStoreScope, requireReportAccess } =
     await import("../../server/authz.ts");
@@ -440,7 +452,21 @@ export async function getHqStoreComparisonReport({
   const { getLatestCorrectionValuesForLedgers } =
     await import("../corrections/queries.ts");
   const stores = storeScope.stores;
-  const storeIds = stores.map((store) => store.id);
+  const normalizedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const matchedStore = normalizedStoreId
+    ? stores.find((store) => store.id === normalizedStoreId)
+    : null;
+  const selectedStores = normalizedStoreId
+    ? matchedStore
+      ? [matchedStore]
+      : []
+    : stores;
+  const storeErrorMessage =
+    normalizedStoreId && !matchedStore
+      ? "조회 지점을 확인해 주세요. 권한 있는 활성 지점만 기간 비교에 포함됩니다."
+      : null;
+  const storeIds = selectedStores.map((store) => store.id);
   const ledgers =
     storeIds.length === 0
       ? []
@@ -535,12 +561,20 @@ export async function getHqStoreComparisonReport({
 
   return {
     range,
-    rows: stores.map((store) =>
-      buildStoreComparisonReportRowForTest({
-        store,
-        dateCount: getInclusiveDateCount(range.startDate, range.endDate),
-        ledgerSummaries: summariesByStoreId.get(store.id) ?? [],
-      }),
+    stores,
+    selectedStoreId: matchedStore?.id ?? null,
+    selectedStoreName: matchedStore?.name ?? null,
+    errorMessages: [range.errorMessage, storeErrorMessage].filter(
+      (message): message is string => Boolean(message),
+    ),
+    rows: sortStoreComparisonReportRowsForTest(
+      selectedStores.map((store) =>
+        buildStoreComparisonReportRowForTest({
+          store,
+          dateCount: getInclusiveDateCount(range.startDate, range.endDate),
+          ledgerSummaries: summariesByStoreId.get(store.id) ?? [],
+        }),
+      ),
     ),
   };
 }
@@ -1865,6 +1899,43 @@ export function buildStoreComparisonReportRowForTest({
   };
 }
 
+export function sortStoreComparisonReportRowsForTest(
+  rows: StoreComparisonReportRow[],
+) {
+  return [...rows].sort((left, right) => {
+    const salesDelta =
+      getSortableMetricValue(right.salesAmount) -
+      getSortableMetricValue(left.salesAmount);
+
+    if (salesDelta !== 0) {
+      return salesDelta;
+    }
+
+    const statusDelta = getStoreComparisonIssueCount(right) -
+      getStoreComparisonIssueCount(left);
+
+    if (statusDelta !== 0) {
+      return statusDelta;
+    }
+
+    return left.storeName.localeCompare(right.storeName, "ko-KR");
+  });
+}
+
+function getSortableMetricValue(metric: LedgerReviewMetric) {
+  return metric.value ?? Number.NEGATIVE_INFINITY;
+}
+
+function getStoreComparisonIssueCount(row: StoreComparisonReportRow) {
+  return (
+    row.statusCounts.missingDayCount +
+    row.statusCounts.inProgressCount +
+    row.statusCounts.reviewCount +
+    row.statusCounts.holidayCount +
+    (row.hasUnappliedCorrections ? 1 : 0)
+  );
+}
+
 type ComparisonMetricCorrectionMatcher = {
   targetType: string;
   fieldKey: string;
@@ -2643,7 +2714,7 @@ function getMetricStatusLabel(
     case "data-insufficient":
       return applied.label ?? "데이터 부족";
     case "needs-review":
-      return applied.label ?? applied.unavailableReason ?? "정정 확인 필요";
+      return applied.unavailableReason ?? applied.label ?? "정정 확인 필요";
     default:
       return "원본";
   }
