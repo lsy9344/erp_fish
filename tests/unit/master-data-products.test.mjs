@@ -22,7 +22,7 @@ function assertProjectFile(...segments) {
   return filePath;
 }
 
-test("Prisma schema adds products and purchase standards without hard-delete semantics", () => {
+test("Prisma schema keeps products, purchase standards, and ledger snapshots without hard-delete semantics", () => {
   const schema = readProjectFile("prisma", "schema.prisma");
   const migrationsRoot = projectPath("prisma", "migrations");
   const migrationNames = existsSync(migrationsRoot)
@@ -98,7 +98,7 @@ test("Prisma schema adds products and purchase standards without hard-delete sem
   );
   assert.ok(
     storyMigration,
-    "Story 1.5 must add Product and PurchaseStandard in a new migration after Story 1.4",
+    "Product and PurchaseStandard migration should exist after the user-management migration",
   );
   assert.match(
     readFileSync(
@@ -107,6 +107,22 @@ test("Prisma schema adds products and purchase standards without hard-delete sem
     ),
     /CREATE UNIQUE INDEX "Product_name_category_spec_key" ON "Product"\("name", "category", "spec"\)/,
   );
+
+  for (const modelName of [
+    "LedgerPurchaseItem",
+    "LedgerInventoryItem",
+    "LedgerInventoryAdjustment",
+    "LedgerLossItem",
+    "InventoryOpeningSnapshot",
+  ]) {
+    const modelPattern = new RegExp(`model\\s+${modelName}\\s*{[^}]*}`, "s");
+    const model = schema.match(modelPattern)?.[0] ?? "";
+
+    assert.match(model, /productName\s+String/);
+    assert.match(model, /productCategory\s+String/);
+    assert.match(model, /productSpec\s+String/);
+    assert.match(model, /unitPrice\s+Int/);
+  }
 });
 
 test("product schemas normalize input and return Korean field errors", async () => {
@@ -121,14 +137,14 @@ test("product schemas normalize input and return Korean field errors", async () 
   );
 
   const parsed = productFormSchema.parse({
-    name: "  스토리15 고등어  ",
+    name: "  스토리52 고등어  ",
     category: " 냉동 ",
     spec: " 10kg ",
     defaultUnitPrice: "12000",
   });
 
   assert.deepEqual(parsed, {
-    name: "스토리15 고등어",
+    name: "스토리52 고등어",
     category: "냉동",
     spec: "10kg",
     defaultUnitPrice: 12000,
@@ -159,7 +175,7 @@ test("product schemas normalize input and return Korean field errors", async () 
   ]);
 
   const decimal = productFormSchema.safeParse({
-    name: "스토리15 고등어",
+    name: "스토리52 고등어",
     category: "냉동",
     spec: "10kg",
     defaultUnitPrice: "12.5",
@@ -170,7 +186,7 @@ test("product schemas normalize input and return Korean field errors", async () 
   ]);
 
   const tooLarge = productFormSchema.safeParse({
-    name: "스토리15 고등어",
+    name: "스토리52 고등어",
     category: "냉동",
     spec: "10kg",
     defaultUnitPrice: "2147483648",
@@ -284,11 +300,17 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
   assert.match(productActions, /product\.updated/);
   assert.match(productActions, /product\.activated/);
   assert.match(productActions, /product\.deactivated/);
+  assert.match(productActions, /before:\s*toProductAuditValue\(existing\)/);
+  assert.match(productActions, /after:\s*toProductAuditValue\(updated\)/);
   assert.match(productActions, /ActionResult/);
   assert.match(productActions, /DUPLICATE_PRODUCT/);
   assert.match(
     productActions,
     /revalidatePath\("\/app\/master-data\/products"\)/,
+  );
+  assert.match(
+    productActions,
+    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
   );
   assert.match(productActions, /revalidatePath\("\/app\/dashboard"\)/);
   assert.match(productActions, /revalidatePath\("\/app\/store-entry"\)/);
@@ -297,6 +319,11 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
     /export\s+async\s+function\s+deleteProduct/,
   );
   assert.doesNotMatch(productActions, /\.delete\(/);
+  assert.doesNotMatch(productActions, /ledgerPurchaseItem\.update/i);
+  assert.doesNotMatch(productActions, /ledgerInventoryItem\.update/i);
+  assert.doesNotMatch(productActions, /ledgerInventoryAdjustment\.update/i);
+  assert.doesNotMatch(productActions, /ledgerLossItem\.update/i);
+  assert.doesNotMatch(productActions, /inventoryOpeningSnapshot\.update/i);
 
   assert.match(standardActions, /"use server"/);
   assert.match(
@@ -354,6 +381,7 @@ test("product and purchase standard queries expose headquarters lists and active
   assert.match(productQueries, /normalizeProductCategoryFilter/);
   assert.match(productQueries, /normalizeProductStatusFilter/);
   assert.match(productQueries, /requireSettingsAccess\(\)/);
+  assert.match(productQueries, /requireAppUser\(\)/);
   assert.match(productQueries, /name:\s*{\s*contains:\s*q/s);
   assert.match(productQueries, /category/);
   assert.match(productQueries, /isActive:\s*true/);
@@ -364,6 +392,41 @@ test("product and purchase standard queries expose headquarters lists and active
   assert.match(standardQueries, /product:\s*{/);
   assert.match(standardQueries, /isActive:\s*true/);
   assert.match(standardQueries, /product:\s*{\s*isActive:\s*true\s*}/s);
+});
+
+test("Story 5.2 stays within basic product master scope", () => {
+  const productActions = readProjectFile(
+    "src",
+    "features",
+    "master-data",
+    "product-actions.ts",
+  );
+  const productClient = readProjectFile(
+    "src",
+    "features",
+    "master-data",
+    "components",
+    "product-management-client.tsx",
+  );
+  const routesRoot = projectPath("src", "app", "api", "products");
+
+  assert.equal(
+    existsSync(projectPath("src", "features", "products")),
+    false,
+    "Story 5.2 should extend src/features/master-data instead of adding a products domain",
+  );
+  assert.equal(
+    existsSync(routesRoot),
+    false,
+    "Story 5.2 should not add a public /app/api/products route handler",
+  );
+  for (const source of [productActions, productClient]) {
+    assert.doesNotMatch(source, /alias|별칭|merge|병합/i);
+    assert.doesNotMatch(source, /eCount|이카운트/i);
+    assert.doesNotMatch(source, /FIFO|fifo/);
+    assert.doesNotMatch(source, /mapping|매핑/i);
+    assert.doesNotMatch(source, /effectiveStart|적용 시작일/i);
+  }
 });
 
 test("product and purchase standard screens follow headquarters shell and form accessibility contracts", () => {

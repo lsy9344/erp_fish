@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-12T16:16:12+09:00
+# last_updated: 2026-06-12T16:39:09+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-12T16:16:12+09:00"
+last_updated: "2026-06-12T16:39:09+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -76,7 +76,7 @@ development_status:
   epic-4-retrospective: done
   epic-5: in-progress
   5-1-지점-마스터-관리: done
-  5-2-품목-마스터-기본-관리: backlog
+  5-2-품목-마스터-기본-관리: done
   5-3-매입-기준-관리: backlog
   5-4-장부-입력-코드-관리: backlog
   5-5-이상-신호-기준값-설정-구조: backlog
