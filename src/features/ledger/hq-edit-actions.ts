@@ -109,6 +109,48 @@ function mapHqActionError(): ActionResult<never> {
   );
 }
 
+async function validateActiveExpenseCodesInTx(
+  tx: Prisma.TransactionClient,
+  expenses: LedgerExpensesInput["expenses"],
+): Promise<ActionResult<Set<string>>> {
+  const activeExpenseCodes = await tx.ledgerInputCode.findMany({
+    where: {
+      group: "EXPENSE_ITEM",
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+  const activeExpenseCodeIds = new Set(
+    activeExpenseCodes.map((code) => code.id),
+  );
+
+  if (activeExpenseCodeIds.size === 0) {
+    return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+      expenses: ["비용 항목 코드가 등록된 뒤 저장할 수 있습니다."],
+    });
+  }
+
+  const expenseCodeErrors: Record<string, string[]> = {};
+
+  expenses.forEach((expense, index) => {
+    if (!activeExpenseCodeIds.has(expense.ledgerInputCodeId)) {
+      expenseCodeErrors[`expenses.${index}.ledgerInputCodeId`] = [
+        "활성 비용 항목만 저장할 수 있습니다.",
+      ];
+    }
+  });
+
+  if (Object.keys(expenseCodeErrors).length > 0) {
+    return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+      ...expenseCodeErrors,
+    });
+  }
+
+  return actionOk(activeExpenseCodeIds);
+}
+
 function notFoundError(): ActionResult<never> {
   return actionError("LEDGER_NOT_FOUND", "장부를 찾을 수 없습니다.");
 }
@@ -423,38 +465,13 @@ export async function saveHqLedgerExpenses(
         }
 
         const beforeLedger = beforeLedgerResult.data;
-        const validExpenseCodeIds = new Set(
-          (
-            await tx.ledgerInputCode.findMany({
-              where: {
-                id: {
-                  in: parsed.data.expenses.map(
-                    (expense) => expense.ledgerInputCodeId,
-                  ),
-                },
-                group: "EXPENSE_ITEM",
-                isActive: true,
-              },
-              select: { id: true },
-            })
-          ).map((code) => code.id),
+        const expenseCodeValidation = await validateActiveExpenseCodesInTx(
+          tx,
+          parsed.data.expenses,
         );
-        const expenseCodeErrors: Record<string, string[]> = {};
 
-        parsed.data.expenses.forEach((expense, index) => {
-          if (!validExpenseCodeIds.has(expense.ledgerInputCodeId)) {
-            expenseCodeErrors[`expenses.${index}.ledgerInputCodeId`] = [
-              "비용 항목을 확인해 주세요.",
-            ];
-          }
-        });
-
-        if (Object.keys(expenseCodeErrors).length > 0) {
-          return actionError<LedgerCostStepData>(
-            "VALIDATION_ERROR",
-            "입력값을 확인해 주세요.",
-            expenseCodeErrors,
-          );
+        if (!expenseCodeValidation.ok) {
+          return expenseCodeValidation;
         }
 
         const updated = await updateEditableDailyLedgerInTx(

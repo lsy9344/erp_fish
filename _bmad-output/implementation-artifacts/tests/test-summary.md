@@ -4,29 +4,25 @@
 
 ### API / Unit 테스트
 
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - 매입 기준 schema의 product trim, optional KRW integer, 음수/소수/포맷 문자열/Int 범위 초과, 단가/참조 정보 둘 중 하나 필수 검증
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - 매입 기준 action의 settings 권한, Prisma transaction, same-transaction audit, before/after payload, active product rule, revalidation 검증
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - 매입 기준 query의 settings-only list, active 기준 + active 품목 신규 선택지, active/inactive URL 필터 계약 검증
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - 관리 화면의 headquarters shell, URL filter, 표시 컬럼, validation accessibility, no hard-delete 계약 검증
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - eCount upload/FIFO/mapping/effective-start 후속 범위 제외 검증
-- [x] `tests/unit/master-data-purchase-standards.test.mjs` - 장부 저장 action이 매입 기준을 참조로만 사용하고 사용자 snapshot을 덮어쓰지 않는 구조 검증
+- [x] `tests/unit/master-data-codes-story54.test.mjs` - Story 5.4 코드 관리 도메인 재사용, hard-delete/API route 금지, settings 권한, validation, audit, revalidation, no-op 계약 검증
+- [x] `tests/unit/master-data-codes-story54.test.mjs` - active-only 비용/손실 코드 선택지, wrong-group/inactive 직접 post 차단, 과거 snapshot 보존, 보수적 `PAYMENT_METHOD` 경계 검증
+- [x] `tests/unit/master-data-codes.test.mjs` - 기존 코드 관리 action/query/schema 회귀 검증 유지
 
 ### E2E 테스트
 
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 본사 설정 관리자가 매입 기준 목록 컬럼, 상태 필터, 생성, 수정, 비활성화, 감사 로그를 확인
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 비활성 품목의 매입 기준 활성화 차단과 생성 dialog의 active product option 제한 검증
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 매입 기준 폼의 서버 validation error, `aria-invalid`, `aria-describedby`, 첫 오류 focus 검증
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 지점장이 매입 기준 관리 URL에서 차단되고 데이터를 볼 수 없는지 검증
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 장부 매입 입력에서 active 기준 선택, 비활성 기준 제외, 수동 입력 가능, 사용자 수정 snapshot 저장 검증
-- [x] `tests/e2e/master-data-purchase-standards.spec.ts` - 저장 후 매입 기준/품목이 변경 및 비활성화되어도 과거 장부 입력값은 유지되고 신규 매입 기준 선택지에서는 제외되는 회귀 검증
+- [x] `tests/e2e/master-data-codes.spec.ts` - Story 5.4 fixture prefix로 코드 관리 목록/검색/그룹/상태 필터, 빈 데이터 그룹 표시, 생성/수정/비활성화, 감사 로그, validation focus, 지점장 차단 검증
+- [x] `tests/e2e/master-data-codes.spec.ts` - 같은 그룹 중복 코드명 거부와 다른 그룹의 같은 코드명 허용을 신규 critical error case로 보강
+- [x] `tests/e2e/master-data-codes.spec.ts` - 결제수단 코드 관리의 보수 경계 문구를 화면에서 검증
+- [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - 기존 비용 신규 입력에서 비활성 비용 코드 제외와 기존 비활성 비용 코드 표시 보존 검증 확인
+- [x] `tests/e2e/store-ledger-losses.spec.ts` - 기존 손실 신규 입력에서 비활성 손실 유형 제외와 기존 손실 유형 snapshot 표시 보존 검증 확인
 
 ## 커버리지
 
-- Story 5.3 AC: 6/6 covered
-- API/action 경계: settings 권한, 생성/수정/상태 변경, KRW integer validation, active product rule, transaction-scoped audit, revalidation, no hard-delete covered
-- UI workflow: 목록/필터, 생성/수정/비활성화, 감사 로그, validation focus, branch-manager unauthorized redirect covered
-- 장부 입력: active 기준 참조, inactive 기준 신규 선택지 제외, 수동 입력 유지, 사용자 수정 snapshot 보존, 기준 변경 후 과거 입력값 유지 covered
-- Critical error cases: invalid KRW format, missing required reference, inactive product activation, unauthorized manager access, inactive standard option exclusion covered
+- Story 5.4 AC: 6/6 covered
+- API/action 경계: settings 권한, 생성/수정/상태 변경, same-group duplicate, validation, same-transaction audit, revalidation, no hard-delete covered
+- UI workflow: 목록/필터, 세 그룹 표시, 생성/수정/비활성화, 감사 로그, field error focus, branch-manager unauthorized redirect covered
+- 장부 입력: 비용/손실 active-only 신규 선택지, 비활성 기존 코드 표시 보존, wrong-group/inactive server validation covered
+- 결제수단: 코드 관리/audit/option boundary covered. 매출/결제 입력은 현금/카드/기타 결제수단 고정 필드 계약으로 명시 검증
 
 ## 체크리스트 결과
 
@@ -38,16 +34,16 @@
 - [x] Semantic locators and accessible names used
 - [x] Clear test descriptions used
 - [x] No hardcoded waits or sleeps added
-- [x] Tests are independent through cleanup, unique generated names, and Story 5.3 fixture scope
+- [x] Tests are independent through cleanup, unique generated names, and Story 5.4 fixture scope
 - [x] Tests saved to appropriate directories
 - [x] Summary includes coverage metrics and validation status
 
 ## 검증
 
-- [x] `corepack pnpm test:unit -- master-data-purchase-standards` - 34/34 passed. 스크립트 특성상 focused 인자와 함께 전체 unit suite가 실행됨.
-- [x] `corepack pnpm exec playwright test --list tests/e2e/master-data-purchase-standards.spec.ts` - 4 tests discovered
-- [ ] `corepack pnpm test:e2e tests/e2e/master-data-purchase-standards.spec.ts` - blocked before test body because Playwright `config.webServer` exited early.
-- [x] `corepack pnpm lint` - passed
-- [x] `corepack pnpm typecheck` - passed
+- [x] `pnpm test:unit -- master-data-codes` - 35/35 passed. 스크립트 특성상 focused 인자와 함께 전체 unit suite가 실행됨
+- [ ] `pnpm test:e2e tests/e2e/master-data-codes.spec.ts` - blocked before test body because Playwright `config.webServer` exited early
+- [x] `pnpm lint` - passed
+- [x] `pnpm typecheck` - passed
+- [x] Senior review `pnpm exec prettier --check src/app/app/master-data/codes/page.tsx src/features/ledger/hq-edit-actions.ts tests/unit/master-data-codes-story54.test.mjs tests/unit/master-data-codes.test.mjs tests/e2e/master-data-codes.spec.ts` - passed after formatting Story 5.4 test files
 
 E2E 차단 원인 확인: 동일 webServer 명령을 직접 실행하면 Next dev server가 `listen EPERM: operation not permitted 127.0.0.1:3000`으로 시작하지 못한다. 테스트 코드 생성과 정적 검증은 완료됐지만, 이 sandbox에서는 포트 listen 권한 때문에 Playwright 실행을 완료할 수 없다.

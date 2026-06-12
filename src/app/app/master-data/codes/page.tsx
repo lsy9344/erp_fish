@@ -39,7 +39,7 @@ export default async function CodeManagementPage({
     >
       <PageHeader
         title="코드 관리"
-        description="장부 입력에서 사용할 결제수단, 비용 항목, 손실 유형 코드를 관리합니다."
+        description="장부 입력에서 사용할 결제수단, 비용 항목, 손실 유형 코드를 관리합니다. 현재 매출/결제 입력은 기존 현금, 카드, 기타 결제수단 고정 필드로 저장됩니다."
       />
       <CodeManagementClient codes={codes} filters={filters} />
     </HeadquartersShell>

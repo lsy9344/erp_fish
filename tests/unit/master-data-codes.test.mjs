@@ -90,7 +90,7 @@ test("Prisma schema adds ledger input codes without hard-delete semantics", () =
   );
   assert.ok(
     storyMigration,
-    "Story 1.6 must add LedgerInputCode in a new migration after Story 1.5",
+    "LedgerInputCode must be present from the existing code-management migration",
   );
   const migrationSql = readFileSync(
     path.join(migrationsRoot, storyMigration, "migration.sql"),
@@ -122,12 +122,12 @@ test("ledger input code schemas normalize input and return Korean field errors",
   assert.deepEqual(
     ledgerInputCodeFormSchema.parse({
       group: "PAYMENT_METHOD",
-      name: "  스토리16 현금  ",
+      name: "  스토리54 현금  ",
       displayOrder: "10",
     }),
     {
       group: "PAYMENT_METHOD",
-      name: "스토리16 현금",
+      name: "스토리54 현금",
       displayOrder: 10,
     },
   );
