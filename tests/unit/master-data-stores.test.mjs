@@ -125,6 +125,11 @@ test("master-data actions enforce headquarters authorization, audit, transaction
   assert.match(actions, /store\.updated/);
   assert.match(actions, /store\.activated/);
   assert.match(actions, /store\.deactivated/);
+  assert.match(actions, /DUPLICATE_STORE_NAME/);
+  assert.match(
+    actions,
+    /name:\s*\[\s*"이미 같은 이름의 지점이 있습니다\."\s*\]/,
+  );
   assert.match(actions, /revalidatePath\("\/app\/master-data\/stores"\)/);
   assert.match(actions, /status:\s*"unchanged"/);
   assert.match(
@@ -148,6 +153,16 @@ test("master-data queries and audit helper use the shared server boundaries", ()
   assert.match(queries, /getStoresForHeadquarters/);
   assert.match(queries, /getActiveStoreOptions/);
   assert.match(queries, /requireSettingsAccess\(\)/);
+  assert.match(
+    queries,
+    /type\s+StoreListItem\s*=\s*{[^}]*createdAt:\s*string/s,
+  );
+  assert.match(
+    queries,
+    /select:\s*{[^}]*createdAt:\s*true[^}]*updatedAt:\s*true/s,
+  );
+  assert.match(queries, /createdAt:\s*store\.createdAt\.toISOString\(\)/);
+  assert.match(queries, /updatedAt:\s*store\.updatedAt\.toISOString\(\)/);
   assert.match(queries, /isActive:\s*true/);
   assert.match(audit, /export\s+async\s+function\s+writeAuditLog/);
   assert.match(audit, /export\s+function\s+withAuditActorContext/);
@@ -186,6 +201,13 @@ test("store management UI preserves combined filters and uses status-only row sa
   );
 
   assert.match(client, /updateStoreStatus/);
+  assert.match(client, /function\s+formatStoreDateTime\(value:\s*string\)/);
+  assert.match(client, /timeZone:\s*"Asia\/Seoul"/);
+  assert.match(client, /<TableHead>생성 시각<\/TableHead>/);
+  assert.match(client, /<TableHead>마지막 수정 시각<\/TableHead>/);
+  assert.match(client, /formatStoreDateTime\(store\.createdAt\)/);
+  assert.match(client, /formatStoreDateTime\(store\.updatedAt\)/);
+  assert.match(client, /colSpan=\{6\}/);
   assert.match(
     client,
     /pushFilters\(\{\s*q:\s*filters\.q,\s*status:\s*nextStatus\s*\}\)/,

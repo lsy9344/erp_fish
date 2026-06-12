@@ -7,6 +7,7 @@ export type StoreListItem = {
   id: string;
   name: string;
   isActive: boolean;
+  createdAt: string;
   updatedAt: string;
   updatedByName: string;
 };
@@ -58,6 +59,7 @@ export async function getStoresForHeadquarters(filters: StoreListFilters = {}) {
       id: true,
       name: true,
       isActive: true,
+      createdAt: true,
       updatedAt: true,
       updatedBy: {
         select: {
@@ -72,6 +74,7 @@ export async function getStoresForHeadquarters(filters: StoreListFilters = {}) {
     id: store.id,
     name: store.name,
     isActive: store.isActive,
+    createdAt: store.createdAt.toISOString(),
     updatedAt: store.updatedAt.toISOString(),
     updatedByName: store.updatedBy?.name ?? store.updatedBy?.email ?? "시스템",
   }));

@@ -184,6 +184,14 @@ If the identifier needed for authorization is missing or malformed, return a nor
 **Audit and Correction Strategy:**
 Original ledger records are preserved after HQ close. `AuditLog` and `CorrectionRecord` are append-only records. Reports and dashboards use correction-applied values by default while details keep original values visible.
 
+Epic 4 implementation fixed the close/correction contract more concretely:
+
+- `runHqLedgerClosePreflight` builds the authorized HQ closeability snapshot. It checks permission and ledger scope before returning store names, missing fields, calculation states, correction state, or other closeability detail.
+- `closeHqLedger` does not trust a prior UI preflight result. It checks the stale edit token first, rebuilds close preflight inside the close transaction, blocks on `blocking` items, and requires an exception reason when only `exception-allowed` items remain.
+- HQ close writes `DailyLedger.status`, `closedById`, `closedAt`, `updatedById`, and a `ledger.hq.closed` audit event. It must not rewrite original ledger input rows.
+- `createCorrectionRecord` is the post-close mutation path. It is append-only, requires `CORRECTION_CREATE` and ledger scope, re-reads the original value on the server, uses a transaction lock for same target ordering, and writes `correction.created` audit data with original, previous applied, corrected value, reason, and actor.
+- `applyCorrectionValuesToLedgerReviewInput` is the shared correction overlay for dashboard, reports, and close preflight. Unsupported or not-yet-policy-approved corrections surface as `정정 확인 필요` or `기준 확인 필요` instead of silently changing numbers.
+
 **Calculation Strategy:**
 Dashboard, detail pages, and reports must share the same server-side calculation functions. Do not duplicate calculation rules in separate UI-only code paths.
 
@@ -239,6 +247,8 @@ Use Server Components and server-side query helpers for page data. Queries must 
 
 **Mutation Pattern:**
 Use Server Actions for internal mutations such as saving ledger steps, closing ledgers, adding corrections, changing thresholds, and editing master data.
+
+Current HQ ledger actions are feature-specific rather than generic route handlers: `saveHqLedgerSalesPayment`, `saveHqLedgerExpenses`, `saveHqLedgerPurchases`, `saveHqLedgerInventoryItems`, `saveHqLedgerInventoryAdjustment`, `saveHqLedgerLosses`, `saveHqLedgerWorkInfo`, `runHqLedgerClosePreflight`, `closeHqLedger`, and `createCorrectionRecord`. These actions share the same pattern: minimal identifier parsing, authorization/scope checks, detailed validation, transactional writes where needed, audit logging, and route revalidation.
 
 **Route Handler Pattern:**
 Use Route Handlers only when an actual HTTP endpoint is useful, such as future webhooks, exports, health checks, or integration endpoints.
@@ -401,7 +411,7 @@ The main risk is not individual feature complexity. The risk is different agents
 
 **API and Action Naming Conventions:**
 
-- Server Actions use verb-first camelCase names: `saveLedgerStep`, `closeDailyLedger`, `addCorrectionRecord`, `updateAnomalyThreshold`.
+- Server Actions use verb-first camelCase names and may include domain qualifiers when the permission boundary matters: `saveLedgerStep`, `saveHqLedgerSalesPayment`, `runHqLedgerClosePreflight`, `closeHqLedger`, `createCorrectionRecord`, `updateAnomalyThreshold`.
 - Route Handlers are used only for true HTTP endpoints and use plural resource paths when needed: `/api/exports`, `/api/health`.
 - Query parameters use camelCase in application code.
 
@@ -741,7 +751,7 @@ Root-level config files are reserved for framework and tool configuration. Envir
 Business code is organized by feature under `src/features`. Shared infrastructure code is organized under `src/server`. General formatting and result helpers live under `src/lib`.
 
 **Test Organization:**
-Calculation and validation tests live in `tests/unit`. Authorization, ledger mutations, closing, and correction flows live in `tests/integration`. Browser-level workflows live in `tests/e2e`.
+Current automated tests live in `tests/unit` and `tests/e2e`. Calculation, validation, authorization, source-contract, ledger mutation, close, correction, dashboard, report, and master-data contracts are covered by `node:test` files in `tests/unit`. Browser-level workflows live in `tests/e2e` and are run through Playwright. Do not invent a separate `tests/integration` convention unless the repo actually adds that layer.
 
 **Asset Organization:**
 Static assets live in `public/assets`. Persistent uploaded files are deferred until a file storage decision is needed.

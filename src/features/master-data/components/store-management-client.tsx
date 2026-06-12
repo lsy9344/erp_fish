@@ -58,7 +58,7 @@ const statusLabels = {
   inactive: "비활성",
 } as const;
 
-function formatUpdatedAt(value: string) {
+function formatStoreDateTime(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -248,6 +248,7 @@ export function StoreManagementClient({
               <TableHead>지점명</TableHead>
               <TableHead>상태</TableHead>
               <TableHead>마지막 수정자</TableHead>
+              <TableHead>생성 시각</TableHead>
               <TableHead>마지막 수정 시각</TableHead>
               <TableHead className="text-right">행 작업</TableHead>
             </TableRow>
@@ -271,7 +272,8 @@ export function StoreManagementClient({
                     </Badge>
                   </TableCell>
                   <TableCell>{store.updatedByName}</TableCell>
-                  <TableCell>{formatUpdatedAt(store.updatedAt)}</TableCell>
+                  <TableCell>{formatStoreDateTime(store.createdAt)}</TableCell>
+                  <TableCell>{formatStoreDateTime(store.updatedAt)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <select
@@ -326,7 +328,7 @@ export function StoreManagementClient({
             {stores.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-muted-foreground py-8 text-center"
                 >
                   조건에 맞는 지점이 없습니다.
