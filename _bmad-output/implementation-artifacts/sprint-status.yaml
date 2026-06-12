@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-13T03:55:46+09:00
+# last_updated: 2026-06-13T04:17:16+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-13T03:55:46+09:00"
+last_updated: "2026-06-13T04:17:16+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -105,5 +105,5 @@ development_status:
   8-6-특수기간-엑셀-매핑-월-손익-리포트-계약-확정: done
   8-7-외부-알림-채널과-템플릿-정책-확정: done
   8-8-ai-기능-제외와-구조화-데이터-경계-확정: done
-  8-9-cap-19-운영-계약-범위-분리-확인: backlog
+  8-9-cap-19-운영-계약-범위-분리-확인: done
   epic-8-retrospective: optional
