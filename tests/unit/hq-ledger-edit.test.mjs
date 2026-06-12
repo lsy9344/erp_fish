@@ -458,19 +458,192 @@ test("HQ close action has idempotent close handling and same-tx audit path", () 
   assert.match(source, /writeAuditLog\(/);
   assert.match(
     source,
-    /before:\s*toLedgerAuditPayload\(before\)/,
-    "before payload should be captured",
+    /before:\s*toCloseAuditPayload\(before,\s*preflight\)/,
+    "before payload should include close preflight context",
   );
   assert.match(
     source,
-    /after:\s*toLedgerAuditPayload\(after\)/,
-    "after payload should be captured",
+    /after:\s*toCloseAuditPayload\(after,\s*preflight\)/,
+    "after payload should include close preflight context",
   );
   assert.match(
     source,
     /revalidateHqLedgerPathsBestEffort/,
     "cache revalidation should not turn a committed close into a false failure",
   );
+});
+
+test("HQ close preflight server contract is exported and permission-gated", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+  const preflightSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
+
+  assert.match(
+    actionSource,
+    /export\s+async\s+function\s+runHqLedgerClosePreflight/,
+  );
+  assert.match(
+    actionSource,
+    /requireLedgerHqCloseAccess\(\)[\s\S]*requireHeadquartersLedgerScope\(ledgerId\)[\s\S]*buildHqLedgerClosePreflightInTx/s,
+    "preflight action should authorize before loading detailed ledger data",
+  );
+  assert.match(preflightSource, /export\s+type\s+HqLedgerClosePreflightResult/);
+  assert.match(preflightSource, /ledgerId:\s*string/);
+  assert.match(preflightSource, /storeName:\s*string/);
+  assert.match(preflightSource, /closingDate:\s*string/);
+  assert.match(preflightSource, /ledgerUpdatedAt:\s*string/);
+  assert.match(preflightSource, /executedBy:/);
+  assert.match(preflightSource, /executedAt:\s*string/);
+  assert.match(preflightSource, /canClose:\s*boolean/);
+  assert.match(preflightSource, /items:\s*HqLedgerClosePreflightItem\[\]/);
+  assert.match(
+    preflightSource,
+    /severity:\s*"blocking"\s*\|\s*"warning"\s*\|\s*"exception-allowed"\s*\|\s*"info"/,
+  );
+});
+
+test("HQ close actions avoid detailed preflight data before permission and scope gates", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+  const preflightStart = actionSource.indexOf(
+    "export async function runHqLedgerClosePreflight",
+  );
+  const closeStart = actionSource.indexOf("export async function closeHqLedger");
+  const preflightActionSource = actionSource.slice(preflightStart, closeStart);
+  const closeActionSource = actionSource.slice(closeStart);
+
+  assert.ok(preflightStart >= 0, "preflight action should exist");
+  assert.ok(closeStart > preflightStart, "close action should follow preflight");
+
+  for (const [label, source] of [
+    ["preflight", preflightActionSource],
+    ["close", closeActionSource],
+  ]) {
+    const permissionIndex = source.indexOf(
+      "await requireLedgerHqCloseAccess()",
+    );
+    const scopeIndex = source.indexOf("await requireHeadquartersLedgerScope");
+    const buildIndex = source.indexOf("buildHqLedgerClosePreflightInTx");
+    const beforePermission = source.slice(0, permissionIndex);
+    const beforeScope = source.slice(0, scopeIndex);
+
+    assert.ok(permissionIndex > 0, `${label} should require close permission`);
+    assert.ok(
+      scopeIndex > permissionIndex,
+      `${label} should require scope after permission`,
+    );
+    assert.ok(
+      buildIndex === -1 || buildIndex > scopeIndex,
+      `${label} should not build detailed preflight data before scope`,
+    );
+    assert.doesNotMatch(
+      beforePermission,
+      /storeName|summary|items|findUnique|buildHqLedgerClosePreflightInTx/,
+      `${label} should not load or shape closeability detail before permission`,
+    );
+    assert.doesNotMatch(
+      beforeScope,
+      /storeName|summary|items|buildHqLedgerClosePreflightInTx/,
+      `${label} should not expose closeability detail before ledger scope`,
+    );
+  }
+
+  assert.match(
+    actionSource,
+    /function\s+preflightBlockedError\([\s\S]*?actionError\([\s\S]*?"LEDGER_CLOSE_PREFLIGHT_BLOCKED"[\s\S]*?undefined[\s\S]*?\)/,
+    "blocked close response should not echo detailed preflight rows in action metadata",
+  );
+});
+
+test("HQ close preflight reuses review, calculation, correction, and carryover contracts", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
+
+  assert.match(source, /getLedgerReviewMissingItems/);
+  assert.match(source, /getLedgerReviewStepHref/);
+  assert.match(source, /calculateLedgerReviewSummary/);
+  assert.match(source, /applyCorrectionValuesToLedgerReviewInput/);
+  assert.match(source, /hasUnappliedCorrections/);
+  assert.match(source, /policy-unconfirmed/);
+  assert.match(source, /기준 확인 필요/);
+  assert.match(source, /권한/);
+  assert.match(source, /이미 마감 여부/);
+  assert.match(source, /carryoverStatus/);
+  assert.match(source, /DATA_INSUFFICIENT/);
+  assert.match(source, /CARRYOVER_EMPTY/);
+  assert.match(source, /amountStatus/);
+  assert.match(source, /LedgerInventoryAdjustment\.amountStatus/);
+  assert.match(source, /purchaseStandardId/);
+  assert.match(source, /exception-allowed/);
+  assert.match(source, /getDashboardSignals/);
+});
+
+test("HQ close action reruns preflight inside the close transaction before audit", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+
+  assert.match(source, /LEDGER_CLOSE_PREFLIGHT_BLOCKED/);
+  assert.match(
+    source,
+    /before\.updatedAt\.getTime\(\)\s*!==\s*expectedUpdatedAt\.getTime\(\)[\s\S]*?closeConflictError\(tx,\s*parsed\.data\)[\s\S]*?buildHqLedgerClosePreflightInTx/s,
+    "close should preserve stale-token LEDGER_CONFLICT before rebuilding detailed preflight rows",
+  );
+  assert.match(
+    source,
+    /buildHqLedgerClosePreflightInTx\([\s\S]*?if\s*\(!preflight\.canClose\)[\s\S]*?preflightBlockedError\(preflight\)[\s\S]*?updateMany/s,
+    "close should reject newly blocking preflight results before status update",
+  );
+  assert.match(
+    source,
+    /preflight:\s*\{[\s\S]*summary:\s*preflight\.summary[\s\S]*executedBy:\s*preflight\.executedBy[\s\S]*executedAt:\s*preflight\.executedAt[\s\S]*ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/s,
+    "close audit payload should include the preflight summary and token used",
+  );
+});
+
+test("HQ close dialog opens with a ClosePreflight table before enabling confirm", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "hq-ledger-close-dialog.tsx",
+  );
+
+  assert.match(source, /runHqLedgerClosePreflight/);
+  assert.match(source, /preflight/);
+  assert.match(source, /Table/);
+  assert.match(source, /조건명/);
+  assert.match(source, /상태/);
+  assert.match(source, /필요한 조치/);
+  assert.match(source, /차단/);
+  assert.match(source, /경고/);
+  assert.match(source, /사유 필요/);
+  assert.match(source, /정보/);
+  assert.match(source, /preflight\.canClose/);
+  assert.match(source, /preflight\.ledgerUpdatedAt/);
+  assert.match(source, /재점검/);
+  assert.match(source, /overflow-x-auto/);
 });
 
 test("HQ close schema and payload include close metadata", () => {
@@ -516,7 +689,7 @@ test("HQ close dialog follows cross-tab ledger updatedAt sync", () => {
     source,
     /useLedgerUpdatedAtSync\(ledgerId,\s*setCurrentLedgerUpdatedAt\)/,
   );
-  assert.match(source, /ledgerUpdatedAt:\s*currentLedgerUpdatedAt/);
+  assert.match(source, /ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/);
 });
 
 test("HQ edit actions block HEADQUARTERS_CLOSED in all editable paths", () => {

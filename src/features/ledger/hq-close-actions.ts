@@ -6,16 +6,20 @@ import { z } from "zod";
 import type { DailyLedgerStatus, Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireHeadquartersLedgerScope, requireLedgerHqCloseAccess } from "~/server/authz";
+import {
+  requireHeadquartersLedgerScope,
+  requireLedgerHqCloseAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "./conflicts";
 import {
-  ledgerSelect,
-  toLedgerAuditPayload,
-} from "./queries";
+  buildHqLedgerClosePreflightInTx,
+  type HqLedgerClosePreflightResult,
+} from "./hq-close-preflight";
+import { ledgerSelect, toLedgerAuditPayload } from "./queries";
 
 const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
 
@@ -30,19 +34,37 @@ const closeLedgerInputSchema = z.object({
     .pipe(z.string().min(1, "마감할 장부가 확인되지 않습니다.")),
 });
 
+const closePreflightInputSchema = z.object({
+  ledgerId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, "장부를 확인해 주세요.")),
+});
+
 type LedgerCloseInput = z.infer<typeof closeLedgerInputSchema>;
+type LedgerClosePreflightInput = z.infer<typeof closePreflightInputSchema>;
 
 const closeLedgerAuditSelect = {
   ...ledgerSelect,
 } as const;
 
-function parseCloseLedgerInput(
-  input: unknown,
-): ActionResult<LedgerCloseInput> {
+function parseCloseLedgerInput(input: unknown): ActionResult<LedgerCloseInput> {
   const parsed = closeLedgerInputSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.");
+  }
+
+  return actionOk(parsed.data);
+}
+
+function parseClosePreflightInput(
+  input: unknown,
+): ActionResult<LedgerClosePreflightInput> {
+  const parsed = closePreflightInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError("VALIDATION_ERROR", "장부를 확인해 주세요.");
   }
 
   return actionOk(parsed.data);
@@ -85,6 +107,35 @@ function alreadyClosedError(): ActionResult<never> {
   return actionError("LEDGER_ALREADY_CLOSED", "이미 마감된 장부입니다.");
 }
 
+function preflightBlockedError(
+  _preflight: HqLedgerClosePreflightResult,
+): ActionResult<never> {
+  return actionError(
+    "LEDGER_CLOSE_PREFLIGHT_BLOCKED",
+    "마감 전 점검에서 보완이 필요한 항목이 확인됐습니다.",
+    undefined,
+  );
+}
+
+function toCloseAuditPayload(
+  ledger: Parameters<typeof toLedgerAuditPayload>[0],
+  preflight: HqLedgerClosePreflightResult,
+) {
+  return {
+    ...toLedgerAuditPayload(ledger),
+    preflight: {
+      summary: preflight.summary,
+      executedBy: preflight.executedBy,
+      executedAt: preflight.executedAt,
+      ledgerUpdatedAt: preflight.ledgerUpdatedAt,
+      beforeStatus: ledger.status,
+      blockingCount: preflight.summary.blockingCount,
+      warningCount: preflight.summary.warningCount,
+      exceptionAllowedCount: preflight.summary.exceptionAllowedCount,
+    },
+  };
+}
+
 async function closeConflictError<T = never>(
   tx: Prisma.TransactionClient,
   input: LedgerCloseInput,
@@ -122,6 +173,37 @@ export type HqCloseLedgerResult = {
   status: DailyLedgerStatus;
   closedAt: string;
 };
+
+export async function runHqLedgerClosePreflight(
+  input: unknown,
+): Promise<ActionResult<HqLedgerClosePreflightResult>> {
+  const parsed = parseClosePreflightInput(input);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const actor = { user: await requireLedgerHqCloseAccess() };
+  const { ledgerId } = parsed.data;
+  await requireHeadquartersLedgerScope(ledgerId);
+
+  const preflight = await db.$transaction((tx) =>
+    buildHqLedgerClosePreflightInTx(tx, {
+      ledgerId,
+      actor: {
+        id: actor.user.id,
+        name: actor.user.name ?? null,
+        email: actor.user.email ?? null,
+      },
+    }),
+  );
+
+  if (!preflight) {
+    return notFoundError();
+  }
+
+  return actionOk(preflight);
+}
 
 export async function closeHqLedger(
   input: unknown,
@@ -163,6 +245,27 @@ export async function closeHqLedger(
           return notEditableError();
         }
 
+        if (before.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          return await closeConflictError(tx, parsed.data);
+        }
+
+        const preflight = await buildHqLedgerClosePreflightInTx(tx, {
+          ledgerId: before.id,
+          actor: {
+            id: actor.user.id,
+            name: actor.user.name ?? null,
+            email: actor.user.email ?? null,
+          },
+        });
+
+        if (!preflight) {
+          return notFoundError();
+        }
+
+        if (!preflight.canClose) {
+          return preflightBlockedError(preflight);
+        }
+
         const closedAt = new Date();
         const updated = await tx.dailyLedger.updateMany({
           where: {
@@ -201,8 +304,8 @@ export async function closeHqLedger(
           targetType: "DailyLedger",
           targetId: after.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(before),
-          after: toLedgerAuditPayload(after),
+          before: toCloseAuditPayload(before, preflight),
+          after: toCloseAuditPayload(after, preflight),
         });
 
         return actionOk({
@@ -212,7 +315,6 @@ export async function closeHqLedger(
         });
       },
     );
-
   } catch {
     return mapCloseActionError();
   }
