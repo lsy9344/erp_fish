@@ -52,8 +52,73 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
   assert.match(source, /ledger\.hq\.work_info\.saved/);
   assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
   assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(source, /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/);
+  assert.match(
+    source,
+    /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/,
+  );
   assert.doesNotMatch(source, /getTodayStoreLedger/);
+});
+
+test("HQ ledger edit actions require and audit headquarters edit reasons", () => {
+  const ledgerSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const inventorySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  const lossesSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+
+  for (const source of [ledgerSource, inventorySource, lossesSource]) {
+    assert.match(source, /hqEditReasonSchema/);
+    assert.match(source, /본사 수정 사유를 입력해 주세요/);
+    assert.match(
+      source,
+      /\.max\(500,\s*"본사 수정 사유는 500자 이하여야 합니다\."\)/,
+    );
+    assert.match(source, /reason:\s*parsed\.data\.reason/);
+  }
+
+  for (const actionName of [
+    "ledger.hq.sales_payment.updated",
+    "ledger.hq.expenses.saved",
+    "ledger.hq.purchases.saved",
+    "ledger.hq.work_info.saved",
+  ]) {
+    assert.match(
+      ledgerSource,
+      new RegExp(
+        `action:\\s*"${actionName.replaceAll(".", "\\.")}"[\\s\\S]*reason:\\s*parsed\\.data\\.reason`,
+      ),
+    );
+  }
+
+  for (const actionName of [
+    "ledger.hq.inventory.saved",
+    "ledger.hq.inventory_adjustment.saved",
+  ]) {
+    assert.match(
+      inventorySource,
+      new RegExp(
+        `action:\\s*"${actionName.replaceAll(".", "\\.")}"[\\s\\S]*reason:\\s*parsed\\.data\\.reason`,
+      ),
+    );
+  }
+
+  assert.match(
+    lossesSource,
+    /action:\s*"ledger\.hq\.losses\.saved"[\s\S]*reason:\s*parsed\.data\.reason/,
+  );
 });
 
 test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
@@ -82,7 +147,10 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
     assert.match(source, /writeAuditLog\(/);
     assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
     assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
-    assert.match(source, /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/);
+    assert.match(
+      source,
+      /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/,
+    );
     assert.doesNotMatch(source, /getTodayStoreLedger/);
   }
 
@@ -92,6 +160,56 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
   assert.match(inventorySource, /ledger\.hq\.inventory_adjustment\.saved/);
   assert.match(lossesSource, /saveHqLedgerLosses/);
   assert.match(lossesSource, /ledger\.hq\.losses\.saved/);
+});
+
+test("HQ original edit actions reject closed or holiday ledgers before writing audit logs", () => {
+  const sources = [
+    [
+      "ledger",
+      readProjectFile("src", "features", "ledger", "hq-edit-actions.ts"),
+      "ensureTargetLedger",
+    ],
+    [
+      "inventory",
+      readProjectFile("src", "features", "inventory", "hq-edit-actions.ts"),
+      "ensureTargetInventory",
+    ],
+    [
+      "losses",
+      readProjectFile("src", "features", "losses", "hq-edit-actions.ts"),
+      "ensureTargetLossData",
+    ],
+  ];
+
+  for (const [label, source, ensureHelper] of sources) {
+    assert.match(
+      source,
+      /function\s+notEditableError[\s\S]*"HEADQUARTERS_CLOSED"[\s\S]*"LEDGER_CLOSED"[\s\S]*정정 기록을 사용해 주세요/,
+      `${label} should return LEDGER_CLOSED for headquarters-closed ledgers`,
+    );
+    assert.match(
+      source,
+      /function\s+notEditableError[\s\S]*"HOLIDAY"[\s\S]*"LEDGER_NOT_EDITABLE"/,
+      `${label} should reject holiday ledgers as not editable`,
+    );
+    assert.match(
+      source,
+      new RegExp(`function\\s+${ensureHelper}[\\s\\S]*notEditableError`),
+      `${label} should centralize editable status checks`,
+    );
+    assert.match(
+      source,
+      new RegExp(
+        `${ensureHelper}\\([\\s\\S]*?if\\s*\\(![^\\n]+\\.ok\\)\\s*{[\\s\\S]*?return\\s+[^;]+;[\\s\\S]*?}[\\s\\S]*?writeAuditLog\\(`,
+      ),
+      `${label} should return closed/not-editable errors before audit writes`,
+    );
+    assert.match(
+      source,
+      /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]/s,
+      `${label} should condition writes on editable statuses`,
+    );
+  }
 });
 
 test("HQ detail page renders editable sections with HQ actions", () => {
@@ -142,6 +260,23 @@ test("HQ detail page renders editable sections with HQ actions", () => {
   assert.doesNotMatch(source, /getTodayStoreLedger/);
 });
 
+test("HQ detail page enables headquarters edit reason input on every editable tab", () => {
+  const source = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.equal(
+    source.match(/hqEditReasonRequired/g)?.length,
+    6,
+    "each HQ editable tab should require a headquarters edit reason",
+  );
+});
+
 test("shared entry clients can accept injected HQ save actions", () => {
   const clientFiles = [
     [
@@ -164,6 +299,61 @@ test("shared entry clients can accept injected HQ save actions", () => {
     assert.match(source, /saveAction|saveItemsAction/);
     assert.match(source, /ledgerId:\s*(ledger|data)\.id/);
   }
+});
+
+test("shared entry clients render and submit headquarters edit reason when enabled", () => {
+  const reasonFieldSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "hq-edit-reason-field.tsx",
+  );
+  const clientFiles = [
+    [
+      "src",
+      "features",
+      "ledger",
+      "components",
+      "sales-payment-step-client.tsx",
+    ],
+    ["src", "features", "ledger", "components", "expense-step-client.tsx"],
+    ["src", "features", "ledger", "components", "purchase-step-client.tsx"],
+    ["src", "features", "ledger", "components", "workstep-client.tsx"],
+    ["src", "features", "inventory", "components", "inventory-step-client.tsx"],
+    ["src", "features", "losses", "components", "loss-step-client.tsx"],
+  ];
+
+  assert.match(reasonFieldSource, /본사 수정 사유/);
+  assert.match(reasonFieldSource, /감사 로그/);
+  assert.match(reasonFieldSource, /maxLength=\{500\}/);
+
+  for (const segments of clientFiles) {
+    const source = readProjectFile(...segments);
+
+    assert.match(source, /hqEditReasonRequired/);
+    assert.match(source, /HqEditReasonField/);
+    assert.match(source, /reason:\s*hqEditReason/);
+    assert.match(source, /hqEditReasonInputRef\.current\?\.focus\(\)/);
+  }
+});
+
+test("HQ inventory adjustment shows the shared reason field error before saving", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(source, /if\s*\(hqEditReasonRequired\)\s*{/);
+  assert.match(
+    source,
+    /setFieldErrors\(\{\s*reason:\s*\["본사 수정 사유를 입력해 주세요\."\]/s,
+  );
+  assert.match(source, /setFormError\("본사 수정 사유를 입력해 주세요\."\)/);
+  assert.match(source, /hqEditReasonInputRef\.current\?\.focus\(\)/);
 });
 
 test("audit history labels distinguish headquarters edits", () => {

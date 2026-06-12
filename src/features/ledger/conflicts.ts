@@ -39,6 +39,7 @@ const ledgerConflictMetaSelect = {
     select: {
       name: true,
       email: true,
+      role: true,
     },
   },
 } as const;
@@ -66,6 +67,10 @@ export async function getLedgerConflictMeta(
 
 function getLastModifiedBy(meta: LedgerConflictMeta | null) {
   return meta?.updatedBy.name ?? meta?.updatedBy.email ?? null;
+}
+
+function isHeadquartersModified(meta: LedgerConflictMeta | null) {
+  return meta?.updatedBy?.role === "HEADQUARTERS";
 }
 
 export function toLedgerConflictPayload({
@@ -126,6 +131,6 @@ export function ledgerConflictErrorFromMeta<T = never>({
     serverToken,
     lastModifiedBy: getLastModifiedBy(meta),
     lastModifiedAt,
+    hqEditing: input.hqEditing ?? isHeadquartersModified(meta),
   });
 }
-

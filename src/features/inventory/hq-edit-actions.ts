@@ -39,17 +39,33 @@ const ledgerIdInputSchema = z.object({
     .pipe(z.string().min(1, "장부 상태를 확인해 주세요.")),
 });
 
+const hqEditReasonSchema = z.object({
+  reason: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(
+      z
+        .string()
+        .min(1, "본사 수정 사유를 입력해 주세요.")
+        .max(500, "본사 수정 사유는 500자 이하여야 합니다."),
+    ),
+});
+
 function parseHqInventoryInput<T>(
   input: unknown,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-): ActionResult<T & { ledgerId: string; ledgerUpdatedAt: string }> {
+): ActionResult<
+  T & { ledgerId: string; ledgerUpdatedAt: string; reason: string }
+> {
   const parsed = schema.safeParse(input);
   const parsedLedgerId = ledgerIdInputSchema.safeParse(input);
+  const parsedReason = hqEditReasonSchema.safeParse(input);
 
-  if (!parsed.success || !parsedLedgerId.success) {
+  if (!parsed.success || !parsedLedgerId.success || !parsedReason.success) {
     return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
       ...(!parsed.success ? toFieldErrors(parsed.error) : {}),
       ...(!parsedLedgerId.success ? toFieldErrors(parsedLedgerId.error) : {}),
+      ...(!parsedReason.success ? toFieldErrors(parsedReason.error) : {}),
     });
   }
 
@@ -57,6 +73,7 @@ function parseHqInventoryInput<T>(
     ...parsed.data,
     ledgerId: parsedLedgerId.data.ledgerId,
     ledgerUpdatedAt: parsedLedgerId.data.ledgerUpdatedAt,
+    reason: parsedReason.data.reason,
   });
 }
 
@@ -328,6 +345,7 @@ export async function saveHqLedgerInventoryItems(
           actorId: actor.user.id,
           before,
           after,
+          reason: parsed.data.reason,
         });
 
         return actionOk(after);

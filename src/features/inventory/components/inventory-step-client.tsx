@@ -27,6 +27,7 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
@@ -58,6 +59,7 @@ type InventoryStepClientProps = {
   ) => Promise<ActionResult<InventoryDisplayData>>;
   ledgerLabel?: string;
   showStepNavigation?: boolean;
+  hqEditReasonRequired?: boolean;
 };
 
 type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
@@ -189,15 +191,18 @@ export function InventoryStepClient({
   saveAdjustmentAction = saveLedgerInventoryAdjustment,
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
+  hqEditReasonRequired = false,
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [data, setData] = useState(initialData);
   const [items, setItems] = useState(() => toLineState(initialData));
+  const [hqEditReason, setHqEditReason] = useState("");
   const [activeCategory, setActiveCategory] =
     useState<(typeof categories)[number]>("냉동");
   const [pageByCategory, setPageByCategory] = useState<
@@ -218,6 +223,7 @@ export function InventoryStepClient({
   >(null);
   const saveConflict = useSaveConflictDialog();
   const showsSensitiveAmounts = items.some(hasSensitiveInventoryAmounts);
+  const hqEditReasonError = fieldErrors.reason?.[0];
 
   useLedgerUpdatedAtSync(data.id, (updatedAt) => {
     setData((current) => ({ ...current, updatedAt }));
@@ -314,6 +320,10 @@ export function InventoryStepClient({
           return;
         }
       }
+
+      if (errors.reason?.length) {
+        hqEditReasonInputRef.current?.focus();
+      }
     }, 0);
   }
 
@@ -356,6 +366,7 @@ export function InventoryStepClient({
             currentQuantityRefs.current[item.productId]?.value ??
             item.currentQuantityInput,
         })),
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
       if (!result.ok) {
@@ -454,7 +465,9 @@ export function InventoryStepClient({
   }
 
   async function handleAdjustmentSave(item: InventoryLineState) {
-    const reason = item.adjustmentReasonInput.trim();
+    const reason = hqEditReasonRequired
+      ? hqEditReason.trim()
+      : item.adjustmentReasonInput.trim();
 
     setResultMessage(null);
     setFormError(null);
@@ -466,11 +479,24 @@ export function InventoryStepClient({
     });
 
     if (!reason) {
-      setAdjustmentErrors((current) => ({
-        ...current,
-        [item.productId]: "조정 사유를 입력해 주세요.",
-      }));
+      if (hqEditReasonRequired) {
+        setFieldErrors({
+          reason: ["본사 수정 사유를 입력해 주세요."],
+        });
+        setFormError("본사 수정 사유를 입력해 주세요.");
+      } else {
+        setAdjustmentErrors((current) => ({
+          ...current,
+          [item.productId]: "조정 사유를 입력해 주세요.",
+        }));
+      }
+
       window.setTimeout(() => {
+        if (hqEditReasonRequired) {
+          hqEditReasonInputRef.current?.focus();
+          return;
+        }
+
         reasonRefs.current[item.productId]?.focus();
       }, 0);
       return;
@@ -487,7 +513,7 @@ export function InventoryStepClient({
         ledgerUpdatedAt: data.updatedAt,
         productId: item.productId,
         actualQuantity: item.currentQuantityInput,
-        reason,
+        reason: hqEditReasonRequired ? hqEditReason : reason,
       });
 
       if (!result.ok) {
@@ -502,11 +528,19 @@ export function InventoryStepClient({
           result.error.fieldErrors?.actualQuantity?.[0];
 
         if (reasonError) {
-          setAdjustmentErrors((current) => ({
-            ...current,
-            [item.productId]: reasonError,
-          }));
+          if (!hqEditReasonRequired) {
+            setAdjustmentErrors((current) => ({
+              ...current,
+              [item.productId]: reasonError,
+            }));
+          }
+
           window.setTimeout(() => {
+            if (hqEditReasonRequired) {
+              hqEditReasonInputRef.current?.focus();
+              return;
+            }
+
             reasonRefs.current[item.productId]?.focus();
           }, 0);
         }
@@ -1090,6 +1124,22 @@ export function InventoryStepClient({
             </AlertTitle>
             <AlertDescription>{originalEditBlockedMessage}</AlertDescription>
           </Alert>
+        ) : null}
+
+        {hqEditReasonRequired ? (
+          <section className="bg-card text-card-foreground rounded-lg border p-4">
+            <HqEditReasonField
+              id="inventory-hq-edit-reason"
+              value={hqEditReason}
+              error={hqEditReasonError}
+              disabled={isSaving || isClosed || isAdjustmentSavePending}
+              inputRef={hqEditReasonInputRef}
+              onChange={(value) => {
+                setHqEditReason(value);
+                setResultMessage(null);
+              }}
+            />
+          </section>
         ) : null}
 
         <form

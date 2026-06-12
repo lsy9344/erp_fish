@@ -9,6 +9,7 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
@@ -64,6 +65,7 @@ type SalesPaymentStepClientProps = {
   ) => Promise<ActionResult<StoreManagerLedgerCostStepData>>;
   showStepNavigation?: boolean;
   ledgerLabel?: string;
+  hqEditReasonRequired?: boolean;
 };
 
 export function SalesPaymentStepClient({
@@ -73,6 +75,7 @@ export function SalesPaymentStepClient({
   saveAction = saveLedgerSalesPayment,
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
+  hqEditReasonRequired = false,
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const authorDisplayNameInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +83,7 @@ export function SalesPaymentStepClient({
   const cashAmountInputRef = useRef<HTMLInputElement>(null);
   const cardAmountInputRef = useRef<HTMLInputElement>(null);
   const otherPaymentInputRef = useRef<HTMLInputElement>(null);
+  const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
   const [authorDisplayName, setAuthorDisplayName] = useState(
@@ -97,6 +101,7 @@ export function SalesPaymentStepClient({
   const [otherPaymentAmount, setOtherPaymentAmount] = useState(
     formatKrwInput(String(initialLedger.otherPaymentAmount)),
   );
+  const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -166,6 +171,11 @@ export function SalesPaymentStepClient({
 
       if (errors.otherPaymentAmount?.length) {
         otherPaymentInputRef.current?.focus();
+        return;
+      }
+
+      if (errors.reason?.length) {
+        hqEditReasonInputRef.current?.focus();
       }
     }, 0);
   }
@@ -197,6 +207,7 @@ export function SalesPaymentStepClient({
         otherPaymentAmount: toRawKrwInputValue(
           otherPaymentInputRef.current?.value ?? otherPaymentAmount,
         ),
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       };
 
       const result = await saveAction(payload);
@@ -255,6 +266,7 @@ export function SalesPaymentStepClient({
   const cardAmountError = fieldErrors.cardAmount?.[0];
   const otherPaymentAmountError = fieldErrors.otherPaymentAmount?.[0];
   const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
+  const hqEditReasonError = fieldErrors.reason?.[0];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -504,6 +516,20 @@ export function SalesPaymentStepClient({
               <p className="text-muted-foreground">결제 합계 차액 0원</p>
             )}
           </div>
+
+          {hqEditReasonRequired ? (
+            <HqEditReasonField
+              id="sales-hq-edit-reason"
+              value={hqEditReason}
+              error={hqEditReasonError}
+              disabled={!isHydrated || isOriginalEditBlocked || isSaving}
+              inputRef={hqEditReasonInputRef}
+              onChange={(value) => {
+                setHqEditReason(value);
+                setResultMessage(null);
+              }}
+            />
+          ) : null}
 
           {resultMessage ? (
             <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">

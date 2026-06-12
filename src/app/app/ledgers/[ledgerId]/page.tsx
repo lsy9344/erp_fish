@@ -378,6 +378,7 @@ export default async function LedgerDetailPage({
               saveAction={saveHqLedgerSalesPayment}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
           <TabsContent value="expenses" className="mt-3" forceMount>
@@ -391,6 +392,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
           <TabsContent value="purchases" className="mt-3" forceMount>
@@ -404,6 +406,7 @@ export default async function LedgerDetailPage({
               saveAction={saveHqLedgerPurchases}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
           <TabsContent value="inventory" className="mt-3" forceMount>
@@ -415,6 +418,7 @@ export default async function LedgerDetailPage({
               saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
           <TabsContent value="losses" className="mt-3" forceMount>
@@ -425,6 +429,7 @@ export default async function LedgerDetailPage({
               saveAction={saveHqLedgerLosses}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
           <TabsContent value="work" className="mt-3" forceMount>
@@ -437,6 +442,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
             />
           </TabsContent>
         </Tabs>

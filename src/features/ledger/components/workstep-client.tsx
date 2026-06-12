@@ -9,6 +9,7 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerWorkInfo } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
@@ -36,6 +37,7 @@ type WorkStepClientProps = {
   showStepNavigation?: boolean;
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
+  hqEditReasonRequired?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -78,16 +80,19 @@ export function WorkStepClient({
   showStepNavigation = true,
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
+  hqEditReasonRequired = false,
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const workerCountInputRef = useRef<HTMLInputElement>(null);
   const workMemoInputRef = useRef<HTMLTextAreaElement>(null);
+  const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
   const [workerCount, setWorkerCount] = useState(
     initialLedger.workerCount === null ? "" : String(initialLedger.workerCount),
   );
   const [workMemo, setWorkMemo] = useState(initialLedger.workMemo ?? "");
+  const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -95,6 +100,7 @@ export function WorkStepClient({
   const saveConflict = useSaveConflictDialog();
   const workerCountError = fieldErrors.workerCount?.[0];
   const workMemoError = fieldErrors.workMemo?.[0];
+  const hqEditReasonError = fieldErrors.reason?.[0];
   const isDirty =
     workerCount !==
       (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
@@ -129,7 +135,7 @@ export function WorkStepClient({
   }, [initialLedger]);
 
   useEffect(() => {
-    if (isSaving || (!workerCountError && !workMemoError)) {
+    if (isSaving || (!workerCountError && !workMemoError && !hqEditReasonError)) {
       return;
     }
 
@@ -141,11 +147,16 @@ export function WorkStepClient({
 
       if (workMemoError) {
         workMemoInputRef.current?.focus();
+        return;
+      }
+
+      if (hqEditReasonError) {
+        hqEditReasonInputRef.current?.focus();
       }
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [isSaving, workerCountError, workMemoError]);
+  }, [isSaving, workerCountError, workMemoError, hqEditReasonError]);
 
   function fillLedger(next: WorkLedgerData) {
     setLedger(next);
@@ -171,6 +182,7 @@ export function WorkStepClient({
         ledgerUpdatedAt: ledger.updatedAt,
         workerCount: workerCountInputRef.current?.value ?? workerCount,
         workMemo: workMemoInputRef.current?.value ?? workMemo,
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
       if (!result.ok) {
@@ -322,6 +334,20 @@ export function WorkStepClient({
               <FieldError id="work-memo-error">{workMemoError}</FieldError>
             ) : null}
           </Field>
+
+          {hqEditReasonRequired ? (
+            <HqEditReasonField
+              id="work-hq-edit-reason"
+              value={hqEditReason}
+              error={hqEditReasonError}
+              disabled={isSaving || isOriginalEditBlocked}
+              inputRef={hqEditReasonInputRef}
+              onChange={(value) => {
+                setHqEditReason(value);
+                setResultMessage(null);
+              }}
+            />
+          ) : null}
 
           <div className="bg-muted/40 rounded-md p-3">
             <div className="flex justify-between gap-2 text-sm">

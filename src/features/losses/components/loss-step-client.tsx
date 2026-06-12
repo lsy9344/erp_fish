@@ -17,6 +17,7 @@ import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
+import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
@@ -56,6 +57,7 @@ type LossStepClientProps = {
   saveAction?: (input: unknown) => Promise<ActionResult<LossDisplayData>>;
   ledgerLabel?: string;
   showStepNavigation?: boolean;
+  hqEditReasonRequired?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -123,6 +125,7 @@ export function LossStepClient({
   saveAction = saveLedgerLosses,
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
+  hqEditReasonRequired = false,
 }: LossStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -130,10 +133,12 @@ export function LossStepClient({
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
   const amountRefs = useRef<(HTMLInputElement | null)[]>([]);
   const reasonRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const nextDraftLineNumberRef = useRef(0);
 
   const [data, setData] = useState(initialData);
   const [items, setItems] = useState(() => toLineState(initialData));
+  const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -191,6 +196,10 @@ export function LossStepClient({
           reasonRefs.current[index]?.focus();
           return;
         }
+      }
+
+      if (errors.reason?.length) {
+        hqEditReasonInputRef.current?.focus();
       }
     }, 50);
   }
@@ -267,6 +276,7 @@ export function LossStepClient({
           amount: amountRefs.current[index]?.value ?? item.amount,
           reason: reasonRefs.current[index]?.value ?? item.reason,
         })),
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
       if (!result.ok) {
@@ -336,6 +346,7 @@ export function LossStepClient({
     step: "work",
   }).toString()}`;
   const showsSensitiveLossAmounts = "totalAmount" in data.summary;
+  const hqEditReasonError = fieldErrors.reason?.[0];
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -725,6 +736,22 @@ export function LossStepClient({
             </div>
           )}
         </section>
+
+        {hqEditReasonRequired ? (
+          <section className="bg-card text-card-foreground rounded-lg border p-4">
+            <HqEditReasonField
+              id="loss-hq-edit-reason"
+              value={hqEditReason}
+              error={hqEditReasonError}
+              disabled={isSaving || isOriginalEditBlocked}
+              inputRef={hqEditReasonInputRef}
+              onChange={(value) => {
+                setHqEditReason(value);
+                setResultMessage(null);
+              }}
+            />
+          </section>
+        ) : null}
 
         <div className="flex flex-col gap-2">
           {resultMessage ? (

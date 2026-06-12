@@ -45,6 +45,13 @@ test("server actions return common structured conflict contract", () => {
     /code:\s*"LEDGER_CONFLICT"|LEDGER_CONFLICT/,
   );
   assert.match(ledgerConflictSource, /updatedBy:\s*\{\s*select:/s);
+  assert.match(ledgerConflictSource, /role:\s*true/);
+  assert.match(
+    ledgerConflictSource,
+    /meta\?\.updatedBy\?\.role === "HEADQUARTERS"/,
+    "conflicts should identify HQ-originated edits for the 본사 수정 중 badge",
+  );
+  assert.match(ledgerConflictSource, /hqEditing:\s*input\.hqEditing \?\?/);
 
   for (const segments of [
     ["src", "features", "ledger", "actions.ts"],

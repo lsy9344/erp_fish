@@ -9,6 +9,7 @@ import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerExpenses } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
+import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
@@ -55,6 +56,7 @@ type ExpenseStepClientProps = {
   showStepNavigation?: boolean;
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
+  hqEditReasonRequired?: boolean;
 };
 
 const DEFAULT_EXPENSE_CODE_OPTION: ExpenseCodeOption = {
@@ -142,11 +144,13 @@ export function ExpenseStepClient({
   showStepNavigation = true,
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
+  hqEditReasonRequired = false,
 }: ExpenseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const lineCodeRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const lineAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
   const lineMemoRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const hasRegisteredExpenseCodeOptions = expenseCodeOptions.length > 0;
   const expenseOptions = hasRegisteredExpenseCodeOptions
@@ -158,6 +162,7 @@ export function ExpenseStepClient({
       ? toExpenseLines(initialLedger.expenseItems)
       : createFallbackExpenseLines(initialLedger.expenseItems),
   );
+  const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -209,6 +214,10 @@ export function ExpenseStepClient({
           return;
         }
       }
+
+      if (errors.reason?.length) {
+        hqEditReasonInputRef.current?.focus();
+      }
     }, 50);
   }
 
@@ -258,6 +267,7 @@ export function ExpenseStepClient({
           ),
           memo: lineMemoRefs.current[index]?.value ?? line.memo,
         })),
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
       if (!result.ok) {
@@ -330,6 +340,7 @@ export function ExpenseStepClient({
     memo: fieldErrors[`expenses.${index}.memo`]?.[0],
   }));
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
+  const hqEditReasonError = fieldErrors.reason?.[0];
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
   const isOriginalEditBlocked =
     ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
@@ -605,6 +616,22 @@ export function ExpenseStepClient({
             </div>
           ) : null}
         </div>
+
+        {hqEditReasonRequired ? (
+          <div className="mt-3">
+            <HqEditReasonField
+              id="expense-hq-edit-reason"
+              value={hqEditReason}
+              error={hqEditReasonError}
+              disabled={isFormSaving || isOriginalEditBlocked}
+              inputRef={hqEditReasonInputRef}
+              onChange={(value) => {
+                setHqEditReason(value);
+                setResultMessage(null);
+              }}
+            />
+          </div>
+        ) : null}
       </section>
 
       <form
