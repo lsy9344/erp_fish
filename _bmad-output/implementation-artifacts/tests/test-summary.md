@@ -4,41 +4,44 @@
 
 ### API / Unit 테스트
 
-- [x] Story 7.1은 정책 문서-only story로 정리되어 새 unit test를 남기지 않음. 필수 정책 항목은 `rg` 기반 문서 검증과 review checklist로 확인.
+- [x] `tests/unit/sensitive-response-shaping.test.mjs` - Story 7.2 정책 alias인 `30%단가`, `30_단가`, `thirtyPercent`, `thirty_percent_unit_price`, `thirty-percent-preview`, `price30`, `price_30`, `margin30`, `margin_30`가 공통 민감 필드 helper에서 제거되는지 검증.
+- [x] `src/server/sensitive-fields.ts` - 위 테스트를 만족하도록 공통 민감 필드 차단 목록과 separator-insensitive matching을 보강.
 
 ### E2E 테스트
 
-- [x] Story 7.1은 승인 전 제품 동작을 변경하지 않는 정책 story로 정리되어 새 E2E test를 남기지 않음. 기존 관제판/상세 OQ-1 guardrail은 현행 테스트와 source contract 검토로 확인.
+- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 지점장 재고 화면 row와 inventory 응답 payload에 단가/재고금액/조정금액 및 camelCase/snake_case/hyphen/Korean `30%단가` 파생 key가 직렬화되지 않는지 검증.
+- [x] `tests/e2e/hq-reports.spec.ts` - daily/comparison/monthly CSV export, export 403 응답, export 400 응답에 camelCase/snake_case/hyphen/Korean `30%단가` 파생 key가 포함되지 않는지 검증.
 
 ## 커버리지
 
-- Story 7.1 AC: 5/5 covered by policy artifact review and required-section validation
-- API endpoints: 해당 없음. Story 7.1은 정책 산출물 및 기존 관제판 표시 guardrail 검증 대상이며 새 API surface가 없다.
-- UI features: 제품 UI 변경 없음. 기존 `기준 확인 필요` guardrail 유지 여부를 source/search로 확인.
-- Critical policy cases: 금액 기준 단독, 부호/절댓값 판정, 비율 미채택, GLOBAL 적용, 복수 신호 비숨김, 승인 전 구현 금지, 감사 로그 필수 필드 covered by policy artifact.
+- Story 7.2 AC: 승인 전 `30%단가` 파생 key/value 추가 금지와 지점장/export 숨김 정책을 회귀 테스트로 보강.
+- API endpoints: 1/1 relevant export endpoint covered for forbidden and invalid export responses.
+- UI features: 지점장 재고 화면 민감 응답/표시 1 surface covered.
+- Export surfaces: daily, comparison, monthly CSV 3/3 covered for `30%단가` 파생 alias 누출 방지.
+- Critical error cases: 권한 없는 export 403, 잘못된 export 요청 400 covered.
 
 ## 체크리스트 결과
 
-- [x] API tests not generated; no API/code behavior changed
-- [x] E2E tests not generated; no UI behavior changed
-- [x] Project APIs unchanged
-- [x] Policy happy path covered by document sections and traceability
-- [x] Critical policy cases covered: 승인 전 gate 유지, 확정 경고 미노출, 승인 guardrail, 필수 정책 항목 누락 방지
-- [x] Semantic locators/accessibility not applicable to this document-only story
-- [x] Clear test descriptions used
+- [x] API tests generated where applicable
+- [x] E2E tests generated where UI/export surfaces exist
+- [x] Tests use standard project APIs: Playwright and Node test
+- [x] Tests cover happy path: authorized CSV export does not include `30%단가` aliases
+- [x] Tests cover critical error cases: unauthorized 403 and bad request 400 responses
+- [x] Tests use semantic locators where UI is inspected
+- [x] Tests have clear descriptions
 - [x] No hardcoded waits or sleeps added
-- [x] No test state or seed data added
-- [x] No test files saved for this story after review auto-fix
-- [x] Summary includes coverage metrics and validation status
+- [x] Tests are independent and reuse existing seed/cleanup patterns
+- [x] Test summary created
+- [x] Tests saved to appropriate directories
+- [x] Summary includes coverage metrics
 
 ## 검증
 
-- [x] `rg -n "기준표|부호 예시|임계값|표시 문구|감사 로그 필드|우선순위|중복 표시|승인자|MVP-S04 구현 story 생성 가능|Traceability|기준 확인 필요" _bmad-output/planning-artifacts/policy-decisions/7-1-매출차액-이상-신호-기준-정책.md` - passed
-- [x] `rg -n "sales-difference-exceeded|매출차액 초과|thresholds-configured|기준 확인 필요" src tests _bmad-output/planning-artifacts` - reviewed
-- [x] `pnpm test:unit` - passed after review cleanup, 35/35 unit files
-- [x] `pnpm lint` - passed with existing warnings in `src/app/api/reports/export/route.ts` for unused `DATE_PATTERN` and `MONTH_PATTERN`
+- [x] `node --experimental-strip-types --test tests/unit/sensitive-response-shaping.test.mjs` - passed
+- [x] `pnpm test:unit` - passed, 35/35 unit files
 - [x] `pnpm typecheck` - passed
+- [x] `pnpm lint` - passed with existing warnings in `src/app/api/reports/export/route.ts` for unused `DATE_PATTERN` and `MONTH_PATTERN`
 - [x] `git diff --check` - passed
-- [ ] `pnpm test:e2e` - blocked before test body because Playwright `config.webServer` exited early
+- [ ] `pnpm exec playwright test tests/e2e/store-ledger-inventory.spec.ts tests/e2e/hq-reports.spec.ts` - blocked before test body because Playwright `config.webServer` exited early
 
-E2E 차단 원인 확인: 동일 dev server 경로가 현재 sandbox에서 `listen EPERM`으로 시작하지 못한다. 따라서 현재 실행 환경에서는 브라우저 테스트 본문을 완료할 수 없다.
+E2E 차단 원인 확인: `timeout 10s corepack pnpm dev --hostname 127.0.0.1 --port 3000`가 현재 sandbox에서 `listen EPERM: operation not permitted 127.0.0.1:3000`으로 실패한다. 따라서 브라우저 테스트 본문은 이 실행 환경에서 완료할 수 없다.

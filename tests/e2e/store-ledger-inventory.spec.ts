@@ -4,6 +4,8 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
+const THIRTY_PERCENT_DERIVED_KEY_PATTERN =
+  /30[%_-]?단가|thirty[_-]?percent|thirty[_-]?percent[_-]?unit[_-]?price|price[_-]?30|margin[_-]?30/i;
 
 test.afterAll(async () => {
   await cleanupStoryTwoFiveData();
@@ -174,6 +176,27 @@ test.beforeEach(async () => {
 test("지점장 재고 화면 응답은 단가와 재고금액, 조정 금액을 직렬화하지 않는다", async ({
   page,
 }) => {
+  const inventoryResponseBodies: string[] = [];
+  page.on("response", async (response) => {
+    if (!response.url().includes("/app/store-entry/inventory")) {
+      return;
+    }
+
+    const contentType = response.headers()["content-type"] ?? "";
+    if (
+      !/json|text|html|x-component/i.test(contentType) ||
+      response.request().resourceType() === "document"
+    ) {
+      return;
+    }
+
+    try {
+      inventoryResponseBodies.push(await response.text());
+    } catch {
+      // Playwright can reject response body reads for redirected or cached assets.
+    }
+  });
+
   await login(page);
   const actorId = await getHeadquartersUserId();
   const product = await seedProduct("스토리2-5 민감 차단 광어", "냉동", 987654);
@@ -231,6 +254,13 @@ test("지점장 재고 화면 응답은 단가와 재고금액, 조정 금액을
   await expect(row).not.toContainText("987654");
   await expect(row).not.toContainText("8888886");
   await expect(row).not.toContainText("9876540");
+  await expect(row).not.toContainText(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
+
+  const responsePayload = inventoryResponseBodies.join("\n");
+  expect(responsePayload).not.toMatch(
+    /unitPrice|purchaseAmount|lossAmount|inventoryAmount|beforeAmount|afterAmount|differenceAmount/,
+  );
+  expect(responsePayload).not.toMatch(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 });
 
 test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 행을 유지한다", async ({

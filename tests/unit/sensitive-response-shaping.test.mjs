@@ -19,7 +19,12 @@ const sensitiveKeys = [
   "salesDifferenceMeaningChange",
   "salesDifferenceThresholdAnomaly",
   "storeManagerSensitiveDerivedMetrics",
+  "30%단가",
+  "30단가",
+  "thirtyPercent",
   "thirtyPercentUnitPrice",
+  "price30",
+  "margin30",
   "unitPrice",
   "beforeAmount",
   "afterAmount",
@@ -31,6 +36,10 @@ const sensitiveKeys = [
   "comparisonStore",
   "comparisonStoreValue",
 ];
+
+function compactFieldKey(key) {
+  return key.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "");
+}
 
 function assertProjectFile(...segments) {
   const filePath = path.join(root, ...segments);
@@ -57,8 +66,12 @@ function assertNoSensitiveKeys(value, location = "payload") {
   }
 
   for (const [key, nestedValue] of Object.entries(value)) {
+    const compactKey = compactFieldKey(key);
+
     assert.equal(
-      sensitiveKeys.some((sensitiveKey) => key.includes(sensitiveKey)),
+      sensitiveKeys.some((sensitiveKey) =>
+        compactKey.includes(compactFieldKey(sensitiveKey)),
+      ),
       false,
       `${location}.${key} should not expose a sensitive field`,
     );
@@ -192,6 +205,16 @@ test("common sensitive field helper removes derived and OQ-gated metric keys", a
         value: null,
         status: "policy-unconfirmed",
       },
+      thirtyPercentUnitPrice: 14_286,
+      thirtyPercentPreview: 14_286,
+      thirty_percent_unit_price: 14_286,
+      "thirty-percent-preview": 14_286,
+      "30%단가": 14_286,
+      "30_단가": 14_286,
+      price30: 14_286,
+      price_30: 14_286,
+      margin30: 0.3,
+      margin_30: 0.3,
       comparisonStoreValue: 1,
       pilotProgramStatus: "유지",
       safeStatus: "확인 필요",
