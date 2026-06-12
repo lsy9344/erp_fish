@@ -149,7 +149,15 @@ export default async function LedgerDetailPage({
   const closedAt = detail.closedAt
     ? dateTimeFormatter.format(new Date(detail.closedAt))
     : "마감 전";
-  const correctionTargetOptions = getCorrectionTargetOptions(ledger);
+  const canShowCorrectionPanel =
+    ledger.status === "HEADQUARTERS_CLOSED" && canCreateCorrection;
+  const correctionTargetOptions = canShowCorrectionPanel
+    ? getCorrectionTargetOptions({
+        ledger,
+        inventoryData,
+        lossData,
+      })
+    : [];
   const latestCorrectionValues = getLatestCorrectionValueMap(correctionRecords);
   const appliedCorrections = Array.from(latestCorrectionValues.values());
   const totalSalesCorrection = getAppliedCorrection(latestCorrectionValues, {
@@ -347,7 +355,7 @@ export default async function LedgerDetailPage({
           />
         </section>
       ) : null}
-      {ledger.status === "HEADQUARTERS_CLOSED" && canCreateCorrection ? (
+      {canShowCorrectionPanel ? (
         <CorrectionPanel
           ledgerId={ledger.id}
           targetOptions={correctionTargetOptions}
@@ -464,9 +472,17 @@ export default async function LedgerDetailPage({
   );
 }
 
-function getCorrectionTargetOptions(
-  ledger: NonNullable<Awaited<ReturnType<typeof getLedgerCostStepDataById>>>,
-): CorrectionTargetOption[] {
+function getCorrectionTargetOptions({
+  ledger,
+  inventoryData,
+  lossData,
+}: {
+  ledger: NonNullable<Awaited<ReturnType<typeof getLedgerCostStepDataById>>>;
+  inventoryData: NonNullable<
+    Awaited<ReturnType<typeof getInventoryStepDataByLedgerId>>
+  >;
+  lossData: NonNullable<Awaited<ReturnType<typeof getLossStepDataByLedgerId>>>;
+}): CorrectionTargetOption[] {
   return [
     {
       targetType: "PAYMENT_FIELD",
@@ -526,17 +542,136 @@ function getCorrectionTargetOptions(
         label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       },
     })),
-    ...ledger.purchaseItems.map<CorrectionTargetOption>((item, index) => ({
-      targetType: "PURCHASE_ROW",
-      targetId: item.id,
-      fieldKey: "amount",
-      label: `매입 ${index + 1} · ${item.productName} · 금액`,
+    ...ledger.purchaseItems.flatMap<CorrectionTargetOption>((item, index) => {
+      const prefix = `매입 ${index + 1} · ${item.productName}`;
+
+      return [
+        {
+          targetType: "PURCHASE_ROW",
+          targetId: item.id,
+          fieldKey: "unitPrice",
+          label: `${prefix} · 단가`,
+          originalValue: {
+            kind: "money",
+            value: item.unitPrice,
+            label: `${prefix} · 단가`,
+          },
+        },
+        {
+          targetType: "PURCHASE_ROW",
+          targetId: item.id,
+          fieldKey: "quantity",
+          label: `${prefix} · 수량`,
+          originalValue: {
+            kind: "quantity",
+            value: item.quantity,
+            label: `${prefix} · 수량`,
+          },
+        },
+        {
+          targetType: "PURCHASE_ROW",
+          targetId: item.id,
+          fieldKey: "amount",
+          label: `${prefix} · 금액`,
+          originalValue: {
+            kind: "money",
+            value: item.amount,
+            label: `${prefix} · 금액`,
+          },
+        },
+      ];
+    }),
+    ...inventoryData.items
+      .filter((item) => item.id !== item.productId)
+      .flatMap<CorrectionTargetOption>((item, index) => {
+        const prefix = `재고 ${index + 1} · ${item.productName}`;
+
+        return [
+          {
+            targetType: "INVENTORY_ROW",
+            targetId: item.id,
+            fieldKey: "currentQuantity",
+            label: `${prefix} · 현재고`,
+            originalValue: {
+              kind: "quantity",
+              value: item.currentQuantity,
+              label: `${prefix} · 현재고`,
+            },
+          },
+          {
+            targetType: "INVENTORY_ROW",
+            targetId: item.id,
+            fieldKey: "inventoryAmount",
+            label: `${prefix} · 재고 금액`,
+            originalValue: {
+              kind: "money",
+              value: item.inventoryAmount,
+              label: `${prefix} · 재고 금액`,
+            },
+          },
+        ];
+      }),
+    ...lossData.lossItems.flatMap<CorrectionTargetOption>((item, index) => {
+      const prefix = `손실 ${index + 1} · ${item.productName}`;
+
+      return [
+        {
+          targetType: "LOSS_ROW",
+          targetId: item.id,
+          fieldKey: "quantity",
+          label: `${prefix} · 수량`,
+          originalValue: {
+            kind: "quantity",
+            value: item.quantity,
+            label: `${prefix} · 수량`,
+          },
+        },
+        {
+          targetType: "LOSS_ROW",
+          targetId: item.id,
+          fieldKey: "amount",
+          label: `${prefix} · 금액`,
+          originalValue: {
+            kind: "money",
+            value: item.amount,
+            label: `${prefix} · 금액`,
+          },
+        },
+      ];
+    }),
+    {
+      targetType: "CALCULATED_METRIC",
+      targetId: ledger.id,
+      fieldKey: "grossMarginRate",
+      label: "계산 표시값 · 마진율",
       originalValue: {
-        kind: "money",
-        value: item.amount,
-        label: `매입 ${index + 1} · ${item.productName} · 금액`,
+        kind: "metric",
+        value: null,
+        label: "계산 표시값 · 마진율",
       },
-    })),
+    },
+    {
+      targetType: "CALCULATED_METRIC",
+      targetId: ledger.id,
+      fieldKey: "salesDifference",
+      label: "계산 표시값 · 매출 차이",
+      originalValue: {
+        kind: "metric",
+        value: null,
+        label: "계산 표시값 · 매출 차이",
+      },
+    },
+    {
+      targetType: "CALCULATED_METRIC",
+      targetId: ledger.id,
+      fieldKey: "lossAmount",
+      label: "계산 표시값 · 손실",
+      originalValue: {
+        kind: "metric",
+        value: null,
+        label: "계산 표시값 · 손실",
+      },
+    },
   ];
 }
 

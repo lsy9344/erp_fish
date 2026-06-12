@@ -251,6 +251,24 @@ test("HQ detail page renders editable sections with HQ actions", () => {
   assert.match(source, /getCorrectionRecordsForLedger/);
   assert.match(source, /getLatestCorrectionValueMap/);
   assert.match(source, /createCorrectionRecord/);
+  assert.match(
+    source,
+    /const canShowCorrectionPanel\s*=\s*ledger\.status\s*===\s*"HEADQUARTERS_CLOSED"\s*&&\s*canCreateCorrection/,
+  );
+  assert.match(
+    source,
+    /const correctionTargetOptions\s*=\s*canShowCorrectionPanel\s*\?\s*getCorrectionTargetOptions\(\{\s*ledger,\s*inventoryData,\s*lossData/s,
+  );
+  assert.match(source, /\{canShowCorrectionPanel\s*\?\s*\(\s*<CorrectionPanel/);
+  assert.match(source, /targetType:\s*"INVENTORY_ROW"/);
+  assert.match(source, /\.filter\(\(item\)\s*=>\s*item\.id\s*!==\s*item\.productId\)/);
+  assert.match(source, /fieldKey:\s*"currentQuantity"/);
+  assert.match(source, /fieldKey:\s*"inventoryAmount"/);
+  assert.match(source, /targetType:\s*"LOSS_ROW"/);
+  assert.match(source, /fieldKey:\s*"quantity"/);
+  assert.match(source, /targetType:\s*"CALCULATED_METRIC"/);
+  assert.match(source, /fieldKey:\s*"grossMarginRate"/);
+  assert.match(source, /fieldKey:\s*"salesDifference"/);
   assert.match(source, /ledger\.status\s*===\s*"HEADQUARTERS_CLOSED"/);
   assert.match(source, /원본/);
   assert.match(source, /정정 반영/);
