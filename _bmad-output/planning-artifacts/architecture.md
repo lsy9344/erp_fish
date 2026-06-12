@@ -8,14 +8,14 @@ inputDocuments:
   - "C:\\Code\\Project\\erp_fish\\_bmad-output\\planning-artifacts\\briefs\\brief-erp_fish-2026-05-28\\brief.md"
   - "C:\\Code\\Project\\erp_fish\\docs\\reference_from_customer\\feature_analysis.md"
   - "C:\\Code\\Project\\erp_fish\\docs\\reference_from_customer\\desc.md"
-workflowType: 'architecture'
-project_name: 'erp_fish'
-user_name: 'Noah Lee'
-date: '2026-05-28'
-lastPrdAlignmentReview: '2026-06-11'
+workflowType: "architecture"
+project_name: "erp_fish"
+user_name: "Noah Lee"
+date: "2026-05-28"
+lastPrdAlignmentReview: "2026-06-11"
 lastStep: 8
-status: 'complete'
-completedAt: '2026-05-28'
+status: "complete"
+completedAt: "2026-05-28"
 ---
 
 # Architecture Decision Document
@@ -228,6 +228,16 @@ Use authenticated server helpers for Server Actions, Route Handlers, and databas
 **Audit Strategy:**
 Record business-critical changes rather than only authentication events. Input, edit, close, correction, anomaly threshold changes, and master-data changes must write audit records with actor, timestamp, target entity, before value, after value, and reason where applicable.
 
+Epic 5 implementation fixed the master-data/settings contract more concretely:
+
+- Store, product, purchase standard, ledger input code, and anomaly threshold settings are managed through settings-only Server Actions and queries guarded by `requireSettingsAccess`.
+- Master-data create/update/status actions use soft activation state instead of hard delete. Inactive stores, products, purchase standards, and codes stay visible for administration and historical references, but active-option queries exclude them from new ledger entry choices.
+- Master-data changes write audit records in the same Prisma transaction as the business change whenever possible. Audit target types include `Store`, `Product`, `PurchaseStandard`, `LedgerInputCode`, and `AnomalyThresholdSetting`.
+- Historical ledger rows must not be backfilled when product, purchase standard, code, or threshold settings change. Ledger snapshots and correction history keep the original operational context.
+- `updateAnomalyThresholdSettings` stores global threshold values plus `isActive`, requires a change reason, writes `AuditLog.reason`, and suppresses audit writes for no-op saves.
+- Inactive anomaly threshold settings normalize to no configured threshold for signal consumers. Even active saved thresholds do not override open policy gates; OQ-gated signals still surface as `기준 확인 필요`/info states until the policy is approved.
+- `PAYMENT_METHOD` codes are managed and audited as master data, but the current sales/payment ledger entry remains the fixed-field contract: `cashAmount`, `cardAmount`, and `otherPaymentAmount`. Dynamic payment method entry storage is a later scope, not an implied Epic 5.4 change.
+
 **Secrets and Environment Configuration:**
 Auth secrets, database URLs, and provider secrets live in environment variables. They must not be committed to the repository.
 
@@ -248,7 +258,12 @@ Use Server Components and server-side query helpers for page data. Queries must 
 **Mutation Pattern:**
 Use Server Actions for internal mutations such as saving ledger steps, closing ledgers, adding corrections, changing thresholds, and editing master data.
 
-Current HQ ledger actions are feature-specific rather than generic route handlers: `saveHqLedgerSalesPayment`, `saveHqLedgerExpenses`, `saveHqLedgerPurchases`, `saveHqLedgerInventoryItems`, `saveHqLedgerInventoryAdjustment`, `saveHqLedgerLosses`, `saveHqLedgerWorkInfo`, `runHqLedgerClosePreflight`, `closeHqLedger`, and `createCorrectionRecord`. These actions share the same pattern: minimal identifier parsing, authorization/scope checks, detailed validation, transactional writes where needed, audit logging, and route revalidation.
+Current HQ ledger and settings actions are feature-specific rather than generic route handlers:
+
+- HQ ledger and correction: `saveHqLedgerSalesPayment`, `saveHqLedgerExpenses`, `saveHqLedgerPurchases`, `saveHqLedgerInventoryItems`, `saveHqLedgerInventoryAdjustment`, `saveHqLedgerLosses`, `saveHqLedgerWorkInfo`, `runHqLedgerClosePreflight`, `closeHqLedger`, and `createCorrectionRecord`.
+- Master data and settings: `createStore`, `updateStore`, `updateStoreStatus`, `createProduct`, `updateProduct`, `updateProductStatus`, `createPurchaseStandard`, `updatePurchaseStandard`, `updatePurchaseStandardStatus`, `createLedgerInputCode`, `updateLedgerInputCode`, `updateLedgerInputCodeStatus`, and `updateAnomalyThresholdSettings`.
+
+These actions share the same pattern: minimal identifier parsing where authorization depends on an id, authorization/scope checks, detailed validation, transactional writes where needed, audit logging, and route revalidation.
 
 **Route Handler Pattern:**
 Use Route Handlers only when an actual HTTP endpoint is useful, such as future webhooks, exports, health checks, or integration endpoints.
@@ -328,7 +343,7 @@ Use Vercel for Next.js hosting, preview deployments, production deployment, and 
 
 **Environment Strategy:**
 
-- Local: developer machine with `.env.local`, pulled through Vercel CLI where useful.
+- Local: developer machine with `.env`, pulled through Vercel CLI where useful.
 - Preview: automatic deployment for pull requests and non-production branches.
 - Production: main production branch and production environment variables.
 
@@ -411,7 +426,7 @@ The main risk is not individual feature complexity. The risk is different agents
 
 **API and Action Naming Conventions:**
 
-- Server Actions use verb-first camelCase names and may include domain qualifiers when the permission boundary matters: `saveLedgerStep`, `saveHqLedgerSalesPayment`, `runHqLedgerClosePreflight`, `closeHqLedger`, `createCorrectionRecord`, `updateAnomalyThreshold`.
+- Server Actions use verb-first camelCase names and may include domain qualifiers when the permission boundary matters: `saveLedgerStep`, `saveHqLedgerSalesPayment`, `runHqLedgerClosePreflight`, `closeHqLedger`, `createCorrectionRecord`, `createProduct`, `updateProductStatus`, `createLedgerInputCode`, `updateLedgerInputCodeStatus`, `updateAnomalyThresholdSettings`.
 - Route Handlers are used only for true HTTP endpoints and use plural resource paths when needed: `/api/exports`, `/api/health`.
 - Query parameters use camelCase in application code.
 
@@ -451,7 +466,14 @@ Expected validation and business errors should return a typed result rather than
 ```ts
 type ActionResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string; fieldErrors?: Record<string, string[]> } }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        fieldErrors?: Record<string, string[]>;
+      };
+    };
 ```
 
 Unexpected errors may throw after being logged. User-facing messages should stay simple and not expose internals.
@@ -544,18 +566,15 @@ erp_fish/
 ├── README.md
 ├── package.json
 ├── pnpm-lock.yaml
-├── next.config.ts
+├── next.config.js
 ├── tsconfig.json
 ├── components.json
-├── postcss.config.mjs
+├── postcss.config.js
 ├── eslint.config.js
 ├── prettier.config.js
 ├── .env.example
-├── .env.local
+├── .env
 ├── .gitignore
-├── .github/
-│   └── workflows/
-│       └── ci.yml
 ├── prisma/
 │   ├── schema.prisma
 │   ├── seed.ts
@@ -675,19 +694,15 @@ erp_fish/
 │   └── middleware.ts
 └── tests/
     ├── unit/
-    │   ├── calculations/
-    │   └── validation/
-    ├── integration/
-    │   ├── ledger/
-    │   ├── authz/
-    │   └── corrections/
+    │   └── *.test.mjs
     ├── e2e/
+    │   ├── global-setup.ts
     │   ├── hq-dashboard.spec.ts
+    │   ├── master-data-codes.spec.ts
+    │   ├── master-data-products.spec.ts
+    │   ├── master-data-purchase-standards.spec.ts
+    │   ├── master-data-stores.spec.ts
     │   └── store-ledger-entry.spec.ts
-    └── fixtures/
-        ├── users.ts
-        ├── stores.ts
-        └── ledgers.ts
 ```
 
 ### Architectural Boundaries
@@ -759,7 +774,7 @@ Static assets live in `public/assets`. Persistent uploaded files are deferred un
 ### Development Workflow Integration
 
 **Development Server Structure:**
-The app runs as a standard Next.js application. Local development uses `.env.local`, Prisma migrations, and seed data where needed.
+The app runs as a standard Next.js application. Local development uses `.env`, Prisma migrations, and seed data where needed.
 
 **Build Process Structure:**
 The build uses Next.js and TypeScript checks. Prisma generation must run before code that depends on Prisma Client.

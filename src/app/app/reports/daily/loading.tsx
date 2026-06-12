@@ -8,6 +8,8 @@ const desktopColumns = [
   "w-32",
   "w-20",
   "w-24",
+  "w-40",
+  "w-24",
   "w-20",
   "w-28",
   "w-16",
@@ -47,14 +49,14 @@ export default function DailyMeetingReportLoading() {
         aria-label="아침 회의 리포트 지점 목록 불러오기"
       >
         <div className="bg-background hidden overflow-x-auto rounded-lg border p-3 md:block">
-          <div className="min-w-[1040px] space-y-3">
-            <div className="grid grid-cols-8 gap-3 border-b pb-3">
+          <div className="min-w-[1320px] space-y-3">
+            <div className="grid grid-cols-10 gap-3 border-b pb-3">
               {desktopColumns.map((width, index) => (
                 <Skeleton key={`head-${index}`} className={`h-4 ${width}`} />
               ))}
             </div>
             {desktopRows.map((row) => (
-              <div key={row} className="grid grid-cols-8 items-center gap-3">
+              <div key={row} className="grid grid-cols-10 items-center gap-3">
                 {desktopColumns.map((width, index) => (
                   <Skeleton
                     key={`${row}-${index}`}
@@ -77,6 +79,8 @@ export default function DailyMeetingReportLoading() {
                 <Skeleton className="h-6 w-16" />
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />

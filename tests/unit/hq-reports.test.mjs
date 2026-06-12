@@ -18,7 +18,7 @@ function readProjectFile(...segments) {
   return readFileSync(assertProjectFile(...segments), "utf8");
 }
 
-test("HQ daily meeting report source files follow story 5.1 boundaries", () => {
+test("HQ daily meeting report source files follow story 6.1 boundaries", () => {
   assertProjectFile("src", "features", "reports", "types.ts");
   assertProjectFile("src", "features", "reports", "queries.ts");
   assertProjectFile(
@@ -78,6 +78,8 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /storeId:\s*\{\s*in:/s);
   assert.match(querySource, /closingDate/);
   assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
+  assert.match(querySource, /latestReflectedAt/);
+  assert.match(querySource, /getLatestReflectedAt/);
   assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
   assert.match(querySource, /calculateLedgerReviewSummary/);
   assert.match(querySource, /evaluateRevenueAnomalySignals/);
@@ -99,6 +101,11 @@ test("HQ daily meeting report UI reuses status and signal components without UI 
   assert.match(tableSource, /DashboardStatusBadge/);
   assert.match(tableSource, /DashboardSignalSummary/);
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
+  assert.match(tableSource, /최신 반영/);
+  assert.match(tableSource, /상태 메시지/);
+  assert.match(tableSource, /row\.latestReflectedAt/);
+  assert.match(tableSource, /getDailyMeetingStatusMessage/);
+  assert.match(tableSource, /formatLatestReflectedAt/);
   assert.match(tableSource, /<details/);
   assert.match(tableSource, /근거 보기/);
   assert.match(tableSource, /원본/);

@@ -32,6 +32,14 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",
   maximumFractionDigits: 1,
 });
+const latestReflectedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 export function DailyMeetingReportTable({
   report,
@@ -51,11 +59,13 @@ export function DailyMeetingReportTable({
       aria-label="일별 아침 회의 리포트 지점 목록"
     >
       <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
-        <Table className="min-w-[1040px]">
+        <Table className="min-w-[1320px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">지점</TableHead>
               <TableHead>장부 상태</TableHead>
+              <TableHead className="text-right">최신 반영</TableHead>
+              <TableHead className="min-w-[220px]">상태 메시지</TableHead>
               <TableHead className="text-right">매출</TableHead>
               <TableHead className="text-right">이익률</TableHead>
               <TableHead className="text-right">매출 차이</TableHead>
@@ -73,6 +83,14 @@ export function DailyMeetingReportTable({
                 <TableCell className="font-medium">{row.storeName}</TableCell>
                 <TableCell>
                   <DashboardStatusBadge status={row.ledgerStatus} />
+                </TableCell>
+                <TableCell className="text-right text-sm whitespace-nowrap tabular-nums">
+                  <span className="sr-only">최신 반영 </span>
+                  {formatLatestReflectedAt(row.latestReflectedAt)}
+                </TableCell>
+                <TableCell className="min-w-[220px] text-sm break-words">
+                  <span className="sr-only">상태 메시지 </span>
+                  {getDailyMeetingStatusMessage(row)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <MetricValueWithEvidence
@@ -124,7 +142,7 @@ export function DailyMeetingReportTable({
                   {row.storeName}
                 </h2>
                 <p className="text-muted-foreground text-sm break-words">
-                  {row.businessStatus.label} · {formatLoss(row)}
+                  {getDailyMeetingStatusMessage(row)}
                 </p>
               </div>
               <DashboardStatusBadge
@@ -134,6 +152,18 @@ export function DailyMeetingReportTable({
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+              <div>
+                <dt className="text-muted-foreground">최신 반영</dt>
+                <dd className="font-medium tabular-nums">
+                  {formatLatestReflectedAt(row.latestReflectedAt)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">상태 메시지</dt>
+                <dd className="font-medium break-words">
+                  {getDailyMeetingStatusMessage(row)}
+                </dd>
+              </div>
               <div>
                 <dt className="text-muted-foreground">매출</dt>
                 <dd className="font-medium tabular-nums">
@@ -311,6 +341,81 @@ function formatLoss(row: DailyMeetingReportRow) {
   }
 
   return row.hasLoss ? "손실 있음" : "손실 없음";
+}
+
+function formatLatestReflectedAt(value: string | null) {
+  if (!value) {
+    return "반영 전";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "반영 전";
+  }
+
+  return latestReflectedAtFormatter.format(date);
+}
+
+function getDailyMeetingStatusMessage(row: DailyMeetingReportRow) {
+  if (!row.ledgerId) {
+    return "미제출 - 장부 입력 전";
+  }
+
+  if (row.ledgerStatus.key === "HOLIDAY") {
+    return row.correctionState.hasUnappliedCorrections
+      ? "휴무일 - 정정 확인 필요"
+      : "휴무일 - 집계 제외";
+  }
+
+  if (row.correctionState.hasUnappliedCorrections) {
+    return "정정 확인 필요 - 장부 상세 확인";
+  }
+
+  if (row.signals.length > 0) {
+    return `확인 필요 - ${row.signals.map((signal) => signal.label).join(", ")}`;
+  }
+
+  const timingMessage = getSubmissionTimingMessage(row);
+
+  switch (row.ledgerStatus.key) {
+    case "HEADQUARTERS_CLOSED":
+      return `본사마감 - ${timingMessage ?? "회의 반영 완료"}`;
+    case "IN_REVIEW":
+      return `검토 대기 - ${timingMessage ?? "본사 확인 필요"}`;
+    case "IN_PROGRESS":
+      return `입력중 - ${timingMessage ?? "제출 전"}`;
+    default:
+      return `${row.businessStatus.label} - ${formatLoss(row)}`;
+  }
+}
+
+function getSubmissionTimingMessage(row: DailyMeetingReportRow) {
+  if (!row.lastModifiedAt) {
+    return null;
+  }
+
+  const submittedAt = Date.parse(row.lastModifiedAt);
+  const meetingThreshold = getMeetingThresholdUtc(row.closingDate);
+
+  if (!Number.isFinite(submittedAt) || meetingThreshold === null) {
+    return null;
+  }
+
+  return submittedAt > meetingThreshold ? "지연 제출" : "기준 전 제출";
+}
+
+function getMeetingThresholdUtc(closingDateIso: string) {
+  const dateInput = closingDateIso.slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day] = match;
+
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), -1, 0, 0);
 }
 
 function formatEvidenceValue(value: DailyMeetingReportMetricValue) {
