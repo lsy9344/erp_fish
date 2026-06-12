@@ -458,12 +458,12 @@ test("HQ close action has idempotent close handling and same-tx audit path", () 
   assert.match(source, /writeAuditLog\(/);
   assert.match(
     source,
-    /before:\s*toCloseAuditPayload\(before,\s*preflight\)/,
+    /before:\s*toCloseAuditPayload\(before,\s*preflight,\s*exceptionReason\)/,
     "before payload should include close preflight context",
   );
   assert.match(
     source,
-    /after:\s*toCloseAuditPayload\(after,\s*preflight\)/,
+    /after:\s*toCloseAuditPayload\(after,\s*preflight,\s*exceptionReason\)/,
     "after payload should include close preflight context",
   );
   assert.match(
@@ -521,12 +521,17 @@ test("HQ close actions avoid detailed preflight data before permission and scope
   const preflightStart = actionSource.indexOf(
     "export async function runHqLedgerClosePreflight",
   );
-  const closeStart = actionSource.indexOf("export async function closeHqLedger");
+  const closeStart = actionSource.indexOf(
+    "export async function closeHqLedger",
+  );
   const preflightActionSource = actionSource.slice(preflightStart, closeStart);
   const closeActionSource = actionSource.slice(closeStart);
 
   assert.ok(preflightStart >= 0, "preflight action should exist");
-  assert.ok(closeStart > preflightStart, "close action should follow preflight");
+  assert.ok(
+    closeStart > preflightStart,
+    "close action should follow preflight",
+  );
 
   for (const [label, source] of [
     ["preflight", preflightActionSource],
@@ -611,13 +616,75 @@ test("HQ close action reruns preflight inside the close transaction before audit
   );
   assert.match(
     source,
-    /buildHqLedgerClosePreflightInTx\([\s\S]*?if\s*\(!preflight\.canClose\)[\s\S]*?preflightBlockedError\(preflight\)[\s\S]*?updateMany/s,
+    /buildHqLedgerClosePreflightInTx\([\s\S]*?preflight\.summary\.blockingCount\s*>\s*0[\s\S]*?preflightBlockedError\(\)[\s\S]*?updateMany/s,
     "close should reject newly blocking preflight results before status update",
   );
   assert.match(
     source,
     /preflight:\s*\{[\s\S]*summary:\s*preflight\.summary[\s\S]*executedBy:\s*preflight\.executedBy[\s\S]*executedAt:\s*preflight\.executedAt[\s\S]*ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/s,
     "close audit payload should include the preflight summary and token used",
+  );
+});
+
+test("HQ close action supports reason-gated individual exception close", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+
+  assert.match(source, /exceptionReason:\s*z/);
+  assert.match(
+    source,
+    /\.max\(500,\s*"마감 예외 사유는 500자 이하여야 합니다\."\)/,
+  );
+  assert.match(
+    source,
+    /preflight\.summary\.blockingCount\s*>\s*0[\s\S]*preflightBlockedError\(\)/,
+    "blocking preflight items must still stop close without audit",
+  );
+  assert.match(
+    source,
+    /preflight\.summary\.exceptionAllowedCount\s*>\s*0[\s\S]*!exceptionReason[\s\S]*exceptionReasonRequiredError\(\)/,
+    "exception-allowed preflight items require a reason before status update",
+  );
+  assert.match(
+    source,
+    /fieldErrors\?: FieldErrors|reason:\s*\["마감 예외 사유를 입력해 주세요\."\]/,
+  );
+  assert.match(
+    source,
+    /reason:\s*exceptionReason/,
+    "successful exception close should persist the reason on AuditLog.reason",
+  );
+});
+
+test("HQ close audit payload includes closer, token, summary, exception items, and reason", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+
+  assert.match(source, /closedById:\s*actor\.user\.id/);
+  assert.match(source, /closedAt/);
+  assert.match(source, /ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/);
+  assert.match(source, /summary:\s*preflight\.summary/);
+  assert.match(source, /items:\s*preflight\.items\.map/);
+  assert.match(
+    source,
+    /exceptionAllowedCount:\s*preflight\.summary\.exceptionAllowedCount/,
+  );
+  assert.match(source, /exceptionReason:\s*exceptionReason\s*\?\?\s*null/);
+  assert.match(
+    source,
+    /before:\s*toCloseAuditPayload\(before,\s*preflight,\s*exceptionReason\)/,
+  );
+  assert.match(
+    source,
+    /after:\s*toCloseAuditPayload\(after,\s*preflight,\s*exceptionReason\)/,
   );
 });
 
@@ -640,10 +707,33 @@ test("HQ close dialog opens with a ClosePreflight table before enabling confirm"
   assert.match(source, /경고/);
   assert.match(source, /사유 필요/);
   assert.match(source, /정보/);
-  assert.match(source, /preflight\.canClose/);
+  assert.match(source, /preflight\?\.canClose/);
   assert.match(source, /preflight\.ledgerUpdatedAt/);
   assert.match(source, /재점검/);
   assert.match(source, /overflow-x-auto/);
+});
+
+test("HQ close dialog requires exception reason for exception-only preflight results", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "hq-ledger-close-dialog.tsx",
+  );
+
+  assert.match(source, /requiresExceptionReason/);
+  assert.match(source, /preflight\.summary\.exceptionAllowedCount\s*>\s*0/);
+  assert.match(source, /preflight\.summary\.blockingCount\s*===\s*0/);
+  assert.match(source, /마감 예외 사유/);
+  assert.match(source, /maxLength=\{500\}/);
+  assert.match(source, /exceptionReason\.trim\(\)\.length\s*>\s*0/);
+  assert.match(
+    source,
+    /exceptionReason:\s*requiresExceptionReason\s*\?\s*exceptionReason\s*:\s*undefined/,
+  );
+  assert.match(source, /isPreflightStale/);
+  assert.match(source, /사유 입력 필요/);
 });
 
 test("HQ close schema and payload include close metadata", () => {
@@ -674,6 +764,32 @@ test("HQ close schema and payload include close metadata", () => {
     /closedAt:\s*ledger\.closedAt\?\.toISOString\(\)\s*\?\?\s*null/,
     "audit and step payloads should carry the close timestamp",
   );
+});
+
+test("HQ ledger detail displays human-readable headquarters close metadata", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+
+  assert.match(querySource, /closedBy:\s*\{\s*select:\s*\{/s);
+  assert.match(querySource, /closedAt:\s*true/);
+  assert.match(
+    pageSource,
+    /detail\.closedBy\?\.name\s*\?\?\s*detail\.closedBy\?\.email/,
+  );
+  assert.match(pageSource, /본사 마감 정보/);
+  assert.match(pageSource, /closedAt/);
 });
 
 test("HQ close dialog follows cross-tab ledger updatedAt sync", () => {

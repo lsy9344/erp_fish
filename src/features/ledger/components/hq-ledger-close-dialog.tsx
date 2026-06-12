@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Label } from "~/components/ui/label";
 import {
   Dialog,
   DialogClose,
@@ -59,14 +60,25 @@ export function HqLedgerCloseDialog({
     useState<HqLedgerClosePreflightResult | null>(null);
   const [currentLedgerUpdatedAt, setCurrentLedgerUpdatedAt] =
     useState(ledgerUpdatedAt);
+  const [exceptionReason, setExceptionReason] = useState("");
+  const [exceptionReasonError, setExceptionReasonError] = useState<
+    string | null
+  >(null);
   const saveConflict = useSaveConflictDialog();
 
   const isEditable = status === "IN_PROGRESS" || status === "IN_REVIEW";
   const isPreflightStale =
     preflight !== null && preflight.ledgerUpdatedAt !== currentLedgerUpdatedAt;
+  const requiresExceptionReason =
+    preflight !== null &&
+    preflight.summary.exceptionAllowedCount > 0 &&
+    preflight.summary.blockingCount === 0;
+  const canCloseWithoutException = preflight?.canClose ?? false;
+  const canCloseWithException =
+    requiresExceptionReason && exceptionReason.trim().length > 0;
   const canConfirm =
     preflight !== null &&
-    preflight.canClose &&
+    (canCloseWithoutException || canCloseWithException) &&
     !isPreflightStale &&
     !isChecking &&
     !isSubmitting;
@@ -93,17 +105,20 @@ export function HqLedgerCloseDialog({
     }
 
     setIsSubmitting(true);
+    setExceptionReasonError(null);
 
     try {
       const result = await closeHqLedger({
         ledgerId,
         ledgerUpdatedAt: preflight.ledgerUpdatedAt,
+        exceptionReason: requiresExceptionReason ? exceptionReason : undefined,
       });
 
       if (!result.ok) {
         if (isLedgerConflictResult(result)) {
           saveConflict.captureConflict(result);
         }
+        setExceptionReasonError(result.error.fieldErrors?.reason?.[0] ?? null);
         setErrorMessage(result.error.message);
         return;
       }
@@ -121,6 +136,7 @@ export function HqLedgerCloseDialog({
   async function loadPreflight() {
     setIsChecking(true);
     setErrorMessage(null);
+    setExceptionReasonError(null);
 
     try {
       const result = await runHqLedgerClosePreflight({ ledgerId });
@@ -133,6 +149,7 @@ export function HqLedgerCloseDialog({
 
       setPreflight(result.data);
       setCurrentLedgerUpdatedAt(result.data.ledgerUpdatedAt);
+      setExceptionReason("");
     } catch {
       setPreflight(null);
       setErrorMessage("마감 전 점검을 실행하지 못했습니다.");
@@ -150,8 +167,11 @@ export function HqLedgerCloseDialog({
 
           if (open) {
             setErrorMessage(null);
+            setExceptionReasonError(null);
           } else {
             setPreflight(null);
+            setExceptionReason("");
+            setExceptionReasonError(null);
           }
         }}
       >
@@ -228,6 +248,40 @@ export function HqLedgerCloseDialog({
                 </Alert>
               ) : null}
               <ClosePreflightTable items={preflight.items} />
+              {requiresExceptionReason ? (
+                <div className="grid gap-2 rounded-md border p-3">
+                  <Label htmlFor="hq-close-exception-reason">
+                    마감 예외 사유
+                  </Label>
+                  <p
+                    id="hq-close-exception-reason-description"
+                    className="text-muted-foreground text-sm"
+                  >
+                    표에서 사유 필요로 표시된 항목을 확인한 뒤 개별 마감 사유를
+                    남겨 주세요.
+                  </p>
+                  <textarea
+                    id="hq-close-exception-reason"
+                    className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring min-h-24 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    maxLength={500}
+                    value={exceptionReason}
+                    aria-describedby="hq-close-exception-reason-description"
+                    aria-invalid={exceptionReasonError ? true : undefined}
+                    disabled={isSubmitting || isChecking || isPreflightStale}
+                    onChange={(event) => {
+                      setExceptionReason(event.target.value);
+                      if (exceptionReasonError) {
+                        setExceptionReasonError(null);
+                      }
+                    }}
+                  />
+                  {exceptionReasonError ? (
+                    <p className="text-destructive text-sm">
+                      {exceptionReasonError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
           {errorMessage ? (
@@ -257,9 +311,12 @@ export function HqLedgerCloseDialog({
             >
               {isSubmitting
                 ? "마감 중..."
-                : preflight?.canClose && !isPreflightStale
+                : (preflight?.canClose || canCloseWithException) &&
+                    !isPreflightStale
                   ? "마감 확정"
-                  : "차단 항목 보완 필요"}
+                  : requiresExceptionReason
+                    ? "사유 입력 필요"
+                    : "차단 항목 보완 필요"}
             </Button>
           </DialogFooter>
         </DialogContent>

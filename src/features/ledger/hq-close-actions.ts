@@ -32,6 +32,11 @@ const closeLedgerInputSchema = z.object({
     .string()
     .transform((value) => value.trim())
     .pipe(z.string().min(1, "마감할 장부가 확인되지 않습니다.")),
+  exceptionReason: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(500, "마감 예외 사유는 500자 이하여야 합니다."))
+    .optional(),
 });
 
 const closePreflightInputSchema = z.object({
@@ -107,9 +112,7 @@ function alreadyClosedError(): ActionResult<never> {
   return actionError("LEDGER_ALREADY_CLOSED", "이미 마감된 장부입니다.");
 }
 
-function preflightBlockedError(
-  _preflight: HqLedgerClosePreflightResult,
-): ActionResult<never> {
+function preflightBlockedError(): ActionResult<never> {
   return actionError(
     "LEDGER_CLOSE_PREFLIGHT_BLOCKED",
     "마감 전 점검에서 보완이 필요한 항목이 확인됐습니다.",
@@ -117,14 +120,28 @@ function preflightBlockedError(
   );
 }
 
+function exceptionReasonRequiredError(): ActionResult<never> {
+  return actionError("VALIDATION_ERROR", "마감 예외 사유를 입력해 주세요.", {
+    reason: ["마감 예외 사유를 입력해 주세요."],
+  });
+}
+
 function toCloseAuditPayload(
   ledger: Parameters<typeof toLedgerAuditPayload>[0],
   preflight: HqLedgerClosePreflightResult,
+  exceptionReason?: string,
 ) {
   return {
     ...toLedgerAuditPayload(ledger),
     preflight: {
       summary: preflight.summary,
+      items: preflight.items.map((item) => ({
+        id: item.id,
+        label: item.label,
+        severity: item.severity,
+        statusLabel: item.statusLabel,
+        source: item.source,
+      })),
       executedBy: preflight.executedBy,
       executedAt: preflight.executedAt,
       ledgerUpdatedAt: preflight.ledgerUpdatedAt,
@@ -132,6 +149,7 @@ function toCloseAuditPayload(
       blockingCount: preflight.summary.blockingCount,
       warningCount: preflight.summary.warningCount,
       exceptionAllowedCount: preflight.summary.exceptionAllowedCount,
+      exceptionReason: exceptionReason ?? null,
     },
   };
 }
@@ -262,8 +280,16 @@ export async function closeHqLedger(
           return notFoundError();
         }
 
-        if (!preflight.canClose) {
-          return preflightBlockedError(preflight);
+        if (preflight.summary.blockingCount > 0) {
+          return preflightBlockedError();
+        }
+
+        const exceptionReason = parsed.data.exceptionReason;
+        const requiresExceptionReason =
+          preflight.summary.exceptionAllowedCount > 0;
+
+        if (requiresExceptionReason && !exceptionReason) {
+          return exceptionReasonRequiredError();
         }
 
         const closedAt = new Date();
@@ -304,8 +330,9 @@ export async function closeHqLedger(
           targetType: "DailyLedger",
           targetId: after.id,
           actorId: actor.user.id,
-          before: toCloseAuditPayload(before, preflight),
-          after: toCloseAuditPayload(after, preflight),
+          before: toCloseAuditPayload(before, preflight, exceptionReason),
+          after: toCloseAuditPayload(after, preflight, exceptionReason),
+          reason: exceptionReason,
         });
 
         return actionOk({

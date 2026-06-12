@@ -577,6 +577,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
         otherPaymentAmount: true,
         workerCount: true,
         updatedAt: true,
+        closedAt: true,
         store: {
           select: {
             id: true,
@@ -584,6 +585,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
           },
         },
         updatedBy: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+        closedBy: {
           select: {
             name: true,
             email: true,
@@ -730,6 +737,8 @@ export async function getHqLedgerDetail(ledgerId: string) {
     latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
     lastModifiedBy: ledger.updatedBy,
     lastModifiedAt: ledger.updatedAt.toISOString(),
+    closedBy: ledger.closedBy,
+    closedAt: ledger.closedAt?.toISOString() ?? null,
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
     correctionState,
     signals,

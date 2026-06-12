@@ -144,6 +144,11 @@ export default async function LedgerDetailPage({
   const lastModifiedAt = detail.lastModifiedAt
     ? dateTimeFormatter.format(new Date(detail.lastModifiedAt))
     : "수정 이력 없음";
+  const closedBy =
+    detail.closedBy?.name ?? detail.closedBy?.email ?? "마감자 없음";
+  const closedAt = detail.closedAt
+    ? dateTimeFormatter.format(new Date(detail.closedAt))
+    : "마감 전";
   const correctionTargetOptions = getCorrectionTargetOptions(ledger);
   const latestCorrectionValues = getLatestCorrectionValueMap(correctionRecords);
   const appliedCorrections = Array.from(latestCorrectionValues.values());
@@ -236,6 +241,14 @@ export default async function LedgerDetailPage({
               })}
             </dd>
           </div>
+          {ledger.status === "HEADQUARTERS_CLOSED" ? (
+            <div className="rounded-md border p-3">
+              <dt className="text-muted-foreground text-sm">본사 마감 정보</dt>
+              <dd className="mt-1 font-medium">
+                {closedAt} · {closedBy}
+              </dd>
+            </div>
+          ) : null}
         </dl>
       </section>
 
