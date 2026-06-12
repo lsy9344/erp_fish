@@ -427,7 +427,7 @@ The main risk is not individual feature complexity. The risk is different agents
 **API and Action Naming Conventions:**
 
 - Server Actions use verb-first camelCase names and may include domain qualifiers when the permission boundary matters: `saveLedgerStep`, `saveHqLedgerSalesPayment`, `runHqLedgerClosePreflight`, `closeHqLedger`, `createCorrectionRecord`, `createProduct`, `updateProductStatus`, `createLedgerInputCode`, `updateLedgerInputCodeStatus`, `updateAnomalyThresholdSettings`.
-- Route Handlers are used only for true HTTP endpoints and use plural resource paths when needed: `/api/exports`, `/api/health`.
+- Route Handlers are used only for true HTTP endpoints and use stable resource paths when needed: `/api/reports/export`, `/api/health`.
 - Query parameters use camelCase in application code.
 
 **Code Naming Conventions:**
@@ -622,8 +622,9 @@ erp_fish/
 │   │       ├── auth/
 │   │       │   └── [...nextauth]/
 │   │       │       └── route.ts
-│   │       ├── exports/
-│   │       │   └── route.ts
+│   │       ├── reports/
+│   │       │   └── export/
+│   │       │       └── route.ts
 │   │       └── health/
 │   │           └── route.ts
 │   ├── components/
@@ -669,7 +670,7 @@ erp_fish/
 │   │   │   └── types.ts
 │   │   └── reports/
 │   │       ├── components/
-│   │       ├── exports.ts
+│   │       ├── export.ts
 │   │       ├── queries.ts
 │   │       └── types.ts
 │   ├── lib/
@@ -729,7 +730,7 @@ Prisma schema is the source of truth for persisted data. Feature queries should 
 - FR-15 to FR-17, HQ dashboard and anomaly signals: `src/features/dashboard`, `src/server/calculations/anomaly.ts`, `src/app/app/dashboard`, `src/app/app/master-data/anomaly-thresholds`.
 - FR-18 to FR-21, HQ edits, closing, corrections: `src/features/ledger`, `src/features/corrections`, `src/features/audit`.
 - FR-22 to FR-26, master data and settings: `src/features/master-data`, `src/app/app/master-data`.
-- FR-27 to FR-29, reports: `src/features/reports`, `src/app/app/reports`, `src/app/api/exports`.
+- FR-27 to FR-29, reports: `src/features/reports`, `src/app/app/reports`, `src/app/api/reports/export`.
 - CAP-1 and CAP-9, employee/work/payroll reference: `src/features/hr`, `src/features/payroll`, `src/app/app/hr`, `src/app/app/payroll`.
 - CAP-5 to CAP-7, product mapping, imports, FIFO valuation: `src/features/product-mapping`, `src/features/imports`, `src/features/inventory-valuation`, `src/server/calculations/inventory`.
 - CAP-4 and CAP-8, all-store inventory and product analysis: `src/features/inventory`, `src/features/reports`, `src/app/app/inventory`, `src/app/app/reports/product-analysis`.
