@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test, type Page } from "@playwright/test";
 import {
   PrismaClient,
@@ -331,6 +333,7 @@ async function cleanupStorySixOneData() {
             targetType: "CorrectionRecord",
             targetId: { in: correctionRecordIds },
           },
+          { targetType: "ReportExport" },
         ],
       },
     });
@@ -790,6 +793,113 @@ test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과
   await expect(page.getByText(/표시할 지점 데이터가 없습니다/)).toBeVisible();
   await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
   await expect(page.getByLabel("지점")).toHaveValue("");
+});
+
+test("본사는 일별 기간비교 월간 리포트를 CSV로 다운로드하고 감사 이력을 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+
+  await page.goto("/app/reports/daily?date=today");
+  await expect(page.getByRole("link", { name: "CSV" })).toBeVisible();
+
+  const dailyDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "CSV" }).click();
+  const dailyDownload = await dailyDownloadPromise;
+  expect(dailyDownload.suggestedFilename()).toMatch(
+    /^erp-fish-report-daily-\d{4}-\d{2}-\d{2}\.csv$/,
+  );
+  const dailyDownloadPath = await dailyDownload.path();
+  expect(dailyDownloadPath).toBeTruthy();
+  const dailyCsv = await readFile(dailyDownloadPath, "utf8");
+  expect(dailyCsv.charCodeAt(0)).toBe(0xfeff);
+  expect(dailyCsv).toContain("정정 반영");
+  expect(dailyCsv).not.toContain("300000");
+  expect(dailyCsv).not.toContain("inventoryAmount");
+  expect(dailyCsv).not.toContain("lot");
+
+  await page.goto(
+    `/app/reports/comparison?startDate=2026-05-31&endDate=${getTodayKstInput()}`,
+  );
+  const comparisonDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "CSV" }).click();
+  const comparisonDownload = await comparisonDownloadPromise;
+  expect(comparisonDownload.suggestedFilename()).toMatch(
+    /^erp-fish-report-comparison-2026-05-31-\d{4}-\d{2}-\d{2}\.csv$/,
+  );
+
+  await page.goto(
+    `/app/reports/monthly?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
+  const monthlyDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "CSV" }).click();
+  const monthlyDownload = await monthlyDownloadPromise;
+  expect(monthlyDownload.suggestedFilename()).toBe(
+    `erp-fish-report-monthly-${getCurrentMonthInput()}.csv`,
+  );
+
+  const auditLogs = await prisma.auditLog.findMany({
+    where: { targetType: "ReportExport" },
+    orderBy: { createdAt: "desc" },
+  });
+
+  expect(auditLogs).toHaveLength(3);
+  expect(auditLogs.every((log) => log.action === "report.export.created")).toBe(
+    true,
+  );
+  expect(auditLogs.every((log) => log.after)).toBe(true);
+
+  await page.goto("/app/master-data/history?targetType=ReportExport");
+  await expect(page.getByRole("heading", { name: "변경 이력" })).toBeVisible();
+  await expect(page.getByText("리포트 Export").first()).toBeVisible();
+  await expect(page.getByText("리포트 Export 생성").first()).toBeVisible();
+});
+
+test("export 권한이 없는 본사 조회 사용자와 지점장은 CSV를 받을 수 없다", async ({
+  page,
+}) => {
+  await login(page, "hq-viewer@example.com");
+  await page.goto("/app/reports/daily?date=today");
+  await expect(page.getByRole("link", { name: "CSV" })).toHaveCount(0);
+
+  const viewerResponse = await page.goto(
+    `/api/reports/export?report=daily&date=${getTodayKstInput()}&format=csv`,
+  );
+  expect(viewerResponse?.status()).toBe(403);
+  await expect(page.locator("body")).not.toContainText("grossProfit");
+  await expect(page.locator("body")).not.toContainText(STORE_IDS.closed);
+
+  await login(page, "manager@example.com");
+  const managerResponse = await page.goto(
+    `/api/reports/export?report=monthly&month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}&format=csv`,
+  );
+  expect(managerResponse?.status()).toBe(403);
+  await expect(page.locator("body")).not.toContainText("inventoryAmount");
+  await expect(page.locator("body")).not.toContainText(STORE_IDS.closed);
+});
+
+test("본사는 잘못된 export 요청에서 CSV 파일이나 감사 로그를 받지 않는다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await prisma.auditLog.deleteMany({ where: { targetType: "ReportExport" } });
+
+  const response = await page.request.get(
+    "/api/reports/export?report=monthly&month=2026-13&format=csv",
+  );
+  const responseText = await response.text();
+
+  expect(response.status()).toBe(400);
+  expect(response.headers()["content-disposition"]).toBeUndefined();
+  expect(response.headers()["content-type"]).toContain("application/json");
+  expect(responseText).toContain("bad_request");
+  expect(responseText).not.toContain(STORE_IDS.closed);
+  expect(responseText).not.toContain("inventoryAmount");
+
+  const auditLogCount = await prisma.auditLog.count({
+    where: { targetType: "ReportExport" },
+  });
+  expect(auditLogCount).toBe(0);
 });
 
 test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목을 본다", async ({

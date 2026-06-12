@@ -9,6 +9,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "DailyLedger",
   "CorrectionRecord",
   "AnomalyThresholdSetting",
+  "ReportExport",
 ] as const;
 
 export type AuditHistoryTargetType =
@@ -25,6 +26,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "DailyLedger", label: "장부" },
   { value: "CorrectionRecord", label: "정정 기록" },
   { value: "AnomalyThresholdSetting", label: "이상 신호 기준값" },
+  { value: "ReportExport", label: "리포트 Export" },
 ] as const satisfies ReadonlyArray<{
   value: AuditHistoryTargetType;
   label: string;
@@ -69,6 +71,8 @@ const actionLabels: Record<string, string> = {
   "ledger.hq.losses.saved": "본사 손실 수정",
   "ledger.hq.work_info.saved": "본사 근무 정보 수정",
   "threshold.updated": "기준값 변경",
+  "report.export.created": "리포트 Export 생성",
+  "report.export.denied": "리포트 Export 거부",
 };
 
 const snapshotNameKeys = [

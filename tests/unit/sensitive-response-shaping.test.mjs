@@ -220,6 +220,66 @@ test("common sensitive field helper removes derived and OQ-gated metric keys", a
   });
 });
 
+test("report export forbidden response does not expose sensitive export metadata", async () => {
+  const exportPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  const { buildForbiddenReportExportResponsePayload } = await import(
+    pathToFileURL(exportPath).href
+  );
+
+  const payload = buildForbiddenReportExportResponsePayload({
+    report: "comparison",
+    requestedStoreId: "unauthorized-store",
+    requestedColumns: [
+      "grossProfit",
+      "operatingProfit",
+      "inventoryAmount",
+      "lotBasis",
+    ],
+  });
+
+  assert.deepEqual(payload, {
+    error: "forbidden",
+    message: "export 권한이 없습니다.",
+  });
+  assertNoSensitiveKeys(payload);
+  assert.doesNotMatch(JSON.stringify(payload), /unauthorized-store/);
+  assert.doesNotMatch(
+    JSON.stringify(payload),
+    /grossProfit|operatingProfit|inventoryAmount|lot/i,
+  );
+});
+
+test("report export source keeps sensitive unauthorised paths out of CSV and audit metadata", () => {
+  const routeSource = readProjectFile(
+    "src",
+    "app",
+    "api",
+    "reports",
+    "export",
+    "route.ts",
+  );
+  const exportSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+
+  assert.match(routeSource, /buildForbiddenReportExportResponsePayload/);
+  assert.match(routeSource, /status:\s*403/);
+  assert.match(routeSource, /return\s+new\s+Response\(\s*JSON\.stringify/);
+  assert.doesNotMatch(routeSource, /requestedColumns/);
+  assert.doesNotMatch(routeSource, /unauthorized-store/);
+  assert.match(exportSource, /REPORT_EXPORT_COLUMN_ALLOWLISTS/);
+  assert.match(exportSource, /omitSensitiveFields/);
+  assert.doesNotMatch(exportSource, /clientColumns|requestedColumns/);
+});
+
 test("store manager inventory and loss contracts define safe response types", () => {
   const inventoryTypes = readProjectFile(
     "src",

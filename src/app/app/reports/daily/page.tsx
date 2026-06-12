@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { DownloadIcon } from "lucide-react";
 
+import { PermissionAction } from "../../../../../generated/prisma";
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
@@ -12,7 +14,7 @@ import {
   getDailyMeetingReportPath,
   getHqDailyMeetingReport,
 } from "~/features/reports/queries";
-import { requireReportAccess } from "~/server/authz";
+import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type DailyMeetingReportPageProps = {
   searchParams: Promise<{
@@ -25,6 +27,10 @@ export default async function DailyMeetingReportPage({
 }: DailyMeetingReportPageProps) {
   const user = await requireReportAccess();
   const navigationItems = await getHeadquartersNavigationItems(user.id);
+  const canExportReports = await hasActionPermission(
+    user.id,
+    PermissionAction.EXPORT_CREATE,
+  );
   const params = await searchParams;
   const dateQuery = getDailyMeetingReportDateQuery(
     Array.isArray(params.date) ? params.date[0] : params.date,
@@ -63,6 +69,11 @@ export default async function DailyMeetingReportPage({
       variant: "danger" as const,
     },
   ];
+  const exportHref = `/api/reports/export?${new URLSearchParams({
+    report: "daily",
+    date: report.dateInput,
+    format: "csv",
+  }).toString()}`;
 
   return (
     <HeadquartersShell
@@ -137,6 +148,14 @@ export default async function DailyMeetingReportPage({
             <Button type="submit" variant="outline" size="sm">
               조회
             </Button>
+            {canExportReports ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={exportHref}>
+                  <DownloadIcon data-icon="inline-start" />
+                  CSV
+                </a>
+              </Button>
+            ) : null}
           </form>
         </div>
       </div>

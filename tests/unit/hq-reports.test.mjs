@@ -1972,3 +1972,355 @@ test("HQ daily meeting report metric evidence scopes correction states to the me
   assert.equal(holidayNeedsReview.status, "needs-review");
   assert.equal(holidayNeedsReview.statusLabel, "정정 확인 필요");
 });
+
+test("HQ report export route follows story 6.4 server-side guardrails", () => {
+  assertProjectFile("src", "app", "api", "reports", "export", "route.ts");
+  assertProjectFile("src", "features", "reports", "export.ts");
+
+  const routeSource = readProjectFile(
+    "src",
+    "app",
+    "api",
+    "reports",
+    "export",
+    "route.ts",
+  );
+  const exportSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const comparisonPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "comparison",
+    "page.tsx",
+  );
+  const monthlyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "monthly",
+    "page.tsx",
+  );
+
+  assert.match(routeSource, /requireExportCreateAccess\(\)/);
+  assert.match(routeSource, /isValidDateInput\(/);
+  assert.match(routeSource, /isValidMonthInput\(/);
+  assert.match(routeSource, /isRequestedStoreOutsideResolvedScope\(/);
+  assert.match(routeSource, /getHqDailyMeetingReport\(/);
+  assert.match(routeSource, /getHqStoreComparisonReport\(/);
+  assert.match(routeSource, /getHqMonthlyClosingAnomalyReport\(/);
+  assert.match(routeSource, /writeAuditLog\(/);
+  assert.match(routeSource, /targetType:\s*"ReportExport"/);
+  assert.match(routeSource, /action:\s*"report\.export\.created"/);
+  assert.match(routeSource, /Cache-Control["']?\s*:\s*"no-store"/);
+  assert.match(routeSource, /Content-Disposition/);
+  assert.match(routeSource, /text\/csv;\s*charset=utf-8/);
+  assert.match(routeSource, /status:\s*403/);
+  assert.doesNotMatch(routeSource, /redirect\("/);
+
+  assert.match(exportSource, /REPORT_EXPORT_COLUMN_ALLOWLISTS/);
+  assert.match(exportSource, /buildDailyMeetingReportExport/);
+  assert.match(exportSource, /buildStoreComparisonReportExport/);
+  assert.match(exportSource, /buildMonthlyClosingAnomalyReportExport/);
+  assert.match(exportSource, /buildReportCsv/);
+  assert.match(exportSource, /getReportExportFilename/);
+  assert.match(exportSource, /statusLabel/);
+  assert.match(exportSource, /unavailableReason/);
+  assert.match(exportSource, /정정 반영/);
+  assert.match(exportSource, /기준 확인 필요/);
+  assert.doesNotMatch(exportSource, /xlsx|exceljs|sheetjs/i);
+
+  for (const pageSource of [
+    dailyPageSource,
+    comparisonPageSource,
+    monthlyPageSource,
+  ]) {
+    assert.match(pageSource, /hasActionPermission\(/);
+    assert.match(pageSource, /PermissionAction\.EXPORT_CREATE/);
+    assert.match(pageSource, /DownloadIcon/);
+    assert.match(pageSource, /\/api\/reports\/export/);
+  }
+});
+
+test("HQ report export helpers produce safe CSV, filenames, and status values", async () => {
+  const exportPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  const {
+    buildReportCsv,
+    getReportExportFilename,
+    buildDailyMeetingReportExport,
+  } = await import(pathToFileURL(exportPath).href);
+  const metric = ({
+    label,
+    value,
+    originalValue = value,
+    statusLabel = "원본",
+    unavailableReason = null,
+  }) => ({
+    label,
+    kind: "money",
+    original: { value: originalValue },
+    applied: { value, unavailableReason },
+    isCorrected: statusLabel === "정정 반영",
+    status: statusLabel === "정정 반영" ? "corrected" : "original",
+    statusLabel,
+    unavailableReason,
+    ledgerDetailHref: "/app/ledgers/ledger-1",
+    correctionTimelineHref:
+      statusLabel === "정정 반영"
+        ? "/app/ledgers/ledger-1#correction-timeline"
+        : null,
+  });
+  const exportData = buildDailyMeetingReportExport({
+    dateInput: "2026-06-12",
+    rows: [
+      {
+        storeId: "store-1",
+        storeName: '=강남 "본점"',
+        ledgerStatus: { label: "본사마감" },
+        businessStatus: { label: "영업" },
+        latestReflectedAt: "2026-06-12T01:00:00.000Z",
+        statusMessage: "회의 반영 완료",
+        salesAmount: { value: 45000 },
+        grossMarginRate: {
+          value: null,
+          unavailableReason: "계산 기준 확인 필요",
+        },
+        salesDifference: { value: 0 },
+        hasLoss: false,
+        signals: [{ label: "정정 확인 필요" }],
+        metricEvidence: {
+          salesAmount: metric({
+            label: "매출",
+            value: 45000,
+            originalValue: 300000,
+            statusLabel: "정정 반영",
+          }),
+          grossMarginRate: metric({
+            label: "이익률",
+            value: null,
+            statusLabel: "계산 기준 확인 필요",
+            unavailableReason: "계산 기준 확인 필요",
+          }),
+          salesDifference: metric({ label: "매출 차이", value: 0 }),
+          loss: metric({ label: "손실", value: 0, statusLabel: "0" }),
+        },
+      },
+    ],
+  });
+  const csv = buildReportCsv(exportData);
+
+  assert.equal(
+    getReportExportFilename({
+      report: "daily",
+      period: "2026-06-12/store-1/강남",
+    }),
+    "erp-fish-report-daily-2026-06-12-store-1.csv",
+  );
+  assert.equal(csv.charCodeAt(0), 0xfeff);
+  assert.match(csv, /"'=강남 ""본점"""/);
+  assert.match(csv, /정정 반영/);
+  assert.match(csv, /기준 확인 필요/);
+  assert.doesNotMatch(csv, /300000/);
+  assert.deepEqual(exportData.scopedStoreIds, ["store-1"]);
+  assert.ok(exportData.columns.every((column) => column.key !== "lot"));
+});
+
+test("HQ comparison and monthly export helpers preserve gated statuses without leaking row values into audit metadata", async () => {
+  const exportPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  const {
+    buildReportCsv,
+    buildReportExportAuditSnapshot,
+    buildStoreComparisonReportExport,
+    buildMonthlyClosingAnomalyReportExport,
+  } = await import(pathToFileURL(exportPath).href);
+  const metric = ({
+    label,
+    value,
+    originalValue = value,
+    statusLabel = "원본",
+    unavailableReason = null,
+  }) => ({
+    label,
+    kind: "money",
+    original: { value: originalValue },
+    applied: { value, unavailableReason },
+    isCorrected: statusLabel === "정정 반영",
+    status: statusLabel === "정정 반영" ? "corrected" : "original",
+    statusLabel,
+    unavailableReason,
+    ledgerDetailHref: "/app/ledgers/ledger-1",
+    correctionTimelineHref: null,
+  });
+  const comparisonExport = buildStoreComparisonReportExport({
+    range: {
+      startDateInput: "2026-06-01",
+      endDateInput: "2026-06-12",
+    },
+    selectedStoreId: "store-2",
+    rows: [
+      {
+        storeId: "store-2",
+        storeName: "잠실점",
+        statusCounts: {
+          closedCount: 8,
+          inProgressCount: 1,
+          reviewCount: 1,
+          missingDayCount: 2,
+        },
+        metricEvidence: {
+          salesAmount: metric({
+            label: "매출",
+            value: 120000,
+            originalValue: 100000,
+            statusLabel: "정정 반영",
+          }),
+          grossProfit: metric({
+            label: "매출이익",
+            value: null,
+            statusLabel: "데이터 부족",
+            unavailableReason: "데이터 부족",
+          }),
+          grossMarginRate: metric({
+            label: "이익률",
+            value: null,
+            statusLabel: "계산 불가",
+            unavailableReason: "계산 불가",
+          }),
+          operatingProfit: metric({
+            label: "영업이익",
+            value: null,
+            statusLabel: "기준 확인 필요",
+            unavailableReason: "기준 확인 필요",
+          }),
+          productivity: metric({ label: "인당생산성", value: 30000 }),
+          loss: metric({ label: "손실", value: 0 }),
+        },
+      },
+    ],
+  });
+  const comparisonCsv = buildReportCsv(comparisonExport);
+
+  assert.match(comparisonCsv, /정정 반영/);
+  assert.match(comparisonCsv, /데이터 부족/);
+  assert.match(comparisonCsv, /계산 불가/);
+  assert.match(comparisonCsv, /기준 확인 필요/);
+  assert.doesNotMatch(comparisonCsv, /100000/);
+  assert.deepEqual(comparisonExport.filters, {
+    startDate: "2026-06-01",
+    endDate: "2026-06-12",
+    storeId: "store-2",
+  });
+  assert.deepEqual(comparisonExport.scopedStoreIds, ["store-2"]);
+
+  const monthlyExport = buildMonthlyClosingAnomalyReportExport({
+    monthRange: { monthInput: "2026-06" },
+    selectedStoreId: "store-2",
+    selectedStoreName: "서초점",
+    monthlyKpis: {
+      metricEvidence: {
+        salesAmount: metric({ label: "월간 매출", value: 500000 }),
+        grossProfit: metric({
+          label: "매출이익",
+          value: null,
+          statusLabel: "기준 확인 필요",
+          unavailableReason: "기준 확인 필요",
+        }),
+        grossMarginRate: metric({
+          label: "이익률",
+          value: null,
+          statusLabel: "데이터 부족",
+          unavailableReason: "데이터 부족",
+        }),
+        operatingProfit: metric({
+          label: "영업이익",
+          value: null,
+          statusLabel: "계산 불가",
+          unavailableReason: "계산 불가",
+        }),
+      },
+    },
+    monthlyLossSummary: {
+      metricEvidence: {
+        totalAmount: metric({ label: "손실 합계", value: 0 }),
+      },
+    },
+    monthlyInventoryFlow: {
+      metricEvidence: {
+        currentAmount: metric({
+          label: "당일재고",
+          value: 220000,
+          originalValue: 240000,
+          statusLabel: "정정 반영",
+        }),
+      },
+    },
+    topRevenueItem: {
+      productName: "광어",
+      note: "정정 확인 필요",
+      statusLabel: "정정 확인 필요",
+    },
+    calculationDays: [
+      {
+        ledgerStatusLabel: "입력중",
+        dateInput: "2026-06-12",
+        inclusion: "excluded",
+        reason: "미마감 장부 제외",
+      },
+    ],
+    days: [{ storeId: "store-2" }, { storeId: "store-2" }],
+  });
+  const monthlyCsv = buildReportCsv(monthlyExport);
+  const auditSnapshot = buildReportExportAuditSnapshot({
+    exportData: monthlyExport,
+    format: "csv",
+  });
+  const auditJson = JSON.stringify(auditSnapshot);
+
+  assert.match(monthlyCsv, /정정 확인 필요/);
+  assert.match(monthlyCsv, /미마감 장부 제외/);
+  assert.match(monthlyCsv, /정정 반영/);
+  assert.doesNotMatch(monthlyCsv, /240000/);
+  assert.deepEqual(monthlyExport.scopedStoreIds, ["store-2"]);
+  assert.deepEqual(auditSnapshot, {
+    report: "monthly",
+    filters: { month: "2026-06", storeId: "store-2" },
+    scopedStoreIdCount: 1,
+    scopedStoreIds: ["store-2"],
+    columnKeys: [
+      "section",
+      "item",
+      "date",
+      "storeName",
+      "value",
+      "status",
+      "reason",
+    ],
+    rowCount: monthlyExport.rows.length,
+    format: "csv",
+  });
+  assert.doesNotMatch(auditJson, /서초점|광어|500000|220000/);
+});

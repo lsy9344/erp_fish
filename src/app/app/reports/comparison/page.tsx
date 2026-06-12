@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { DownloadIcon } from "lucide-react";
 
+import { PermissionAction } from "../../../../../generated/prisma";
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
@@ -10,7 +12,7 @@ import {
   getHqStoreComparisonReport,
   getStoreComparisonReportPath,
 } from "~/features/reports/queries";
-import { requireReportAccess } from "~/server/authz";
+import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type StoreComparisonReportPageProps = {
   searchParams: Promise<{
@@ -25,6 +27,10 @@ export default async function StoreComparisonReportPage({
 }: StoreComparisonReportPageProps) {
   const user = await requireReportAccess();
   const navigationItems = await getHeadquartersNavigationItems(user.id);
+  const canExportReports = await hasActionPermission(
+    user.id,
+    PermissionAction.EXPORT_CREATE,
+  );
   const params = await searchParams;
   const startDate = Array.isArray(params.startDate)
     ? params.startDate[0]
@@ -41,6 +47,18 @@ export default async function StoreComparisonReportPage({
     storeId,
   });
   const selectedStoreLabel = report.selectedStoreName ?? "전체 활성 지점";
+  const exportParams = new URLSearchParams({
+    report: "comparison",
+    startDate: report.range.startDateInput,
+    endDate: report.range.endDateInput,
+    format: "csv",
+  });
+
+  if (report.selectedStoreId) {
+    exportParams.set("storeId", report.selectedStoreId);
+  }
+
+  const exportHref = `/api/reports/export?${exportParams.toString()}`;
 
   return (
     <HeadquartersShell
@@ -130,6 +148,14 @@ export default async function StoreComparisonReportPage({
             <Button type="submit" variant="outline" size="sm">
               조회
             </Button>
+            {canExportReports ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={exportHref}>
+                  <DownloadIcon data-icon="inline-start" />
+                  CSV
+                </a>
+              </Button>
+            ) : null}
           </form>
         </div>
       </div>

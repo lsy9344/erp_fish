@@ -92,6 +92,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "DailyLedger",
       "CorrectionRecord",
       "AnomalyThresholdSetting",
+      "ReportExport",
     ],
   );
   assert.equal(getAuditTargetTypeLabel("Store"), "지점");
@@ -105,6 +106,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
     getAuditTargetTypeLabel("AnomalyThresholdSetting"),
     "이상 신호 기준값",
   );
+  assert.equal(getAuditTargetTypeLabel("ReportExport"), "리포트 Export");
   assert.equal(getAuditActionLabel("store.created"), "생성");
   assert.equal(getAuditActionLabel("user.role_changed"), "역할 변경");
   assert.equal(
@@ -121,6 +123,10 @@ test("audit format helpers map target/action labels and safely format JSON detai
   );
   assert.equal(getAuditActionLabel("correction.created"), "정정 기록 추가");
   assert.equal(getAuditActionLabel("threshold.updated"), "기준값 변경");
+  assert.equal(
+    getAuditActionLabel("report.export.created"),
+    "리포트 Export 생성",
+  );
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
   assert.match(
