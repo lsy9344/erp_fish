@@ -412,9 +412,15 @@ function toDashboardRow(
 ): HqDashboardRowWithoutPriority {
   if (ledger === null) {
     const metrics = {
-      totalSales: unavailable("계산 불가"),
-      grossMarginRate: unavailable("계산 불가"),
-      salesDifference: unavailable("계산 기준 확인 필요"),
+      totalSales: dataInsufficient(
+        "장부 입력 전이라 총매출 데이터가 없습니다.",
+      ),
+      grossMarginRate: dataInsufficient(
+        "장부 입력 전이라 마진율 데이터가 없습니다.",
+      ),
+      salesDifference: dataInsufficient(
+        "장부 입력 전이라 매출차액 데이터가 없습니다.",
+      ),
     };
 
     return {
@@ -843,12 +849,13 @@ export function summarizeDashboardRows(
   };
 }
 
-function unavailable(
-  unavailableReason: NonNullable<LedgerReviewMetric["unavailableReason"]>,
-): LedgerReviewMetric {
+function dataInsufficient(reason: string): LedgerReviewMetric {
   return {
     value: null,
-    unavailableReason,
+    status: "data-insufficient",
+    label: "데이터 부족",
+    unavailableReason: "계산 불가",
+    reason,
   };
 }
 

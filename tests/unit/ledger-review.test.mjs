@@ -18,6 +18,20 @@ function readProjectFile(...segments) {
   return readFileSync(assertProjectFile(...segments), "utf8");
 }
 
+function ok(value) {
+  return { value, status: "ok" };
+}
+
+function unavailable(status, label, unavailableReason, reason) {
+  return {
+    value: null,
+    status,
+    label,
+    unavailableReason,
+    ...(reason ? { reason } : {}),
+  };
+}
+
 test("ledger review summary helper calculates PRD metrics and unavailable states", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -58,15 +72,18 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
     lossItems: [],
   });
 
-  assert.deepEqual(summary.totalSales, { value: 100_000 });
-  assert.deepEqual(summary.costOfGoodsSold, { value: 9_000 });
-  assert.deepEqual(summary.grossProfit, { value: 91_000 });
-  assert.deepEqual(summary.grossMarginRate, { value: 0.91 });
-  assert.deepEqual(summary.operatingProfit, { value: 79_000 });
-  assert.deepEqual(summary.productivity, { value: 25_000 });
-  assert.deepEqual(summary.inventoryAmount, { value: 16_000 });
-  assert.deepEqual(summary.paymentDifference, { value: 2_000 });
-  assert.deepEqual(summary.salesDifference, { value: 91_000 });
+  assert.deepEqual(summary.totalSales, ok(100_000));
+  assert.deepEqual(summary.paymentTotal, ok(98_000));
+  assert.deepEqual(summary.expenseTotal, ok(12_000));
+  assert.deepEqual(summary.workerCount, ok(4));
+  assert.deepEqual(summary.costOfGoodsSold, ok(9_000));
+  assert.deepEqual(summary.grossProfit, ok(91_000));
+  assert.deepEqual(summary.grossMarginRate, ok(0.91));
+  assert.deepEqual(summary.operatingProfit, ok(79_000));
+  assert.deepEqual(summary.productivity, ok(25_000));
+  assert.deepEqual(summary.inventoryAmount, ok(16_000));
+  assert.deepEqual(summary.paymentDifference, ok(2_000));
+  assert.deepEqual(summary.salesDifference, ok(91_000));
 });
 
 test("ledger review summary helper does not calculate sales difference without adjustment and loss context", async () => {
@@ -99,10 +116,15 @@ test("ledger review summary helper does not calculate sales difference without a
     ],
   });
 
-  assert.deepEqual(summary.salesDifference, {
-    value: null,
-    unavailableReason: "계산 기준 확인 필요",
-  });
+  assert.deepEqual(
+    summary.salesDifference,
+    unavailable(
+      "policy-unconfirmed",
+      "확인 필요",
+      "계산 기준 확인 필요",
+      "매출차액 계산에는 재고조정과 손실 입력 컨텍스트가 필요합니다.",
+    ),
+  );
 });
 
 test("ledger review summary helper calculates sales difference with loss and inventory adjustment amounts", async () => {
@@ -145,8 +167,8 @@ test("ledger review summary helper calculates sales difference with loss and inv
     ],
   });
 
-  assert.deepEqual(summary.costOfGoodsSold, { value: 50_000 });
-  assert.deepEqual(summary.salesDifference, { value: 65_000 });
+  assert.deepEqual(summary.costOfGoodsSold, ok(50_000));
+  assert.deepEqual(summary.salesDifference, ok(65_000));
 });
 
 test("ledger review summary helper does not expose divide by zero or hidden inventory calculations", async () => {
@@ -179,22 +201,10 @@ test("ledger review summary helper does not expose divide by zero or hidden inve
     ],
   });
 
-  assert.deepEqual(summary.grossMarginRate, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
-  assert.deepEqual(summary.productivity, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
-  assert.deepEqual(summary.costOfGoodsSold, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
-  assert.deepEqual(summary.inventoryAmount, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
+  assert.equal(summary.grossMarginRate.status, "data-insufficient");
+  assert.equal(summary.productivity.status, "data-insufficient");
+  assert.equal(summary.costOfGoodsSold.status, "data-insufficient");
+  assert.equal(summary.inventoryAmount.status, "data-insufficient");
   assert.equal(Number.isFinite(summary.grossMarginRate.value), false);
   assert.equal(Number.isFinite(summary.productivity.value), false);
 });
@@ -220,14 +230,8 @@ test("ledger review summary helper requires saved inventory and uses one quantit
     inventoryItems: [],
   });
 
-  assert.deepEqual(noInventorySummary.costOfGoodsSold, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
-  assert.deepEqual(noInventorySummary.inventoryAmount, {
-    value: null,
-    unavailableReason: "계산 불가",
-  });
+  assert.equal(noInventorySummary.costOfGoodsSold.status, "data-insufficient");
+  assert.equal(noInventorySummary.inventoryAmount.status, "data-insufficient");
 
   const adjustedSummary = calculateLedgerReviewSummary({
     totalSalesAmount: 100_000,
@@ -250,8 +254,8 @@ test("ledger review summary helper requires saved inventory and uses one quantit
     lossItems: [],
   });
 
-  assert.deepEqual(adjustedSummary.costOfGoodsSold, { value: 7_000 });
-  assert.deepEqual(adjustedSummary.inventoryAmount, { value: 8_000 });
+  assert.deepEqual(adjustedSummary.costOfGoodsSold, ok(7_000));
+  assert.deepEqual(adjustedSummary.inventoryAmount, ok(8_000));
 });
 
 test("ledger review route/query contracts use existing server flows", () => {
@@ -298,6 +302,9 @@ test("ledger review route/query contracts use existing server flows", () => {
   assert.match(querySource, /getLossStepDataInTx\(/);
   assert.match(querySource, /calculateLedgerReviewSummary\(/);
   assert.match(querySource, /ledgerInventoryItem\.findMany\(/);
+  assert.match(querySource, /getWarnings\(summary\.paymentDifference\)/);
+  assert.match(querySource, /payment-difference-unavailable/);
+  assert.doesNotMatch(querySource, /paymentDifference\.value\s*\?\?\s*0/);
   assert.doesNotMatch(querySource, /requireStoreAccess\(/);
   assert.doesNotMatch(
     querySource,
@@ -426,15 +433,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     submittedById: null,
     submittedAt: null,
     summary: {
-      totalSales: { value: 100_000 },
-      costOfGoodsSold: { value: 30_000 },
-      grossProfit: { value: 70_000 },
-      grossMarginRate: { value: 0.7 },
-      operatingProfit: { value: 60_000 },
-      productivity: { value: 30_000 },
-      inventoryAmount: { value: 8_000 },
-      salesDifference: { value: 2_000 },
-      paymentDifference: { value: 0 },
+      totalSales: ok(100_000),
+      costOfGoodsSold: ok(30_000),
+      grossProfit: ok(70_000),
+      grossMarginRate: ok(0.7),
+      operatingProfit: ok(60_000),
+      productivity: ok(30_000),
+      inventoryAmount: ok(8_000),
+      salesDifference: ok(2_000),
+      paymentDifference: ok(0),
     },
     missingItems: [],
     warnings: [],

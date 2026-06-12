@@ -487,10 +487,12 @@ function formatKrw(value: number | null) {
 
 function formatKrwMetric(metric: {
   value: number | null;
+  status?: string;
+  label?: string;
   unavailableReason?: string;
 }) {
   if (metric.value === null) {
-    return metric.unavailableReason ?? "-";
+    return formatUnavailableMetric(metric);
   }
 
   return krwFormatter.format(metric.value);
@@ -498,13 +500,27 @@ function formatKrwMetric(metric: {
 
 function formatPercentMetric(metric: {
   value: number | null;
+  status?: string;
+  label?: string;
   unavailableReason?: string;
 }) {
   if (metric.value === null) {
-    return metric.unavailableReason ?? "-";
+    return formatUnavailableMetric(metric);
   }
 
   return percentFormatter.format(metric.value);
+}
+
+function formatUnavailableMetric(metric: {
+  status?: string;
+  label?: string;
+  unavailableReason?: string;
+}) {
+  if (metric.status === "data-insufficient") {
+    return metric.label ?? metric.unavailableReason ?? "-";
+  }
+
+  return metric.label ?? metric.unavailableReason ?? "-";
 }
 
 function formatCorrectionValue(value: unknown) {

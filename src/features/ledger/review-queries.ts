@@ -1,6 +1,9 @@
 import type { LossSignalThresholds } from "~/server/calculations/inventory";
-import { calculateExpenseTotal } from "~/server/calculations/ledger";
-import { calculateLedgerReviewSummary } from "~/server/calculations/ledger";
+import {
+  calculateExpenseTotal,
+  calculateLedgerReviewSummary,
+  type LedgerReviewMetric,
+} from "~/server/calculations/ledger";
 import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
@@ -35,8 +38,24 @@ const reviewInventoryItemSelect = {
   inventoryAmount: true,
 } as const;
 
-function getWarnings(paymentDifference: number): LedgerReviewWarning[] {
-  if (paymentDifference === 0) {
+function getWarnings(
+  paymentDifference: LedgerReviewMetric,
+): LedgerReviewWarning[] {
+  if (paymentDifference.status !== "ok" || paymentDifference.value === null) {
+    return [
+      {
+        id: "payment-difference-unavailable",
+        label: "결제 차액 계산 상태 확인",
+        detail:
+          paymentDifference.reason ??
+          paymentDifference.label ??
+          paymentDifference.unavailableReason ??
+          "결제 차액을 계산할 수 없습니다.",
+      },
+    ];
+  }
+
+  if (paymentDifference.value === 0) {
     return [];
   }
 
@@ -45,7 +64,7 @@ function getWarnings(paymentDifference: number): LedgerReviewWarning[] {
       id: "payment-difference",
       label: "결제 합계 불일치",
       detail: "총매출과 결제수단 합계가 다릅니다. 제출을 막지는 않습니다.",
-      amount: paymentDifference,
+      amount: paymentDifference.value,
     },
   ];
 }
@@ -164,7 +183,7 @@ export async function getLedgerReviewStepData(
         lossCount: losses.lossItems.length,
         workerCount: ledger.workerCount,
       }),
-      warnings: getWarnings(summary.paymentDifference.value ?? 0),
+      warnings: getWarnings(summary.paymentDifference),
       signals: getSignals({
         inventoryItems: inventory.items,
         lossSignalCandidates: losses.signalCandidates,

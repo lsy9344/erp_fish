@@ -343,7 +343,7 @@ function formatKrw(value: number | null) {
 
 function formatKrwMetric(metric: HqDashboardRow["salesDifference"]) {
   if (metric.value === null) {
-    return metric.unavailableReason ?? "-";
+    return formatUnavailableMetric(metric);
   }
 
   return krwFormatter.format(metric.value);
@@ -351,10 +351,18 @@ function formatKrwMetric(metric: HqDashboardRow["salesDifference"]) {
 
 function formatPercentMetric(metric: HqDashboardRow["grossMarginRate"]) {
   if (metric.value === null) {
-    return metric.unavailableReason ?? "-";
+    return formatUnavailableMetric(metric);
   }
 
   return percentFormatter.format(metric.value);
+}
+
+function formatUnavailableMetric(metric: HqDashboardRow["salesDifference"]) {
+  if (metric.status === "data-insufficient") {
+    return metric.label ?? metric.unavailableReason ?? "-";
+  }
+
+  return metric.label ?? metric.unavailableReason ?? "-";
 }
 
 function formatLoss(row: HqDashboardRow) {

@@ -248,9 +248,7 @@ export function getMonthlyClosingAnomalyReportMonthRange(
   const today = getDailyMeetingReportDate("today", inputDate);
   const currentMonthInput = getDailyMeetingReportDateInput(today).slice(0, 7);
   const hasMonthInput = month !== undefined && month !== null && month !== "";
-  const monthInput = isValidMonthQuery(month)
-    ? month
-    : currentMonthInput;
+  const monthInput = isValidMonthQuery(month) ? month : currentMonthInput;
   const year = Number(monthInput.slice(0, 4));
   const monthNumber = Number(monthInput.slice(5, 7));
   const startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
@@ -303,9 +301,8 @@ export async function getHqDailyMeetingReport({
   datePreset?: string;
   dateQuery?: string;
 } = {}): Promise<DailyMeetingReportData> {
-  const { getHeadquartersStoreScope, requireReportAccess } = await import(
-    "../../server/authz.ts"
-  );
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
@@ -432,9 +429,8 @@ export async function getHqStoreComparisonReport({
   startDate?: unknown;
   endDate?: unknown;
 } = {}): Promise<StoreComparisonReportData> {
-  const { getHeadquartersStoreScope, requireReportAccess } = await import(
-    "../../server/authz.ts"
-  );
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
@@ -912,7 +908,8 @@ function buildMonthlyMissingDay({
 function buildMonthlyKpis(
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
 ) {
-  const businessSummaries = getMonthlyBusinessAggregateSummaries(ledgerSummaries);
+  const businessSummaries =
+    getMonthlyBusinessAggregateSummaries(ledgerSummaries);
   const originalAggregates = aggregateStoreComparisonMetrics(
     businessSummaries,
     "original",
@@ -1023,7 +1020,8 @@ function buildMonthlyKpis(
 function buildMonthlyLossSummary(
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
 ): MonthlyLossSummary {
-  const businessSummaries = getMonthlyBusinessAggregateSummaries(ledgerSummaries);
+  const businessSummaries =
+    getMonthlyBusinessAggregateSummaries(ledgerSummaries);
   const byType = new Map<string, MonthlyLossSummary["byType"][number]>();
 
   for (const item of getMonthlyBusinessLossItems(ledgerSummaries)) {
@@ -1080,7 +1078,8 @@ function buildMonthlyLossSummary(
 function buildMonthlyInventoryFlow(
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
 ): MonthlyInventoryFlowSummary {
-  const businessSummaries = getMonthlyBusinessAggregateSummaries(ledgerSummaries);
+  const businessSummaries =
+    getMonthlyBusinessAggregateSummaries(ledgerSummaries);
   const originalFlow = calculateMonthlyInventoryFlowMetrics(
     ledgerSummaries,
     "original",
@@ -1251,7 +1250,7 @@ function addNullableMetricValue(
   value: number | null,
 ) {
   if (value === null) {
-    return unavailable("계산 불가");
+    return dataInsufficient("재고 흐름 계산에 필요한 수량 데이터가 없습니다.");
   }
 
   return addMetricValue(metric, value);
@@ -1269,7 +1268,8 @@ function hasMonthlyInventoryFlowCalculationIssue(
 
     if (
       currentQuantity === null ||
-      calculateInventoryAmount(item.previousQuantity, item.unitPrice) === null ||
+      calculateInventoryAmount(item.previousQuantity, item.unitPrice) ===
+        null ||
       calculateInventoryAmount(item.purchasedQuantity, item.unitPrice) ===
         null ||
       calculateInventoryAmount(currentQuantity, item.unitPrice) === null
@@ -1351,7 +1351,9 @@ function getMonthlyBusinessAggregateSummaries(
 ): (MonthlyClosingAnomalyLedgerSummaryForTest &
   ReportAggregateLedgerSummary)[] {
   return ledgerSummaries.filter(
-    (summary): summary is MonthlyClosingAnomalyLedgerSummaryForTest &
+    (
+      summary,
+    ): summary is MonthlyClosingAnomalyLedgerSummaryForTest &
       ReportAggregateLedgerSummary =>
       summary.status !== "HOLIDAY" &&
       summary.original !== undefined &&
@@ -1531,7 +1533,9 @@ function buildMonthlyCorrectionAnomalyItems(
   }
 
   return Object.values(day.metricEvidence)
-    .filter((evidence) => evidence.isCorrected || evidence.status === "needs-review")
+    .filter(
+      (evidence) => evidence.isCorrected || evidence.status === "needs-review",
+    )
     .map((evidence, index) => ({
       id: `${day.dateInput}-${ledgerId}-correction-${index}`,
       dateInput: day.dateInput,
@@ -1542,7 +1546,9 @@ function buildMonthlyCorrectionAnomalyItems(
       ledgerDetailHref: `/app/ledgers/${ledgerId}`,
       label: `${evidence.label} ${evidence.statusLabel}`,
       severity: "info",
-      detail: evidence.unavailableReason ?? "장부 상세에서 정정 근거를 확인해 주세요.",
+      detail:
+        evidence.unavailableReason ??
+        "장부 상세에서 정정 근거를 확인해 주세요.",
       correctionTimelineHref: evidence.correctionTimelineHref,
       metricEvidence: evidence,
     }));
@@ -2049,26 +2055,51 @@ function getMetrics(
 
 function sumMetric(metrics: LedgerReviewMetric[]): LedgerReviewMetric {
   if (metrics.some((metric) => metric.value === null)) {
-    return unavailable("계산 불가");
+    return aggregateUnavailableMetric(
+      metrics,
+      "합계 계산에 필요한 장부 데이터가 부족합니다.",
+    );
   }
 
   const values = metrics.map((metric) => metric.value ?? 0);
 
   return metrics.length === 0
-    ? unavailable("계산 불가")
+    ? dataInsufficient("합계 계산 대상 장부가 없습니다.")
     : available(values.reduce((sum, value) => sum + value, 0));
 }
 
 function averageMetric(metrics: LedgerReviewMetric[]): LedgerReviewMetric {
   if (metrics.some((metric) => metric.value === null)) {
-    return unavailable("계산 불가");
+    return aggregateUnavailableMetric(
+      metrics,
+      "평균 계산에 필요한 장부 데이터가 부족합니다.",
+    );
   }
 
   const values = metrics.map((metric) => metric.value ?? 0);
 
   return metrics.length === 0
-    ? unavailable("계산 불가")
-    : available(values.reduce((sum, value) => sum + value, 0) / values.length);
+    ? dataInsufficient("평균 계산 대상 장부가 없습니다.")
+    : available(
+        Math.round(
+          values.reduce((sum, value) => sum + value, 0) / values.length,
+        ),
+      );
+}
+
+function aggregateUnavailableMetric(
+  metrics: LedgerReviewMetric[],
+  dataInsufficientReason: string,
+): LedgerReviewMetric {
+  if (metrics.some((metric) => metric.status === "policy-unconfirmed")) {
+    return unavailable("계산 기준 확인 필요");
+  }
+
+  if (metrics.some((metric) => metric.status === "calculation-unavailable")) {
+    return unavailable("계산 불가");
+  }
+
+  return dataInsufficient(dataInsufficientReason);
 }
 
 function getWorkerCount(
@@ -2081,7 +2112,7 @@ function getWorkerCount(
 }
 
 function available(value: number): LedgerReviewMetric {
-  return { value };
+  return { value, status: "ok" };
 }
 
 function getInclusiveDateCount(startDate: Date, endDate: Date) {
@@ -2182,9 +2213,13 @@ function toEmptyReportRow({
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
 }): ReportRowWithoutPriority {
   const metrics = {
-    totalSales: unavailable("계산 불가"),
-    grossMarginRate: unavailable("계산 불가"),
-    salesDifference: unavailable("계산 불가"),
+    totalSales: dataInsufficient("장부 입력 전이라 총매출 데이터가 없습니다."),
+    grossMarginRate: dataInsufficient(
+      "장부 입력 전이라 마진율 데이터가 없습니다.",
+    ),
+    salesDifference: dataInsufficient(
+      "장부 입력 전이라 매출차액 데이터가 없습니다.",
+    ),
   };
 
   const rowWithoutEvidence = {
@@ -2393,7 +2428,9 @@ export function buildDailyMeetingReportMetricEvidence({
     status,
     statusLabel: getMetricStatusLabel(status, applied),
     unavailableReason:
-      applied.value === null ? (applied.unavailableReason ?? null) : null,
+      applied.value === null
+        ? (applied.reason ?? applied.label ?? applied.unavailableReason ?? null)
+        : null,
     ledgerDetailHref: ledgerId ? `/app/ledgers/${ledgerId}` : null,
     correctionTimelineHref:
       ledgerId && (correctionCount > 0 || hasUnappliedCorrections)
@@ -2487,14 +2524,14 @@ function buildDailyMeetingReportMetricEvidenceMap({
       kind: "boolean",
       ledgerId,
       ledgerStatus,
-      original: {
-        value: originalHasLoss === null ? null : originalHasLoss ? 1 : 0,
-        unavailableReason: originalHasLoss === null ? "계산 불가" : undefined,
-      },
-      applied: {
-        value: appliedHasLoss === null ? null : appliedHasLoss ? 1 : 0,
-        unavailableReason: appliedHasLoss === null ? "계산 불가" : undefined,
-      },
+      original:
+        originalHasLoss === null
+          ? unavailable("계산 불가")
+          : available(originalHasLoss ? 1 : 0),
+      applied:
+        appliedHasLoss === null
+          ? unavailable("계산 불가")
+          : available(appliedHasLoss ? 1 : 0),
       correctionCount: lossCorrections.appliedCount,
       hasUnappliedCorrections: lossCorrections.hasUnapplied,
     }),
@@ -2541,6 +2578,7 @@ function getMetricStatus({
 }): DailyMeetingReportMetricEvidence["status"] {
   if (
     hasUnappliedCorrections ||
+    applied.status === "policy-unconfirmed" ||
     applied.unavailableReason === "계산 기준 확인 필요"
   ) {
     return "needs-review";
@@ -2583,9 +2621,9 @@ function getMetricStatusLabel(
     case "holiday":
       return "휴무";
     case "data-insufficient":
-      return "데이터 부족";
+      return applied.label ?? "데이터 부족";
     case "needs-review":
-      return applied.unavailableReason ?? "정정 확인 필요";
+      return applied.label ?? applied.unavailableReason ?? "정정 확인 필요";
     default:
       return "원본";
   }
@@ -2740,9 +2778,26 @@ function toCorrectedInventoryAdjustments(
 function unavailable(
   unavailableReason: NonNullable<LedgerReviewMetric["unavailableReason"]>,
 ): LedgerReviewMetric {
+  const status =
+    unavailableReason === "계산 기준 확인 필요"
+      ? "policy-unconfirmed"
+      : "calculation-unavailable";
+
   return {
     value: null,
+    status,
+    label: status === "policy-unconfirmed" ? "확인 필요" : "계산 불가",
     unavailableReason,
+  };
+}
+
+function dataInsufficient(reason: string): LedgerReviewMetric {
+  return {
+    value: null,
+    status: "data-insufficient",
+    label: "데이터 부족",
+    unavailableReason: "계산 불가",
+    reason,
   };
 }
 

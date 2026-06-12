@@ -340,7 +340,7 @@ function MetricValueWithEvidence({
 
 function formatKrwMetric(metric: StoreComparisonReportRow["salesAmount"]) {
   return metric.value === null
-    ? (metric.unavailableReason ?? "계산 불가")
+    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
     : krwFormatter.format(metric.value);
 }
 
@@ -348,7 +348,7 @@ function formatPercentMetric(
   metric: StoreComparisonReportRow["grossMarginRate"],
 ) {
   return metric.value === null
-    ? (metric.unavailableReason ?? "계산 불가")
+    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
     : percentFormatter.format(metric.value);
 }
 
@@ -362,7 +362,7 @@ function formatLoss(row: StoreComparisonReportRow) {
 
 function formatEvidenceValue(value: DailyMeetingReportMetricValue) {
   if (value.value === null) {
-    return value.unavailableReason ?? "계산 불가";
+    return value.label ?? value.unavailableReason ?? "계산 불가";
   }
 
   if (value.kind === "percent") {

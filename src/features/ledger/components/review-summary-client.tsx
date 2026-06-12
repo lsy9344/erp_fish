@@ -25,6 +25,7 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
 import type { FieldErrors } from "~/lib/action-result";
+import { formatKrw, formatSignedKrw, formatSignedQuantity } from "~/lib/format";
 
 type ReviewSummaryClientProps = {
   storeName: string;
@@ -91,10 +92,6 @@ function SuccessModal({
   );
 }
 
-function formatKrw(value: number) {
-  return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
-}
-
 function normalizeStatusLabel(
   status: StoreManagerLedgerReviewStepData["status"],
 ) {
@@ -114,19 +111,21 @@ function normalizeStatusLabel(
 }
 
 function formatMetric(metric: LedgerReviewMetric) {
-  if (metric.value === null) {
-    return metric.unavailableReason ?? "계산 불가";
+  if (metric.status !== "ok" || metric.value === null) {
+    return metric.label ?? metric.unavailableReason ?? "계산 불가";
   }
 
   return formatKrw(metric.value);
 }
 
 function metricDetail(metric: LedgerReviewMetric) {
-  if (metric.value !== null) {
+  if (metric.status === "ok") {
     return null;
   }
 
-  return metric.unavailableReason ?? "계산 불가";
+  return (
+    metric.reason ?? metric.label ?? metric.unavailableReason ?? "계산 불가"
+  );
 }
 
 function MetricCard({
@@ -151,18 +150,6 @@ function MetricCard({
       ) : null}
     </div>
   );
-}
-
-function formatSignedKrw(value: number) {
-  const prefix = value > 0 ? "+" : "";
-
-  return `${prefix}${formatKrw(value)}`;
-}
-
-function formatSignedQuantity(value: number) {
-  const prefix = value > 0 ? "+" : "";
-
-  return `${prefix}${new Intl.NumberFormat("ko-KR").format(value)}개`;
 }
 
 export function ReviewSummaryClient({

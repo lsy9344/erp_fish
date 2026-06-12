@@ -713,7 +713,7 @@ function formatQuantity(
   signed = false,
 ) {
   if (value.value === null) {
-    return value.unavailableReason ?? "계산 불가";
+    return value.label ?? value.unavailableReason ?? "계산 불가";
   }
 
   const prefix = signed && value.value > 0 ? "+" : "";
@@ -726,7 +726,7 @@ function formatMetricValue(
   kind: DailyMeetingReportMetricValue["kind"],
 ) {
   if (value.value === null) {
-    return value.unavailableReason ?? "계산 불가";
+    return value.label ?? value.unavailableReason ?? "계산 불가";
   }
 
   return formatEvidenceValue({ ...value, kind });
@@ -734,7 +734,7 @@ function formatMetricValue(
 
 function formatEvidenceValue(value: DailyMeetingReportMetricValue) {
   if (value.value === null) {
-    return value.unavailableReason ?? "계산 불가";
+    return value.label ?? value.unavailableReason ?? "계산 불가";
   }
 
   if (value.kind === "percent") {

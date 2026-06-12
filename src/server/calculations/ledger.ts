@@ -1,6 +1,26 @@
 import { calculateInventoryAmount } from "./inventory.ts";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
+const CALCULATION_LOG_PREFIX = "ledger calculation unavailable";
+
+export const CALCULATION_STATUS_LABELS = {
+  ok: "정상",
+  "data-insufficient": "데이터 부족",
+  "policy-unconfirmed": "확인 필요",
+  "calculation-unavailable": "계산 불가",
+} as const;
+
+export type CalculationStatus = keyof typeof CALCULATION_STATUS_LABELS;
+export type CalculationStatusLabel =
+  (typeof CALCULATION_STATUS_LABELS)[CalculationStatus];
+export type LedgerReviewUnavailableReason = "계산 불가" | "계산 기준 확인 필요";
+
+export type CalculationMetric = {
+  value: number | null;
+  status: CalculationStatus;
+  label?: CalculationStatusLabel;
+  reason?: string;
+};
 
 export function calculatePaymentDifference(
   totalSalesAmount: number,
@@ -48,9 +68,8 @@ export function calculateProductivity(
   return grossProfit / workerCount;
 }
 
-export type LedgerReviewMetric = {
-  value: number | null;
-  unavailableReason?: "계산 불가" | "계산 기준 확인 필요";
+export type LedgerReviewMetric = CalculationMetric & {
+  unavailableReason?: LedgerReviewUnavailableReason;
 };
 
 export type LedgerReviewInventoryInput = {
@@ -125,6 +144,9 @@ export type LedgerReviewCorrectionOverlayResult = {
 
 export type LedgerReviewSummary = {
   totalSales: LedgerReviewMetric;
+  paymentTotal: LedgerReviewMetric;
+  expenseTotal: LedgerReviewMetric;
+  workerCount: LedgerReviewMetric;
   costOfGoodsSold: LedgerReviewMetric;
   grossProfit: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
@@ -135,17 +157,135 @@ export type LedgerReviewSummary = {
   salesDifference: LedgerReviewMetric;
 };
 
-const unavailable = (
-  unavailableReason: LedgerReviewMetric["unavailableReason"],
-): LedgerReviewMetric => ({
-  value: null,
-  unavailableReason,
+const available = (value: number): LedgerReviewMetric => ({
+  value,
+  status: "ok",
 });
 
-const available = (value: number): LedgerReviewMetric => ({ value });
+const unavailable = ({
+  status,
+  reason,
+  metricId,
+  logReason,
+}: {
+  status: Exclude<CalculationStatus, "ok">;
+  reason?: string;
+  metricId?: string;
+  logReason?: string;
+}): LedgerReviewMetric => {
+  if (status === "calculation-unavailable" && metricId && logReason) {
+    console.error(CALCULATION_LOG_PREFIX, { metricId, reason: logReason });
+  }
+
+  return {
+    value: null,
+    status,
+    label: CALCULATION_STATUS_LABELS[status],
+    unavailableReason:
+      status === "policy-unconfirmed" ? "계산 기준 확인 필요" : "계산 불가",
+    ...(reason ? { reason } : {}),
+  };
+};
+
+const dataInsufficient = (reason?: string): LedgerReviewMetric =>
+  unavailable({ status: "data-insufficient", reason });
+
+const policyUnconfirmed = (reason?: string): LedgerReviewMetric =>
+  unavailable({ status: "policy-unconfirmed", reason });
+
+const calculationUnavailable = ({
+  metricId,
+  reason,
+  logReason = "calculation-unavailable",
+}: {
+  metricId: string;
+  reason?: string;
+  logReason?: string;
+}): LedgerReviewMetric =>
+  unavailable({
+    status: "calculation-unavailable",
+    reason,
+    metricId,
+    logReason,
+  });
+
+const dependentCalculationUnavailable = (reason: string): LedgerReviewMetric =>
+  unavailable({ status: "calculation-unavailable", reason });
 
 function isUsableNumber(value: number | null): value is number {
   return value !== null && Number.isFinite(value);
+}
+
+function isSafeKrwInteger(value: number) {
+  return Number.isSafeInteger(value);
+}
+
+function asKrwMetric(metricId: string, value: number): LedgerReviewMetric {
+  if (!isSafeKrwInteger(value)) {
+    return calculationUnavailable({
+      metricId,
+      reason: `${metricId} 계산값이 integer KRW 안전 범위를 벗어났습니다.`,
+      logReason: "unsafe-krw-integer",
+    });
+  }
+
+  return available(value);
+}
+
+function asRatioMetric(metricId: string, value: number): LedgerReviewMetric {
+  if (!Number.isFinite(value)) {
+    return calculationUnavailable({
+      metricId,
+      reason: `${metricId} 계산값이 유효한 숫자가 아닙니다.`,
+      logReason: "invalid-number",
+    });
+  }
+
+  return available(value);
+}
+
+function asCountMetric(
+  metricId: string,
+  value: number | null,
+): LedgerReviewMetric {
+  if (value === null) {
+    return dataInsufficient(`${metricId} 입력값이 없습니다.`);
+  }
+
+  if (!Number.isSafeInteger(value)) {
+    return calculationUnavailable({
+      metricId,
+      reason: `${metricId} 계산값이 유효한 정수가 아닙니다.`,
+      logReason: "invalid-integer",
+    });
+  }
+
+  return available(value);
+}
+
+type NumberCalculationResult =
+  | { kind: "ok"; value: number | null }
+  | { kind: "error"; metric: LedgerReviewMetric };
+
+function safelyCalculateNumber(
+  metricId: string,
+  calculate: () => number | null,
+): NumberCalculationResult {
+  try {
+    return { kind: "ok", value: calculate() };
+  } catch (error) {
+    return {
+      kind: "error",
+      metric: calculationUnavailable({
+        metricId,
+        reason: `${metricId} 계산 중 예상하지 못한 오류가 발생했습니다.`,
+        logReason:
+          error instanceof Error
+            ? `unexpected-error:${error.name}`
+            : "unexpected-error",
+      }),
+    };
+  }
 }
 
 function getReviewInventoryQuantity(item: LedgerReviewInventoryInput) {
@@ -245,19 +385,59 @@ export function calculateLedgerReviewSummary({
   inventoryAdjustments,
   lossItems,
 }: LedgerReviewSummaryInput): LedgerReviewSummary {
-  const costOfGoodsSold = calculateCostOfGoodsSold(inventoryItems);
-  const inventoryAmount = calculateInventoryTotal(inventoryItems);
+  const costOfGoodsSoldResult = safelyCalculateNumber("costOfGoodsSold", () =>
+    calculateCostOfGoodsSold(inventoryItems),
+  );
+  const inventoryAmountResult = safelyCalculateNumber("inventoryAmount", () =>
+    calculateInventoryTotal(inventoryItems),
+  );
+  const costOfGoodsSold =
+    costOfGoodsSoldResult.kind === "ok" ? costOfGoodsSoldResult.value : null;
+  const inventoryAmount =
+    inventoryAmountResult.kind === "ok" ? inventoryAmountResult.value : null;
+  const totalSales = asKrwMetric("totalSales", totalSalesAmount);
+  const paymentTotal = cashAmount + cardAmount + otherPaymentAmount;
+  const paymentTotalMetric = asKrwMetric("paymentTotal", paymentTotal);
+  const expenseTotalMetric = asKrwMetric("expenseTotal", expenseTotal);
+  const paymentDifference =
+    totalSales.status !== "ok" || paymentTotalMetric.status !== "ok"
+      ? calculationUnavailable({
+          metricId: "paymentDifference",
+          reason:
+            "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+          logReason: "unsafe-krw-integer",
+        })
+      : asKrwMetric(
+          "paymentDifference",
+          calculatePaymentDifference(
+            totalSalesAmount,
+            cashAmount,
+            cardAmount,
+            otherPaymentAmount,
+          ),
+        );
   const hasSalesDifferenceContext =
     inventoryAdjustments !== undefined && lossItems !== undefined;
+  const salesDifferenceResult =
+    costOfGoodsSoldResult.kind === "error" && hasSalesDifferenceContext
+      ? ({
+          kind: "error",
+          metric: dependentCalculationUnavailable(
+            "매출원가 계산 오류로 매출차액을 계산할 수 없습니다.",
+          ),
+        } as const)
+      : costOfGoodsSold === null || !hasSalesDifferenceContext
+        ? ({ kind: "ok", value: null } as const)
+        : safelyCalculateNumber("salesDifference", () =>
+            calculateSalesDifference({
+              totalSalesAmount,
+              costOfGoodsSold,
+              inventoryAdjustments,
+              lossItems,
+            }),
+          );
   const salesDifference =
-    costOfGoodsSold === null || !hasSalesDifferenceContext
-      ? null
-      : calculateSalesDifference({
-          totalSalesAmount,
-          costOfGoodsSold,
-          inventoryAdjustments,
-          lossItems,
-        });
+    salesDifferenceResult.kind === "ok" ? salesDifferenceResult.value : null;
   const grossProfit =
     costOfGoodsSold === null ? null : totalSalesAmount - costOfGoodsSold;
   const grossMarginRate =
@@ -271,44 +451,68 @@ export function calculateLedgerReviewSummary({
       ? null
       : totalSalesAmount / workerCount;
 
+  const inventoryUnavailableReason =
+    inventoryItems.length === 0
+      ? "재고 입력이 없어 계산할 수 없습니다."
+      : "재고 수량 또는 단가 입력이 부족합니다.";
+
   return {
-    totalSales: available(totalSalesAmount),
+    totalSales,
+    paymentTotal: paymentTotalMetric,
+    expenseTotal: expenseTotalMetric,
+    workerCount: asCountMetric("workerCount", workerCount),
     costOfGoodsSold:
-      costOfGoodsSold === null
-        ? unavailable("계산 불가")
-        : available(costOfGoodsSold),
+      costOfGoodsSoldResult.kind === "error"
+        ? costOfGoodsSoldResult.metric
+        : costOfGoodsSold === null
+          ? dataInsufficient(inventoryUnavailableReason)
+          : asKrwMetric("costOfGoodsSold", costOfGoodsSold),
     grossProfit:
-      grossProfit === null ? unavailable("계산 불가") : available(grossProfit),
+      costOfGoodsSoldResult.kind === "error"
+        ? dependentCalculationUnavailable(
+            "매출원가 계산 오류로 매출이익을 계산할 수 없습니다.",
+          )
+        : grossProfit === null
+          ? dataInsufficient("매출원가 계산에 필요한 재고 입력이 부족합니다.")
+          : asKrwMetric("grossProfit", grossProfit),
     grossMarginRate:
-      grossMarginRate === null
-        ? unavailable("계산 불가")
-        : available(grossMarginRate),
+      costOfGoodsSoldResult.kind === "error"
+        ? dependentCalculationUnavailable(
+            "매출원가 계산 오류로 마진율을 계산할 수 없습니다.",
+          )
+        : grossMarginRate === null
+          ? dataInsufficient(
+              "총매출 또는 매출이익이 부족해 마진율을 계산할 수 없습니다.",
+            )
+          : asRatioMetric("grossMarginRate", grossMarginRate),
     operatingProfit:
-      operatingProfit === null
-        ? unavailable("계산 불가")
-        : available(operatingProfit),
+      costOfGoodsSoldResult.kind === "error"
+        ? dependentCalculationUnavailable(
+            "매출원가 계산 오류로 영업이익을 계산할 수 없습니다.",
+          )
+        : operatingProfit === null
+          ? dataInsufficient("매출이익이 부족해 영업이익을 계산할 수 없습니다.")
+          : asKrwMetric("operatingProfit", operatingProfit),
     productivity:
       productivity === null
-        ? unavailable("계산 불가")
-        : available(productivity),
+        ? dataInsufficient("근무인원이 입력되지 않았거나 1명 미만입니다.")
+        : asKrwMetric("productivity", productivity),
     inventoryAmount:
-      inventoryAmount === null
-        ? unavailable("계산 불가")
-        : available(inventoryAmount),
-    paymentDifference: available(
-      calculatePaymentDifference(
-        totalSalesAmount,
-        cashAmount,
-        cardAmount,
-        otherPaymentAmount,
-      ),
-    ),
-    salesDifference:
-      !hasSalesDifferenceContext
-        ? unavailable("계산 기준 확인 필요")
+      inventoryAmountResult.kind === "error"
+        ? inventoryAmountResult.metric
+        : inventoryAmount === null
+          ? dataInsufficient(inventoryUnavailableReason)
+          : asKrwMetric("inventoryAmount", inventoryAmount),
+    paymentDifference,
+    salesDifference: !hasSalesDifferenceContext
+      ? policyUnconfirmed(
+          "매출차액 계산에는 재고조정과 손실 입력 컨텍스트가 필요합니다.",
+        )
+      : salesDifferenceResult.kind === "error"
+        ? salesDifferenceResult.metric
         : salesDifference === null
-          ? unavailable("계산 불가")
-        : available(salesDifference),
+          ? dataInsufficient("매출차액 계산에 필요한 재고 입력이 부족합니다.")
+          : asKrwMetric("salesDifference", salesDifference),
   };
 }
 

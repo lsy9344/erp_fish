@@ -510,6 +510,39 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   expect(emptyLedgerCountAfter).toBe(0);
 });
 
+test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불가로 숨기지 않는다", async ({
+  page,
+}) => {
+  const holidayLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.holiday },
+    select: { id: true },
+  });
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today");
+
+  const holidayRow = getDesktopRow(page, STORE_IDS.holiday);
+  await expect(holidayRow).toContainText("데이터 부족");
+  await expect(holidayRow).not.toContainText("계산 불가");
+
+  await page.goto(`/app/ledgers/${holidayLedger.id}`);
+  await expect(
+    page.getByRole("heading", { name: "스토리3-1 휴무점 장부 상세" }),
+  ).toBeVisible();
+
+  const metrics = page.getByLabel("장부 주요 숫자");
+  const marginCard = metrics.locator("div").filter({ hasText: "마진율" });
+  const salesDifferenceCard = metrics
+    .locator("div")
+    .filter({ hasText: "매출 차이" });
+
+  await expect(marginCard).toContainText("데이터 부족");
+  await expect(marginCard).not.toContainText("0%");
+  await expect(salesDifferenceCard).toContainText("데이터 부족");
+  await expect(salesDifferenceCard).not.toContainText("₩0");
+  await expect(metrics).not.toContainText("계산 불가");
+});
+
 test("기준값이 저장된 관제판은 매출 신호 계산 상태와 상세 이동을 제공한다", async ({
   page,
 }) => {
