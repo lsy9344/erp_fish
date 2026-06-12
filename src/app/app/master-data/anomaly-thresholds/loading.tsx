@@ -9,6 +9,8 @@ const fields = [
   "sales-difference",
   "loss-amount",
   "inventory-difference",
+  "active-status",
+  "change-reason",
 ];
 
 export default function AnomalyThresholdSettingsLoading() {
@@ -18,6 +20,13 @@ export default function AnomalyThresholdSettingsLoading() {
         title="이상 신호 기준값"
         description="기준값 설정을 불러오는 중입니다."
       />
+      <div className="w-full max-w-2xl rounded-lg border bg-background p-4">
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      </div>
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <Skeleton className="h-5 w-28" />

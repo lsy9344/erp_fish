@@ -10,11 +10,14 @@ import {
 export type AnomalyThresholdSettingsView = {
   id: string;
   scope: string;
+  scopeLabel: string;
   salesDropRateBps: number;
   grossMarginDropBps: number;
   salesDifferenceAmount: number;
   lossAmount: number;
   inventoryDifferenceQuantity: number;
+  isActive: boolean;
+  statusLabel: string;
   updatedAt: string;
   updatedByName: string;
   formValues: {
@@ -34,6 +37,7 @@ type AnomalyThresholdRecord = {
   salesDifferenceAmount: number;
   lossAmount: number;
   inventoryDifferenceQuantity: number;
+  isActive: boolean;
   updatedAt: Date;
   updatedBy: {
     name: string | null;
@@ -49,6 +53,7 @@ const anomalyThresholdSelect = {
   salesDifferenceAmount: true,
   lossAmount: true,
   inventoryDifferenceQuantity: true,
+  isActive: true,
   updatedAt: true,
   updatedBy: {
     select: {
@@ -64,11 +69,14 @@ export function toAnomalyThresholdSettingsView(
   return {
     id: setting.id,
     scope: setting.scope,
+    scopeLabel: "전체 지점",
     salesDropRateBps: setting.salesDropRateBps,
     grossMarginDropBps: setting.grossMarginDropBps,
     salesDifferenceAmount: setting.salesDifferenceAmount,
     lossAmount: setting.lossAmount,
     inventoryDifferenceQuantity: setting.inventoryDifferenceQuantity,
+    isActive: setting.isActive,
+    statusLabel: setting.isActive ? "활성" : "비활성",
     updatedAt: setting.updatedAt.toISOString(),
     updatedByName: setting.updatedBy?.name ?? setting.updatedBy?.email ?? "시스템",
     formValues: {
@@ -105,6 +113,7 @@ export async function getAnomalyThresholdSettingsForSignals() {
       salesDifferenceAmount: true,
       lossAmount: true,
       inventoryDifferenceQuantity: true,
+      isActive: true,
     },
   });
 

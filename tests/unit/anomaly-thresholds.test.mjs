@@ -22,7 +22,7 @@ function assertProjectFile(...segments) {
   return filePath;
 }
 
-test("Prisma schema adds global anomaly threshold settings", () => {
+test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
   const schema = readProjectFile("prisma", "schema.prisma");
   const migrationsRoot = projectPath("prisma", "migrations");
   const migrationNames = existsSync(migrationsRoot)
@@ -53,7 +53,7 @@ test("Prisma schema adds global anomaly threshold settings", () => {
   );
   assert.match(
     schema,
-    /model\s+AnomalyThresholdSetting\s*{[^}]*updatedById\s+String\?[^}]*updatedBy\s+User\?[^}]*@relation\("AnomalyThresholdSettingUpdatedBy"/s,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*isActive\s+Boolean\s+@default\(true\)[^}]*updatedById\s+String\?[^}]*updatedBy\s+User\?[^}]*@relation\("AnomalyThresholdSettingUpdatedBy"/s,
   );
   assert.match(
     schema,
@@ -61,7 +61,7 @@ test("Prisma schema adds global anomaly threshold settings", () => {
   );
   assert.ok(
     storyMigration,
-    "Story 3.2 must add AnomalyThresholdSetting in a new migration",
+    "Story 5.5 reuses the existing AnomalyThresholdSetting creation migration",
   );
   const migrationSql = readFileSync(
     path.join(migrationsRoot, storyMigration, "migration.sql"),
@@ -76,9 +76,26 @@ test("Prisma schema adds global anomaly threshold settings", () => {
     /CHECK\s*\("scope"\s*=\s*'GLOBAL'\)/,
     "global threshold scope should be constrained at the database layer",
   );
+
+  const activeMigration = migrationNames.find((name) => {
+    const migrationPath = path.join(migrationsRoot, name, "migration.sql");
+
+    return (
+      name > "20260531225000_add_anomaly_threshold_settings" &&
+      existsSync(migrationPath) &&
+      /ALTER TABLE "AnomalyThresholdSetting"[\s\S]*ADD COLUMN "isActive" BOOLEAN NOT NULL DEFAULT true/.test(
+        readFileSync(migrationPath, "utf8"),
+      )
+    );
+  });
+
+  assert.ok(
+    activeMigration,
+    "Story 5.5 must add isActive in a new migration without editing the existing creation migration",
+  );
 });
 
-test("anomaly threshold schema parses display input into server integers", async () => {
+test("anomaly threshold schema parses display input, active state, and required reason", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -99,6 +116,8 @@ test("anomaly threshold schema parses display input into server integers", async
       salesDifferenceAmount: "1,000",
       lossAmount: "50,000",
       inventoryDifferenceQuantity: "7",
+      isActive: "true",
+      reason: "월간 운영 기준 정비",
     }),
     {
       salesDropRateBps: 1250,
@@ -106,6 +125,8 @@ test("anomaly threshold schema parses display input into server integers", async
       salesDifferenceAmount: 1000,
       lossAmount: 50000,
       inventoryDifferenceQuantity: 7,
+      isActive: true,
+      reason: "월간 운영 기준 정비",
     },
   );
 
@@ -115,6 +136,8 @@ test("anomaly threshold schema parses display input into server integers", async
     salesDifferenceAmount: "-1",
     lossAmount: "abc",
     inventoryDifferenceQuantity: "1.5",
+    isActive: "invalid",
+    reason: "   ",
   });
 
   assert.equal(invalid.success, false);
@@ -135,6 +158,10 @@ test("anomaly threshold schema parses display input into server integers", async
   assert.deepEqual(errors.inventoryDifferenceQuantity, [
     "재고 차이 기준은 0 이상의 정수여야 합니다.",
   ]);
+  assert.deepEqual(errors.isActive, [
+    "활성 상태는 활성 또는 비활성 중 하나여야 합니다.",
+  ]);
+  assert.deepEqual(errors.reason, ["변경 사유를 입력해 주세요."]);
 
   const malformedComma = anomalyThresholdFormSchema.safeParse({
     salesDropRate: "12.5",
@@ -142,6 +169,8 @@ test("anomaly threshold schema parses display input into server integers", async
     salesDifferenceAmount: "1,2,3",
     lossAmount: "1,,000",
     inventoryDifferenceQuantity: "1,00",
+    isActive: "true",
+    reason: "콤마 검증",
   });
 
   assert.equal(malformedComma.success, false);
@@ -158,7 +187,7 @@ test("anomaly threshold schema parses display input into server integers", async
   ]);
 });
 
-test("anomaly calculation helper normalizes saved threshold settings for signal consumers", async () => {
+test("anomaly calculation helper normalizes only active saved threshold settings for signal consumers", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -177,6 +206,7 @@ test("anomaly calculation helper normalizes saved threshold settings for signal 
       salesDifferenceAmount: 1000,
       lossAmount: 50000,
       inventoryDifferenceQuantity: 7,
+      isActive: true,
       updatedByName: "본사 관리자",
     }),
     {
@@ -186,6 +216,17 @@ test("anomaly calculation helper normalizes saved threshold settings for signal 
       lossAmount: 50000,
       inventoryDifferenceQuantity: 7,
     },
+  );
+  assert.equal(
+    normalizeAnomalyThresholdSignalSettings({
+      salesDropRateBps: 1250,
+      grossMarginDropBps: 375,
+      salesDifferenceAmount: 1000,
+      lossAmount: 50000,
+      inventoryDifferenceQuantity: 7,
+      isActive: false,
+    }),
+    null,
   );
 });
 
@@ -271,9 +312,20 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(actionSource, /writeAuditLog/);
   assert.match(actionSource, /threshold\.updated/);
   assert.match(actionSource, /targetType:\s*"AnomalyThresholdSetting"/);
+  assert.match(actionSource, /reason:\s*parsed\.data\.reason/);
+  assert.match(actionSource, /isActive:\s*parsed\.data\.isActive/);
+  assert.match(actionSource, /targetName:\s*"이상 신호 기준값"/);
+  assert.match(actionSource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
   assert.match(actionSource, /revalidatePath\("\/app\/master-data\/anomaly-thresholds"\)/);
   assert.match(actionSource, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
+  assert.match(actionSource, /revalidatePath\("\/app\/reports\/monthly"\)/);
   assert.match(actionSource, /ActionResult/);
+  assert.match(
+    actionSource,
+    /existing\s*&&\s*isSameAnomalyThreshold[\s\S]*status:\s*"unchanged"/,
+    "no-op saves should not create audit rows",
+  );
 
   assert.match(querySource, /getAnomalyThresholdSettingsForHeadquarters/);
   assert.match(querySource, /getAnomalyThresholdSettingsForSignals/);
@@ -284,6 +336,9 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   );
   assert.match(querySource, /anomalyThresholdSetting\.findUnique/);
   assert.match(querySource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
+  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /scopeLabel:\s*"전체 지점"/);
+  assert.match(querySource, /statusLabel:\s*setting\.isActive\s*\?\s*"활성"\s*:\s*"비활성"/);
 
   assert.match(pageSource, /requireSettingsAccess/);
   assert.match(pageSource, /HeadquartersShell/);
@@ -296,6 +351,7 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /FieldError/);
   assert.match(clientSource, /aria-invalid/);
   assert.match(clientSource, /focusFirstError/);
+  assert.match(clientSource, /reasonRef/);
   assert.match(clientSource, /toast/);
   assert.match(clientSource, /inputMode="decimal"/);
   assert.match(clientSource, /inputMode="numeric"/);
@@ -304,6 +360,11 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /매출차액 금액\(원\)/);
   assert.match(clientSource, /손실액\(원\)/);
   assert.match(clientSource, /재고 차이 기준\(수량\)/);
+  assert.match(clientSource, /변경 사유/);
+  assert.match(clientSource, /활성 상태/);
+  assert.match(clientSource, /적용 범위/);
+  assert.match(clientSource, /마지막 변경/);
+  assert.match(clientSource, /기준 유형/);
   assert.match(
     clientSource,
     /기준일 정책 확인 필요[\s\S]*기준일 정책 확인 필요/,

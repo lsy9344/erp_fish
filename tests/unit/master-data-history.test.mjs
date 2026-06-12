@@ -124,6 +124,14 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
   assert.match(
+    formatAuditJsonValue({
+      targetName: "이상 신호 기준값",
+      scope: "GLOBAL",
+      isActive: false,
+    }),
+    /"isActive": false/,
+  );
+  assert.match(
     formatAuditJsonValue({ memo: `긴 값 ${"가".repeat(120)}` }),
     /"memo": "긴 값/,
   );
@@ -169,6 +177,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /db\.dailyLedger\.findMany/);
   assert.match(query, /db\.correctionRecord\.findMany/);
   assert.match(query, /db\.anomalyThresholdSetting\.findMany/);
+  assert.match(query, /"이상 신호 기준값"/);
   assert.match(query, /targetKey\("CorrectionRecord"/);
   assert.match(query, /store:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}/);
   assert.match(query, /closingDate:\s*true/);

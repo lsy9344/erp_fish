@@ -29,7 +29,11 @@ type AnomalyThresholdSettingsClientProps = {
   settings: AnomalyThresholdSettingsView | null;
 };
 
-type FormValues = AnomalyThresholdSettingsView["formValues"];
+type ThresholdFormValues = AnomalyThresholdSettingsView["formValues"];
+type FormValues = ThresholdFormValues & {
+  isActive: boolean;
+  reason: string;
+};
 
 const emptyFormValues: FormValues = {
   salesDropRate: "",
@@ -37,7 +41,19 @@ const emptyFormValues: FormValues = {
   salesDifferenceAmount: "",
   lossAmount: "",
   inventoryDifferenceQuantity: "",
+  isActive: true,
+  reason: "",
 };
+
+function toFormValues(
+  settings: AnomalyThresholdSettingsView | null,
+): FormValues {
+  return {
+    ...(settings?.formValues ?? emptyFormValues),
+    isActive: settings?.isActive ?? true,
+    reason: "",
+  };
+}
 
 function formatUpdatedAt(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -55,8 +71,9 @@ export function AnomalyThresholdSettingsClient({
   const salesDifferenceRef = useRef<HTMLInputElement>(null);
   const lossAmountRef = useRef<HTMLInputElement>(null);
   const inventoryDifferenceRef = useRef<HTMLInputElement>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
   const [formValues, setFormValues] = useState<FormValues>(
-    settings?.formValues ?? emptyFormValues,
+    toFormValues(settings),
   );
   const [savedSettings, setSavedSettings] =
     useState<AnomalyThresholdSettingsView | null>(settings);
@@ -64,7 +81,10 @@ export function AnomalyThresholdSettingsClient({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  function setFieldValue(name: keyof FormValues, value: string) {
+  function setFieldValue<K extends keyof FormValues>(
+    name: K,
+    value: FormValues[K],
+  ) {
     setFormValues((current) => ({ ...current, [name]: value }));
     setFormError(null);
     setFieldErrors((current) => {
@@ -98,6 +118,11 @@ export function AnomalyThresholdSettingsClient({
 
       if (errors.inventoryDifferenceQuantity?.length) {
         inventoryDifferenceRef.current?.focus();
+        return;
+      }
+
+      if (errors.reason?.length) {
+        reasonRef.current?.focus();
       }
     }, 0);
   }
@@ -125,7 +150,7 @@ export function AnomalyThresholdSettingsClient({
       }
 
       setSavedSettings(result.data);
-      setFormValues(result.data.formValues);
+      setFormValues(toFormValues(result.data));
       toast.success("기준값을 저장했습니다.");
     } catch {
       const message = "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
@@ -151,12 +176,83 @@ export function AnomalyThresholdSettingsClient({
   const salesDifferenceError = fieldErrors.salesDifferenceAmount?.[0];
   const lossAmountError = fieldErrors.lossAmount?.[0];
   const inventoryDifferenceError = fieldErrors.inventoryDifferenceQuantity?.[0];
+  const activeError = fieldErrors.isActive?.[0];
+  const reasonError = fieldErrors.reason?.[0];
+  const thresholdRows = savedSettings
+    ? [
+        {
+          type: "매출 하락률",
+          value: `${savedSettings.formValues.salesDropRate}%`,
+        },
+        {
+          type: "이익률 하락폭",
+          value: `${savedSettings.formValues.grossMarginDropRate}%p`,
+        },
+        {
+          type: "매출차액 금액",
+          value: `${savedSettings.formValues.salesDifferenceAmount}원`,
+        },
+        {
+          type: "손실액",
+          value: `${savedSettings.formValues.lossAmount}원`,
+        },
+        {
+          type: "재고 차이 기준",
+          value: `${savedSettings.formValues.inventoryDifferenceQuantity}개`,
+        },
+      ]
+    : [];
 
   return (
     <div className="flex w-full max-w-2xl flex-col gap-4">
       {!savedSettings ? (
         <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
           아직 기준값이 저장되지 않았습니다.
+        </div>
+      ) : null}
+
+      {savedSettings ? (
+        <div className="rounded-lg border bg-background">
+          <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3 border-b px-4 py-3 text-sm font-medium text-muted-foreground sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+            <span>기준 유형</span>
+            <span>현재 값</span>
+            <span className="hidden sm:block">적용 범위</span>
+            <span className="hidden sm:block">상태</span>
+            <span className="hidden sm:block">마지막 변경</span>
+          </div>
+          <div className="divide-y">
+            {thresholdRows.map((row) => (
+              <div
+                key={row.type}
+                className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]"
+              >
+                <span className="min-w-0 break-words font-medium">
+                  {row.type}
+                </span>
+                <span className="min-w-0 break-words tabular-nums">
+                  {row.value}
+                </span>
+                <span className="hidden min-w-0 break-words sm:block">
+                  {savedSettings.scopeLabel}
+                </span>
+                <span className="hidden min-w-0 break-words sm:block">
+                  {savedSettings.statusLabel}
+                </span>
+                <span className="hidden min-w-0 break-words text-muted-foreground sm:block">
+                  {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}
+                  {savedSettings.updatedByName}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 border-t px-4 py-3 text-sm text-muted-foreground sm:hidden">
+            <span>적용 범위: {savedSettings.scopeLabel}</span>
+            <span>상태: {savedSettings.statusLabel}</span>
+            <span>
+              마지막 변경: {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}
+              {savedSettings.updatedByName}
+            </span>
+          </div>
         </div>
       ) : null}
 
@@ -313,6 +409,61 @@ export function AnomalyThresholdSettingsClient({
                   </FieldError>
                 ) : null}
               </Field>
+
+              <Field data-invalid={Boolean(activeError)}>
+                <FieldLabel htmlFor="threshold-active">활성 상태</FieldLabel>
+                <select
+                  id="threshold-active"
+                  value={formValues.isActive ? "active" : "inactive"}
+                  onChange={(event) =>
+                    setFieldValue(
+                      "isActive",
+                      event.currentTarget.value === "active",
+                    )
+                  }
+                  className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                  aria-invalid={Boolean(activeError)}
+                  aria-describedby={
+                    activeError ? "threshold-active-error" : undefined
+                  }
+                >
+                  <option value="active">활성</option>
+                  <option value="inactive">비활성</option>
+                </select>
+                <FieldDescription>
+                  비활성 기준은 확정 이상 판정에 사용하지 않습니다.
+                </FieldDescription>
+                {activeError ? (
+                  <FieldError id="threshold-active-error">
+                    {activeError}
+                  </FieldError>
+                ) : null}
+              </Field>
+
+              <Field data-invalid={Boolean(reasonError)}>
+                <FieldLabel htmlFor="threshold-reason">변경 사유</FieldLabel>
+                <textarea
+                  ref={reasonRef}
+                  id="threshold-reason"
+                  value={formValues.reason}
+                  onChange={(event) =>
+                    setFieldValue("reason", event.currentTarget.value)
+                  }
+                  className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                  aria-invalid={Boolean(reasonError)}
+                  aria-describedby={
+                    reasonError ? "threshold-reason-error" : undefined
+                  }
+                />
+                <FieldDescription>
+                  변경 이력에 남길 사유를 입력해 주세요.
+                </FieldDescription>
+                {reasonError ? (
+                  <FieldError id="threshold-reason-error">
+                    {reasonError}
+                  </FieldError>
+                ) : null}
+              </Field>
             </FieldGroup>
             {formError ? (
               <p className="mt-4 text-sm text-destructive" role="alert">
@@ -324,7 +475,7 @@ export function AnomalyThresholdSettingsClient({
             <div className="text-sm text-muted-foreground">
               {savedSettings ? (
                 <>
-                  마지막 저장: {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}
+                  마지막 변경: {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}
                   {savedSettings.updatedByName}
                 </>
               ) : (
@@ -336,7 +487,7 @@ export function AnomalyThresholdSettingsClient({
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  setFormValues(savedSettings?.formValues ?? emptyFormValues);
+                  setFormValues(toFormValues(savedSettings));
                   setFieldErrors({});
                   setFormError(null);
                 }}

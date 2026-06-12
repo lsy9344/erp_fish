@@ -8,6 +8,10 @@ export type AnomalyThresholdSignalSettings = {
   inventoryDifferenceQuantity: number;
 };
 
+type AnomalyThresholdSignalSettingsInput = AnomalyThresholdSignalSettings & {
+  isActive?: boolean;
+};
+
 export type AnomalySignalSeverity = "info" | "warning" | "critical";
 
 export type AnomalySignalSummary = {
@@ -101,9 +105,9 @@ export function getAnomalyThresholdSignalSummary(
 }
 
 export function normalizeAnomalyThresholdSignalSettings(
-  settings: AnomalyThresholdSignalSettings | null,
+  settings: AnomalyThresholdSignalSettingsInput | null,
 ): AnomalyThresholdSignalSettings | null {
-  if (!settings) {
+  if (!settings || settings.isActive === false) {
     return null;
   }
 

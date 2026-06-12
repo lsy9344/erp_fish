@@ -27,6 +27,7 @@ const anomalyThresholdSelect = {
   salesDifferenceAmount: true,
   lossAmount: true,
   inventoryDifferenceQuantity: true,
+  isActive: true,
   updatedAt: true,
   updatedBy: {
     select: {
@@ -72,7 +73,8 @@ function isSameAnomalyThreshold(
     setting.grossMarginDropBps === input.grossMarginDropBps &&
     setting.salesDifferenceAmount === input.salesDifferenceAmount &&
     setting.lossAmount === input.lossAmount &&
-    setting.inventoryDifferenceQuantity === input.inventoryDifferenceQuantity
+    setting.inventoryDifferenceQuantity === input.inventoryDifferenceQuantity &&
+    setting.isActive === input.isActive
   );
 }
 
@@ -87,6 +89,7 @@ function toAnomalyThresholdAuditValue(
     salesDifferenceAmount: setting.salesDifferenceAmount,
     lossAmount: setting.lossAmount,
     inventoryDifferenceQuantity: setting.inventoryDifferenceQuantity,
+    isActive: setting.isActive,
   };
 }
 
@@ -127,6 +130,7 @@ export async function updateAnomalyThresholdSettings(
         salesDifferenceAmount: parsed.data.salesDifferenceAmount,
         lossAmount: parsed.data.lossAmount,
         inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
+        isActive: parsed.data.isActive,
         updatedById: actor.id,
       },
       update: {
@@ -135,6 +139,7 @@ export async function updateAnomalyThresholdSettings(
         salesDifferenceAmount: parsed.data.salesDifferenceAmount,
         lossAmount: parsed.data.lossAmount,
         inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
+        isActive: parsed.data.isActive,
         updatedById: actor.id,
       },
       select: anomalyThresholdSelect,
@@ -147,6 +152,7 @@ export async function updateAnomalyThresholdSettings(
       actorId: actor.id,
       before: existing ? toAnomalyThresholdAuditValue(existing) : null,
       after: toAnomalyThresholdAuditValue(updated),
+      reason: parsed.data.reason,
     });
 
     return { status: "updated" as const, setting: updated };

@@ -583,6 +583,61 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
   ]);
 });
 
+test("HQ dashboard treats inactive anomaly thresholds as policy-required info state", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const anomalyPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "anomaly.ts",
+  );
+  const { getDashboardSignals } = await import(pathToFileURL(queryPath).href);
+  const {
+    evaluateInventoryLossAnomalySignals,
+    evaluateRevenueAnomalySignals,
+    normalizeAnomalyThresholdSignalSettings,
+  } = await import(pathToFileURL(anomalyPath).href);
+
+  const thresholdSettings = normalizeAnomalyThresholdSignalSettings({
+    salesDropRateBps: 1250,
+    grossMarginDropBps: 350,
+    salesDifferenceAmount: 10000,
+    lossAmount: 50000,
+    inventoryDifferenceQuantity: 10,
+    isActive: false,
+  });
+  const signals = getDashboardSignals({
+    thresholdSettings,
+    revenueCurrent: {
+      totalSales: { value: 100000, status: "ok" },
+      grossMarginRate: { value: 0.2, status: "ok" },
+      salesDifference: { value: 25000, status: "ok" },
+    },
+    inventoryLossCurrent: {
+      inventoryItems: [],
+      inventoryAdjustments: [],
+      lossItems: [],
+    },
+    evaluateRevenueAnomalySignals,
+    evaluateInventoryLossAnomalySignals,
+  });
+
+  assert.equal(thresholdSettings, null);
+  assert.deepEqual(signals, [
+    {
+      id: "thresholds-pending",
+      label: "기준값 설정 전",
+      severity: "info",
+      detail: "기준값 기반 이상 신호는 기준값 저장 후 계산합니다.",
+    },
+  ]);
+});
+
 test("Dashboard signal chips expose text, icon, title, and aria labels", () => {
   const summarySource = readProjectFile(
     "src",

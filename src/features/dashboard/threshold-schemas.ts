@@ -13,6 +13,8 @@ const integerError = {
   lossAmount: "손실액은 0원 이상의 정수여야 합니다.",
   inventoryDifferenceQuantity: "재고 차이 기준은 0 이상의 정수여야 합니다.",
 } as const;
+const activeStatusError = "활성 상태는 활성 또는 비활성 중 하나여야 합니다.";
+const reasonError = "변경 사유를 입력해 주세요.";
 
 function isValidInteger(value: number) {
   return Number.isSafeInteger(value) && value >= 0 && value <= MAX_INTEGER;
@@ -72,6 +74,40 @@ function parseInteger(
   return parsed;
 }
 
+function parseActiveStatus(value: unknown, context: z.RefinementCtx) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized =
+    typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (normalized === "true" || normalized === "active") {
+    return true;
+  }
+
+  if (normalized === "false" || normalized === "inactive") {
+    return false;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: activeStatusError,
+  });
+  return z.NEVER;
+}
+
+function parseReason(value: unknown, context: z.RefinementCtx) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+
+  if (!normalized) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: reasonError });
+    return z.NEVER;
+  }
+
+  return normalized;
+}
+
 export const anomalyThresholdFormSchema = z.object({
   salesDropRate: z
     .unknown()
@@ -98,12 +134,18 @@ export const anomalyThresholdFormSchema = z.object({
     .transform((value, context) =>
       parseInteger(value, context, integerError.inventoryDifferenceQuantity),
     ),
+  isActive: z
+    .unknown()
+    .transform((value, context) => parseActiveStatus(value, context)),
+  reason: z.unknown().transform((value, context) => parseReason(value, context)),
 }).transform((value) => ({
   salesDropRateBps: value.salesDropRate,
   grossMarginDropBps: value.grossMarginDropRate,
   salesDifferenceAmount: value.salesDifferenceAmount,
   lossAmount: value.lossAmount,
   inventoryDifferenceQuantity: value.inventoryDifferenceQuantity,
+  isActive: value.isActive,
+  reason: value.reason,
 }));
 
 export type AnomalyThresholdFormInput = z.infer<
