@@ -117,14 +117,26 @@ test("ledger review summary helper does not calculate sales difference without a
   });
 
   assert.deepEqual(
-    summary.salesDifference,
+    {
+      value: summary.salesDifference.value,
+      status: summary.salesDifference.status,
+      label: summary.salesDifference.label,
+      unavailableReason: summary.salesDifference.unavailableReason,
+      reason: summary.salesDifference.reason,
+    },
     unavailable(
       "policy-unconfirmed",
       "확인 필요",
       "계산 기준 확인 필요",
-      "매출차액 계산에는 재고조정과 손실 입력 컨텍스트가 필요합니다.",
+      "OQ-14 차이를 당일 판매량으로 바꾸는 계산 의미 변경이 확정되지 않아 기존 차이 외 파생 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
     ),
   );
+  assert.equal(summary.salesDifference.metricId, "salesDifferenceMeaningChange");
+  assert.equal(
+    summary.salesDifference.policyLabel,
+    "차이의 당일 판매량 의미 변경",
+  );
+  assert.deepEqual(summary.salesDifference.oqIds, ["OQ-14"]);
 });
 
 test("ledger review summary helper calculates sales difference with loss and inventory adjustment amounts", async () => {

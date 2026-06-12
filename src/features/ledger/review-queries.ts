@@ -4,6 +4,7 @@ import {
   calculateLedgerReviewSummary,
   type LedgerReviewMetric,
 } from "~/server/calculations/ledger";
+// OQ-gated calculation policy is centralized in ~/server/calculations/policy-gates.
 import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";

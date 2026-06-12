@@ -1,4 +1,5 @@
 import { calculateInventoryAmount } from "./inventory.ts";
+import { createPolicyUnconfirmedMetric } from "./policy-gates.ts";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 const CALCULATION_LOG_PREFIX = "ledger calculation unavailable";
@@ -189,9 +190,6 @@ const unavailable = ({
 
 const dataInsufficient = (reason?: string): LedgerReviewMetric =>
   unavailable({ status: "data-insufficient", reason });
-
-const policyUnconfirmed = (reason?: string): LedgerReviewMetric =>
-  unavailable({ status: "policy-unconfirmed", reason });
 
 const calculationUnavailable = ({
   metricId,
@@ -505,9 +503,7 @@ export function calculateLedgerReviewSummary({
           : asKrwMetric("inventoryAmount", inventoryAmount),
     paymentDifference,
     salesDifference: !hasSalesDifferenceContext
-      ? policyUnconfirmed(
-          "매출차액 계산에는 재고조정과 손실 입력 컨텍스트가 필요합니다.",
-        )
+      ? createPolicyUnconfirmedMetric("salesDifferenceMeaningChange")
       : salesDifferenceResult.kind === "error"
         ? salesDifferenceResult.metric
         : salesDifference === null

@@ -7,18 +7,29 @@ import { test } from "node:test";
 const root = process.cwd();
 const sensitiveKeys = [
   "costOfGoodsSold",
+  "fifoCostOfGoodsSold",
+  "fifoInventoryAmount",
   "grossProfit",
   "grossMarginRate",
+  "hopedSalePriceLossAmount",
   "operatingProfit",
   "productivity",
   "inventoryAmount",
+  "salesDifference",
+  "salesDifferenceMeaningChange",
+  "salesDifferenceThresholdAnomaly",
+  "storeManagerSensitiveDerivedMetrics",
+  "thirtyPercentUnitPrice",
   "unitPrice",
   "beforeAmount",
   "afterAmount",
   "differenceAmount",
+  "amountDifference",
+  "marginRate",
   "lot",
   "fixedCost",
   "comparisonStore",
+  "comparisonStoreValue",
 ];
 
 function assertProjectFile(...segments) {
@@ -85,6 +96,10 @@ test("store manager response shaping recursively removes sensitive ledger metric
       productivity: { value: 30_000 },
       inventoryAmount: { value: 8_000 },
       salesDifference: { value: 2_000 },
+      hopedSalePriceLossAmount: {
+        value: null,
+        status: "policy-unconfirmed",
+      },
       paymentDifference: { value: 0 },
     },
     missingItems: [],
@@ -127,6 +142,13 @@ test("store manager response shaping recursively removes sensitive ledger metric
             kind: "krw",
             status: "ok",
           },
+          {
+            id: "hopedSalePriceLossAmount",
+            label: "희망 판매가 기준 손실액",
+            value: "기준 확인 필요",
+            kind: "status",
+            status: "policy-unconfirmed",
+          },
         ],
       },
     ],
@@ -155,6 +177,47 @@ test("store manager response shaping recursively removes sensitive ledger metric
     ),
     false,
   );
+});
+
+test("common sensitive field helper removes derived and OQ-gated metric keys", async () => {
+  const helperPath = assertProjectFile("src", "server", "sensitive-fields.ts");
+  const { omitSensitiveFields } = await import(pathToFileURL(helperPath).href);
+
+  const shaped = omitSensitiveFields({
+    storeId: "store-1",
+    nested: {
+      projectedGrossProfitAmount: 70_000,
+      fifoInventoryAmount: 50_000,
+      hopedSalePriceLossAmount: {
+        value: null,
+        status: "policy-unconfirmed",
+      },
+      comparisonStoreValue: 1,
+      pilotProgramStatus: "유지",
+      safeStatus: "확인 필요",
+    },
+    rows: [
+      {
+        productName: "광어",
+        unitPrice: 10_000,
+        quantity: 2,
+      },
+    ],
+  });
+
+  assert.deepEqual(shaped, {
+    storeId: "store-1",
+    nested: {
+      pilotProgramStatus: "유지",
+      safeStatus: "확인 필요",
+    },
+    rows: [
+      {
+        productName: "광어",
+        quantity: 2,
+      },
+    ],
+  });
 });
 
 test("store manager inventory and loss contracts define safe response types", () => {

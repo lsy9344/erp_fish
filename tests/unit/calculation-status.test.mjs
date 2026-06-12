@@ -67,13 +67,29 @@ test("ledger calculations expose separated status code, label, and legacy reason
     unavailableReason: "계산 불가",
     reason: "근무인원이 입력되지 않았거나 1명 미만입니다.",
   });
-  assert.deepEqual(summary.salesDifference, {
-    value: null,
-    status: "policy-unconfirmed",
-    label: "확인 필요",
-    unavailableReason: "계산 기준 확인 필요",
-    reason: "매출차액 계산에는 재고조정과 손실 입력 컨텍스트가 필요합니다.",
-  });
+  assert.deepEqual(
+    {
+      value: summary.salesDifference.value,
+      status: summary.salesDifference.status,
+      label: summary.salesDifference.label,
+      unavailableReason: summary.salesDifference.unavailableReason,
+      reason: summary.salesDifference.reason,
+    },
+    {
+      value: null,
+      status: "policy-unconfirmed",
+      label: "확인 필요",
+      unavailableReason: "계산 기준 확인 필요",
+      reason:
+        "OQ-14 차이를 당일 판매량으로 바꾸는 계산 의미 변경이 확정되지 않아 기존 차이 외 파생 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
+    },
+  );
+  assert.equal(summary.salesDifference.metricId, "salesDifferenceMeaningChange");
+  assert.equal(
+    summary.salesDifference.policyLabel,
+    "차이의 당일 판매량 의미 변경",
+  );
+  assert.deepEqual(summary.salesDifference.oqIds, ["OQ-14"]);
 });
 
 test("ledger calculations mark invalid KRW arithmetic as unavailable and log context", async () => {

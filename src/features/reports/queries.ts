@@ -7,6 +7,7 @@ import {
   type LedgerReviewInventoryInput,
   type LedgerReviewMetric,
 } from "../../server/calculations/ledger.ts";
+// OQ-gated calculation policy is centralized in ../../server/calculations/policy-gates.
 import {
   calculateInventoryAdjustment,
   calculateInventoryAmount,

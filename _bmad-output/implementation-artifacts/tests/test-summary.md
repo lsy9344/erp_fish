@@ -2,46 +2,45 @@
 
 ## Generated Tests
 
-### API Tests
+### API / Server Contract Tests
 
-- [x] `tests/unit/ledger-validation.test.mjs` - 서버 검증 schema, dotted `fieldErrors`, 권한 우선 action 순서, 클라이언트 오류 접근성 wiring, 검증 오류/계산 상태 분리를 검증한다.
-- [x] 기존 ledger unit suite - 매출, 비용, 매입, 재고, 손실, 제출, conflict 회귀를 유지하며 Story 3.2의 서버 검증 경계를 보강한다.
+- [x] `tests/e2e/calculation-policy-gates.spec.ts` - Playwright runtime에서 OQ-gated 계산 helper가 임시 숫자 대신 `policy-unconfirmed` 상태와 OQ reason을 반환하는지 검증한다.
+- [x] `tests/unit/calculation-policy-gates.test.mjs` - OQ gate registry, `확인 필요` metric contract, dashboard/report/review query의 shared helper 사용 guardrail을 검증한다.
+- [x] `tests/unit/ledger-review.test.mjs` - salesDifference context가 없을 때 OQ-14 policy gate가 반환되고, context가 있을 때만 허용 계산이 수행되는지 검증한다.
+- [x] `tests/unit/sensitive-response-shaping.test.mjs` - 지점장 review 응답에서 민감 metric/key와 손실/재고 금액이 제거되는지 검증한다.
 
 ### E2E Tests
 
-- [x] `tests/e2e/store-ledger-sales.spec.ts` - 매출/결제 필수 금액 누락 시 서버 오류가 첫 오류 필드로 포커스되고 `aria-describedby`로 연결되는지 추가 검증한다.
-- [x] `tests/e2e/store-ledger-cost-labor.spec.ts` - 비용 항목 필수 오류와 근무인원 숫자 오류의 포커스, `aria-invalid`, 오류 설명 연결을 검증한다.
-- [x] `tests/e2e/store-ledger-purchase.spec.ts` - 매입 단가/수량 숫자 오류가 값을 조용히 보정하지 않고 필드 오류와 연결되는지 검증한다.
-- [x] `tests/e2e/store-ledger-inventory.spec.ts` - 재고 수량 오류가 동적 행 입력의 `aria-describedby` alert와 연결되는지 검증한다.
-- [x] `tests/e2e/store-ledger-losses.spec.ts` - 손실 사유 필수 오류와 손실액 숫자 오류의 포커스 및 접근성 연결을 검증한다.
-- [x] `tests/e2e/store-ledger-review.spec.ts` - 기존 검토/제출 E2E가 필수 누락, 경고, 제출 차단/성공/중복 제출을 검증한다.
+- [x] `tests/e2e/calculation-policy-gates.spec.ts` - 지점장 검토 화면에서 총매출/결제차액/근무인원 같은 허용 항목은 보이고, FIFO, `30%단가`, 희망 판매가 손실액, 매출원가, 마진율, 영업이익, 재고금액, OQ 텍스트는 노출되지 않는지 검증한다.
+- [x] `tests/e2e/store-ledger-review.spec.ts` - 기존 검토/제출 E2E가 지점장 민감 계산값 미노출, 비민감 경고/이상 후보, 제출 차단/성공/중복 제출을 검증한다.
 
 ## Coverage
 
-- API endpoints: N/A. Story 3.2는 public API route를 추가하지 않으며 서버 action/schema 검증은 unit/source tests로 커버한다.
-- Server validation: 필수 누락, 음수/소수/콤마/NaN/Infinity/overflow, dotted field path, 권한 우선 검증 구조가 unit tests로 커버된다.
-- UI workflows: 6개 장부 단계의 서버 `fieldErrors` 표시, 첫 오류 포커스, `aria-invalid`, `aria-describedby` 연결이 E2E로 커버된다.
-- Happy path: 기존 단계별 저장/재방문 E2E가 매출, 비용, 매입, 재고, 손실, 근무, 검토 제출 정상 흐름을 커버한다.
-- Critical error cases: 필수 누락, 숫자 오류, 동적 행 오류, 권한 밖 화면 차단, 제출 전 누락, 계산 상태/검증 오류 병렬 표시를 커버한다.
+- API endpoints: N/A. Story 3.4는 public API route를 추가하지 않으며 서버 계산/helper contract를 unit 및 Playwright runtime tests로 커버한다.
+- OQ policy gates: OQ-1, OQ-2, OQ-7/OQ-17, OQ-9, OQ-10A, OQ-14 registry와 `policy-unconfirmed` metric contract가 커버된다.
+- UI workflows: 지점장 검토 화면에서 허용 summary만 표시하고 민감/OQ-gated 파생 계산을 화면 응답에 노출하지 않는 흐름이 커버된다.
+- Happy path: 허용 MVP 계산인 총매출, 결제수단 합계, 결제 차액, 근무인원 표시가 E2E로 커버된다.
+- Critical error cases: OQ-14 context 없는 매출차액 계산 차단, FIFO/30%단가/희망 판매가 손실액 gate, 지점장 민감 지표 미노출 회귀가 커버된다.
 
 ## Validation
 
-- [x] `corepack pnpm test:unit` - pass, 32/32 unit files.
+- [x] `corepack pnpm exec prettier --check tests/e2e/calculation-policy-gates.spec.ts` - pass.
+- [x] `corepack pnpm test:unit -- tests/unit/calculation-policy-gates.test.mjs tests/unit/ledger-review.test.mjs tests/unit/sensitive-response-shaping.test.mjs` - pass, 33/33 unit files.
+- [x] `corepack pnpm exec playwright test tests/e2e/calculation-policy-gates.spec.ts --list` - pass, 2 tests discovered.
 - [x] `corepack pnpm typecheck` - pass.
 - [x] `corepack pnpm lint` - pass.
-- [x] `corepack pnpm exec prettier --check tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts tests/e2e/store-ledger-purchase.spec.ts tests/e2e/store-ledger-inventory.spec.ts tests/e2e/store-ledger-losses.spec.ts` - pass.
-- [ ] `corepack pnpm test:e2e -- tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-cost-labor.spec.ts tests/e2e/store-ledger-purchase.spec.ts tests/e2e/store-ledger-inventory.spec.ts tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-review.spec.ts` - blocked by sandbox localhost access failure: `connect EPERM 127.0.0.1:3000`, followed by Playwright `Process from config.webServer exited early`.
+- [ ] `corepack pnpm test:e2e -- tests/e2e/calculation-policy-gates.spec.ts` - blocked by sandbox localhost permission: Next webServer exits with `listen EPERM: operation not permitted 127.0.0.1:3000`.
 
 ## Checklist Result
 
-- API tests generated if applicable: complete via unit/source tests for server action/schema contracts.
+- API tests generated if applicable: complete via server contract unit tests and Playwright runtime helper test.
 - E2E tests generated if UI exists: complete.
 - Tests use standard framework APIs: complete. Uses Playwright `test`/`expect`, semantic role/label locators, and existing Prisma fixture patterns.
-- Happy path covered: complete through existing stage save/revisit and review submission E2E.
-- Critical error cases covered: complete for required fields, numeric validation, focus, accessibility wiring, authorization screen, and review missing-state separation.
-- All generated tests run successfully: unit/type/lint/format pass; Playwright E2E execution is blocked only by sandbox localhost permission.
+- Happy path covered: complete for allowed review summary values.
+- Critical error cases covered: complete for OQ-gated numeric blocking and store-manager sensitive metric suppression.
+- All generated tests run successfully: unit/type/lint/format and Playwright discovery pass; browser execution is blocked only by sandbox localhost permission.
 - Proper locators: complete.
 - Clear descriptions: complete.
 - No hardcoded waits or sleeps: complete.
-- Tests are independent: complete, using existing per-test cleanup and isolated story fixtures.
+- Tests are independent: complete, using per-test cleanup and isolated Story 3.4 fixtures.
 - Summary includes coverage metrics: complete.
