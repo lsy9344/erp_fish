@@ -70,6 +70,9 @@ test("store manager response shaping recursively removes sensitive ledger metric
     id: "ledger-1",
     storeId: "store-1",
     closingDate: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    version: 1,
+    authorDisplayName: "작성자",
     status: "IN_PROGRESS",
     submittedById: null,
     submittedAt: null,
@@ -95,6 +98,38 @@ test("store manager response shaping recursively removes sensitive ledger metric
         amount: -2_000,
       },
     ],
+    stepSummaries: [
+      {
+        id: "sales",
+        label: "매출/결제",
+        status: "saved",
+        detail: "총매출과 결제수단 합계를 확인했습니다.",
+        href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=sales",
+        metrics: [
+          {
+            id: "paymentDifference",
+            label: "결제수단 합계와 총매출 차이",
+            value: 0,
+            kind: "signed-krw",
+            status: "ok",
+          },
+          {
+            id: "costOfGoodsSold",
+            label: "매출원가",
+            value: 30_000,
+            kind: "krw",
+            status: "ok",
+          },
+          {
+            id: "inventoryAmount",
+            label: "재고금액",
+            value: 8_000,
+            kind: "krw",
+            status: "ok",
+          },
+        ],
+      },
+    ],
   });
 
   assertNoSensitiveKeys(safeReview);
@@ -108,15 +143,52 @@ test("store manager response shaping recursively removes sensitive ledger metric
     detail: "광어 실제 재고 차이",
     quantity: -2,
   });
+  assert.deepEqual(
+    safeReview.stepSummaries[0].metrics.map((metric) => metric.id),
+    ["paymentDifference"],
+  );
+  assert.equal(
+    safeReview.stepSummaries[0].metrics.some((metric) =>
+      /매출원가|재고금액|costOfGoodsSold|inventoryAmount/.test(
+        `${metric.id} ${metric.label}`,
+      ),
+    ),
+    false,
+  );
 });
 
 test("store manager inventory and loss contracts define safe response types", () => {
-  const inventoryTypes = readProjectFile("src", "features", "inventory", "types.ts");
+  const inventoryTypes = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "types.ts",
+  );
   const lossTypes = readProjectFile("src", "features", "losses", "types.ts");
-  const inventoryQueries = readProjectFile("src", "features", "inventory", "queries.ts");
-  const lossQueries = readProjectFile("src", "features", "losses", "queries.ts");
-  const inventoryActions = readProjectFile("src", "features", "inventory", "actions.ts");
-  const lossActions = readProjectFile("src", "features", "losses", "actions.ts");
+  const inventoryQueries = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "queries.ts",
+  );
+  const lossQueries = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "queries.ts",
+  );
+  const inventoryActions = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  const lossActions = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "actions.ts",
+  );
 
   assert.match(inventoryTypes, /StoreManagerInventoryStepData/);
   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
@@ -127,10 +199,7 @@ test("store manager inventory and loss contracts define safe response types", ()
     lossTypes,
     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
   );
-  assert.match(
-    lossTypes,
-    /StoreManagerLossProductSummary[\s\S]*"amount"/,
-  );
+  assert.match(lossTypes, /StoreManagerLossProductSummary[\s\S]*"amount"/);
   assert.match(
     lossTypes,
     /StoreManagerLossSignalCandidate[\s\S]*"amount"\s*\|\s*"exceededAmount"/,

@@ -193,6 +193,53 @@ export default async function LedgerDetailPage({
       </section>
 
       <section
+        className="bg-card rounded-lg border p-4 shadow-sm"
+        aria-labelledby="hq-review-summary-heading"
+      >
+        <div className="flex flex-col gap-1">
+          <h2 id="hq-review-summary-heading" className="text-lg font-semibold">
+            검토 상태 요약
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            본사 조회 권한으로 확인 가능한 검증 상태와 action 권한입니다.
+          </p>
+        </div>
+        <dl className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-md border p-3">
+            <dt className="text-muted-foreground text-sm">검증 상태</dt>
+            <dd className="mt-1 font-medium">
+              {detail.signals.length > 0
+                ? `확인 항목 ${detail.signals.length}건`
+                : "표시할 이상 후보 없음"}
+            </dd>
+          </div>
+          <div className="rounded-md border p-3">
+            <dt className="text-muted-foreground text-sm">정정 상태</dt>
+            <dd className="mt-1 font-medium">
+              {formatHqCorrectionReviewStatus(detail.correctionState)}
+            </dd>
+          </div>
+          <div className="rounded-md border p-3">
+            <dt className="text-muted-foreground text-sm">수정 action</dt>
+            <dd className="mt-1 font-medium">
+              {canEditLedger && !isOriginalEditBlocked ? "허용" : "조회 전용"}
+            </dd>
+          </div>
+          <div className="rounded-md border p-3">
+            <dt className="text-muted-foreground text-sm">마감/정정 action</dt>
+            <dd className="mt-1 font-medium">
+              {formatHqCloseCorrectionActionStatus({
+                canCloseLedger,
+                canCreateCorrection,
+                isOriginalEditBlocked,
+                isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
+              })}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="장부 주요 숫자"
       >
@@ -521,6 +568,44 @@ function formatUnavailableMetric(metric: {
   }
 
   return metric.label ?? metric.unavailableReason ?? "-";
+}
+
+function formatHqCorrectionReviewStatus(
+  correctionState: NonNullable<
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["correctionState"],
+) {
+  if (correctionState.hasUnappliedCorrections) {
+    return "정정 확인 필요";
+  }
+
+  if (correctionState.hasAppliedCorrections) {
+    return `정정 반영 ${correctionState.appliedCorrectionCount}건`;
+  }
+
+  return "정정 없음";
+}
+
+function formatHqCloseCorrectionActionStatus({
+  canCloseLedger,
+  canCreateCorrection,
+  isOriginalEditBlocked,
+  isHeadquartersClosed,
+}: {
+  canCloseLedger: boolean;
+  canCreateCorrection: boolean;
+  isOriginalEditBlocked: boolean;
+  isHeadquartersClosed: boolean;
+}) {
+  if (isHeadquartersClosed) {
+    return canCreateCorrection ? "정정 가능" : "정정 조회 전용";
+  }
+
+  if (!isOriginalEditBlocked && canCloseLedger) {
+    return "마감 가능";
+  }
+
+  return "조회 전용";
 }
 
 function formatCorrectionValue(value: unknown) {

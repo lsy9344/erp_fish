@@ -15,7 +15,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import { submitLedgerForReview } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
@@ -23,7 +22,10 @@ import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-d
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import type { StoreManagerLedgerReviewStepData } from "~/features/ledger/review-types";
+import type {
+  LedgerReviewStepMetric,
+  StoreManagerLedgerReviewStepData,
+} from "~/features/ledger/review-types";
 import type { FieldErrors } from "~/lib/action-result";
 import { formatKrw, formatSignedKrw, formatSignedQuantity } from "~/lib/format";
 
@@ -110,46 +112,48 @@ function normalizeStatusLabel(
   return "휴무";
 }
 
-function formatMetric(metric: LedgerReviewMetric) {
-  if (metric.status !== "ok" || metric.value === null) {
-    return metric.label ?? metric.unavailableReason ?? "계산 불가";
+function normalizeStepStatusLabel(
+  status: StoreManagerLedgerReviewStepData["stepSummaries"][number]["status"],
+) {
+  if (status === "saved") {
+    return "저장됨";
   }
 
-  return formatKrw(metric.value);
-}
-
-function metricDetail(metric: LedgerReviewMetric) {
-  if (metric.status === "ok") {
-    return null;
+  if (status === "missing") {
+    return "입력 필요";
   }
 
-  return (
-    metric.reason ?? metric.label ?? metric.unavailableReason ?? "계산 불가"
-  );
+  if (status === "needs-attention") {
+    return "확인 필요";
+  }
+
+  return "검토";
 }
 
-function MetricCard({
-  label,
-  metric,
-}: {
-  label: string;
-  metric: LedgerReviewMetric;
-}) {
-  const detail = metricDetail(metric);
+function stepStatusVariant(
+  status: StoreManagerLedgerReviewStepData["stepSummaries"][number]["status"],
+) {
+  if (status === "saved") {
+    return "secondary";
+  }
 
-  return (
-    <div className="min-w-0 rounded-lg border p-3">
-      <p className="text-muted-foreground text-sm break-words">{label}</p>
-      <p className="mt-2 text-lg font-semibold tracking-normal break-words tabular-nums">
-        {formatMetric(metric)}
-      </p>
-      {detail ? (
-        <p className="text-muted-foreground mt-1 text-xs break-words">
-          {detail}
-        </p>
-      ) : null}
-    </div>
-  );
+  return "outline";
+}
+
+function formatMetric(metric: LedgerReviewStepMetric) {
+  if (metric.status !== "ok") {
+    return metric.value === null ? "계산 불가" : String(metric.value);
+  }
+
+  if (metric.kind === "signed-krw" && typeof metric.value === "number") {
+    return formatSignedKrw(metric.value);
+  }
+
+  if (metric.kind === "krw" && typeof metric.value === "number") {
+    return formatKrw(metric.value);
+  }
+
+  return metric.value === null ? "계산 불가" : String(metric.value);
 }
 
 export function ReviewSummaryClient({
@@ -164,7 +168,6 @@ export function ReviewSummaryClient({
   const previousReviewContextKey = useRef(
     `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`,
   );
-  const { summary } = currentReviewData;
 
   useEffect(() => {
     const nextReviewContextKey = `${reviewData.id}:${reviewData.storeId}:${reviewData.closingDate}`;
@@ -286,11 +289,64 @@ export function ReviewSummaryClient({
           className="bg-card text-card-foreground rounded-lg border p-4"
         >
           <h2 id="review-metrics-heading" className="text-base font-semibold">
-            계산값
+            검토 요약
           </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard label="총매출" metric={summary.totalSales} />
-            <MetricCard label="결제 차액" metric={summary.paymentDifference} />
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {currentReviewData.stepSummaries.map((stepSummary) => (
+              <article
+                key={stepSummary.id}
+                className="min-w-0 rounded-lg border p-3"
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold break-words">
+                    {stepSummary.label}
+                  </h3>
+                  <Badge
+                    variant={stepStatusVariant(stepSummary.status)}
+                    className="break-words whitespace-normal"
+                  >
+                    {normalizeStepStatusLabel(stepSummary.status)}
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground mt-2 text-sm break-words">
+                  {stepSummary.detail}
+                </p>
+                <dl className="mt-3 grid gap-2">
+                  {stepSummary.metrics.map((metric) => (
+                    <div
+                      key={metric.id}
+                      className="bg-muted/40 flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 rounded-md px-3 py-2"
+                    >
+                      <dt className="text-muted-foreground min-w-0 text-sm break-words">
+                        {metric.label}
+                      </dt>
+                      <dd className="min-w-0 text-right text-sm font-medium break-words tabular-nums">
+                        {formatMetric(metric)}
+                      </dd>
+                      {metric.detail ? (
+                        <dd className="text-muted-foreground basis-full text-xs break-words">
+                          {metric.detail}
+                        </dd>
+                      ) : null}
+                    </div>
+                  ))}
+                </dl>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 min-h-8"
+                >
+                  <a
+                    href={stepSummary.href}
+                    aria-label={`${stepSummary.label} 단계로 이동`}
+                  >
+                    <ArrowRightIcon aria-hidden="true" />
+                    이동
+                  </a>
+                </Button>
+              </article>
+            ))}
           </div>
         </section>
 

@@ -1,36 +1,29 @@
 import { getKstLedgerDateParam } from "./date.ts";
 import type { LedgerReviewMissingItem } from "./review-types";
 
-function storeStepHref(
+export function getLedgerReviewStepHref(
   storeId: string,
   closingDate: string,
-  step: "sales" | "cost" | "purchase" | "work",
+  step: "sales" | "expenses" | "purchases" | "inventory" | "losses" | "work",
 ) {
+  if (step === "inventory" || step === "losses") {
+    const params = new URLSearchParams({
+      storeId,
+      date: getKstLedgerDateParam(closingDate),
+    });
+
+    return `/app/store-entry/${step}?${params.toString()}`;
+  }
+
+  const storeEntryStep =
+    step === "expenses" ? "cost" : step === "purchases" ? "purchase" : step;
   const params = new URLSearchParams({
     storeId,
     date: getKstLedgerDateParam(closingDate),
-    step,
+    step: storeEntryStep,
   });
 
   return `/app/store-entry?${params.toString()}`;
-}
-
-function inventoryHref(storeId: string, closingDate: string) {
-  const params = new URLSearchParams({
-    storeId,
-    date: getKstLedgerDateParam(closingDate),
-  });
-
-  return `/app/store-entry/inventory?${params.toString()}`;
-}
-
-function lossesHref(storeId: string, closingDate: string) {
-  const params = new URLSearchParams({
-    storeId,
-    date: getKstLedgerDateParam(closingDate),
-  });
-
-  return `/app/store-entry/losses?${params.toString()}`;
 }
 
 export function getLedgerReviewMissingItems({
@@ -62,7 +55,7 @@ export function getLedgerReviewMissingItems({
     items.push({
       id: "sales",
       label: "총매출/결제",
-      href: storeStepHref(storeId, closingDate, "sales"),
+      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
       status: "missing",
       detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
     });
@@ -72,7 +65,7 @@ export function getLedgerReviewMissingItems({
     items.push({
       id: "expenses",
       label: "비용",
-      href: storeStepHref(storeId, closingDate, "cost"),
+      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
       status: "missing",
       detail: "비용 항목이 아직 입력되지 않았습니다.",
     });
@@ -82,7 +75,7 @@ export function getLedgerReviewMissingItems({
     items.push({
       id: "purchases",
       label: "매입",
-      href: storeStepHref(storeId, closingDate, "purchase"),
+      href: getLedgerReviewStepHref(storeId, closingDate, "purchases"),
       status: "missing",
       detail: "매입 항목이 아직 입력되지 않았습니다.",
     });
@@ -92,7 +85,7 @@ export function getLedgerReviewMissingItems({
     items.push({
       id: "inventory",
       label: "재고",
-      href: inventoryHref(storeId, closingDate),
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
       status: "missing",
       detail:
         inventoryCount === 0
@@ -104,7 +97,7 @@ export function getLedgerReviewMissingItems({
   items.push({
     id: "losses",
     label: "손실/폐기",
-    href: lossesHref(storeId, closingDate),
+    href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
     status: "review",
     detail:
       lossCount === 0
@@ -116,7 +109,7 @@ export function getLedgerReviewMissingItems({
     items.push({
       id: "work",
       label: "근무인원",
-      href: storeStepHref(storeId, closingDate, "work"),
+      href: getLedgerReviewStepHref(storeId, closingDate, "work"),
       status: "missing",
       detail:
         workerCount === null

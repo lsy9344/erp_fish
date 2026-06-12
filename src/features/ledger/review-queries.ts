@@ -9,9 +9,17 @@ import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
 import { getStoreLedgerInTx, getKstBusinessDateParam } from "./queries";
 import { toStoreManagerLedgerReviewStepData } from "./response-shaping";
-import { getLedgerReviewMissingItems } from "./review-validation";
+import {
+  getLedgerReviewMissingItems,
+  getLedgerReviewStepHref,
+} from "./review-validation";
 import type {
+  LedgerReviewMissingItem,
   LedgerReviewSignal,
+  LedgerReviewStepId,
+  LedgerReviewStepMetric,
+  LedgerReviewStepStatus,
+  LedgerReviewStepSummary,
   LedgerReviewStepData,
   LedgerReviewWarning,
   StoreManagerLedgerReviewStepData,
@@ -104,6 +112,257 @@ function getSignals({
   return [...inventorySignals, ...lossSignals];
 }
 
+function metricStatusText(metric: LedgerReviewMetric) {
+  if (metric.status === "ok") {
+    return "정상";
+  }
+
+  if (metric.status === "policy-unconfirmed") {
+    return "기준 확인 필요";
+  }
+
+  if (metric.status === "data-insufficient") {
+    return "데이터 부족";
+  }
+
+  return "계산 불가";
+}
+
+function metricDetail(metric: LedgerReviewMetric) {
+  return metric.reason ?? metric.unavailableReason ?? metric.label;
+}
+
+function moneyMetric(
+  id: string,
+  label: string,
+  metric: LedgerReviewMetric,
+  kind: "krw" | "signed-krw" = "krw",
+): LedgerReviewStepMetric {
+  if (metric.status !== "ok" || metric.value === null) {
+    const detail = metricDetail(metric);
+
+    return {
+      id,
+      label,
+      value: metricStatusText(metric),
+      kind: "status",
+      status: metric.status,
+      ...(detail ? { detail } : {}),
+    };
+  }
+
+  return {
+    id,
+    label,
+    value: metric.value,
+    kind,
+    status: metric.status,
+  };
+}
+
+function textMetric(
+  id: string,
+  label: string,
+  value: string,
+): LedgerReviewStepMetric {
+  return {
+    id,
+    label,
+    value,
+    kind: "text",
+    status: "ok",
+  };
+}
+
+function statusMetric(
+  id: string,
+  label: string,
+  metric: LedgerReviewMetric,
+): LedgerReviewStepMetric {
+  const detail = metricDetail(metric);
+
+  return {
+    id,
+    label,
+    value: metricStatusText(metric),
+    kind: "status",
+    status: metric.status,
+    ...(detail ? { detail } : {}),
+  };
+}
+
+function stepStatus(
+  stepId: LedgerReviewStepId,
+  missingItems: Map<string, LedgerReviewMissingItem>,
+  calculationMetric?: LedgerReviewMetric,
+): LedgerReviewStepStatus {
+  const missingItem = missingItems.get(stepId);
+
+  if (missingItem?.status === "missing") {
+    return "missing";
+  }
+
+  if (calculationMetric && calculationMetric.status !== "ok") {
+    return "needs-attention";
+  }
+
+  if (missingItem?.status === "review") {
+    return "review";
+  }
+
+  return "saved";
+}
+
+function stepDetail({
+  stepId,
+  missingItems,
+  savedDetail,
+  calculationMetric,
+}: {
+  stepId: LedgerReviewStepId;
+  missingItems: Map<string, LedgerReviewMissingItem>;
+  savedDetail: string;
+  calculationMetric?: LedgerReviewMetric;
+}) {
+  const missingItem = missingItems.get(stepId);
+
+  if (missingItem) {
+    return missingItem.detail;
+  }
+
+  if (calculationMetric && calculationMetric.status !== "ok") {
+    return metricDetail(calculationMetric) ?? savedDetail;
+  }
+
+  return savedDetail;
+}
+
+export function buildLedgerReviewStepSummaries({
+  storeId,
+  closingDate,
+  summary,
+  missingItems,
+  expenseCount,
+  purchaseCount,
+  inventoryCount,
+  lossCount,
+  workerCount,
+}: {
+  storeId: string;
+  closingDate: string;
+  summary: LedgerReviewStepData["summary"];
+  missingItems: LedgerReviewMissingItem[];
+  expenseCount: number;
+  purchaseCount: number;
+  inventoryCount: number;
+  lossCount: number;
+  workerCount: number | null;
+}): LedgerReviewStepSummary[] {
+  const missingById = new Map(missingItems.map((item) => [item.id, item]));
+
+  return [
+    {
+      id: "sales",
+      label: "매출/결제",
+      status: stepStatus("sales", missingById, summary.paymentDifference),
+      detail: stepDetail({
+        stepId: "sales",
+        missingItems: missingById,
+        savedDetail: "총매출과 결제수단 합계를 확인했습니다.",
+        calculationMetric: summary.paymentDifference,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
+      metrics: [
+        moneyMetric("totalSales", "총매출", summary.totalSales),
+        moneyMetric("paymentTotal", "결제수단 합계", summary.paymentTotal),
+        moneyMetric(
+          "paymentDifference",
+          "결제수단 합계와 총매출 차이",
+          summary.paymentDifference,
+          "signed-krw",
+        ),
+      ],
+    },
+    {
+      id: "expenses",
+      label: "비용",
+      status: stepStatus("expenses", missingById),
+      detail: stepDetail({
+        stepId: "expenses",
+        missingItems: missingById,
+        savedDetail: `비용 ${expenseCount}건이 저장되어 있습니다.`,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
+      metrics: [textMetric("expenseCount", "비용 저장", `${expenseCount}건`)],
+    },
+    {
+      id: "purchases",
+      label: "매입",
+      status: stepStatus("purchases", missingById),
+      detail: stepDetail({
+        stepId: "purchases",
+        missingItems: missingById,
+        savedDetail: `매입 ${purchaseCount}건이 저장되어 있습니다.`,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "purchases"),
+      metrics: [textMetric("purchaseCount", "매입 저장", `${purchaseCount}건`)],
+    },
+    {
+      id: "inventory",
+      label: "재고",
+      status: stepStatus("inventory", missingById, summary.inventoryAmount),
+      detail: stepDetail({
+        stepId: "inventory",
+        missingItems: missingById,
+        savedDetail: `재고 ${inventoryCount}건이 저장되어 있습니다.`,
+        calculationMetric: summary.inventoryAmount,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
+      metrics: [
+        textMetric("inventoryCount", "재고 저장", `${inventoryCount}건`),
+        statusMetric("reviewStatus", "계산 상태", summary.inventoryAmount),
+      ],
+    },
+    {
+      id: "losses",
+      label: "손실",
+      status: stepStatus("losses", missingById),
+      detail: stepDetail({
+        stepId: "losses",
+        missingItems: missingById,
+        savedDetail:
+          lossCount === 0
+            ? "손실 항목 없음으로 검토할 수 있습니다."
+            : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
+      metrics: [textMetric("lossCount", "손실 저장", `${lossCount}건`)],
+    },
+    {
+      id: "work",
+      label: "근무",
+      status: stepStatus("work", missingById, summary.workerCount),
+      detail: stepDetail({
+        stepId: "work",
+        missingItems: missingById,
+        savedDetail:
+          workerCount === null
+            ? "근무인원이 아직 입력되지 않았습니다."
+            : `근무인원 ${workerCount}명이 저장되어 있습니다.`,
+        calculationMetric: summary.workerCount,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "work"),
+      metrics: [
+        textMetric(
+          "workerCount",
+          "근무인원",
+          workerCount === null ? "미입력" : `${workerCount}명`,
+        ),
+      ],
+    },
+  ];
+}
+
 export async function getLedgerReviewStepData(
   storeId: string,
   closingDate: string | Date,
@@ -158,6 +417,19 @@ export async function getLedgerReviewStepData(
         (item.currentQuantity ?? item.quantity) === null ||
         item.inventoryAmount === null,
     );
+    const missingItems = getLedgerReviewMissingItems({
+      storeId,
+      closingDate: closingDateParam,
+      totalSalesAmount: ledger.totalSalesAmount,
+      paymentTotal:
+        ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
+      expenseCount: ledger.ledgerExpenses.length,
+      purchaseCount: ledger.ledgerPurchaseItems.length,
+      hasInventoryUnavailable,
+      inventoryCount: savedInventoryItems.length,
+      lossCount: losses.lossItems.length,
+      workerCount: ledger.workerCount,
+    });
 
     return {
       id: ledger.id,
@@ -170,23 +442,22 @@ export async function getLedgerReviewStepData(
       submittedById: ledger.submittedById ?? null,
       submittedAt: ledger.submittedAt?.toISOString() ?? null,
       summary,
-      missingItems: getLedgerReviewMissingItems({
-        storeId,
-        closingDate: closingDateParam,
-        totalSalesAmount: ledger.totalSalesAmount,
-        paymentTotal:
-          ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
-        expenseCount: ledger.ledgerExpenses.length,
-        purchaseCount: ledger.ledgerPurchaseItems.length,
-        hasInventoryUnavailable,
-        inventoryCount: savedInventoryItems.length,
-        lossCount: losses.lossItems.length,
-        workerCount: ledger.workerCount,
-      }),
+      missingItems,
       warnings: getWarnings(summary.paymentDifference),
       signals: getSignals({
         inventoryItems: inventory.items,
         lossSignalCandidates: losses.signalCandidates,
+      }),
+      stepSummaries: buildLedgerReviewStepSummaries({
+        storeId,
+        closingDate: closingDateParam,
+        summary,
+        missingItems,
+        expenseCount: ledger.ledgerExpenses.length,
+        purchaseCount: ledger.ledgerPurchaseItems.length,
+        inventoryCount: savedInventoryItems.length,
+        lossCount: losses.lossItems.length,
+        workerCount: ledger.workerCount,
       }),
     };
   });

@@ -1,5 +1,8 @@
 import type { DailyLedgerStatus } from "../../../generated/prisma";
-import type { LedgerReviewSummary } from "~/server/calculations/ledger";
+import type {
+  LedgerReviewMetric,
+  LedgerReviewSummary,
+} from "~/server/calculations/ledger";
 
 export type LedgerReviewMissingItem = {
   id: string;
@@ -24,6 +27,38 @@ export type LedgerReviewSignal = {
   quantity?: number;
 };
 
+export type LedgerReviewStepId =
+  | "sales"
+  | "expenses"
+  | "purchases"
+  | "inventory"
+  | "losses"
+  | "work";
+
+export type LedgerReviewStepStatus =
+  | "saved"
+  | "missing"
+  | "review"
+  | "needs-attention";
+
+export type LedgerReviewStepMetric = {
+  id: string;
+  label: string;
+  value: number | string | null;
+  kind: "krw" | "signed-krw" | "text" | "status";
+  status: LedgerReviewMetric["status"];
+  detail?: string;
+};
+
+export type LedgerReviewStepSummary = {
+  id: LedgerReviewStepId;
+  label: string;
+  status: LedgerReviewStepStatus;
+  detail: string;
+  href: string;
+  metrics: LedgerReviewStepMetric[];
+};
+
 export type LedgerReviewStepData = {
   id: string;
   storeId: string;
@@ -38,6 +73,7 @@ export type LedgerReviewStepData = {
   missingItems: LedgerReviewMissingItem[];
   warnings: LedgerReviewWarning[];
   signals: LedgerReviewSignal[];
+  stepSummaries: LedgerReviewStepSummary[];
 };
 
 export type StoreManagerLedgerReviewSummary = Pick<

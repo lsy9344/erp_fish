@@ -360,6 +360,43 @@ test("ledger review missing item helper preserves KST links and separates review
   );
 });
 
+test("ledger review step summary contract preserves shape, KST links, signed difference, and calculation states", () => {
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-types.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-queries.ts",
+  );
+  const validationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-validation.ts",
+  );
+
+  assert.match(typeSource, /LedgerReviewStepId[\s\S]*"sales"/);
+  assert.match(typeSource, /LedgerReviewStepId[\s\S]*"work"/);
+  assert.match(typeSource, /LedgerReviewStepMetric/);
+  assert.match(typeSource, /kind:\s*"krw"\s*\|\s*"signed-krw"/);
+  assert.match(typeSource, /stepSummaries:\s*LedgerReviewStepSummary\[\]/);
+  assert.match(validationSource, /getLedgerReviewStepHref/);
+  assert.match(validationSource, /getKstLedgerDateParam\(closingDate\)/);
+  assert.match(querySource, /buildLedgerReviewStepSummaries/);
+  assert.match(querySource, /"paymentDifference"/);
+  assert.match(querySource, /"결제수단 합계와 총매출 차이"/);
+  assert.match(querySource, /"signed-krw"/);
+  assert.match(querySource, /"reviewStatus"/);
+  assert.match(querySource, /"데이터 부족"/);
+  assert.match(querySource, /"기준 확인 필요"/);
+  assert.doesNotMatch(querySource, /paymentDifference\.value\s*\?\?\s*0/);
+});
+
 test("store manager ledger review response omits sensitive accounting metrics", async () => {
   const typeSource = readProjectFile(
     "src",
@@ -391,6 +428,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(typeSource, /StoreManagerLedgerReviewStepData/);
   assert.match(querySource, /toStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
+  assert.match(querySource, /buildLedgerReviewStepSummaries/);
   assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
   assert.match(
     responseShapeSource,
@@ -410,6 +448,10 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.doesNotMatch(clientSource, /summary\.operatingProfit/);
   assert.doesNotMatch(clientSource, /summary\.productivity/);
   assert.doesNotMatch(clientSource, /summary\.salesDifference/);
+  assert.match(clientSource, /stepSummaries/);
+  assert.match(clientSource, /formatSignedKrw/);
+  assert.match(querySource, /결제수단 합계와 총매출 차이/);
+  assert.doesNotMatch(clientSource, /임계값 초과|확정 이상/);
   assert.doesNotMatch(clientSource, /label="매출원가"/);
   assert.doesNotMatch(clientSource, /label="매출이익"/);
   assert.doesNotMatch(clientSource, /label="영업이익"/);
@@ -432,6 +474,9 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     status: "IN_PROGRESS",
     submittedById: null,
     submittedAt: null,
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    version: 1,
+    authorDisplayName: "작성자",
     summary: {
       totalSales: ok(100_000),
       costOfGoodsSold: ok(30_000),
@@ -446,6 +491,24 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     missingItems: [],
     warnings: [],
     signals: [],
+    stepSummaries: [
+      {
+        id: "sales",
+        label: "매출/결제",
+        status: "saved",
+        detail: "총매출과 결제수단 합계를 확인했습니다.",
+        href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=sales",
+        metrics: [
+          {
+            id: "paymentDifference",
+            label: "결제수단 합계와 총매출 차이",
+            value: 0,
+            kind: "signed-krw",
+            status: "ok",
+          },
+        ],
+      },
+    ],
   });
 
   assert.deepEqual(Object.keys(safeReview.summary), [
@@ -459,4 +522,34 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
+  assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.kind, "signed-krw");
+});
+
+test("headquarters ledger detail keeps review summary read access separate from action permissions", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(pageSource, /requireReportAccess\(\)/);
+  assert.match(
+    pageSource,
+    /hasActionPermission\(user\.id,\s*PermissionAction\.LEDGER_EDIT\)/,
+  );
+  assert.match(
+    pageSource,
+    /hasActionPermission\(user\.id,\s*PermissionAction\.LEDGER_HQ_CLOSE\)/,
+  );
+  assert.match(
+    pageSource,
+    /hasActionPermission\(user\.id,\s*PermissionAction\.CORRECTION_CREATE\)/,
+  );
+  assert.match(pageSource, /검토 상태 요약/);
+  assert.match(pageSource, /조회 전용/);
+  assert.match(pageSource, /formatHqCloseCorrectionActionStatus/);
+  assert.doesNotMatch(pageSource, /requireStoreAccess\(/);
 });

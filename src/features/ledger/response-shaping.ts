@@ -1,4 +1,5 @@
 import type {
+  LedgerReviewStepMetric,
   LedgerReviewStepData,
   StoreManagerLedgerReviewStepData,
 } from "./review-types";
@@ -18,6 +19,24 @@ export function toStoreManagerLedgerCostStepData(
   return safeLedger;
 }
 
+const storeManagerReviewMetricIds = new Set([
+  "totalSales",
+  "paymentTotal",
+  "paymentDifference",
+  "expenseCount",
+  "purchaseCount",
+  "inventoryCount",
+  "reviewStatus",
+  "lossCount",
+  "workerCount",
+]);
+
+function toStoreManagerReviewStepMetrics(
+  metrics: LedgerReviewStepMetric[],
+): LedgerReviewStepMetric[] {
+  return metrics.filter((metric) => storeManagerReviewMetricIds.has(metric.id));
+}
+
 export function toStoreManagerLedgerReviewStepData(
   data: LedgerReviewStepData,
 ): StoreManagerLedgerReviewStepData {
@@ -26,10 +45,15 @@ export function toStoreManagerLedgerReviewStepData(
 
     return signal;
   });
+  const stepSummaries = data.stepSummaries.map((stepSummary) => ({
+    ...stepSummary,
+    metrics: toStoreManagerReviewStepMetrics(stepSummary.metrics),
+  }));
 
   return {
     ...data,
     signals,
+    stepSummaries,
     summary: {
       totalSales: data.summary.totalSales,
       paymentDifference: data.summary.paymentDifference,
