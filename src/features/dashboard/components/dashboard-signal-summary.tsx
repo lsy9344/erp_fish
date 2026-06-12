@@ -57,6 +57,7 @@ export function DashboardSignalSummary({
             key={signal.id}
             variant="outline"
             title={signal.detail}
+            aria-label={getSignalAccessibilityLabel(signal)}
             className={cn(
               style.className,
               showDetails &&
@@ -79,4 +80,8 @@ export function DashboardSignalSummary({
       })}
     </div>
   );
+}
+
+function getSignalAccessibilityLabel(signal: DashboardSignalSummaryType) {
+  return signal.detail ? `${signal.label}: ${signal.detail}` : signal.label;
 }

@@ -376,6 +376,233 @@ test("HQ dashboard priority presentation orders problem rows first", async () =>
   );
 });
 
+test("HQ dashboard keeps calculation and policy states as distinct info signals", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { getDashboardSignals } = await import(pathToFileURL(queryPath).href);
+
+  const signals = getDashboardSignals({
+    thresholdSettings: {
+      salesDropRateBps: 1250,
+      grossMarginDropBps: 350,
+      salesDifferenceAmount: 10000,
+      lossAmount: 50000,
+      inventoryDifferenceQuantity: 10,
+    },
+    revenueCurrent: {
+      totalSales: {
+        value: null,
+        status: "data-insufficient",
+        reason: "총매출 입력이 없습니다.",
+      },
+      grossMarginRate: {
+        value: null,
+        status: "calculation-unavailable",
+        reason: "마진율 계산 중 오류가 발생했습니다.",
+      },
+      salesDifference: {
+        value: null,
+        status: "policy-unconfirmed",
+        unavailableReason: "계산 기준 확인 필요",
+        reason: "OQ-1 매출차액 기준이 확정되지 않았습니다.",
+      },
+    },
+    inventoryLossCurrent: {
+      inventoryItems: [],
+      inventoryAdjustments: [],
+      lossItems: [],
+    },
+    missingItems: [
+      {
+        id: "sales",
+        label: "총매출/결제",
+        status: "missing",
+        detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
+        href: "/app/store-entry",
+      },
+    ],
+    evaluateRevenueAnomalySignals: () => [],
+    evaluateInventoryLossAnomalySignals: () => [],
+  });
+
+  assert.deepEqual(
+    signals.map(({ id, label, severity }) => ({ id, label, severity })),
+    [
+      {
+        id: "required-input-sales",
+        label: "필수 누락",
+        severity: "info",
+      },
+      {
+        id: "calculation-totalSales-data-insufficient",
+        label: "데이터 부족",
+        severity: "info",
+      },
+      {
+        id: "calculation-grossMarginRate-calculation-unavailable",
+        label: "계산 불가",
+        severity: "info",
+      },
+      {
+        id: "calculation-salesDifference-policy-unconfirmed",
+        label: "매출차액 기준 확인",
+        severity: "info",
+      },
+    ],
+  );
+  assert.match(signals[0].detail, /총매출\/결제/);
+  assert.match(signals[1].detail, /총매출 입력이 없습니다/);
+  assert.match(signals[2].detail, /마진율 계산 중 오류/);
+  assert.match(signals[3].detail, /OQ-1/);
+});
+
+test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confirmed", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { applyDashboardPresentation, getDashboardSignals } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const signals = getDashboardSignals({
+    thresholdSettings: {
+      salesDropRateBps: 1250,
+      grossMarginDropBps: 350,
+      salesDifferenceAmount: 10000,
+      lossAmount: 50000,
+      inventoryDifferenceQuantity: 10,
+    },
+    revenueCurrent: {
+      totalSales: { value: 100000, status: "ok" },
+      grossMarginRate: { value: 0.2, status: "ok" },
+      salesDifference: { value: 25000, status: "ok" },
+    },
+    inventoryLossCurrent: {
+      inventoryItems: [
+        {
+          productName: "광어",
+          previousQuantity: 20,
+          purchasedQuantity: 0,
+          currentQuantity: 1,
+          quantity: 1,
+          unitPrice: 1000,
+        },
+      ],
+      inventoryAdjustments: [
+        {
+          productName: "광어",
+          differenceQuantity: -19,
+          differenceAmount: -19000,
+          reason: "실사",
+        },
+      ],
+      lossItems: [
+        {
+          productId: "product-1",
+          productName: "광어",
+          quantity: 60,
+          amount: 60000,
+        },
+      ],
+    },
+    evaluateRevenueAnomalySignals: ({ current }) => [
+      {
+        id: "sales-difference-exceeded",
+        label: "매출차액 초과",
+        severity: "warning",
+        detail: `매출차액 ${current.salesDifference.value}`,
+      },
+    ],
+    evaluateInventoryLossAnomalySignals: () => [
+      {
+        id: "inventory-difference-exceeded",
+        label: "재고 이상",
+        severity: "critical",
+        detail: "재고 차이 19개",
+      },
+      {
+        id: "loss-amount-exceeded",
+        label: "손실 이상",
+        severity: "critical",
+        detail: "손실액 60,000원",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    signals.map(({ id, label, severity }) => ({ id, label, severity })),
+    [
+      {
+        id: "sales-difference-policy-required",
+        label: "매출차액 기준 확인",
+        severity: "info",
+      },
+      {
+        id: "inventory-policy-required",
+        label: "재고 기준 확인",
+        severity: "info",
+      },
+      {
+        id: "loss-policy-required",
+        label: "손실 기준 확인",
+        severity: "info",
+      },
+    ],
+  );
+  assert.ok(signals.every((signal) => signal.severity === "info"));
+  assert.ok(
+    signals.every(
+      (signal) =>
+        !/초과|급락|이상/.test(signal.label) &&
+        /OQ-|정책|기준/.test(signal.detail ?? ""),
+    ),
+  );
+
+  const [row] = applyDashboardPresentation(
+    [
+      makeDashboardRow({
+        storeId: "policy",
+        storeName: "정책확인점",
+        signals,
+      }),
+    ],
+    { sortMode: "priority", filterMode: "needs-attention" },
+  );
+  assert.equal(row.priority.label, "확인 필요");
+  assert.deepEqual(row.priority.reasons, [
+    "매출차액 기준 확인",
+    "재고 기준 확인",
+    "손실 기준 확인",
+  ]);
+});
+
+test("Dashboard signal chips expose text, icon, title, and aria labels", () => {
+  const summarySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "dashboard-signal-summary.tsx",
+  );
+
+  assert.match(summarySource, /InfoIcon/);
+  assert.match(summarySource, /TriangleAlertIcon/);
+  assert.match(summarySource, /CircleAlertIcon/);
+  assert.match(summarySource, /aria-label=\{getSignalAccessibilityLabel/);
+  assert.match(summarySource, /title=\{signal\.detail/);
+  assert.match(summarySource, /signal\.label/);
+  assert.match(summarySource, /signal\.detail/);
+  assert.match(summarySource, /flex-wrap/);
+  assert.match(summarySource, /break-words/);
+});
+
 test("HQ dashboard summary stays based on all active stores when rows are filtered", async () => {
   const queryPath = assertProjectFile(
     "src",
@@ -519,6 +746,69 @@ test("store manager closed ledger view exposes read-only correction values and h
   assert.match(storeEntrySource, /getStoreReadableCorrectionRecordsForLedger/);
   assert.match(storeEntrySource, /CorrectionReadonlySummary/);
   assert.match(storeEntrySource, /status === "HEADQUARTERS_CLOSED"/);
+});
+
+test("store manager paths do not reuse HQ dashboard row shape or sensitive dashboard fields", () => {
+  const storeEntrySource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "store-entry",
+    "page.tsx",
+  );
+  const ledgerReviewResponseSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const ledgerReviewTypesSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-types.ts",
+  );
+  const inventoryTypesSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "types.ts",
+  );
+
+  assert.doesNotMatch(storeEntrySource, /getHqDashboardRows|getHqLedgerDetail/);
+  assert.doesNotMatch(storeEntrySource, /HqDashboardRow/);
+  assert.match(
+    ledgerReviewResponseSource,
+    /toStoreManagerLedgerReviewStepData/,
+  );
+  assert.doesNotMatch(
+    ledgerReviewTypesSource,
+    /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
+  );
+  assert.match(
+    ledgerReviewTypesSource,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"paymentDifference"/s,
+  );
+  assert.match(
+    ledgerReviewResponseSource,
+    /const\s+storeManagerReviewMetricIds/,
+  );
+  assert.doesNotMatch(
+    ledgerReviewResponseSource,
+    /storeManagerReviewMetricIds[\s\S]*grossMarginRate|storeManagerReviewMetricIds[\s\S]*inventoryAmount|storeManagerReviewMetricIds[\s\S]*salesDifference/s,
+  );
+  assert.match(
+    ledgerReviewResponseSource,
+    /const\s+signals\s*=\s*data\.signals\.map\(\(\{\s*amount,\s*\.\.\.signal\s*\}/s,
+  );
+  assert.match(
+    inventoryTypesSource,
+    /StoreManagerInventoryAdjustmentView\s*=\s*Omit<[\s\S]*"beforeAmount"\s*\|\s*"afterAmount"\s*\|\s*"differenceAmount"/s,
+  );
+  assert.match(
+    inventoryTypesSource,
+    /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"inventoryAmount"/s,
+  );
 });
 
 function makeDashboardRow(overrides = {}) {

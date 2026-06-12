@@ -1,5 +1,5 @@
 # generated: 2026-06-11T19:07:09+09:00
-# last_updated: 2026-06-12T12:53:56+09:00
+# last_updated: 2026-06-12T13:33:39+09:00
 # project: erp_fish
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to review, then runs code-review
 
 generated: "2026-06-11T19:07:09+09:00"
-last_updated: "2026-06-12T12:53:56+09:00"
+last_updated: "2026-06-12T13:33:39+09:00"
 project: erp_fish
 project_key: NOKEY
 tracking_system: file-system
@@ -68,7 +68,7 @@ development_status:
   epic-3-retrospective: done
   epic-4: in-progress
   4-1-본사-전체-지점-관제판-조회: done
-  4-2-관제판-이상-상태와-기준-확인-필요-표시: backlog
+  4-2-관제판-이상-상태와-기준-확인-필요-표시: done
   4-3-본사-마감-전-장부-보완-수정: backlog
   4-4-마감-전-closepreflight-검토: backlog
   4-5-본사-마감과-원본-잠금: backlog

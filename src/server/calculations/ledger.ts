@@ -29,7 +29,18 @@ export function calculatePaymentDifference(
   cardAmount: number,
   otherPaymentAmount: number,
 ) {
-  return totalSalesAmount - (cashAmount + cardAmount + otherPaymentAmount);
+  return (
+    totalSalesAmount -
+    calculatePaymentTotal(cashAmount, cardAmount, otherPaymentAmount)
+  );
+}
+
+export function calculatePaymentTotal(
+  cashAmount: number,
+  cardAmount: number,
+  otherPaymentAmount: number,
+) {
+  return cashAmount + cardAmount + otherPaymentAmount;
 }
 
 export function calculateExpenseTotal(expenses: number[]) {
