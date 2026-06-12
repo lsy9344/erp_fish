@@ -602,8 +602,9 @@ test("본사는 기간 비교에서 권한 밖 지점 필터를 데이터 없이
     page.getByRole("heading", { name: "기간 비교 리포트" }),
   ).toBeVisible();
   await expect(page.getByText(/조회 지점을 확인/)).toBeVisible();
-  await expect(page.getByText(/선택한 조건에 표시할 지점 데이터가 없습니다/))
-    .toBeVisible();
+  await expect(
+    page.getByText(/선택한 조건에 표시할 지점 데이터가 없습니다/),
+  ).toBeVisible();
   await expect(
     page.locator(`[data-testid^="hq-report-comparison-row-"]`),
   ).toHaveCount(0);
@@ -667,6 +668,8 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   await expect(page.getByLabel("지점")).toHaveValue(STORE_IDS.closed);
   const kpiSummary = page.getByLabel("월간 핵심 성과");
   await expect(kpiSummary).toContainText("월간 매출");
+  await expect(kpiSummary).toContainText("마감 장부 숫자만 포함");
+  await expect(kpiSummary).toContainText("정정 반영 건수");
   const kpiSales = page.getByTestId("hq-report-monthly-kpi-sales");
   await expect(kpiSales).toContainText("₩45,000");
   await expect(kpiSales).toContainText("정정 반영");
@@ -719,7 +722,61 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   ).toHaveAttribute("href", /\/app\/ledgers\/.+#correction-timeline/);
 });
 
-test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 안전한 기본값으로 본다", async ({
+test("본사는 월간 리포트에서 미마감과 휴무 상태를 텍스트로 구분해 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+
+  const currentMonth = getCurrentMonthInput();
+  const todayInput = getTodayKstInput();
+
+  await page.goto(
+    `/app/reports/monthly?month=${currentMonth}&storeId=${STORE_IDS.inProgress}`,
+  );
+
+  await expect(
+    page.getByRole("heading", { name: "월간 요약 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("지점")).toHaveValue(STORE_IDS.inProgress);
+
+  const inProgressKpis = page.getByLabel("월간 핵심 성과");
+  await expect(inProgressKpis).toContainText("미마감 장부 포함");
+  await expect(inProgressKpis).toContainText("월간 매출");
+  await expect(page.getByTestId("hq-report-monthly-kpi-sales")).toContainText(
+    "₩150,000",
+  );
+
+  const inProgressStatusSummary = page.getByLabel("월간 마감 상태 요약");
+  await expect(inProgressStatusSummary).toContainText("입력중");
+  await expect(inProgressStatusSummary).toContainText("미마감 장부 포함");
+
+  const inProgressDay = page.locator(
+    `[data-testid="hq-report-monthly-day-${todayInput}"]`,
+  );
+  await expect(inProgressDay).toContainText("입력중");
+  await expect(page.getByLabel("계산 포함/제외 일자")).toContainText(
+    "장부 집계 포함",
+  );
+
+  await page.getByLabel("지점").selectOption(STORE_IDS.holiday);
+  await page.getByRole("button", { name: "조회" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.holiday}`));
+  await expect(page.getByLabel("지점")).toHaveValue(STORE_IDS.holiday);
+
+  const holidayStatusSummary = page.getByLabel("월간 마감 상태 요약");
+  await expect(holidayStatusSummary).toContainText("휴무");
+  await expect(holidayStatusSummary).toContainText("미입력");
+
+  const holidayDay = page.locator(
+    `[data-testid="hq-report-monthly-day-${todayInput}"]`,
+  );
+  await expect(holidayDay).toContainText("휴무");
+  await expect(holidayDay).not.toContainText("입력중");
+  await expect(page.getByLabel("계산 포함/제외 일자")).toContainText("휴무일");
+});
+
+test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과로 본다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
@@ -729,8 +786,10 @@ test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 안전한 
     page.getByRole("heading", { name: "월간 요약 리포트" }),
   ).toBeVisible();
   await expect(page.getByText(/조회 월을 확인/)).toBeVisible();
-  await expect(page.getByText(/조회 지점을 확인/)).toBeVisible();
+  await expect(page.getByText(/권한 범위에 없거나 비활성/)).toBeVisible();
+  await expect(page.getByText(/표시할 지점 데이터가 없습니다/)).toBeVisible();
   await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+  await expect(page.getByLabel("지점")).toHaveValue("");
 });
 
 test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목을 본다", async ({

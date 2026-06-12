@@ -243,7 +243,10 @@ test("HQ store comparison report query reuses report calculation contracts", () 
   assert.match(typeSource, /selectedStoreId/);
   assert.match(typeSource, /errorMessages/);
   assert.match(typeSource, /metricEvidence/);
-  assert.match(querySource, /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*null/);
+  assert.match(
+    querySource,
+    /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*null/,
+  );
   assert.doesNotMatch(
     querySource,
     /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*normalizedStoreId/,
@@ -273,7 +276,7 @@ test("ledger and master data writes revalidate store comparison reports", () => 
   }
 });
 
-test("HQ monthly closing anomaly report source files follow story 5.4 boundaries", () => {
+test("HQ monthly closing anomaly report source files follow story 6.3 boundaries", () => {
   assertProjectFile("src", "app", "app", "reports", "monthly", "page.tsx");
   assertProjectFile("src", "app", "app", "reports", "monthly", "loading.tsx");
   assertProjectFile(
@@ -282,6 +285,14 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
     "reports",
     "components",
     "monthly-closing-anomaly-report.tsx",
+  );
+  assert.ok(
+    !existsSync(path.join(root, "src", "features", "monthly-report")),
+    "story 6.3 should stay inside src/features/reports",
+  );
+  assert.ok(
+    !existsSync(path.join(root, "src", "app", "api", "reports", "monthly")),
+    "story 6.3 should not add a public monthly report API route",
   );
 
   const pageSource = readProjectFile(
@@ -329,6 +340,11 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
   assert.match(pageSource, /MonthlyClosingAnomalyReport/);
   assert.match(pageSource, /월간 요약 리포트/);
   assert.match(pageSource, /핵심 성과와 손실\/재고 흐름/);
+  assert.match(pageSource, /권한 있는 지점 선택 후/);
+  assert.doesNotMatch(
+    pageSource,
+    /selectedStoreName\s*\?\?\s*"활성 지점 없음"/,
+  );
   assert.match(pageSource, /month/);
   assert.match(pageSource, /storeId/);
   assert.match(loadingSource, /Skeleton/);
@@ -349,6 +365,8 @@ test("HQ monthly closing anomaly report source files follow story 5.4 boundaries
   assert.match(componentSource, /손실 유형별 요약/);
   assert.match(componentSource, /최고매출품목/);
   assert.match(componentSource, /계산 포함\/제외 일자/);
+  assert.match(componentSource, /정정 반영 건수/);
+  assert.match(componentSource, /미마감 장부 포함/);
   assert.match(componentSource, /장부 상세/);
   assert.match(componentSource, /item\.storeName/);
   assert.match(
@@ -402,6 +420,15 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   assert.match(querySource, /requireReportAccess\(\)/);
   assert.match(querySource, /getHeadquartersStoreScope\(\)/);
   assert.match(querySource, /storeScope\.stores/);
+  assert.match(
+    querySource,
+    /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*null/,
+  );
+  assert.doesNotMatch(
+    querySource,
+    /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*selectedStore\.id/,
+  );
+  assert.doesNotMatch(querySource, /첫 번째 활성 지점으로 조회합니다/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /storeId/);
   assert.match(querySource, /closingDate:\s*\{\s*gte:/s);
@@ -515,7 +542,7 @@ test("HQ monthly closing anomaly report month helper keeps KST URL state", async
   assert.equal(futureMonth.endDateInput, "2026-07-31");
 });
 
-test("HQ monthly closing anomaly report store fallback message requires active fallback", () => {
+test("HQ monthly closing anomaly report rejects invalid store URL state without fallback data", () => {
   const querySource = readProjectFile(
     "src",
     "features",
@@ -525,7 +552,12 @@ test("HQ monthly closing anomaly report store fallback message requires active f
 
   assert.match(
     querySource,
-    /normalizedStoreId\s*&&\s*!matchedStore\s*&&\s*selectedStore/s,
+    /normalizedStoreId\s*&&\s*!matchedStore[\s\S]*권한 범위/,
+  );
+  assert.match(querySource, /buildEmptyMonthlyClosingAnomalyReport/);
+  assert.doesNotMatch(
+    querySource,
+    /const selectedStore = matchedStore \?\? stores\[0\]/,
   );
 });
 
@@ -675,6 +707,8 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
   assert.equal(report.statusCounts.inProgressCount, 1);
   assert.equal(report.statusCounts.holidayCount, 1);
   assert.equal(report.statusCounts.missingDayCount, 1);
+  assert.equal(report.unfinishedDayCount, 2);
+  assert.equal(report.hasUnfinishedDays, true);
   assert.equal(report.days.length, 6);
   assert.equal(report.days[0].ledgerDetailHref, "/app/ledgers/ledger-1");
   assert.equal(report.days[5].ledgerStatus.label, "미입력");
@@ -937,6 +971,7 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
     report.monthlyKpis.metricEvidence.salesAmount.correctionTimelineHref,
     "/app/ledgers/ledger-2#correction-timeline",
   );
+  assert.equal(report.monthlyKpis.appliedCorrectionCount, 3);
   assert.equal(report.monthlyLossSummary.totalQuantity, 4);
   assert.equal(report.monthlyLossSummary.totalAmount, 20000);
   assert.deepEqual(
@@ -1763,7 +1798,10 @@ test("HQ store comparison report keeps OQ-gated metrics as needs-review instead 
   assert.equal(row.grossProfit.value, null);
   assert.equal(row.grossProfit.unavailableReason, "계산 기준 확인 필요");
   assert.equal(row.metricEvidence.grossProfit.status, "needs-review");
-  assert.equal(row.metricEvidence.grossProfit.statusLabel, "계산 기준 확인 필요");
+  assert.equal(
+    row.metricEvidence.grossProfit.statusLabel,
+    "계산 기준 확인 필요",
+  );
   assert.equal(row.metricEvidence.averageInventory.status, "needs-review");
 });
 

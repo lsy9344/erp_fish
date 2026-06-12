@@ -586,11 +586,8 @@ export async function getHqMonthlyClosingAnomalyReport({
   month?: unknown;
   storeId?: unknown;
 } = {}): Promise<MonthlyClosingAnomalyReportData> {
-  const {
-    getHeadquartersStoreScope,
-    requireHeadquartersStoreScope,
-    requireReportAccess,
-  } = await import("../../server/authz.ts");
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
@@ -608,17 +605,14 @@ export async function getHqMonthlyClosingAnomalyReport({
   ]);
   const normalizedStoreId =
     typeof storeId === "string" && storeId.length > 0 ? storeId : null;
-  if (normalizedStoreId) {
-    await requireHeadquartersStoreScope(normalizedStoreId);
-  }
-
   const matchedStore = normalizedStoreId
     ? stores.find((store) => store.id === normalizedStoreId)
     : null;
-  const selectedStore = matchedStore ?? stores[0] ?? null;
+  const selectedStore =
+    matchedStore ?? (normalizedStoreId ? null : (stores[0] ?? null));
   const storeErrorMessage =
-    normalizedStoreId && !matchedStore && selectedStore
-      ? "조회 지점을 확인해 주세요. 첫 번째 활성 지점으로 조회합니다."
+    normalizedStoreId && !matchedStore
+      ? "조회 지점이 권한 범위에 없거나 비활성입니다. 권한 있는 지점을 선택해 주세요."
       : null;
   const errorMessages = [monthRange.errorMessage, storeErrorMessage].filter(
     (message): message is string => Boolean(message),
@@ -864,6 +858,10 @@ export function buildMonthlyClosingAnomalyReportForTest({
     };
   });
 
+  const statusCounts = getMonthlyStatusCounts(days);
+  const unfinishedDayCount =
+    statusCounts.inProgressCount + statusCounts.reviewCount;
+
   return {
     monthRange:
       monthRange ??
@@ -874,7 +872,9 @@ export function buildMonthlyClosingAnomalyReportForTest({
     stores,
     selectedStoreId: store.id,
     selectedStoreName: store.name,
-    statusCounts: getMonthlyStatusCounts(days),
+    statusCounts,
+    unfinishedDayCount,
+    hasUnfinishedDays: unfinishedDayCount > 0,
     monthlyKpis: buildMonthlyKpis(ledgerSummaries),
     monthlyLossSummary: buildMonthlyLossSummary(ledgerSummaries),
     monthlyInventoryFlow: buildMonthlyInventoryFlow(ledgerSummaries),
@@ -907,6 +907,8 @@ function buildEmptyMonthlyClosingAnomalyReport({
       closedCount: 0,
       holidayCount: 0,
     },
+    unfinishedDayCount: 0,
+    hasUnfinishedDays: false,
     monthlyKpis: buildMonthlyKpis([]),
     monthlyLossSummary: buildMonthlyLossSummary([]),
     monthlyInventoryFlow: buildMonthlyInventoryFlow([]),
@@ -965,6 +967,14 @@ function buildMonthlyKpis(
     businessSummaries.length === 0
       ? ("EMPTY" as const)
       : ("HEADQUARTERS_CLOSED" as const);
+  const appliedCorrectionCount = businessSummaries.reduce(
+    (sum, summary) =>
+      sum +
+      (summary.appliedCorrectionCount ??
+        summary.appliedCorrectionKeys?.size ??
+        0),
+    0,
+  );
 
   return {
     salesAmount: appliedAggregates.salesAmount,
@@ -975,6 +985,7 @@ function buildMonthlyKpis(
     averageInventory: appliedAggregates.averageInventory,
     averageSales: appliedAggregates.averageSales,
     inventoryToSalesRatio: appliedAggregates.inventoryToSalesRatio,
+    appliedCorrectionCount,
     metricEvidence: {
       salesAmount: buildStoreComparisonMetricEvidence({
         label: "매출",
@@ -1911,8 +1922,8 @@ export function sortStoreComparisonReportRowsForTest(
       return salesDelta;
     }
 
-    const statusDelta = getStoreComparisonIssueCount(right) -
-      getStoreComparisonIssueCount(left);
+    const statusDelta =
+      getStoreComparisonIssueCount(right) - getStoreComparisonIssueCount(left);
 
     if (statusDelta !== 0) {
       return statusDelta;

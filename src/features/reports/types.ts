@@ -194,6 +194,7 @@ export type MonthlyClosingKpiSummary = {
   averageInventory: LedgerReviewMetric;
   averageSales: LedgerReviewMetric;
   inventoryToSalesRatio: LedgerReviewMetric;
+  appliedCorrectionCount: number;
   metricEvidence: MonthlyClosingKpiMetricEvidenceMap;
 };
 
@@ -260,6 +261,8 @@ export type MonthlyClosingAnomalyReportData = {
   selectedStoreId: string | null;
   selectedStoreName: string | null;
   statusCounts: MonthlyClosingAnomalyStatusCounts;
+  unfinishedDayCount: number;
+  hasUnfinishedDays: boolean;
   monthlyKpis: MonthlyClosingKpiSummary;
   monthlyLossSummary: MonthlyLossSummary;
   monthlyInventoryFlow: MonthlyInventoryFlowSummary;

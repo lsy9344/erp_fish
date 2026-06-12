@@ -41,8 +41,8 @@ export function MonthlyClosingAnomalyReport({
   if (!report.selectedStoreId) {
     return (
       <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm">
-        표시할 지점 데이터가 없습니다. 기준정보에서 활성 지점을 먼저 확인해
-        주세요.
+        표시할 지점 데이터가 없습니다. 권한 있는 활성 지점을 선택하거나
+        기준정보의 지점 상태를 확인해 주세요.
       </section>
     );
   }
@@ -82,11 +82,27 @@ function MonthlyKpiSummary({
         <h2 className="text-lg font-semibold tracking-normal">
           월간 핵심 성과
         </h2>
-        {report.selectedStoreName ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {report.selectedStoreName ? (
+            <Badge variant="outline" className="max-w-full break-words">
+              {report.selectedStoreName}
+            </Badge>
+          ) : null}
+          {report.hasUnfinishedDays ? (
+            <Badge variant="secondary" className="max-w-full break-words">
+              미마감 장부 포함{" "}
+              {report.unfinishedDayCount.toLocaleString("ko-KR")}일
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="max-w-full break-words">
+              마감 장부 숫자만 포함
+            </Badge>
+          )}
           <Badge variant="outline" className="max-w-full break-words">
-            {report.selectedStoreName}
+            정정 반영 건수 {kpis.appliedCorrectionCount.toLocaleString("ko-KR")}
+            건
           </Badge>
-        ) : null}
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -297,18 +313,27 @@ function StatusSummary({
   ];
 
   return (
-    <section
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-      aria-label="월간 마감 상태 요약"
-    >
-      {items.map(([label, count]) => (
-        <div key={label} className="bg-card rounded-lg border p-4 shadow-sm">
-          <p className="text-muted-foreground text-sm">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tracking-normal tabular-nums">
-            {Number(count).toLocaleString("ko-KR")}일
-          </p>
-        </div>
-      ))}
+    <section className="space-y-3" aria-label="월간 마감 상태 요약">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-normal">
+          월간 마감 상태 요약
+        </h2>
+        <Badge variant={report.hasUnfinishedDays ? "secondary" : "outline"}>
+          {report.hasUnfinishedDays
+            ? `미마감 장부 포함 ${report.unfinishedDayCount.toLocaleString("ko-KR")}일`
+            : "미마감 장부 없음"}
+        </Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {items.map(([label, count]) => (
+          <div key={label} className="bg-card rounded-lg border p-4 shadow-sm">
+            <p className="text-muted-foreground text-sm">{label}</p>
+            <p className="mt-2 text-2xl font-semibold tracking-normal tabular-nums">
+              {Number(count).toLocaleString("ko-KR")}일
+            </p>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

@@ -30,7 +30,11 @@ export default async function MonthlyClosingAnomalyReportPage({
     ? params.storeId[0]
     : params.storeId;
   const report = await getHqMonthlyClosingAnomalyReport({ month, storeId });
-  const selectedStoreLabel = report.selectedStoreName ?? "활성 지점 없음";
+  const reportTargetDescription = report.selectedStoreName
+    ? `${report.monthRange.monthInput} ${report.selectedStoreName}의`
+    : report.stores.length > 0
+      ? `${report.monthRange.monthInput} 권한 있는 지점 선택 후`
+      : `${report.monthRange.monthInput} 활성 지점 없음 상태에서`;
 
   return (
     <HeadquartersShell
@@ -41,7 +45,7 @@ export default async function MonthlyClosingAnomalyReportPage({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="월간 요약 리포트"
-          description={`${report.monthRange.monthInput} ${selectedStoreLabel}의 핵심 성과와 손실/재고 흐름, 마감 상태를 봅니다.`}
+          description={`${reportTargetDescription} 핵심 성과와 손실/재고 흐름, 마감 상태를 봅니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
           <div className="flex flex-wrap items-center gap-2">
@@ -93,6 +97,9 @@ export default async function MonthlyClosingAnomalyReportPage({
               >
                 {report.stores.length === 0 ? (
                   <option value="">활성 지점 없음</option>
+                ) : null}
+                {report.stores.length > 0 && !report.selectedStoreId ? (
+                  <option value="">지점을 선택해 주세요</option>
                 ) : null}
                 {report.stores.map((store) => (
                   <option key={store.id} value={store.id}>
