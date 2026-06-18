@@ -230,6 +230,8 @@ test("purchase standard screen keeps headquarters shell, URL filter, and form ac
   assert.match(pageSource, /PageHeader/);
   assert.match(pageSource, /PurchaseStandardManagementClient/);
   assert.match(pageSource, /normalizePurchaseStandardStatusFilter/);
+  assert.doesNotMatch(pageSource, /getHeadquartersStoreScope/);
+  assert.doesNotMatch(pageSource, /getKstBusinessDateParam/);
 
   assert.match(clientSource, /statusLabels/);
   assert.match(clientSource, /pushFilters/);
@@ -239,11 +241,54 @@ test("purchase standard screen keeps headquarters shell, URL filter, and form ac
   assert.match(clientSource, /참조 정보/);
   assert.match(clientSource, /마지막 수정 시각/);
   assert.match(clientSource, /상태 적용/);
+  assert.doesNotMatch(clientSource, /\/app\/dashboard/);
+  assert.match(clientSource, /엑셀 불러오기/);
+  assert.match(clientSource, /importPurchaseStandardsFromEcount/);
+  assert.doesNotMatch(clientSource, /\/app\/ledgers/);
+  assert.match(clientSource, /accept="\.xlsx"/);
+  assert.doesNotMatch(clientSource, /import-store-id/);
+  assert.doesNotMatch(clientSource, /import-closing-date/);
+  assert.match(clientSource, /router\.refresh\(\)/);
+  assert.match(clientSource, /role="status"/);
   assert.match(clientSource, /inputMode="numeric"/);
   assert.match(clientSource, /aria-invalid/);
   assert.match(clientSource, /aria-describedby/);
   assert.match(clientSource, /focusFirstError/);
   assert.doesNotMatch(clientSource, /deletePurchaseStandard|\.delete\(/);
+});
+
+test("purchase standard ECount import action saves xlsx rows into purchase standards", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "master-data",
+    "purchase-standard-import-actions.ts",
+  );
+
+  assert.match(source, /"use server"/);
+  assert.match(
+    source,
+    /export\s+async\s+function\s+importPurchaseStandardsFromEcount/,
+  );
+  assert.match(source, /requireSettingsAccess\(\)/);
+  assert.match(source, /parseEcountPurchaseWorkbook/);
+  assert.match(source, /tx\.product\.upsert/);
+  assert.match(source, /tx\.purchaseStandard\.findFirst/);
+  assert.match(source, /tx\.purchaseStandard\.create/);
+  assert.match(source, /tx\.purchaseStandard\.update/);
+  assert.match(source, /writeAuditLog\(tx,/);
+  assert.match(source, /purchase_standard\.ecount_import\.created/);
+  assert.match(source, /purchase_standard\.ecount_import\.updated/);
+  assert.doesNotMatch(source, /ledgerPurchaseItem/);
+  assert.doesNotMatch(source, /DailyLedger/);
+  assert.doesNotMatch(source, /getOrCreateStoreLedgerInTx/);
+  assert.match(
+    source,
+    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
+  );
+  assert.match(source, /revalidatePath\("\/app\/master-data\/products"\)/);
+  assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.doesNotMatch(source, /revalidatePath\(`\/app\/ledgers/);
 });
 
 test("purchase standards remain in master-data scope and exclude eCount upload policy", () => {

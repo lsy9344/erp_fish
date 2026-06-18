@@ -2,13 +2,20 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  PencilIcon,
+  PlusIcon,
+  UploadIcon,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import {
   createPurchaseStandard,
   updatePurchaseStandard,
   updatePurchaseStandardStatus,
 } from "~/features/master-data/purchase-standard-actions";
+import { importPurchaseStandardsFromEcount } from "~/features/master-data/purchase-standard-import-actions";
 import type {
   PurchaseStandardListItem,
   PurchaseStandardStatusFilter,
@@ -95,13 +102,21 @@ export function PurchaseStandardManagementClient({
   const productInputRef = useRef<HTMLSelectElement>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
   const [dialogState, setDialogState] = useState<EditingState | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [standardUnitPrice, setStandardUnitPrice] = useState("");
   const [referenceInfo, setReferenceInfo] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [importFieldErrors, setImportFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importResultMessage, setImportResultMessage] = useState<string | null>(
+    null,
+  );
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [rowStatusValues, setRowStatusValues] = useState<
     Record<string, string>
   >({});
@@ -168,6 +183,18 @@ export function PurchaseStandardManagementClient({
     setDialogState(null);
     setFieldErrors({});
     setFormError(null);
+  }
+
+  function openImportDialog() {
+    setIsImportDialogOpen(true);
+    setImportFieldErrors({});
+    setImportError(null);
+  }
+
+  function closeImportDialog() {
+    setIsImportDialogOpen(false);
+    setImportFieldErrors({});
+    setImportError(null);
   }
 
   async function handleStatusFilterChange(value: string) {
@@ -251,9 +278,41 @@ export function PurchaseStandardManagementClient({
     }
   }
 
+  async function handleImportSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsImporting(true);
+    setImportFieldErrors({});
+    setImportError(null);
+
+    try {
+      const formData = new FormData(event.currentTarget);
+      const result = await importPurchaseStandardsFromEcount(formData);
+
+      if (!result.ok) {
+        setImportError(result.error.message);
+        setImportFieldErrors(result.error.fieldErrors ?? {});
+        return;
+      }
+
+      const message = `매입 기준 ${result.data.importedCount}건을 불러왔습니다.`;
+      setImportResultMessage(message);
+      closeImportDialog();
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
+      }
+      toast.success(message);
+      router.refresh();
+    } catch {
+      setImportError("엑셀 파일을 불러오는 중 오류가 발생했습니다.");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   const productIdError = fieldErrors.productId?.[0];
   const priceError = fieldErrors.standardUnitPrice?.[0];
   const referenceError = fieldErrors.referenceInfo?.[0];
+  const importFileError = importFieldErrors.file?.[0];
 
   return (
     <div className="flex flex-col gap-4">
@@ -275,11 +334,30 @@ export function PurchaseStandardManagementClient({
             <option value="inactive">비활성</option>
           </select>
         </Field>
-        <Button type="button" onClick={openCreateDialog}>
-          <PlusIcon data-icon="inline-start" />
-          매입 기준 추가
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button type="button" variant="outline" onClick={openImportDialog}>
+            <UploadIcon data-icon="inline-start" />
+            엑셀 불러오기
+          </Button>
+          <Button type="button" onClick={openCreateDialog}>
+            <PlusIcon data-icon="inline-start" />
+            매입 기준 추가
+          </Button>
+        </div>
       </div>
+
+      {importResultMessage ? (
+        <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+          <p
+            className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+            role="status"
+            aria-live="polite"
+          >
+            <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+            {importResultMessage}
+          </p>
+        </div>
+      ) : null}
 
       <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
         <Table>
@@ -494,6 +572,63 @@ export function PurchaseStandardManagementClient({
               </Button>
               <Button type="submit" disabled={isSaving}>
                 저장
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isImportDialogOpen}
+        onOpenChange={(open) => !open && closeImportDialog()}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>엑셀 불러오기</DialogTitle>
+            <DialogDescription>
+              이카운트 엑셀의 품목과 단가를 매입 기준으로 저장합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={handleImportSubmit}
+            className="flex flex-col gap-4"
+            noValidate
+          >
+            <Field data-invalid={Boolean(importFileError)}>
+              <FieldLabel htmlFor="import-ecount-file">엑셀 파일</FieldLabel>
+              <Input
+                ref={importFileInputRef}
+                id="import-ecount-file"
+                name="file"
+                type="file"
+                accept=".xlsx"
+                aria-invalid={Boolean(importFileError)}
+                aria-describedby={
+                  importFileError ? "import-ecount-file-error" : undefined
+                }
+              />
+              {importFileError ? (
+                <FieldError id="import-ecount-file-error">
+                  {importFileError}
+                </FieldError>
+              ) : null}
+            </Field>
+            {importError ? (
+              <p className="text-destructive text-sm" role="alert">
+                {importError}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeImportDialog}
+                disabled={isImporting}
+              >
+                취소
+              </Button>
+              <Button type="submit" disabled={isImporting}>
+                {isImporting ? "불러오는 중..." : "불러오기"}
               </Button>
             </DialogFooter>
           </form>
