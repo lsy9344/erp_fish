@@ -3,10 +3,6 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - master
-      - new_function
   workflow_dispatch:
     inputs:
       run_full_e2e:
@@ -326,3 +322,99 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 14
+
+  notify-slack:
+    name: Slack Notification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - quality
+      - playwright-smoke
+      - playwright-full
+      - playwright-burn-in
+    if: always()
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      REPOSITORY: ${{ github.repository }}
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      COMMIT_SHA: ${{ github.sha }}
+      COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title || github.event_name }}
+      QUALITY_RESULT: ${{ needs.quality.result }}
+      PLAYWRIGHT_SMOKE_RESULT: ${{ needs.playwright-smoke.result }}
+      PLAYWRIGHT_FULL_RESULT: ${{ needs.playwright-full.result }}
+      PLAYWRIGHT_BURN_IN_RESULT: ${{ needs.playwright-burn-in.result }}
+    steps:
+      - name: Send Slack notification
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL secret is not set; skipping Slack notification."
+            exit 0
+          fi
+
+          overall="success"
+          for result in "$QUALITY_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              overall="failure"
+            fi
+          done
+
+          if [ "$overall" = "success" ]; then
+            icon=":white_check_mark:"
+            status="CI passed"
+            color="#2eb67d"
+          else
+            icon=":x:"
+            status="CI failed"
+            color="#e01e5a"
+          fi
+
+          short_sha="${COMMIT_SHA:0:7}"
+          COMMIT_MESSAGE="${COMMIT_MESSAGE%%$'\n'*}"
+          export icon status color short_sha
+
+          payload="$(
+            python3 -c '
+          import json
+          import os
+
+          icon = os.environ["icon"]
+          status = os.environ["status"]
+          color = os.environ["color"]
+          repository = os.environ["REPOSITORY"]
+          branch = os.environ["BRANCH_NAME"]
+          short_sha = os.environ["short_sha"]
+          commit_url = os.environ["COMMIT_URL"]
+          run_url = os.environ["RUN_URL"]
+          commit_message = os.environ["COMMIT_MESSAGE"]
+          results = {
+              "Quality Gate": os.environ["QUALITY_RESULT"],
+              "Playwright Smoke": os.environ["PLAYWRIGHT_SMOKE_RESULT"],
+              "Playwright Full": os.environ["PLAYWRIGHT_FULL_RESULT"],
+              "Playwright Smoke Burn-In": os.environ["PLAYWRIGHT_BURN_IN_RESULT"],
+          }
+
+          fields = [
+              {"title": "Repository", "value": repository, "short": True},
+              {"title": "Branch", "value": branch, "short": True},
+              {"title": "Commit", "value": f"<{commit_url}|{short_sha}> {commit_message}", "short": False},
+              {"title": "Jobs", "value": "\n".join(f"{name}: {result}" for name, result in results.items()), "short": False},
+          ]
+
+          print(json.dumps({
+              "text": f"{icon} {status}: {repository}@{branch} ({short_sha})",
+              "attachments": [{
+                  "color": color,
+                  "fields": fields,
+                  "actions": [{
+                      "type": "button",
+                      "text": "Open workflow run",
+                      "url": run_url,
+                  }],
+              }],
+          }))
+          '
+          )"
+
+          curl -sS -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK_URL"
