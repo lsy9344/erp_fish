@@ -84,6 +84,23 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm exec prisma validate
 
+      - name: Create test env file
+        run: |
+          cat > .env <<EOF
+          AUTH_SECRET="${AUTH_SECRET}"
+          AUTH_TRUST_HOST="true"
+          DATABASE_URL="${DATABASE_URL}"
+          SEED_HQ_EMAIL="admin@example.com"
+          SEED_HQ_PASSWORD="test-headquarters-password"
+          SEED_HQ_NAME="CI Headquarters"
+          SEED_STORE_MANAGER_EMAIL="store-manager@example.com"
+          SEED_STORE_MANAGER_PASSWORD="test-store-manager-password"
+          SEED_STORE_MANAGER_NAME="CI Store Manager"
+          SEED_SAMPLE_STORE_NAME="CI Store"
+          ALLOW_PRODUCTION_SEED=""
+          ALLOW_SEED_PASSWORD_ROTATION=""
+          EOF
+
       - name: Check formatting
         run: pnpm format:check
 

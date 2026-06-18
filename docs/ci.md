@@ -50,6 +50,8 @@ postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
 
 The Playwright wrapper forces test runs to use a test-like database, so inherited local values such as `DATABASE_URL=rider` cannot leak into CI.
 
+The quality job also creates a short-lived test `.env` file from CI environment values. This mirrors local development because one unit test verifies that a project `.env` can override a polluted inherited shell value.
+
 ## Artifacts
 
 Playwright uploads artifacts only on failure:

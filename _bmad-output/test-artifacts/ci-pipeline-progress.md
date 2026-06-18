@@ -32,6 +32,7 @@ lastSaved: "2026-06-18"
 
 - Quality gate fails on any format, lint, type, unit, build, or smoke e2e failure.
 - PostgreSQL service is isolated to `erp_fish_e2e`.
+- Quality gate creates a short-lived test `.env` file so local env precedence tests also pass on GitHub runners.
 - Burn-in runs the smoke Playwright test 10 times on weekly schedule or manual request.
 - No Slack/email notification is configured because no notification secret exists.
 
