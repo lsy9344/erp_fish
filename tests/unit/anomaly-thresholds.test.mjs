@@ -49,7 +49,23 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
   );
   assert.match(
     schema,
-    /model\s+AnomalyThresholdSetting\s*{[^}]*salesDropRateBps\s+Int[^}]*grossMarginDropBps\s+Int[^}]*salesDifferenceAmount\s+Int[^}]*lossAmount\s+Int[^}]*inventoryDifferenceQuantity\s+Int[^}]*}/s,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*marginRateBps\s+Int[^}]*inventoryDifferenceQuantity\s+Int[^}]*}/s,
+  );
+  assert.doesNotMatch(
+    schema,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*salesDropRateBps[^}]*}/s,
+  );
+  assert.doesNotMatch(
+    schema,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*grossMarginDropBps[^}]*}/s,
+  );
+  assert.doesNotMatch(
+    schema,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*salesDifferenceAmount[^}]*}/s,
+  );
+  assert.doesNotMatch(
+    schema,
+    /model\s+AnomalyThresholdSetting\s*{[^}]*lossAmount[^}]*}/s,
   );
   assert.match(
     schema,
@@ -111,19 +127,13 @@ test("anomaly threshold schema parses display input, active state, and required 
   assert.equal(ANOMALY_THRESHOLD_SCOPE, "GLOBAL");
   assert.deepEqual(
     anomalyThresholdFormSchema.parse({
-      salesDropRate: "12.5",
-      grossMarginDropRate: "3.75",
-      salesDifferenceAmount: "1,000",
-      lossAmount: "50,000",
+      marginRate: "12.5",
       inventoryDifferenceQuantity: "7",
       isActive: "true",
       reason: "월간 운영 기준 정비",
     }),
     {
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 375,
-      salesDifferenceAmount: 1000,
-      lossAmount: 50000,
+      marginRateBps: 1250,
       inventoryDifferenceQuantity: 7,
       isActive: true,
       reason: "월간 운영 기준 정비",
@@ -131,10 +141,7 @@ test("anomaly threshold schema parses display input, active state, and required 
   );
 
   const invalid = anomalyThresholdFormSchema.safeParse({
-    salesDropRate: "",
-    grossMarginDropRate: "101",
-    salesDifferenceAmount: "-1",
-    lossAmount: "abc",
+    marginRate: "",
     inventoryDifferenceQuantity: "1.5",
     isActive: "invalid",
     reason: "   ",
@@ -143,17 +150,8 @@ test("anomaly threshold schema parses display input, active state, and required 
   assert.equal(invalid.success, false);
   const errors = toAnomalyThresholdFieldErrors(invalid.error);
 
-  assert.deepEqual(errors.salesDropRate, [
-    "매출 하락률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
-  ]);
-  assert.deepEqual(errors.grossMarginDropRate, [
-    "이익률 하락폭은 0.0% 이상 100.0% 이하로 입력해 주세요.",
-  ]);
-  assert.deepEqual(errors.salesDifferenceAmount, [
-    "매출차액 금액은 0원 이상의 정수여야 합니다.",
-  ]);
-  assert.deepEqual(errors.lossAmount, [
-    "손실액은 0원 이상의 정수여야 합니다.",
+  assert.deepEqual(errors.marginRate, [
+    "마진률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
   ]);
   assert.deepEqual(errors.inventoryDifferenceQuantity, [
     "재고 차이 기준은 0 이상의 정수여야 합니다.",
@@ -164,10 +162,7 @@ test("anomaly threshold schema parses display input, active state, and required 
   assert.deepEqual(errors.reason, ["변경 사유를 입력해 주세요."]);
 
   const malformedComma = anomalyThresholdFormSchema.safeParse({
-    salesDropRate: "12.5",
-    grossMarginDropRate: "3.75",
-    salesDifferenceAmount: "1,2,3",
-    lossAmount: "1,,000",
+    marginRate: "12.5",
     inventoryDifferenceQuantity: "1,00",
     isActive: "true",
     reason: "콤마 검증",
@@ -176,12 +171,6 @@ test("anomaly threshold schema parses display input, active state, and required 
   assert.equal(malformedComma.success, false);
   const commaErrors = toAnomalyThresholdFieldErrors(malformedComma.error);
 
-  assert.deepEqual(commaErrors.salesDifferenceAmount, [
-    "매출차액 금액은 0원 이상의 정수여야 합니다.",
-  ]);
-  assert.deepEqual(commaErrors.lossAmount, [
-    "손실액은 0원 이상의 정수여야 합니다.",
-  ]);
   assert.deepEqual(commaErrors.inventoryDifferenceQuantity, [
     "재고 차이 기준은 0 이상의 정수여야 합니다.",
   ]);
@@ -201,28 +190,19 @@ test("anomaly calculation helper normalizes only active saved threshold settings
   assert.equal(normalizeAnomalyThresholdSignalSettings(null), null);
   assert.deepEqual(
     normalizeAnomalyThresholdSignalSettings({
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 375,
-      salesDifferenceAmount: 1000,
-      lossAmount: 50000,
+      marginRateBps: 1250,
       inventoryDifferenceQuantity: 7,
       isActive: true,
       updatedByName: "본사 관리자",
     }),
     {
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 375,
-      salesDifferenceAmount: 1000,
-      lossAmount: 50000,
+      marginRateBps: 1250,
       inventoryDifferenceQuantity: 7,
     },
   );
   assert.equal(
     normalizeAnomalyThresholdSignalSettings({
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 375,
-      salesDifferenceAmount: 1000,
-      lossAmount: 50000,
+      marginRateBps: 1250,
       inventoryDifferenceQuantity: 7,
       isActive: false,
     }),
@@ -316,6 +296,11 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(actionSource, /isActive:\s*parsed\.data\.isActive/);
   assert.match(actionSource, /targetName:\s*"이상 신호 기준값"/);
   assert.match(actionSource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
+  assert.match(actionSource, /marginRateBps:\s*parsed\.data\.marginRateBps/);
+  assert.doesNotMatch(actionSource, /salesDropRateBps/);
+  assert.doesNotMatch(actionSource, /grossMarginDropBps/);
+  assert.doesNotMatch(actionSource, /salesDifferenceAmount/);
+  assert.doesNotMatch(actionSource, /lossAmount/);
   assert.match(actionSource, /revalidatePath\("\/app\/master-data\/anomaly-thresholds"\)/);
   assert.match(actionSource, /revalidatePath\("\/app\/dashboard"\)/);
   assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
@@ -336,7 +321,7 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   );
   assert.match(querySource, /anomalyThresholdSetting\.findUnique/);
   assert.match(querySource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
-  assert.match(querySource, /isActive:\s*true/);
+  assert.match(querySource, /marginRateBps:\s*true/);
   assert.match(querySource, /scopeLabel:\s*"전체 지점"/);
   assert.match(querySource, /statusLabel:\s*setting\.isActive\s*\?\s*"활성"\s*:\s*"비활성"/);
 
@@ -355,20 +340,18 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /toast/);
   assert.match(clientSource, /inputMode="decimal"/);
   assert.match(clientSource, /inputMode="numeric"/);
-  assert.match(clientSource, /매출 하락률\(%\)/);
-  assert.match(clientSource, /이익률 하락폭\(%p\)/);
-  assert.match(clientSource, /매출차액 금액\(원\)/);
-  assert.match(clientSource, /손실액\(원\)/);
+  assert.match(clientSource, /마진률\(%\)/);
   assert.match(clientSource, /재고 차이 기준\(수량\)/);
+  assert.doesNotMatch(clientSource, /매출 하락률/);
+  assert.doesNotMatch(clientSource, /이익률 하락폭/);
+  assert.doesNotMatch(clientSource, /매출차액 금액/);
+  assert.doesNotMatch(clientSource, /손실액\(원\)/);
   assert.match(clientSource, /변경 사유/);
   assert.match(clientSource, /활성 상태/);
   assert.match(clientSource, /적용 범위/);
   assert.match(clientSource, /마지막 변경/);
   assert.match(clientSource, /기준 유형/);
-  assert.match(
-    clientSource,
-    /기준일 정책 확인 필요[\s\S]*기준일 정책 확인 필요/,
-  );
+  assert.match(clientSource, /현재 장부 마진률이 기준보다 낮으면/);
   assert.doesNotMatch(clientSource, /전일 또는 기준일 대비/);
   assert.match(clientSource, /function setFieldValue[\s\S]*setFormError\(null\)/);
 

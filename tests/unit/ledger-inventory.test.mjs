@@ -49,6 +49,16 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
   );
   assert.match(
     schema,
+    /model\s+LedgerInventoryItem\s*{[^}]*carryoverDetail\s+LedgerInventoryCarryoverDetail\?/s,
+    "inventory rows should have one carryover detail record",
+  );
+  assert.match(
+    schema,
+    /model\s+LedgerInventoryCarryoverDetail\s*{[^}]*ledgerInventoryItemId\s+String\s+@unique[^}]*source\s+InventoryCarryoverSource[^}]*status\s+InventoryCarryoverStatus[^}]*resolvedQuantity\s+Int[^}]*sourceLedgerId\s+String\?[^}]*sourceLedgerClosingDate\s+DateTime\?[^}]*sourceLedgerStatus\s+DailyLedgerStatus\?[^}]*sourceYearMonth\s+String\?[^}]*sourceSnapshotId\s+String\?[^}]*sourcePreviousQuantity\s+Int\?[^}]*sourcePurchasedQuantity\s+Int\?[^}]*sourceLossQuantity\s+Int\?[^}]*sourceCurrentQuantity\s+Int\?[^}]*sourceQuantity\s+Int\?[^}]*message\s+String/s,
+    "carryover detail should persist the source data needed for the previous-stock popup",
+  );
+  assert.match(
+    schema,
     /model\s+InventoryOpeningSnapshot\s*{[^}]*storeId\s+String[^}]*yearMonth\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*@@unique\(\[storeId,\s*yearMonth,\s*productId\]/s,
   );
   assert.match(
@@ -106,6 +116,30 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
       statusMigration.includes("'PREVIOUS_CARRYOVER'::") &&
       statusMigration.includes("'CARRYOVER_EMPTY'::"),
     "migration should add previous saved ledger source and row carryover status",
+  );
+
+  const detailMigrationName = migrationDirNames().find((name) =>
+    name.includes("inventory_carryover_detail"),
+  );
+  assert.ok(detailMigrationName, "carryover detail migration should exist");
+
+  const detailMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      detailMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    detailMigration.includes('CREATE TABLE "LedgerInventoryCarryoverDetail"') &&
+      detailMigration.includes(
+        'CREATE UNIQUE INDEX "LedgerInventoryCarryoverDetail_ledgerInventoryItemId_key"',
+      ) &&
+      detailMigration.includes('ON DELETE CASCADE') &&
+      detailMigration.includes('INSERT INTO "LedgerInventoryCarryoverDetail"'),
+    "migration should create and backfill carryover detail rows",
   );
 });
 
@@ -380,6 +414,17 @@ test("inventory adjustment calculations derive before after and signed differenc
 });
 
 test("inventory queries and actions implement carryover, purchase aggregation, and audit contracts", () => {
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "types.ts",
+  );
+  assert.match(typeSource, /export\s+type\s+InventoryCarryoverDetailView/);
+  assert.match(typeSource, /previousQuantityDetail:\s+InventoryCarryoverDetailView/);
+  assert.match(typeSource, /export\s+type\s+InventoryCarryoverHistoryRow/);
+  assert.match(typeSource, /history:\s+InventoryCarryoverHistoryRow\[\]/);
+
   const querySource = readProjectFile(
     "src",
     "features",
@@ -417,6 +462,13 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(querySource, /ledgerPurchaseItems/);
   assert.match(querySource, /purchasedQuantity/);
   assert.match(querySource, /purchaseAmount/);
+  assert.match(querySource, /carryoverDetail/);
+  assert.match(querySource, /toCarryoverDetailView/);
+  assert.match(querySource, /buildLedgerCarryoverDetail/);
+  assert.match(querySource, /buildSnapshotCarryoverDetail/);
+  assert.match(querySource, /attachCarryoverHistories/);
+  assert.match(querySource, /historyLimit/);
+  assert.match(querySource, /sourceLossQuantity/);
   assert.match(
     querySource,
     /getActiveProductBases/,
@@ -440,6 +492,7 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /before\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.createMany/);
+  assert.match(actionSource, /persistLedgerInventoryCarryoverDetails/);
   assert.match(actionSource, /carryoverStatus:\s*item\.carryoverStatus/);
   assert.match(
     actionSource,
@@ -624,8 +677,26 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
   assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="numeric"/);
-  assert.match(componentSource, /className="h-11 tabular-nums sm:h-8"/);
+  assert.match(componentSource, /className="h-11 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
+  assert.match(componentSource, /전일재고 이력/);
+  assert.match(componentSource, /previousQuantityDetail/);
+  assert.match(componentSource, /전일재고 이력 보기/);
+  assert.match(componentSource, /날짜별 수량 흐름/);
+  assert.match(componentSource, /현재 장부 전일재고/);
+  assert.match(componentSource, /기준 장부 시작 수량/);
+  assert.match(componentSource, /기준 장부 마감 수량/);
+  assert.match(componentSource, /월초 스냅샷 수량/);
+  assert.match(componentSource, /getCarryoverQuantityTimeline/);
+  assert.match(componentSource, /이전 날짜 재고 이력/);
+  assert.match(componentSource, /h-\[min\(90vh,42rem\)\]/);
+  assert.match(componentSource, /grid-rows-\[auto_minmax\(0,1fr\)\]/);
+  assert.match(componentSource, /overflow-hidden/);
+  assert.match(componentSource, /min-h-0 overflow-y-auto overscroll-contain/);
+  assert.match(componentSource, /max-h-\[18rem\]/);
+  assert.match(componentSource, /overscroll-contain/);
+  assert.match(componentSource, /history\.map/);
+  assert.match(componentSource, /Dialog/);
   assert.match(componentSource, /overflow-x-auto/);
   assert.match(
     componentSource,
@@ -641,7 +712,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 사유/);
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
-  assert.match(componentSource, /차이/);
+  assert.match(componentSource, /당일 판매량/);
+  assert.match(
+    componentSource,
+    /실제 POS 판매 수량과 다를 수 있습니다/,
+  );
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
   assert.match(componentSource, /상태\/조정/);

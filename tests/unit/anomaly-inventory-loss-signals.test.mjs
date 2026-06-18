@@ -15,10 +15,7 @@ function assertProjectFile(...segments) {
 }
 
 const thresholds = {
-  salesDropRateBps: 1250,
-  grossMarginDropBps: 350,
-  salesDifferenceAmount: 10000,
-  lossAmount: 50000,
+  marginRateBps: 3500,
   inventoryDifferenceQuantity: 10,
 };
 
@@ -72,10 +69,7 @@ test("inventory/loss anomaly helper distinguishes missing thresholds, missing in
 
   assert.deepEqual(
     missingInput.map((signal) => [signal.id, signal.label, signal.severity]),
-    [
-      ["inventory-input-required", "재고 입력 필요", "info"],
-      ["loss-input-required", "손실 입력 필요", "info"],
-    ],
+    [["inventory-input-required", "재고 입력 필요", "info"]],
   );
 
   const missingInventoryRows = evaluateInventoryLossAnomalySignals({
@@ -109,7 +103,7 @@ test("inventory/loss anomaly helper distinguishes missing thresholds, missing in
   );
 });
 
-test("inventory/loss anomaly helper emits critical signals with actual and threshold details", async () => {
+test("inventory/loss anomaly helper emits only inventory critical signals with actual and threshold details", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -145,17 +139,15 @@ test("inventory/loss anomaly helper emits critical signals with actual and thres
 
   assert.deepEqual(
     signals.map((signal) => [signal.id, signal.label, signal.severity]),
-    [
-      ["inventory-difference-exceeded", "재고 이상", "critical"],
-      ["loss-amount-exceeded", "손실 이상", "critical"],
-    ],
+    [["inventory-difference-exceeded", "재고 이상", "critical"]],
   );
   assert.match(signals[0].detail, /꽃게/);
   assert.match(signals[0].detail, /12개/);
   assert.match(signals[0].detail, /기준 10개/);
-  assert.match(signals[1].detail, /광어/);
-  assert.match(signals[1].detail, /52,000원/);
-  assert.match(signals[1].detail, /기준 50,000원/);
+  assert.ok(
+    signals.every((signal) => signal.id !== "loss-amount-exceeded"),
+    "손실액 이상 신호는 삭제된 기준값이므로 더 이상 생성하지 않습니다.",
+  );
 });
 
 test("inventory/loss anomaly helper requires values to exceed thresholds", async () => {
@@ -187,7 +179,7 @@ test("inventory/loss anomaly helper requires values to exceed thresholds", async
             productId: "product-flatfish",
             productName: "광어",
             quantity: 3,
-            amount: 50000,
+            amount: 999999,
           },
         ],
       },

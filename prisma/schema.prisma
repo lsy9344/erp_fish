@@ -75,6 +75,7 @@ enum InventoryAdjustmentAmountStatus {
 
 enum LedgerPurchaseSource {
   MANUAL
+  ECOUNT_UPLOAD
 }
 
 enum CorrectionTargetType {
@@ -323,10 +324,7 @@ model AuditLog {
 model AnomalyThresholdSetting {
   id                          String   @id @default(cuid())
   scope                       String   @unique @default("GLOBAL")
-  salesDropRateBps            Int
-  grossMarginDropBps          Int
-  salesDifferenceAmount       Int
-  lossAmount                  Int
+  marginRateBps               Int
   inventoryDifferenceQuantity Int
   isActive                    Boolean  @default(true)
   updatedById                 String?
@@ -474,11 +472,12 @@ model LedgerInventoryItem {
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
-  dailyLedger               DailyLedger                @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
-  product                   Product                    @relation(fields: [productId], references: [id], onDelete: Restrict)
-  createdBy                 User                       @relation("LedgerInventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy                 User                       @relation("LedgerInventoryItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  dailyLedger               DailyLedger                     @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  product                   Product                         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy                 User                            @relation("LedgerInventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy                 User                            @relation("LedgerInventoryItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   ledgerInventoryAdjustment LedgerInventoryAdjustment?
+  carryoverDetail           LedgerInventoryCarryoverDetail?
 
   @@unique([dailyLedgerId, productId], map: "ledgerInventoryItem_dailyLedgerId_productId_key")
   @@index([dailyLedgerId])
@@ -486,11 +485,38 @@ model LedgerInventoryItem {
   @@index([carryoverLedgerId])
 }
 
+model LedgerInventoryCarryoverDetail {
+  id                      String                   @id @default(cuid())
+  ledgerInventoryItemId   String                   @unique
+  source                  InventoryCarryoverSource
+  status                  InventoryCarryoverStatus
+  resolvedQuantity        Int
+  sourceLedgerId          String?
+  sourceLedgerClosingDate DateTime?
+  sourceLedgerStatus      DailyLedgerStatus?
+  sourceYearMonth         String?
+  sourceSnapshotId        String?
+  sourcePreviousQuantity  Int?
+  sourcePurchasedQuantity Int?
+  sourceLossQuantity      Int?
+  sourceCurrentQuantity   Int?
+  sourceQuantity          Int?
+  message                 String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  ledgerInventoryItem LedgerInventoryItem @relation(fields: [ledgerInventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([sourceLedgerId])
+  @@index([sourceSnapshotId])
+  @@index([source, status])
+}
+
 model LedgerInventoryAdjustment {
-  id                    String   @id @default(cuid())
+  id                    String                          @id @default(cuid())
   dailyLedgerId         String
   productId             String
-  ledgerInventoryItemId String?  @unique
+  ledgerInventoryItemId String?                         @unique
   productName           String
   productCategory       String
   productSpec           String
@@ -505,8 +531,8 @@ model LedgerInventoryAdjustment {
   reason                String
   createdById           String
   updatedById           String
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime                        @default(now())
+  updatedAt             DateTime                        @updatedAt
 
   dailyLedger         DailyLedger          @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)

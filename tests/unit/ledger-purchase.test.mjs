@@ -34,7 +34,10 @@ test("ledger purchase model and migration preserve manual purchase snapshots", (
     schema,
     /model\s+LedgerPurchaseItem\s*{[^}]*id\s+String\s+@id\s+[^}]*dailyLedgerId\s+String[^}]*productId\s+String\?[^}]*purchaseStandardId\s+String\?[^}]*sourceType\s+LedgerPurchaseSource\s+@default\(MANUAL\)[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*referenceInfo\s+String\?[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[purchaseStandardId\]\)[^}]*@@index\(\[sourceType\]\)/s,
   );
-  assert.match(schema, /enum\s+LedgerPurchaseSource\s*{\s*MANUAL\s*}/s);
+  assert.match(
+    schema,
+    /enum\s+LedgerPurchaseSource\s*{\s*MANUAL\s+ECOUNT_UPLOAD\s*}/s,
+  );
   assert.match(
     schema,
     /model\s+DailyLedger\s*{[^}]*ledgerPurchaseItems\s+LedgerPurchaseItem\[\]/s,
@@ -63,6 +66,28 @@ test("ledger purchase model and migration preserve manual purchase snapshots", (
       migration.includes("DEFAULT 'MANUAL'") &&
       migration.includes('ALTER COLUMN "productId" DROP NOT NULL'),
     "migration should add sourceType and allow raw manual product snapshots",
+  );
+
+  const uploadMigrationName = migrationDirNames().find((name) =>
+    name.includes("add_ecount_purchase_source"),
+  );
+  assert.ok(
+    uploadMigrationName,
+    "ECount purchase source migration should exist",
+  );
+
+  const uploadMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      uploadMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    uploadMigration.includes("ECOUNT_UPLOAD"),
+    "migration should add ECOUNT_UPLOAD source type",
   );
 });
 
@@ -113,6 +138,26 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
   assert.equal(rawManual.purchases[0].productName, "수기 광어");
   assert.equal(rawManual.purchases[0].productCategory, "생물");
   assert.equal(rawManual.purchases[0].productSpec, "1kg");
+  assert.equal(rawManual.purchases[0].sourceType, "MANUAL");
+
+  const ecountUpload = ledgerPurchaseSchema.parse({
+    ...basePayload,
+    purchases: [
+      {
+        productId: "",
+        purchaseStandardId: "",
+        sourceType: "ECOUNT_UPLOAD",
+        productName: "냉)삼치",
+        productCategory: "냉동",
+        productSpec: "15미",
+        referenceInfo:
+          "이카운트 판매현황 4행 · 일자-No. 2026/06/17 -1 · 거래처 진수산(수산물)",
+        unitPrice: "78000",
+        quantity: "1",
+      },
+    ],
+  });
+  assert.equal(ecountUpload.purchases[0].sourceType, "ECOUNT_UPLOAD");
 
   const zeroValues = ledgerPurchaseSchema.parse({
     ...basePayload,
@@ -204,6 +249,70 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
   });
 });
 
+test("store purchase edit policy blocks ECount uploaded rows from store edits", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "purchase-edit-policy.ts",
+  );
+  const { getStoreEcountPurchaseEditErrors } = await import(
+    pathToFileURL(policyPath).href
+  );
+  const existingRows = [
+    {
+      id: "purchase-ecount-1",
+      productId: null,
+      purchaseStandardId: null,
+      sourceType: "ECOUNT_UPLOAD",
+      productName: "고등어",
+      productCategory: "생물",
+      productSpec: "28미",
+      unitPrice: 34000,
+      quantity: 4,
+      referenceInfo:
+        "이카운트 판매현황 3행 · 일자-No. 2026/06/17 -1 · 거래처 진수산(수산물)",
+    },
+  ];
+
+  assert.deepEqual(
+    getStoreEcountPurchaseEditErrors(existingRows, [
+      { ...existingRows[0], quantity: 5 },
+    ]),
+    {
+      "purchases.0": ["이카운트 업로드 매입은 지점에서 수정할 수 없습니다."],
+    },
+  );
+  assert.deepEqual(getStoreEcountPurchaseEditErrors(existingRows, []), {
+    purchases: ["이카운트 업로드 매입은 지점에서 삭제할 수 없습니다."],
+  });
+  assert.deepEqual(
+    getStoreEcountPurchaseEditErrors(
+      [],
+      [
+        {
+          id: "draft-ecount",
+          sourceType: "ECOUNT_UPLOAD",
+          productId: null,
+          purchaseStandardId: null,
+          productName: "고등어",
+          productCategory: "생물",
+          productSpec: "28미",
+          unitPrice: 34000,
+          quantity: 4,
+          referenceInfo:
+            "이카운트 판매현황 3행 · 일자-No. 2026/06/17 -1 · 거래처 진수산(수산물)",
+        },
+      ],
+    ),
+    {
+      "purchases.0.sourceType": [
+        "이카운트 업로드 매입은 본사 업로드로만 만들 수 있습니다.",
+      ],
+    },
+  );
+});
+
 test("ledger purchase calculations, queries, and actions expose expected contracts", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -218,6 +327,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
 
   const typeSource = readProjectFile("src", "features", "ledger", "types.ts");
   assert.match(typeSource, /export\s+type\s+LedgerPurchaseLine\s+=/);
+  assert.match(typeSource, /sourceType:\s+LedgerPurchaseSource/);
   assert.match(typeSource, /export\s+type\s+LedgerPurchaseStepData\s+=/);
 
   const querySource = readProjectFile(
@@ -246,6 +356,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /existingPurchaseItemsById/);
   assert.match(actionSource, /isExistingSnapshotPurchase/);
   assert.match(actionSource, /LedgerPurchaseValidationError/);
+  assert.match(actionSource, /getStoreEcountPurchaseEditErrors/);
   assert.match(actionSource, /매입 기준과 품목이 일치하지 않습니다\./);
   assert.match(actionSource, /매입 기준을 확인해 주세요\./);
   assert.match(actionSource, /품목을 확인해 주세요\./);
@@ -256,9 +367,27 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     /unitPrice\s*\*\s*quantity|quantity\s*\*\s*unitPrice/,
   );
   assert.match(actionSource, /action:\s*"ledger\.purchases\.saved"/);
-  assert.match(actionSource, /sourceType:\s*"MANUAL"/);
+  assert.match(actionSource, /sourceType:\s*purchase\.sourceType/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
+
+  const uploadActionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "ecount-purchase-actions.ts",
+  );
+  assert.match(uploadActionSource, /requireLedgerHqEditAccess\(\)/);
+  assert.ok(
+    uploadActionSource.indexOf("requireLedgerHqEditAccess()") <
+      uploadActionSource.indexOf("file.arrayBuffer()"),
+    "ECount upload should check HQ permission before reading file bytes",
+  );
+  assert.match(
+    uploadActionSource,
+    /fileName\.toLowerCase\(\)\.endsWith\("\.xlsx"\)/,
+  );
+  assert.match(uploadActionSource, /maxUploadBytes/);
 });
 
 test("ledger purchase UI and routing are wired for the purchase step", () => {
@@ -286,6 +415,18 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     "purchase-step-client.tsx",
   );
   assert.match(componentSource, /saveLedgerPurchases/);
+  assert.match(componentSource, /previewEcountPurchaseUpload/);
+  assert.match(componentSource, /accept="\.xlsx"/);
+  assert.match(
+    componentSource,
+    /saveImportedPurchases\(result\.data\.purchases\)/,
+  );
+  assert.doesNotMatch(componentSource, /저장을 눌러 반영/);
+  assert.match(
+    componentSource,
+    /sourceType\s*===\s*"ECOUNT_UPLOAD"[\s\S]*!ecountUploadEnabled/,
+  );
+  assert.match(componentSource, /sourceType:\s*line\.sourceType/);
   assert.match(componentSource, /inputMode="numeric"/);
   assert.match(componentSource, /focusFirstError/);
   assert.doesNotMatch(componentSource, /sanitizeAmount/);

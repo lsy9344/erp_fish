@@ -84,6 +84,65 @@ const snapshotNameKeys = [
   "targetName",
 ] as const;
 
+const auditSummaryFieldLabels: Record<string, string> = {
+  amount: "금액",
+  category: "분류",
+  codeName: "코드명",
+  displayOrder: "표시 순서",
+  email: "이메일",
+  isActive: "활성 상태",
+  name: "이름",
+  productName: "품목명",
+  quantity: "수량",
+  role: "권한",
+  scope: "범위",
+  storeName: "지점명",
+  targetName: "대상 이름",
+  threshold: "기준값",
+  unitPrice: "단가",
+};
+
+function isJsonObject(
+  value: Prisma.JsonValue | null | undefined,
+): value is Prisma.JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function formatAuditSummaryValue(value: Prisma.JsonValue | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value) ?? "-";
+}
+
+function isSameAuditValue(
+  before: Prisma.JsonValue | null | undefined,
+  after: Prisma.JsonValue | null | undefined,
+) {
+  if (before === null || before === undefined) {
+    return after === null || after === undefined;
+  }
+
+  if (after === null || after === undefined) {
+    return false;
+  }
+
+  if (Object.is(before, after)) {
+    return true;
+  }
+
+  return JSON.stringify(before) === JSON.stringify(after);
+}
+
 export function isAuditHistoryTargetType(
   value: string,
 ): value is AuditHistoryTargetType {
@@ -131,6 +190,34 @@ export function formatAuditJsonValue(
   }
 
   return JSON.stringify(value, null, 2) ?? "-";
+}
+
+export function formatAuditChangeSummary(
+  before: Prisma.JsonValue | null | undefined,
+  after: Prisma.JsonValue | null | undefined,
+) {
+  if (!isJsonObject(before) || !isJsonObject(after)) {
+    return isSameAuditValue(before, after)
+      ? "-"
+      : `값: ${formatAuditSummaryValue(before)} → ${formatAuditSummaryValue(after)}`;
+  }
+
+  const lines = Array.from(
+    new Set([...Object.keys(before), ...Object.keys(after)]),
+  ).flatMap((key) => {
+    const beforeValue = before[key];
+    const afterValue = after[key];
+
+    if (isSameAuditValue(beforeValue, afterValue)) {
+      return [];
+    }
+
+    return [
+      `${auditSummaryFieldLabels[key] ?? key}: ${formatAuditSummaryValue(beforeValue)} → ${formatAuditSummaryValue(afterValue)}`,
+    ];
+  });
+
+  return lines.length > 0 ? lines.join("\n") : "-";
 }
 
 export function getSnapshotDisplayName(

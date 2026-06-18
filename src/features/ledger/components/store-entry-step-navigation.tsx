@@ -75,7 +75,10 @@ export function StoreEntryStepNavigation({
                   }
 
                   event.preventDefault();
-                  onNavigateAttempt(event.currentTarget.href, event.currentTarget);
+                  onNavigateAttempt(
+                    event.currentTarget.href,
+                    event.currentTarget,
+                  );
                 }}
               >
                 {step.label}

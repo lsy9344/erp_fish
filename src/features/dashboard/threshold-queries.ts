@@ -11,20 +11,14 @@ export type AnomalyThresholdSettingsView = {
   id: string;
   scope: string;
   scopeLabel: string;
-  salesDropRateBps: number;
-  grossMarginDropBps: number;
-  salesDifferenceAmount: number;
-  lossAmount: number;
+  marginRateBps: number;
   inventoryDifferenceQuantity: number;
   isActive: boolean;
   statusLabel: string;
   updatedAt: string;
   updatedByName: string;
   formValues: {
-    salesDropRate: string;
-    grossMarginDropRate: string;
-    salesDifferenceAmount: string;
-    lossAmount: string;
+    marginRate: string;
     inventoryDifferenceQuantity: string;
   };
 };
@@ -32,10 +26,7 @@ export type AnomalyThresholdSettingsView = {
 type AnomalyThresholdRecord = {
   id: string;
   scope: string;
-  salesDropRateBps: number;
-  grossMarginDropBps: number;
-  salesDifferenceAmount: number;
-  lossAmount: number;
+  marginRateBps: number;
   inventoryDifferenceQuantity: number;
   isActive: boolean;
   updatedAt: Date;
@@ -48,10 +39,7 @@ type AnomalyThresholdRecord = {
 const anomalyThresholdSelect = {
   id: true,
   scope: true,
-  salesDropRateBps: true,
-  grossMarginDropBps: true,
-  salesDifferenceAmount: true,
-  lossAmount: true,
+  marginRateBps: true,
   inventoryDifferenceQuantity: true,
   isActive: true,
   updatedAt: true,
@@ -70,20 +58,15 @@ export function toAnomalyThresholdSettingsView(
     id: setting.id,
     scope: setting.scope,
     scopeLabel: "전체 지점",
-    salesDropRateBps: setting.salesDropRateBps,
-    grossMarginDropBps: setting.grossMarginDropBps,
-    salesDifferenceAmount: setting.salesDifferenceAmount,
-    lossAmount: setting.lossAmount,
+    marginRateBps: setting.marginRateBps,
     inventoryDifferenceQuantity: setting.inventoryDifferenceQuantity,
     isActive: setting.isActive,
     statusLabel: setting.isActive ? "활성" : "비활성",
     updatedAt: setting.updatedAt.toISOString(),
-    updatedByName: setting.updatedBy?.name ?? setting.updatedBy?.email ?? "시스템",
+    updatedByName:
+      setting.updatedBy?.name ?? setting.updatedBy?.email ?? "시스템",
     formValues: {
-      salesDropRate: formatBpsAsPercent(setting.salesDropRateBps),
-      grossMarginDropRate: formatBpsAsPercent(setting.grossMarginDropBps),
-      salesDifferenceAmount: formatIntegerInput(setting.salesDifferenceAmount),
-      lossAmount: formatIntegerInput(setting.lossAmount),
+      marginRate: formatBpsAsPercent(setting.marginRateBps),
       inventoryDifferenceQuantity: formatIntegerInput(
         setting.inventoryDifferenceQuantity,
       ),
@@ -108,10 +91,7 @@ export async function getAnomalyThresholdSettingsForSignals() {
   const setting = await db.anomalyThresholdSetting.findUnique({
     where: { scope: ANOMALY_THRESHOLD_SCOPE },
     select: {
-      salesDropRateBps: true,
-      grossMarginDropBps: true,
-      salesDifferenceAmount: true,
-      lossAmount: true,
+      marginRateBps: true,
       inventoryDifferenceQuantity: true,
       isActive: true,
     },

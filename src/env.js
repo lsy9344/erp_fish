@@ -1,4 +1,6 @@
 import { createEnv } from "@t3-oss/env-nextjs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 
 const exampleAuthSecret =
@@ -11,6 +13,56 @@ const productionAuthSecretSchema = z
     message:
       "AUTH_SECRET must not use the .env.example placeholder in production.",
   });
+
+/**
+ * Some local shells expose SQLAlchemy-style PostgreSQL URLs. Prisma accepts the
+ * same connection details, but only with the standard PostgreSQL protocol.
+ *
+ * @param {string | undefined} value
+ */
+function normalizePrismaDatabaseUrl(value) {
+  if (!value) {
+    return value;
+  }
+
+  return value
+    .replace(/^postgresql\+asyncpg:\/\//, "postgresql://")
+    .replace(/^postgres\+asyncpg:\/\//, "postgres://");
+}
+
+function readProjectDatabaseUrl() {
+  if (process.env.NODE_ENV === "production") {
+    return undefined;
+  }
+
+  const envPath = path.join(process.cwd(), ".env");
+
+  if (!existsSync(envPath)) {
+    return undefined;
+  }
+
+  const match = readFileSync(envPath, "utf8").match(/^DATABASE_URL=(.*)$/m);
+  const value = match?.[1]?.trim();
+
+  if (!value) {
+    return undefined;
+  }
+
+  return value.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+}
+
+const inheritedDatabaseUrl = process.env.DATABASE_URL;
+const projectDatabaseUrl = readProjectDatabaseUrl();
+const shouldPreferProjectDatabaseUrl =
+  !!projectDatabaseUrl &&
+  /^postgres(?:ql)?\+asyncpg:\/\//.test(inheritedDatabaseUrl ?? "");
+const databaseUrl = normalizePrismaDatabaseUrl(
+  shouldPreferProjectDatabaseUrl ? projectDatabaseUrl : inheritedDatabaseUrl,
+);
+
+if (databaseUrl !== process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = databaseUrl;
+}
 
 export const env = createEnv({
   /**
@@ -48,7 +100,7 @@ export const env = createEnv({
    */
   runtimeEnv: {
     AUTH_SECRET: process.env.AUTH_SECRET,
-    DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_URL: databaseUrl,
     SEED_HQ_EMAIL: process.env.SEED_HQ_EMAIL,
     SEED_HQ_PASSWORD: process.env.SEED_HQ_PASSWORD,
     SEED_HQ_NAME: process.env.SEED_HQ_NAME,

@@ -1,15 +1,18 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 3102);
 const baseURL = `http://localhost:${port}`;
 const databaseURL =
   process.env.DATABASE_URL ??
-  "postgresql://postgres:password@localhost:55432/erp_fish_e2e";
+  "postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e";
+const reuseExistingServer =
+  !process.env.CI && process.env.PW_REUSE_EXISTING_SERVER === "1";
 
 process.env.DATABASE_URL = databaseURL;
 
 export default defineConfig({
-  testDir: "./tests/e2e",
+  testDir: "./tests",
+  testMatch: ["e2e/**/*.spec.ts", "api/**/*.spec.ts"],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -26,7 +29,8 @@ export default defineConfig({
   webServer: {
     command: `corepack pnpm dev --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer,
+    timeout: 120_000,
     env: {
       AUTH_SECRET: "test-auth-secret-at-least-32-characters",
       AUTH_URL: baseURL,

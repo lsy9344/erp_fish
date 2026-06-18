@@ -1,16 +1,4 @@
 {
   "version": "1.0.0",
-  "presets": [
-    {
-      "name": "all-codex",
-      "createdAt": "2026-06-11T08:05:53Z",
-      "config": {
-        "defaultPrimary": "codex",
-        "defaultFallback": false,
-        "auto": {
-          "skip": false
-        }
-      }
-    }
-  ]
+  "presets": []
 }

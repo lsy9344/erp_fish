@@ -254,6 +254,19 @@ export function ChangeHistoryClient({
           </DialogHeader>
           {selectedHistory ? (
             <div className="flex flex-col gap-4">
+              {selectedHistory.changeSummaryText !== "-" ? (
+                <section className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold">변경 요약</h3>
+                    <span className="text-muted-foreground text-xs">
+                      기존 값 → 변경된 값
+                    </span>
+                  </div>
+                  <pre className="bg-muted max-h-56 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                    {selectedHistory.changeSummaryText}
+                  </pre>
+                </section>
+              ) : null}
               {selectedHistory.reasonText !== "-" ? (
                 <section className="flex flex-col gap-2">
                   <h3 className="text-sm font-semibold">사유</h3>

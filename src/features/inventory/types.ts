@@ -24,8 +24,38 @@ export type InventoryStepLine = {
   carryoverSource: InventoryCarryoverSource;
   carryoverStatus: InventoryCarryoverStatus;
   carryoverLedgerId: string | null;
+  previousQuantityDetail: InventoryCarryoverDetailView;
   isModified: boolean;
   adjustment: InventoryAdjustmentView | null;
+};
+
+export type InventoryCarryoverHistoryRow = {
+  ledgerId: string;
+  closingDate: string;
+  ledgerStatus: DailyLedgerStatus;
+  previousQuantity: number;
+  purchasedQuantity: number;
+  lossQuantity: number | null;
+  currentQuantity: number | null;
+  quantity: number | null;
+};
+
+export type InventoryCarryoverDetailView = {
+  source: InventoryCarryoverSource;
+  status: InventoryCarryoverStatus;
+  resolvedQuantity: number;
+  sourceLedgerId: string | null;
+  sourceLedgerClosingDate: string | null;
+  sourceLedgerStatus: DailyLedgerStatus | null;
+  sourceYearMonth: string | null;
+  sourceSnapshotId: string | null;
+  sourcePreviousQuantity: number | null;
+  sourcePurchasedQuantity: number | null;
+  sourceLossQuantity: number | null;
+  sourceCurrentQuantity: number | null;
+  sourceQuantity: number | null;
+  message: string;
+  history: InventoryCarryoverHistoryRow[];
 };
 
 export type InventoryAdjustmentView = {

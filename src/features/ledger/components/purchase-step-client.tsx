@@ -1,13 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+import {
+  CheckCircle2Icon,
+  PlusIcon,
+  Trash2Icon,
+  UploadIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerPurchases } from "~/features/ledger/actions";
+import { previewEcountPurchaseUpload } from "~/features/ledger/ecount-purchase-actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
@@ -43,6 +55,7 @@ type PurchaseLine = {
   id: string;
   productId: string;
   purchaseStandardId: string;
+  sourceType: "MANUAL" | "ECOUNT_UPLOAD";
   productName: string;
   productCategory: string;
   productSpec: string;
@@ -64,6 +77,7 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  ecountUploadEnabled?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -88,6 +102,7 @@ function createLineState(id: string): PurchaseLine {
     id,
     productId: "",
     purchaseStandardId: "",
+    sourceType: "MANUAL",
     productName: "",
     productCategory: "",
     productSpec: "",
@@ -105,6 +120,7 @@ function toPurchaseLines(
     id: item.id,
     productId: item.productId ?? "",
     purchaseStandardId: item.purchaseStandardId ?? "",
+    sourceType: item.sourceType,
     productName: item.productName,
     productCategory: item.productCategory,
     productSpec: item.productSpec,
@@ -123,6 +139,13 @@ function getDraftPurchaseTotal(lines: PurchaseLine[]) {
   return lines.reduce((sum, line) => sum + getLineAmount(line), 0);
 }
 
+function isUploadedLineLocked(
+  line: PurchaseLine,
+  ecountUploadEnabled: boolean,
+) {
+  return line.sourceType === "ECOUNT_UPLOAD" && !ecountUploadEnabled;
+}
+
 function arePurchaseLinesEqual(left: PurchaseLine[], right: PurchaseLine[]) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -137,8 +160,10 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  ecountUploadEnabled = false,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const ecountUploadInputRef = useRef<HTMLInputElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const standardRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const productNameRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -155,6 +180,8 @@ export function PurchaseStepClient({
   );
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -230,29 +257,47 @@ export function PurchaseStepClient({
     }, 50);
   }
 
-  function fillLedger(next: StoreManagerLedgerCostStepData) {
+  function fillLedger(next: StoreManagerLedgerCostStepData, message?: string) {
     setLedger(next);
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
     const savedCount = next.purchaseItems.length;
-    setResultMessage(
-      savedCount > 0
+    const nextMessage =
+      message ??
+      (savedCount > 0
         ? `매입 항목 ${savedCount}건을 저장했습니다.`
-        : "저장됐습니다.",
-    );
-    toast.success(
-      savedCount > 0
-        ? `매입 항목 ${savedCount}건을 저장했습니다.`
-        : "저장됐습니다.",
-    );
+        : "저장됐습니다.");
+    setResultMessage(nextMessage);
+    toast.success(nextMessage);
   }
 
   function clearRowErrors() {
     setFieldErrors({});
     setFormError(null);
+    setImportMessage(null);
   }
 
-  async function saveCurrentDraft() {
+  function getCurrentPurchaseLines() {
+    return purchaseItems.map((line, index) => ({
+      ...line,
+      productId: productRefs.current[index]?.value ?? line.productId,
+      purchaseStandardId:
+        standardRefs.current[index]?.value ?? line.purchaseStandardId,
+      productName: productNameRefs.current[index]?.value ?? line.productName,
+      productCategory:
+        productCategoryRefs.current[index]?.value ?? line.productCategory,
+      productSpec: productSpecRefs.current[index]?.value ?? line.productSpec,
+      unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
+      quantity: quantityRefs.current[index]?.value ?? line.quantity,
+    }));
+  }
+
+  async function persistPurchaseLines(
+    lines: PurchaseLine[],
+    options: { successMessage?: string; reasonFallback?: string } = {},
+  ) {
+    const hqEditReasonValue = hqEditReason.trim();
+
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
@@ -265,22 +310,26 @@ export function PurchaseStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
-        purchases: purchaseItems.map((line, index) => ({
+        purchases: lines.map((line) => ({
           id: line.id,
-          productId: productRefs.current[index]?.value ?? line.productId,
-          purchaseStandardId:
-            standardRefs.current[index]?.value ?? line.purchaseStandardId,
-          productName:
-            productNameRefs.current[index]?.value ?? line.productName,
-          productCategory:
-            productCategoryRefs.current[index]?.value ?? line.productCategory,
-          productSpec:
-            productSpecRefs.current[index]?.value ?? line.productSpec,
+          sourceType: line.sourceType,
+          productId: line.productId,
+          purchaseStandardId: line.purchaseStandardId,
+          productName: line.productName,
+          productCategory: line.productCategory,
+          productSpec: line.productSpec,
           referenceInfo: line.referenceInfo,
-          unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
-          quantity: quantityRefs.current[index]?.value ?? line.quantity,
+          unitPrice: line.unitPrice,
+          quantity: line.quantity,
         })),
-        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
+        ...(hqEditReasonRequired
+          ? {
+              reason:
+                hqEditReasonValue.length > 0
+                  ? hqEditReasonValue
+                  : (options.reasonFallback ?? ""),
+            }
+          : {}),
       });
 
       if (!result.ok) {
@@ -300,7 +349,7 @@ export function PurchaseStepClient({
         return false;
       }
 
-      fillLedger(result.data);
+      fillLedger(result.data, options.successMessage);
       setFormError(null);
       return true;
     } catch {
@@ -313,9 +362,69 @@ export function PurchaseStepClient({
     }
   }
 
+  async function saveCurrentDraft() {
+    return persistPurchaseLines(getCurrentPurchaseLines());
+  }
+
+  async function saveImportedPurchases(lines: PurchaseLine[]) {
+    return persistPurchaseLines(lines, {
+      successMessage: `이카운트 엑셀에서 ${lines.length}건을 저장했습니다.`,
+      reasonFallback: "이카운트 엑셀 업로드",
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await saveCurrentDraft();
+  }
+
+  async function handleEcountUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+
+    if (!file || isSaving || isImporting || isOriginalEditBlocked) {
+      return;
+    }
+
+    setIsImporting(true);
+    setResultMessage(null);
+    setImportMessage(null);
+    setFormError(null);
+    setFieldErrors({});
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("storeId", ledger.storeId);
+      formData.append("closingDate", getKstLedgerDateParam(ledger.closingDate));
+
+      const result = await previewEcountPurchaseUpload(formData);
+
+      if (!result.ok) {
+        const nextErrors = result.error.fieldErrors ?? {};
+
+        setFieldErrors(nextErrors);
+        setFormError(result.error.message);
+        toast.error(result.error.message);
+        return;
+      }
+
+      setPurchaseItems(result.data.purchases);
+      const saved = await saveImportedPurchases(result.data.purchases);
+
+      if (!saved) {
+        return;
+      }
+
+      setImportMessage(
+        `이카운트 엑셀에서 ${result.data.matchedRowCount}건을 저장했습니다.`,
+      );
+    } catch {
+      setFormError("이카운트 엑셀 파일을 읽을 수 없습니다.");
+      toast.error("이카운트 엑셀 파일을 읽을 수 없습니다.");
+    } finally {
+      setIsImporting(false);
+      event.currentTarget.value = "";
+    }
   }
 
   function handleRetry() {
@@ -396,7 +505,8 @@ export function PurchaseStepClient({
     });
   }
 
-  const isFormSaving = isSaving;
+  const isBusy = isSaving || isImporting;
+  const isFormSaving = isBusy;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
   const hqEditReasonError = fieldErrors.reason?.[0];
   const isOriginalEditBlocked =
@@ -461,6 +571,41 @@ export function PurchaseStepClient({
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
+        {ecountUploadEnabled ? (
+          <div className="mb-3 rounded-md border p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium">이카운트 엑셀</p>
+              <input
+                ref={ecountUploadInputRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                disabled={isBusy || isOriginalEditBlocked}
+                onChange={handleEcountUpload}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => ecountUploadInputRef.current?.click()}
+                disabled={isBusy || isOriginalEditBlocked}
+                className="min-h-11 gap-2"
+              >
+                <UploadIcon data-icon="inline-start" />
+                {isImporting ? "불러오는 중..." : "엑셀 선택"}
+              </Button>
+            </div>
+            {importMessage ? (
+              <p
+                className="text-muted-foreground mt-2 text-sm"
+                role="status"
+                aria-live="polite"
+              >
+                {importMessage}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-sm font-medium">매입 항목</p>
           <Button
@@ -510,6 +655,10 @@ export function PurchaseStepClient({
                     defaultUnitPrice: line.referenceUnitPrice,
                   }
                 : selectedStandard?.product;
+              const isLineEditBlocked =
+                isFormSaving ||
+                isOriginalEditBlocked ||
+                isUploadedLineLocked(line, ecountUploadEnabled);
 
               return (
                 <div key={line.id} className="grid gap-2 rounded-md border p-3">
@@ -521,7 +670,7 @@ export function PurchaseStepClient({
                       type="button"
                       variant="outline"
                       onClick={() => removePurchaseLine(line.id)}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={isLineEditBlocked}
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
@@ -539,7 +688,7 @@ export function PurchaseStepClient({
                         productRefs.current[index] = node;
                       }}
                       value={line.productId}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={isLineEditBlocked}
                       onChange={(event) =>
                         applyProduct(line.id, event.currentTarget.value)
                       }
@@ -582,7 +731,7 @@ export function PurchaseStepClient({
                         standardRefs.current[index] = node;
                       }}
                       value={line.purchaseStandardId}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={isLineEditBlocked}
                       onChange={(event) =>
                         applyStandard(line.id, event.currentTarget.value)
                       }
@@ -634,7 +783,7 @@ export function PurchaseStepClient({
                         }}
                         autoComplete="off"
                         value={line.productName}
-                        disabled={isFormSaving || isOriginalEditBlocked}
+                        disabled={isLineEditBlocked}
                         onChange={(event) =>
                           updatePurchaseLine(line.id, {
                             productName: event.currentTarget.value,
@@ -670,7 +819,7 @@ export function PurchaseStepClient({
                         }}
                         autoComplete="off"
                         value={line.productCategory}
-                        disabled={isFormSaving || isOriginalEditBlocked}
+                        disabled={isLineEditBlocked}
                         onChange={(event) =>
                           updatePurchaseLine(line.id, {
                             productCategory: event.currentTarget.value,
@@ -704,7 +853,7 @@ export function PurchaseStepClient({
                         }}
                         autoComplete="off"
                         value={line.productSpec}
-                        disabled={isFormSaving || isOriginalEditBlocked}
+                        disabled={isLineEditBlocked}
                         onChange={(event) =>
                           updatePurchaseLine(line.id, {
                             productSpec: event.currentTarget.value,
@@ -755,7 +904,7 @@ export function PurchaseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.unitPrice}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={isLineEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           unitPrice: event.currentTarget.value,
@@ -788,7 +937,7 @@ export function PurchaseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.quantity}
-                      disabled={isFormSaving || isOriginalEditBlocked}
+                      disabled={isLineEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           quantity: event.currentTarget.value,
@@ -899,7 +1048,7 @@ export function PurchaseStepClient({
             className="min-h-11 w-full sm:w-auto"
             disabled={isFormSaving || isOriginalEditBlocked}
           >
-            {isFormSaving ? "저장 중..." : "저장"}
+            {isFormSaving ? "처리 중..." : "저장"}
           </Button>
           {resultMessage ? (
             <Button

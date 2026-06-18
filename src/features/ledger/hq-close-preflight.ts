@@ -176,11 +176,9 @@ export async function buildHqLedgerClosePreflightInTx(
     tx.anomalyThresholdSetting.findUnique({
       where: { scope: ANOMALY_THRESHOLD_SCOPE },
       select: {
-        salesDropRateBps: true,
-        grossMarginDropBps: true,
-        salesDifferenceAmount: true,
-        lossAmount: true,
+        marginRateBps: true,
         inventoryDifferenceQuantity: true,
+        isActive: true,
       },
     }),
     getCorrectionRecordsForLedgerInTx(tx, ledgerId),

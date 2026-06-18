@@ -26,6 +26,7 @@ import {
   toLedgerAuditPayload,
   toStoreManagerLedgerCostStepData,
 } from "./queries";
+import { getStoreEcountPurchaseEditErrors } from "./purchase-edit-policy";
 import {
   ledgerSalesPaymentSchema,
   ledgerExpenseSchema,
@@ -906,6 +907,15 @@ export async function saveLedgerPurchases(
       const existingPurchaseItemsById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
       );
+      const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
+        beforeLedger.ledgerPurchaseItems,
+        parsed.data.purchases,
+      );
+
+      if (Object.keys(ecountPurchaseEditErrors).length > 0) {
+        throw new LedgerPurchaseValidationError(ecountPurchaseEditErrors);
+      }
+
       const standardIds = [
         ...new Set(
           parsed.data.purchases
@@ -1022,7 +1032,7 @@ export async function saveLedgerPurchases(
               ? {
                   productId: standard.product.id,
                   purchaseStandardId: standard.id,
-                  sourceType: "MANUAL" as const,
+                  sourceType: purchase.sourceType,
                   productName: purchase.productName || standard.product.name,
                   productCategory:
                     purchase.productCategory || standard.product.category,
@@ -1034,7 +1044,7 @@ export async function saveLedgerPurchases(
                 ? {
                     productId: product.id,
                     purchaseStandardId: null,
-                    sourceType: "MANUAL" as const,
+                    sourceType: purchase.sourceType,
                     productName: purchase.productName || product.name,
                     productCategory:
                       purchase.productCategory || product.category,
@@ -1045,7 +1055,7 @@ export async function saveLedgerPurchases(
                   ? {
                       productId: existing.productId,
                       purchaseStandardId: existing.purchaseStandardId,
-                      sourceType: "MANUAL" as const,
+                      sourceType: purchase.sourceType,
                       productName: purchase.productName || existing.productName,
                       productCategory:
                         purchase.productCategory || existing.productCategory,
@@ -1055,7 +1065,7 @@ export async function saveLedgerPurchases(
                   : {
                       productId: null,
                       purchaseStandardId: null,
-                      sourceType: "MANUAL" as const,
+                      sourceType: purchase.sourceType,
                       productName: purchase.productName,
                       productCategory: purchase.productCategory,
                       productSpec: purchase.productSpec,

@@ -303,11 +303,9 @@ test("코드 관리는 같은 그룹 중복을 거부하고 다른 그룹의 같
   await page.getByLabel("표시 순서").fill("15");
   await page.getByRole("button", { name: "저장" }).click();
 
-  await expect(
-    page.getByRole("alert").filter({
-      hasText: "이미 같은 그룹에 같은 코드명이 있습니다.",
-    }),
-  ).toBeVisible();
+  await expect(page.locator("#ledger-input-code-name-error")).toHaveText(
+    "이미 같은 그룹에 같은 코드명이 있습니다.",
+  );
   await expect(page.getByLabel("코드명")).toBeFocused();
   await expect(page.getByLabel("코드명")).toHaveAttribute(
     "aria-invalid",

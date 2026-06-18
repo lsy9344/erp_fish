@@ -19,8 +19,11 @@
     "lint:fix": "eslint . --fix",
     "preview": "next build && next start",
     "start": "next start",
-    "test:e2e": "playwright test",
+    "test:api": "node scripts/run-playwright-clean.mjs tests/api",
+    "test:e2e": "node scripts/run-playwright-clean.mjs tests/e2e",
+    "test:playwright": "node scripts/run-playwright-clean.mjs",
     "test:unit": "node --experimental-strip-types --test tests/unit/*.test.mjs",
+    "test:unit:file": "node --experimental-strip-types --test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -46,6 +49,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@playwright/test": "^1.60.0",
+    "@seontechnologies/playwright-utils": "4.3.0",
     "@tailwindcss/postcss": "^4.0.15",
     "@types/node": "^20.14.10",
     "@types/react": "^19.0.0",

@@ -22,10 +22,7 @@ type AnomalyThresholdActionData = ReturnType<
 const anomalyThresholdSelect = {
   id: true,
   scope: true,
-  salesDropRateBps: true,
-  grossMarginDropBps: true,
-  salesDifferenceAmount: true,
-  lossAmount: true,
+  marginRateBps: true,
   inventoryDifferenceQuantity: true,
   isActive: true,
   updatedAt: true,
@@ -70,10 +67,7 @@ function isSameAnomalyThreshold(
   input: AnomalyThresholdFormInput,
 ) {
   return (
-    setting.salesDropRateBps === input.salesDropRateBps &&
-    setting.grossMarginDropBps === input.grossMarginDropBps &&
-    setting.salesDifferenceAmount === input.salesDifferenceAmount &&
-    setting.lossAmount === input.lossAmount &&
+    setting.marginRateBps === input.marginRateBps &&
     setting.inventoryDifferenceQuantity === input.inventoryDifferenceQuantity &&
     setting.isActive === input.isActive
   );
@@ -85,18 +79,13 @@ function toAnomalyThresholdAuditValue(
   return {
     targetName: "이상 신호 기준값",
     scope: ANOMALY_THRESHOLD_SCOPE,
-    salesDropRateBps: setting.salesDropRateBps,
-    grossMarginDropBps: setting.grossMarginDropBps,
-    salesDifferenceAmount: setting.salesDifferenceAmount,
-    lossAmount: setting.lossAmount,
+    marginRateBps: setting.marginRateBps,
     inventoryDifferenceQuantity: setting.inventoryDifferenceQuantity,
     isActive: setting.isActive,
   };
 }
 
-async function lockAnomalyThresholdSettings(
-  tx: Prisma.TransactionClient,
-) {
+async function lockAnomalyThresholdSettings(tx: Prisma.TransactionClient) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('anomaly_threshold_settings'))`;
 }
 
@@ -126,19 +115,13 @@ export async function updateAnomalyThresholdSettings(
       where: { scope: ANOMALY_THRESHOLD_SCOPE },
       create: {
         scope: ANOMALY_THRESHOLD_SCOPE,
-        salesDropRateBps: parsed.data.salesDropRateBps,
-        grossMarginDropBps: parsed.data.grossMarginDropBps,
-        salesDifferenceAmount: parsed.data.salesDifferenceAmount,
-        lossAmount: parsed.data.lossAmount,
+        marginRateBps: parsed.data.marginRateBps,
         inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
         isActive: parsed.data.isActive,
         updatedById: actor.id,
       },
       update: {
-        salesDropRateBps: parsed.data.salesDropRateBps,
-        grossMarginDropBps: parsed.data.grossMarginDropBps,
-        salesDifferenceAmount: parsed.data.salesDifferenceAmount,
-        lossAmount: parsed.data.lossAmount,
+        marginRateBps: parsed.data.marginRateBps,
         inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
         isActive: parsed.data.isActive,
         updatedById: actor.id,

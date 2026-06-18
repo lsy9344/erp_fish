@@ -1,4 +1,7 @@
-import type { CorrectionTargetType, Prisma } from "../../../generated/prisma/index.js";
+import type {
+  CorrectionTargetType,
+  Prisma,
+} from "../../../generated/prisma/index.js";
 import { UserRole } from "../../../generated/prisma/index.js";
 import { redirect } from "next/navigation";
 
@@ -9,7 +12,10 @@ import {
   requireReportAccess,
 } from "../../server/authz.ts";
 import { db } from "../../server/db.ts";
-import type { CorrectionAppliedValue, CorrectionRecordListItem } from "./types.ts";
+import type {
+  CorrectionAppliedValue,
+  CorrectionRecordListItem,
+} from "./types.ts";
 import { correctionTargetTypeLabels } from "./types.ts";
 
 type CorrectionTargetIdentity = {

@@ -4,13 +4,9 @@ export const ANOMALY_THRESHOLD_SCOPE = "GLOBAL";
 
 const MAX_INTEGER = 2_147_483_647;
 const percentError = {
-  salesDropRate: "매출 하락률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
-  grossMarginDropRate:
-    "이익률 하락폭은 0.0% 이상 100.0% 이하로 입력해 주세요.",
+  marginRate: "마진률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
 } as const;
 const integerError = {
-  salesDifferenceAmount: "매출차액 금액은 0원 이상의 정수여야 합니다.",
-  lossAmount: "손실액은 0원 이상의 정수여야 합니다.",
   inventoryDifferenceQuantity: "재고 차이 기준은 0 이상의 정수여야 합니다.",
 } as const;
 const activeStatusError = "활성 상태는 활성 또는 비활성 중 하나여야 합니다.";
@@ -108,45 +104,31 @@ function parseReason(value: unknown, context: z.RefinementCtx) {
   return normalized;
 }
 
-export const anomalyThresholdFormSchema = z.object({
-  salesDropRate: z
-    .unknown()
-    .transform((value, context) =>
-      parsePercentBps(value, context, percentError.salesDropRate),
-    ),
-  grossMarginDropRate: z
-    .unknown()
-    .transform((value, context) =>
-      parsePercentBps(value, context, percentError.grossMarginDropRate),
-    ),
-  salesDifferenceAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseInteger(value, context, integerError.salesDifferenceAmount),
-    ),
-  lossAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseInteger(value, context, integerError.lossAmount),
-    ),
-  inventoryDifferenceQuantity: z
-    .unknown()
-    .transform((value, context) =>
-      parseInteger(value, context, integerError.inventoryDifferenceQuantity),
-    ),
-  isActive: z
-    .unknown()
-    .transform((value, context) => parseActiveStatus(value, context)),
-  reason: z.unknown().transform((value, context) => parseReason(value, context)),
-}).transform((value) => ({
-  salesDropRateBps: value.salesDropRate,
-  grossMarginDropBps: value.grossMarginDropRate,
-  salesDifferenceAmount: value.salesDifferenceAmount,
-  lossAmount: value.lossAmount,
-  inventoryDifferenceQuantity: value.inventoryDifferenceQuantity,
-  isActive: value.isActive,
-  reason: value.reason,
-}));
+export const anomalyThresholdFormSchema = z
+  .object({
+    marginRate: z
+      .unknown()
+      .transform((value, context) =>
+        parsePercentBps(value, context, percentError.marginRate),
+      ),
+    inventoryDifferenceQuantity: z
+      .unknown()
+      .transform((value, context) =>
+        parseInteger(value, context, integerError.inventoryDifferenceQuantity),
+      ),
+    isActive: z
+      .unknown()
+      .transform((value, context) => parseActiveStatus(value, context)),
+    reason: z
+      .unknown()
+      .transform((value, context) => parseReason(value, context)),
+  })
+  .transform((value) => ({
+    marginRateBps: value.marginRate,
+    inventoryDifferenceQuantity: value.inventoryDifferenceQuantity,
+    isActive: value.isActive,
+    reason: value.reason,
+  }));
 
 export type AnomalyThresholdFormInput = z.infer<
   typeof anomalyThresholdFormSchema

@@ -36,10 +36,7 @@ type FormValues = ThresholdFormValues & {
 };
 
 const emptyFormValues: FormValues = {
-  salesDropRate: "",
-  grossMarginDropRate: "",
-  salesDifferenceAmount: "",
-  lossAmount: "",
+  marginRate: "",
   inventoryDifferenceQuantity: "",
   isActive: true,
   reason: "",
@@ -66,10 +63,7 @@ function formatUpdatedAt(value: string) {
 export function AnomalyThresholdSettingsClient({
   settings,
 }: AnomalyThresholdSettingsClientProps) {
-  const salesDropRef = useRef<HTMLInputElement>(null);
-  const grossMarginDropRef = useRef<HTMLInputElement>(null);
-  const salesDifferenceRef = useRef<HTMLInputElement>(null);
-  const lossAmountRef = useRef<HTMLInputElement>(null);
+  const marginRateRef = useRef<HTMLInputElement>(null);
   const inventoryDifferenceRef = useRef<HTMLInputElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const [formValues, setFormValues] = useState<FormValues>(
@@ -96,23 +90,8 @@ export function AnomalyThresholdSettingsClient({
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
-      if (errors.salesDropRate?.length) {
-        salesDropRef.current?.focus();
-        return;
-      }
-
-      if (errors.grossMarginDropRate?.length) {
-        grossMarginDropRef.current?.focus();
-        return;
-      }
-
-      if (errors.salesDifferenceAmount?.length) {
-        salesDifferenceRef.current?.focus();
-        return;
-      }
-
-      if (errors.lossAmount?.length) {
-        lossAmountRef.current?.focus();
+      if (errors.marginRate?.length) {
+        marginRateRef.current?.focus();
         return;
       }
 
@@ -153,7 +132,8 @@ export function AnomalyThresholdSettingsClient({
       setFormValues(toFormValues(result.data));
       toast.success("기준값을 저장했습니다.");
     } catch {
-      const message = "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+      const message =
+        "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
       setFormError(message);
       toast.error(message, {
         action: {
@@ -171,30 +151,15 @@ export function AnomalyThresholdSettingsClient({
     void saveSettings();
   }
 
-  const salesDropError = fieldErrors.salesDropRate?.[0];
-  const grossMarginDropError = fieldErrors.grossMarginDropRate?.[0];
-  const salesDifferenceError = fieldErrors.salesDifferenceAmount?.[0];
-  const lossAmountError = fieldErrors.lossAmount?.[0];
+  const marginRateError = fieldErrors.marginRate?.[0];
   const inventoryDifferenceError = fieldErrors.inventoryDifferenceQuantity?.[0];
   const activeError = fieldErrors.isActive?.[0];
   const reasonError = fieldErrors.reason?.[0];
   const thresholdRows = savedSettings
     ? [
         {
-          type: "매출 하락률",
-          value: `${savedSettings.formValues.salesDropRate}%`,
-        },
-        {
-          type: "이익률 하락폭",
-          value: `${savedSettings.formValues.grossMarginDropRate}%p`,
-        },
-        {
-          type: "매출차액 금액",
-          value: `${savedSettings.formValues.salesDifferenceAmount}원`,
-        },
-        {
-          type: "손실액",
-          value: `${savedSettings.formValues.lossAmount}원`,
+          type: "마진률",
+          value: `${savedSettings.formValues.marginRate}%`,
         },
         {
           type: "재고 차이 기준",
@@ -206,14 +171,14 @@ export function AnomalyThresholdSettingsClient({
   return (
     <div className="flex w-full max-w-2xl flex-col gap-4">
       {!savedSettings ? (
-        <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+        <div className="bg-muted/30 text-muted-foreground rounded-lg border p-4 text-sm">
           아직 기준값이 저장되지 않았습니다.
         </div>
       ) : null}
 
       {savedSettings ? (
-        <div className="rounded-lg border bg-background">
-          <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3 border-b px-4 py-3 text-sm font-medium text-muted-foreground sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="bg-background rounded-lg border">
+          <div className="text-muted-foreground grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3 border-b px-4 py-3 text-sm font-medium sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
             <span>기준 유형</span>
             <span>현재 값</span>
             <span className="hidden sm:block">적용 범위</span>
@@ -226,7 +191,7 @@ export function AnomalyThresholdSettingsClient({
                 key={row.type}
                 className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]"
               >
-                <span className="min-w-0 break-words font-medium">
+                <span className="min-w-0 font-medium break-words">
                   {row.type}
                 </span>
                 <span className="min-w-0 break-words tabular-nums">
@@ -238,14 +203,14 @@ export function AnomalyThresholdSettingsClient({
                 <span className="hidden min-w-0 break-words sm:block">
                   {savedSettings.statusLabel}
                 </span>
-                <span className="hidden min-w-0 break-words text-muted-foreground sm:block">
+                <span className="text-muted-foreground hidden min-w-0 break-words sm:block">
                   {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}
                   {savedSettings.updatedByName}
                 </span>
               </div>
             ))}
           </div>
-          <div className="grid gap-2 border-t px-4 py-3 text-sm text-muted-foreground sm:hidden">
+          <div className="text-muted-foreground grid gap-2 border-t px-4 py-3 text-sm sm:hidden">
             <span>적용 범위: {savedSettings.scopeLabel}</span>
             <span>상태: {savedSettings.statusLabel}</span>
             <span>
@@ -260,120 +225,34 @@ export function AnomalyThresholdSettingsClient({
         <CardHeader>
           <CardTitle>기준값 입력</CardTitle>
           <CardDescription>
-            기준일 정책 확인 필요. 입력한 값은 전체 지점 관제판에 공통 적용됩니다.
+            기준일 정책 확인 필요. 입력한 값은 전체 지점 관제판에 공통
+            적용됩니다.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit} noValidate>
           <CardContent>
             <FieldGroup>
-              <Field data-invalid={Boolean(salesDropError)}>
-                <FieldLabel htmlFor="sales-drop-rate">매출 하락률(%)</FieldLabel>
+              <Field data-invalid={Boolean(marginRateError)}>
+                <FieldLabel htmlFor="margin-rate">마진률(%)</FieldLabel>
                 <Input
-                  ref={salesDropRef}
-                  id="sales-drop-rate"
+                  ref={marginRateRef}
+                  id="margin-rate"
                   inputMode="decimal"
-                  value={formValues.salesDropRate}
+                  value={formValues.marginRate}
                   onChange={(event) =>
-                    setFieldValue("salesDropRate", event.currentTarget.value)
+                    setFieldValue("marginRate", event.currentTarget.value)
                   }
-                  aria-invalid={Boolean(salesDropError)}
+                  aria-invalid={Boolean(marginRateError)}
                   aria-describedby={
-                    salesDropError ? "sales-drop-rate-error" : undefined
+                    marginRateError ? "margin-rate-error" : undefined
                   }
                 />
                 <FieldDescription>
-                  기준일 정책 확인 필요. 매출 하락률 기준입니다.
+                  현재 장부 마진률이 기준보다 낮으면 이상 신호로 표시합니다.
                 </FieldDescription>
-                {salesDropError ? (
-                  <FieldError id="sales-drop-rate-error">
-                    {salesDropError}
-                  </FieldError>
-                ) : null}
-              </Field>
-
-              <Field data-invalid={Boolean(grossMarginDropError)}>
-                <FieldLabel htmlFor="gross-margin-drop-rate">
-                  이익률 하락폭(%p)
-                </FieldLabel>
-                <Input
-                  ref={grossMarginDropRef}
-                  id="gross-margin-drop-rate"
-                  inputMode="decimal"
-                  value={formValues.grossMarginDropRate}
-                  onChange={(event) =>
-                    setFieldValue(
-                      "grossMarginDropRate",
-                      event.currentTarget.value,
-                    )
-                  }
-                  aria-invalid={Boolean(grossMarginDropError)}
-                  aria-describedby={
-                    grossMarginDropError
-                      ? "gross-margin-drop-rate-error"
-                      : undefined
-                  }
-                />
-                <FieldDescription>
-                  기준일 정책 확인 필요. 이익률 하락폭 기준입니다.
-                </FieldDescription>
-                {grossMarginDropError ? (
-                  <FieldError id="gross-margin-drop-rate-error">
-                    {grossMarginDropError}
-                  </FieldError>
-                ) : null}
-              </Field>
-
-              <Field data-invalid={Boolean(salesDifferenceError)}>
-                <FieldLabel htmlFor="sales-difference-amount">
-                  매출차액 금액(원)
-                </FieldLabel>
-                <Input
-                  ref={salesDifferenceRef}
-                  id="sales-difference-amount"
-                  inputMode="numeric"
-                  value={formValues.salesDifferenceAmount}
-                  onChange={(event) =>
-                    setFieldValue(
-                      "salesDifferenceAmount",
-                      event.currentTarget.value,
-                    )
-                  }
-                  aria-invalid={Boolean(salesDifferenceError)}
-                  aria-describedby={
-                    salesDifferenceError
-                      ? "sales-difference-amount-error"
-                      : undefined
-                  }
-                />
-                <FieldDescription>
-                  현금/카드/기타 합계와 매출 차액 금액 기준입니다.
-                </FieldDescription>
-                {salesDifferenceError ? (
-                  <FieldError id="sales-difference-amount-error">
-                    {salesDifferenceError}
-                  </FieldError>
-                ) : null}
-              </Field>
-
-              <Field data-invalid={Boolean(lossAmountError)}>
-                <FieldLabel htmlFor="loss-amount">손실액(원)</FieldLabel>
-                <Input
-                  ref={lossAmountRef}
-                  id="loss-amount"
-                  inputMode="numeric"
-                  value={formValues.lossAmount}
-                  onChange={(event) =>
-                    setFieldValue("lossAmount", event.currentTarget.value)
-                  }
-                  aria-invalid={Boolean(lossAmountError)}
-                  aria-describedby={
-                    lossAmountError ? "loss-amount-error" : undefined
-                  }
-                />
-                <FieldDescription>손실 금액 기준입니다.</FieldDescription>
-                {lossAmountError ? (
-                  <FieldError id="loss-amount-error">
-                    {lossAmountError}
+                {marginRateError ? (
+                  <FieldError id="margin-rate-error">
+                    {marginRateError}
                   </FieldError>
                 ) : null}
               </Field>
@@ -466,13 +345,13 @@ export function AnomalyThresholdSettingsClient({
               </Field>
             </FieldGroup>
             {formError ? (
-              <p className="mt-4 text-sm text-destructive" role="alert">
+              <p className="text-destructive mt-4 text-sm" role="alert">
                 {formError}
               </p>
             ) : null}
           </CardContent>
           <CardFooter className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-muted-foreground">
+            <div className="text-muted-foreground text-sm">
               {savedSettings ? (
                 <>
                   마지막 변경: {formatUpdatedAt(savedSettings.updatedAt)} ·{" "}

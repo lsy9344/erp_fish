@@ -14,9 +14,28 @@ import {
 } from "~/server/authz";
 import {
   type InventoryStepData,
+  type InventoryCarryoverDetailView,
+  type InventoryCarryoverHistoryRow,
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
 } from "./types";
+
+export const inventoryCarryoverDetailSelect = {
+  source: true,
+  status: true,
+  resolvedQuantity: true,
+  sourceLedgerId: true,
+  sourceLedgerClosingDate: true,
+  sourceLedgerStatus: true,
+  sourceYearMonth: true,
+  sourceSnapshotId: true,
+  sourcePreviousQuantity: true,
+  sourcePurchasedQuantity: true,
+  sourceLossQuantity: true,
+  sourceCurrentQuantity: true,
+  sourceQuantity: true,
+  message: true,
+} as const;
 
 const inventoryItemSelect = {
   id: true,
@@ -34,6 +53,9 @@ const inventoryItemSelect = {
   carryoverSource: true,
   carryoverStatus: true,
   carryoverLedgerId: true,
+  carryoverDetail: {
+    select: inventoryCarryoverDetailSelect,
+  },
 } as const;
 
 const inventoryAdjustmentSelect = {
@@ -61,6 +83,11 @@ const inventoryAdjustmentSelect = {
 type InventoryItemPayload = Prisma.LedgerInventoryItemGetPayload<{
   select: typeof inventoryItemSelect;
 }>;
+
+type InventoryCarryoverDetailPayload =
+  Prisma.LedgerInventoryCarryoverDetailGetPayload<{
+    select: typeof inventoryCarryoverDetailSelect;
+  }>;
 
 type InventoryAdjustmentPayload = Prisma.LedgerInventoryAdjustmentGetPayload<{
   select: typeof inventoryAdjustmentSelect;
@@ -110,13 +137,18 @@ type ProductInventoryBase = {
   carryoverSource: InventoryCarryoverSource;
   carryoverStatus: InventoryCarryoverStatus;
   carryoverLedgerId: string | null;
+  previousQuantityDetail: InventoryCarryoverDetailView;
 };
 
 type ExistingCarryoverBasis = {
   productId: string;
+  previousQuantity: number;
+  purchasedQuantity: number;
   currentQuantity: number | null;
   quantity: number | null;
 };
+
+const historyLimit = 30;
 
 function getYearMonth(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -155,6 +187,11 @@ function aggregatePurchases(purchases: PurchasePayload[]) {
         carryoverSource: InventoryCarryoverSource.MANUAL,
         carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
         carryoverLedgerId: null,
+        previousQuantityDetail: buildCarryoverDetail({
+          source: InventoryCarryoverSource.MANUAL,
+          status: InventoryCarryoverStatus.DATA_INSUFFICIENT,
+          resolvedQuantity: 0,
+        }),
       },
     });
   }
@@ -187,11 +224,154 @@ function aggregateLosses(losses: LossPayload[]) {
         carryoverSource: InventoryCarryoverSource.MANUAL,
         carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
         carryoverLedgerId: null,
+        previousQuantityDetail: buildCarryoverDetail({
+          source: InventoryCarryoverSource.MANUAL,
+          status: InventoryCarryoverStatus.DATA_INSUFFICIENT,
+          resolvedQuantity: 0,
+        }),
       },
     });
   }
 
   return aggregates;
+}
+
+function toCarryoverDetailView(
+  detail: InventoryCarryoverDetailPayload,
+): InventoryCarryoverDetailView {
+  return {
+    ...detail,
+    sourceLedgerClosingDate:
+      detail.sourceLedgerClosingDate?.toISOString() ?? null,
+    history: [],
+  };
+}
+
+function toCarryoverDetailMessage(status: InventoryCarryoverStatus) {
+  switch (status) {
+    case InventoryCarryoverStatus.PREVIOUS_CARRYOVER:
+      return "직전 본사 마감 장부의 당일재고 후보입니다.";
+    case InventoryCarryoverStatus.REVIEW_REQUIRED:
+      return "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 확인이 필요합니다.";
+    case InventoryCarryoverStatus.CARRYOVER_EMPTY:
+      return "전일 장부나 이월 근거가 부족합니다. 표시된 값은 확인이 필요한 후보입니다.";
+    case InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED:
+      return "마감 또는 정정으로 이월 기준이 바뀔 수 있습니다. 기존 입력값은 자동으로 덮어쓰지 않습니다.";
+    case InventoryCarryoverStatus.OPENING_CARRYOVER:
+      return "월초 재고 스냅샷에서 넘어온 품목입니다.";
+    case InventoryCarryoverStatus.POLICY_UNCONFIRMED:
+      return "기준 확인 필요 상태입니다.";
+    case InventoryCarryoverStatus.DATA_INSUFFICIENT:
+    default:
+      return "이월 기준 데이터가 부족합니다.";
+  }
+}
+
+function buildCarryoverDetail({
+  source,
+  status,
+  resolvedQuantity,
+  message = toCarryoverDetailMessage(status),
+  sourceLedgerId = null,
+  sourceLedgerClosingDate = null,
+  sourceLedgerStatus = null,
+  sourceYearMonth = null,
+  sourceSnapshotId = null,
+  sourcePreviousQuantity = null,
+  sourcePurchasedQuantity = null,
+  sourceLossQuantity = null,
+  sourceCurrentQuantity = null,
+  sourceQuantity = null,
+}: {
+  source: InventoryCarryoverSource;
+  status: InventoryCarryoverStatus;
+  resolvedQuantity: number;
+  message?: string;
+  sourceLedgerId?: string | null;
+  sourceLedgerClosingDate?: Date | string | null;
+  sourceLedgerStatus?: InventoryCarryoverDetailView["sourceLedgerStatus"];
+  sourceYearMonth?: string | null;
+  sourceSnapshotId?: string | null;
+  sourcePreviousQuantity?: number | null;
+  sourcePurchasedQuantity?: number | null;
+  sourceLossQuantity?: number | null;
+  sourceCurrentQuantity?: number | null;
+  sourceQuantity?: number | null;
+}): InventoryCarryoverDetailView {
+  return {
+    source,
+    status,
+    resolvedQuantity,
+    sourceLedgerId,
+    sourceLedgerClosingDate:
+      sourceLedgerClosingDate instanceof Date
+        ? sourceLedgerClosingDate.toISOString()
+        : sourceLedgerClosingDate,
+    sourceLedgerStatus,
+    sourceYearMonth,
+    sourceSnapshotId,
+    sourcePreviousQuantity,
+    sourcePurchasedQuantity,
+    sourceLossQuantity,
+    sourceCurrentQuantity,
+    sourceQuantity,
+    message,
+    history: [],
+  };
+}
+
+function buildLedgerCarryoverDetail({
+  source,
+  status,
+  ledger,
+  item,
+  lossQuantity = null,
+}: {
+  source: InventoryCarryoverSource;
+  status: InventoryCarryoverStatus;
+  ledger: {
+    id: string;
+    status: InventoryCarryoverDetailView["sourceLedgerStatus"];
+    closingDate: Date;
+  };
+  item: ExistingCarryoverBasis;
+  lossQuantity?: number | null;
+}) {
+  return buildCarryoverDetail({
+    source,
+    status,
+    resolvedQuantity: toPreviousQuantity(item),
+    sourceLedgerId: ledger.id,
+    sourceLedgerClosingDate: ledger.closingDate,
+    sourceLedgerStatus: ledger.status,
+    sourcePreviousQuantity: item.previousQuantity,
+    sourcePurchasedQuantity: item.purchasedQuantity,
+    sourceLossQuantity: lossQuantity,
+    sourceCurrentQuantity: item.currentQuantity,
+    sourceQuantity: item.quantity,
+  });
+}
+
+function buildSnapshotCarryoverDetail({
+  snapshot,
+  status = InventoryCarryoverStatus.OPENING_CARRYOVER,
+}: {
+  snapshot: {
+    id: string;
+    yearMonth: string;
+    quantity: number;
+  };
+  status?: InventoryCarryoverStatus;
+}) {
+  return buildCarryoverDetail({
+    source: InventoryCarryoverSource.OPENING_SNAPSHOT,
+    status,
+    resolvedQuantity: snapshot.quantity,
+    sourceYearMonth: snapshot.yearMonth,
+    sourceSnapshotId: snapshot.id,
+    sourcePreviousQuantity: snapshot.quantity,
+    sourceQuantity: snapshot.quantity,
+  });
 }
 
 function toInventoryLine(
@@ -220,6 +400,7 @@ function toInventoryLine(
     carryoverSource: base.carryoverSource,
     carryoverStatus: base.carryoverStatus,
     carryoverLedgerId: base.carryoverLedgerId,
+    previousQuantityDetail: base.previousQuantityDetail,
     isModified: false,
     adjustment: null,
   };
@@ -271,6 +452,17 @@ function toExistingInventoryLine(
     carryoverSource: item.carryoverSource,
     carryoverStatus,
     carryoverLedgerId: item.carryoverLedgerId,
+    previousQuantityDetail: item.carryoverDetail
+      ? {
+          ...toCarryoverDetailView(item.carryoverDetail),
+          status: carryoverStatus,
+        }
+      : buildCarryoverDetail({
+          source: item.carryoverSource,
+          status: carryoverStatus,
+          resolvedQuantity: item.previousQuantity,
+          sourceLedgerId: item.carryoverLedgerId,
+        }),
     isModified: item.isModified,
     adjustment: toAdjustmentView(adjustment),
   };
@@ -451,6 +643,8 @@ async function mergeExistingInventoryLines(
             ledgerInventoryItems: {
               select: {
                 productId: true,
+                previousQuantity: true,
+                purchasedQuantity: true,
                 currentQuantity: true,
                 quantity: true,
               },
@@ -528,6 +722,12 @@ async function getCarryoverBases(
         select: inventoryItemSelect,
         orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
       },
+      ledgerLossItems: {
+        select: {
+          productId: true,
+          quantity: true,
+        },
+      },
     },
   });
 
@@ -545,6 +745,15 @@ async function getCarryoverBases(
         ? InventoryCarryoverStatus.PREVIOUS_CARRYOVER
         : InventoryCarryoverStatus.REVIEW_REQUIRED
       : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+    const lossQuantityByProductId = new Map<string, number>();
+
+    for (const lossItem of priorLedger.ledgerLossItems) {
+      lossQuantityByProductId.set(
+        lossItem.productId,
+        (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
+          lossItem.quantity,
+      );
+    }
 
     return {
       status:
@@ -568,6 +777,13 @@ async function getCarryoverBases(
           carryoverSource: source,
           carryoverStatus: status,
           carryoverLedgerId: priorLedger.id,
+          previousQuantityDetail: buildLedgerCarryoverDetail({
+            source,
+            status,
+            ledger: priorLedger,
+            item,
+            lossQuantity: lossQuantityByProductId.get(item.productId) ?? null,
+          }),
         }),
       ),
     };
@@ -580,6 +796,8 @@ async function getCarryoverBases(
     },
     orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
     select: {
+      id: true,
+      yearMonth: true,
       productId: true,
       productName: true,
       productCategory: true,
@@ -599,6 +817,11 @@ async function getCarryoverBases(
       .map<ProductInventoryBase>((base) => ({
         ...base,
         carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
+        previousQuantityDetail: buildCarryoverDetail({
+          source: base.carryoverSource,
+          status: InventoryCarryoverStatus.DATA_INSUFFICIENT,
+          resolvedQuantity: base.previousQuantity,
+        }),
       }));
 
     return {
@@ -619,6 +842,7 @@ async function getCarryoverBases(
           carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
           carryoverStatus: InventoryCarryoverStatus.OPENING_CARRYOVER,
           carryoverLedgerId: null,
+          previousQuantityDetail: buildSnapshotCarryoverDetail({ snapshot }),
         })),
         ...missingSnapshotBases,
       ],
@@ -630,6 +854,16 @@ async function getCarryoverBases(
     const source = isHeadquartersClosed
       ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
       : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
+    const status = InventoryCarryoverStatus.CARRYOVER_EMPTY;
+    const lossQuantityByProductId = new Map<string, number>();
+
+    for (const lossItem of priorLedger.ledgerLossItems) {
+      lossQuantityByProductId.set(
+        lossItem.productId,
+        (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
+          lossItem.quantity,
+      );
+    }
 
     return {
       status: "manual" as const,
@@ -645,8 +879,15 @@ async function getCarryoverBases(
           unitPrice: item.unitPrice,
           previousQuantity: toPreviousQuantity(item),
           carryoverSource: source,
-          carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
+          carryoverStatus: status,
           carryoverLedgerId: priorLedger.id,
+          previousQuantityDetail: buildLedgerCarryoverDetail({
+            source,
+            status,
+            ledger: priorLedger,
+            item,
+            lossQuantity: lossQuantityByProductId.get(item.productId) ?? null,
+          }),
         }),
       ),
     };
@@ -683,17 +924,111 @@ async function getActiveProductBases(
     },
   });
 
-  return products.map<ProductInventoryBase>((product) => ({
-    productId: product.id,
-    productName: product.name,
-    productCategory: product.category,
-    productSpec: product.spec,
-    unitPrice: product.defaultUnitPrice,
-    previousQuantity: 0,
-    carryoverSource: InventoryCarryoverSource.MANUAL,
-    carryoverStatus:
-      options.carryoverStatus ?? InventoryCarryoverStatus.DATA_INSUFFICIENT,
-    carryoverLedgerId: null,
+  return products.map<ProductInventoryBase>((product) => {
+    const carryoverStatus =
+      options.carryoverStatus ?? InventoryCarryoverStatus.DATA_INSUFFICIENT;
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 0,
+      carryoverSource: InventoryCarryoverSource.MANUAL,
+      carryoverStatus,
+      carryoverLedgerId: null,
+      previousQuantityDetail: buildCarryoverDetail({
+        source: InventoryCarryoverSource.MANUAL,
+        status: carryoverStatus,
+        resolvedQuantity: 0,
+      }),
+    };
+  });
+}
+
+function toHistoryLossQuantity(item: {
+  previousQuantity: number;
+  purchasedQuantity: number;
+  currentQuantity: number | null;
+  quantity: number | null;
+}) {
+  const closingQuantity = item.currentQuantity ?? item.quantity;
+
+  if (closingQuantity === null) {
+    return null;
+  }
+
+  return item.previousQuantity + item.purchasedQuantity - closingQuantity;
+}
+
+async function attachCarryoverHistories(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  closingDate: Date,
+  items: InventoryStepLine[],
+) {
+  const productIds = [...new Set(items.map((item) => item.productId))];
+
+  if (productIds.length === 0) {
+    return items;
+  }
+
+  const historyLedgers = await tx.dailyLedger.findMany({
+    where: {
+      storeId,
+      closingDate: { lt: closingDate },
+      status: { not: "HOLIDAY" },
+      ledgerInventoryItems: {
+        some: {
+          productId: { in: productIds },
+        },
+      },
+    },
+    orderBy: { closingDate: "desc" },
+    take: historyLimit,
+    select: {
+      id: true,
+      closingDate: true,
+      status: true,
+      ledgerInventoryItems: {
+        where: { productId: { in: productIds } },
+        select: {
+          productId: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          quantity: true,
+        },
+      },
+    },
+  });
+  const historyByProductId = new Map<string, InventoryCarryoverHistoryRow[]>();
+
+  for (const ledger of historyLedgers) {
+    for (const item of ledger.ledgerInventoryItems) {
+      const rows = historyByProductId.get(item.productId) ?? [];
+
+      rows.push({
+        ledgerId: ledger.id,
+        closingDate: ledger.closingDate.toISOString(),
+        ledgerStatus: ledger.status,
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity: item.purchasedQuantity,
+        lossQuantity: toHistoryLossQuantity(item),
+        currentQuantity: item.currentQuantity,
+        quantity: item.quantity,
+      });
+      historyByProductId.set(item.productId, rows);
+    }
+  }
+
+  return items.map((item) => ({
+    ...item,
+    previousQuantityDetail: {
+      ...item.previousQuantityDetail,
+      history: historyByProductId.get(item.productId) ?? [],
+    },
   }));
 }
 
@@ -738,6 +1073,12 @@ async function getInventoryStepDataForLedgerInTx(
       purchases,
       losses,
     );
+    const itemsWithHistory = await attachCarryoverHistories(
+      tx,
+      ledger.storeId,
+      ledger.closingDate,
+      items,
+    );
     const carryoverStatus = getPrimaryCarryoverStatus(items);
 
     return {
@@ -749,7 +1090,7 @@ async function getInventoryStepDataForLedgerInTx(
       authorDisplayName: ledger.authorDisplayName ?? null,
       status: ledger.status,
       stepCompletion,
-      items,
+      items: itemsWithHistory,
       carryover: {
         status: toCarryoverLoadStatus(carryoverStatus),
         source,
@@ -764,6 +1105,23 @@ async function getInventoryStepDataForLedgerInTx(
     ledger.closingDate,
   );
   const bases = mergeActivityBases(carryover.bases, purchases, losses);
+  const items = bases.map((base) =>
+    withPurchaseAggregate(
+      toInventoryLine(
+        base,
+        purchases.get(base.productId)?.quantity ?? 0,
+        losses.get(base.productId),
+      ),
+      purchases.get(base.productId),
+      losses.get(base.productId),
+    ),
+  );
+  const itemsWithHistory = await attachCarryoverHistories(
+    tx,
+    ledger.storeId,
+    ledger.closingDate,
+    items,
+  );
 
   return {
     id: ledger.id,
@@ -774,17 +1132,7 @@ async function getInventoryStepDataForLedgerInTx(
     authorDisplayName: ledger.authorDisplayName ?? null,
     status: ledger.status,
     stepCompletion,
-    items: bases.map((base) =>
-      withPurchaseAggregate(
-        toInventoryLine(
-          base,
-          purchases.get(base.productId)?.quantity ?? 0,
-          losses.get(base.productId),
-        ),
-        purchases.get(base.productId),
-        losses.get(base.productId),
-      ),
-    ),
+    items: itemsWithHistory,
     carryover: {
       status: carryover.status,
       source: carryover.source,

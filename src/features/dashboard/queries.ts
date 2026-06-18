@@ -829,16 +829,12 @@ function metricStatusSignal(
   metricLabel: string,
   metric: LedgerReviewMetric,
 ) {
-  if (metric.status === "ok") {
+  if (metric.status === "ok" || metric.status === "policy-unconfirmed") {
     return null;
   }
 
   const statusLabel =
-    metric.status === "policy-unconfirmed"
-      ? `${metricLabel} 기준 확인`
-      : metric.status === "data-insufficient"
-        ? "데이터 부족"
-        : "계산 불가";
+    metric.status === "data-insufficient" ? "데이터 부족" : "계산 불가";
   const detail =
     metric.reason ??
     metric.unavailableReason ??
@@ -876,35 +872,11 @@ const policyRequiredSignalByAnomalyId: Record<
   string,
   { id: string; label: string; detail: string }
 > = {
-  "sales-difference-exceeded": {
-    id: "sales-difference-policy-required",
-    label: "매출차액 기준 확인",
-    detail:
-      "OQ-1 매출차액 허용 기준/임계값이 확정되지 않아 확정 이상으로 표시하지 않습니다.",
-  },
-  "sales-drop": {
-    id: "sales-drop-policy-required",
-    label: "매출 기준 확인",
-    detail:
-      "OQ-1 매출 하락 비교 기준일 정책이 확정되지 않아 확정 이상으로 표시하지 않습니다.",
-  },
-  "gross-margin-drop": {
-    id: "gross-margin-policy-required",
-    label: "이익률 기준 확인",
-    detail:
-      "OQ-1 이익률 하락 비교 기준일 정책이 확정되지 않아 확정 이상으로 표시하지 않습니다.",
-  },
   "inventory-difference-exceeded": {
     id: "inventory-policy-required",
     label: "재고 기준 확인",
     detail:
       "OQ-7/OQ-17 FIFO 재고 기준 정책이 확정되지 않아 확정 재고 이상으로 표시하지 않습니다.",
-  },
-  "loss-amount-exceeded": {
-    id: "loss-policy-required",
-    label: "손실 기준 확인",
-    detail:
-      "OQ-9 손실액 판정 정책이 확정되지 않아 확정 손실 이상으로 표시하지 않습니다.",
   },
 };
 

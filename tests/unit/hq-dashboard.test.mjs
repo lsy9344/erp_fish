@@ -387,10 +387,7 @@ test("HQ dashboard keeps calculation and policy states as distinct info signals"
 
   const signals = getDashboardSignals({
     thresholdSettings: {
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 350,
-      salesDifferenceAmount: 10000,
-      lossAmount: 50000,
+      marginRateBps: 3500,
       inventoryDifferenceQuantity: 10,
     },
     revenueCurrent: {
@@ -447,17 +444,11 @@ test("HQ dashboard keeps calculation and policy states as distinct info signals"
         label: "계산 불가",
         severity: "info",
       },
-      {
-        id: "calculation-salesDifference-policy-unconfirmed",
-        label: "매출차액 기준 확인",
-        severity: "info",
-      },
     ],
   );
   assert.match(signals[0].detail, /총매출\/결제/);
   assert.match(signals[1].detail, /총매출 입력이 없습니다/);
   assert.match(signals[2].detail, /마진율 계산 중 오류/);
-  assert.match(signals[3].detail, /OQ-1/);
 });
 
 test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confirmed", async () => {
@@ -473,10 +464,7 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
 
   const signals = getDashboardSignals({
     thresholdSettings: {
-      salesDropRateBps: 1250,
-      grossMarginDropBps: 350,
-      salesDifferenceAmount: 10000,
-      lossAmount: 50000,
+      marginRateBps: 3500,
       inventoryDifferenceQuantity: 10,
     },
     revenueCurrent: {
@@ -512,26 +500,13 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
         },
       ],
     },
-    evaluateRevenueAnomalySignals: ({ current }) => [
-      {
-        id: "sales-difference-exceeded",
-        label: "매출차액 초과",
-        severity: "warning",
-        detail: `매출차액 ${current.salesDifference.value}`,
-      },
-    ],
+    evaluateRevenueAnomalySignals: () => [],
     evaluateInventoryLossAnomalySignals: () => [
       {
         id: "inventory-difference-exceeded",
         label: "재고 이상",
         severity: "critical",
         detail: "재고 차이 19개",
-      },
-      {
-        id: "loss-amount-exceeded",
-        label: "손실 이상",
-        severity: "critical",
-        detail: "손실액 60,000원",
       },
     ],
   });
@@ -540,18 +515,8 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
     signals.map(({ id, label, severity }) => ({ id, label, severity })),
     [
       {
-        id: "sales-difference-policy-required",
-        label: "매출차액 기준 확인",
-        severity: "info",
-      },
-      {
         id: "inventory-policy-required",
         label: "재고 기준 확인",
-        severity: "info",
-      },
-      {
-        id: "loss-policy-required",
-        label: "손실 기준 확인",
         severity: "info",
       },
     ],
@@ -577,9 +542,7 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
   );
   assert.equal(row.priority.label, "확인 필요");
   assert.deepEqual(row.priority.reasons, [
-    "매출차액 기준 확인",
     "재고 기준 확인",
-    "손실 기준 확인",
   ]);
 });
 
@@ -604,10 +567,7 @@ test("HQ dashboard treats inactive anomaly thresholds as policy-required info st
   } = await import(pathToFileURL(anomalyPath).href);
 
   const thresholdSettings = normalizeAnomalyThresholdSignalSettings({
-    salesDropRateBps: 1250,
-    grossMarginDropBps: 350,
-    salesDifferenceAmount: 10000,
-    lossAmount: 50000,
+    marginRateBps: 3500,
     inventoryDifferenceQuantity: 10,
     isActive: false,
   });

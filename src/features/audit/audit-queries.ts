@@ -1,6 +1,7 @@
 import type { Prisma } from "../../../generated/prisma";
 import {
   AUDIT_HISTORY_TARGET_TYPES,
+  formatAuditChangeSummary,
   formatAuditJsonValue,
   getAuditActionLabel,
   getAuditTargetTypeLabel,
@@ -40,6 +41,7 @@ export type AuditHistoryItem = {
   action: string;
   actionLabel: string;
   reasonText: string;
+  changeSummaryText: string;
   beforeText: string;
   afterText: string;
 };
@@ -398,6 +400,7 @@ export async function getAuditHistoryForHeadquarters(
       action: log.action,
       actionLabel: getAuditActionLabel(log.action),
       reasonText: log.reason ?? "-",
+      changeSummaryText: formatAuditChangeSummary(log.before, log.after),
       beforeText: formatAuditJsonValue(log.before),
       afterText: formatAuditJsonValue(log.after),
     }));

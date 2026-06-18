@@ -1,6 +1,10 @@
 "use client";
 
-import { AlertCircleIcon, CheckCircle2Icon, LoaderCircleIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  LoaderCircleIcon,
+} from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";

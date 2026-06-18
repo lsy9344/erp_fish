@@ -583,9 +583,10 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
     ledgerDetailHref: "/app/ledgers/ledger-1",
     correctionTimelineHref: null,
   };
-  const correctedSalesDifference = {
+  const correctedMarginRate = {
     ...baseMetric,
-    label: "매출 차이",
+    label: "이익률",
+    kind: "percent",
     isCorrected: true,
     status: "corrected",
     statusLabel: "정정 반영",
@@ -603,8 +604,8 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
   };
   const metricEvidence = {
     salesAmount: baseMetric,
-    grossMarginRate: { ...baseMetric, label: "이익률", kind: "percent" },
-    salesDifference: correctedSalesDifference,
+    grossMarginRate: correctedMarginRate,
+    salesDifference: { ...baseMetric, label: "매출 차이" },
     loss: { ...baseMetric, label: "손실", kind: "boolean" },
   };
   const plainMetricEvidence = {
@@ -650,10 +651,10 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
         status: "HEADQUARTERS_CLOSED",
         signals: [
           {
-            id: "sales-difference",
-            label: "매출 차이 확인",
+            id: "margin-rate-below-threshold",
+            label: "마진률 미달",
             severity: "warning",
-            detail: "정정 반영 후에도 차이가 큽니다.",
+            detail: "마진률이 기준보다 낮습니다.",
           },
         ],
         metricEvidence,

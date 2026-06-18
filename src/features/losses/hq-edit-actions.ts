@@ -285,7 +285,8 @@ async function hqLossConflictError<T = never>(
     ledgerId: input.ledgerId,
     section: "losses",
     clientToken: input.ledgerUpdatedAt,
-    serverToken: current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+    serverToken:
+      current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
     clientValues: toLossClientValues(input),
     serverValues: current ? toLossConflictValues(current) : {},
     lastModifiedAt: current?.updatedAt,

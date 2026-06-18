@@ -1,4 +1,7 @@
-import { type DailyLedgerStatus } from "../../../generated/prisma";
+import {
+  type DailyLedgerStatus,
+  type LedgerPurchaseSource,
+} from "../../../generated/prisma";
 import { type StoreEntryStepCompletion } from "./step-completion";
 
 type PaymentAmounts = {
@@ -35,7 +38,7 @@ export type LedgerPurchaseLine = {
   id: string;
   productId: string | null;
   purchaseStandardId: string | null;
-  sourceType: "MANUAL";
+  sourceType: LedgerPurchaseSource;
   productName: string;
   productCategory: string;
   productSpec: string;

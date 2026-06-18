@@ -195,7 +195,9 @@ export async function requireLedgerHqCloseAccess() {
 }
 
 export async function requireCorrectionCreateAccess() {
-  return requireHeadquartersActionPermission(PermissionAction.CORRECTION_CREATE);
+  return requireHeadquartersActionPermission(
+    PermissionAction.CORRECTION_CREATE,
+  );
 }
 
 export async function requireExportCreateAccess() {

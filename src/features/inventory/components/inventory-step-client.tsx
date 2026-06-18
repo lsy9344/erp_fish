@@ -7,6 +7,13 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import {
   Table,
@@ -211,6 +218,8 @@ export function InventoryStepClient({
     냉동: 1,
     생물: 1,
   });
+  const [selectedCarryoverItem, setSelectedCarryoverItem] =
+    useState<InventoryLineState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -601,6 +610,95 @@ export function InventoryStepClient({
     return `${new Intl.NumberFormat("ko-KR").format(value)}개`;
   }
 
+  function formatOptionalQuantity(value: number | null) {
+    return value === null ? "-" : formatQuantity(value);
+  }
+
+  function formatCarryoverBasisDate(
+    detail: InventoryLineState["previousQuantityDetail"],
+  ) {
+    if (detail.sourceLedgerClosingDate) {
+      return formatDate(detail.sourceLedgerClosingDate);
+    }
+
+    if (detail.sourceYearMonth) {
+      return `${detail.sourceYearMonth} 기준`;
+    }
+
+    return "-";
+  }
+
+  function getCarryoverQuantityTimeline(item: InventoryLineState) {
+    const detail = item.previousQuantityDetail;
+    const basisDate = formatCarryoverBasisDate(detail);
+    const currentLedgerDate = formatDate(data.closingDate);
+    const rows: {
+      label: string;
+      date: string;
+      quantity: number | null;
+      note: string;
+    }[] = [];
+
+    if (detail.source === "OPENING_SNAPSHOT") {
+      rows.push({
+        label: "월초 스냅샷 수량",
+        date: basisDate,
+        quantity:
+          detail.sourceQuantity ??
+          detail.sourcePreviousQuantity ??
+          detail.resolvedQuantity,
+        note: "월초 기준으로 저장된 시작 재고입니다.",
+      });
+    } else {
+      rows.push({
+        label: "기준 장부 시작 수량",
+        date: basisDate,
+        quantity: detail.sourcePreviousQuantity,
+        note: "근거 장부가 시작할 때의 재고입니다.",
+      });
+      rows.push({
+        label: "기준 장부 매입 수량",
+        date: basisDate,
+        quantity: detail.sourcePurchasedQuantity,
+        note: "근거 장부에 저장된 매입 수량입니다.",
+      });
+      rows.push({
+        label: "기준 장부 손실 수량",
+        date: basisDate,
+        quantity: detail.sourceLossQuantity,
+        note: "근거 장부에 저장된 손실/폐기 수량입니다.",
+      });
+      rows.push({
+        label: "기준 장부 마감 수량",
+        date: basisDate,
+        quantity: detail.sourceCurrentQuantity ?? detail.sourceQuantity,
+        note: "현재 장부로 넘어온 마감 기준 수량입니다.",
+      });
+
+      if (
+        detail.sourceQuantity !== null &&
+        detail.sourceCurrentQuantity !== null &&
+        detail.sourceQuantity !== detail.sourceCurrentQuantity
+      ) {
+        rows.push({
+          label: "기준 장부 표시 수량",
+          date: basisDate,
+          quantity: detail.sourceQuantity,
+          note: "근거 장부 화면에 표시된 재고 수량입니다.",
+        });
+      }
+    }
+
+    rows.push({
+      label: "현재 장부 전일재고",
+      date: currentLedgerDate,
+      quantity: detail.resolvedQuantity,
+      note: "현재 재고 입력 화면에 표시되는 이월 수량입니다.",
+    });
+
+    return rows;
+  }
+
   function getQuantityDifference(item: InventoryLineState) {
     const systemQuantity = getSystemQuantity(item);
     const actualQuantity = parseQuantityInput(item.currentQuantityInput);
@@ -618,6 +716,71 @@ export function InventoryStepClient({
     }
 
     return `${formatSignedQuantity(value)}개`;
+  }
+
+  function formatDate(value: string | null) {
+    return value ? value.slice(0, 10) : "-";
+  }
+
+  function formatSourceLabel(source: InventoryLineState["carryoverSource"]) {
+    switch (source) {
+      case "PREVIOUS_CLOSED_LEDGER":
+        return "직전 본사 마감 장부";
+      case "PREVIOUS_SAVED_LEDGER":
+        return "직전 저장 장부";
+      case "OPENING_SNAPSHOT":
+        return "월초 스냅샷";
+      case "MANUAL":
+      default:
+        return "수동/근거 부족";
+    }
+  }
+
+  function formatStatusLabel(status: InventoryLineState["carryoverStatus"]) {
+    switch (status) {
+      case "PREVIOUS_CARRYOVER":
+        return "전일 이월";
+      case "REVIEW_REQUIRED":
+        return "검토 필요";
+      case "CARRYOVER_EMPTY":
+        return "이월 공백";
+      case "CARRYOVER_RECHECK_REQUIRED":
+        return "이월 재확인 필요";
+      case "OPENING_CARRYOVER":
+        return "월초 이월";
+      case "POLICY_UNCONFIRMED":
+        return "기준 확인 필요";
+      case "DATA_INSUFFICIENT":
+      default:
+        return "데이터 부족";
+    }
+  }
+
+  function formatLedgerStatus(
+    status: InventoryLineState["previousQuantityDetail"]["sourceLedgerStatus"],
+  ) {
+    switch (status) {
+      case "HEADQUARTERS_CLOSED":
+        return "본사 마감";
+      case "IN_REVIEW":
+        return "검토 대기";
+      case "IN_PROGRESS":
+        return "저장 중";
+      case "HOLIDAY":
+        return "휴무";
+      default:
+        return "-";
+    }
+  }
+
+  function shouldWarnCarryoverDetail(item: InventoryLineState) {
+    return [
+      "REVIEW_REQUIRED",
+      "CARRYOVER_EMPTY",
+      "CARRYOVER_RECHECK_REQUIRED",
+      "DATA_INSUFFICIENT",
+      "POLICY_UNCONFIRMED",
+    ].includes(item.previousQuantityDetail.status);
   }
 
   function getSourceBadges(item: InventoryLineState) {
@@ -748,6 +911,184 @@ export function InventoryStepClient({
     );
   }
 
+  const dailySalesQuantityHelp =
+    "기준재고와 입력한 당일재고의 차이입니다. 실제 POS 판매 수량과 다를 수 있습니다.";
+
+  function renderCarryoverDetailDialog() {
+    if (!selectedCarryoverItem) {
+      return null;
+    }
+
+    const detail = selectedCarryoverItem.previousQuantityDetail;
+    const timelineRows = getCarryoverQuantityTimeline(selectedCarryoverItem);
+    const basisLabel =
+      detail.source === "OPENING_SNAPSHOT" ? "기준월" : "기준일";
+    const basisDate = formatCarryoverBasisDate(detail);
+    const summaryRows = [
+      ["출처", formatSourceLabel(detail.source)],
+      ["상태", formatStatusLabel(detail.status)],
+      [basisLabel, basisDate],
+      ["근거 장부 상태", formatLedgerStatus(detail.sourceLedgerStatus)],
+    ];
+
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCarryoverItem(null);
+          }
+        }}
+      >
+        <DialogContent className="h-[min(90vh,42rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="px-4 pt-4 pr-12 pb-3">
+            <DialogTitle>전일재고 이력</DialogTitle>
+            <DialogDescription>
+              {selectedCarryoverItem.productName} 전일재고가 어느 날짜의 몇
+              개에서 넘어왔는지 확인합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
+            <div className="grid gap-4">
+              {shouldWarnCarryoverDetail(selectedCarryoverItem) ? (
+                <p className="text-destructive border-destructive/30 bg-destructive/10 rounded-md border px-3 py-2 text-sm">
+                  이 값은 확정값이 아니라 확인이 필요한 후보입니다.
+                </p>
+              ) : null}
+              <section className="bg-muted/30 grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs">
+                    현재 장부 전일재고
+                  </p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {formatQuantity(detail.resolvedQuantity)}
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    {formatDate(data.closingDate)} 재고 입력에 표시되는 수량
+                  </p>
+                </div>
+                <Badge variant="outline" className="w-fit">
+                  {formatStatusLabel(detail.status)}
+                </Badge>
+              </section>
+              <p className="text-muted-foreground text-sm">{detail.message}</p>
+              <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2 text-sm">
+                {summaryRows.map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="font-medium tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <section className="grid gap-2">
+                <h3 className="text-sm font-semibold">날짜별 수량 흐름</h3>
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead scope="col">구분</TableHead>
+                        <TableHead scope="col" className="w-28">
+                          날짜
+                        </TableHead>
+                        <TableHead scope="col" className="w-24 text-right">
+                          수량
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {timelineRows.map((row) => (
+                        <TableRow key={`${row.label}-${row.date}`}>
+                          <TableCell>
+                            <div className="grid gap-0.5">
+                              <span className="font-medium">{row.label}</span>
+                              <span className="text-muted-foreground text-xs">
+                                {row.note}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {row.date}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatOptionalQuantity(row.quantity)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
+              {detail.history.length > 0 ? (
+                <section className="grid gap-2">
+                  <div className="flex flex-col gap-0.5 sm:flex-row sm:items-end sm:justify-between">
+                    <h3 className="text-sm font-semibold">
+                      이전 날짜 재고 이력
+                    </h3>
+                    <p className="text-muted-foreground text-xs tabular-nums">
+                      최근 {detail.history.length}일
+                    </p>
+                  </div>
+                  <div className="max-h-[18rem] overflow-auto overscroll-contain rounded-md border">
+                    <Table className="min-w-[620px]">
+                      <TableHeader className="bg-background sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead scope="col" className="w-28">
+                            날짜
+                          </TableHead>
+                          <TableHead scope="col" className="w-28">
+                            상태
+                          </TableHead>
+                          <TableHead scope="col" className="w-24 text-right">
+                            전일
+                          </TableHead>
+                          <TableHead scope="col" className="w-24 text-right">
+                            매입
+                          </TableHead>
+                          <TableHead scope="col" className="w-24 text-right">
+                            손실
+                          </TableHead>
+                          <TableHead scope="col" className="w-24 text-right">
+                            마감
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detail.history.map((row) => (
+                          <TableRow key={row.ledgerId}>
+                            <TableCell className="tabular-nums">
+                              {formatDate(row.closingDate)}
+                            </TableCell>
+                            <TableCell>
+                              {formatLedgerStatus(row.ledgerStatus)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatQuantity(row.previousQuantity)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatQuantity(row.purchasedQuantity)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatOptionalQuantity(row.lossQuantity)}
+                            </TableCell>
+                            <TableCell className="text-right font-medium tabular-nums">
+                              {formatOptionalQuantity(
+                                row.currentQuantity ?? row.quantity,
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function renderRows(category: string) {
     const visibleItems = getCategoryItems(category);
     const normalizedCategory = normalizeCategory(category);
@@ -789,6 +1130,7 @@ export function InventoryStepClient({
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
       const adjustmentActionLabel = adjusted ? "수정" : "조정";
+      const adjustmentButtonLabel = `${item.productName} 조정 기록`;
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
 
@@ -817,7 +1159,7 @@ export function InventoryStepClient({
                 {adjustmentNeeded
                   ? renderBadgeWithTooltip({
                       label: "조정 필요",
-                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 차이 사유를 남겨 주세요.`,
+                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 당일 판매량 사유를 남겨 주세요.`,
                       className:
                         "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
                     })
@@ -826,7 +1168,7 @@ export function InventoryStepClient({
                   ? renderBadgeWithTooltip({
                       label: "조정됨",
                       detail: item.adjustment
-                        ? `조정 사유가 저장됐습니다. 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
+                        ? `조정 사유가 저장됐습니다. 당일 판매량 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
                         : "조정 사유가 저장됐습니다.",
                       className:
                         "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
@@ -838,7 +1180,16 @@ export function InventoryStepClient({
           </TableCell>
           <TableCell className="w-20 text-sm">{item.productSpec}</TableCell>
           <TableCell className="w-16 text-right tabular-nums">
-            {item.previousQuantity}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              aria-label={`${item.productName} 전일재고 이력 보기`}
+              onClick={() => setSelectedCarryoverItem(item)}
+              className="h-11 min-w-11 px-1 text-right tabular-nums"
+            >
+              {item.previousQuantity}
+            </Button>
           </TableCell>
           <TableCell className="w-16 text-right tabular-nums">
             {item.purchasedQuantity}
@@ -881,7 +1232,7 @@ export function InventoryStepClient({
                 updateCurrentQuantity(item.productId, event.currentTarget.value)
               }
               disabled={isSaving || isClosed || isAdjustmentSavePending}
-              className="h-11 tabular-nums sm:h-8"
+              className="h-11 tabular-nums"
             />
             {quantityError ? (
               <p
@@ -935,7 +1286,7 @@ export function InventoryStepClient({
                       </span>
                     </p>
                     <p>
-                      차이{" "}
+                      당일 판매량{" "}
                       <span className="tabular-nums">
                         {formatSignedQuantity(
                           item.adjustment.differenceQuantity,
@@ -971,17 +1322,17 @@ export function InventoryStepClient({
                       )
                     }
                     disabled={isAdjustmentSavePending || isClosed}
-                    className="h-11 min-w-0 flex-1 sm:h-8"
+                    className="h-11 min-w-0 flex-1"
                     placeholder="조정 사유"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    aria-label={`${item.productName} 조정 ${adjustmentActionLabel}`}
+                    aria-label={adjustmentButtonLabel}
                     onClick={() => handleAdjustmentSave(item)}
                     disabled={savingAdjustmentProductId !== null || isClosed}
-                    className="h-11 shrink-0 px-2 text-xs sm:h-8"
+                    className="h-11 shrink-0 px-2 text-xs"
                   >
                     {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
                   </Button>
@@ -1056,6 +1407,7 @@ export function InventoryStepClient({
   return (
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+        {renderCarryoverDetailDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}
@@ -1203,7 +1555,23 @@ export function InventoryStepClient({
                           당일재고
                         </TableHead>
                         <TableHead scope="col" className="w-28 text-right">
-                          차이
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                tabIndex={0}
+                                aria-label={`당일 판매량: ${dailySalesQuantityHelp}`}
+                                className="inline-flex cursor-help outline-none"
+                              >
+                                당일 판매량
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-64 leading-relaxed"
+                            >
+                              {dailySalesQuantityHelp}
+                            </TooltipContent>
+                          </Tooltip>
                         </TableHead>
                         {showsSensitiveAmounts ? (
                           <TableHead scope="col" className="w-28 text-right">

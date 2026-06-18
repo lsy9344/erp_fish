@@ -92,13 +92,9 @@ function parsePurchaseStandardStatusInput(
 }
 
 function invalidProductError<T>(): ActionResult<T> {
-  return actionError(
-    "INVALID_PRODUCT",
-    "활성 품목을 선택해 주세요.",
-    {
-      productId: ["활성 품목을 선택해 주세요."],
-    },
-  );
+  return actionError("INVALID_PRODUCT", "활성 품목을 선택해 주세요.", {
+    productId: ["활성 품목을 선택해 주세요."],
+  });
 }
 
 function inactiveProductActivationError<T>(): ActionResult<T> {
@@ -257,7 +253,10 @@ export async function updatePurchaseStandard(
         ? existing.product.isActive
         : await getProductActiveState(tx, parsed.data.productId);
 
-    if (productIsActive !== true && existing.productId !== parsed.data.productId) {
+    if (
+      productIsActive !== true &&
+      existing.productId !== parsed.data.productId
+    ) {
       return { status: "invalid-product" as const };
     }
 

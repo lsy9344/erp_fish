@@ -689,7 +689,7 @@ export async function saveHqLedgerPurchases(
             ? {
                 productId: standard.product.id,
                 purchaseStandardId: standard.id,
-                sourceType: "MANUAL" as const,
+                sourceType: purchase.sourceType,
                 productName: purchase.productName || standard.product.name,
                 productCategory:
                   purchase.productCategory || standard.product.category,
@@ -700,7 +700,7 @@ export async function saveHqLedgerPurchases(
               ? {
                   productId: product.id,
                   purchaseStandardId: null,
-                  sourceType: "MANUAL" as const,
+                  sourceType: purchase.sourceType,
                   productName: purchase.productName || product.name,
                   productCategory: purchase.productCategory || product.category,
                   productSpec: purchase.productSpec || product.spec,
@@ -710,7 +710,7 @@ export async function saveHqLedgerPurchases(
                 ? {
                     productId: existing.productId,
                     purchaseStandardId: existing.purchaseStandardId,
-                    sourceType: "MANUAL" as const,
+                    sourceType: purchase.sourceType,
                     productName: purchase.productName || existing.productName,
                     productCategory:
                       purchase.productCategory || existing.productCategory,
@@ -720,7 +720,7 @@ export async function saveHqLedgerPurchases(
                 : {
                     productId: null,
                     purchaseStandardId: null,
-                    sourceType: "MANUAL" as const,
+                    sourceType: purchase.sourceType,
                     productName: purchase.productName,
                     productCategory: purchase.productCategory,
                     productSpec: purchase.productSpec,

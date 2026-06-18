@@ -195,6 +195,11 @@ const ledgerPurchaseItemSchema = z.object({
   id: z
     .unknown()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  sourceType: z.preprocess(
+    (value) =>
+      value === "" || value === null || value === undefined ? "MANUAL" : value,
+    z.enum(["MANUAL", "ECOUNT_UPLOAD"]),
+  ),
   productId: z
     .unknown()
     .transform((value) =>

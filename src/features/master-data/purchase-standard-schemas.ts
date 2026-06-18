@@ -4,9 +4,7 @@ const MAX_KRW_INTEGER = 2_147_483_647;
 const standardUnitPriceError = "기준 단가는 0원 이상의 정수여야 합니다.";
 
 function isValidKrwInteger(value: number) {
-  return (
-    Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER
-  );
+  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
 }
 
 const productIdSchema = z

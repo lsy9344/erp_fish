@@ -126,19 +126,17 @@ export function SaveConflictDialog({
               >
                 <div className="min-w-0">
                   <p className="text-muted-foreground text-xs">항목</p>
-                  <p className="break-words text-sm font-medium">
-                    {fieldName}
-                  </p>
+                  <p className="text-sm font-medium break-words">{fieldName}</p>
                 </div>
                 <div className="min-w-0">
                   <p className="text-muted-foreground text-xs">내 입력값</p>
-                  <p className="break-words text-sm">
+                  <p className="text-sm break-words">
                     {formatValue(conflict.clientValues[fieldName])}
                   </p>
                 </div>
                 <div className="min-w-0">
                   <p className="text-muted-foreground text-xs">서버 최신값</p>
-                  <p className="break-words text-sm font-medium">
+                  <p className="text-sm font-medium break-words">
                     {formatValue(conflict.serverValues[fieldName])}
                   </p>
                 </div>

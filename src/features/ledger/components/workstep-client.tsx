@@ -135,7 +135,10 @@ export function WorkStepClient({
   }, [initialLedger]);
 
   useEffect(() => {
-    if (isSaving || (!workerCountError && !workMemoError && !hqEditReasonError)) {
+    if (
+      isSaving ||
+      (!workerCountError && !workMemoError && !hqEditReasonError)
+    ) {
       return;
     }
 

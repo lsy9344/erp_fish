@@ -93,7 +93,7 @@ Run `pnpm build` again before `pnpm start` when source code changed.
 
 ### Validation
 
-Run the main local checks with:
+Use the fast checks while developing:
 
 ```bash
 pnpm exec prisma validate
@@ -101,20 +101,41 @@ pnpm exec prisma generate
 pnpm lint
 pnpm typecheck
 pnpm test:unit
+pnpm test:unit:file tests/unit/example.test.mjs
+```
+
+Run `pnpm build` before handing work off or before a release:
+
+```bash
 pnpm build
 ```
 
-Playwright uses `playwright.config.ts`. By default it expects:
+Playwright runs through `scripts/run-playwright-clean.mjs` so inherited shell
+variables from other projects cannot point tests at the wrong database.
+By default it uses:
 
 ```text
-DATABASE_URL=postgresql://postgres:password@localhost:55432/erp_fish_e2e
-PORT=3000
+DATABASE_URL=postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
+PORT=3102
 ```
 
-Override those when your local test database or app port differs:
+Create the e2e database once if it does not exist:
 
 ```bash
-PORT=3100 DATABASE_URL="postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish" pnpm test:e2e
+docker exec erp_fish_postgres createdb -U postgres erp_fish_e2e
+```
+
+Run only the Playwright file or test you need:
+
+```bash
+pnpm test:playwright -- tests/e2e/auth.spec.ts -g "비로그인 사용자가 루트 경로"
+pnpm test:playwright -- tests/api/report-export.spec.ts
+```
+
+Override the safe defaults only with test-like values:
+
+```bash
+PORT=3199 PLAYWRIGHT_DATABASE_URL="postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e_branch" pnpm test:playwright -- tests/e2e/auth.spec.ts
 ```
 
 ### Stop

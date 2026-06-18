@@ -1604,20 +1604,8 @@ function getMonthlyAnomalyMetricEvidence(
   signalId: string,
   metricEvidence: DailyMeetingReportMetricEvidenceMap,
 ) {
-  if (signalId.startsWith("sales-drop")) {
-    return metricEvidence.salesAmount;
-  }
-
-  if (signalId.startsWith("gross-margin")) {
+  if (signalId.startsWith("margin-rate")) {
     return metricEvidence.grossMarginRate;
-  }
-
-  if (signalId.startsWith("sales-difference")) {
-    return metricEvidence.salesDifference;
-  }
-
-  if (signalId.startsWith("loss")) {
-    return metricEvidence.loss;
   }
 
   if (signalId.startsWith("inventory")) {

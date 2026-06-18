@@ -22,6 +22,10 @@ import {
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import {
+  persistLedgerInventoryCarryoverDetail,
+  persistLedgerInventoryCarryoverDetails,
+} from "./carryover-detail-persistence";
+import {
   getInventoryStepDataByLedgerIdInTx,
   getInventoryStepDataInTx,
   toStoreManagerInventoryStepData,
@@ -307,6 +311,11 @@ export async function saveLedgerInventoryItems(
             };
           }),
         });
+        await persistLedgerInventoryCarryoverDetails(
+          tx,
+          before.id,
+          before.items,
+        );
       }
 
       await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
@@ -523,6 +532,12 @@ export async function saveLedgerInventoryAdjustment(
           id: true,
         },
       });
+
+      await persistLedgerInventoryCarryoverDetail(
+        tx,
+        inventoryItem.id,
+        line.previousQuantityDetail,
+      );
 
       await tx.ledgerInventoryAdjustment.upsert({
         where: {

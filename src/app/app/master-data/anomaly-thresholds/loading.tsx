@@ -4,10 +4,7 @@ import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 
 const fields = [
-  "sales-drop",
-  "gross-margin-drop",
-  "sales-difference",
-  "loss-amount",
+  "margin-rate",
   "inventory-difference",
   "active-status",
   "change-reason",
@@ -20,7 +17,7 @@ export default function AnomalyThresholdSettingsLoading() {
         title="이상 신호 기준값"
         description="기준값 설정을 불러오는 중입니다."
       />
-      <div className="w-full max-w-2xl rounded-lg border bg-background p-4">
+      <div className="bg-background w-full max-w-2xl rounded-lg border p-4">
         <div className="flex flex-col gap-3">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-8 w-full" />

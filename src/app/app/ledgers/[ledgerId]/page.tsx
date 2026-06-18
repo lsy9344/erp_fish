@@ -428,6 +428,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              ecountUploadEnabled
             />
           </TabsContent>
           <TabsContent value="inventory" className="mt-3" forceMount>

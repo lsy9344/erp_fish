@@ -6,7 +6,10 @@ import { z } from "zod";
 import type { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireLedgerHqEditAccess, requireHeadquartersStoreScope } from "~/server/authz";
+import {
+  requireLedgerHqEditAccess,
+  requireHeadquartersStoreScope,
+} from "~/server/authz";
 import {
   calculateInventoryAdjustment,
   calculateInventoryAmount,
@@ -18,6 +21,10 @@ import {
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import {
+  persistLedgerInventoryCarryoverDetail,
+  persistLedgerInventoryCarryoverDetails,
+} from "./carryover-detail-persistence";
 import { getInventoryStepDataByLedgerIdInTx } from "./queries";
 import {
   ledgerInventoryAdjustmentSchema,
@@ -148,7 +155,8 @@ async function hqInventoryConflictError<T = never>(
     ledgerId: input.ledgerId,
     section,
     clientToken: input.ledgerUpdatedAt,
-    serverToken: current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+    serverToken:
+      current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
     clientValues: toInventoryClientValues(input),
     serverValues: current ? toInventoryConflictValues(current) : {},
     lastModifiedAt: current?.updatedAt,
@@ -329,6 +337,13 @@ export async function saveHqLedgerInventoryItems(
           await tx.ledgerInventoryItem.createMany({
             data: rowsToPersist,
           });
+          await persistLedgerInventoryCarryoverDetails(
+            tx,
+            before.id,
+            before.items.filter((item) =>
+              rowsToPersist.some((row) => row.productId === item.productId),
+            ),
+          );
         }
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
@@ -525,6 +540,12 @@ export async function saveHqLedgerInventoryAdjustment(
             id: true,
           },
         });
+
+        await persistLedgerInventoryCarryoverDetail(
+          tx,
+          inventoryItem.id,
+          line.previousQuantityDetail,
+        );
 
         await tx.ledgerInventoryAdjustment.upsert({
           where: {

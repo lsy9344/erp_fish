@@ -75,6 +75,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
   );
   const {
     AUDIT_TARGET_TYPE_OPTIONS,
+    formatAuditChangeSummary,
     formatAuditJsonValue,
     getAuditActionLabel,
     getAuditTargetTypeLabel,
@@ -129,6 +130,14 @@ test("audit format helpers map target/action labels and safely format JSON detai
   );
   assert.equal(getAuditActionLabel("future.action"), "future.action");
   assert.equal(formatAuditJsonValue(null), "-");
+  assert.equal(formatAuditChangeSummary(null, undefined), "-");
+  assert.match(
+    formatAuditChangeSummary(
+      { targetName: "이상 신호 기준값", isActive: false, quantity: 5 },
+      { targetName: "이상 신호 기준값", isActive: true, quantity: 6 },
+    ),
+    /활성 상태: false → true[\s\S]*수량: 5 → 6/,
+  );
   assert.match(
     formatAuditJsonValue({
       targetName: "이상 신호 기준값",
@@ -169,6 +178,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /actorId/);
   assert.match(query, /reason:\s*true/);
   assert.match(query, /reasonText:\s*log\.reason\s*\?\?\s*"-"/);
+  assert.match(query, /changeSummaryText:\s*formatAuditChangeSummary/);
   assert.match(query, /from/);
   assert.match(query, /to/);
   assert.match(query, /createdAt:\s*"desc"/);
@@ -245,6 +255,9 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(client, /대상 이름/);
   assert.match(client, /변경 유형/);
   assert.match(client, /selectedHistory\.reasonText/);
+  assert.match(client, /selectedHistory\.changeSummaryText/);
+  assert.match(client, /변경 요약/);
+  assert.match(client, /기존 값 → 변경된 값/);
   assert.match(client, /사유/);
   assert.match(client, /조건에 맞는 변경 이력이 없습니다\./);
   assert.match(client, /Dialog/);

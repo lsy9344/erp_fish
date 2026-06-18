@@ -142,6 +142,48 @@ test("auth environment validates production secret strength", () => {
   assert.match(env, /AUTH_SECRET:[\s\S]*z\.string\(\)\.trim\(\)\.min\(32/);
 });
 
+test("auth environment prefers project .env over inherited Python-style PostgreSQL URLs", async () => {
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousAuthSecret = process.env.AUTH_SECRET;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const envExample = readFileSync(path.join(root, ".env"), "utf8");
+  const expectedDatabaseUrl = envExample
+    .match(/^DATABASE_URL=(.*)$/m)?.[1]
+    ?.trim()
+    .replace(/^"(.*)"$/, "$1");
+
+  process.env.DATABASE_URL =
+    "postgresql+asyncpg://postgres:password@127.0.0.1:55434/rider";
+  process.env.AUTH_SECRET = "test-auth-secret-at-least-32-characters";
+  process.env.NODE_ENV = "development";
+
+  try {
+    await import(
+      `${pathToFileURL(path.join(root, "src", "env.js")).href}?normalize=${Date.now()}`
+    );
+
+    assert.equal(process.env.DATABASE_URL, expectedDatabaseUrl);
+  } finally {
+    if (previousDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+
+    if (previousAuthSecret === undefined) {
+      delete process.env.AUTH_SECRET;
+    } else {
+      process.env.AUTH_SECRET = previousAuthSecret;
+    }
+
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
+});
+
 test("login schema limits password input length", async () => {
   const { loginSchema } = await import(authSchemaModuleUrl.href);
 

@@ -212,7 +212,8 @@ async function main() {
   const storeManagerEmail =
     process.env.SEED_STORE_MANAGER_EMAIL?.trim().toLowerCase() ??
     DEFAULT_STORE_MANAGER_EMAIL;
-  const storeManagerPassword = process.env.SEED_STORE_MANAGER_PASSWORD ?? password;
+  const storeManagerPassword =
+    process.env.SEED_STORE_MANAGER_PASSWORD ?? password;
   const storeManagerName = getStoreManagerName();
   const sampleStoreName = getSampleStoreName();
   const allowProductionSeed = process.env.ALLOW_PRODUCTION_SEED === "true";

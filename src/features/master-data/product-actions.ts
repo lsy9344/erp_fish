@@ -105,10 +105,7 @@ function toProductAuditValue(product: ProductActionData) {
   };
 }
 
-function isSameProduct(
-  product: ProductActionData,
-  input: ProductFormInput,
-) {
+function isSameProduct(product: ProductActionData, input: ProductFormInput) {
   return (
     product.name === input.name &&
     product.category === input.category &&

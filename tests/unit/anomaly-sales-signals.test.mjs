@@ -15,10 +15,7 @@ function assertProjectFile(...segments) {
 }
 
 const thresholds = {
-  salesDropRateBps: 1250,
-  grossMarginDropBps: 350,
-  salesDifferenceAmount: 10000,
-  lossAmount: 50000,
+  marginRateBps: 3500,
   inventoryDifferenceQuantity: 10,
 };
 
@@ -28,7 +25,7 @@ const unavailable = (unavailableReason) => ({
   unavailableReason,
 });
 
-test("revenue anomaly helper reports missing thresholds and unresolved policies instead of normal", async () => {
+test("revenue anomaly helper reports missing thresholds and unavailable margin instead of normal", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -71,11 +68,7 @@ test("revenue anomaly helper reports missing thresholds and unresolved policies 
 
   assert.deepEqual(
     unresolved.map((signal) => [signal.id, signal.label, signal.severity]),
-    [
-      ["sales-drop-policy-required", "매출 기준 확인", "info"],
-      ["gross-margin-unavailable", "이익률 계산 불가", "info"],
-      ["sales-difference-unavailable", "매출차액 기준 확인", "info"],
-    ],
+    [["margin-rate-unavailable", "마진률 계산 불가", "info"]],
   );
   assert.ok(
     unresolved.every((signal) => signal.label !== "기준값 저장됨"),
@@ -83,7 +76,7 @@ test("revenue anomaly helper reports missing thresholds and unresolved policies 
   );
 });
 
-test("revenue anomaly helper preserves current calculation unavailable before policy gaps", async () => {
+test("revenue anomaly helper ignores deleted sales and sales-difference threshold signals", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -97,24 +90,23 @@ test("revenue anomaly helper preserves current calculation unavailable before po
   const signals = evaluateRevenueAnomalySignals({
     thresholds,
     current: {
-      totalSales: metric(120000),
-      grossMarginRate: unavailable("계산 불가"),
-      salesDifference: unavailable("계산 기준 확인 필요"),
+      totalSales: metric(1),
+      grossMarginRate: metric(0.36),
+      salesDifference: metric(999999),
     },
-    comparison: { policy: null, baseline: null },
+    comparison: {
+      policy: "manual-baseline",
+      baseline: {
+        totalSales: metric(100000),
+        grossMarginRate: metric(0.9),
+      },
+    },
   });
 
-  assert.deepEqual(
-    signals.map((signal) => [signal.id, signal.label]),
-    [
-      ["sales-drop-policy-required", "매출 기준 확인"],
-      ["gross-margin-unavailable", "이익률 계산 불가"],
-      ["sales-difference-unavailable", "매출차액 기준 확인"],
-    ],
-  );
+  assert.deepEqual(signals, []);
 });
 
-test("revenue anomaly helper does not round below-threshold drops into warnings", async () => {
+test("revenue anomaly helper does not round equal-threshold margin into warnings", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -129,7 +121,7 @@ test("revenue anomaly helper does not round below-threshold drops into warnings"
     thresholds,
     current: {
       totalSales: metric(87505),
-      grossMarginRate: metric(0.38501),
+      grossMarginRate: metric(0.35),
       salesDifference: metric(9999),
     },
     comparison: {
@@ -144,7 +136,7 @@ test("revenue anomaly helper does not round below-threshold drops into warnings"
   assert.deepEqual(signals, []);
 });
 
-test("revenue anomaly helper requires values to exceed thresholds", async () => {
+test("revenue anomaly helper treats margin above threshold as normal", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -159,7 +151,7 @@ test("revenue anomaly helper requires values to exceed thresholds", async () => 
     thresholds,
     current: {
       totalSales: metric(87500),
-      grossMarginRate: metric(0.385),
+      grossMarginRate: metric(0.351),
       salesDifference: metric(10000),
     },
     comparison: {
@@ -174,7 +166,7 @@ test("revenue anomaly helper requires values to exceed thresholds", async () => 
   assert.deepEqual(signals, []);
 });
 
-test("revenue anomaly helper emits warning chips with actual and threshold details", async () => {
+test("revenue anomaly helper emits warning chip when margin is below threshold", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -203,16 +195,8 @@ test("revenue anomaly helper emits warning chips with actual and threshold detai
 
   assert.deepEqual(
     signals.map((signal) => [signal.id, signal.label, signal.severity]),
-    [
-      ["sales-drop", "매출 급락", "warning"],
-      ["gross-margin-drop", "이익률 급락", "warning"],
-      ["sales-difference-exceeded", "매출차액 초과", "warning"],
-    ],
+    [["margin-rate-below-threshold", "마진률 미달", "warning"]],
   );
-  assert.match(signals[0].detail, /25\.0% 하락/);
-  assert.match(signals[0].detail, /기준 12\.5%/);
-  assert.match(signals[1].detail, /11\.0%p 하락/);
-  assert.match(signals[1].detail, /기준 3\.5%p/);
-  assert.match(signals[2].detail, /48,000원/);
-  assert.match(signals[2].detail, /기준 10,000원/);
+  assert.match(signals[0].detail, /마진률 31\.0%/);
+  assert.match(signals[0].detail, /기준 35\.0%/);
 });
