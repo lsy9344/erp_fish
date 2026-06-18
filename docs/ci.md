@@ -1,0 +1,76 @@
+# GitHub CI Guide
+
+## What Runs
+
+The workflow lives at `.github/workflows/ci.yml`.
+
+- Pull requests run `Quality Gate` and `Playwright Smoke`.
+- Pushes to `main`, `master`, and `new_function` run the same fast checks.
+- Pushes to `main` or `master` also run the full Playwright suite in 4 shards.
+- A weekly schedule runs a 10-iteration smoke burn-in to catch flaky UI timing.
+- Manual runs can trigger full Playwright and burn-in when needed.
+
+## Fast Local Loop
+
+Use these while developing:
+
+```bash
+pnpm test:unit:file tests/unit/example.test.mjs
+pnpm test:unit
+pnpm typecheck
+pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
+```
+
+Run the heavier checks before pushing important work:
+
+```bash
+pnpm lint
+pnpm format:check
+pnpm build
+```
+
+## Manual GitHub Run
+
+1. Open the repository on GitHub.
+2. Go to `Actions`.
+3. Select `CI`.
+4. Click `Run workflow`.
+5. Choose options:
+   - `run_full_e2e`: runs the full Playwright suite in 4 shards.
+   - `run_burn_in`: runs the smoke test 10 times.
+   - `e2e_grep`: optional text filter for manual full e2e runs.
+
+## Database Used In CI
+
+CI starts a PostgreSQL service with this database:
+
+```text
+postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
+```
+
+The Playwright wrapper forces test runs to use a test-like database, so inherited local values such as `DATABASE_URL=rider` cannot leak into CI.
+
+## Artifacts
+
+Playwright uploads artifacts only on failure:
+
+- `test-results/`
+- `playwright-report/`
+
+Artifacts are kept for 14 days.
+
+## When To Use Each Check
+
+- Small code change: unit file, typecheck.
+- Server logic change: related unit tests, full unit tests, typecheck.
+- UI/navigation/auth change: one targeted Playwright test.
+- Before merge: PR CI.
+- Before release or after broad UI changes: manual full e2e.
+- Suspected flaky test: manual burn-in.
+
+## Troubleshooting
+
+- If CI fails during install, rerun once. Dependency or browser cache may be cold.
+- If Playwright fails, download the failed job artifact and inspect `test-results`.
+- If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
+- If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.

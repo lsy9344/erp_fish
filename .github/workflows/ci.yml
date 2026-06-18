@@ -1,0 +1,311 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - new_function
+  workflow_dispatch:
+    inputs:
+      run_full_e2e:
+        description: "Run the full Playwright suite"
+        required: false
+        type: boolean
+        default: false
+      run_burn_in:
+        description: "Run the Playwright smoke burn-in loop"
+        required: false
+        type: boolean
+        default: false
+      e2e_grep:
+        description: "Optional Playwright grep filter for manual full e2e"
+        required: false
+        type: string
+        default: ""
+  schedule:
+    - cron: "0 19 * * 0"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.31.0"
+  AUTH_SECRET: test-auth-secret-at-least-32-characters
+  DATABASE_URL: postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
+  PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
+  SKIP_ENV_VALIDATION: "1"
+  PW_REUSE_EXISTING_SERVER: "0"
+
+jobs:
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: github.event_name != 'schedule'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Check CI YAML and docs formatting
+        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Production build
+        run: pnpm build
+
+  playwright-smoke:
+    name: Playwright Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'schedule'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run smoke e2e
+        run: pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+  playwright-full:
+    name: Playwright Full ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.run_full_e2e ||
+      github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_GREP: ${{ github.event_name == 'workflow_dispatch' && inputs.e2e_grep || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright shard
+        run: |
+          # Security: inputs passed through env: to prevent script injection
+          if [ -n "$E2E_GREP" ]; then
+            pnpm test:playwright -- --grep "$E2E_GREP" --shard=${{ matrix.shard }}/4 --reporter=line
+          else
+            pnpm test:playwright -- --shard=${{ matrix.shard }}/4 --reporter=line
+          fi
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-full-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+  playwright-burn-in:
+    name: Playwright Smoke Burn-In
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && inputs.run_burn_in
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run smoke burn-in
+        run: |
+          for i in $(seq 1 10); do
+            echo "Burn-in iteration $i/10"
+            pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
+          done
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-burn-in-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14

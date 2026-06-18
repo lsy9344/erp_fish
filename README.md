@@ -138,6 +138,8 @@ Override the safe defaults only with test-like values:
 PORT=3199 PLAYWRIGHT_DATABASE_URL="postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e_branch" pnpm test:playwright -- tests/e2e/auth.spec.ts
 ```
 
+GitHub Actions CI usage is documented in `docs/ci.md`.
+
 ### Stop
 
 ```bash
