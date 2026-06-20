@@ -140,7 +140,7 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
   assert.equal(rawManual.purchases[0].productSpec, "1kg");
   assert.equal(rawManual.purchases[0].sourceType, "MANUAL");
 
-  const ecountUpload = ledgerPurchaseSchema.parse({
+  const unmappedEcountUpload = ledgerPurchaseSchema.safeParse({
     ...basePayload,
     purchases: [
       {
@@ -157,7 +157,32 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
       },
     ],
   });
+  assert.equal(unmappedEcountUpload.success, false);
+  assert.deepEqual(toFieldErrors(unmappedEcountUpload.error), {
+    "purchases.0.productId": [
+      "이카운트 매입은 품목 또는 매입 기준을 선택해 주세요.",
+    ],
+  });
+
+  const ecountUpload = ledgerPurchaseSchema.parse({
+    ...basePayload,
+    purchases: [
+      {
+        productId: "product-1",
+        purchaseStandardId: "standard-1",
+        sourceType: "ECOUNT_UPLOAD",
+        productName: "냉)삼치",
+        productCategory: "냉동",
+        productSpec: "15미",
+        referenceInfo:
+          "이카운트 판매현황 4행 · 일자-No. 2026/06/17 -1 · 거래처 진수산(수산물)",
+        unitPrice: "78000",
+        quantity: "1",
+      },
+    ],
+  });
   assert.equal(ecountUpload.purchases[0].sourceType, "ECOUNT_UPLOAD");
+  assert.equal(ecountUpload.purchases[0].productId, "product-1");
 
   const zeroValues = ledgerPurchaseSchema.parse({
     ...basePayload,
@@ -280,11 +305,15 @@ test("store purchase edit policy blocks ECount uploaded rows from store edits", 
       { ...existingRows[0], quantity: 5 },
     ]),
     {
-      "purchases.0": ["이카운트 업로드 매입은 지점에서 수정할 수 없습니다."],
+      "purchases.0": [
+        "이카운트 업로드 매입은 장부 매입 화면에서 수정할 수 없습니다.",
+      ],
     },
   );
   assert.deepEqual(getStoreEcountPurchaseEditErrors(existingRows, []), {
-    purchases: ["이카운트 업로드 매입은 지점에서 삭제할 수 없습니다."],
+    purchases: [
+      "이카운트 업로드 매입은 장부 매입 화면에서 삭제할 수 없습니다.",
+    ],
   });
   assert.deepEqual(
     getStoreEcountPurchaseEditErrors(
@@ -307,7 +336,7 @@ test("store purchase edit policy blocks ECount uploaded rows from store edits", 
     ),
     {
       "purchases.0.sourceType": [
-        "이카운트 업로드 매입은 본사 업로드로만 만들 수 있습니다.",
+        "이카운트 엑셀은 본사 매입 기준 화면에서 불러와 주세요.",
       ],
     },
   );
@@ -342,6 +371,20 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(querySource, /export\s+function\s+toLedgerPurchaseStepData/);
   assert.match(querySource, /purchaseTotal/);
 
+  const reconciliationSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-reconciliation.ts",
+  );
+  assert.match(
+    reconciliationSource,
+    /export\s+async\s+function\s+syncLedgerInventoryPurchasedQuantitiesInTx/,
+  );
+  assert.match(reconciliationSource, /ledgerPurchaseItem\.findMany/);
+  assert.match(reconciliationSource, /ledgerInventoryItem\.findMany/);
+  assert.match(reconciliationSource, /purchasedQuantity/);
+
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -350,7 +393,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   );
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerPurchases/);
   assert.match(actionSource, /ledgerPurchaseSchema\.safeParse/);
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
@@ -362,6 +405,22 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /품목을 확인해 주세요\./);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.createMany/);
+  assert.match(actionSource, /syncLedgerInventoryPurchasedQuantitiesInTx/);
+  const storeInventorySyncIndex = actionSource.indexOf(
+    "await syncLedgerInventoryPurchasedQuantitiesInTx",
+  );
+  const storeAdjustmentReconcileIndex = actionSource.indexOf(
+    "await reconcileLedgerInventoryAdjustments",
+  );
+  assert.ok(
+    actionSource.indexOf("tx.ledgerPurchaseItem.createMany") <
+      storeInventorySyncIndex,
+    "store purchase save should create purchase rows before syncing inventory purchased quantity",
+  );
+  assert.ok(
+    storeInventorySyncIndex < storeAdjustmentReconcileIndex,
+    "store purchase save should sync inventory purchased quantity before reconciling adjustments",
+  );
   assert.match(
     actionSource,
     /unitPrice\s*\*\s*quantity|quantity\s*\*\s*unitPrice/,
@@ -371,23 +430,54 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
 
-  const uploadActionSource = readProjectFile(
+  const hqActionSource = readProjectFile(
     "src",
     "features",
     "ledger",
-    "ecount-purchase-actions.ts",
+    "hq-edit-actions.ts",
   );
-  assert.match(uploadActionSource, /requireLedgerHqEditAccess\(\)/);
+  assert.match(hqActionSource, /getStoreEcountPurchaseEditErrors/);
+  assert.match(hqActionSource, /syncLedgerInventoryPurchasedQuantitiesInTx/);
+  const hqInventorySyncIndex = hqActionSource.indexOf(
+    "await syncLedgerInventoryPurchasedQuantitiesInTx",
+  );
+  const hqAdjustmentReconcileIndex = hqActionSource.indexOf(
+    "await reconcileLedgerInventoryAdjustments",
+  );
   assert.ok(
-    uploadActionSource.indexOf("requireLedgerHqEditAccess()") <
-      uploadActionSource.indexOf("file.arrayBuffer()"),
-    "ECount upload should check HQ permission before reading file bytes",
+    hqActionSource.indexOf("tx.ledgerPurchaseItem.createMany") <
+      hqInventorySyncIndex,
+    "HQ purchase save should create purchase rows before syncing inventory purchased quantity",
   );
-  assert.match(
-    uploadActionSource,
-    /fileName\.toLowerCase\(\)\.endsWith\("\.xlsx"\)/,
+  assert.ok(
+    hqInventorySyncIndex < hqAdjustmentReconcileIndex,
+    "HQ purchase save should sync inventory purchased quantity before reconciling adjustments",
   );
-  assert.match(uploadActionSource, /maxUploadBytes/);
+
+  assert.equal(
+    existsSync(
+      path.join(
+        root,
+        "src",
+        "features",
+        "ledger",
+        "ecount-purchase-actions.ts",
+      ),
+    ),
+    false,
+  );
+  assert.equal(
+    existsSync(
+      path.join(
+        root,
+        "src",
+        "features",
+        "ledger",
+        "ecount-purchase-matching.ts",
+      ),
+    ),
+    false,
+  );
 });
 
 test("ledger purchase UI and routing are wired for the purchase step", () => {
@@ -415,16 +505,15 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     "purchase-step-client.tsx",
   );
   assert.match(componentSource, /saveLedgerPurchases/);
-  assert.match(componentSource, /previewEcountPurchaseUpload/);
-  assert.match(componentSource, /accept="\.xlsx"/);
+  assert.doesNotMatch(componentSource, /previewEcountPurchaseUpload/);
+  assert.doesNotMatch(componentSource, /accept="\.xlsx"/);
+  assert.doesNotMatch(componentSource, /엑셀 불러오기/);
+  assert.doesNotMatch(componentSource, /saveImportedPurchases/);
+  assert.doesNotMatch(componentSource, /hasUnmappedEcountLine/);
+  assert.doesNotMatch(componentSource, /ecountUploadEnabled/);
   assert.match(
     componentSource,
-    /saveImportedPurchases\(result\.data\.purchases\)/,
-  );
-  assert.doesNotMatch(componentSource, /저장을 눌러 반영/);
-  assert.match(
-    componentSource,
-    /sourceType\s*===\s*"ECOUNT_UPLOAD"[\s\S]*!ecountUploadEnabled/,
+    /sourceType\s*===\s*"ECOUNT_UPLOAD"/,
   );
   assert.match(componentSource, /sourceType:\s*line\.sourceType/);
   assert.match(componentSource, /inputMode="numeric"/);
@@ -441,4 +530,18 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);
   assert.match(componentSource, /min-h-11/);
+
+  const hqDetailSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+  assert.match(
+    hqDetailSource,
+    /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*saveAction=\{saveHqLedgerPurchases\}/s,
+  );
+  assert.doesNotMatch(hqDetailSource, /ecountUploadEnabled/);
 });

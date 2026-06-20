@@ -271,11 +271,11 @@ test("ledger cost/work data model, actions, and queries follow expected contract
     actionSource,
     /action:\s*"ledger\.work_info\.saved"|action:\s*'ledger\.work_info\.saved'/,
   );
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
-  assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
   assert.match(actionSource, /validateActiveExpenseCodesInTx/);
   assert.match(
     actionSource,

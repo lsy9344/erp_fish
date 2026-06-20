@@ -23,7 +23,9 @@ function readProjectFile(...segments) {
 }
 
 function getPrismaModelBlock(schema, modelName) {
-  const block = schema.match(new RegExp(`model\\s+${modelName}\\s*{[^}]*}`, "s"));
+  const block = schema.match(
+    new RegExp(`model\\s+${modelName}\\s*{[^}]*}`, "s"),
+  );
 
   assert.ok(block, `${modelName} model should exist`);
 
@@ -105,11 +107,8 @@ test("purchase standard model preserves active flags, audit ownership, and ledge
   const standardModel = getPrismaModelBlock(schema, "PurchaseStandard");
   const purchaseItemModel = getPrismaModelBlock(schema, "LedgerPurchaseItem");
 
-  assert.match(
-    standardModel,
-    /id\s+String\s+@id/,
-  );
-  assert.match(standardModel, /productId\s+String/);
+  assert.match(standardModel, /id\s+String\s+@id/);
+  assert.match(standardModel, /productId\s+String\s+@unique/);
   assert.match(standardModel, /standardUnitPrice\s+Int\?/);
   assert.match(standardModel, /referenceInfo\s+String\?/);
   assert.match(standardModel, /isActive\s+Boolean\s+@default\(true\)/);
@@ -123,6 +122,7 @@ test("purchase standard model preserves active flags, audit ownership, and ledge
     /updatedBy\s+User\?\s+@relation\("PurchaseStandardUpdatedBy"[^)]*onDelete:\s*SetNull\)/,
   );
   assert.match(standardModel, /ledgerPurchaseItems\s+LedgerPurchaseItem\[\]/);
+  assert.doesNotMatch(standardModel, /@@index\(\[productId\]\)/);
   assert.match(purchaseItemModel, /purchaseStandardId\s+String\?/);
   assert.match(
     purchaseItemModel,
@@ -167,18 +167,17 @@ test("purchase standard actions enforce settings auth, transaction audit, active
   assert.match(source, /referenceInfo:\s*standard\.referenceInfo/);
   assert.match(source, /isActive:\s*standard\.isActive/);
   assert.match(source, /INACTIVE_PRODUCT_STANDARD_ACTIVATION/);
+  assert.match(source, /DUPLICATE_PURCHASE_STANDARD/);
+  assert.match(
+    source,
+    /purchaseStandard\.findUnique\(\{\s*where:\s*\{\s*productId/s,
+  );
   assert.match(
     source,
     /getProductActiveState\(tx,\s*parsed\.data\.productId\)/,
   );
   assert.match(source, /parsed\.data\.isActive/);
-  assert.match(
-    source,
-    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
-  );
-  assert.match(source, /revalidatePath\("\/app\/master-data\/products"\)/);
-  assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(source, /revalidatePath\("\/app\/store-entry"\)/);
+  assert.match(source, /revalidateMasterDataPaths\("purchase-standards"\)/);
   assert.doesNotMatch(source, /export\s+async\s+function\s+delete/);
   assert.doesNotMatch(source, /\.delete\(/);
   assert.doesNotMatch(source, /ledgerPurchaseItem\.update/i);
@@ -272,8 +271,16 @@ test("purchase standard ECount import action saves xlsx rows into purchase stand
   );
   assert.match(source, /requireSettingsAccess\(\)/);
   assert.match(source, /parseEcountPurchaseWorkbook/);
+  assert.doesNotMatch(source, /validateLedgerScope:\s*true/);
+  assert.match(source, /findDuplicateImportedPurchaseConflict/);
+  assert.match(source, /DUPLICATE_IMPORT_PURCHASE_STANDARD/);
+  assert.match(source, /return actionError\(\s*"VALIDATION_ERROR"[\s\S]*file:/);
   assert.match(source, /tx\.product\.upsert/);
-  assert.match(source, /tx\.purchaseStandard\.findFirst/);
+  assert.match(
+    source,
+    /tx\.purchaseStandard\.findUnique\(\{\s*where:\s*\{\s*productId:/s,
+  );
+  assert.doesNotMatch(source, /tx\.purchaseStandard\.findFirst/);
   assert.match(source, /tx\.purchaseStandard\.create/);
   assert.match(source, /tx\.purchaseStandard\.update/);
   assert.match(source, /writeAuditLog\(tx,/);
@@ -282,12 +289,7 @@ test("purchase standard ECount import action saves xlsx rows into purchase stand
   assert.doesNotMatch(source, /ledgerPurchaseItem/);
   assert.doesNotMatch(source, /DailyLedger/);
   assert.doesNotMatch(source, /getOrCreateStoreLedgerInTx/);
-  assert.match(
-    source,
-    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
-  );
-  assert.match(source, /revalidatePath\("\/app\/master-data\/products"\)/);
-  assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.match(source, /revalidateMasterDataPaths\("purchase-standards"\)/);
   assert.doesNotMatch(source, /revalidatePath\(`\/app\/ledgers/);
 });
 

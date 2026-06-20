@@ -24,6 +24,7 @@ const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const authorDisplayNameError = "작성자 표시명은 50자 이하여야 합니다.";
+const authorDisplayNameRequiredError = "작성자 표시명을 입력해 주세요.";
 
 function parseRequiredKrwAmount(
   value: unknown,
@@ -121,14 +122,24 @@ export const ledgerAuthorDisplayNameSchema = z
   .unknown()
   .transform((value, context) => {
     if (value === "" || value === null || value === undefined) {
-      return null;
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: authorDisplayNameRequiredError,
+      });
+
+      return z.NEVER;
     }
 
     if (typeof value === "string") {
       const displayName = value.trim();
 
       if (displayName === "") {
-        return null;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: authorDisplayNameRequiredError,
+        });
+
+        return z.NEVER;
       }
 
       if (displayName.length <= 50) {
@@ -246,6 +257,18 @@ export const ledgerPurchaseSchema = z
   })
   .superRefine((value, context) => {
     value.purchases.forEach((purchase, index) => {
+      if (
+        purchase.sourceType === "ECOUNT_UPLOAD" &&
+        !purchase.productId &&
+        !purchase.purchaseStandardId
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "이카운트 매입은 품목 또는 매입 기준을 선택해 주세요.",
+          path: ["purchases", index, "productId"],
+        });
+      }
+
       if (
         !purchase.productId &&
         !purchase.purchaseStandardId &&

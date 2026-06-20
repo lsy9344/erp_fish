@@ -1,12 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import type { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   ANOMALY_THRESHOLD_SCOPE,
   anomalyThresholdFormSchema,
@@ -55,11 +54,7 @@ function parseAnomalyThresholdInput(
 }
 
 function revalidateAnomalyThresholdPaths() {
-  revalidatePath("/app/master-data/anomaly-thresholds");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateMasterDataPaths("anomaly-thresholds");
 }
 
 function isSameAnomalyThreshold(

@@ -36,3 +36,38 @@ export function buildPlaywrightEnv(sourceEnv = process.env) {
     PW_REUSE_EXISTING_SERVER: sourceEnv.PW_REUSE_EXISTING_SERVER || "0",
   };
 }
+
+function normalizePathForPlaywright(value) {
+  return value.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function isOption(value) {
+  return value.startsWith("-");
+}
+
+export function buildPlaywrightArgs(args) {
+  const [first, ...rest] = args;
+
+  if (!first || isOption(first)) {
+    return args;
+  }
+
+  const defaultDirectory = normalizePathForPlaywright(first);
+  if (!["tests/e2e", "tests/api"].includes(defaultDirectory)) {
+    return args;
+  }
+
+  const hasSpecificPathInDefaultDirectory = rest.some((arg) => {
+    if (isOption(arg)) {
+      return false;
+    }
+
+    const normalized = normalizePathForPlaywright(arg);
+    return (
+      normalized.startsWith(`${defaultDirectory}/`) &&
+      normalized !== defaultDirectory
+    );
+  });
+
+  return hasSpecificPathInDefaultDirectory ? rest : args;
+}

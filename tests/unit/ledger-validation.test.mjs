@@ -67,7 +67,7 @@ test("validation helper preserves dotted field paths for nested step errors", as
 
   const salesNaN = ledgerSalesPaymentSchema.safeParse({
     ...context,
-    authorDisplayName: "",
+    authorDisplayName: "작성자",
     totalSalesAmount: Number.NaN,
     cashAmount: 0,
     cardAmount: 0,
@@ -198,7 +198,7 @@ test("store save actions authorize store access before detailed field validation
     const functionSource = getExportedAsyncFunctionSource(source, functionName);
     const accessParseIndex = functionSource.indexOf("StoreAccessInput(input)");
     const authIndex = functionSource.indexOf(
-      "requireStoreAccess(access.data.storeId)",
+      "requireStoreManagerLedgerEditAccess(access.data.storeId)",
     );
     const detailedParseIndex = functionSource.indexOf(
       `${detailedParseName}(input)`,
@@ -210,7 +210,7 @@ test("store save actions authorize store access before detailed field validation
     );
     assert.ok(
       authIndex > accessParseIndex,
-      `${functionName} should call requireStoreAccess after storeId parse`,
+      `${functionName} should call requireStoreManagerLedgerEditAccess after storeId parse`,
     );
     assert.ok(
       detailedParseIndex > authIndex,

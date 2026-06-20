@@ -82,6 +82,10 @@ admin@example.com
 the SEED_HQ_PASSWORD value from your local .env
 ```
 
+For the full first-run account, password rotation, store manager assignment,
+and 10+ store operation procedure, see
+[`docs/first-run-accounts-and-store-management.md`](docs/first-run-accounts-and-store-management.md).
+
 ### Daily Start
 
 ```bash
@@ -96,15 +100,28 @@ Run `pnpm build` again before `pnpm start` when source code changed.
 Use the fast checks while developing:
 
 ```bash
-pnpm exec prisma validate
-pnpm exec prisma generate
+pnpm db:validate
+pnpm db:generate
 pnpm lint
 pnpm typecheck
 pnpm test:unit
 pnpm test:unit:file tests/unit/example.test.mjs
 ```
 
-Run `pnpm build` before handing work off or before a release:
+Run the release gate as one serial command:
+
+```bash
+pnpm release:preflight
+```
+
+This command runs DB validation, typecheck, lint, build, unit tests, API tests,
+core E2E, and `git diff --check` in order. Do not run `pnpm build`,
+`pnpm test:api`, or E2E Playwright commands in parallel in the same worktree
+because they can touch the same `.next` output. Use a separate worktree or an
+isolated build output if parallel release checks are needed.
+
+Run `pnpm build` before handing work off when the full release gate is not
+needed:
 
 ```bash
 pnpm build
@@ -128,8 +145,58 @@ docker exec erp_fish_postgres createdb -U postgres erp_fish_e2e
 Run only the Playwright file or test you need:
 
 ```bash
+pnpm test:e2e -- tests/e2e/auth.spec.ts
+pnpm test:e2e -- tests/e2e/store-ledger-inventory.spec.ts -g "월초 스냅샷"
 pnpm test:playwright -- tests/e2e/auth.spec.ts -g "비로그인 사용자가 루트 경로"
 pnpm test:playwright -- tests/api/report-export.spec.ts
+```
+
+The release smoke bundle covers representative store-ledger, headquarters,
+report/export, permission, master-data, and anomaly-threshold flows:
+
+```bash
+pnpm test:e2e:core
+```
+
+Prisma CLI commands read `DATABASE_URL` directly. They do not run the app-level
+normalization in `src/env.js`, so release shells must provide a standard
+`postgresql://` or `postgres://` URL before running:
+
+```bash
+pnpm db:validate
+pnpm db:migrate
+```
+
+### Release Preflight Notes
+
+- Before production deployment, complete `docs/release-checklist.md`.
+- FIFO lot policy for this release is forward-only. Existing ledgers without
+  FIFO lots keep the existing fallback calculation, and FIFO-derived money
+  metrics stay in the "기준 확인 필요" state when the basis is not confirmed.
+  Historical FIFO backfill must be a separate approved staging run.
+- ECOUNT store matching accepts exact store names and the same base store name
+  with a parenthesized business suffix, such as `진수산(수산물)` or
+  `진수산 （수산물）`. Different base store names or mismatched closing dates are
+  blocked with a file error.
+- `PURCHASE_ROW` corrections remain out of this release scope. The Prisma enum
+  is kept for compatibility, but UI selection and server creation are blocked
+  until report overlay support exists.
+- Before release, check active store-manager permission profiles in the target
+  database:
+
+```sql
+SELECT
+  u.email,
+  u.name,
+  array_agg(DISTINCT pp.code ORDER BY pp.code) AS profiles,
+  bool_or(ppa.action = 'LEDGER_EDIT') AS can_edit_ledger
+FROM "User" u
+LEFT JOIN "UserPermissionProfile" upp ON upp."userId" = u.id
+LEFT JOIN "PermissionProfile" pp ON pp.id = upp."profileId" AND pp."isActive" = true
+LEFT JOIN "PermissionProfileAction" ppa ON ppa."profileId" = pp.id
+WHERE u.role = 'STORE_MANAGER' AND u."isActive" = true
+GROUP BY u.id, u.email, u.name
+ORDER BY u.email;
 ```
 
 Override the safe defaults only with test-like values:

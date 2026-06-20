@@ -205,14 +205,7 @@ test("ledger input code actions enforce auth, audit, transactions, and revalidat
   assert.match(codeActions, /AUTO_DISPLAY_ORDER_LIMIT_EXCEEDED/);
   assert.match(codeActions, /ActionResult/);
   assert.match(codeActions, /DUPLICATE_LEDGER_INPUT_CODE/);
-  assert.match(codeActions, /revalidatePath\("\/app\/master-data\/codes"\)/);
-  assert.match(codeActions, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(codeActions, /revalidatePath\("\/app\/store-entry"\)/);
-  assert.match(
-    codeActions,
-    /revalidatePath\("\/app\/store-entry\/inventory"\)/,
-  );
-  assert.match(codeActions, /revalidatePath\("\/app\/store-entry\/losses"\)/);
+  assert.match(codeActions, /revalidateMasterDataPaths\("codes"\)/);
   assert.doesNotMatch(
     codeActions,
     /export\s+async\s+function\s+deleteLedgerInputCode/,

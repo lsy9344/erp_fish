@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
@@ -17,9 +16,19 @@ import {
 } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import {
+  revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
+import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "~/features/ledger/status-policy";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import {
   persistLedgerInventoryCarryoverDetail,
@@ -85,13 +94,9 @@ function parseHqInventoryInput<T>(
 }
 
 function revalidateHqInventoryPaths(ledgerId: string) {
-  revalidatePath(`/app/ledgers/${ledgerId}`);
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateLedgerDetailPath(ledgerId);
+  revalidateStoreEntryPaths(["root", "inventory"]);
+  revalidateDashboardAndReports();
 }
 
 function mapHqActionError(): ActionResult<never> {
@@ -168,21 +173,9 @@ async function hqInventoryConflictError<T = never>(
 function notEditableError(
   status: InventoryStepData["status"],
 ): ActionResult<never> {
-  if (status === "HEADQUARTERS_CLOSED") {
-    return actionError(
-      "LEDGER_CLOSED",
-      "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-    );
-  }
+  const reason = getLedgerEditBlockReason(status, "inventory-adjustment");
 
-  if (status === "HOLIDAY") {
-    return actionError(
-      "LEDGER_NOT_EDITABLE",
-      "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다.",
-    );
-  }
-
-  return actionError("LEDGER_NOT_EDITABLE", "수정할 수 없는 장부 상태입니다.");
+  return actionError(reason.code, reason.message);
 }
 
 function ensureTargetInventory(
@@ -193,7 +186,7 @@ function ensureTargetInventory(
     return notFoundError();
   }
 
-  if (data.status !== "IN_PROGRESS" && data.status !== "IN_REVIEW") {
+  if (!isLedgerEditable(data.status)) {
     return notEditableError(data.status);
   }
 
@@ -209,7 +202,7 @@ async function markEditableLedgerInTx(
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
-      status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+      status: { in: [...editableLedgerStatuses] },
       updatedAt: expectedUpdatedAt,
     },
     data: { updatedById: actorId },

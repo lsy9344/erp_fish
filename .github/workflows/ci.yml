@@ -101,7 +101,7 @@ jobs:
         run: pnpm format:check
 
       - name: Check CI YAML and docs formatting
-        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
+        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
 
       - name: Lint
         run: pnpm lint
@@ -111,6 +111,9 @@ jobs:
 
       - name: Unit tests
         run: pnpm test:unit
+
+      - name: API tests
+        run: pnpm test:api
 
       - name: Production build
         run: pnpm build
@@ -165,8 +168,8 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run smoke e2e
-        run: pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
+      - name: Run core e2e
+        run: pnpm test:e2e:core
 
       - name: Upload Playwright artifacts
         if: failure()

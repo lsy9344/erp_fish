@@ -78,6 +78,13 @@ enum LedgerPurchaseSource {
   ECOUNT_UPLOAD
 }
 
+enum InventoryLotSource {
+  OPENING
+  PREVIOUS_CARRYOVER
+  PURCHASE
+  LEGACY_OPENING
+}
+
 enum CorrectionTargetType {
   LEDGER_FIELD
   PAYMENT_FIELD
@@ -132,6 +139,7 @@ model Product {
   purchaseStandards          PurchaseStandard[]
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
+  ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
   inventoryOpeningSnapshots  InventoryOpeningSnapshot[]
@@ -144,7 +152,7 @@ model Product {
 
 model PurchaseStandard {
   id                String   @id @default(cuid())
-  productId         String
+  productId         String   @unique
   standardUnitPrice Int?
   referenceInfo     String?
   isActive          Boolean  @default(true)
@@ -156,7 +164,6 @@ model PurchaseStandard {
   updatedBy           User?                @relation("PurchaseStandardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   ledgerPurchaseItems LedgerPurchaseItem[]
 
-  @@index([productId])
   @@index([isActive])
   @@index([updatedById])
 }
@@ -357,6 +364,7 @@ model DailyLedger {
   ledgerExpenses             LedgerExpense[]
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
+  ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
   correctionRecords          CorrectionRecord[]
@@ -438,11 +446,12 @@ model LedgerPurchaseItem {
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
-  dailyLedger      DailyLedger       @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
-  product          Product?          @relation(fields: [productId], references: [id], onDelete: Restrict)
-  purchaseStandard PurchaseStandard? @relation(fields: [purchaseStandardId], references: [id], onDelete: SetNull)
-  createdBy        User              @relation("LedgerPurchaseItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy        User              @relation("LedgerPurchaseItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  dailyLedger             DailyLedger              @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  product                 Product?                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseStandard        PurchaseStandard?        @relation(fields: [purchaseStandardId], references: [id], onDelete: SetNull)
+  ledgerInventoryFifoLots LedgerInventoryFifoLot[]
+  createdBy               User                     @relation("LedgerPurchaseItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy               User                     @relation("LedgerPurchaseItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
 
   @@index([dailyLedgerId])
   @@index([productId])
@@ -478,6 +487,7 @@ model LedgerInventoryItem {
   updatedBy                 User                            @relation("LedgerInventoryItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   ledgerInventoryAdjustment LedgerInventoryAdjustment?
   carryoverDetail           LedgerInventoryCarryoverDetail?
+  fifoLots                  LedgerInventoryFifoLot[]
 
   @@unique([dailyLedgerId, productId], map: "ledgerInventoryItem_dailyLedgerId_productId_key")
   @@index([dailyLedgerId])
@@ -510,6 +520,38 @@ model LedgerInventoryCarryoverDetail {
   @@index([sourceLedgerId])
   @@index([sourceSnapshotId])
   @@index([source, status])
+}
+
+model LedgerInventoryFifoLot {
+  id                    String             @id @default(cuid())
+  dailyLedgerId         String
+  ledgerInventoryItemId String?
+  productId             String
+  sourceType            InventoryLotSource
+  sourceLedgerId        String?
+  sourcePurchaseItemId  String?
+  unitPrice             Int
+  originalQuantity      Int
+  consumedQuantity      Int
+  remainingQuantity     Int
+  originalAmount        Int
+  consumedAmount        Int
+  remainingAmount       Int
+  sortOrder             Int
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  dailyLedger         DailyLedger          @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+  ledgerInventoryItem LedgerInventoryItem? @relation(fields: [ledgerInventoryItemId], references: [id], onDelete: Cascade)
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sourcePurchaseItem  LedgerPurchaseItem?  @relation(fields: [sourcePurchaseItemId], references: [id], onDelete: SetNull)
+
+  @@unique([dailyLedgerId, productId, sortOrder], map: "ledgerInventoryFifoLot_dailyLedgerId_productId_sortOrder_key")
+  @@index([dailyLedgerId, productId])
+  @@index([ledgerInventoryItemId])
+  @@index([productId])
+  @@index([sourceType])
+  @@index([sourcePurchaseItemId])
 }
 
 model LedgerInventoryAdjustment {

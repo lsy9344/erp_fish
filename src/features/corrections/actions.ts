@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
@@ -10,6 +8,11 @@ import {
   requireHeadquartersLedgerScope,
 } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  revalidateBestEffort,
+  revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
+} from "~/server/revalidation";
 import {
   correctionRecordSchema,
   toFieldErrors,
@@ -40,17 +43,9 @@ const expenseFieldKinds: Record<string, CorrectionValue["kind"]> = {
   memo: "text",
 };
 
-const purchaseFieldKinds: Record<string, CorrectionValue["kind"]> = {
-  unitPrice: "money",
-  quantity: "quantity",
-  amount: "money",
-  referenceInfo: "text",
-};
-
 const inventoryFieldKinds: Record<string, CorrectionValue["kind"]> = {
   currentQuantity: "quantity",
   quantity: "quantity",
-  inventoryAmount: "money",
 };
 
 const lossFieldKinds: Record<string, CorrectionValue["kind"]> = {
@@ -82,17 +77,9 @@ const expenseFieldLabels: Record<string, string> = {
   memo: "메모",
 };
 
-const purchaseFieldLabels: Record<string, string> = {
-  unitPrice: "단가",
-  quantity: "수량",
-  amount: "금액",
-  referenceInfo: "참고 정보",
-};
-
 const inventoryFieldLabels: Record<string, string> = {
   currentQuantity: "현재고",
   quantity: "수량",
-  inventoryAmount: "재고 금액",
 };
 
 const lossFieldLabels: Record<string, string> = {
@@ -238,19 +225,12 @@ async function lockCorrectionTargetInTx(
 }
 
 function revalidateCorrectionPaths(ledgerId: string) {
-  revalidatePath(`/app/ledgers/${ledgerId}`);
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateLedgerDetailPath(ledgerId);
+  revalidateDashboardAndReports();
 }
 
 function revalidateCorrectionPathsBestEffort(ledgerId: string) {
-  try {
-    revalidateCorrectionPaths(ledgerId);
-  } catch {
-    // The correction is already committed; avoid reporting a false failure.
-  }
+  revalidateBestEffort(() => revalidateCorrectionPaths(ledgerId));
 }
 
 async function resolveOriginalCorrectionValue(
@@ -366,46 +346,7 @@ async function resolveOriginalCorrectionValue(
   }
 
   if (input.targetType === "PURCHASE_ROW") {
-    const kind = purchaseFieldKinds[input.fieldKey];
-
-    if (!kind) {
-      return unsupportedTargetError();
-    }
-
-    const row = await tx.ledgerPurchaseItem.findFirst({
-      where: { id: input.targetId, dailyLedgerId: input.ledgerId },
-      select: {
-        unitPrice: true,
-        quantity: true,
-        amount: true,
-        referenceInfo: true,
-        productName: true,
-      },
-    });
-
-    if (!row) {
-      return unsupportedTargetError();
-    }
-
-    const values = {
-      unitPrice: row.unitPrice,
-      quantity: row.quantity,
-      amount: row.amount,
-      referenceInfo: row.referenceInfo,
-    };
-
-    return actionOk(
-      asCorrectionValue(
-        kind,
-        values[input.fieldKey as keyof typeof values] ?? null,
-        targetRowLabel(
-          "매입",
-          row.productName,
-          purchaseFieldLabels[input.fieldKey] ?? input.fieldKey,
-          input.targetId,
-        ),
-      ),
-    );
+    return unsupportedTargetError();
   }
 
   if (input.targetType === "INVENTORY_ROW") {
@@ -420,7 +361,6 @@ async function resolveOriginalCorrectionValue(
       select: {
         currentQuantity: true,
         quantity: true,
-        inventoryAmount: true,
         productName: true,
       },
     });
@@ -432,7 +372,6 @@ async function resolveOriginalCorrectionValue(
     const values = {
       currentQuantity: row.currentQuantity,
       quantity: row.quantity,
-      inventoryAmount: row.inventoryAmount,
     };
 
     return actionOk(

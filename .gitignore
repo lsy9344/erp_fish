@@ -30,6 +30,7 @@ tmp/
 temp/
 tmp-*.js
 tmp-*.mjs
+.tmp-*.js
 .cache/
 .tmp/
 

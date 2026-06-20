@@ -2,7 +2,11 @@
 
 import { spawnSync } from "node:child_process";
 
-import { buildPlaywrightEnv, getDatabaseName } from "./playwright-clean-env.mjs";
+import {
+  buildPlaywrightArgs,
+  buildPlaywrightEnv,
+  getDatabaseName,
+} from "./playwright-clean-env.mjs";
 
 let env;
 
@@ -20,7 +24,7 @@ console.log(
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const result = spawnSync(
   pnpm,
-  ["exec", "playwright", "test", ...process.argv.slice(2)],
+  ["exec", "playwright", "test", ...buildPlaywrightArgs(process.argv.slice(2))],
   {
     env,
     shell: process.platform === "win32",

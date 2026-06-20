@@ -4,22 +4,15 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type FormEvent,
 } from "react";
-import {
-  CheckCircle2Icon,
-  PlusIcon,
-  Trash2Icon,
-  UploadIcon,
-} from "lucide-react";
+import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerPurchases } from "~/features/ledger/actions";
-import { previewEcountPurchaseUpload } from "~/features/ledger/ecount-purchase-actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
@@ -28,6 +21,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -77,7 +71,6 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
-  ecountUploadEnabled?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -139,11 +132,8 @@ function getDraftPurchaseTotal(lines: PurchaseLine[]) {
   return lines.reduce((sum, line) => sum + getLineAmount(line), 0);
 }
 
-function isUploadedLineLocked(
-  line: PurchaseLine,
-  ecountUploadEnabled: boolean,
-) {
-  return line.sourceType === "ECOUNT_UPLOAD" && !ecountUploadEnabled;
+function isUploadedLineLocked(line: PurchaseLine) {
+  return line.sourceType === "ECOUNT_UPLOAD";
 }
 
 function arePurchaseLinesEqual(left: PurchaseLine[], right: PurchaseLine[]) {
@@ -160,10 +150,8 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
-  ecountUploadEnabled = false,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
-  const ecountUploadInputRef = useRef<HTMLInputElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const standardRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const productNameRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -180,8 +168,6 @@ export function PurchaseStepClient({
   );
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importMessage, setImportMessage] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -274,7 +260,6 @@ export function PurchaseStepClient({
   function clearRowErrors() {
     setFieldErrors({});
     setFormError(null);
-    setImportMessage(null);
   }
 
   function getCurrentPurchaseLines() {
@@ -366,65 +351,9 @@ export function PurchaseStepClient({
     return persistPurchaseLines(getCurrentPurchaseLines());
   }
 
-  async function saveImportedPurchases(lines: PurchaseLine[]) {
-    return persistPurchaseLines(lines, {
-      successMessage: `이카운트 엑셀에서 ${lines.length}건을 저장했습니다.`,
-      reasonFallback: "이카운트 엑셀 업로드",
-    });
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await saveCurrentDraft();
-  }
-
-  async function handleEcountUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-
-    if (!file || isSaving || isImporting || isOriginalEditBlocked) {
-      return;
-    }
-
-    setIsImporting(true);
-    setResultMessage(null);
-    setImportMessage(null);
-    setFormError(null);
-    setFieldErrors({});
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("storeId", ledger.storeId);
-      formData.append("closingDate", getKstLedgerDateParam(ledger.closingDate));
-
-      const result = await previewEcountPurchaseUpload(formData);
-
-      if (!result.ok) {
-        const nextErrors = result.error.fieldErrors ?? {};
-
-        setFieldErrors(nextErrors);
-        setFormError(result.error.message);
-        toast.error(result.error.message);
-        return;
-      }
-
-      setPurchaseItems(result.data.purchases);
-      const saved = await saveImportedPurchases(result.data.purchases);
-
-      if (!saved) {
-        return;
-      }
-
-      setImportMessage(
-        `이카운트 엑셀에서 ${result.data.matchedRowCount}건을 저장했습니다.`,
-      );
-    } catch {
-      setFormError("이카운트 엑셀 파일을 읽을 수 없습니다.");
-      toast.error("이카운트 엑셀 파일을 읽을 수 없습니다.");
-    } finally {
-      setIsImporting(false);
-      event.currentTarget.value = "";
-    }
   }
 
   function handleRetry() {
@@ -505,12 +434,10 @@ export function PurchaseStepClient({
     });
   }
 
-  const isBusy = isSaving || isImporting;
-  const isFormSaving = isBusy;
+  const isFormSaving = isSaving;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
   const hqEditReasonError = fieldErrors.reason?.[0];
-  const isOriginalEditBlocked =
-    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
     storeId: ledger.storeId,
     date: getKstLedgerDateParam(ledger.closingDate),
@@ -571,41 +498,6 @@ export function PurchaseStepClient({
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
-        {ecountUploadEnabled ? (
-          <div className="mb-3 rounded-md border p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-medium">이카운트 엑셀</p>
-              <input
-                ref={ecountUploadInputRef}
-                type="file"
-                accept=".xlsx"
-                className="hidden"
-                disabled={isBusy || isOriginalEditBlocked}
-                onChange={handleEcountUpload}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => ecountUploadInputRef.current?.click()}
-                disabled={isBusy || isOriginalEditBlocked}
-                className="min-h-11 gap-2"
-              >
-                <UploadIcon data-icon="inline-start" />
-                {isImporting ? "불러오는 중..." : "엑셀 선택"}
-              </Button>
-            </div>
-            {importMessage ? (
-              <p
-                className="text-muted-foreground mt-2 text-sm"
-                role="status"
-                aria-live="polite"
-              >
-                {importMessage}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-sm font-medium">매입 항목</p>
           <Button
@@ -658,7 +550,7 @@ export function PurchaseStepClient({
               const isLineEditBlocked =
                 isFormSaving ||
                 isOriginalEditBlocked ||
-                isUploadedLineLocked(line, ecountUploadEnabled);
+                isUploadedLineLocked(line);
 
               return (
                 <div key={line.id} className="grid gap-2 rounded-md border p-3">

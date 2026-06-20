@@ -1,12 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   ledgerInputCodeFormSchema,
   ledgerInputCodeStatusSchema,
@@ -36,11 +35,7 @@ const MAX_LEDGER_INPUT_CODE_DISPLAY_ORDER = 2_147_483_647;
 const LEDGER_INPUT_CODE_DISPLAY_ORDER_STEP = 10;
 
 function revalidateLedgerInputCodePaths() {
-  revalidatePath("/app/master-data/codes");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/store-entry/losses");
+  revalidateMasterDataPaths("codes");
 }
 
 function normalizeLedgerInputCode(code: {

@@ -1,26 +1,5 @@
-import Link from "next/link";
-import { BookOpenIcon, PackageIcon, TriangleAlertIcon } from "lucide-react";
-
-import { cn } from "~/lib/utils";
 import { LogoutButton } from "~/components/logout-button";
-
-const storeNavItems = [
-  {
-    label: "장부",
-    href: "/app/store-entry",
-    icon: BookOpenIcon,
-  },
-  {
-    label: "재고",
-    href: "/app/store-entry/inventory",
-    icon: PackageIcon,
-  },
-  {
-    label: "손실",
-    href: "/app/store-entry/losses",
-    icon: TriangleAlertIcon,
-  },
-];
+import { StoreManagerNavigation } from "~/components/store-manager-navigation";
 
 type StoreManagerShellProps = {
   userName: string;
@@ -28,16 +7,6 @@ type StoreManagerShellProps = {
   storeId?: string;
   children: React.ReactNode;
 };
-
-function getStoreScopedHref(href: string, storeId?: string) {
-  if (!storeId) {
-    return href;
-  }
-
-  const params = new URLSearchParams({ storeId });
-
-  return `${href}?${params.toString()}`;
-}
 
 export function StoreManagerShell({
   userName,
@@ -57,23 +26,7 @@ export function StoreManagerShell({
               {storeName ? `${storeName} · ${userName}` : userName}
             </p>
           </div>
-          <nav
-            className="hidden items-center gap-1 md:flex"
-            aria-label="지점장 업무"
-          >
-            {storeNavItems.map((item) => (
-              <Link
-                key={item.label}
-                href={getStoreScopedHref(item.href, storeId)}
-                prefetch={false}
-                data-unsaved-guard-nav="store-shell"
-                className="text-muted-foreground hover:bg-primary/10 hover:text-primary inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium"
-              >
-                <item.icon className="size-4" aria-hidden="true" />
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <StoreManagerNavigation storeId={storeId} variant="top" />
           <div className="shrink-0">
             <LogoutButton />
           </div>
@@ -82,28 +35,7 @@ export function StoreManagerShell({
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-8">
         {children}
       </main>
-      <nav
-        className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(15_23_42/0.08)] md:hidden"
-        aria-label="지점장 하단 업무"
-      >
-        <div className="grid min-h-14 grid-cols-3">
-          {storeNavItems.map((item) => (
-            <Link
-              key={item.label}
-              href={getStoreScopedHref(item.href, storeId)}
-              prefetch={false}
-              data-unsaved-guard-nav="store-shell"
-              className={cn(
-                "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium",
-                "text-muted-foreground hover:bg-primary/10 hover:text-primary",
-              )}
-            >
-              <item.icon className="size-5" aria-hidden="true" />
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <StoreManagerNavigation storeId={storeId} variant="bottom" />
     </div>
   );
 }

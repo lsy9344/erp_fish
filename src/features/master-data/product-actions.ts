@@ -1,12 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   productFormSchema,
   productStatusSchema,
@@ -34,10 +33,7 @@ const productSelect = {
 } as const;
 
 function revalidateProductPaths() {
-  revalidatePath("/app/master-data/products");
-  revalidatePath("/app/master-data/purchase-standards");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
+  revalidateMasterDataPaths("products");
 }
 
 function parseProductInput(input: unknown): ActionResult<ProductFormInput> {

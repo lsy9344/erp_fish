@@ -195,6 +195,62 @@ test("ledger review correction overlay marks unsupported calculated metric corre
   });
 });
 
+test("ledger review correction overlay keeps purchase row corrections unapplied for report review", async () => {
+  const ledgerPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(ledgerPath).href
+  );
+
+  const result = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100000,
+      cashAmount: 40000,
+      cardAmount: 50000,
+      otherPaymentAmount: 10000,
+      workerCount: 4,
+      expenseTotal: 0,
+      inventoryItems: [
+        {
+          id: "inventory-1",
+          productName: "광어",
+          previousQuantity: 10,
+          purchasedQuantity: 5,
+          currentQuantity: 8,
+          quantity: 8,
+          unitPrice: 1000,
+          inventoryAmount: 8000,
+        },
+      ],
+    },
+    lossItems: [],
+    corrections: [
+      {
+        targetType: "PURCHASE_ROW",
+        targetId: "purchase-1",
+        fieldKey: "quantity",
+        latestAppliedValue: quantity(9),
+      },
+    ],
+  });
+
+  assert.equal(result.reviewInput.inventoryItems[0].purchasedQuantity, 5);
+  assert.deepEqual([...result.appliedCorrectionKeys], []);
+  assert.deepEqual([...result.unappliedCorrectionKeys], [
+    "ledger-1:PURCHASE_ROW:purchase-1:quantity",
+  ]);
+  assert.deepEqual(result.correctionState, {
+    appliedCorrectionCount: 0,
+    hasAppliedCorrections: false,
+    hasUnappliedCorrections: true,
+  });
+});
+
 test("ledger review correction overlay does not claim unused inventory amount corrections were applied", async () => {
   const ledgerPath = assertProjectFile(
     "src",

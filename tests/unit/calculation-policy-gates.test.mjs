@@ -91,24 +91,15 @@ test("OQ-gated calculation registry returns policy-unconfirmed metric contracts"
   );
 });
 
-test("ledger summary keeps MVP calculations and exposes OQ-gated policy state through the shared helper", async () => {
+test("ledger summary marks FIFO amounts as policy-unconfirmed before policy approval", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
     "calculations",
     "ledger.ts",
   );
-  const gatePath = assertProjectFile(
-    "src",
-    "server",
-    "calculations",
-    "policy-gates.ts",
-  );
   const { calculateLedgerReviewSummary } = await import(
     pathToFileURL(calcPath).href
-  );
-  const { createPolicyUnconfirmedMetric } = await import(
-    pathToFileURL(gatePath).href
   );
 
   const summary = calculateLedgerReviewSummary({
@@ -126,6 +117,79 @@ test("ledger summary keeps MVP calculations and exposes OQ-gated policy state th
         quantity: 8,
         unitPrice: 1_000,
         inventoryAmount: 8_000,
+        fifoConsumedAmount: 2_000,
+        fifoRemainingAmount: 1_000,
+        fifoContainsLegacyOpening: false,
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  });
+
+  assert.equal(summary.costOfGoodsSold.value, 2_000);
+  assert.equal(summary.costOfGoodsSold.status, "policy-unconfirmed");
+  assert.equal(summary.grossMarginRate.value, 0.98);
+  assert.equal(summary.grossMarginRate.status, "policy-unconfirmed");
+  assert.equal(summary.inventoryAmount.value, 1_000);
+  assert.equal(summary.inventoryAmount.status, "policy-unconfirmed");
+
+  const legacySummary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 8_000,
+    workerCount: 4,
+    expenseTotal: 12_000,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+        fifoConsumedAmount: 7_000,
+        fifoRemainingAmount: 8_000,
+        fifoContainsLegacyOpening: true,
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  });
+
+  assert.equal(legacySummary.costOfGoodsSold.value, 7_000);
+  assert.equal(legacySummary.costOfGoodsSold.status, "policy-unconfirmed");
+  assert.equal(legacySummary.inventoryAmount.value, 8_000);
+  assert.equal(legacySummary.inventoryAmount.status, "policy-unconfirmed");
+});
+
+test("ledger summary falls back when FIFO lot rows are empty", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 8_000,
+    workerCount: 4,
+    expenseTotal: 12_000,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+        fifoLots: [],
       },
     ],
     inventoryAdjustments: [],
@@ -134,39 +198,69 @@ test("ledger summary keeps MVP calculations and exposes OQ-gated policy state th
 
   assert.deepEqual(summary.costOfGoodsSold, { value: 7_000, status: "ok" });
   assert.deepEqual(summary.inventoryAmount, { value: 8_000, status: "ok" });
-  assert.equal(
-    summary.costOfGoodsSold.reason?.includes("FIFO") ?? false,
-    false,
-    "MVP saved-unit-price calculation must not be labeled as FIFO final cost",
+});
+
+test("inventory corrections discard stale FIFO amounts", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
   );
-  assert.deepEqual(
-    createPolicyUnconfirmedMetric("fifoCostOfGoodsSold"),
-    {
-      metricId: "fifoCostOfGoodsSold",
-      value: null,
-      status: "policy-unconfirmed",
-      label: "확인 필요",
-      policyLabel: "FIFO 확정 원가",
-      unavailableReason: "계산 기준 확인 필요",
-      reason:
-        "OQ-7/OQ-17 FIFO 적용 범위와 처리 순서가 확정되지 않아 FIFO 확정 원가 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
-      oqIds: ["OQ-7", "OQ-17"],
+  const {
+    applyCorrectionValuesToLedgerReviewInput,
+    calculateLedgerReviewSummary,
+  } = await import(pathToFileURL(calcPath).href);
+
+  const overlay = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100_000,
+      cashAmount: 40_000,
+      cardAmount: 50_000,
+      otherPaymentAmount: 8_000,
+      workerCount: 4,
+      expenseTotal: 12_000,
+      inventoryItems: [
+        {
+          id: "inventory-1",
+          previousQuantity: 10,
+          purchasedQuantity: 0,
+          currentQuantity: 8,
+          quantity: 8,
+          unitPrice: 100,
+          inventoryAmount: 800,
+          fifoConsumedAmount: 200,
+          fifoRemainingAmount: 800,
+          fifoContainsLegacyOpening: false,
+          fifoLots: [
+            {
+              sourceType: "PREVIOUS_CARRYOVER",
+              consumedAmount: 200,
+              remainingAmount: 800,
+            },
+          ],
+        },
+      ],
+      inventoryAdjustments: [],
+      lossItems: [],
     },
-  );
-  assert.deepEqual(
-    createPolicyUnconfirmedMetric("thirtyPercentUnitPrice"),
-    {
-      metricId: "thirtyPercentUnitPrice",
-      value: null,
-      status: "policy-unconfirmed",
-      label: "확인 필요",
-      policyLabel: "30%단가",
-      unavailableReason: "계산 기준 확인 필요",
-      reason:
-        "OQ-2 30%단가 의미와 적용 우선순위가 확정되지 않아 파생 단가 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
-      oqIds: ["OQ-2"],
-    },
-  );
+    corrections: [
+      {
+        targetType: "INVENTORY_ROW",
+        targetId: "inventory-1",
+        fieldKey: "currentQuantity",
+        latestAppliedValue: { kind: "quantity", value: 4 },
+      },
+    ],
+  });
+
+  assert.equal(overlay.correctionState.appliedCorrectionCount, 1);
+
+  const summary = calculateLedgerReviewSummary(overlay.reviewInput);
+
+  assert.deepEqual(summary.costOfGoodsSold, { value: 600, status: "ok" });
+  assert.deepEqual(summary.inventoryAmount, { value: 400, status: "ok" });
 });
 
 test("dashboard and reports use shared calculation or policy gate helpers instead of local OQ formulas", () => {
@@ -193,7 +287,6 @@ test("dashboard and reports use shared calculation or policy gate helpers instea
     assert.match(source, /calculateLedgerReviewSummary/);
     assert.match(source, /policy-gates/);
     assert.doesNotMatch(source, /30\s*%\s*단가|thirty\s*percent/i);
-    assert.doesNotMatch(source, /FIFO\s*(?:원가|cost|inventory)/i);
     assert.doesNotMatch(source, /hoped|희망\s*판매가/i);
     assert.doesNotMatch(source, /0\.3\s*\*|\*\s*0\.3/);
   }

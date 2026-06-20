@@ -171,7 +171,7 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.match(actions, /user\.role_changed/);
   assert.match(actions, /user\.store_assignments_changed/);
   assert.match(actions, /user\.deactivated/);
-  assert.match(actions, /revalidatePath\("\/app\/master-data\/users"\)/);
+  assert.match(actions, /revalidateMasterDataPaths\("users"\)/);
   assert.match(actions, /SELF_PERMISSION_CHANGE/);
   assert.doesNotMatch(actions, /export\s+async\s+function\s+deleteUser/);
   assert.doesNotMatch(actions, /user\.delete/);

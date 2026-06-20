@@ -79,6 +79,11 @@ type DashboardLedgerRecord = {
     quantity: number | null;
     unitPrice: number;
     inventoryAmount: number | null;
+    fifoLots?: {
+      sourceType: string;
+      consumedAmount: number;
+      remainingAmount: number;
+    }[];
   }[];
   ledgerExpenses: {
     id: string;
@@ -243,6 +248,13 @@ export async function getHqDashboardRows({
                 quantity: true,
                 unitPrice: true,
                 inventoryAmount: true,
+                fifoLots: {
+                  select: {
+                    sourceType: true,
+                    consumedAmount: true,
+                    remainingAmount: true,
+                  },
+                },
               },
             },
             ledgerExpenses: {
@@ -493,11 +505,11 @@ function toDashboardRow(
   const missingItems = getLedgerReviewMissingItems({
     storeId: store.id,
     closingDate: ledger.closingDate.toISOString(),
-    totalSalesAmount: ledger.totalSalesAmount,
+    totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
     paymentTotal: calculatePaymentTotal(
-      ledger.cashAmount,
-      ledger.cardAmount,
-      ledger.otherPaymentAmount,
+      correctionOverlay.reviewInput.cashAmount,
+      correctionOverlay.reviewInput.cardAmount,
+      correctionOverlay.reviewInput.otherPaymentAmount,
     ),
     expenseCount: ledger.ledgerExpenses.length,
     purchaseCount: ledger._count.ledgerPurchaseItems,
@@ -506,7 +518,7 @@ function toDashboardRow(
     ),
     inventoryCount: correctionOverlay.reviewInput.inventoryItems.length,
     lossCount: correctionOverlay.lossItems.length,
-    workerCount: ledger.workerCount,
+    workerCount: correctionOverlay.reviewInput.workerCount,
   });
   const signals =
     ledger.status === "HOLIDAY"
@@ -607,6 +619,13 @@ export async function getHqLedgerDetail(ledgerId: string) {
             quantity: true,
             unitPrice: true,
             inventoryAmount: true,
+            fifoLots: {
+              select: {
+                sourceType: true,
+                consumedAmount: true,
+                remainingAmount: true,
+              },
+            },
           },
         },
         ledgerExpenses: {
@@ -685,11 +704,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.store.id,
     closingDate: ledger.closingDate.toISOString(),
-    totalSalesAmount: ledger.totalSalesAmount,
+    totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
     paymentTotal: calculatePaymentTotal(
-      ledger.cashAmount,
-      ledger.cardAmount,
-      ledger.otherPaymentAmount,
+      correctionOverlay.reviewInput.cashAmount,
+      correctionOverlay.reviewInput.cardAmount,
+      correctionOverlay.reviewInput.otherPaymentAmount,
     ),
     expenseCount: ledger.ledgerExpenses.length,
     purchaseCount: ledger._count.ledgerPurchaseItems,
@@ -698,7 +717,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     ),
     inventoryCount: correctionOverlay.reviewInput.inventoryItems.length,
     lossCount: correctionOverlay.lossItems.length,
-    workerCount: ledger.workerCount,
+    workerCount: correctionOverlay.reviewInput.workerCount,
   });
   const signals =
     ledger.status === "HOLIDAY"
@@ -771,13 +790,18 @@ export function getDashboardSignals({
       detail: `${item.label}: ${item.detail}`,
     }));
   const calculationSignals = getMetricStatusSignals(revenueCurrent);
-  const revenueSignals = normalizeDashboardAnomalySignals(
-    evaluateRevenueAnomalySignals({
-      thresholds: thresholdSettings,
-      current: revenueCurrent,
-      comparison: { policy: null, baseline: null },
-    }),
-  );
+  const anomalyReadyRevenueCurrent =
+    toAnomalyReadyRevenueCurrent(revenueCurrent);
+  const revenueSignals =
+    thresholdSettings === null || anomalyReadyRevenueCurrent
+      ? normalizeDashboardAnomalySignals(
+          evaluateRevenueAnomalySignals({
+            thresholds: thresholdSettings,
+            current: anomalyReadyRevenueCurrent ?? revenueCurrent,
+            comparison: { policy: null, baseline: null },
+          }),
+        )
+      : [];
   const inventoryLossSignals = thresholdSettings
     ? normalizeDashboardAnomalySignals(
         evaluateInventoryLossAnomalySignals({
@@ -824,17 +848,33 @@ function getMetricStatusSignals(revenueCurrent: DashboardRevenueCurrent) {
   ].filter((signal) => signal !== null);
 }
 
+function toAnomalyReadyRevenueCurrent(revenueCurrent: DashboardRevenueCurrent) {
+  const metrics = [
+    revenueCurrent.totalSales,
+    revenueCurrent.grossMarginRate,
+    revenueCurrent.salesDifference,
+  ];
+
+  return metrics.every((metric) => metric.status === "ok")
+    ? revenueCurrent
+    : null;
+}
+
 function metricStatusSignal(
   id: "totalSales" | "grossMarginRate" | "salesDifference",
   metricLabel: string,
   metric: LedgerReviewMetric,
 ) {
-  if (metric.status === "ok" || metric.status === "policy-unconfirmed") {
+  if (metric.status === "ok") {
     return null;
   }
 
   const statusLabel =
-    metric.status === "data-insufficient" ? "데이터 부족" : "계산 불가";
+    metric.status === "policy-unconfirmed"
+      ? "기준 확인 필요"
+      : metric.status === "data-insufficient"
+        ? "데이터 부족"
+        : "계산 불가";
   const detail =
     metric.reason ??
     metric.unavailableReason ??

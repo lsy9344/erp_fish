@@ -95,14 +95,8 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
     "actions.ts",
   );
   assert.match(ledgerActionSource, /OriginalLedgerBlockedError/);
-  assert.match(
-    ledgerActionSource,
-    /본사 마감된 장부는 원본 항목으로 수정할 수 없습니다/,
-  );
-  assert.match(
-    ledgerActionSource,
-    /휴무 장부는 원본 항목으로 수정할 수 없습니다/,
-  );
+  assert.match(ledgerActionSource, /getLedgerEditBlockReason/);
+  assert.match(ledgerActionSource, /isLedgerEditable/);
   assert.match(
     ledgerActionSource,
     /error instanceof OriginalLedgerBlockedError[\s\S]*actionError\(error\.code,\s*error\.message\)/,
@@ -118,12 +112,9 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
   assert.match(inventoryActionSource, /OriginalInventoryBlockedError/);
   assert.match(
     inventoryActionSource,
-    /before\.status === "HEADQUARTERS_CLOSED" \|\|[\s\S]*before\.status === "HOLIDAY"/,
+    /getLedgerEditBlockReason\(status,\s*"inventory-adjustment"\)/,
   );
-  assert.match(
-    inventoryActionSource,
-    /휴무 장부는 원본 재고 조정으로 수정할 수 없습니다/,
-  );
+  assert.match(inventoryActionSource, /!isLedgerEditable\(before\.status\)/);
   assert.match(
     inventoryActionSource,
     /error instanceof OriginalInventoryBlockedError[\s\S]*actionError\(error\.code,\s*error\.message\)/,
@@ -138,12 +129,9 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
   assert.match(lossActionSource, /originalLossBlockedError/);
   assert.match(
     lossActionSource,
-    /before\.status === "HEADQUARTERS_CLOSED" \|\|[\s\S]*before\.status === "HOLIDAY"/,
+    /getLedgerEditBlockReason\(status,\s*"loss-entry"\)/,
   );
-  assert.match(
-    lossActionSource,
-    /휴무 장부는 원본 손실 입력으로 수정할 수 없습니다/,
-  );
+  assert.match(lossActionSource, /!isLedgerEditable\(before\.status\)/);
 });
 
 test("conflict UI is wired into every editable ledger surface", () => {
@@ -196,6 +184,11 @@ test("unsaved-change guard covers store shell tabs and HQ tab state", () => {
     "components",
     "store-manager-shell.tsx",
   );
+  const navigationSource = readProjectFile(
+    "src",
+    "components",
+    "store-manager-navigation.tsx",
+  );
   const guardSource = readProjectFile(
     "src",
     "features",
@@ -212,7 +205,8 @@ test("unsaved-change guard covers store shell tabs and HQ tab state", () => {
     "page.tsx",
   );
 
-  assert.match(shellSource, /data-unsaved-guard-nav="store-shell"/);
+  assert.match(shellSource, /StoreManagerNavigation/);
+  assert.match(navigationSource, /data-unsaved-guard-nav="store-shell"/);
   assert.match(guardSource, /a\[data-unsaved-guard-nav\]/);
   assert.match(guardSource, /document\.addEventListener\("click"/);
   assert.match(guardSource, /requestNavigation\(link\.href,\s*link\)/);

@@ -532,6 +532,80 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   expect(emptyLedgerCountAfter).toBe(0);
 });
 
+test("본사 관제판 데스크톱 컬럼 폭은 저장되고 초기화할 수 있다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  const storeHeader = page.getByTestId("hq-dashboard-column-header-store");
+  const storeResizer = page.getByTestId("hq-dashboard-column-resizer-store");
+  const initialBox = await storeHeader.boundingBox();
+
+  expect(initialBox).toBeTruthy();
+  await expect(storeResizer).toBeVisible();
+
+  await storeResizer.hover();
+  await page.mouse.down();
+  await page.mouse.move(
+    initialBox!.x + initialBox!.width + 80,
+    initialBox!.y + 6,
+  );
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => (await storeHeader.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(initialBox!.width + 40);
+
+  const storedWidths = await page.evaluate(() =>
+    window.localStorage.getItem("erp-fish:hq-dashboard-column-widths:v1"),
+  );
+  expect(storedWidths).toContain('"store"');
+
+  await page.reload();
+  await expect
+    .poll(async () => (await storeHeader.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(initialBox!.width + 40);
+
+  await page.getByRole("button", { name: "컬럼 폭 초기화" }).click();
+  await expect
+    .poll(async () => (await storeHeader.boundingBox())?.width ?? 0)
+    .toBeLessThan(initialBox!.width + 20);
+});
+
+test("본사 관제판은 자동 갱신 주기 후 상태 변경을 반영한다", async ({
+  page,
+}) => {
+  test.setTimeout(70_000);
+
+  const progressLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.progress },
+    select: { id: true },
+  });
+  const actorId = await getHeadquartersUserId();
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  const progressRow = getDesktopRow(page, STORE_IDS.progress);
+  await expect(progressRow).toContainText("입력중");
+  await expect(page.getByTestId("hq-dashboard-refresh-status")).toContainText(
+    "마지막 갱신",
+  );
+
+  await prisma.dailyLedger.update({
+    where: { id: progressLedger.id },
+    data: {
+      status: "IN_REVIEW",
+      updatedAt: new Date(),
+      updatedById: actorId,
+    },
+  });
+
+  await page.waitForTimeout(31_000);
+  await expect(progressRow).toContainText("검토대기");
+});
+
 test("관제판 행 전체 클릭은 상세로 이동하지만 미입력 행은 장부를 생성하지 않는다", async ({
   page,
 }) => {

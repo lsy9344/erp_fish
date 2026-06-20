@@ -249,7 +249,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /"use server"/);
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerLosses/);
   assert.match(actionSource, /ledgerLossesSchema\.safeParse/);
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /tx\.ledgerLossItem\.update\(/);
   assert.match(actionSource, /tx\.ledgerLossItem\.create\(/);
@@ -265,10 +265,10 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /reconcileLedgerInventoryAdjustments\(/);
   assert.match(actionSource, /action:\s*"ledger\.losses\.saved"/);
   assert.match(actionSource, /writeAuditLog\(/);
-  assert.match(actionSource, /revalidatePath\("\/app\/store-entry\/losses"\)/);
+  assert.match(actionSource, /revalidateLossPaths\(\)/);
   assert.match(
     actionSource,
-    /revalidatePath\("\/app\/store-entry\/inventory"\)/,
+    /revalidateStoreEntryPaths\(\["losses",\s*"inventory",\s*"root"\]\)/,
   );
 
   const componentSource = readProjectFile(

@@ -5,9 +5,9 @@ import { StoreManagerShell } from "~/components/store-manager-shell";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
 import { getLossStepData } from "~/features/losses/queries";
 import {
-  getStoreManagerWorkspace,
+  getStoreManagerLedgerEditWorkspace,
   normalizeStoreIdParam,
-  requireStoreAccess,
+  requireStoreManagerLedgerEditAccess,
 } from "~/server/authz";
 import { getKstBusinessDateParam } from "~/features/ledger/queries";
 
@@ -51,7 +51,7 @@ export default async function LossEntryPage({
   }
 
   if (storeId) {
-    const { user, store } = await requireStoreAccess(storeId);
+    const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
     const initialData = await getLossStepData(store.id, closingDate, user.id);
 
     return (
@@ -65,7 +65,7 @@ export default async function LossEntryPage({
     );
   }
 
-  const workspace = await getStoreManagerWorkspace();
+  const workspace = await getStoreManagerLedgerEditWorkspace();
 
   if (workspace.status === "headquarters") {
     redirect("/app/dashboard");

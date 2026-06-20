@@ -5,9 +5,9 @@ import { StoreManagerShell } from "~/components/store-manager-shell";
 import { InventoryStepClient } from "~/features/inventory/components/inventory-step-client";
 import { getInventoryStepData } from "~/features/inventory/queries";
 import {
-  getStoreManagerWorkspace,
+  getStoreManagerLedgerEditWorkspace,
   normalizeStoreIdParam,
-  requireStoreAccess,
+  requireStoreManagerLedgerEditAccess,
 } from "~/server/authz";
 import { getKstBusinessDateParam } from "~/features/ledger/queries";
 
@@ -53,7 +53,7 @@ export default async function InventoryEntryPage({
   }
 
   if (storeId) {
-    const { user, store } = await requireStoreAccess(storeId);
+    const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
     const initialData = await getInventoryStepData(
       store.id,
       closingDate,
@@ -71,7 +71,7 @@ export default async function InventoryEntryPage({
     );
   }
 
-  const workspace = await getStoreManagerWorkspace();
+  const workspace = await getStoreManagerLedgerEditWorkspace();
 
   if (workspace.status === "headquarters") {
     redirect("/app/dashboard");

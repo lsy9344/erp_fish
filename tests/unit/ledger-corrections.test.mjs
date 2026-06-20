@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 const root = process.cwd();
@@ -125,6 +126,11 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /paymentFieldKinds/);
   assert.match(actions, /ledgerFieldKinds/);
   assert.match(actions, /calculatedMetricKinds/);
+  assert.match(
+    actions,
+    /if\s*\(input\.targetType\s*===\s*"PURCHASE_ROW"\)\s*\{\s*return unsupportedTargetError\(\);\s*\}/s,
+  );
+  assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.findFirst/);
   assert.match(actions, /normalizeCorrectedValueForTarget/);
   assert.match(actions, /correctedValue\.kind !== originalValue\.kind/);
   assert.match(actions, /withServerLabel/);
@@ -134,8 +140,8 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /action:\s*"correction\.created"/);
   assert.match(actions, /targetType:\s*"CorrectionRecord"/);
   assert.match(actions, /reason:\s*parsed\.data\.reason/);
-  assert.match(actions, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
-  assert.match(actions, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.match(actions, /revalidateLedgerDetailPath\(ledgerId\)/);
+  assert.match(actions, /revalidateDashboardAndReports\(\)/);
   assert.doesNotMatch(actions, /tx\.dailyLedger\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerExpense\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.update/);
@@ -157,6 +163,62 @@ test("correction feature validates input and writes append-only records with aud
   );
 });
 
+test("correction schema rejects new purchase row corrections until report application is supported", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "schemas.ts",
+  );
+  const { correctionRecordSchema, toFieldErrors } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const result = correctionRecordSchema.safeParse({
+    ledgerId: "ledger-1",
+    targetType: "PURCHASE_ROW",
+    targetId: "purchase-1",
+    fieldKey: "quantity",
+    correctedValue: { kind: "quantity", value: 9 },
+    reason: "매입 수량 확인",
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(toFieldErrors(result.error), {
+    targetType: [
+      "매입 행 정정은 아직 지원하지 않습니다. 리포트 반영 경로가 준비된 뒤 사용해 주세요.",
+    ],
+  });
+});
+
+test("correction schema rejects inventory amount corrections until all calculations can apply them", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "schemas.ts",
+  );
+  const { correctionRecordSchema, toFieldErrors } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const result = correctionRecordSchema.safeParse({
+    ledgerId: "ledger-1",
+    targetType: "INVENTORY_ROW",
+    targetId: "inventory-1",
+    fieldKey: "inventoryAmount",
+    correctedValue: { kind: "money", value: 12000 },
+    reason: "재고 금액 확인",
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(toFieldErrors(result.error), {
+    fieldKey: [
+      "재고 금액 정정은 아직 지원하지 않습니다. 수량 정정으로 반영해 주세요.",
+    ],
+  });
+});
+
 test("correction queries expose batched latest values for dashboard calculations", () => {
   const queries = readProjectFile(
     "src",
@@ -170,7 +232,10 @@ test("correction queries expose batched latest values for dashboard calculations
   assert.match(queries, /getHeadquartersStoreScope\(\)/);
   assert.match(queries, /dailyLedgerId:\s*\{\s*in:\s*ledgerIds\s*\}/);
   assert.match(queries, /getLatestCorrectionValueMap\(records\)/);
-  assert.match(queries, /Map<string,\s*ReturnType<typeof getLatestCorrectionValueMap>>/);
+  assert.match(
+    queries,
+    /Map<string,\s*ReturnType<typeof getLatestCorrectionValueMap>>/,
+  );
 });
 
 test("latest correction map preserves database ordering when JS timestamps tie", () => {
@@ -181,7 +246,10 @@ test("latest correction map preserves database ordering when JS timestamps tie",
     "queries.ts",
   );
 
-  assert.match(queries, /\.map\(\(record,\s*index\) => \(\{ record,\s*index \}\)\)/);
+  assert.match(
+    queries,
+    /\.map\(\(record,\s*index\) => \(\{ record,\s*index \}\)\)/,
+  );
   assert.match(queries, /createdAtOrder\s*\|\|\s*left\.index - right\.index/);
   assert.doesNotMatch(queries, /right\.id\.localeCompare\(left\.id\)/);
 });

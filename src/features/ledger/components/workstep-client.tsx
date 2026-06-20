@@ -16,6 +16,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -229,8 +230,7 @@ export function WorkStepClient({
     formRef.current.requestSubmit();
   }
 
-  const isOriginalEditBlocked =
-    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");

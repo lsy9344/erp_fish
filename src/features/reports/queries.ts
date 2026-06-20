@@ -86,6 +86,11 @@ type ReportLedgerRecord = {
     quantity: number | null;
     unitPrice: number;
     inventoryAmount: number | null;
+    fifoLots?: {
+      sourceType: string;
+      consumedAmount: number;
+      remainingAmount: number;
+    }[];
   }[];
   ledgerExpenses: {
     id: string;
@@ -368,6 +373,13 @@ export async function getHqDailyMeetingReport({
                 quantity: true,
                 unitPrice: true,
                 inventoryAmount: true,
+                fifoLots: {
+                  select: {
+                    sourceType: true,
+                    consumedAmount: true,
+                    remainingAmount: true,
+                  },
+                },
               },
             },
             ledgerExpenses: {
@@ -504,6 +516,13 @@ export async function getHqStoreComparisonReport({
                 quantity: true,
                 unitPrice: true,
                 inventoryAmount: true,
+                fifoLots: {
+                  select: {
+                    sourceType: true,
+                    consumedAmount: true,
+                    remainingAmount: true,
+                  },
+                },
               },
             },
             ledgerExpenses: {
@@ -663,6 +682,13 @@ export async function getHqMonthlyClosingAnomalyReport({
           quantity: true,
           unitPrice: true,
           inventoryAmount: true,
+          fifoLots: {
+            select: {
+              sourceType: true,
+              consumedAmount: true,
+              remainingAmount: true,
+            },
+          },
         },
       },
       ledgerExpenses: {
@@ -1154,7 +1180,7 @@ function buildMonthlyInventoryFlow(
         applied: appliedFlow.purchaseAmount,
         ledgerStatus: getMonthlyEvidenceLedgerStatus(businessSummaries),
         ledgerSummaries: businessSummaries,
-        matchers: [],
+        matchers: comparisonMetricCorrectionMatchers.purchase,
       }),
       lossAmount: buildStoreComparisonMetricEvidence({
         label: "손실",
@@ -1946,23 +1972,35 @@ const inventoryCorrectionMatchers = [
   { targetType: "INVENTORY_ROW", fieldKey: "inventoryAmount" },
 ] satisfies ComparisonMetricCorrectionMatcher[];
 
+const purchaseCorrectionMatchers = [
+  { targetType: "PURCHASE_ROW", fieldKey: "unitPrice" },
+  { targetType: "PURCHASE_ROW", fieldKey: "quantity" },
+  { targetType: "PURCHASE_ROW", fieldKey: "amount" },
+  { targetType: "PURCHASE_ROW", fieldKey: "productName" },
+  { targetType: "PURCHASE_ROW", fieldKey: "referenceInfo" },
+] satisfies ComparisonMetricCorrectionMatcher[];
+
 const totalSalesCorrectionMatchers = [
   { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
 ] satisfies ComparisonMetricCorrectionMatcher[];
 
 const comparisonMetricCorrectionMatchers = {
   salesAmount: totalSalesCorrectionMatchers,
+  purchase: purchaseCorrectionMatchers,
   grossProfit: [
     ...totalSalesCorrectionMatchers,
+    ...purchaseCorrectionMatchers,
     ...inventoryCorrectionMatchers,
   ],
   grossMarginRate: [
     ...totalSalesCorrectionMatchers,
+    ...purchaseCorrectionMatchers,
     ...inventoryCorrectionMatchers,
     { targetType: "CALCULATED_METRIC", fieldKey: "grossMarginRate" },
   ],
   operatingProfit: [
     ...totalSalesCorrectionMatchers,
+    ...purchaseCorrectionMatchers,
     ...inventoryCorrectionMatchers,
     { targetType: "EXPENSE_ROW", fieldKey: "amount" },
   ],
@@ -2543,12 +2581,14 @@ function buildDailyMeetingReportMetricEvidenceMap({
   ]);
   const grossMarginRateCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+    ...purchaseCorrectionMatchers,
     { targetType: "INVENTORY_ROW", fieldKey: "currentQuantity" },
     { targetType: "INVENTORY_ROW", fieldKey: "quantity" },
     { targetType: "CALCULATED_METRIC", fieldKey: "grossMarginRate" },
   ]);
   const salesDifferenceCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+    ...purchaseCorrectionMatchers,
     { targetType: "INVENTORY_ROW", fieldKey: "currentQuantity" },
     { targetType: "INVENTORY_ROW", fieldKey: "quantity" },
     { targetType: "LOSS_ROW", fieldKey: "amount" },

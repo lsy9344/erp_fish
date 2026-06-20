@@ -19,7 +19,7 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
-test("지정 지점 본사 프로파일은 배정 지점만 직접 열 수 있다", async ({
+test("지정 지점 본사 프로파일은 지점장 입력 화면을 직접 열 수 없다", async ({
   page,
 }) => {
   await login(page, "hq-assigned@example.com");
@@ -28,9 +28,11 @@ test("지정 지점 본사 프로파일은 배정 지점만 직접 열 수 있�
 
   await page.goto("/app/store-entry?storeId=store-seocho");
 
-  await expect(page).toHaveURL(/\/app\/store-entry\?storeId=store-seocho/);
-  await expect(page.getByRole("heading", { name: "서초점" })).toBeVisible();
-  await expect(page.getByText("강남점")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/app\/unauthorized/);
+  await expect(
+    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
+  ).toBeVisible();
+  await expect(page.getByText("서초점")).toHaveCount(0);
 
   await page.goto("/app/store-entry?storeId=store-gangnam");
 
@@ -215,7 +217,7 @@ test("DB에서 본사 프로파일 action이 제거되면 같은 세션 다음 �
   }
 });
 
-test("DB에서 본사 지점 배정이 제거되면 같은 세션 다음 지점 요청에서 차단된다", async ({
+test("DB에서 본사 지점 배정이 제거되면 같은 세션 다음 조회에서 지점 데이터가 사라진다", async ({
   page,
 }) => {
   const user = await prisma.user.findUniqueOrThrow({
@@ -224,8 +226,8 @@ test("DB에서 본사 지점 배정이 제거되면 같은 세션 다음 지점 
   });
 
   await login(page, "hq-assigned@example.com");
-  await page.goto("/app/store-entry?storeId=store-seocho");
-  await expect(page.getByRole("heading", { name: "서초점" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
+  await expect(page.getByTestId("hq-dashboard-row-store-seocho")).toBeVisible();
 
   await prisma.userStoreAssignment.delete({
     where: {
@@ -237,12 +239,9 @@ test("DB에서 본사 지점 배정이 제거되면 같은 세션 다음 지점 
   });
 
   try {
-    await page.goto("/app/store-entry?storeId=store-seocho");
+    await page.goto("/app/dashboard");
 
-    await expect(page).toHaveURL(/\/app\/unauthorized/);
-    await expect(
-      page.getByRole("heading", { name: "접근 권한이 없습니다." }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
     await expect(page.getByText("서초점")).toHaveCount(0);
   } finally {
     await prisma.userStoreAssignment.upsert({

@@ -137,7 +137,7 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
       detailMigration.includes(
         'CREATE UNIQUE INDEX "LedgerInventoryCarryoverDetail_ledgerInventoryItemId_key"',
       ) &&
-      detailMigration.includes('ON DELETE CASCADE') &&
+      detailMigration.includes("ON DELETE CASCADE") &&
       detailMigration.includes('INSERT INTO "LedgerInventoryCarryoverDetail"'),
     "migration should create and backfill carryover detail rows",
   );
@@ -175,6 +175,31 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
     schema,
     /enum\s+InventoryAdjustmentAmountStatus\s*{[^}]*POLICY_UNCONFIRMED[^}]*CONFIRMED[^}]*}/s,
     "inventory adjustment amounts should carry an explicit policy status",
+  );
+  assert.match(
+    schema,
+    /enum\s+InventoryLotSource\s*{[^}]*OPENING[^}]*PREVIOUS_CARRYOVER[^}]*PURCHASE[^}]*LEGACY_OPENING[^}]*}/s,
+    "FIFO lot source should distinguish opening, carryover, purchase, and legacy opening lots",
+  );
+  assert.match(
+    schema,
+    /model\s+DailyLedger\s*{[^}]*ledgerInventoryFifoLots\s+LedgerInventoryFifoLot\[\]/s,
+    "DailyLedger should expose FIFO lot snapshots",
+  );
+  assert.match(
+    schema,
+    /model\s+Product\s*{[^}]*ledgerInventoryFifoLots\s+LedgerInventoryFifoLot\[\]/s,
+    "Product should relate to FIFO lot snapshots",
+  );
+  assert.match(
+    schema,
+    /model\s+LedgerPurchaseItem\s*{[^}]*ledgerInventoryFifoLots\s+LedgerInventoryFifoLot\[\]/s,
+    "purchase rows should relate to FIFO purchase lots",
+  );
+  assert.match(
+    schema,
+    /model\s+LedgerInventoryFifoLot\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*sourceType\s+InventoryLotSource[^}]*sourceLedgerId\s+String\?[^}]*sourcePurchaseItemId\s+String\?[^}]*unitPrice\s+Int[^}]*originalQuantity\s+Int[^}]*consumedQuantity\s+Int[^}]*remainingQuantity\s+Int[^}]*originalAmount\s+Int[^}]*consumedAmount\s+Int[^}]*remainingAmount\s+Int[^}]*sortOrder\s+Int[^}]*@@index\(\[dailyLedgerId,\s*productId\]\)/s,
+    "FIFO lot snapshots should persist quantities, amounts, source links, and stable sort order",
   );
 
   const migrationName = migrationDirNames().find((name) =>
@@ -222,6 +247,27 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
       policyMigration.includes('"amountStatus"') &&
       policyMigration.includes("'POLICY_UNCONFIRMED'"),
     "migration should mark existing adjustment amount fields as policy-unconfirmed",
+  );
+
+  const fifoMigrationName = migrationDirNames().find((name) =>
+    name.includes("add_inventory_fifo_lots"),
+  );
+  assert.ok(fifoMigrationName, "FIFO lot migration should exist");
+
+  const fifoMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      fifoMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    fifoMigration.includes('CREATE TYPE "InventoryLotSource"') &&
+      fifoMigration.includes('CREATE TABLE "LedgerInventoryFifoLot"') &&
+      fifoMigration.includes('"remainingAmount" INTEGER NOT NULL'),
+    "migration should create FIFO source enum and lot snapshot table",
   );
 });
 
@@ -413,6 +459,195 @@ test("inventory adjustment calculations derive before after and signed differenc
   );
 });
 
+test("FIFO lot calculation consumes oldest lots first and marks legacy opening lots", async () => {
+  const fifoPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const { calculateFifoLotSnapshots } = await import(
+    pathToFileURL(fifoPath).href
+  );
+
+  const result = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        unitPrice: 100,
+        remainingQuantity: 10,
+      },
+    ],
+    legacyOpening: {
+      unitPrice: 999,
+      quantity: 10,
+    },
+    purchases: [
+      {
+        id: "purchase-1",
+        unitPrice: 200,
+        quantity: 10,
+      },
+    ],
+    closingQuantity: 5,
+  });
+
+  assert.equal(result.consumedAmount, 2_000);
+  assert.equal(result.remainingAmount, 1_000);
+  assert.equal(result.containsLegacyOpening, false);
+  assert.deepEqual(
+    result.lots.map((lot) => ({
+      sourceType: lot.sourceType,
+      unitPrice: lot.unitPrice,
+      originalQuantity: lot.originalQuantity,
+      consumedQuantity: lot.consumedQuantity,
+      remainingQuantity: lot.remainingQuantity,
+      consumedAmount: lot.consumedAmount,
+      remainingAmount: lot.remainingAmount,
+    })),
+    [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        unitPrice: 100,
+        originalQuantity: 10,
+        consumedQuantity: 10,
+        remainingQuantity: 0,
+        consumedAmount: 1_000,
+        remainingAmount: 0,
+      },
+      {
+        sourceType: "PURCHASE",
+        unitPrice: 200,
+        originalQuantity: 10,
+        consumedQuantity: 5,
+        remainingQuantity: 5,
+        consumedAmount: 1_000,
+        remainingAmount: 1_000,
+      },
+    ],
+  );
+
+  const legacyResult = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: {
+      unitPrice: 100,
+      quantity: 10,
+    },
+    purchases: [],
+    closingQuantity: 5,
+  });
+
+  assert.equal(legacyResult.containsLegacyOpening, true);
+  assert.equal(legacyResult.consumedAmount, 500);
+  assert.equal(legacyResult.remainingAmount, 500);
+  assert.equal(legacyResult.lots[0].sourceType, "LEGACY_OPENING");
+
+  const carriedLegacyResult = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        sourceType: "LEGACY_OPENING",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        unitPrice: 100,
+        remainingQuantity: 5,
+      },
+    ],
+    legacyOpening: {
+      unitPrice: 100,
+      quantity: 0,
+    },
+    purchases: [],
+    closingQuantity: 3,
+  });
+
+  assert.equal(carriedLegacyResult.containsLegacyOpening, true);
+  assert.equal(carriedLegacyResult.consumedAmount, 200);
+  assert.equal(carriedLegacyResult.remainingAmount, 300);
+  assert.equal(carriedLegacyResult.lots[0].sourceType, "LEGACY_OPENING");
+});
+
+test("pre-approval product actions do not refresh FIFO lot snapshots", () => {
+  const actionFiles = [
+    ["src", "features", "inventory", "actions.ts"],
+    ["src", "features", "inventory", "hq-edit-actions.ts"],
+    ["src", "features", "ledger", "actions.ts"],
+    ["src", "features", "ledger", "hq-edit-actions.ts"],
+    ["src", "features", "losses", "actions.ts"],
+    ["src", "features", "losses", "hq-edit-actions.ts"],
+  ];
+
+  for (const segments of actionFiles) {
+    const source = readProjectFile(...segments);
+    const label = segments.join("/");
+
+    assert.doesNotMatch(
+      source,
+      /refreshLedgerInventoryFifoLots/,
+      `${label} should not run FIFO refresh before OQ-7/OQ-17 approval`,
+    );
+    assert.doesNotMatch(
+      source,
+      /fifo-lots/,
+      `${label} should not import FIFO lot engine before OQ-7/OQ-17 approval`,
+    );
+  }
+});
+
+test("inventory normal save requires matching adjustment record for changed actual quantities", async () => {
+  const guardPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-save-guard.ts",
+  );
+  const { getInventorySaveAdjustmentErrors } = await import(
+    pathToFileURL(guardPath).href
+  );
+  const items = [
+    {
+      productId: "product-1",
+      previousQuantity: 10,
+      purchasedQuantity: 3,
+      lossQuantity: 1,
+      currentQuantity: 9,
+    },
+    {
+      productId: "product-2",
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 5,
+    },
+    {
+      productId: "product-3",
+      previousQuantity: 2,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: null,
+    },
+  ];
+
+  assert.deepEqual(getInventorySaveAdjustmentErrors(items, []), {
+    "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+  });
+  assert.deepEqual(
+    getInventorySaveAdjustmentErrors(items, [
+      { productId: "product-1", afterQuantity: 8 },
+    ]),
+    {
+      "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+    },
+  );
+  assert.deepEqual(
+    getInventorySaveAdjustmentErrors(items, [
+      { productId: "product-1", afterQuantity: 9 },
+    ]),
+    {},
+  );
+});
+
 test("inventory queries and actions implement carryover, purchase aggregation, and audit contracts", () => {
   const typeSource = readProjectFile(
     "src",
@@ -421,7 +656,10 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     "types.ts",
   );
   assert.match(typeSource, /export\s+type\s+InventoryCarryoverDetailView/);
-  assert.match(typeSource, /previousQuantityDetail:\s+InventoryCarryoverDetailView/);
+  assert.match(
+    typeSource,
+    /previousQuantityDetail:\s+InventoryCarryoverDetailView/,
+  );
   assert.match(typeSource, /export\s+type\s+InventoryCarryoverHistoryRow/);
   assert.match(typeSource, /history:\s+InventoryCarryoverHistoryRow\[\]/);
 
@@ -487,9 +725,9 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     /export\s+async\s+function\s+saveLedgerInventoryItems/,
   );
   assert.match(actionSource, /ledgerInventorySchema\.safeParse/);
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
-  assert.match(actionSource, /before\.status\s*!==\s*"IN_PROGRESS"/);
+  assert.match(actionSource, /!isLedgerEditable\(before\.status\)/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.createMany/);
   assert.match(actionSource, /persistLedgerInventoryCarryoverDetails/);
@@ -501,15 +739,18 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   );
   assert.match(
     actionSource,
+    /getInventorySaveAdjustmentErrors\(/,
+    "normal inventory save should reject changed actual quantities without matching adjustment records",
+  );
+  assert.match(
+    actionSource,
     /editableLedger\.count !== 1\)\s*{\s*throw new Error\("LEDGER_CONFLICT"\)/,
     "inventory save should report stale version races as ledger conflicts",
   );
   assert.match(actionSource, /action:\s*"ledger\.inventory\.saved"/);
   assert.match(actionSource, /writeAuditLog\(/);
-  assert.match(
-    actionSource,
-    /revalidatePath\("\/app\/store-entry\/inventory"\)/,
-  );
+  assert.match(actionSource, /revalidateInventoryPaths\(\)/);
+  assert.match(actionSource, /revalidateStoreEntryPaths\(\["inventory"\]\)/);
 });
 
 test("inventory adjustment query action and audit contracts are wired", () => {
@@ -560,19 +801,11 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     /export\s+async\s+function\s+saveLedgerInventoryAdjustment/,
   );
   assert.match(actionSource, /ledgerInventoryAdjustmentSchema\.safeParse/);
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
-  assert.match(actionSource, /IN_PROGRESS/);
-  assert.match(actionSource, /IN_REVIEW/);
-  assert.match(actionSource, /HEADQUARTERS_CLOSED/);
-  assert.match(
-    actionSource,
-    /본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다/,
-  );
-  assert.match(
-    actionSource,
-    /휴무 장부는 원본 재고 조정으로 수정할 수 없습니다/,
-  );
+  assert.match(actionSource, /editableLedgerStatuses/);
+  assert.match(actionSource, /isLedgerEditable/);
+  assert.match(actionSource, /getLedgerEditBlockReason/);
   assert.match(actionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
   assert.match(actionSource, /tx\.ledgerInventoryItem\.upsert/);
   assert.match(actionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
@@ -584,7 +817,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   );
   assert.match(
     actionSource,
-    /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]\s*}/,
+    /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]\s*}/,
     "adjustment save should lock or conditionally guard editable ledger status",
   );
   assert.match(
@@ -599,10 +832,8 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   );
   assert.match(actionSource, /action:\s*"ledger\.inventory_adjustment\.saved"/);
   assert.match(actionSource, /reason:\s*parsed\.data\.reason/);
-  assert.match(
-    actionSource,
-    /revalidatePath\("\/app\/store-entry\/inventory"\)[\s\S]*revalidatePath\("\/app\/dashboard"\)/,
-  );
+  assert.match(actionSource, /revalidateInventoryPaths\(\)/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
 
   const auditSource = readProjectFile("src", "server", "audit.ts");
   assert.match(auditSource, /reason\?:\s*string\s*\|\s*null/);
@@ -650,7 +881,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(pageSource, /InventoryStepClient/);
   assert.match(pageSource, /getInventoryStepData/);
-  assert.match(pageSource, /requireStoreAccess/);
+  assert.match(pageSource, /requireStoreManagerLedgerEditAccess/);
   assert.doesNotMatch(pageSource, /재고 입력 준비/);
 
   const componentSource = readProjectFile(
@@ -713,15 +944,13 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
   assert.match(componentSource, /당일 판매량/);
-  assert.match(
-    componentSource,
-    /실제 POS 판매 수량과 다를 수 있습니다/,
-  );
+  assert.match(componentSource, /실제 POS 판매 수량과 다를 수 있습니다/);
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
   assert.match(componentSource, /상태\/조정/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
-  assert.match(componentSource, /정정\s+기록을 사용해 주세요/);
+  assert.match(componentSource, /getLedgerEditBlockReason/);
+  assert.match(componentSource, /isLedgerReadOnly/);
   assert.match(componentSource, /휴무 장부/);
   assert.match(
     componentSource,
@@ -735,6 +964,12 @@ test("inventory UI is wired to the canonical inventory route", () => {
     /actualQuantityError/,
     "adjustment quantity validation should be shown on the row",
   );
+  assert.match(
+    componentSource,
+    /const actualQuantityInput =\s*currentQuantityRefs\.current\[item\.productId\]\?\.value \?\?\s*item\.currentQuantityInput/,
+    "adjustment save should submit the latest visible actual quantity",
+  );
+  assert.match(componentSource, /actualQuantity:\s*actualQuantityInput/);
   assert.match(
     componentSource,
     /const adjustmentNeeded = !adjusted && isAdjustmentNeeded\(item\)/,
@@ -760,6 +995,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
     componentSource,
     /mergeAdjustedLineState/,
     "saving one adjustment should not discard other unsaved row edits",
+  );
+  assert.match(
+    componentSource,
+    /validateInventorySaveAdjustments/,
+    "full inventory save should block rows that still need adjustment reasons",
   );
 });
 

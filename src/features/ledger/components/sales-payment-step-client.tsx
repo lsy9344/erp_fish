@@ -16,6 +16,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -128,8 +129,7 @@ export function SalesPaymentStepClient({
     otherPaymentAmountValue,
   );
   const hasPaymentDifference = paymentDifference !== 0;
-  const isOriginalEditBlocked =
-    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "cost");
   const isDirty =
     authorDisplayName.trim() !== (ledger.authorDisplayName ?? "") ||

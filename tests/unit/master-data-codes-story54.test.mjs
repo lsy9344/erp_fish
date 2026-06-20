@@ -104,11 +104,7 @@ test("Story 5.4 code mutations keep validation, audit, no-op, and revalidation c
     actions,
     /toLedgerInputCodeAuditValue[\s\S]*(token|session|dialog|screen)/,
   );
-  assert.match(actions, /revalidatePath\("\/app\/master-data\/codes"\)/);
-  assert.match(actions, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(actions, /revalidatePath\("\/app\/store-entry"\)/);
-  assert.match(actions, /revalidatePath\("\/app\/store-entry\/inventory"\)/);
-  assert.match(actions, /revalidatePath\("\/app\/store-entry\/losses"\)/);
+  assert.match(actions, /revalidateMasterDataPaths\("codes"\)/);
 });
 
 test("Story 5.4 active options use stable active-only sorting for ledger entry choices", () => {

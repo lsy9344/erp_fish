@@ -313,7 +313,24 @@ function formatMetricEvidence(evidence: DailyMeetingReportMetricEvidence) {
     );
   }
 
+  if (evidence.kind === "percent") {
+    return formatPercentValue(evidence.applied.value);
+  }
+
+  if (evidence.kind === "boolean") {
+    return evidence.applied.value ? "있음" : "없음";
+  }
+
   return evidence.applied.value;
+}
+
+function formatPercentValue(value: number) {
+  const percent = value * 100;
+  const rounded = Number.isInteger(percent)
+    ? String(percent)
+    : String(Number(percent.toFixed(2)));
+
+  return `${rounded}%`;
 }
 
 function formatMetricStatus(evidence: DailyMeetingReportMetricEvidence) {

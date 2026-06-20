@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
@@ -11,6 +10,11 @@ import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "~/features/ledger/status-policy";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
@@ -18,6 +22,11 @@ import {
 } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import {
+  revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
 import { toFieldErrors } from "./schemas";
@@ -199,14 +208,9 @@ function parseHqLossesInput(
 }
 
 function revalidateHqLossPaths(ledgerId: string) {
-  revalidatePath(`/app/ledgers/${ledgerId}`);
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/store-entry/losses");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateLedgerDetailPath(ledgerId);
+  revalidateStoreEntryPaths();
+  revalidateDashboardAndReports();
 }
 
 function mapHqActionError(): ActionResult<never> {
@@ -221,21 +225,9 @@ function notFoundError(): ActionResult<never> {
 }
 
 function notEditableError(status: LossStepData["status"]): ActionResult<never> {
-  if (status === "HEADQUARTERS_CLOSED") {
-    return actionError(
-      "LEDGER_CLOSED",
-      "본사 마감된 장부는 원본 손실 입력으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-    );
-  }
+  const reason = getLedgerEditBlockReason(status, "loss-entry");
 
-  if (status === "HOLIDAY") {
-    return actionError(
-      "LEDGER_NOT_EDITABLE",
-      "휴무 장부는 원본 손실 입력으로 수정할 수 없습니다.",
-    );
-  }
-
-  return actionError("LEDGER_NOT_EDITABLE", "수정할 수 없는 장부 상태입니다.");
+  return actionError(reason.code, reason.message);
 }
 
 function ensureTargetLossData(
@@ -246,7 +238,7 @@ function ensureTargetLossData(
     return notFoundError();
   }
 
-  if (data.status !== "IN_PROGRESS" && data.status !== "IN_REVIEW") {
+  if (!isLedgerEditable(data.status)) {
     return notEditableError(data.status);
   }
 
@@ -304,7 +296,7 @@ async function markEditableLedgerInTx(
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
-      status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+      status: { in: [...editableLedgerStatuses] },
       updatedAt: expectedUpdatedAt,
     },
     data: { updatedById: actorId },

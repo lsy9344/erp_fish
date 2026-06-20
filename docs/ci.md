@@ -5,7 +5,7 @@
 The workflow lives at `.github/workflows/ci.yml`.
 
 - Pull requests run `Quality Gate` and `Playwright Smoke`.
-- Pushes to `main`, `master`, and `new_function` run the same fast checks.
+- Pushes to any branch run the same fast checks.
 - Pushes to `main` or `master` also run the full Playwright suite in 4 shards.
 - A weekly schedule runs a 10-iteration smoke burn-in to catch flaky UI timing.
 - Manual runs can trigger full Playwright and burn-in when needed.
@@ -50,7 +50,10 @@ postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
 
 The Playwright wrapper forces test runs to use a test-like database, so inherited local values such as `DATABASE_URL=rider` cannot leak into CI.
 
-The quality job also creates a short-lived test `.env` file from CI environment values. This mirrors local development because one unit test verifies that a project `.env` can override a polluted inherited shell value.
+The quality job also creates a short-lived test `.env` file from CI environment
+values. Playwright commands use `PLAYWRIGHT_DATABASE_URL` through
+`scripts/run-playwright-clean.mjs`, and the wrapper refuses production-like
+database names before tests start.
 
 ## Artifacts
 

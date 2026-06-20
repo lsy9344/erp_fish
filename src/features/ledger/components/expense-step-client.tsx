@@ -16,6 +16,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerUpdatedAtSync,
@@ -342,8 +343,7 @@ export function ExpenseStepClient({
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
   const hqEditReasonError = fieldErrors.reason?.[0];
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
-  const isOriginalEditBlocked =
-    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "purchase");
   const guard = useUnsavedStepGuard({
     isDirty,

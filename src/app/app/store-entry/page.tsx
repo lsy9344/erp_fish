@@ -6,9 +6,9 @@ import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-que
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
 import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
 import {
-  getStoreManagerWorkspace,
+  getStoreManagerLedgerEditWorkspace,
   normalizeStoreIdParam,
-  requireStoreAccess,
+  requireStoreManagerLedgerEditAccess,
 } from "~/server/authz";
 import {
   getKstBusinessDateParam,
@@ -167,7 +167,7 @@ export default async function StoreEntryPage({
   }
 
   if (storeId) {
-    const { user, store } = await requireStoreAccess(storeId);
+    const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
     const expenseCodeOptions =
       await getActiveLedgerInputCodeOptions("EXPENSE_ITEM");
     const [productOptions, purchaseStandardOptions] = await Promise.all([
@@ -208,7 +208,7 @@ export default async function StoreEntryPage({
     );
   }
 
-  const workspace = await getStoreManagerWorkspace();
+  const workspace = await getStoreManagerLedgerEditWorkspace();
 
   if (workspace.status === "headquarters") {
     redirect("/app/dashboard");

@@ -124,6 +124,7 @@ test("server authorization helper exposes profile-aware semantic gates", () => {
     "requireUserPermissionAccess",
     "requireReportAccess",
     "requireLedgerHqEditAccess",
+    "requireStoreManagerLedgerEditAccess",
     "requireLedgerHqCloseAccess",
     "requireCorrectionCreateAccess",
     "requireExportCreateAccess",
@@ -152,6 +153,76 @@ test("server authorization helper exposes profile-aware semantic gates", () => {
   assert.match(authz, /actions:\s*{\s*some:\s*{\s*action/s);
   assert.match(authz, /StoreAccessMode\.ASSIGNED_STORES/);
   assert.match(authz, /StoreAccessMode\.ALL_STORES/);
+});
+
+test("store manager entry routes and write actions require store-manager ledger edit access", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+  const storeEntryPage = readFileSync(
+    path.join(root, "src", "app", "app", "store-entry", "page.tsx"),
+    "utf8",
+  );
+  const inventoryPage = readFileSync(
+    path.join(
+      root,
+      "src",
+      "app",
+      "app",
+      "store-entry",
+      "inventory",
+      "page.tsx",
+    ),
+    "utf8",
+  );
+  const lossesPage = readFileSync(
+    path.join(root, "src", "app", "app", "store-entry", "losses", "page.tsx"),
+    "utf8",
+  );
+  const ledgerActions = readFileSync(
+    path.join(root, "src", "features", "ledger", "actions.ts"),
+    "utf8",
+  );
+  const inventoryActions = readFileSync(
+    path.join(root, "src", "features", "inventory", "actions.ts"),
+    "utf8",
+  );
+  const lossActions = readFileSync(
+    path.join(root, "src", "features", "losses", "actions.ts"),
+    "utf8",
+  );
+
+  assert.match(
+    authz,
+    /export\s+async\s+function\s+requireStoreManagerLedgerEditAccess\(storeId:\s*string\)/,
+  );
+  assert.match(
+    authz,
+    /export\s+async\s+function\s+getStoreManagerLedgerEditWorkspace\(\)/,
+  );
+  assert.match(
+    authz,
+    /getStoreManagerLedgerEditWorkspace[\s\S]*requireStoreManagerLedgerEditAccess\(workspace\.store\.id\)/,
+  );
+  assert.match(
+    authz,
+    /requireStoreManagerLedgerEditAccess[\s\S]*currentUser\.role !== UserRole\.STORE_MANAGER[\s\S]*redirect\("\/app\/unauthorized"\)/,
+  );
+  assert.match(
+    authz,
+    /requireStoreManagerLedgerEditAccess[\s\S]*hasActionPermission\([\s\S]*PermissionAction\.LEDGER_EDIT[\s\S]*requiredRole:\s*UserRole\.STORE_MANAGER/s,
+  );
+
+  for (const route of [storeEntryPage, inventoryPage, lossesPage]) {
+    assert.match(route, /requireStoreManagerLedgerEditAccess\(storeId\)/);
+    assert.match(route, /getStoreManagerLedgerEditWorkspace\(\)/);
+    assert.doesNotMatch(route, /const\s+\{\s*user,\s*store\s*\}\s*=\s*await\s+requireStoreAccess\(storeId\)/);
+  }
+
+  for (const source of [ledgerActions, inventoryActions, lossActions]) {
+    assert.match(source, /requireStoreManagerLedgerEditAccess/);
+  }
 });
 
 test("semantic headquarters gates require explicit actions and store scope", () => {
@@ -357,6 +428,10 @@ test("store manager shell preserves selected storeId in tab links", () => {
     path.join(root, "src", "components", "store-manager-shell.tsx"),
     "utf8",
   );
+  const navigation = readFileSync(
+    path.join(root, "src", "components", "store-manager-navigation.tsx"),
+    "utf8",
+  );
   const storeEntryPage = readFileSync(
     path.join(root, "src", "app", "app", "store-entry", "page.tsx"),
     "utf8",
@@ -379,8 +454,9 @@ test("store manager shell preserves selected storeId in tab links", () => {
   );
 
   assert.match(shell, /storeId\?: string/);
-  assert.match(shell, /URLSearchParams/);
-  assert.match(shell, /storeId/);
+  assert.match(shell, /StoreManagerNavigation/);
+  assert.match(navigation, /URLSearchParams/);
+  assert.match(navigation, /storeId/);
 
   for (const route of [storeEntryPage, inventoryPage, lossesPage]) {
     assert.match(route, /storeId={store\.id}/);
@@ -389,12 +465,12 @@ test("store manager shell preserves selected storeId in tab links", () => {
 });
 
 test("store manager shell does not prefetch store entry data that can go stale", () => {
-  const shell = readFileSync(
-    path.join(root, "src", "components", "store-manager-shell.tsx"),
+  const navigation = readFileSync(
+    path.join(root, "src", "components", "store-manager-navigation.tsx"),
     "utf8",
   );
 
-  assert.match(shell, /prefetch={false}/);
+  assert.match(navigation, /prefetch={false}/);
 });
 
 test("authenticated shells expose a logout button that signs out to login", () => {

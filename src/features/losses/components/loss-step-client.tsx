@@ -26,6 +26,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import { saveLedgerLosses } from "~/features/losses/actions";
 import {
   type LossProductOption,
@@ -336,8 +337,7 @@ export function LossStepClient({
     (sum, item) => sum + parseNumber(item.amount),
     0,
   );
-  const isOriginalEditBlocked =
-    data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(data.status);
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
   const nextStepHref = `/app/store-entry?${new URLSearchParams({

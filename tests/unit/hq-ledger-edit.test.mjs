@@ -42,7 +42,7 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
   assert.match(source, /ledgerId/);
   assert.match(
     source,
-    /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]/s,
+    /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
   );
   assert.match(source, /updatedById:\s*actor\.user\.id/);
   assert.match(source, /writeAuditLog\(/);
@@ -50,8 +50,8 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
   assert.match(source, /ledger\.hq\.expenses\.saved/);
   assert.match(source, /ledger\.hq\.purchases\.saved/);
   assert.match(source, /ledger\.hq\.work_info\.saved/);
-  assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
-  assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.match(source, /revalidateLedgerDetailPath\(ledgerId\)/);
+  assert.match(source, /revalidateDashboardAndReports\(\)/);
   assert.match(
     source,
     /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/,
@@ -141,12 +141,12 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
     assert.match(source, /ledgerId/);
     assert.match(
       source,
-      /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]/s,
+      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
     );
     assert.match(source, /updatedById:\s*actor\.user\.id/);
     assert.match(source, /writeAuditLog\(/);
-    assert.match(source, /revalidatePath\(`\/app\/ledgers\/\$\{ledgerId\}`\)/);
-    assert.match(source, /revalidatePath\("\/app\/dashboard"\)/);
+    assert.match(source, /revalidateLedgerDetailPath\(ledgerId\)/);
+    assert.match(source, /revalidateDashboardAndReports\(\)/);
     assert.match(
       source,
       /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/,
@@ -184,13 +184,13 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
   for (const [label, source, ensureHelper] of sources) {
     assert.match(
       source,
-      /function\s+notEditableError[\s\S]*"HEADQUARTERS_CLOSED"[\s\S]*"LEDGER_CLOSED"[\s\S]*정정 기록을 사용해 주세요/,
-      `${label} should return LEDGER_CLOSED for headquarters-closed ledgers`,
+      /getLedgerEditBlockReason/,
+      `${label} should use the shared ledger status policy for block reasons`,
     );
     assert.match(
       source,
-      /function\s+notEditableError[\s\S]*"HOLIDAY"[\s\S]*"LEDGER_NOT_EDITABLE"/,
-      `${label} should reject holiday ledgers as not editable`,
+      /isLedgerEditable/,
+      `${label} should use the shared ledger status policy for editability`,
     );
     assert.match(
       source,
@@ -206,7 +206,7 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
     );
     assert.match(
       source,
-      /status:\s*{\s*in:\s*\[\s*"IN_PROGRESS",\s*"IN_REVIEW"\s*\]/s,
+      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
       `${label} should condition writes on editable statuses`,
     );
   }
@@ -260,10 +260,14 @@ test("HQ detail page renders editable sections with HQ actions", () => {
     /const correctionTargetOptions\s*=\s*canShowCorrectionPanel\s*\?\s*getCorrectionTargetOptions\(\{\s*ledger,\s*inventoryData,\s*lossData/s,
   );
   assert.match(source, /\{canShowCorrectionPanel\s*\?\s*\(\s*<CorrectionPanel/);
+  assert.doesNotMatch(source, /targetType:\s*"PURCHASE_ROW"/);
   assert.match(source, /targetType:\s*"INVENTORY_ROW"/);
-  assert.match(source, /\.filter\(\(item\)\s*=>\s*item\.id\s*!==\s*item\.productId\)/);
+  assert.match(
+    source,
+    /\.filter\(\(item\)\s*=>\s*item\.id\s*!==\s*item\.productId\)/,
+  );
   assert.match(source, /fieldKey:\s*"currentQuantity"/);
-  assert.match(source, /fieldKey:\s*"inventoryAmount"/);
+  assert.doesNotMatch(source, /fieldKey:\s*"inventoryAmount"/);
   assert.match(source, /targetType:\s*"LOSS_ROW"/);
   assert.match(source, /fieldKey:\s*"quantity"/);
   assert.match(source, /targetType:\s*"CALCULATED_METRIC"/);
@@ -618,6 +622,24 @@ test("HQ close preflight reuses review, calculation, correction, and carryover c
   assert.match(source, /getDashboardSignals/);
 });
 
+test("HQ close preflight required-input checks use correction-applied required values", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
+
+  assert.match(
+    source,
+    /const missingItems = getLedgerReviewMissingItems\(\{[\s\S]*totalSalesAmount:\s*correctionOverlay\.reviewInput\.totalSalesAmount[\s\S]*paymentTotal:\s*calculatePaymentTotal\(\s*correctionOverlay\.reviewInput\.cashAmount,\s*correctionOverlay\.reviewInput\.cardAmount,\s*correctionOverlay\.reviewInput\.otherPaymentAmount,\s*\)[\s\S]*workerCount:\s*correctionOverlay\.reviewInput\.workerCount[\s\S]*\}\);/s,
+  );
+  assert.doesNotMatch(
+    source,
+    /const missingItems = getLedgerReviewMissingItems\(\{[\s\S]*totalSalesAmount:\s*ledger\.totalSalesAmount[\s\S]*workerCount:\s*ledger\.workerCount[\s\S]*\}\);/s,
+  );
+});
+
 test("HQ close action reruns preflight inside the close transaction before audit", () => {
   const source = readProjectFile(
     "src",
@@ -847,7 +869,7 @@ test("HQ edit actions block HEADQUARTERS_CLOSED in all editable paths", () => {
   );
 
   for (const source of [ledgerSource, inventorySource, lossesSource]) {
-    assert.match(source, /HEADQUARTERS_CLOSED/);
+    assert.match(source, /getLedgerEditBlockReason/);
     assert.match(
       source,
       /notEditableError\([^)]*\)/,

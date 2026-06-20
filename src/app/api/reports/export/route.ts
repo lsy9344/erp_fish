@@ -40,7 +40,7 @@ export async function GET(request: Request) {
   if (!parsed.ok) {
     return NextResponse.json(
       { error: "bad_request", message: parsed.message },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 

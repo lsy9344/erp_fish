@@ -39,6 +39,7 @@ export default async function ChangeHistoryPage({
       <ChangeHistoryClient
         history={history.items}
         actorOptions={history.actorOptions}
+        visibleTargetTypeOptions={history.visibleTargetTypeOptions}
         filters={history.filters}
       />
     </HeadquartersShell>

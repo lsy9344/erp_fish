@@ -158,12 +158,27 @@ test("audit format helpers map target/action labels and safely format JSON detai
 
 test("audit history query enforces headquarters auth, safe filters, stable ordering, cap, and batch lookups", () => {
   const query = readProjectFile("src", "features", "audit", "audit-queries.ts");
+  const authz = readProjectFile("src", "server", "authz.ts");
 
   assert.match(
     query,
     /export\s+async\s+function\s+getAuditHistoryForHeadquarters/,
   );
-  assert.match(query, /requireSettingsAccess\(\)/);
+  assert.match(authz, /export\s+async\s+function\s+requireAuditHistoryAccess/);
+  assert.match(
+    authz,
+    /requireAuditHistoryAccess[\s\S]*requireSettingsAccess\(\)[\s\S]*requireReportAccess\(\)/,
+  );
+  assert.match(query, /requireAuditHistoryAccess\(\)/);
+  assert.match(query, /PermissionAction\.USER_PERMISSION_MANAGE/);
+  assert.match(query, /getAllowedAuditHistoryTargetTypes/);
+  assert.match(query, /visibleTargetTypeOptions/);
+  assert.match(
+    query,
+    /hasActionPermission\(\s*currentUserId,\s*PermissionAction\.USER_PERMISSION_MANAGE/,
+  );
+  assert.match(query, /getHeadquartersStoreScope\(\)/);
+  assert.match(query, /omitSensitiveFields/);
   assert.match(query, /AUDIT_HISTORY_TARGET_TYPES/);
   assert.match(query, /Store/);
   assert.match(query, /User/);
@@ -173,12 +188,23 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /DailyLedger/);
   assert.match(query, /CorrectionRecord/);
   assert.match(query, /AnomalyThresholdSetting/);
+  assert.match(query, /ReportExport/);
+  assert.match(query, /targetType:\s*\{\s*in:\s*allowedTargetTypes/);
+  assert.match(
+    query,
+    /normalizedFilters\.targetType !== "all"[\s\S]*!allowedTargetTypes\.includes\(normalizedFilters\.targetType\)/,
+  );
   assert.match(query, /normalizeAuditHistoryFilters/);
   assert.match(query, /targetType/);
   assert.match(query, /actorId/);
   assert.match(query, /reason:\s*true/);
   assert.match(query, /reasonText:\s*log\.reason\s*\?\?\s*"-"/);
-  assert.match(query, /changeSummaryText:\s*formatAuditChangeSummary/);
+  assert.match(
+    query,
+    /changeSummaryText:\s*formatAuditChangeSummary\(safeBefore,\s*safeAfter\)/,
+  );
+  assert.match(query, /beforeText:\s*formatAuditJsonValue\(safeBefore\)/);
+  assert.match(query, /afterText:\s*formatAuditJsonValue\(safeAfter\)/);
   assert.match(query, /from/);
   assert.match(query, /to/);
   assert.match(query, /createdAt:\s*"desc"/);
@@ -197,11 +223,16 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /targetKey\("CorrectionRecord"/);
   assert.match(query, /store:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}/);
   assert.match(query, /closingDate:\s*true/);
+  assert.match(query, /storeId:\s*\{\s*in:\s*storeIds\s*\}/);
+  assert.match(
+    query,
+    /dailyLedger:\s*\{\s*storeId:\s*\{\s*in:\s*storeIds\s*\}/,
+  );
   assert.doesNotMatch(query, /\.delete\(/);
 
   const actorOptionsFunction =
     query.match(
-      /async function getAuditActorOptions\(\) \{[\s\S]*?\n\}/,
+      /async function getAuditActorOptions\([^)]*\) \{[\s\S]*?\n\}/,
     )?.[0] ?? "";
 
   assert.doesNotMatch(
@@ -242,7 +273,12 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(page, /PageHeader/);
   assert.match(page, /getAuditHistoryForHeadquarters/);
   assert.match(page, /ChangeHistoryClient/);
+  assert.match(
+    page,
+    /visibleTargetTypeOptions={history\.visibleTargetTypeOptions}/,
+  );
   assert.match(client, /\/app\/master-data\/history/);
+  assert.match(client, /visibleTargetTypeOptions/);
   assert.match(client, /대상 유형 필터/);
   assert.match(client, /변경자 필터/);
   assert.match(client, /from "~\/components\/ui\/select"/);

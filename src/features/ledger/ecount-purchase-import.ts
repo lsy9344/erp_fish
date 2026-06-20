@@ -20,8 +20,8 @@ type CellValue = string | number | null;
 
 export type EcountPurchaseImportLine = {
   id: string;
-  productId: "";
-  purchaseStandardId: "";
+  productId: string;
+  purchaseStandardId: string;
   sourceType: typeof ecountPurchaseSourceType;
   productName: string;
   productCategory: "냉동" | "생물";
@@ -36,6 +36,12 @@ export type EcountPurchaseImportResult = {
   sheetName: string;
   matchedRowCount: number;
   purchases: EcountPurchaseImportLine[];
+};
+
+export type EcountPurchaseImportOptions = {
+  storeName: string;
+  closingDate: string | Date;
+  validateLedgerScope?: boolean;
 };
 
 export class EcountPurchaseImportError extends Error {
@@ -268,38 +274,6 @@ function cellNumber(
   return parsed;
 }
 
-function normalizeDate(value: string | Date) {
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  const match = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(value.trim());
-
-  if (!match) {
-    return value.trim();
-  }
-
-  return `${match[1]}-${match[2]!.padStart(2, "0")}-${match[3]!.padStart(2, "0")}`;
-}
-
-function normalizeStoreName(value: string) {
-  return value
-    .replace(/\s+/g, "")
-    .replace(/\(수산물\)/g, "")
-    .replace(/（수산물）/g, "")
-    .trim();
-}
-
-function parseRowDate(value: string) {
-  const match = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(value);
-
-  if (!match) {
-    return null;
-  }
-
-  return `${match[1]}-${match[2]!.padStart(2, "0")}-${match[3]!.padStart(2, "0")}`;
-}
-
 function splitProductNameAndSpec(value: string) {
   const match = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(value.trim());
 
@@ -388,9 +362,75 @@ function isSummaryRow(dateNo: string, rawProductName: string) {
   );
 }
 
+function normalizeStoreName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeStoreNameMatchKey(value: string) {
+  return normalizeStoreName(value)
+    .replaceAll("（", "(")
+    .replaceAll("）", ")")
+    .replace(/\s*\(수산물\)\s*$/u, "")
+    .trim();
+}
+
+function normalizeDate(value: string | Date) {
+  if (value instanceof Date) {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(value.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  const match = /(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(value);
+
+  if (!match) {
+    return value.trim();
+  }
+
+  const [, year, month, day] = match;
+
+  return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`;
+}
+
+function validateLedgerScope({
+  rowNumber,
+  dateNo,
+  storeName,
+  selectedStoreName,
+  selectedClosingDate,
+}: {
+  rowNumber: number;
+  dateNo: string;
+  storeName: string;
+  selectedStoreName: string;
+  selectedClosingDate: string;
+}) {
+  const errors: string[] = [];
+  const rowStoreName = normalizeStoreName(storeName);
+  const rowStoreMatchKey = normalizeStoreNameMatchKey(rowStoreName);
+  const selectedStoreMatchKey = normalizeStoreNameMatchKey(selectedStoreName);
+  const rowDate = normalizeDate(dateNo);
+
+  if (rowStoreMatchKey !== selectedStoreMatchKey) {
+    errors.push(
+      `${rowNumber}행 거래처가 선택 장부의 지점과 다릅니다. 선택: ${selectedStoreName}, 엑셀: ${rowStoreName}`,
+    );
+  }
+
+  if (rowDate !== selectedClosingDate) {
+    errors.push(
+      `${rowNumber}행 일자가 선택 장부의 마감일과 다릅니다. 선택: ${selectedClosingDate}, 엑셀: ${rowDate}`,
+    );
+  }
+
+  return errors;
+}
+
 export function parseEcountPurchaseWorkbook(
   input: Uint8Array | ArrayBuffer,
-  options: { storeName: string; closingDate: string | Date },
+  options: EcountPurchaseImportOptions,
 ): EcountPurchaseImportResult {
   const entries = readZipEntries(input);
   const sheetName = getSheetName(
@@ -402,9 +442,11 @@ export function parseEcountPurchaseWorkbook(
   const rows = parseSheetRows(getWorksheetXml(entries), sharedStrings);
   const header = findHeaderRow(rows);
   const headerIndex = buildHeaderIndex(header.cells);
-  const targetDate = normalizeDate(options.closingDate);
-  const targetStore = normalizeStoreName(options.storeName);
   const purchases: EcountPurchaseImportLine[] = [];
+  const scopeErrors: string[] = [];
+  const shouldValidateLedgerScope = options.validateLedgerScope !== false;
+  const selectedStoreName = normalizeStoreName(options.storeName);
+  const selectedClosingDate = normalizeDate(options.closingDate);
 
   for (const row of rows.slice(header.index + 1)) {
     const dateNo = cellText(row.cells, headerIndex["일자-No."]);
@@ -415,12 +457,19 @@ export function parseEcountPurchaseWorkbook(
       continue;
     }
 
-    if (parseRowDate(dateNo) !== targetDate) {
-      continue;
-    }
+    if (shouldValidateLedgerScope) {
+      const rowScopeErrors = validateLedgerScope({
+        rowNumber: row.rowNumber,
+        dateNo,
+        storeName,
+        selectedStoreName,
+        selectedClosingDate,
+      });
 
-    if (normalizeStoreName(storeName) !== targetStore) {
-      continue;
+      if (rowScopeErrors.length > 0) {
+        scopeErrors.push(...rowScopeErrors);
+        continue;
+      }
     }
 
     const quantity = cellNumber(
@@ -466,9 +515,18 @@ export function parseEcountPurchaseWorkbook(
     });
   }
 
+  if (scopeErrors.length > 0) {
+    throw new EcountPurchaseImportError(
+      "엑셀 지점/마감일을 확인해 주세요.",
+      {
+        file: scopeErrors,
+      },
+    );
+  }
+
   if (purchases.length === 0) {
     throw new EcountPurchaseImportError(
-      "선택한 장부와 일치하는 이카운트 행이 없습니다.",
+      "가져올 이카운트 매입 행이 없습니다.",
     );
   }
 

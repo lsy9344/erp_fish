@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import {
   EcountPurchaseImportError,
   parseEcountPurchaseWorkbook,
@@ -11,6 +9,7 @@ import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 
 type PurchaseStandardImportResult = {
   importedCount: number;
@@ -38,6 +37,8 @@ type PurchaseStandardAuditValue = {
 };
 
 const maxUploadBytes = 5 * 1024 * 1024;
+const duplicateImportPurchaseStandardCode =
+  "DUPLICATE_IMPORT_PURCHASE_STANDARD";
 
 const productSelect = {
   id: true,
@@ -71,24 +72,55 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
 }
 
 function revalidatePurchaseStandardImportPaths() {
-  revalidatePath("/app/master-data/purchase-standards");
-  revalidatePath("/app/master-data/products");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
+  revalidateMasterDataPaths("purchase-standards");
+}
+
+function getImportedPurchaseKey(purchase: EcountPurchaseImportLine) {
+  return [
+    purchase.productName,
+    purchase.productCategory,
+    purchase.productSpec,
+  ].join("\u001f");
+}
+
+function findDuplicateImportedPurchaseConflict(
+  purchases: EcountPurchaseImportLine[],
+) {
+  const firstByKey = new Map<string, EcountPurchaseImportLine>();
+
+  for (const purchase of purchases) {
+    const key = getImportedPurchaseKey(purchase);
+    const first = firstByKey.get(key);
+
+    if (!first) {
+      firstByKey.set(key, purchase);
+      continue;
+    }
+
+    if (
+      first.unitPrice !== purchase.unitPrice ||
+      first.referenceUnitPrice !== purchase.referenceUnitPrice
+    ) {
+      return {
+        productName: purchase.productName,
+        productCategory: purchase.productCategory,
+        productSpec: purchase.productSpec,
+      };
+    }
+  }
+
+  return null;
 }
 
 function toUniqueImportedPurchases(purchases: EcountPurchaseImportLine[]) {
   const unique = new Map<string, EcountPurchaseImportLine>();
 
   for (const purchase of purchases) {
-    unique.set(
-      [
-        purchase.productName,
-        purchase.productCategory,
-        purchase.productSpec,
-      ].join("\u001f"),
-      purchase,
-    );
+    const key = getImportedPurchaseKey(purchase);
+
+    if (!unique.has(key)) {
+      unique.set(key, purchase);
+    }
   }
 
   return [...unique.values()];
@@ -169,6 +201,7 @@ export async function importPurchaseStandardsFromEcount(
     imported = parseEcountPurchaseWorkbook(bytes, {
       storeName: "",
       closingDate: "",
+      validateLedgerScope: false,
     });
   } catch (error) {
     if (error instanceof EcountPurchaseImportError) {
@@ -179,6 +212,22 @@ export async function importPurchaseStandardsFromEcount(
       "VALIDATION_ERROR",
       "이카운트 엑셀 파일을 읽을 수 없습니다.",
       { file: ["이카운트 엑셀 파일을 읽을 수 없습니다."] },
+    );
+  }
+
+  const duplicateConflict = findDuplicateImportedPurchaseConflict(
+    imported.purchases,
+  );
+
+  if (duplicateConflict) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "업로드 파일에 같은 품목의 서로 다른 매입 기준이 있습니다.",
+      {
+        file: [
+          `${duplicateImportPurchaseStandardCode}: ${duplicateConflict.productName} (${duplicateConflict.productCategory}, ${duplicateConflict.productSpec})의 단가가 서로 다릅니다.`,
+        ],
+      },
     );
   }
 
@@ -230,9 +279,8 @@ export async function importPurchaseStandardsFromEcount(
           });
         }
 
-        const existingStandard = await tx.purchaseStandard.findFirst({
+        const existingStandard = await tx.purchaseStandard.findUnique({
           where: { productId: product.id },
-          orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
           select: purchaseStandardSelect,
         });
         const nextStandard = {

@@ -111,6 +111,34 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
   );
 });
 
+test("anomaly threshold simplification migration preserves the previous margin threshold", () => {
+  const migration = readProjectFile(
+    "prisma",
+    "migrations",
+    "20260616143000_simplify_anomaly_threshold_settings",
+    "migration.sql",
+  );
+  const addColumnIndex = migration.indexOf('ADD COLUMN "marginRateBps"');
+  const copyValueIndex = migration.indexOf(
+    'SET "marginRateBps" = "grossMarginDropBps"',
+  );
+  const dropDefaultIndex = migration.indexOf(
+    'ALTER COLUMN "marginRateBps" DROP DEFAULT',
+  );
+  const dropColumnIndex = migration.indexOf('DROP COLUMN "salesDropRateBps"');
+
+  assert.notEqual(addColumnIndex, -1);
+  assert.notEqual(copyValueIndex, -1);
+  assert.notEqual(dropDefaultIndex, -1);
+  assert.notEqual(dropColumnIndex, -1);
+  assert.ok(
+    addColumnIndex < copyValueIndex &&
+      copyValueIndex < dropDefaultIndex &&
+      dropDefaultIndex < dropColumnIndex,
+    "migration should add marginRateBps, copy grossMarginDropBps, then drop old columns",
+  );
+});
+
 test("anomaly threshold schema parses display input, active state, and required reason", async () => {
   const schemaPath = assertProjectFile(
     "src",
@@ -301,10 +329,7 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.doesNotMatch(actionSource, /grossMarginDropBps/);
   assert.doesNotMatch(actionSource, /salesDifferenceAmount/);
   assert.doesNotMatch(actionSource, /lossAmount/);
-  assert.match(actionSource, /revalidatePath\("\/app\/master-data\/anomaly-thresholds"\)/);
-  assert.match(actionSource, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
-  assert.match(actionSource, /revalidatePath\("\/app\/reports\/monthly"\)/);
+  assert.match(actionSource, /revalidateMasterDataPaths\("anomaly-thresholds"\)/);
   assert.match(actionSource, /ActionResult/);
   assert.match(
     actionSource,

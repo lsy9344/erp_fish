@@ -195,6 +195,42 @@ test("HQ dashboard query uses correction-applied server calculations by default"
   assert.match(querySource, /toCorrectedInventoryAdjustments/);
 });
 
+test("HQ dashboard required-input signals use correction-applied required values", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const missingItemBlocks = [
+    ...querySource.matchAll(
+      /const missingItems = getLedgerReviewMissingItems\(\{[\s\S]*?^\s*\}\);/gm,
+    ),
+  ].map(([block]) => block);
+
+  assert.ok(
+    missingItemBlocks.length >= 2,
+    "expected dashboard row and detail missing item checks",
+  );
+
+  for (const block of missingItemBlocks) {
+    assert.match(
+      block,
+      /totalSalesAmount:\s*correctionOverlay\.reviewInput\.totalSalesAmount/,
+    );
+    assert.match(
+      block,
+      /paymentTotal:\s*calculatePaymentTotal\(\s*correctionOverlay\.reviewInput\.cashAmount,\s*correctionOverlay\.reviewInput\.cardAmount,\s*correctionOverlay\.reviewInput\.otherPaymentAmount,\s*\)/,
+    );
+    assert.match(
+      block,
+      /workerCount:\s*correctionOverlay\.reviewInput\.workerCount/,
+    );
+    assert.doesNotMatch(block, /totalSalesAmount:\s*ledger\.totalSalesAmount/);
+    assert.doesNotMatch(block, /workerCount:\s*ledger\.workerCount/);
+  }
+});
+
 test("HQ dashboard row contract exposes story 4.1 operational fields", () => {
   const typeSource = readProjectFile(
     "src",
@@ -444,11 +480,88 @@ test("HQ dashboard keeps calculation and policy states as distinct info signals"
         label: "계산 불가",
         severity: "info",
       },
+      {
+        id: "calculation-salesDifference-policy-unconfirmed",
+        label: "기준 확인 필요",
+        severity: "info",
+      },
     ],
   );
   assert.match(signals[0].detail, /총매출\/결제/);
   assert.match(signals[1].detail, /총매출 입력이 없습니다/);
   assert.match(signals[2].detail, /마진율 계산 중 오류/);
+  assert.match(signals[3].detail, /OQ-1 매출차액 기준/);
+});
+
+test("HQ dashboard keeps policy-unconfirmed revenue metrics out of threshold anomaly evaluation", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const anomalyPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "anomaly.ts",
+  );
+  const { getDashboardSignals } = await import(pathToFileURL(queryPath).href);
+  const { evaluateRevenueAnomalySignals } = await import(
+    pathToFileURL(anomalyPath).href
+  );
+
+  const signals = getDashboardSignals({
+    thresholdSettings: {
+      marginRateBps: 3500,
+      inventoryDifferenceQuantity: 10,
+    },
+    revenueCurrent: {
+      totalSales: { value: 100000, status: "ok" },
+      grossMarginRate: {
+        value: null,
+        status: "policy-unconfirmed",
+        unavailableReason: "계산 기준 확인 필요",
+        reason: "OQ-2 마진률 판정 기준 확인이 필요합니다.",
+      },
+      salesDifference: {
+        value: null,
+        status: "policy-unconfirmed",
+        unavailableReason: "계산 기준 확인 필요",
+        reason: "OQ-1 매출차액 기준이 확정되지 않았습니다.",
+      },
+    },
+    inventoryLossCurrent: {
+      inventoryItems: [],
+      inventoryAdjustments: [],
+      lossItems: [],
+    },
+    evaluateRevenueAnomalySignals,
+    evaluateInventoryLossAnomalySignals: () => [],
+  });
+
+  assert.deepEqual(
+    signals.map(({ id, label, severity }) => ({ id, label, severity })),
+    [
+      {
+        id: "calculation-grossMarginRate-policy-unconfirmed",
+        label: "기준 확인 필요",
+        severity: "info",
+      },
+      {
+        id: "calculation-salesDifference-policy-unconfirmed",
+        label: "기준 확인 필요",
+        severity: "info",
+      },
+    ],
+  );
+  assert.ok(
+    signals.every(
+      (signal) =>
+        signal.id !== "margin-rate-unavailable" &&
+        signal.id !== "margin-rate-below-threshold",
+    ),
+  );
 });
 
 test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confirmed", async () => {
@@ -541,9 +654,7 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
     { sortMode: "priority", filterMode: "needs-attention" },
   );
   assert.equal(row.priority.label, "확인 필요");
-  assert.deepEqual(row.priority.reasons, [
-    "재고 기준 확인",
-  ]);
+  assert.deepEqual(row.priority.reasons, ["재고 기준 확인"]);
 });
 
 test("HQ dashboard treats inactive anomaly thresholds as policy-required info state", async () => {
@@ -747,6 +858,92 @@ test("HQ dashboard preserves sort and filter state through detail links", () => 
   assert.match(tableSource, /date=.*sort=.*filter=/s);
   assert.match(detailPageSource, /searchParams/);
   assert.match(detailPageSource, /getDashboardPath/);
+});
+
+test("HQ dashboard desktop table supports persisted column resizing", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.match(tableSource, /dashboardColumnWidthsStorageKey/);
+  assert.match(tableSource, /dashboardColumnWidthConfig/);
+  assert.match(
+    tableSource,
+    /localStorage\.getItem\(\s*dashboardColumnWidthsStorageKey/s,
+  );
+  assert.match(
+    tableSource,
+    /localStorage\.setItem\(\s*dashboardColumnWidthsStorageKey/s,
+  );
+  assert.match(tableSource, /startColumnResize/);
+  assert.match(tableSource, /onPointerDown/);
+  assert.match(tableSource, /handleColumnResizeKeyDown/);
+  assert.match(tableSource, /role="separator"/);
+  assert.match(tableSource, /aria-orientation="vertical"/);
+  assert.match(tableSource, /aria-valuemin=\{column\.minWidth\}/);
+  assert.match(tableSource, /aria-valuemax=\{column\.maxWidth\}/);
+  assert.match(tableSource, /aria-valuenow=\{columnWidths\[column\.id\]\}/);
+  assert.match(
+    tableSource,
+    /aria-label=\{`\$\{column\.label\} 컬럼 폭 조절`\}/,
+  );
+  assert.match(tableSource, /컬럼 폭 초기화/);
+  assert.match(
+    tableSource,
+    /data-testid=\{`hq-dashboard-column-header-\$\{column\.id\}`\}/,
+  );
+  assert.match(
+    tableSource,
+    /data-testid=\{`hq-dashboard-column-resizer-\$\{column\.id\}`\}/,
+  );
+  assert.match(tableSource, /md:hidden/);
+});
+
+test("HQ dashboard auto-refreshes on an operational interval with status feedback", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.match(tableSource, /dashboardRefreshIntervalMs\s*=\s*30_000/);
+  assert.match(
+    tableSource,
+    /window\.setInterval\(\s*triggerDashboardRefresh,\s*dashboardRefreshIntervalMs/s,
+  );
+  assert.match(tableSource, /window\.clearInterval\(intervalId\)/);
+  assert.match(tableSource, /router\.refresh\(\)/);
+  assert.match(tableSource, /hq-dashboard-refresh-status/);
+  assert.match(tableSource, /갱신 중/);
+  assert.match(tableSource, /마지막 갱신/);
+  assert.match(tableSource, /갱신 실패/);
+});
+
+test("HQ ledger detail supports direct navigation to the purchases tab", () => {
+  const detailPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(detailPageSource, /tab\?: string \| string\[\]/);
+  assert.match(detailPageSource, /const ledgerDetailTabs = \[/);
+  assert.match(detailPageSource, /query\.tab/);
+  assert.match(detailPageSource, /selectedTab/);
+  assert.match(detailPageSource, /ledgerDetailTabs\.includes/);
+  assert.match(
+    detailPageSource,
+    /<Tabs defaultValue=\{selectedTab\} className="w-full">/,
+  );
 });
 
 test("store manager closed ledger view exposes read-only correction values and history", () => {

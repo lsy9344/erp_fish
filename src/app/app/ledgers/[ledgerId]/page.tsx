@@ -40,6 +40,7 @@ import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-c
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
 import { getLedgerCostStepDataById } from "~/features/ledger/queries";
+import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   saveHqLedgerInventoryAdjustment,
   saveHqLedgerInventoryItems,
@@ -63,6 +64,7 @@ type LedgerDetailPageProps = {
     date?: string | string[];
     sort?: string | string[];
     filter?: string | string[];
+    tab?: string | string[];
   }>;
 };
 
@@ -88,6 +90,25 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 });
 
 const hqLedgerLabel = "본사 검토 장부";
+const ledgerDetailTabs = [
+  "sales",
+  "expenses",
+  "purchases",
+  "inventory",
+  "losses",
+  "work",
+] as const;
+type LedgerDetailTab = (typeof ledgerDetailTabs)[number];
+
+function getLedgerDetailTab(
+  value: string | string[] | undefined,
+): LedgerDetailTab {
+  const tab = Array.isArray(value) ? value[0] : value;
+
+  return ledgerDetailTabs.includes(tab as LedgerDetailTab)
+    ? (tab as LedgerDetailTab)
+    : "sales";
+}
 
 export default async function LedgerDetailPage({
   params,
@@ -103,6 +124,7 @@ export default async function LedgerDetailPage({
     ]);
   const { ledgerId } = await params;
   const query = await searchParams;
+  const selectedTab = getLedgerDetailTab(query.tab);
   const dashboardPath = getDashboardPath({
     datePreset: getDashboardDatePreset(
       Array.isArray(query.date) ? query.date[0] : query.date,
@@ -135,8 +157,7 @@ export default async function LedgerDetailPage({
           getActivePurchaseStandardOptions(),
         ])
       : [[], [], []];
-  const isOriginalEditBlocked =
-    ledger.status === "HEADQUARTERS_CLOSED" || ledger.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const lastModifiedBy =
     detail.lastModifiedBy?.name ??
     detail.lastModifiedBy?.email ??
@@ -365,7 +386,7 @@ export default async function LedgerDetailPage({
       ) : null}
 
       {canEditLedger ? (
-        <Tabs defaultValue="sales" className="w-full">
+        <Tabs defaultValue={selectedTab} className="w-full">
           <TabsList
             variant="line"
             className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
@@ -428,7 +449,6 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              ecountUploadEnabled
             />
           </TabsContent>
           <TabsContent value="inventory" className="mt-3" forceMount>
@@ -543,45 +563,6 @@ function getCorrectionTargetOptions({
         label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       },
     })),
-    ...ledger.purchaseItems.flatMap<CorrectionTargetOption>((item, index) => {
-      const prefix = `매입 ${index + 1} · ${item.productName}`;
-
-      return [
-        {
-          targetType: "PURCHASE_ROW",
-          targetId: item.id,
-          fieldKey: "unitPrice",
-          label: `${prefix} · 단가`,
-          originalValue: {
-            kind: "money",
-            value: item.unitPrice,
-            label: `${prefix} · 단가`,
-          },
-        },
-        {
-          targetType: "PURCHASE_ROW",
-          targetId: item.id,
-          fieldKey: "quantity",
-          label: `${prefix} · 수량`,
-          originalValue: {
-            kind: "quantity",
-            value: item.quantity,
-            label: `${prefix} · 수량`,
-          },
-        },
-        {
-          targetType: "PURCHASE_ROW",
-          targetId: item.id,
-          fieldKey: "amount",
-          label: `${prefix} · 금액`,
-          originalValue: {
-            kind: "money",
-            value: item.amount,
-            label: `${prefix} · 금액`,
-          },
-        },
-      ];
-    }),
     ...inventoryData.items
       .filter((item) => item.id !== item.productId)
       .flatMap<CorrectionTargetOption>((item, index) => {
@@ -597,17 +578,6 @@ function getCorrectionTargetOptions({
               kind: "quantity",
               value: item.currentQuantity,
               label: `${prefix} · 현재고`,
-            },
-          },
-          {
-            targetType: "INVENTORY_ROW",
-            targetId: item.id,
-            fieldKey: "inventoryAmount",
-            label: `${prefix} · 재고 금액`,
-            originalValue: {
-              kind: "money",
-              value: item.inventoryAmount,
-              label: `${prefix} · 재고 금액`,
             },
           },
         ];

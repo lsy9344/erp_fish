@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
+const BULK_STORE_ID_PREFIX = "store-bulk-10-plus";
+const BULK_STORE_NAME_PREFIX = "스토리10+";
 
 test.afterAll(async () => {
   await prisma.$disconnect();
@@ -25,6 +27,38 @@ async function login(page: Page, email: string) {
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);
+}
+
+async function getHeadquartersUserId() {
+  const user = await prisma.user.findUnique({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+
+  expect(user?.id).toBeTruthy();
+
+  return user!.id;
+}
+
+async function cleanupBulkStores() {
+  const stores = await prisma.store.findMany({
+    where: { id: { startsWith: BULK_STORE_ID_PREFIX } },
+    select: { id: true },
+  });
+  const storeIds = stores.map((store) => store.id);
+
+  if (storeIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: {
+        targetType: "Store",
+        targetId: { in: storeIds },
+      },
+    });
+  }
+
+  await prisma.store.deleteMany({
+    where: { id: { startsWith: BULK_STORE_ID_PREFIX } },
+  });
 }
 
 test("본사는 기준정보에서 지점 목록과 검색 필터를 볼 수 있다", async ({
@@ -159,6 +193,79 @@ test("본사는 지점을 생성하고 이름과 활성 상태를 수정할 수 
 
   await page.getByLabel("상태 필터").selectOption("active");
   await expect(page.getByRole("cell", { name: editedName })).toHaveCount(0);
+});
+
+test("본사는 10개 이상 지점을 검색하고 활성 상태를 운영할 수 있다", async ({
+  page,
+}) => {
+  await cleanupBulkStores();
+
+  const actorId = await getHeadquartersUserId();
+  const suffix = Date.now().toString(36);
+  const stores = Array.from({ length: 11 }, (_, index) => {
+    const sequence = String(index + 1).padStart(2, "0");
+
+    return {
+      id: `${BULK_STORE_ID_PREFIX}-${suffix}-${sequence}`,
+      name: `${BULK_STORE_NAME_PREFIX} ${suffix} ${sequence}점`,
+      isActive: true,
+      updatedById: actorId,
+    };
+  });
+  const firstStore = stores[0]!;
+  const seventhStore = stores[6]!;
+  const eleventhStore = stores[10]!;
+
+  await prisma.store.createMany({ data: stores });
+
+  try {
+    await login(page, "hq@example.com");
+    await page.goto("/app/master-data/stores");
+
+    await page
+      .getByLabel("지점 검색")
+      .fill(`${BULK_STORE_NAME_PREFIX} ${suffix}`);
+    await page.getByRole("button", { name: "검색" }).click();
+
+    await expect(page).toHaveURL(/q=/);
+    for (const store of stores) {
+      await expect(page.getByRole("cell", { name: store.name })).toBeVisible();
+      await expect(
+        storeRow(page, store.name).locator("td").nth(1),
+      ).toContainText("활성");
+    }
+
+    await page.getByLabel("지점 검색").fill(seventhStore.name);
+    await page.getByRole("button", { name: "검색" }).click();
+
+    await expect(
+      page.getByRole("cell", { name: seventhStore.name }),
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: firstStore.name })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole("cell", { name: eleventhStore.name }),
+    ).toHaveCount(0);
+
+    const targetRow = storeRow(page, seventhStore.name);
+    await targetRow.getByLabel("활성 상태").selectOption("inactive");
+    await targetRow.getByRole("button", { name: "상태 적용" }).click();
+
+    await expect(targetRow.locator("td").nth(1)).toContainText("비활성");
+
+    await page.getByLabel("상태 필터").selectOption("inactive");
+
+    await expect(page).toHaveURL(/status=inactive/);
+    await expect(
+      page.getByRole("cell", { name: seventhStore.name }),
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: firstStore.name })).toHaveCount(
+      0,
+    );
+  } finally {
+    await cleanupBulkStores();
+  }
 });
 
 test("지점 관리 폼은 한국어 검증 오류와 첫 오류 포커스를 제공한다", async ({

@@ -190,6 +190,28 @@ export async function requireLedgerHqEditAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
 }
 
+export async function requireStoreManagerLedgerEditAccess(storeId: string) {
+  const access = await requireStoreAccess(storeId);
+
+  if (access.user.role !== UserRole.STORE_MANAGER) {
+    redirect("/app/unauthorized");
+  }
+
+  const hasPermission = await hasActionPermission(
+    access.user.id,
+    PermissionAction.LEDGER_EDIT,
+    {
+      requiredRole: UserRole.STORE_MANAGER,
+    },
+  );
+
+  if (!hasPermission) {
+    redirect("/app/unauthorized");
+  }
+
+  return access;
+}
+
 export async function requireLedgerHqCloseAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_HQ_CLOSE);
 }
@@ -198,6 +220,13 @@ export async function requireCorrectionCreateAccess() {
   return requireHeadquartersActionPermission(
     PermissionAction.CORRECTION_CREATE,
   );
+}
+
+export async function requireAuditHistoryAccess() {
+  const currentUser = await requireSettingsAccess();
+  await requireReportAccess();
+
+  return currentUser;
 }
 
 export async function requireExportCreateAccess() {
@@ -335,6 +364,18 @@ export async function getStoreManagerWorkspace() {
     user: currentUser,
     store,
   } as const;
+}
+
+export async function getStoreManagerLedgerEditWorkspace() {
+  const workspace = await getStoreManagerWorkspace();
+
+  if (workspace.status !== "ready") {
+    return workspace;
+  }
+
+  await requireStoreManagerLedgerEditAccess(workspace.store.id);
+
+  return workspace;
 }
 
 export async function requireStoreAccess(storeId: string) {

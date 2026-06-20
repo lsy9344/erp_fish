@@ -4,14 +4,12 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { EyeIcon } from "lucide-react";
 
-import {
-  AUDIT_TARGET_TYPE_OPTIONS,
-  type AuditHistoryTargetTypeFilter,
-} from "~/features/audit/audit-format";
+import type { AuditHistoryTargetTypeFilter } from "~/features/audit/audit-format";
 import type {
   AuditHistoryActorOption,
   AuditHistoryFilters,
   AuditHistoryItem,
+  AuditHistoryTargetTypeOption,
 } from "~/features/audit/audit-queries";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -46,6 +44,7 @@ const historyPath = "/app/master-data/history";
 type ChangeHistoryClientProps = {
   history: AuditHistoryItem[];
   actorOptions: AuditHistoryActorOption[];
+  visibleTargetTypeOptions: AuditHistoryTargetTypeOption[];
   filters: AuditHistoryFilters;
 };
 
@@ -57,8 +56,11 @@ function formatChangedAt(value: string) {
   }).format(new Date(value));
 }
 
-function normalizeTargetType(value: string): AuditHistoryTargetTypeFilter {
-  return AUDIT_TARGET_TYPE_OPTIONS.some((option) => option.value === value)
+function normalizeTargetType(
+  value: string,
+  visibleTargetTypeOptions: readonly AuditHistoryTargetTypeOption[],
+): AuditHistoryTargetTypeFilter {
+  return visibleTargetTypeOptions.some((option) => option.value === value)
     ? (value as AuditHistoryTargetTypeFilter)
     : "all";
 }
@@ -66,6 +68,7 @@ function normalizeTargetType(value: string): AuditHistoryTargetTypeFilter {
 export function ChangeHistoryClient({
   history,
   actorOptions,
+  visibleTargetTypeOptions,
   filters,
 }: ChangeHistoryClientProps) {
   const router = useRouter();
@@ -126,7 +129,10 @@ export function ChangeHistoryClient({
             value={filters.targetType}
             onValueChange={(value) =>
               pushFilters({
-                targetType: normalizeTargetType(value),
+                targetType: normalizeTargetType(
+                  value,
+                  visibleTargetTypeOptions,
+                ),
               })
             }
           >
@@ -136,7 +142,7 @@ export function ChangeHistoryClient({
             <SelectContent>
               <SelectGroup>
                 <SelectItem value="all">전체</SelectItem>
-                {AUDIT_TARGET_TYPE_OPTIONS.map((option) => (
+                {visibleTargetTypeOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

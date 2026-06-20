@@ -130,7 +130,7 @@ test("master-data actions enforce headquarters authorization, audit, transaction
     actions,
     /name:\s*\[\s*"이미 같은 이름의 지점이 있습니다\."\s*\]/,
   );
-  assert.match(actions, /revalidatePath\("\/app\/master-data\/stores"\)/);
+  assert.match(actions, /revalidateMasterDataPaths\("stores"\)/);
   assert.match(actions, /status:\s*"unchanged"/);
   assert.match(
     actions,
@@ -191,6 +191,26 @@ test("headquarters navigation points 기준정보 to the store management route"
   assert.match(storesPage, /HeadquartersShell/);
 });
 
+test("first-run account and 10+ store operations are documented", () => {
+  const manual = readProjectFile(
+    "docs",
+    "first-run-accounts-and-store-management.md",
+  );
+  const readme = readProjectFile("README.md");
+
+  assert.match(manual, /SEED_HQ_EMAIL/);
+  assert.match(manual, /SEED_HQ_PASSWORD/);
+  assert.match(manual, /SEED_STORE_MANAGER_EMAIL/);
+  assert.match(manual, /SEED_STORE_MANAGER_PASSWORD/);
+  assert.match(manual, /ALLOW_SEED_PASSWORD_ROTATION/);
+  assert.match(manual, /고정 기본 비밀번호를 코드에 넣지 않는다/);
+  assert.match(manual, /10개 이상 지점/);
+  assert.match(manual, /비활성 지점/);
+  assert.match(manual, /사용자\/권한 관리/);
+  assert.match(manual, /지점 관리/);
+  assert.match(readme, /first-run-accounts-and-store-management\.md/);
+});
+
 test("store management UI preserves combined filters and uses status-only row saves", () => {
   const client = readProjectFile(
     "src",
@@ -215,6 +235,18 @@ test("store management UI preserves combined filters and uses status-only row sa
   assert.match(client, /const result = await updateStoreStatus/);
   assert.match(client, /if \(!result\.ok\)/);
   assert.match(client, /!isRowStatusChanged/);
+});
+
+test("master-data store e2e covers 10+ branch operations", () => {
+  const spec = readProjectFile("tests", "e2e", "master-data-stores.spec.ts");
+
+  assert.match(spec, /Array\.from\(\{ length: 11 \}/);
+  assert.match(spec, /BULK_STORE_NAME_PREFIX/);
+  assert.match(spec, /지점 검색/);
+  assert.match(spec, /상태 필터/);
+  assert.match(spec, /selectOption\("inactive"\)/);
+  assert.match(spec, /manager@example\.com/);
+  assert.match(spec, /hq-viewer@example\.com/);
 });
 
 test("e2e global setup requires an isolated test database", () => {

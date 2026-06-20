@@ -1,6 +1,8 @@
 import type { Prisma } from "../../../generated/prisma";
+import { PermissionAction } from "../../../generated/prisma";
 import {
   AUDIT_HISTORY_TARGET_TYPES,
+  AUDIT_TARGET_TYPE_OPTIONS,
   formatAuditChangeSummary,
   formatAuditJsonValue,
   getAuditActionLabel,
@@ -11,7 +13,12 @@ import {
   type AuditHistoryTargetType,
   type AuditHistoryTargetTypeFilter,
 } from "~/features/audit/audit-format";
-import { requireSettingsAccess } from "~/server/authz";
+import { omitSensitiveFields } from "~/server/sensitive-fields";
+import {
+  getHeadquartersStoreScope,
+  hasActionPermission,
+  requireAuditHistoryAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 
 export const AUDIT_HISTORY_PAGE_SIZE = 50;
@@ -51,9 +58,13 @@ export type AuditHistoryActorOption = {
   label: string;
 };
 
+export type AuditHistoryTargetTypeOption =
+  (typeof AUDIT_TARGET_TYPE_OPTIONS)[number];
+
 export type AuditHistoryResult = {
   items: AuditHistoryItem[];
   actorOptions: AuditHistoryActorOption[];
+  visibleTargetTypeOptions: AuditHistoryTargetTypeOption[];
   filters: AuditHistoryFilters;
   nextCursor: { createdAt: string; id: string } | null;
 };
@@ -77,6 +88,12 @@ type AuditLogWithActor = Prisma.AuditLogGetPayload<{
     };
   };
 }>;
+
+type ScopedAuditTargetFilters = {
+  storeIds: string[];
+  dailyLedgerIds: string[];
+  correctionRecordIds: string[];
+};
 
 function normalizeSingleParam(value: string | string[] | undefined) {
   if (Array.isArray(value) || !value) {
@@ -131,9 +148,46 @@ function toEndOfKoreanDate(value: string) {
   return new Date(`${value}T23:59:59.999+09:00`);
 }
 
-function buildAuditHistoryWhere(filters: AuditHistoryFilters) {
+function buildScopedAuditTargetWhere(
+  targetType: AuditHistoryTargetTypeFilter,
+  scopedTargets: ScopedAuditTargetFilters,
+): Prisma.AuditLogWhereInput | null {
+  if (targetType === "DailyLedger") {
+    return { targetId: { in: scopedTargets.dailyLedgerIds } };
+  }
+
+  if (targetType === "CorrectionRecord") {
+    return { targetId: { in: scopedTargets.correctionRecordIds } };
+  }
+
+  if (targetType !== "all") {
+    return null;
+  }
+
+  return {
+    OR: [
+      { targetType: { notIn: ["DailyLedger", "CorrectionRecord"] } },
+      {
+        targetType: "DailyLedger",
+        targetId: { in: scopedTargets.dailyLedgerIds },
+      },
+      {
+        targetType: "CorrectionRecord",
+        targetId: { in: scopedTargets.correctionRecordIds },
+      },
+    ],
+  };
+}
+
+function buildAuditHistoryWhere(
+  filters: AuditHistoryFilters,
+  scopedTargets?: ScopedAuditTargetFilters,
+  allowedTargetTypes: AuditHistoryTargetType[] = [
+    ...AUDIT_HISTORY_TARGET_TYPES,
+  ],
+) {
   const where: Prisma.AuditLogWhereInput = {
-    targetType: { in: [...AUDIT_HISTORY_TARGET_TYPES] },
+    targetType: { in: allowedTargetTypes },
   };
 
   if (filters.targetType !== "all") {
@@ -158,7 +212,47 @@ function buildAuditHistoryWhere(filters: AuditHistoryFilters) {
     where.createdAt = createdAt;
   }
 
+  if (scopedTargets) {
+    const scopedTargetWhere = buildScopedAuditTargetWhere(
+      filters.targetType,
+      scopedTargets,
+    );
+
+    if (scopedTargetWhere) {
+      where.AND = [scopedTargetWhere];
+    }
+  }
+
   return where;
+}
+
+async function getScopedAuditTargetFilters(
+  storeIds: string[],
+): Promise<ScopedAuditTargetFilters> {
+  if (storeIds.length === 0) {
+    return {
+      storeIds,
+      dailyLedgerIds: [],
+      correctionRecordIds: [],
+    };
+  }
+
+  const [dailyLedgers, correctionRecords] = await Promise.all([
+    db.dailyLedger.findMany({
+      where: { storeId: { in: storeIds } },
+      select: { id: true },
+    }),
+    db.correctionRecord.findMany({
+      where: { dailyLedger: { storeId: { in: storeIds } } },
+      select: { id: true },
+    }),
+  ]);
+
+  return {
+    storeIds,
+    dailyLedgerIds: dailyLedgers.map((ledger) => ledger.id),
+    correctionRecordIds: correctionRecords.map((record) => record.id),
+  };
 }
 
 function groupTargetIds(logs: AuditLogWithActor[]) {
@@ -193,7 +287,10 @@ function formatDailyLedgerTargetName(input: {
   return `${input.store.name} ${date}`;
 }
 
-async function resolveTargetNames(logs: AuditLogWithActor[]) {
+async function resolveTargetNames(
+  logs: AuditLogWithActor[],
+  storeIds: string[],
+) {
   const ids = groupTargetIds(logs);
   const [
     stores,
@@ -231,7 +328,10 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
       select: { id: true, name: true },
     }),
     db.dailyLedger.findMany({
-      where: { id: { in: [...(ids.get("DailyLedger") ?? [])] } },
+      where: {
+        id: { in: [...(ids.get("DailyLedger") ?? [])] },
+        storeId: { in: storeIds },
+      },
       select: {
         id: true,
         closingDate: true,
@@ -241,7 +341,10 @@ async function resolveTargetNames(logs: AuditLogWithActor[]) {
       },
     }),
     db.correctionRecord.findMany({
-      where: { id: { in: [...(ids.get("CorrectionRecord") ?? [])] } },
+      where: {
+        id: { in: [...(ids.get("CorrectionRecord") ?? [])] },
+        dailyLedger: { storeId: { in: storeIds } },
+      },
       select: {
         id: true,
         fieldKey: true,
@@ -315,11 +418,16 @@ function toActorLabel(actor: { name: string | null; email: string | null }) {
   return actor.name ?? actor.email ?? "시스템";
 }
 
-async function getAuditActorOptions() {
+async function getAuditActorOptions(
+  scopedTargets: ScopedAuditTargetFilters,
+  allowedTargetTypes: AuditHistoryTargetType[],
+) {
   const rows = await db.auditLog.findMany({
-    where: {
-      targetType: { in: [...AUDIT_HISTORY_TARGET_TYPES] },
-    },
+    where: buildAuditHistoryWhere(
+      { targetType: "all", actorId: "all", from: "", to: "" },
+      scopedTargets,
+      allowedTargetTypes,
+    ),
     distinct: ["actorId"],
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
@@ -341,20 +449,76 @@ async function getAuditActorOptions() {
     .sort((a, b) => a.label.localeCompare(b.label, "ko-KR"));
 }
 
+async function getAllowedAuditHistoryTargetTypes(currentUserId: string) {
+  const [canManageUsers, canExport] = await Promise.all([
+    hasActionPermission(currentUserId, PermissionAction.USER_PERMISSION_MANAGE),
+    hasActionPermission(currentUserId, PermissionAction.EXPORT_CREATE),
+  ]);
+  const allowedTargetTypes: AuditHistoryTargetType[] = [
+    "Store",
+    "Product",
+    "PurchaseStandard",
+    "LedgerInputCode",
+    "DailyLedger",
+    "CorrectionRecord",
+    "AnomalyThresholdSetting",
+  ];
+
+  if (canManageUsers) {
+    allowedTargetTypes.push("User");
+  }
+
+  if (canExport) {
+    allowedTargetTypes.push("ReportExport");
+  }
+
+  return allowedTargetTypes;
+}
+
+function getVisibleTargetTypeOptions(
+  allowedTargetTypes: AuditHistoryTargetType[],
+) {
+  return AUDIT_TARGET_TYPE_OPTIONS.filter((option) =>
+    allowedTargetTypes.includes(option.value),
+  );
+}
+
 export async function getAuditHistoryForHeadquarters(
   filters: Partial<AuditHistoryFilters> = {},
 ): Promise<AuditHistoryResult> {
-  await requireSettingsAccess();
+  const currentUser = await requireAuditHistoryAccess();
+  const storeScope = await getHeadquartersStoreScope();
+  const scopedTargets = await getScopedAuditTargetFilters(storeScope.storeIds);
+  const allowedTargetTypes = await getAllowedAuditHistoryTargetTypes(
+    currentUser.id,
+  );
 
-  const normalizedFilters: AuditHistoryFilters = {
+  let normalizedFilters: AuditHistoryFilters = {
     targetType: filters.targetType ?? "all",
     actorId: filters.actorId ?? "all",
     from: filters.from ?? "",
     to: filters.to ?? "",
   };
+
+  if (
+    normalizedFilters.targetType !== "all" &&
+    !allowedTargetTypes.includes(normalizedFilters.targetType)
+  ) {
+    normalizedFilters = {
+      ...normalizedFilters,
+      targetType: "all",
+    };
+  }
+
+  const visibleTargetTypeOptions =
+    getVisibleTargetTypeOptions(allowedTargetTypes);
   const [logs, actorOptions] = await Promise.all([
     db.auditLog.findMany({
-      where: buildAuditHistoryWhere(normalizedFilters),
+      where: buildAuditHistoryWhere(
+        normalizedFilters,
+        scopedTargets,
+        allowedTargetTypes,
+      ),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: AUDIT_HISTORY_PAGE_SIZE,
       select: {
@@ -375,9 +539,9 @@ export async function getAuditHistoryForHeadquarters(
         },
       },
     }),
-    getAuditActorOptions(),
+    getAuditActorOptions(scopedTargets, allowedTargetTypes),
   ]);
-  const targetNames = await resolveTargetNames(logs);
+  const targetNames = await resolveTargetNames(logs, scopedTargets.storeIds);
   const items = logs
     .filter(
       (
@@ -385,29 +549,41 @@ export async function getAuditHistoryForHeadquarters(
       ): log is AuditLogWithActor & { targetType: AuditHistoryTargetType } =>
         isAuditHistoryTargetType(log.targetType),
     )
-    .map<AuditHistoryItem>((log) => ({
-      id: log.id,
-      createdAt: log.createdAt.toISOString(),
-      actorId: log.actorId,
-      actorName: toActorLabel(log.actor),
-      targetType: log.targetType,
-      targetTypeLabel: getAuditTargetTypeLabel(log.targetType),
-      targetName:
-        targetNames.get(targetKey(log.targetType, log.targetId)) ??
-        getSnapshotDisplayName(log.after) ??
-        getSnapshotDisplayName(log.before) ??
-        log.targetId,
-      action: log.action,
-      actionLabel: getAuditActionLabel(log.action),
-      reasonText: log.reason ?? "-",
-      changeSummaryText: formatAuditChangeSummary(log.before, log.after),
-      beforeText: formatAuditJsonValue(log.before),
-      afterText: formatAuditJsonValue(log.after),
-    }));
+    .map<AuditHistoryItem>((log) => {
+      const safeBefore = omitSensitiveFields(log.before) as
+        | Prisma.JsonValue
+        | null
+        | undefined;
+      const safeAfter = omitSensitiveFields(log.after) as
+        | Prisma.JsonValue
+        | null
+        | undefined;
+
+      return {
+        id: log.id,
+        createdAt: log.createdAt.toISOString(),
+        actorId: log.actorId,
+        actorName: toActorLabel(log.actor),
+        targetType: log.targetType,
+        targetTypeLabel: getAuditTargetTypeLabel(log.targetType),
+        targetName:
+          targetNames.get(targetKey(log.targetType, log.targetId)) ??
+          getSnapshotDisplayName(safeAfter) ??
+          getSnapshotDisplayName(safeBefore) ??
+          log.targetId,
+        action: log.action,
+        actionLabel: getAuditActionLabel(log.action),
+        reasonText: log.reason ?? "-",
+        changeSummaryText: formatAuditChangeSummary(safeBefore, safeAfter),
+        beforeText: formatAuditJsonValue(safeBefore),
+        afterText: formatAuditJsonValue(safeAfter),
+      };
+    });
 
   return {
     items,
     actorOptions,
+    visibleTargetTypeOptions,
     filters: normalizedFilters,
     nextCursor: null,
   };

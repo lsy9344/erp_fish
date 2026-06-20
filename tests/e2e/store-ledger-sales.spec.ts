@@ -1,4 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type ConsoleMessage,
+  type Page,
+  type Request,
+  type Response,
+} from "@playwright/test";
 import {
   PrismaClient,
   type DailyLedgerStatus,
@@ -7,6 +14,14 @@ import {
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
 const SELECTED_LEDGER_DATE = "2026-06-02";
+const LOGIN_TIMEOUT_MS = 15_000;
+const MAX_LOGIN_DIAGNOSTIC_EVENTS = 8;
+
+type LoginDiagnostics = {
+  authResponses: string[];
+  failedRequests: string[];
+  consoleMessages: string[];
+};
 
 test.beforeEach(async () => {
   await cleanupSelectedLedger();
@@ -40,14 +55,199 @@ async function cleanupSelectedLedger() {
   });
 }
 
+function formatUrlForDiagnostic(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
+}
+
+function shouldCaptureLoginFlowUrl(value: string) {
+  try {
+    const { pathname } = new URL(value);
+
+    return (
+      pathname === "/login" ||
+      pathname === "/app" ||
+      pathname.startsWith("/app/store-entry") ||
+      pathname.startsWith("/api/auth/") ||
+      pathname.startsWith("/_next/action")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rememberDiagnosticEvent(events: string[], event: string) {
+  events.push(event);
+
+  if (events.length > MAX_LOGIN_DIAGNOSTIC_EVENTS) {
+    events.shift();
+  }
+}
+
+function captureLoginDiagnostics(page: Page) {
+  const diagnostics: LoginDiagnostics = {
+    authResponses: [],
+    failedRequests: [],
+    consoleMessages: [],
+  };
+
+  const onResponse = (response: Response) => {
+    if (!shouldCaptureLoginFlowUrl(response.url())) {
+      return;
+    }
+
+    rememberDiagnosticEvent(
+      diagnostics.authResponses,
+      `${response.status()} ${response.request().method()} ${formatUrlForDiagnostic(response.url())}`,
+    );
+  };
+  const onRequestFailed = (request: Request) => {
+    if (!shouldCaptureLoginFlowUrl(request.url())) {
+      return;
+    }
+
+    rememberDiagnosticEvent(
+      diagnostics.failedRequests,
+      `${request.method()} ${formatUrlForDiagnostic(request.url())} ${
+        request.failure()?.errorText ?? "unknown failure"
+      }`,
+    );
+  };
+  const onConsole = (message: ConsoleMessage) => {
+    if (!["error", "warning"].includes(message.type())) {
+      return;
+    }
+
+    rememberDiagnosticEvent(
+      diagnostics.consoleMessages,
+      `${message.type()}: ${message.text()}`,
+    );
+  };
+
+  page.on("response", onResponse);
+  page.on("requestfailed", onRequestFailed);
+  page.on("console", onConsole);
+
+  return {
+    diagnostics,
+    stop() {
+      page.off("response", onResponse);
+      page.off("requestfailed", onRequestFailed);
+      page.off("console", onConsole);
+    },
+  };
+}
+
+async function getLoginAlertText(page: Page) {
+  const loginError = page.locator("#login-error");
+
+  if (await loginError.isVisible({ timeout: 100 }).catch(() => false)) {
+    return (await loginError.textContent({ timeout: 100 }))?.trim() ?? "";
+  }
+
+  const alertTexts = await page
+    .getByRole("alert")
+    .allInnerTexts()
+    .catch(() => []);
+  return alertTexts
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function hasHttpError(events: string[]) {
+  return events.some((event) => /^(4|5)\d\d\s/.test(event));
+}
+
+async function buildLoginFailureMessage(
+  page: Page,
+  diagnostics: LoginDiagnostics,
+  cause: "login-alert" | "timeout",
+) {
+  const alertText = await getLoginAlertText(page);
+  const emailDisabled = await page
+    .getByLabel("이메일")
+    .isDisabled()
+    .catch(() => null);
+  const passwordDisabled = await page
+    .getByLabel("비밀번호")
+    .isDisabled()
+    .catch(() => null);
+  const buttonDisabled = await page
+    .getByRole("button", { name: "로그인" })
+    .isDisabled()
+    .catch(() => null);
+  const pendingControls =
+    emailDisabled === true ||
+    passwordDisabled === true ||
+    buttonDisabled === true;
+  const reason = alertText
+    ? "login-alert"
+    : pendingControls
+      ? "login-pending"
+      : diagnostics.failedRequests.length > 0
+        ? "request-failed"
+        : hasHttpError(diagnostics.authResponses)
+          ? "auth-error"
+          : cause === "timeout"
+            ? "redirect-timeout"
+            : cause;
+
+  return [
+    `Store manager login failed (${reason}).`,
+    `URL: ${page.url()}`,
+    `Login alert: ${alertText ? alertText : "(none)"}`,
+    `Controls disabled: email=${String(emailDisabled)}, password=${String(
+      passwordDisabled,
+    )}, button=${String(buttonDisabled)}`,
+    diagnostics.authResponses.length > 0
+      ? `Auth/navigation responses:\n- ${diagnostics.authResponses.join("\n- ")}`
+      : "Auth/navigation responses: (none captured)",
+    diagnostics.failedRequests.length > 0
+      ? `Failed requests:\n- ${diagnostics.failedRequests.join("\n- ")}`
+      : "Failed requests: (none captured)",
+    diagnostics.consoleMessages.length > 0
+      ? `Console warnings/errors:\n- ${diagnostics.consoleMessages.join("\n- ")}`
+      : "Console warnings/errors: (none captured)",
+  ].join("\n");
+}
+
+async function waitForStoreManagerLogin(
+  page: Page,
+  diagnostics: LoginDiagnostics,
+) {
+  try {
+    await page.waitForURL(/\/app\/store-entry/, {
+      timeout: LOGIN_TIMEOUT_MS,
+    });
+    return;
+  } catch {
+    if (page.url().includes("/app/store-entry")) {
+      return;
+    }
+  }
+
+  const cause = (await getLoginAlertText(page)) ? "login-alert" : "timeout";
+  throw new Error(await buildLoginFailureMessage(page, diagnostics, cause));
+}
+
 async function loginAsStoreManager(page: Page) {
-  await page.goto("/login");
+  const loginDiagnostics = captureLoginDiagnostics(page);
 
-  await page.getByLabel("이메일").fill("manager@example.com");
-  await page.getByLabel("비밀번호").fill("correct-password");
-  await page.getByRole("button", { name: "로그인" }).click();
+  try {
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill("manager@example.com");
+    await page.getByLabel("비밀번호").fill("correct-password");
+    await page.getByRole("button", { name: "로그인" }).click();
 
-  await expect(page).toHaveURL(/\/app\/store-entry/);
+    await waitForStoreManagerLogin(page, loginDiagnostics.diagnostics);
+  } finally {
+    loginDiagnostics.stop();
+  }
 }
 
 async function getManagerUserId() {

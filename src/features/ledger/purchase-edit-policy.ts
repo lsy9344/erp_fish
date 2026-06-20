@@ -14,11 +14,11 @@ type PurchaseEditPolicyLine = {
 };
 
 const ecountEditBlockedMessage =
-  "이카운트 업로드 매입은 지점에서 수정할 수 없습니다.";
+  "이카운트 업로드 매입은 장부 매입 화면에서 수정할 수 없습니다.";
 const ecountDeleteBlockedMessage =
-  "이카운트 업로드 매입은 지점에서 삭제할 수 없습니다.";
+  "이카운트 업로드 매입은 장부 매입 화면에서 삭제할 수 없습니다.";
 const ecountCreateBlockedMessage =
-  "이카운트 업로드 매입은 본사 업로드로만 만들 수 있습니다.";
+  "이카운트 엑셀은 본사 매입 기준 화면에서 불러와 주세요.";
 
 function nullableText(value: string | null) {
   return value ?? "";

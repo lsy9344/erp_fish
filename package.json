@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "check": "next lint && tsc --noEmit",
-    "db:generate": "prisma migrate dev",
+    "check": "pnpm lint && pnpm typecheck",
+    "db:validate": "prisma validate",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
@@ -18,9 +20,11 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "next build && next start",
+    "release:preflight": "pnpm db:validate && pnpm typecheck && pnpm lint && pnpm build && pnpm test:unit && pnpm test:api && pnpm test:e2e:core && git diff --check",
     "start": "next start",
     "test:api": "node scripts/run-playwright-clean.mjs tests/api",
     "test:e2e": "node scripts/run-playwright-clean.mjs tests/e2e",
+    "test:e2e:core": "node scripts/run-playwright-clean.mjs tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-purchase.spec.ts tests/e2e/store-ledger-inventory.spec.ts tests/e2e/store-ledger-inventory-adjustment.spec.ts tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-review.spec.ts tests/e2e/hq-dashboard.spec.ts tests/e2e/hq-ledger-edit.spec.ts tests/e2e/hq-ledger-corrections.spec.ts tests/e2e/hq-reports.spec.ts tests/e2e/permission-profiles.spec.ts tests/e2e/master-data-stores.spec.ts tests/e2e/master-data-purchase-standards.spec.ts tests/e2e/anomaly-thresholds.spec.ts",
     "test:playwright": "node scripts/run-playwright-clean.mjs",
     "test:unit": "node --experimental-strip-types --test tests/unit/*.test.mjs",
     "test:unit:file": "node --experimental-strip-types --test",
@@ -66,9 +70,6 @@
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"
-  },
-  "prisma": {
-    "seed": "node --experimental-strip-types prisma/seed.ts"
   },
   "packageManager": "pnpm@10.31.0"
 }

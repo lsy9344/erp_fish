@@ -123,9 +123,14 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
     "submitLedgerForReview",
   );
   assert.match(submitSource, /parseLedgerStoreAccessInput\(input\)/);
-  assert.match(submitSource, /requireStoreAccess\(access\.data\.storeId\)/);
+  assert.match(
+    submitSource,
+    /requireStoreManagerLedgerEditAccess\(access\.data\.storeId\)/,
+  );
   assert.ok(
-    submitSource.indexOf("requireStoreAccess(access.data.storeId)") <
+    submitSource.indexOf(
+      "requireStoreManagerLedgerEditAccess(access.data.storeId)",
+    ) <
       submitSource.indexOf("parseLedgerSubmitInput(input)"),
     "submit should authorize store access before detailed submit validation",
   );
@@ -146,18 +151,14 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
   );
   assert.match(actionSource, /필수 입력을 완료한 뒤 제출해 주세요\./);
   assert.match(actionSource, /Object\.fromEntries/);
-  assert.match(actionSource, /beforeLedger\.status === "HOLIDAY"/);
+  assert.match(actionSource, /getLedgerEditBlockReason/);
   assert.match(actionSource, /ledger\.review\.submitted/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /LEDGER_SUBMIT_FAILED/);
   assert.match(actionSource, /제출에 실패했습니다\. 다시 시도해 주세요\./);
-  assert.match(actionSource, /revalidatePath\("\/app\/store-entry"\)/);
-  assert.match(
-    actionSource,
-    /revalidatePath\("\/app\/store-entry\/inventory"\)/,
-  );
-  assert.match(actionSource, /revalidatePath\("\/app\/store-entry\/losses"\)/);
-  assert.match(actionSource, /revalidatePath\("\/app\/dashboard"\)/);
+  assert.match(actionSource, /revalidateLedgerSubmitPaths\(\)/);
+  assert.match(actionSource, /revalidateStoreEntryPaths\(\)/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
   assert.match(querySource, /submittedById:\s*true/);
   assert.match(querySource, /submittedAt:\s*true/);
   assert.match(reviewTypesSource, /submittedById:\s*string\s*\|\s*null/);
@@ -286,7 +287,7 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
 
   assert.match(
     ledgerActionSource,
-    /editableLedgerStatuses\s*=\s*\["IN_PROGRESS",\s*"IN_REVIEW"\]/,
+    /editableLedgerStatuses/,
   );
   assert.match(
     ledgerActionSource,
@@ -296,7 +297,7 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
   assert.doesNotMatch(workSource, /data:\s*\{[\s\S]*?status:\s*"IN_PROGRESS"/);
   assert.match(
     expenseSource,
-    /if\s*\(!isEditableLedgerStatus\(beforeLedger\.status\)\)/,
+    /if\s*\(!isLedgerEditable\(beforeLedger\.status\)\)/,
   );
   assert.match(
     expenseSource,
@@ -304,7 +305,7 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
   );
   assert.match(
     purchaseSource,
-    /if\s*\(!isEditableLedgerStatus\(beforeLedger\.status\)\)/,
+    /if\s*\(!isLedgerEditable\(beforeLedger\.status\)\)/,
   );
   assert.match(
     purchaseSource,
@@ -312,6 +313,6 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
   );
   assert.match(
     inventoryActionSource,
-    /saveLedgerInventoryItems[\s\S]*status:\s*\{\s*in:\s*\["IN_PROGRESS",\s*"IN_REVIEW"\]\s*\}/,
+    /saveLedgerInventoryItems[\s\S]*status:\s*\{\s*in:\s*\[\.\.\.editableLedgerStatuses\]\s*\}/,
   );
 });

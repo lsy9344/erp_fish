@@ -44,9 +44,14 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import {
+  getLedgerEditBlockReason,
+  isLedgerReadOnly,
+} from "~/features/ledger/status-policy";
+import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
+import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-save-guard";
 import {
   type InventoryAdjustmentView,
   type InventoryStepData,
@@ -243,13 +248,12 @@ export function InventoryStepClient({
     (data.carryover.status === "manual"
       ? carryoverManualMessage
       : carryoverLoadedMessage);
-  const isOriginalEditBlocked =
-    data.status === "HEADQUARTERS_CLOSED" || data.status === "HOLIDAY";
+  const isOriginalEditBlocked = isLedgerReadOnly(data.status);
   const isClosed = isOriginalEditBlocked;
-  const originalEditBlockedMessage =
-    data.status === "HOLIDAY"
-      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+  const originalEditBlockedMessage = getLedgerEditBlockReason(
+    data.status,
+    "inventory-adjustment",
+  ).message;
   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
@@ -336,6 +340,45 @@ export function InventoryStepClient({
     }, 0);
   }
 
+  function validateInventorySaveAdjustments() {
+    const nextErrors: Record<string, string> = {};
+    let firstInvalidItem: InventoryLineState | null = null;
+
+    for (const item of items) {
+      const systemQuantity = getSystemQuantity(item);
+      const currentQuantity = parseQuantityInput(
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
+      );
+
+      if (
+        systemQuantity === null ||
+        currentQuantity === null ||
+        currentQuantity === systemQuantity ||
+        item.adjustment?.afterQuantity === currentQuantity
+      ) {
+        continue;
+      }
+
+      nextErrors[item.productId] = missingAdjustmentReasonMessage;
+      firstInvalidItem ??= item;
+    }
+
+    if (!firstInvalidItem) {
+      return true;
+    }
+
+    setAdjustmentErrors(nextErrors);
+    setFormError(missingAdjustmentReasonMessage);
+    setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
+    window.setTimeout(() => {
+      reasonRefs.current[firstInvalidItem.productId]?.focus();
+    }, 0);
+    toast.error(missingAdjustmentReasonMessage);
+
+    return false;
+  }
+
   async function saveCurrentDraft() {
     if (isClosed) {
       setResultMessage(null);
@@ -350,6 +393,10 @@ export function InventoryStepClient({
       setResultMessage(null);
       setFormError(message);
       toast.error(message);
+      return false;
+    }
+
+    if (!validateInventorySaveAdjustments()) {
       return false;
     }
 
@@ -511,6 +558,10 @@ export function InventoryStepClient({
       return;
     }
 
+    const actualQuantityInput =
+      currentQuantityRefs.current[item.productId]?.value ??
+      item.currentQuantityInput;
+
     setSavingAdjustmentProductId(item.productId);
 
     try {
@@ -521,7 +572,7 @@ export function InventoryStepClient({
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
         productId: item.productId,
-        actualQuantity: item.currentQuantityInput,
+        actualQuantity: actualQuantityInput,
         reason: hqEditReasonRequired ? hqEditReason : reason,
       });
 

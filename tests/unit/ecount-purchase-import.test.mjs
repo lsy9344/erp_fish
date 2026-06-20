@@ -203,7 +203,7 @@ async function importParser() {
   return import(pathToFileURL(modulePath).href);
 }
 
-test("parses fixed ECount purchase workbook rows for the selected store and date", async () => {
+test("parses fixed ECount purchase workbook item rows from required purchase columns", async () => {
   const { parseEcountPurchaseWorkbook } = await importParser();
   const workbook = createWorkbook([
     ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
@@ -239,22 +239,13 @@ test("parses fixed ECount purchase workbook rows for the selected store and date
     ],
     ["2026/06/17 -1", "진수산(수산물)", "바지락", 2, 35000, 70000, null, 70000],
     ["진수산(수산물) 계", null, null, 7, 147000, 284000, null, 284000],
-    [
-      "2026/06/17 -2",
-      "다른수산",
-      "고등어 [28미]",
-      3,
-      34000,
-      102000,
-      null,
-      102000,
-    ],
-    ["총합계", null, null, 10, 181000, 386000, null, 386000],
+    ["총합계", null, null, 7, 147000, 284000, null, 284000],
   ]);
 
   const result = parseEcountPurchaseWorkbook(workbook, {
-    storeName: "진수산",
+    storeName: "진수산(수산물)",
     closingDate: "2026-06-17",
+    validateLedgerScope: true,
   });
 
   assert.equal(result.sheetName, "판매현황");
@@ -322,8 +313,9 @@ test("parses shared-string ECount rows when VAT makes total differ from supply a
   ]);
 
   const result = parseEcountPurchaseWorkbook(workbook, {
-    storeName: "진수산",
+    storeName: "진수산(수산물)",
     closingDate: "2026-06-17",
+    validateLedgerScope: true,
   });
 
   assert.equal(result.matchedRowCount, 1);
@@ -333,8 +325,75 @@ test("parses shared-string ECount rows when VAT makes total differ from supply a
   assert.equal(result.purchases[0].quantity, "2");
 });
 
-test("does not merge stores that only share the same base name", async () => {
+test("imports item rows while preserving the matching source store name in references", async () => {
   const { parseEcountPurchaseWorkbook } = await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    ["2026/06/17 -1", "진수산(수산물)", "바지락", 2, 35000, 70000, null, 70000],
+  ]);
+
+  const result = parseEcountPurchaseWorkbook(workbook, {
+    storeName: "진수산(수산물)",
+    closingDate: "2026-06-17",
+    validateLedgerScope: true,
+  });
+
+  assert.equal(result.matchedRowCount, 1);
+  assert.equal(result.purchases[0].productName, "바지락");
+  assert.match(result.purchases[0].referenceInfo, /거래처 진수산\(수산물\)/);
+});
+
+test("allows ECount store names with a parenthesized business suffix", async () => {
+  const { parseEcountPurchaseWorkbook } = await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    ["2026/06/17 -1", "진수산(수산물)", "바지락", 2, 35000, 70000, null, 70000],
+    [
+      "2026/06/17 -1",
+      "진수산 （수산물）",
+      "고등어 [28미]",
+      4,
+      34000,
+      136000,
+      null,
+      136000,
+    ],
+  ]);
+
+  const result = parseEcountPurchaseWorkbook(workbook, {
+    storeName: "진수산",
+    closingDate: "2026-06-17",
+    validateLedgerScope: true,
+  });
+
+  assert.equal(result.matchedRowCount, 2);
+  assert.match(result.purchases[0].referenceInfo, /거래처 진수산\(수산물\)/);
+  assert.match(result.purchases[1].referenceInfo, /거래처 진수산 （수산물）/);
+});
+
+test("rejects ECount store names with a different branch suffix", async () => {
+  const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
+    await importParser();
   const workbook = createWorkbook([
     ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
     [
@@ -351,22 +410,189 @@ test("does not merge stores that only share the same base name", async () => {
       "2026/06/17 -1",
       "진수산(강남)",
       "고등어 [28미]",
-      3,
+      4,
       34000,
-      102000,
+      136000,
       null,
-      102000,
+      136000,
     ],
-    ["2026/06/17 -1", "진수산(수산물)", "바지락", 2, 35000, 70000, null, 70000],
+  ]);
+
+  assert.throws(
+    () =>
+      parseEcountPurchaseWorkbook(workbook, {
+        storeName: "진수산(수산물)",
+        closingDate: "2026-06-17",
+      }),
+    (error) =>
+      error instanceof EcountPurchaseImportError &&
+      error.fieldErrors["file"]?.[0] ===
+        "3행 거래처가 선택 장부의 지점과 다릅니다. 선택: 진수산(수산물), 엑셀: 진수산(강남)",
+  );
+});
+
+test("rejects ECount store names when the base store name differs", async () => {
+  const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
+    await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "다른수산(수산물)",
+      "고등어 [28미]",
+      4,
+      34000,
+      136000,
+      null,
+      136000,
+    ],
+  ]);
+
+  assert.throws(
+    () =>
+      parseEcountPurchaseWorkbook(workbook, {
+        storeName: "진수산",
+        closingDate: "2026-06-17",
+        validateLedgerScope: true,
+      }),
+    (error) =>
+      error instanceof EcountPurchaseImportError &&
+      error.fieldErrors["file"]?.[0] ===
+        "3행 거래처가 선택 장부의 지점과 다릅니다. 선택: 진수산, 엑셀: 다른수산(수산물)",
+  );
+});
+
+test("rejects ECount purchase rows when store or date does not match the selected ledger", async () => {
+  const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
+    await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "다른수산",
+      "고등어 [28미]",
+      4,
+      34000,
+      136000,
+      null,
+      136000,
+    ],
+  ]);
+
+  assert.throws(
+    () =>
+      parseEcountPurchaseWorkbook(workbook, {
+        storeName: "진수산",
+        closingDate: "2026-06-18",
+        validateLedgerScope: true,
+      }),
+    (error) =>
+      error instanceof EcountPurchaseImportError &&
+      error.message === "엑셀 지점/마감일을 확인해 주세요." &&
+      error.fieldErrors["file"]?.includes(
+        "3행 거래처가 선택 장부의 지점과 다릅니다. 선택: 진수산, 엑셀: 다른수산",
+      ) &&
+      error.fieldErrors["file"]?.includes(
+        "3행 일자가 선택 장부의 마감일과 다릅니다. 선택: 2026-06-18, 엑셀: 2026-06-17",
+      ),
+  );
+});
+
+test("rejects unmatched store and date by default", async () => {
+  const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
+    await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "다른수산",
+      "고등어 [28미]",
+      4,
+      34000,
+      136000,
+      null,
+      136000,
+    ],
+  ]);
+
+  assert.throws(
+    () =>
+      parseEcountPurchaseWorkbook(workbook, {
+        storeName: "진수산",
+        closingDate: "2026-06-18",
+      }),
+    (error) =>
+      error instanceof EcountPurchaseImportError &&
+      error.message === "엑셀 지점/마감일을 확인해 주세요.",
+  );
+});
+
+test("allows unmatched store and date only when ledger scope validation is disabled", async () => {
+  const { parseEcountPurchaseWorkbook } = await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "다른수산",
+      "고등어 [28미]",
+      4,
+      34000,
+      136000,
+      null,
+      136000,
+    ],
   ]);
 
   const result = parseEcountPurchaseWorkbook(workbook, {
-    storeName: "진수산(수산물)",
-    closingDate: "2026-06-17",
+    storeName: "",
+    closingDate: "",
+    validateLedgerScope: false,
   });
 
   assert.equal(result.matchedRowCount, 1);
-  assert.equal(result.purchases[0].productName, "바지락");
+  assert.equal(result.purchases[0].productName, "고등어");
+  assert.equal(result.purchases[0].unitPrice, "34000");
+  assert.equal(result.purchases[0].quantity, "4");
 });
 
 test("rejects ECount rows when amount does not match quantity times unit price", async () => {
@@ -401,6 +627,7 @@ test("rejects ECount rows when amount does not match quantity times unit price",
       parseEcountPurchaseWorkbook(workbook, {
         storeName: "진수산",
         closingDate: "2026-06-17",
+        validateLedgerScope: true,
       }),
     (error) =>
       error instanceof EcountPurchaseImportError &&
@@ -410,7 +637,7 @@ test("rejects ECount rows when amount does not match quantity times unit price",
   );
 });
 
-test("rejects ECount workbooks without rows for the selected ledger", async () => {
+test("rejects ECount workbooks without item rows to import", async () => {
   const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
     await importParser();
   const workbook = createWorkbook([
@@ -425,16 +652,7 @@ test("rejects ECount workbooks without rows for the selected ledger", async () =
       "부가세",
       "합계",
     ],
-    [
-      "2026/06/17 -1",
-      "다른수산",
-      "고등어 [28미]",
-      4,
-      34000,
-      136000,
-      null,
-      136000,
-    ],
+    ["총합계", null, null, 4, 34000, 136000, null, 136000],
   ]);
 
   assert.throws(
@@ -442,9 +660,10 @@ test("rejects ECount workbooks without rows for the selected ledger", async () =
       parseEcountPurchaseWorkbook(workbook, {
         storeName: "진수산",
         closingDate: "2026-06-17",
+        validateLedgerScope: true,
       }),
     (error) =>
       error instanceof EcountPurchaseImportError &&
-      error.message === "선택한 장부와 일치하는 이카운트 행이 없습니다.",
+      error.message === "가져올 이카운트 매입 행이 없습니다.",
   );
 });

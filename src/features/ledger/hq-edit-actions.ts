@@ -1,10 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
-import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import {
+  reconcileLedgerInventoryAdjustments,
+  syncLedgerInventoryPurchasedQuantitiesInTx,
+} from "~/features/inventory/adjustment-reconciliation";
 import {
   actionError,
   actionOk,
@@ -17,6 +19,11 @@ import {
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
@@ -37,6 +44,12 @@ import {
   type LedgerSalesPaymentInput,
   type LedgerWorkInfoInput,
 } from "./schemas";
+import { getStoreEcountPurchaseEditErrors } from "./purchase-edit-policy";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "./status-policy";
 import { type LedgerCostStepData } from "./types";
 
 type LedgerRecord = Prisma.DailyLedgerGetPayload<{
@@ -93,14 +106,9 @@ function parseHqLedgerInput<T>(
 }
 
 function revalidateHqLedgerPaths(ledgerId: string) {
-  revalidatePath(`/app/ledgers/${ledgerId}`);
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/store-entry/losses");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateLedgerDetailPath(ledgerId);
+  revalidateStoreEntryPaths();
+  revalidateDashboardAndReports();
 }
 
 function mapHqActionError(): ActionResult<never> {
@@ -268,25 +276,9 @@ async function hqConflictError<T = never>(
 }
 
 function notEditableError(status: LedgerRecord["status"]): ActionResult<never> {
-  if (status === "HEADQUARTERS_CLOSED") {
-    return actionError(
-      "LEDGER_CLOSED",
-      "본사 마감된 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-    );
-  }
+  const reason = getLedgerEditBlockReason(status);
 
-  if (status === "HOLIDAY") {
-    return actionError(
-      "LEDGER_NOT_EDITABLE",
-      "휴무 장부는 원본 항목으로 수정할 수 없습니다.",
-    );
-  }
-
-  return actionError("LEDGER_NOT_EDITABLE", "수정할 수 없는 장부 상태입니다.");
-}
-
-function isEditableLedgerStatus(status: LedgerRecord["status"]) {
-  return status === "IN_PROGRESS" || status === "IN_REVIEW";
+  return actionError(reason.code, reason.message);
 }
 
 function ensureTargetLedger(
@@ -297,7 +289,7 @@ function ensureTargetLedger(
     return notFoundError();
   }
 
-  if (!isEditableLedgerStatus(ledger.status)) {
+  if (!isLedgerEditable(ledger.status)) {
     return notEditableError(ledger.status);
   }
 
@@ -313,7 +305,7 @@ async function updateEditableDailyLedgerInTx(
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
-      status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+      status: { in: [...editableLedgerStatuses] },
       updatedAt: expectedUpdatedAt,
     },
     data,
@@ -573,6 +565,19 @@ export async function saveHqLedgerPurchases(
         const existingPurchaseItemsById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
         );
+        const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
+          beforeLedger.ledgerPurchaseItems,
+          parsed.data.purchases,
+        );
+
+        if (Object.keys(ecountPurchaseEditErrors).length > 0) {
+          return actionError<LedgerCostStepData>(
+            "VALIDATION_ERROR",
+            "입력값을 확인해 주세요.",
+            ecountPurchaseEditErrors,
+          );
+        }
+
         const standardIds = [
           ...new Set(
             parsed.data.purchases
@@ -764,6 +769,12 @@ export async function saveHqLedgerPurchases(
         if (purchaseRows.length > 0) {
           await tx.ledgerPurchaseItem.createMany({ data: purchaseRows });
         }
+
+        await syncLedgerInventoryPurchasedQuantitiesInTx(
+          tx,
+          beforeLedger.id,
+          actor.user.id,
+        );
 
         await reconcileLedgerInventoryAdjustments(
           tx,

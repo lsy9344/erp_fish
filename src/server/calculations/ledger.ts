@@ -94,6 +94,14 @@ export type LedgerReviewInventoryInput = {
   quantity: number | null;
   unitPrice: number;
   inventoryAmount: number | null;
+  fifoConsumedAmount?: number | null;
+  fifoRemainingAmount?: number | null;
+  fifoContainsLegacyOpening?: boolean;
+  fifoLots?: {
+    sourceType?: string;
+    consumedAmount: number;
+    remainingAmount: number;
+  }[];
 };
 
 export type LedgerReviewExpenseInput = {
@@ -241,6 +249,28 @@ function asKrwMetric(metricId: string, value: number): LedgerReviewMetric {
   return available(value);
 }
 
+function asPolicyUnconfirmedKrwMetric(
+  metricId: string,
+  value: number,
+  reason: string,
+): LedgerReviewMetric {
+  if (!isSafeKrwInteger(value)) {
+    return calculationUnavailable({
+      metricId,
+      reason: `${metricId} 계산값이 integer KRW 안전 범위를 벗어났습니다.`,
+      logReason: "unsafe-krw-integer",
+    });
+  }
+
+  return {
+    value,
+    status: "policy-unconfirmed",
+    label: CALCULATION_STATUS_LABELS["policy-unconfirmed"],
+    unavailableReason: "계산 기준 확인 필요",
+    reason,
+  };
+}
+
 function asRatioMetric(metricId: string, value: number): LedgerReviewMetric {
   if (!Number.isFinite(value)) {
     return calculationUnavailable({
@@ -251,6 +281,28 @@ function asRatioMetric(metricId: string, value: number): LedgerReviewMetric {
   }
 
   return available(value);
+}
+
+function asPolicyUnconfirmedRatioMetric(
+  metricId: string,
+  value: number,
+  reason: string,
+): LedgerReviewMetric {
+  if (!Number.isFinite(value)) {
+    return calculationUnavailable({
+      metricId,
+      reason: `${metricId} 계산값이 유효한 숫자가 아닙니다.`,
+      logReason: "invalid-number",
+    });
+  }
+
+  return {
+    value,
+    status: "policy-unconfirmed",
+    label: CALCULATION_STATUS_LABELS["policy-unconfirmed"],
+    unavailableReason: "계산 기준 확인 필요",
+    reason,
+  };
 }
 
 function asCountMetric(
@@ -301,14 +353,65 @@ function getReviewInventoryQuantity(item: LedgerReviewInventoryInput) {
   return item.currentQuantity ?? item.quantity;
 }
 
+function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
+  if (isUsableNumber(item.fifoConsumedAmount ?? null)) {
+    return item.fifoConsumedAmount!;
+  }
+
+  if (!item.fifoLots || item.fifoLots.length === 0) {
+    return null;
+  }
+
+  return item.fifoLots.reduce((sum, lot) => sum + lot.consumedAmount, 0);
+}
+
+function getFifoRemainingAmount(item: LedgerReviewInventoryInput) {
+  if (isUsableNumber(item.fifoRemainingAmount ?? null)) {
+    return item.fifoRemainingAmount!;
+  }
+
+  if (!item.fifoLots || item.fifoLots.length === 0) {
+    return null;
+  }
+
+  return item.fifoLots.reduce((sum, lot) => sum + lot.remainingAmount, 0);
+}
+
+function hasLegacyOpeningFifoLot(item: LedgerReviewInventoryInput) {
+  return (
+    item.fifoContainsLegacyOpening === true ||
+    item.fifoLots?.some((lot) => lot.sourceType === "LEGACY_OPENING") === true
+  );
+}
+
+function canUseFifoConsumedAmounts(items: LedgerReviewInventoryInput[]) {
+  return (
+    items.length > 0 &&
+    items.every((item) => isUsableNumber(getFifoConsumedAmount(item)))
+  );
+}
+
+function canUseFifoRemainingAmounts(items: LedgerReviewInventoryInput[]) {
+  return (
+    items.length > 0 &&
+    items.every((item) => isUsableNumber(getFifoRemainingAmount(item)))
+  );
+}
+
 function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
   if (items.length === 0) {
     return null;
   }
 
+  const canUseFifo = canUseFifoConsumedAmounts(items);
   let total = 0;
 
   for (const item of items) {
+    if (canUseFifo) {
+      total += getFifoConsumedAmount(item)!;
+      continue;
+    }
+
     const currentQuantity = getReviewInventoryQuantity(item);
 
     if (!isUsableNumber(currentQuantity)) {
@@ -328,9 +431,15 @@ function calculateInventoryTotal(items: LedgerReviewInventoryInput[]) {
     return null;
   }
 
+  const canUseFifo = canUseFifoRemainingAmounts(items);
   let total = 0;
 
   for (const item of items) {
+    if (canUseFifo) {
+      total += getFifoRemainingAmount(item)!;
+      continue;
+    }
+
     const quantity = getReviewInventoryQuantity(item);
     const inventoryAmount = calculateInventoryAmount(quantity, item.unitPrice);
 
@@ -427,6 +536,19 @@ export function calculateLedgerReviewSummary({
         );
   const hasSalesDifferenceContext =
     inventoryAdjustments !== undefined && lossItems !== undefined;
+  const hasLegacyFifoOpening = inventoryItems.some(
+    (item) => hasLegacyOpeningFifoLot(item),
+  );
+  const usesUnapprovedFifoCostBasis =
+    canUseFifoConsumedAmounts(inventoryItems);
+  const usesUnapprovedFifoInventoryBasis =
+    canUseFifoRemainingAmounts(inventoryItems);
+  const hasUnapprovedFifoCostBasis =
+    usesUnapprovedFifoCostBasis || hasLegacyFifoOpening;
+  const hasUnapprovedFifoInventoryBasis =
+    usesUnapprovedFifoInventoryBasis || hasLegacyFifoOpening;
+  const fifoPolicyReason =
+    "FIFO 금액은 OQ-7/OQ-17 승인 전이라 계산 기준 확인이 필요합니다.";
   const salesDifferenceResult =
     costOfGoodsSoldResult.kind === "error" && hasSalesDifferenceContext
       ? ({
@@ -475,6 +597,12 @@ export function calculateLedgerReviewSummary({
         ? costOfGoodsSoldResult.metric
         : costOfGoodsSold === null
           ? dataInsufficient(inventoryUnavailableReason)
+          : hasUnapprovedFifoCostBasis
+            ? asPolicyUnconfirmedKrwMetric(
+                "costOfGoodsSold",
+                costOfGoodsSold,
+                fifoPolicyReason,
+              )
           : asKrwMetric("costOfGoodsSold", costOfGoodsSold),
     grossProfit:
       costOfGoodsSoldResult.kind === "error"
@@ -483,6 +611,12 @@ export function calculateLedgerReviewSummary({
           )
         : grossProfit === null
           ? dataInsufficient("매출원가 계산에 필요한 재고 입력이 부족합니다.")
+          : hasUnapprovedFifoCostBasis
+            ? asPolicyUnconfirmedKrwMetric(
+                "grossProfit",
+                grossProfit,
+                fifoPolicyReason,
+              )
           : asKrwMetric("grossProfit", grossProfit),
     grossMarginRate:
       costOfGoodsSoldResult.kind === "error"
@@ -493,6 +627,12 @@ export function calculateLedgerReviewSummary({
           ? dataInsufficient(
               "총매출 또는 매출이익이 부족해 마진율을 계산할 수 없습니다.",
             )
+          : hasUnapprovedFifoCostBasis
+            ? asPolicyUnconfirmedRatioMetric(
+                "grossMarginRate",
+                grossMarginRate,
+                fifoPolicyReason,
+              )
           : asRatioMetric("grossMarginRate", grossMarginRate),
     operatingProfit:
       costOfGoodsSoldResult.kind === "error"
@@ -501,6 +641,12 @@ export function calculateLedgerReviewSummary({
           )
         : operatingProfit === null
           ? dataInsufficient("매출이익이 부족해 영업이익을 계산할 수 없습니다.")
+          : hasUnapprovedFifoCostBasis
+            ? asPolicyUnconfirmedKrwMetric(
+                "operatingProfit",
+                operatingProfit,
+                fifoPolicyReason,
+              )
           : asKrwMetric("operatingProfit", operatingProfit),
     productivity:
       productivity === null
@@ -511,6 +657,12 @@ export function calculateLedgerReviewSummary({
         ? inventoryAmountResult.metric
         : inventoryAmount === null
           ? dataInsufficient(inventoryUnavailableReason)
+          : hasUnapprovedFifoInventoryBasis
+            ? asPolicyUnconfirmedKrwMetric(
+                "inventoryAmount",
+                inventoryAmount,
+                fifoPolicyReason,
+              )
           : asKrwMetric("inventoryAmount", inventoryAmount),
     paymentDifference,
     salesDifference: !hasSalesDifferenceContext
@@ -519,6 +671,12 @@ export function calculateLedgerReviewSummary({
         ? salesDifferenceResult.metric
         : salesDifference === null
           ? dataInsufficient("매출차액 계산에 필요한 재고 입력이 부족합니다.")
+          : hasUnapprovedFifoCostBasis
+            ? asPolicyUnconfirmedKrwMetric(
+                "salesDifference",
+                salesDifference,
+                fifoPolicyReason,
+              )
           : asKrwMetric("salesDifference", salesDifference),
   };
 }
@@ -752,6 +910,10 @@ function applyInventoryCorrection(
 
       item.currentQuantity = value;
       item.quantity = value;
+      item.fifoConsumedAmount = null;
+      item.fifoRemainingAmount = null;
+      item.fifoContainsLegacyOpening = false;
+      item.fifoLots = undefined;
       return "applied";
     }
     default:

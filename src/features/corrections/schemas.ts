@@ -6,6 +6,7 @@ const correctionTargetTypes = [
   "LEDGER_FIELD",
   "PAYMENT_FIELD",
   "EXPENSE_ROW",
+  // Kept for existing Prisma enum/records; creation is blocked below until report overlay support exists.
   "PURCHASE_ROW",
   "INVENTORY_ROW",
   "LOSS_ROW",
@@ -13,6 +14,10 @@ const correctionTargetTypes = [
 ] as const;
 
 const correctionValueKinds = ["money", "quantity", "text", "metric"] as const;
+const unsupportedPurchaseRowCorrectionMessage =
+  "매입 행 정정은 아직 지원하지 않습니다. 리포트 반영 경로가 준비된 뒤 사용해 주세요.";
+const unsupportedInventoryAmountCorrectionMessage =
+  "재고 금액 정정은 아직 지원하지 않습니다. 수량 정정으로 반영해 주세요.";
 
 function parseNumericCorrectionValue(value: unknown) {
   if (
@@ -125,28 +130,49 @@ export const correctionValueSchema = z
     };
   });
 
-export const correctionRecordSchema = z.object({
-  ledgerId: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(z.string().min(1, "장부를 확인해 주세요.")),
-  targetType: z.enum(correctionTargetTypes, {
-    errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
-  }),
-  targetId: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(z.string().min(1, "정정 대상을 확인해 주세요.")),
-  fieldKey: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(z.string().min(1, "정정 항목을 확인해 주세요.")),
-  correctedValue: correctionValueSchema,
-  reason: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(z.string().min(1, "정정 사유를 입력해 주세요.").max(500)),
-});
+export const correctionRecordSchema = z
+  .object({
+    ledgerId: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "장부를 확인해 주세요.")),
+    targetType: z.enum(correctionTargetTypes, {
+      errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
+    }),
+    targetId: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "정정 대상을 확인해 주세요.")),
+    fieldKey: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "정정 항목을 확인해 주세요.")),
+    correctedValue: correctionValueSchema,
+    reason: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "정정 사유를 입력해 주세요.").max(500)),
+  })
+  .superRefine((value, context) => {
+    if (value.targetType === "PURCHASE_ROW") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: unsupportedPurchaseRowCorrectionMessage,
+        path: ["targetType"],
+      });
+    }
+
+    if (
+      value.targetType === "INVENTORY_ROW" &&
+      value.fieldKey === "inventoryAmount"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: unsupportedInventoryAmountCorrectionMessage,
+        path: ["fieldKey"],
+      });
+    }
+  });
 
 export type CorrectionRecordInput = z.infer<typeof correctionRecordSchema>;
 

@@ -108,6 +108,13 @@ export const hqLedgerClosePreflightLedgerSelect = {
       quantity: true,
       unitPrice: true,
       inventoryAmount: true,
+      fifoLots: {
+        select: {
+          sourceType: true,
+          consumedAmount: true,
+          remainingAmount: true,
+        },
+      },
       carryoverSource: true,
       carryoverStatus: true,
       carryoverLedgerId: true,
@@ -247,11 +254,11 @@ function buildHqLedgerClosePreflightItems(
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
-    totalSalesAmount: ledger.totalSalesAmount,
+    totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
     paymentTotal: calculatePaymentTotal(
-      ledger.cashAmount,
-      ledger.cardAmount,
-      ledger.otherPaymentAmount,
+      correctionOverlay.reviewInput.cashAmount,
+      correctionOverlay.reviewInput.cardAmount,
+      correctionOverlay.reviewInput.otherPaymentAmount,
     ),
     expenseCount: ledger.ledgerExpenses.length,
     purchaseCount: ledger._count.ledgerPurchaseItems,
@@ -260,7 +267,7 @@ function buildHqLedgerClosePreflightItems(
     ),
     inventoryCount: correctionOverlay.reviewInput.inventoryItems.length,
     lossCount: correctionOverlay.lossItems.length,
-    workerCount: ledger.workerCount,
+    workerCount: correctionOverlay.reviewInput.workerCount,
   });
 
   items.push(

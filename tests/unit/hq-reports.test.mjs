@@ -82,6 +82,18 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /getLatestReflectedAt/);
   assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
   assert.match(querySource, /calculateLedgerReviewSummary/);
+  assert.match(
+    querySource,
+    /const\s+purchaseCorrectionMatchers\s*=\s*\[[\s\S]*fieldKey:\s*"unitPrice"[\s\S]*fieldKey:\s*"quantity"[\s\S]*fieldKey:\s*"amount"[\s\S]*fieldKey:\s*"productName"[\s\S]*fieldKey:\s*"referenceInfo"[\s\S]*\]/,
+  );
+  assert.match(
+    querySource,
+    /const\s+grossMarginRateCorrections\s*=\s*getMetricCorrectionState\(correctionState,\s*\[[\s\S]*\.\.\.purchaseCorrectionMatchers[\s\S]*\]\)/,
+  );
+  assert.match(
+    querySource,
+    /const\s+salesDifferenceCorrections\s*=\s*getMetricCorrectionState\(correctionState,\s*\[[\s\S]*\.\.\.purchaseCorrectionMatchers[\s\S]*\]\)/,
+  );
   assert.match(querySource, /evaluateRevenueAnomalySignals/);
   assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
   assert.match(querySource, /correction-review-required/);
@@ -130,7 +142,7 @@ test("correction creation revalidates daily reports after correction values chan
     "actions.ts",
   );
 
-  assert.match(actionSource, /revalidatePath\("\/app\/reports\/daily"\)/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
 });
 
 test("HQ store comparison report source files follow story 6.2 boundaries", () => {
@@ -251,7 +263,7 @@ test("HQ store comparison report query reuses report calculation contracts", () 
     querySource,
     /selectedStoreId:\s*matchedStore\?\.id\s*\?\?\s*normalizedStoreId/,
   );
-  assert.match(actionSource, /revalidatePath\("\/app\/reports\/comparison"\)/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
 });
 
 test("ledger and master data writes revalidate store comparison reports", () => {
@@ -270,7 +282,7 @@ test("ledger and master data writes revalidate store comparison reports", () => 
   for (const segments of files) {
     assert.match(
       readProjectFile(...segments),
-      /revalidatePath\("\/app\/reports\/comparison"\)/,
+      /revalidateDashboardAndReports\(\)|revalidateMasterDataPaths\("(stores|anomaly-thresholds)"\)/,
       `${segments.join("/")} should revalidate store comparison reports`,
     );
   }
@@ -456,7 +468,7 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   for (const segments of revalidationFiles) {
     assert.match(
       readProjectFile(...segments),
-      /revalidatePath\("\/app\/reports\/monthly"\)/,
+      /revalidateDashboardAndReports\(\)|revalidateMasterDataPaths\("(stores|anomaly-thresholds)"\)/,
       `${segments.join("/")} should revalidate monthly reports`,
     );
   }
@@ -478,7 +490,7 @@ test("ledger and master data writes revalidate daily reports", () => {
   for (const segments of files) {
     assert.match(
       readProjectFile(...segments),
-      /revalidatePath\("\/app\/reports\/daily"\)/,
+      /revalidateDashboardAndReports\(\)|revalidateMasterDataPaths\("(stores|anomaly-thresholds)"\)/,
       `${segments.join("/")} should revalidate daily reports`,
     );
   }
@@ -1106,6 +1118,102 @@ test("HQ monthly closing anomaly report keeps zero amount losses visible", async
   assert.equal(report.monthlyLossSummary.totalQuantity, 3);
   assert.equal(report.monthlyLossSummary.totalAmount, 0);
   assert.equal(report.monthlyLossSummary.hasRecordedLoss, true);
+});
+
+test("HQ monthly closing anomaly report marks purchase flow when purchase row correction needs review", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const metric = {
+    label: "매출",
+    kind: "money",
+    original: { value: 1000, kind: "money" },
+    applied: { value: 1000, kind: "money" },
+    isCorrected: false,
+    status: "original",
+    statusLabel: "원본",
+    unavailableReason: null,
+    ledgerDetailHref: "/app/ledgers/ledger-purchase-review",
+    correctionTimelineHref: null,
+  };
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-purchase-review",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {
+          salesAmount: metric,
+          grossMarginRate: metric,
+          salesDifference: metric,
+          loss: metric,
+        },
+        hasUnappliedCorrections: true,
+        original: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 500 },
+          grossMarginRate: { value: 0.5 },
+          operatingProfit: { value: 500 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: 1000 },
+        },
+        applied: {
+          totalSales: { value: 1000 },
+          grossProfit: { value: 500 },
+          grossMarginRate: { value: 0.5 },
+          operatingProfit: { value: 500 },
+          productivity: { value: 1000 },
+          inventoryAmount: { value: 1000 },
+        },
+        workerCount: 1,
+        lossItems: [],
+        inventoryItems: [
+          {
+            id: "inventory-1",
+            productId: "product-1",
+            productName: "광어",
+            previousQuantity: 10,
+            purchasedQuantity: 5,
+            currentQuantity: 8,
+            quantity: 8,
+            unitPrice: 1000,
+            inventoryAmount: 8000,
+          },
+        ],
+        inventoryAdjustments: [],
+        appliedCorrectionKeys: new Set(),
+        unappliedCorrectionKeys: new Set([
+          "ledger-purchase-review:PURCHASE_ROW:purchase-1:quantity",
+        ]),
+      },
+    ],
+  });
+
+  assert.equal(report.monthlyInventoryFlow.purchaseAmount.value, 5000);
+  assert.equal(
+    report.monthlyInventoryFlow.metricEvidence.purchaseAmount.status,
+    "needs-review",
+  );
+  assert.equal(
+    report.monthlyInventoryFlow.metricEvidence.purchaseAmount.statusLabel,
+    "정정 확인 필요",
+  );
+  assert.equal(
+    report.monthlyInventoryFlow.metricEvidence.purchaseAmount
+      .correctionTimelineHref,
+    "/app/ledgers/ledger-purchase-review#correction-timeline",
+  );
 });
 
 test("HQ monthly closing anomaly report marks inventory flow unavailable instead of zeroing invalid quantities", async () => {
@@ -2028,6 +2136,10 @@ test("HQ report export route follows story 6.4 server-side guardrails", () => {
   assert.match(routeSource, /targetType:\s*"ReportExport"/);
   assert.match(routeSource, /action:\s*"report\.export\.created"/);
   assert.match(routeSource, /Cache-Control["']?\s*:\s*"no-store"/);
+  assert.match(
+    routeSource,
+    /NextResponse\.json\([\s\S]*status:\s*400[\s\S]*headers:\s*\{[\s\S]*"Cache-Control":\s*"no-store"[\s\S]*\}/,
+  );
   assert.match(routeSource, /Content-Disposition/);
   assert.match(routeSource, /text\/csv;\s*charset=utf-8/);
   assert.match(routeSource, /status:\s*403/);
@@ -2071,13 +2183,14 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
   } = await import(pathToFileURL(exportPath).href);
   const metric = ({
     label,
+    kind = "money",
     value,
     originalValue = value,
     statusLabel = "원본",
     unavailableReason = null,
   }) => ({
     label,
-    kind: "money",
+    kind,
     original: { value: originalValue },
     applied: { value, unavailableReason },
     isCorrected: statusLabel === "정정 반영",
@@ -2117,9 +2230,10 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
           }),
           grossMarginRate: metric({
             label: "이익률",
-            value: null,
-            statusLabel: "계산 기준 확인 필요",
-            unavailableReason: "계산 기준 확인 필요",
+            kind: "percent",
+            value: 0.25,
+            originalValue: 0.2,
+            statusLabel: "정정 반영",
           }),
           salesDifference: metric({ label: "매출 차이", value: 0 }),
           loss: metric({ label: "손실", value: 0, statusLabel: "0" }),
@@ -2139,7 +2253,8 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
   assert.equal(csv.charCodeAt(0), 0xfeff);
   assert.match(csv, /"'=강남 ""본점"""/);
   assert.match(csv, /정정 반영/);
-  assert.match(csv, /기준 확인 필요/);
+  assert.match(csv, /25%/);
+  assert.doesNotMatch(csv, /0\.25/);
   assert.doesNotMatch(csv, /300000/);
   assert.deepEqual(exportData.scopedStoreIds, ["store-1"]);
   assert.ok(exportData.columns.every((column) => column.key !== "lot"));

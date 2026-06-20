@@ -1,16 +1,18 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireStoreAccess } from "~/server/authz";
+import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import {
   calculateInventoryAdjustment,
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import {
+  revalidateDashboardAndReports,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import {
   ledgerInventoryAdjustmentSchema,
   ledgerInventoryStoreAccessSchema,
@@ -21,6 +23,7 @@ import {
   type LedgerInventoryStoreAccessInput,
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import { getInventorySaveAdjustmentErrors } from "./adjustment-save-guard";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -35,6 +38,11 @@ import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "~/features/ledger/status-policy";
 
 function parseLedgerInventoryInput(
   input: unknown,
@@ -100,18 +108,10 @@ class OriginalInventoryBlockedError extends Error {
   }
 }
 
-function originalInventoryBlockedError(
-  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
-) {
-  const message =
-    status === "HOLIDAY"
-      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+function originalInventoryBlockedError(status: string) {
+  const reason = getLedgerEditBlockReason(status, "inventory-adjustment");
 
-  return new OriginalInventoryBlockedError(
-    status === "HEADQUARTERS_CLOSED" ? "LEDGER_CLOSED" : "LEDGER_NOT_EDITABLE",
-    message,
-  );
+  return new OriginalInventoryBlockedError(reason.code, reason.message);
 }
 
 function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
@@ -175,15 +175,10 @@ async function mapLedgerConflictError(
   });
 }
 
-function originalAdjustmentBlockedError(
-  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
-): ActionResult<never> {
-  const message =
-    status === "HOLIDAY"
-      ? "휴무 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-      : "본사 마감된 장부는 원본 재고 조정으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+function originalAdjustmentBlockedError(status: string): ActionResult<never> {
+  const reason = getLedgerEditBlockReason(status, "inventory-adjustment");
 
-  return actionError("LEDGER_CLOSED", message);
+  return actionError(reason.code, reason.message);
 }
 
 function inventoryBasisUnavailableError<T>(): ActionResult<T> {
@@ -199,11 +194,8 @@ function inventoryBasisUnavailableError<T>(): ActionResult<T> {
 }
 
 function revalidateInventoryPaths() {
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateStoreEntryPaths(["inventory"]);
+  revalidateDashboardAndReports();
 }
 
 export async function saveLedgerInventoryItems(
@@ -215,7 +207,7 @@ export async function saveLedgerInventoryItems(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerInventoryInput(input);
 
@@ -239,17 +231,36 @@ export async function saveLedgerInventoryItems(
         throw new Error("LEDGER_CONFLICT");
       }
 
-      if (
-        before.status === "HEADQUARTERS_CLOSED" ||
-        before.status === "HOLIDAY"
-      ) {
+      if (!isLedgerEditable(before.status)) {
         throw originalInventoryBlockedError(before.status);
       }
 
-      if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
-        throw new OriginalInventoryBlockedError(
-          "LEDGER_NOT_EDITABLE",
-          "수정할 수 없는 장부 상태입니다.",
+      const inputByProductId = new Map(
+        parsed.data.items.map((item) => [item.productId, item]),
+      );
+      const adjustmentErrors = getInventorySaveAdjustmentErrors(
+        before.items.map((item) => ({
+          productId: item.productId,
+          previousQuantity: item.previousQuantity,
+          purchasedQuantity: item.purchasedQuantity,
+          lossQuantity: item.lossQuantity,
+          currentQuantity:
+            inputByProductId.get(item.productId)?.currentQuantity ??
+            item.currentQuantity,
+        })),
+        before.items
+          .filter((item) => item.adjustment !== null)
+          .map((item) => ({
+            productId: item.productId,
+            afterQuantity: item.adjustment!.afterQuantity,
+          })),
+      );
+
+      if (Object.keys(adjustmentErrors).length > 0) {
+        return actionError<StoreManagerInventoryStepData>(
+          "VALIDATION_ERROR",
+          "재고 차이 조정 사유를 먼저 저장해 주세요.",
+          adjustmentErrors,
         );
       }
 
@@ -257,7 +268,7 @@ export async function saveLedgerInventoryItems(
         where: {
           id: before.id,
           version: parsed.data.version,
-          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+          status: { in: [...editableLedgerStatuses] },
         },
         data: { updatedById: actor.user.id, version: { increment: 1 } },
       });
@@ -265,10 +276,6 @@ export async function saveLedgerInventoryItems(
       if (editableLedger.count !== 1) {
         throw new Error("LEDGER_CONFLICT");
       }
-
-      const inputByProductId = new Map(
-        parsed.data.items.map((item) => [item.productId, item]),
-      );
 
       await tx.ledgerInventoryItem.deleteMany({
         where: { dailyLedgerId: before.id },
@@ -339,6 +346,10 @@ export async function saveLedgerInventoryItems(
       return after;
     });
 
+    if ("ok" in result) {
+      return result;
+    }
+
     revalidateInventoryPaths();
 
     return actionOk(toStoreManagerInventoryStepData(result));
@@ -364,7 +375,7 @@ export async function saveLedgerInventoryAdjustment(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerInventoryAdjustmentInput(input);
 
@@ -399,18 +410,8 @@ export async function saveLedgerInventoryAdjustment(
         });
       }
 
-      if (
-        before.status === "HEADQUARTERS_CLOSED" ||
-        before.status === "HOLIDAY"
-      ) {
+      if (!isLedgerEditable(before.status)) {
         return originalAdjustmentBlockedError(before.status);
-      }
-
-      if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
-        return actionError<StoreManagerInventoryStepData>(
-          "LEDGER_NOT_EDITABLE",
-          "저장에 실패했습니다. 다시 시도해 주세요.",
-        );
       }
 
       const line = before.items.find(
@@ -466,7 +467,7 @@ export async function saveLedgerInventoryAdjustment(
         where: {
           id: before.id,
           version: parsed.data.version,
-          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+          status: { in: [...editableLedgerStatuses] },
         },
         data: { updatedById: actor.user.id, version: { increment: 1 } },
       });

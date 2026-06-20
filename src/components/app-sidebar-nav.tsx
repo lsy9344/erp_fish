@@ -64,7 +64,10 @@ export function AppSidebarNav({ navigationItems }: AppSidebarNavProps) {
                       "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground shadow-sm",
                   )}
                 >
-                  <Link href={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={isActive ? "page" : undefined}
+                  >
                     <Icon />
                     <span>{item.label}</span>
                   </Link>

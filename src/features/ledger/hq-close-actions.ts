@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { DailyLedgerStatus, Prisma } from "../../../generated/prisma";
@@ -12,6 +11,11 @@ import {
 } from "~/server/authz";
 import { db } from "~/server/db";
 import {
+  revalidateBestEffort,
+  revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
+} from "~/server/revalidation";
+import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "./conflicts";
@@ -20,8 +24,10 @@ import {
   type HqLedgerClosePreflightResult,
 } from "./hq-close-preflight";
 import { ledgerSelect, toLedgerAuditPayload } from "./queries";
-
-const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+} from "./status-policy";
 
 const closeLedgerInputSchema = z.object({
   ledgerId: z
@@ -76,19 +82,12 @@ function parseClosePreflightInput(
 }
 
 function revalidateHqLedgerPaths(ledgerId: string) {
-  revalidatePath(`/app/ledgers/${ledgerId}`);
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateLedgerDetailPath(ledgerId);
+  revalidateDashboardAndReports();
 }
 
 function revalidateHqLedgerPathsBestEffort(ledgerId: string) {
-  try {
-    revalidateHqLedgerPaths(ledgerId);
-  } catch {
-    // The ledger is already committed; do not report a false close failure.
-  }
+  revalidateBestEffort(() => revalidateHqLedgerPaths(ledgerId));
 }
 
 function mapCloseActionError(): ActionResult<never> {
@@ -103,10 +102,9 @@ function notFoundError(): ActionResult<never> {
 }
 
 function notEditableError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_NOT_EDITABLE",
-    "휴무 장부는 본사 마감할 수 없습니다.",
-  );
+  const reason = getLedgerEditBlockReason("HOLIDAY", "hq-close");
+
+  return actionError(reason.code, reason.message);
 }
 
 function alreadyClosedError(): ActionResult<never> {

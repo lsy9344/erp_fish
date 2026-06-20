@@ -146,15 +146,40 @@ async function assignPermissionProfile(
   });
 }
 
+async function truncateE2eDatabase(prisma: PrismaClient) {
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename <> '_prisma_migrations'
+  `;
+
+  if (tables.length === 0) {
+    return;
+  }
+
+  const tableList = tables
+    .map(({ tablename }) => `"public"."${tablename.replaceAll('"', '""')}"`)
+    .join(", ");
+
+  await prisma.$executeRawUnsafe(
+    `TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`,
+  );
+}
+
 export default async function globalSetup() {
   process.env.DATABASE_URL = requireTestDatabaseUrl(databaseUrl);
 
-  execSync("corepack pnpm exec prisma db push --skip-generate", {
-    env: process.env,
-    stdio: "inherit",
-  });
+  execSync(
+    "corepack pnpm exec prisma db push --skip-generate --accept-data-loss",
+    {
+      env: process.env,
+      stdio: "inherit",
+    },
+  );
 
   const prisma = new PrismaClient();
+  await truncateE2eDatabase(prisma);
   const passwordHash = await hashPassword("correct-password");
   const permissionProfiles = await upsertPermissionProfiles(prisma);
 

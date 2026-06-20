@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { PermissionAction, Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import {
@@ -11,6 +9,7 @@ import {
 } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   storeFormSchema,
   storeStatusSchema,
@@ -32,11 +31,7 @@ const storeSelect = {
 } as const;
 
 function revalidateStorePaths() {
-  revalidatePath("/app/master-data/stores");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateMasterDataPaths("stores");
 }
 
 function parseStoreInput(input: unknown): ActionResult<StoreFormInput> {

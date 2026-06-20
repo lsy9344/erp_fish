@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { Prisma } from "../../../generated/prisma";
 import {
   actionError,
@@ -9,10 +7,17 @@ import {
   type ActionConflictValue,
   type ActionResult,
 } from "~/lib/action-result";
-import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import {
+  reconcileLedgerInventoryAdjustments,
+  syncLedgerInventoryPurchasedQuantitiesInTx,
+} from "~/features/inventory/adjustment-reconciliation";
 import { writeAuditLog } from "~/server/audit";
-import { requireStoreAccess } from "~/server/authz";
+import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import {
+  revalidateDashboardAndReports,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
@@ -27,6 +32,11 @@ import {
   toStoreManagerLedgerCostStepData,
 } from "./queries";
 import { getStoreEcountPurchaseEditErrors } from "./purchase-edit-policy";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "./status-policy";
 import {
   ledgerSalesPaymentSchema,
   ledgerExpenseSchema,
@@ -55,26 +65,14 @@ function isPrismaUniqueError(error: unknown) {
   );
 }
 
-const ledgerSalesPath = "/app/store-entry";
-const dashboardPath = "/app/dashboard";
-const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
-
 function revalidateLedgerSalesPaths() {
-  revalidatePath(ledgerSalesPath);
-  revalidatePath(dashboardPath);
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateStoreEntryPaths(["root"]);
+  revalidateDashboardAndReports();
 }
 
 function revalidateLedgerSubmitPaths() {
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/store-entry/losses");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateStoreEntryPaths();
+  revalidateDashboardAndReports();
 }
 
 function parseLedgerSalesInput(
@@ -190,24 +188,9 @@ class OriginalLedgerBlockedError extends Error {
 }
 
 function originalLedgerBlockedError(status: string) {
-  if (status === "HEADQUARTERS_CLOSED") {
-    return new OriginalLedgerBlockedError(
-      "LEDGER_CLOSED",
-      "본사 마감된 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-    );
-  }
+  const reason = getLedgerEditBlockReason(status);
 
-  if (status === "HOLIDAY") {
-    return new OriginalLedgerBlockedError(
-      "LEDGER_NOT_EDITABLE",
-      "휴무 장부는 원본 항목으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.",
-    );
-  }
-
-  return new OriginalLedgerBlockedError(
-    "LEDGER_NOT_EDITABLE",
-    "수정할 수 없는 장부 상태입니다.",
-  );
+  return new OriginalLedgerBlockedError(reason.code, reason.message);
 }
 
 type LedgerConflictSection = Parameters<
@@ -348,12 +331,6 @@ function ledgerPurchaseValidationError(
   return new LedgerPurchaseValidationError({
     [`purchases.${index}.${field}`]: [message],
   });
-}
-
-function isEditableLedgerStatus(status: string) {
-  return editableLedgerStatuses.some(
-    (editableStatus) => editableStatus === status,
-  );
 }
 
 async function validateActiveExpenseCodesInTx(
@@ -513,7 +490,7 @@ export async function submitLedgerForReview(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerSubmitInput(input);
 
@@ -555,25 +532,13 @@ export async function submitLedgerForReview(
           );
         }
 
-        if (beforeLedger.status === "HEADQUARTERS_CLOSED") {
-          return actionError(
-            "LEDGER_CLOSED",
-            "본사 마감된 장부는 검토 대기로 제출할 수 없습니다.",
-          );
-        }
-
-        if (beforeLedger.status === "HOLIDAY") {
-          return actionError(
-            "LEDGER_NOT_EDITABLE",
-            "휴무 장부는 검토 대기로 제출할 수 없습니다.",
-          );
-        }
-
         if (beforeLedger.status !== "IN_PROGRESS") {
-          return actionError(
-            "LEDGER_NOT_EDITABLE",
-            "제출할 수 없는 장부 상태입니다.",
+          const reason = getLedgerEditBlockReason(
+            beforeLedger.status,
+            "submit-review",
           );
+
+          return actionError(reason.code, reason.message);
         }
 
         const validation = await validateLedgerSubmitRequirementsInTx(
@@ -674,7 +639,7 @@ export async function saveLedgerSalesPayment(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerSalesInput(input);
 
@@ -695,7 +660,7 @@ export async function saveLedgerSalesPayment(
         throw new Error("LEDGER_CONFLICT");
       }
 
-      if (!isEditableLedgerStatus(beforeLedger.status)) {
+      if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
@@ -764,7 +729,7 @@ export async function saveLedgerExpenses(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerExpenseInput(input);
 
@@ -787,7 +752,7 @@ export async function saveLedgerExpenses(
         throw new Error("LEDGER_CONFLICT");
       }
 
-      if (!isEditableLedgerStatus(beforeLedger.status)) {
+      if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
@@ -870,7 +835,7 @@ export async function saveLedgerPurchases(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerPurchaseInput(input);
 
@@ -891,7 +856,7 @@ export async function saveLedgerPurchases(
         throw new Error("LEDGER_CONFLICT");
       }
 
-      if (!isEditableLedgerStatus(beforeLedger.status)) {
+      if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
@@ -1091,6 +1056,12 @@ export async function saveLedgerPurchases(
         });
       }
 
+      await syncLedgerInventoryPurchasedQuantitiesInTx(
+        tx,
+        beforeLedger.id,
+        actor.user.id,
+      );
+
       await reconcileLedgerInventoryAdjustments(
         tx,
         beforeLedger.id,
@@ -1147,7 +1118,7 @@ export async function saveLedgerWorkInfo(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerWorkInfoInput(input);
 
@@ -1168,7 +1139,7 @@ export async function saveLedgerWorkInfo(
         throw new Error("LEDGER_CONFLICT");
       }
 
-      if (!isEditableLedgerStatus(beforeLedger.status)) {
+      if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 

@@ -58,6 +58,44 @@ function aggregateLossQuantity(
   return quantities;
 }
 
+export async function syncLedgerInventoryPurchasedQuantitiesInTx(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+  actorId: string,
+) {
+  const [items, purchases] = await Promise.all([
+    tx.ledgerInventoryItem.findMany({
+      where: { dailyLedgerId },
+      select: { id: true, productId: true, purchasedQuantity: true },
+    }),
+    tx.ledgerPurchaseItem.findMany({
+      where: { dailyLedgerId, productId: { not: null } },
+      select: { productId: true, quantity: true },
+    }),
+  ]);
+  const purchasedQuantityByProductId = aggregatePurchasedQuantity(purchases);
+  const updates = items.flatMap((item) => {
+    const purchasedQuantity =
+      purchasedQuantityByProductId.get(item.productId) ?? 0;
+
+    if (item.purchasedQuantity === purchasedQuantity) {
+      return [];
+    }
+
+    return [
+      tx.ledgerInventoryItem.update({
+        where: { id: item.id },
+        data: {
+          purchasedQuantity,
+          updatedById: actorId,
+        },
+      }),
+    ];
+  });
+
+  await Promise.all(updates);
+}
+
 export async function reconcileLedgerInventoryAdjustments(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,

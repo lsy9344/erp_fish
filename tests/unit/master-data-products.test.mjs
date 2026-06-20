@@ -304,16 +304,7 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
   assert.match(productActions, /after:\s*toProductAuditValue\(updated\)/);
   assert.match(productActions, /ActionResult/);
   assert.match(productActions, /DUPLICATE_PRODUCT/);
-  assert.match(
-    productActions,
-    /revalidatePath\("\/app\/master-data\/products"\)/,
-  );
-  assert.match(
-    productActions,
-    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
-  );
-  assert.match(productActions, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(productActions, /revalidatePath\("\/app\/store-entry"\)/);
+  assert.match(productActions, /revalidateMasterDataPaths\("products"\)/);
   assert.doesNotMatch(
     productActions,
     /export\s+async\s+function\s+deleteProduct/,
@@ -350,10 +341,8 @@ test("product and purchase standard actions enforce auth, audit, transactions, a
   assert.match(standardActions, /product\.isActive/);
   assert.match(
     standardActions,
-    /revalidatePath\("\/app\/master-data\/purchase-standards"\)/,
+    /revalidateMasterDataPaths\("purchase-standards"\)/,
   );
-  assert.match(standardActions, /revalidatePath\("\/app\/dashboard"\)/);
-  assert.match(standardActions, /revalidatePath\("\/app\/store-entry"\)/);
   assert.doesNotMatch(
     standardActions,
     /export\s+async\s+function\s+deletePurchaseStandard/,

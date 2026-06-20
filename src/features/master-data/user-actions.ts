@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import {
   PermissionAction,
   Prisma,
@@ -16,6 +14,7 @@ import {
 import { requireUserPermissionAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { hashPassword } from "~/server/password";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   createUserAccountSchema,
   toUserFieldErrors,
@@ -54,10 +53,7 @@ const userSelect = {
 } as const;
 
 function revalidateUserPaths() {
-  revalidatePath("/app/master-data/users");
-  revalidatePath("/app/master-data/stores");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
+  revalidateMasterDataPaths("users");
 }
 
 function parseCreateUserInput(

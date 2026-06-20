@@ -66,6 +66,10 @@ test("HQ shell and sidebar preserve menu labels while adding mockup active navig
   assert.match(sidebarNavSource, /^"use client";/);
   assert.match(sidebarNavSource, /usePathname/);
   assert.match(sidebarNavSource, /isActive=/);
+  assert.match(
+    sidebarNavSource,
+    /aria-current=\{isActive \? "page" : undefined\}/,
+  );
   assert.match(sidebarNavSource, /bg-primary/);
   assert.match(shellSource, /max-w-\[1600px\]/);
   assert.match(shellSource, /min-w-0/);
@@ -121,4 +125,27 @@ test("inventory entry follows the mobile mockup table and sticky action cues", (
   assert.match(source, /bg-primary\/5/);
   assert.match(source, /border-primary/);
   assert.match(source, /sticky top-0/);
+});
+
+test("store manager navigation exposes active state and aria-current", () => {
+  const shellSource = readProjectFile(
+    "src",
+    "components",
+    "store-manager-shell.tsx",
+  );
+  const navigationSource = readProjectFile(
+    "src",
+    "components",
+    "store-manager-navigation.tsx",
+  );
+
+  assert.match(shellSource, /StoreManagerNavigation/);
+  assert.match(navigationSource, /^"use client";/);
+  assert.match(navigationSource, /usePathname/);
+  assert.match(
+    navigationSource,
+    /aria-current=\{isActive \? "page" : undefined\}/,
+  );
+  assert.match(navigationSource, /data-active=\{isActive/);
+  assert.match(navigationSource, /bg-primary\/10/);
 });

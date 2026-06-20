@@ -45,6 +45,13 @@ const reviewInventoryItemSelect = {
   quantity: true,
   unitPrice: true,
   inventoryAmount: true,
+  fifoLots: {
+    select: {
+      sourceType: true,
+      consumedAmount: true,
+      remainingAmount: true,
+    },
+  },
 } as const;
 
 function getWarnings(
@@ -407,6 +414,7 @@ export async function getLedgerReviewStepData(
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         inventoryAmount: item.inventoryAmount,
+        fifoLots: item.fifoLots,
       })),
       inventoryAdjustments: inventory.items
         .map((item) => item.adjustment)

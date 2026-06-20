@@ -1,12 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import type { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import { requireSettingsAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
   purchaseStandardFormSchema,
   purchaseStandardStatusSchema,
@@ -53,10 +52,7 @@ const purchaseStandardSelect = {
 } as const;
 
 function revalidatePurchaseStandardPaths() {
-  revalidatePath("/app/master-data/purchase-standards");
-  revalidatePath("/app/master-data/products");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/store-entry");
+  revalidateMasterDataPaths("purchase-standards");
 }
 
 function parsePurchaseStandardInput(
@@ -101,6 +97,16 @@ function inactiveProductActivationError<T>(): ActionResult<T> {
   return actionError(
     "INACTIVE_PRODUCT_STANDARD_ACTIVATION",
     "비활성 품목의 매입 기준은 활성화할 수 없습니다.",
+  );
+}
+
+function duplicatePurchaseStandardError<T>(): ActionResult<T> {
+  return actionError(
+    "DUPLICATE_PURCHASE_STANDARD",
+    "이미 매입 기준이 등록된 품목입니다.",
+    {
+      productId: ["이미 매입 기준이 등록된 품목입니다."],
+    },
   );
 }
 
@@ -188,6 +194,15 @@ export async function createPurchaseStandard(
       return { status: "invalid-product" as const };
     }
 
+    const existingStandard = await tx.purchaseStandard.findUnique({
+      where: { productId: parsed.data.productId },
+      select: { id: true },
+    });
+
+    if (existingStandard) {
+      return { status: "duplicate" as const };
+    }
+
     const created = await tx.purchaseStandard.create({
       data: {
         productId: parsed.data.productId,
@@ -216,6 +231,10 @@ export async function createPurchaseStandard(
 
   if (result.status === "invalid-product") {
     return invalidProductError();
+  }
+
+  if (result.status === "duplicate") {
+    return duplicatePurchaseStandardError();
   }
 
   revalidatePurchaseStandardPaths();
@@ -260,6 +279,17 @@ export async function updatePurchaseStandard(
       return { status: "invalid-product" as const };
     }
 
+    if (existing.productId !== parsed.data.productId) {
+      const duplicateStandard = await tx.purchaseStandard.findUnique({
+        where: { productId: parsed.data.productId },
+        select: { id: true },
+      });
+
+      if (duplicateStandard) {
+        return { status: "duplicate" as const };
+      }
+    }
+
     const updated = await tx.purchaseStandard.update({
       where: { id: purchaseStandardId },
       data: {
@@ -292,6 +322,10 @@ export async function updatePurchaseStandard(
 
   if (result.status === "invalid-product") {
     return invalidProductError();
+  }
+
+  if (result.status === "duplicate") {
+    return duplicatePurchaseStandardError();
   }
 
   if (result.status === "updated") {

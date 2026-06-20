@@ -197,11 +197,14 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   const normalizedAuthor = ledgerSalesPaymentSchema.parse(basePayload);
   assert.equal(normalizedAuthor.authorDisplayName, "김지점장");
 
-  const blankAuthor = ledgerSalesPaymentSchema.parse({
+  const blankAuthor = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,
     authorDisplayName: "   ",
   });
-  assert.equal(blankAuthor.authorDisplayName, null);
+  assert.equal(blankAuthor.success, false);
+  assert.deepEqual(blankAuthor.error.flatten().fieldErrors.authorDisplayName, [
+    "작성자 표시명을 입력해 주세요.",
+  ]);
 
   const longAuthor = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,
@@ -274,7 +277,7 @@ test("ledger save action enforces transaction, authorization, version guard, and
     actionSource,
     /export\s+async\s+function\s+saveLedgerSalesPayment/,
   );
-  assert.match(actionSource, /requireStoreAccess\(/);
+  assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /writeAuditLog/);
   assert.match(actionSource, /actionOk\(/);
@@ -288,7 +291,7 @@ test("ledger save action enforces transaction, authorization, version guard, and
     /authorDisplayName:\s*parsed\.data\.authorDisplayName/,
   );
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
-  assert.match(actionSource, /dashboardPath = "\/app\/dashboard"/);
+  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
   assert.ok(actionSource.includes('action: "ledger.sales_payment.updated",'));
   assert.doesNotMatch(actionSource, /\.delete\(/);
   assert.doesNotMatch(

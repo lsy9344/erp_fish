@@ -1,14 +1,16 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { writeAuditLog } from "~/server/audit";
-import { requireStoreAccess } from "~/server/authz";
+import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import {
+  revalidateDashboardAndReports,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import {
   ledgerLossesSchema,
   ledgerLossesStoreAccessSchema,
@@ -23,6 +25,11 @@ import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
+import {
+  editableLedgerStatuses,
+  getLedgerEditBlockReason,
+  isLedgerEditable,
+} from "~/features/ledger/status-policy";
 
 function parseLedgerLossesInput(
   input: unknown,
@@ -63,18 +70,10 @@ function mapStoreActionError(): ActionResult<never> {
   );
 }
 
-function originalLossBlockedError(
-  status: "HEADQUARTERS_CLOSED" | "HOLIDAY",
-): ActionResult<never> {
-  const message =
-    status === "HOLIDAY"
-      ? "휴무 장부는 원본 손실 입력으로 수정할 수 없습니다. 정정 기록을 사용해 주세요."
-      : "본사 마감된 장부는 원본 손실 입력으로 수정할 수 없습니다. 정정 기록을 사용해 주세요.";
+function originalLossBlockedError(status: string): ActionResult<never> {
+  const reason = getLedgerEditBlockReason(status, "loss-entry");
 
-  return actionError(
-    status === "HEADQUARTERS_CLOSED" ? "LEDGER_CLOSED" : "LEDGER_NOT_EDITABLE",
-    message,
-  );
+  return actionError(reason.code, reason.message);
 }
 
 function toLossConflictValues(data: StoreManagerLossStepData) {
@@ -96,13 +95,8 @@ function toLossClientValues(input: LedgerLossesInput) {
 }
 
 function revalidateLossPaths() {
-  revalidatePath("/app/store-entry/losses");
-  revalidatePath("/app/store-entry/inventory");
-  revalidatePath("/app/store-entry");
-  revalidatePath("/app/dashboard");
-  revalidatePath("/app/reports/daily");
-  revalidatePath("/app/reports/comparison");
-  revalidatePath("/app/reports/monthly");
+  revalidateStoreEntryPaths(["losses", "inventory", "root"]);
+  revalidateDashboardAndReports();
 }
 
 type ActiveProduct = {
@@ -193,7 +187,7 @@ export async function saveLedgerLosses(
     return access;
   }
 
-  const actor = await requireStoreAccess(access.data.storeId);
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
 
   const parsed = parseLedgerLossesInput(input);
 
@@ -228,18 +222,8 @@ export async function saveLedgerLosses(
         });
       }
 
-      if (
-        before.status === "HEADQUARTERS_CLOSED" ||
-        before.status === "HOLIDAY"
-      ) {
+      if (!isLedgerEditable(before.status)) {
         return originalLossBlockedError(before.status);
-      }
-
-      if (before.status !== "IN_PROGRESS" && before.status !== "IN_REVIEW") {
-        return actionError<StoreManagerLossStepData>(
-          "LEDGER_NOT_EDITABLE",
-          "저장에 실패했습니다. 다시 시도해 주세요.",
-        );
       }
 
       const productIds = [
@@ -365,7 +349,7 @@ export async function saveLedgerLosses(
       const editableLedger = await tx.dailyLedger.updateMany({
         where: {
           id: before.id,
-          status: { in: ["IN_PROGRESS", "IN_REVIEW"] },
+          status: { in: [...editableLedgerStatuses] },
           version: parsed.data.version,
         },
         data: { updatedById: actor.user.id, version: { increment: 1 } },
