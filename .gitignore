@@ -68,7 +68,14 @@ __pycache__/
 .venv/
 venv/
 
+# Local tooling caches and scratch files
+.codegraph/
+tmp_scan.py
+
 # Large local source media
 audio_concept.m4a
 .agents\.story-automator-active
 .agents/.story-automator-active
+
+.vercel
+.env*
