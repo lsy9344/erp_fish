@@ -332,6 +332,12 @@ Keep the HQ dashboard query focused on the status row data needed for the mornin
 
 ### Infrastructure & Deployment
 
+> **As-deployed record:** The actual production stack, infrastructure, resource
+> identifiers, and the exact deploy procedure that were applied are recorded in
+> `docs/production-deployment.md` (first deployed 2026-06-21 on Vercel with Neon
+> Postgres via the Vercel Marketplace integration). The text below is the
+> original design intent.
+
 **Decision:**
 Deploy the application on Vercel with separate Local, Preview, and Production environments. Use a managed PostgreSQL provider through Vercel Marketplace, such as Neon Postgres or an equivalent production-ready Postgres service.
 

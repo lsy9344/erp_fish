@@ -170,6 +170,8 @@ pnpm db:migrate
 ### Release Preflight Notes
 
 - Before production deployment, complete `docs/release-checklist.md`.
+- The live production stack, infrastructure, and exact deploy procedure are
+  recorded in `docs/production-deployment.md`.
 - FIFO lot policy for this release is forward-only. Existing ledgers without
   FIFO lots keep the existing fallback calculation, and FIFO-derived money
   metrics stay in the "기준 확인 필요" state when the basis is not confirmed.
