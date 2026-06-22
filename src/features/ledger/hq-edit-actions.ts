@@ -35,16 +35,17 @@ import {
 } from "./queries";
 import {
   ledgerExpenseSchema,
+  ledgerLaborSchema,
   ledgerPurchaseSchema,
   ledgerSalesPaymentSchema,
   ledgerWorkInfoSchema,
   toFieldErrors,
   type LedgerExpensesInput,
+  type LedgerLaborInput,
   type LedgerPurchasesInput,
   type LedgerSalesPaymentInput,
   type LedgerWorkInfoInput,
 } from "./schemas";
-import { getStoreEcountPurchaseEditErrors } from "./purchase-edit-policy";
 import {
   editableLedgerStatuses,
   getLedgerEditBlockReason,
@@ -164,13 +165,19 @@ function notFoundError(): ActionResult<never> {
   return actionError("LEDGER_NOT_FOUND", "장부를 찾을 수 없습니다.");
 }
 
-type HqLedgerConflictSection = "sales" | "expenses" | "purchases" | "work";
+type HqLedgerConflictSection =
+  | "sales"
+  | "expenses"
+  | "purchases"
+  | "work"
+  | "labor";
 
 type HqLedgerConflictInput =
   | (LedgerSalesPaymentInput & { ledgerId: string; ledgerUpdatedAt: string })
   | (LedgerExpensesInput & { ledgerId: string; ledgerUpdatedAt: string })
   | (LedgerPurchasesInput & { ledgerId: string; ledgerUpdatedAt: string })
-  | (LedgerWorkInfoInput & { ledgerId: string; ledgerUpdatedAt: string });
+  | (LedgerWorkInfoInput & { ledgerId: string; ledgerUpdatedAt: string })
+  | (LedgerLaborInput & { ledgerId: string; ledgerUpdatedAt: string });
 
 function toHqLedgerServerConflictValues(
   section: HqLedgerConflictSection,
@@ -204,6 +211,13 @@ function toHqLedgerServerConflictValues(
         근무인원: data.workerCount,
         특이사항: data.workMemo,
       };
+    case "labor":
+      return Object.fromEntries(
+        data.laborItems.map((item, index) => [
+          `급여 ${index + 1}`,
+          `${item.workerName} ${item.amount}원`,
+        ]),
+      );
   }
 }
 
@@ -243,6 +257,13 @@ function toHqLedgerClientConflictValues(
         특이사항: work.workMemo,
       };
     }
+    case "labor":
+      return Object.fromEntries(
+        (input as LedgerLaborInput).labor.map((item, index) => [
+          `급여 ${index + 1}`,
+          `${item.workerName} ${item.amount}원`,
+        ]),
+      );
   }
 }
 
@@ -565,18 +586,6 @@ export async function saveHqLedgerPurchases(
         const existingPurchaseItemsById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
         );
-        const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
-          beforeLedger.ledgerPurchaseItems,
-          parsed.data.purchases,
-        );
-
-        if (Object.keys(ecountPurchaseEditErrors).length > 0) {
-          return actionError<LedgerCostStepData>(
-            "VALIDATION_ERROR",
-            "입력값을 확인해 주세요.",
-            ecountPurchaseEditErrors,
-          );
-        }
 
         const standardIds = [
           ...new Set(
@@ -869,6 +878,100 @@ export async function saveHqLedgerWorkInfo(
 
         await writeAuditLog(tx, {
           action: "ledger.hq.work_info.saved",
+          targetType: "DailyLedger",
+          targetId: afterLedger.id,
+          actorId: actor.user.id,
+          before: toLedgerAuditPayload(beforeLedger),
+          after: toLedgerAuditPayload(afterLedger),
+          reason: parsed.data.reason,
+        });
+
+        return actionOk(toLedgerCostStepData(afterLedger));
+      },
+    );
+
+    if (result.ok) {
+      revalidateHqLedgerPaths(ledgerId);
+    }
+
+    return result;
+  } catch {
+    return mapHqActionError();
+  }
+}
+
+export async function saveHqLedgerLaborInfo(
+  input: unknown,
+): Promise<ActionResult<LedgerCostStepData>> {
+  const parsed = parseHqLedgerInput<LedgerLaborInput>(input, ledgerLaborSchema);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const actor = { user: await requireLedgerHqEditAccess() };
+  const { ledgerId } = parsed.data;
+  await requireHeadquartersStoreScope(parsed.data.storeId);
+  const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
+
+  if (!expectedUpdatedAt) {
+    return await db.$transaction((tx) =>
+      hqConflictError(tx, "labor", parsed.data),
+    );
+  }
+
+  try {
+    const result = await db.$transaction<ActionResult<LedgerCostStepData>>(
+      async (tx) => {
+        const beforeLedgerResult = ensureTargetLedger(
+          await getLedgerByIdInTx(tx, ledgerId),
+          parsed.data.storeId,
+        );
+
+        if (!beforeLedgerResult.ok) {
+          return beforeLedgerResult;
+        }
+
+        const beforeLedger = beforeLedgerResult.data;
+        const updated = await updateEditableDailyLedgerInTx(
+          tx,
+          ledgerId,
+          expectedUpdatedAt,
+          {
+            updatedById: actor.user.id,
+          },
+        );
+
+        if (!updated) {
+          return await hqConflictError(tx, "labor", parsed.data);
+        }
+
+        await tx.ledgerLaborItem.deleteMany({
+          where: { dailyLedgerId: beforeLedger.id },
+        });
+
+        if (parsed.data.labor.length > 0) {
+          await tx.ledgerLaborItem.createMany({
+            data: parsed.data.labor.map((item) => ({
+              dailyLedgerId: beforeLedger.id,
+              workerName: item.workerName,
+              amount: item.amount,
+              lateMemo: item.lateMemo,
+              earlyLeaveMemo: item.earlyLeaveMemo,
+              specialMemo: item.specialMemo,
+              createdById: actor.user.id,
+              updatedById: actor.user.id,
+            })),
+          });
+        }
+
+        const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
+          where: { id: ledgerId },
+          select: ledgerSelect,
+        });
+
+        await writeAuditLog(tx, {
+          action: "ledger.hq.labor.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,

@@ -119,6 +119,9 @@ model Store {
   updatedBy                 User?                      @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   dailyLedgers              DailyLedger[]
   inventoryOpeningSnapshots InventoryOpeningSnapshot[]
+  ledgerInputCodeAliases    LedgerInputCodeStoreAlias[]
+  salesPricePlans           StoreSalesPricePlan[]
+  headquartersExpenses      HeadquartersExpense[]
 
   @@index([isActive])
   @@index([updatedById])
@@ -143,6 +146,7 @@ model Product {
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
   inventoryOpeningSnapshots  InventoryOpeningSnapshot[]
+  salesPricePlans            StoreSalesPricePlan[]
 
   @@unique([name, category, spec])
   @@index([category])
@@ -181,10 +185,34 @@ model LedgerInputCode {
   updatedBy       User?            @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   ledgerExpenses  LedgerExpense[]
   ledgerLossItems LedgerLossItem[]
+  storeAliases    LedgerInputCodeStoreAlias[]
 
   @@unique([group, name])
   @@index([group, displayOrder])
   @@index([isActive])
+  @@index([updatedById])
+}
+
+// 미팅 결정(2026-06-21): 코드 등록은 본사가 하되, 각 지점은 화면 표시명만
+// 자기 지점용으로 덮어쓸 수 있다. 코드 자체(키/값/활성)는 본사 전용으로 유지.
+model LedgerInputCodeStoreAlias {
+  id                String   @id @default(cuid())
+  ledgerInputCodeId String
+  storeId           String
+  displayName       String
+  createdById       String
+  updatedById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ledgerInputCode LedgerInputCode @relation(fields: [ledgerInputCodeId], references: [id], onDelete: Cascade)
+  store           Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("LedgerInputCodeStoreAliasCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy       User            @relation("LedgerInputCodeStoreAliasUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([ledgerInputCodeId, storeId])
+  @@index([storeId])
+  @@index([createdById])
   @@index([updatedById])
 }
 
@@ -304,7 +332,15 @@ model User {
   updatedLedgerInventoryAdjustments LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentUpdatedBy")
   createdLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemCreatedBy")
   updatedLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemUpdatedBy")
+  createdLedgerLaborItems           LedgerLaborItem[]           @relation("LedgerLaborItemCreatedBy")
+  updatedLedgerLaborItems           LedgerLaborItem[]           @relation("LedgerLaborItemUpdatedBy")
   createdCorrectionRecords          CorrectionRecord[]          @relation("CorrectionRecordCreatedBy")
+  createdLedgerInputCodeAliases     LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasCreatedBy")
+  updatedLedgerInputCodeAliases     LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasUpdatedBy")
+  createdStoreSalesPricePlans       StoreSalesPricePlan[]       @relation("StoreSalesPricePlanCreatedBy")
+  updatedStoreSalesPricePlans       StoreSalesPricePlan[]       @relation("StoreSalesPricePlanUpdatedBy")
+  createdHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseCreatedBy")
+  updatedHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseUpdatedBy")
   auditLogs                         AuditLog[]                  @relation("AuditActor")
 }
 
@@ -367,6 +403,7 @@ model DailyLedger {
   ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
+  ledgerLaborItems           LedgerLaborItem[]
   correctionRecords          CorrectionRecord[]
   createdById                String
   updatedById                String
@@ -620,6 +657,34 @@ model LedgerLossItem {
   @@index([updatedById])
 }
 
+// WO-05(2026-06-22): 일일 장부에 종속된 라인 단위 인건비/급여 기록.
+// DailyLedger.workerCount/workMemo는 단순 요약 역할을 유지하고, 직원별 이름·금액·
+// 지각/조퇴/특이사항은 이 모델에 별도로 저장한다.
+model LedgerLaborItem {
+  id             String   @id @default(cuid())
+  dailyLedgerId  String
+  employeeId     String?
+  workerName     String
+  amount         Int
+  lateMemo       String?
+  earlyLeaveMemo String?
+  specialMemo    String?
+  createdById    String
+  updatedById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dailyLedger DailyLedger  @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  employee    Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdBy   User         @relation("LedgerLaborItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User         @relation("LedgerLaborItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([dailyLedgerId])
+  @@index([employeeId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
 model InventoryOpeningSnapshot {
   id              String   @id @default(cuid())
   storeId         String
@@ -641,10 +706,107 @@ model InventoryOpeningSnapshot {
   @@index([productId])
 }
 
+// WO-06(2026-06-22): 개점 전 지점장이 입력하는 품목별 예상 판매가 계획.
+// DailyLedger와는 독립된 운영 계획 엔티티로, 지점/영업일/품목 단위로 1행을 유지한다.
+// 실제 품목별 판매가가 없으므로 계획-실적 비교 금액은 모두 추정(estimated)으로만 노출한다.
+model StoreSalesPricePlan {
+  id               String   @id @default(cuid())
+  storeId          String
+  businessDate     DateTime
+  productId        String
+  plannedUnitPrice Int
+  memo             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String
+  updatedById      String
+
+  store     Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy User    @relation("StoreSalesPricePlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User    @relation("StoreSalesPricePlanUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, businessDate, productId], map: "storeSalesPricePlan_storeId_businessDate_productId_key")
+  @@index([storeId, businessDate])
+  @@index([productId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+// WO-07(2026-06-22): 본사 전용 지출. 지점 일일 장부(DailyLedger)의 비용과 분리된
+// 별도 엔티티로, 지점장에게는 노출하지 않고 본사 P&L/리포트에만 별도 라인으로 반영한다.
+// storeId는 선택 사항이며, 지정 시 본사 사용자의 지점 권한 범위 내여야 한다(귀속 표시용).
+model HeadquartersExpense {
+  id          String   @id @default(cuid())
+  expenseDate DateTime
+  storeId     String?
+  category    String
+  amount      Int
+  memo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  updatedById String
+
+  store     Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  createdBy User   @relation("HeadquartersExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User   @relation("HeadquartersExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([expenseDate])
+  @@index([storeId, expenseDate])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
 model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+// WO-11(2026-06-22): 이카운트 매입 미리보기 세션. preview 시 서버에서 파싱한 rows를 저장하고,
+// commit은 importSessionId만 받아 여기서 rows를 읽는다. 클라이언트 rows 조작을 원천 차단한다.
+model EcountImportSession {
+  id          String   @id @default(cuid())
+  ledgerId    String
+  actorId     String
+  purchasesJson Json
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([ledgerId])
+  @@index([actorId])
+  @@index([expiresAt])
+}
+
+// WO-08(2026-06-22): 직원 마스터. 일일 장부의 LedgerLaborItem과 선택적으로 연결하여
+// 본사에서 직원별 월간 급여 롤업을 집계할 수 있다. 기존 자유텍스트 workerName 행은 그대로 동작한다.
+model Employee {
+  id        String   @id @default(cuid())
+  name      String
+  hireDate  DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  laborItems LedgerLaborItem[]
+
+  @@index([isActive])
+}
+
+// WO-10(2026-06-22): LINE 아침 요약 알림 전송 로그.
+// 알림 provider, 템플릿 키, 수신자 ID, 전송 상태를 기록한다.
+model NotificationDeliveryLog {
+  id          String   @id @default(cuid())
+  provider    String
+  templateKey String
+  recipientId String
+  sentAt      DateTime @default(now())
+  status      String
+  error       String?
+
+  @@index([templateKey, sentAt])
+  @@index([recipientId, sentAt])
 }

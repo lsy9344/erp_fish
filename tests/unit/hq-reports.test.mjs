@@ -474,6 +474,37 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   }
 });
 
+test("HQ monthly report surfaces headquarters expenses as a separate line", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "monthly-closing-anomaly-report.tsx",
+  );
+  const typeSource = readProjectFile("src", "features", "reports", "types.ts");
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "monthly",
+    "page.tsx",
+  );
+
+  assert.match(typeSource, /export type MonthlyHeadquartersExpenseSummary/);
+  assert.match(componentSource, /headquartersExpense/);
+  assert.match(componentSource, /본사 지출/);
+  assert.match(
+    componentSource,
+    /data-testid="hq-report-monthly-headquarters-expense"/,
+  );
+  // 본사 지출 합계는 본사 설정 권한 사용자에게만 별도 라인으로 노출된다.
+  assert.match(pageSource, /getHeadquartersExpenseReportSummary\(/);
+  assert.match(pageSource, /PermissionAction\.SETTINGS_MANAGE/);
+  assert.match(pageSource, /headquartersExpense=\{headquartersExpense\}/);
+});
+
 test("ledger and master data writes revalidate daily reports", () => {
   const files = [
     ["src", "features", "ledger", "actions.ts"],
@@ -2132,6 +2163,7 @@ test("HQ report export route follows story 6.4 server-side guardrails", () => {
   assert.match(routeSource, /getHqDailyMeetingReport\(/);
   assert.match(routeSource, /getHqStoreComparisonReport\(/);
   assert.match(routeSource, /getHqMonthlyClosingAnomalyReport\(/);
+  assert.match(routeSource, /getHqInventoryPositionReport\(/);
   assert.match(routeSource, /writeAuditLog\(/);
   assert.match(routeSource, /targetType:\s*"ReportExport"/);
   assert.match(routeSource, /action:\s*"report\.export\.created"/);
@@ -2149,6 +2181,7 @@ test("HQ report export route follows story 6.4 server-side guardrails", () => {
   assert.match(exportSource, /buildDailyMeetingReportExport/);
   assert.match(exportSource, /buildStoreComparisonReportExport/);
   assert.match(exportSource, /buildMonthlyClosingAnomalyReportExport/);
+  assert.match(exportSource, /buildInventoryPositionReportExport/);
   assert.match(exportSource, /buildReportCsv/);
   assert.match(exportSource, /getReportExportFilename/);
   assert.match(exportSource, /statusLabel/);
@@ -2439,4 +2472,219 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
     format: "csv",
   });
   assert.doesNotMatch(auditJson, /서초점|광어|500000|220000/);
+});
+
+test("monthly report ranks products by estimated sales (sold quantity × unit price)", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const inventoryItem = (productId, productName, overrides) => ({
+    id: `inv-${productId}`,
+    productId,
+    productName,
+    previousQuantity: 0,
+    purchasedQuantity: 0,
+    currentQuantity: 0,
+    quantity: 0,
+    unitPrice: 0,
+    inventoryAmount: null,
+    ...overrides,
+  });
+
+  // 판매량 = 전일 + 매입 - 당일. 추정매출 = 판매량 × 단가.
+  // 단가 1000 고정, 판매량으로 순위를 통제한다(추정매출 = 판매량 × 1000).
+  const soldItem = (productId, productName, soldQuantity) =>
+    inventoryItem(productId, productName, {
+      previousQuantity: soldQuantity,
+      purchasedQuantity: 0,
+      currentQuantity: 0,
+      quantity: 0,
+      unitPrice: 1000,
+    });
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {},
+        hasUnappliedCorrections: false,
+        inventoryItems: [
+          soldItem("p1", "1위품목", 70),
+          soldItem("p2", "2위품목", 60),
+          soldItem("p3", "3위품목", 50),
+          soldItem("p4", "4위품목", 40),
+          soldItem("p5", "5위품목", 30),
+          soldItem("p6", "6위품목", 20),
+          soldItem("p7", "7위품목", 10),
+          // 팔리지 않은 품목(판매량 0)은 순위에서 제외된다.
+          inventoryItem("p-nakji", "낙지", {
+            previousQuantity: 3,
+            purchasedQuantity: 0,
+            currentQuantity: 3,
+            quantity: 3,
+            unitPrice: 5000,
+          }),
+        ],
+      },
+    ],
+  });
+
+  const ranking = report.revenueRanking;
+
+  assert.equal(ranking.status, "available");
+  assert.match(ranking.basisLabel, /판매량.*단가.*추정/);
+
+  // 상위 5는 추정매출 내림차순.
+  assert.deepEqual(
+    ranking.top.map((item) => [item.productName, item.estimatedSalesAmount]),
+    [
+      ["1위품목", 70000],
+      ["2위품목", 60000],
+      ["3위품목", 50000],
+      ["4위품목", 40000],
+      ["5위품목", 30000],
+    ],
+  );
+
+  // 하위는 추정매출 오름차순이며, 상위와 중복되지 않는다.
+  assert.deepEqual(
+    ranking.bottom.map((item) => item.productName),
+    ["7위품목", "6위품목"],
+  );
+
+  const topNames = new Set(ranking.top.map((item) => item.productName));
+  assert.ok(
+    ranking.bottom.every((item) => !topNames.has(item.productName)),
+    "하위 목록은 상위 목록과 중복되지 않는다",
+  );
+  assert.ok(
+    [...ranking.top, ...ranking.bottom].every(
+      (item) => item.productName !== "낙지",
+    ),
+    "팔리지 않은 품목은 상위·하위 순위에 포함되지 않는다",
+  );
+});
+
+test("monthly report ranking reports data-insufficient when no sales can be derived", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {},
+        hasUnappliedCorrections: false,
+        inventoryItems: [],
+      },
+    ],
+  });
+
+  assert.equal(report.revenueRanking.status, "data-insufficient");
+  assert.deepEqual(report.revenueRanking.top, []);
+  assert.deepEqual(report.revenueRanking.bottom, []);
+});
+
+test("monthly report lists P&L inputs as actual, estimated, or unavailable", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildMonthlyClosingAnomalyReportForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const report = buildMonthlyClosingAnomalyReportForTest({
+    store: { id: "store-1", name: "테스트점" },
+    monthInput: "2026-06",
+    dateInputs: ["2026-06-01"],
+    ledgerSummaries: [
+      {
+        dateInput: "2026-06-01",
+        ledgerId: "ledger-1",
+        status: "HEADQUARTERS_CLOSED",
+        signals: [],
+        metricEvidence: {},
+        hasUnappliedCorrections: false,
+        inventoryItems: [],
+      },
+    ],
+  });
+
+  const readiness = report.profitAndLossReadiness;
+  const byKey = new Map(readiness.inputs.map((input) => [input.key, input]));
+
+  // 매출/지점비용/본사지출/재고가치는 실측.
+  assert.equal(byKey.get("sales")?.availability, "actual");
+  assert.equal(byKey.get("branchExpense")?.availability, "actual");
+  assert.equal(byKey.get("headquartersExpense")?.availability, "actual");
+  assert.equal(byKey.get("inventoryValue")?.availability, "actual");
+  // 매입원가/품목별 매출은 추정.
+  assert.equal(byKey.get("purchaseCost")?.availability, "estimated");
+  assert.equal(byKey.get("productSales")?.availability, "estimated");
+  // 인건비는 아직 미구현.
+  assert.equal(byKey.get("labor")?.availability, "unavailable");
+
+  assert.equal(byKey.get("sales")?.availabilityLabel, "실측");
+  assert.equal(byKey.get("productSales")?.availabilityLabel, "추정");
+  assert.equal(byKey.get("labor")?.availabilityLabel, "미구현");
+
+  const actualCount = readiness.inputs.filter(
+    (input) => input.availability === "actual",
+  ).length;
+  const estimatedCount = readiness.inputs.filter(
+    (input) => input.availability === "estimated",
+  ).length;
+  const unavailableCount = readiness.inputs.filter(
+    (input) => input.availability === "unavailable",
+  ).length;
+
+  assert.equal(readiness.actualCount, actualCount);
+  assert.equal(readiness.estimatedCount, estimatedCount);
+  assert.equal(readiness.unavailableCount, unavailableCount);
+  assert.match(readiness.statusLabel, /실측.*추정.*미구현/);
+});
+
+test("monthly report keeps product revenue ranking labeled estimated", async () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "monthly-closing-anomaly-report.tsx",
+  );
+
+  // 품목별 매출이 없어 순위가 추정임을 화면에 명시한다.
+  assert.match(componentSource, /추정/);
+  assert.match(componentSource, /매출 상위5 \/ 하위5 품목 \(추정\)/);
+  assert.match(componentSource, /ProfitAndLossReadinessSummary/);
+  assert.match(componentSource, /손익\(P&amp;L\) 리포트 준비도/);
 });
