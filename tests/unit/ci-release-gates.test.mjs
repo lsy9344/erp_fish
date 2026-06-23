@@ -13,23 +13,83 @@ function readProjectFile(...segments) {
   return readFileSync(filePath, "utf8");
 }
 
-test("PR CI runs the same API and core e2e gates as release preflight", () => {
+function readWorkflowJob(workflow, jobName) {
+  const pattern = new RegExp(
+    `\\n  ${jobName}:\\n[\\s\\S]*?(?=\\n  [a-zA-Z0-9_-]+:\\n|\\n$)`,
+  );
+  const match = workflow.match(pattern);
+
+  assert.ok(match, `${jobName} job should exist`);
+
+  return match[0];
+}
+
+test("PR CI keeps release gates while sharding core e2e smoke", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
+  const qualityJob = readWorkflowJob(workflow, "quality");
+  const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
 
   assert.match(packageJson.scripts["release:preflight"], /pnpm test:api/);
   assert.match(packageJson.scripts["release:preflight"], /pnpm test:e2e:core/);
   assert.match(workflow, /run:\s*pnpm test:api/);
-  assert.match(workflow, /run:\s*pnpm test:e2e:core/);
+  assert.match(
+    smokeJob,
+    /github\.event_name != 'schedule' &&[\s\S]*refs\/heads\/main[\s\S]*refs\/heads\/master/,
+  );
+  assert.match(
+    smokeJob,
+    /!\(github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e\)/,
+  );
+  assert.match(smokeJob, /group:\s*\[ledger, hq, admin\]/);
+  assert.match(
+    smokeJob,
+    /run:\s*pnpm test:e2e:core:\$\{\{\s*matrix\.group\s*\}\}/,
+  );
+  assert.doesNotMatch(smokeJob, /run:\s*pnpm test:e2e:core\s*(?:\r?\n|$)/);
+  assert.match(qualityJob, /Restore Next\.js cache/);
+  assert.doesNotMatch(qualityJob, /Install Chromium/);
+  assert.doesNotMatch(qualityJob, /ms-playwright/);
   assert.doesNotMatch(
     workflow,
     /Run smoke e2e[\s\S]*tests\/e2e\/auth\.spec\.ts:16/,
   );
 });
 
+test("scheduled burn-in repeats the smoke test inside one Playwright run", () => {
+  const workflow = readProjectFile(".github", "workflows", "ci.yml");
+  const burnInJob = readWorkflowJob(workflow, "playwright-burn-in");
+
+  assert.match(burnInJob, /--repeat-each=10/);
+  assert.doesNotMatch(burnInJob, /for i in \$\(seq 1 10\)/);
+});
+
 test("core e2e bundle covers store, headquarters, reports, permissions, and master data", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
-  const coreScript = packageJson.scripts["test:e2e:core"];
+  const scripts = packageJson.scripts;
+  const coreScript = [
+    scripts["test:e2e:core"],
+    scripts["test:e2e:core:ledger"],
+    scripts["test:e2e:core:hq"],
+    scripts["test:e2e:core:admin"],
+  ].join(" ");
+
+  assert.match(
+    scripts["test:e2e:core"],
+    /^node scripts\/run-playwright-clean\.mjs tests\/e2e\//,
+  );
+  assert.doesNotMatch(scripts["test:e2e:core"], /pnpm test:e2e:core:/);
+
+  for (const scriptName of [
+    "test:e2e:core:ledger",
+    "test:e2e:core:hq",
+    "test:e2e:core:admin",
+  ]) {
+    assert.match(
+      scripts[scriptName],
+      /^node scripts\/run-playwright-clean\.mjs tests\/e2e\//,
+    );
+  }
 
   for (const spec of [
     "tests/e2e/store-ledger-sales.spec.ts",
@@ -58,7 +118,8 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.match(startDatabase, /deprecated/i);
   assert.match(startDatabase, /docker compose up -d/);
   assert.doesNotMatch(startDatabase, /docker\.io\/postgres/);
-  assert.match(ciDocs, /Pushes to any branch run/);
+  assert.match(ciDocs, /Pushes to feature branches run/);
+  assert.match(ciDocs, /three parallel groups/);
   assert.doesNotMatch(ciDocs, /new_function/);
 
   for (const phrase of [

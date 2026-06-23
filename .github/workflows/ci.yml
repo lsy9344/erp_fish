@@ -74,19 +74,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Restore Playwright browser cache
+      - name: Restore Next.js cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**/*', 'public/**/*', 'next.config.js', 'package.json', 'tsconfig.json') }}
           restore-keys: |
-            playwright-${{ runner.os }}-
+            nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: Validate Prisma schema
         run: pnpm exec prisma validate
@@ -130,10 +127,17 @@ jobs:
         run: pnpm build
 
   playwright-smoke:
-    name: Playwright Smoke
+    name: Playwright Smoke ${{ matrix.group }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    if: github.event_name != 'schedule'
+    timeout-minutes: 25
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) &&
+      !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [ledger, hq, admin]
 
     services:
       postgres:
@@ -179,14 +183,14 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run core e2e
-        run: pnpm test:e2e:core
+      - name: Run core e2e shard
+        run: pnpm test:e2e:core:${{ matrix.group }}
 
       - name: Upload Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-smoke-${{ github.run_attempt }}
+          name: playwright-smoke-${{ matrix.group }}-${{ github.run_attempt }}
           path: |
             test-results/
             playwright-report/
@@ -321,11 +325,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run smoke burn-in
-        run: |
-          for i in $(seq 1 10); do
-            echo "Burn-in iteration $i/10"
-            pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
-          done
+        run: pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --repeat-each=10 --reporter=line
 
       - name: Upload Playwright artifacts
         if: failure()

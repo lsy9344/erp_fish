@@ -5,10 +5,15 @@
 The workflow lives at `.github/workflows/ci.yml`.
 
 - Pull requests run `Quality Gate` and `Playwright Smoke`.
-- Pushes to any branch run the same fast checks.
+- Pushes to feature branches run the same fast checks.
+- `Playwright Smoke` runs the core E2E bundle as three parallel groups:
+  `ledger`, `hq`, and `admin`.
 - Pushes to `main` or `master` also run the full Playwright suite in 4 shards.
+  The smoke job is skipped on those pushes because the full suite covers it.
 - A weekly schedule runs a 10-iteration smoke burn-in to catch flaky UI timing.
 - Manual runs can trigger full Playwright and burn-in when needed.
+  Manual full Playwright runs skip the smoke job because the full suite covers
+  the same tests.
 
 ## Fast Local Loop
 
@@ -36,8 +41,9 @@ pnpm build
 3. Select `CI`.
 4. Click `Run workflow`.
 5. Choose options:
-   - `run_full_e2e`: runs the full Playwright suite in 4 shards.
-   - `run_burn_in`: runs the smoke test 10 times.
+   - `run_full_e2e`: runs the full Playwright suite in 4 shards and skips
+     smoke.
+   - `run_burn_in`: runs the smoke test with `--repeat-each=10`.
    - `e2e_grep`: optional text filter for manual full e2e runs.
 
 ## Database Used In CI
@@ -77,5 +83,8 @@ Artifacts are kept for 14 days.
 
 - If CI fails during install, rerun once. Dependency or browser cache may be cold.
 - If Playwright fails, download the failed job artifact and inspect `test-results`.
+- If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
+  matching local command: `pnpm test:e2e:core:ledger`,
+  `pnpm test:e2e:core:hq`, or `pnpm test:e2e:core:admin`.
 - If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
 - If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.
