@@ -106,7 +106,10 @@ async function getLossStepDataForLedgerInTx(
     select: { ledgerInputCodeId: true, displayName: true },
   });
   const lossTypeAliasByCodeId = new Map(
-    lossTypeAliases.map((alias) => [alias.ledgerInputCodeId, alias.displayName]),
+    lossTypeAliases.map((alias) => [
+      alias.ledgerInputCodeId,
+      alias.displayName,
+    ]),
   );
   const lossTypeOptionsWithAlias = lossTypeOptions.map((option) => ({
     ...option,

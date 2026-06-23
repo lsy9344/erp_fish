@@ -654,7 +654,10 @@ export function WorkStepClient({
                 const specialErrorId = `labor-special-${line.id}-error`;
 
                 return (
-                  <div key={line.id} className="grid gap-2 rounded-md border p-3">
+                  <div
+                    key={line.id}
+                    className="grid gap-2 rounded-md border p-3"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-muted-foreground text-xs font-medium">
                         직원 {index + 1}
@@ -689,7 +692,9 @@ export function WorkStepClient({
                             updateLaborLine(line.id, {
                               employeeId,
                               // 직원을 선택하면 이름을 자동 채우되, 자유 텍스트 수정은 그대로 허용한다.
-                              ...(selected ? { workerName: selected.name } : {}),
+                              ...(selected
+                                ? { workerName: selected.name }
+                                : {}),
                             });
                           }}
                           className="border-input focus-visible:border-ring focus-visible:ring-ring/50 min-h-11 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
@@ -702,8 +707,9 @@ export function WorkStepClient({
                           ))}
                         </select>
                         <p className="text-muted-foreground mt-1 text-xs">
-                          직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다. 연결하지
-                          않으면 “미연결” 합계로만 집계되어 직원별 분석에서 빠집니다.
+                          직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다.
+                          연결하지 않으면 “미연결” 합계로만 집계되어 직원별
+                          분석에서 빠집니다.
                         </p>
                       </Field>
                     ) : null}
@@ -761,7 +767,9 @@ export function WorkStepClient({
                         표시: {formatKrw(parseKrwInputValue(line.amount))}
                       </p>
                       {amountError ? (
-                        <FieldError id={amountErrorId}>{amountError}</FieldError>
+                        <FieldError id={amountErrorId}>
+                          {amountError}
+                        </FieldError>
                       ) : null}
                     </Field>
 
@@ -851,7 +859,9 @@ export function WorkStepClient({
               </span>
             </div>
             <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">마지막 서버 저장 합계</span>
+              <span className="text-muted-foreground">
+                마지막 서버 저장 합계
+              </span>
               <span className="font-semibold tabular-nums">
                 {formatKrw(ledger.payrollTotal)}
               </span>

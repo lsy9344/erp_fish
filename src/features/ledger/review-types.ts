@@ -95,7 +95,10 @@ export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;
 
 // 역산 부정행위 방지(point_summary.md:37): 결제 차액(amount)은 지점장 검토 화면에
 // 절대 노출하지 않는다. signal과 동일하게 warning에서도 amount를 제거한다.
-export type StoreManagerLedgerReviewWarning = Omit<LedgerReviewWarning, "amount">;
+export type StoreManagerLedgerReviewWarning = Omit<
+  LedgerReviewWarning,
+  "amount"
+>;
 
 export type StoreManagerLedgerReviewStepData = Omit<
   LedgerReviewStepData,

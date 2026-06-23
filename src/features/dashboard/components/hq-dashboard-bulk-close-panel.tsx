@@ -115,8 +115,8 @@ export function HqDashboardBulkClosePanel({
           <DialogHeader>
             <DialogTitle>본사 일괄 마감</DialogTitle>
             <DialogDescription>
-              수동 검토 단계를 생략하고 조회된 마감 가능 장부를 즉시
-              본사 마감합니다.
+              수동 검토 단계를 생략하고 조회된 마감 가능 장부를 즉시 본사
+              마감합니다.
             </DialogDescription>
           </DialogHeader>
           <Field data-invalid={Boolean(error)}>

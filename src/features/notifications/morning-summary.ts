@@ -3,7 +3,7 @@ import { getStoreProfitSummariesForRange } from "~/features/reports/queries";
 
 export type MorningSummaryPayload = {
   reportDate: string;
-  longTermDeficitStores: string[];
+  dailyDeficitStores: string[];
   missingEntryStores: string[];
   longTermStagnantProducts: Array<{
     storeName: string;
@@ -19,14 +19,12 @@ export function formatMorningSummaryMessage(
   const lines: string[] = [`[ERP 아침 요약] ${payload.reportDate}`];
 
   lines.push("");
-  lines.push(
-    `📉 전날 장기 적자 매장 (${payload.longTermDeficitStores.length}건)`,
-  );
+  lines.push(`📉 당일 적자 발생 지점 (${payload.dailyDeficitStores.length}건)`);
 
-  if (payload.longTermDeficitStores.length === 0) {
+  if (payload.dailyDeficitStores.length === 0) {
     lines.push("없음");
   } else {
-    for (const store of payload.longTermDeficitStores) {
+    for (const store of payload.dailyDeficitStores) {
       lines.push(`• ${store}`);
     }
   }
@@ -59,9 +57,7 @@ export function formatMorningSummaryMessage(
     }
 
     if (payload.longTermStagnantProducts.length > 5) {
-      lines.push(
-        `  외 ${payload.longTermStagnantProducts.length - 5}건`,
-      );
+      lines.push(`  외 ${payload.longTermStagnantProducts.length - 5}건`);
     }
   }
 
@@ -89,7 +85,7 @@ export async function buildMorningSummaryPayload(
   if (!year || !month || !day) {
     return {
       reportDate,
-      longTermDeficitStores: [],
+      dailyDeficitStores: [],
       missingEntryStores: [],
       longTermStagnantProducts: [],
       belowTargetMarginStores: [],
@@ -97,9 +93,7 @@ export async function buildMorningSummaryPayload(
   }
 
   const targetDate = new Date(Date.UTC(year, month - 1, day));
-  const thirtyDaysAgo = new Date(
-    Date.UTC(year, month - 1, day - 30),
-  );
+  const thirtyDaysAgo = new Date(Date.UTC(year, month - 1, day - 30));
 
   const [activeStores, ledgersYesterday] = await Promise.all([
     db.store.findMany({
@@ -119,8 +113,7 @@ export async function buildMorningSummaryPayload(
   const submittedStoreIds = new Set(
     ledgersYesterday
       .filter(
-        (l) =>
-          l.status === "IN_REVIEW" || l.status === "HEADQUARTERS_CLOSED",
+        (l) => l.status === "IN_REVIEW" || l.status === "HEADQUARTERS_CLOSED",
       )
       .map((l) => l.storeId),
   );
@@ -131,12 +124,19 @@ export async function buildMorningSummaryPayload(
 
   const storeNameById = new Map(activeStores.map((s) => [s.id, s.name]));
 
-  // WO-G(2026-06-22): 장기 적자/마진 미달 판정은 본사 리포트와 같은 기준을 쓴다.
+  // change.md(2026-06-22): 적자 발생 지점은 reportDate 하루 기준으로 본다.
+  // 본사 리포트와 같은 매출원가(COGS) 기반 영업이익 계산을 재사용한다.
+  const dailyProfitSummaries = await getStoreProfitSummariesForRange({
+    storeIds: [...activeStoreIds],
+    startDate: targetDate,
+    endDate: targetDate,
+  });
+
+  // WO-G(2026-06-22): 마진 미달 판정은 본사 리포트와 같은 기준을 쓴다.
   // 단순 (총매출 - 지출)이 아니라 매출원가(COGS) 기반 grossProfit/grossMarginRate,
   // 그리고 본사 정정(correction) 반영 상태를 함께 사용한다.
-  // - 장기 적자: 최근 30일 누적 영업이익(operatingProfit)이 음수인 지점.
   // - 마진 미달: 최근 30일 누적 grossMarginRate가 활성 목표 마진율 미만인 지점.
-  const profitSummaries = await getStoreProfitSummariesForRange({
+  const marginSummaries = await getStoreProfitSummariesForRange({
     storeIds: [...activeStoreIds],
     startDate: thirtyDaysAgo,
     endDate: targetDate,
@@ -152,18 +152,20 @@ export async function buildMorningSummaryPayload(
     ? thresholdSetting.marginRateBps / 10000
     : null;
 
+  const dailyDeficitStores: string[] = [];
   const belowTargetMarginStores: string[] = [];
-  const longTermDeficitStores: string[] = [];
 
-  for (const [storeId, summary] of profitSummaries) {
+  for (const [storeId, summary] of dailyProfitSummaries) {
     const storeName = storeNameById.get(storeId) ?? storeId;
 
-    // 본사 리포트 기준 영업이익이 음수면 장기 적자 후보.
     if (summary.operatingProfit !== null && summary.operatingProfit < 0) {
-      longTermDeficitStores.push(storeName);
+      dailyDeficitStores.push(storeName);
     }
+  }
 
-    // 목표 마진율이 설정되어 있고, grossMarginRate가 계산 가능하며 목표 미만이면 후보.
+  for (const [storeId, summary] of marginSummaries) {
+    const storeName = storeNameById.get(storeId) ?? storeId;
+
     if (
       targetMarginRate !== null &&
       summary.grossMarginRate !== null &&
@@ -182,7 +184,7 @@ export async function buildMorningSummaryPayload(
 
   return {
     reportDate,
-    longTermDeficitStores,
+    dailyDeficitStores,
     missingEntryStores,
     longTermStagnantProducts,
     belowTargetMarginStores,
@@ -218,7 +220,10 @@ async function buildLongTermStagnantProducts({
     select: { id: true, storeId: true, closingDate: true },
   });
 
-  const latestLedgerByStore = new Map<string, { id: string; storeId: string }>();
+  const latestLedgerByStore = new Map<
+    string,
+    { id: string; storeId: string }
+  >();
 
   for (const ledger of latestLedgers) {
     if (!latestLedgerByStore.has(ledger.storeId)) {

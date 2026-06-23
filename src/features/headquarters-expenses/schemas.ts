@@ -77,17 +77,17 @@ const headquartersExpenseIdSchema = z
 const headquartersExpenseFields = {
   expenseDate: expenseDateSchema,
   storeId: z.unknown().transform((value) => parseOptionalStoreId(value)),
-  category: z.unknown().transform((value, context) =>
-    parseCategory(value, context),
-  ),
+  category: z
+    .unknown()
+    .transform((value, context) => parseCategory(value, context)),
   amount: z
     .unknown()
     .transform((value, context) =>
       parseRequiredNonNegativeInteger(value, context, amountError),
     ),
-  memo: z.unknown().transform((value, context) =>
-    parseOptionalMemo(value, context),
-  ),
+  memo: z
+    .unknown()
+    .transform((value, context) => parseOptionalMemo(value, context)),
 };
 
 export const headquartersExpenseCreateSchema = z.object(

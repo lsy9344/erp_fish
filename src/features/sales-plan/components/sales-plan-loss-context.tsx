@@ -24,7 +24,8 @@ export function SalesPlanLossContext({ items }: SalesPlanLossContextProps) {
         </span>
       </div>
       <p className="text-muted-foreground mt-1 text-xs">
-        손실액 산정 기준입니다. 실제 판매/회수액을 입력하면 계획 판매가와의 차액을 손실액으로 저장합니다.
+        손실액 산정 기준입니다. 실제 판매/회수액을 입력하면 계획 판매가와의
+        차액을 손실액으로 저장합니다.
       </p>
       <div className="mt-3 grid gap-2">
         {items.map((item) => (

@@ -7,11 +7,7 @@ import type {
 } from "./types";
 import type { InventoryPositionReportData } from "./inventory-position-types";
 
-export type ReportExportType =
-  | "daily"
-  | "comparison"
-  | "monthly"
-  | "inventory";
+export type ReportExportType = "daily" | "comparison" | "monthly" | "inventory";
 export type ReportExportFormat = "csv";
 
 type ReportExportColumn = {
@@ -84,7 +80,7 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "lossQuantity", label: "손실" },
     { key: "currentQuantity", label: "남은 재고" },
     { key: "systemQuantity", label: "전산 재고" },
-    { key: "differenceQuantity", label: "차이" },
+    { key: "differenceQuantity", label: "당일 판매량" },
     { key: "amount", label: "재고 금액" },
     { key: "statusLabel", label: "상태" },
   ],

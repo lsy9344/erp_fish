@@ -193,7 +193,10 @@ export async function getLatestCorrectionValuesForLedgers(ledgerIds: string[]) {
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
-  return getLatestCorrectionValuesForLedgersScoped(ledgerIds, storeScope.storeIds);
+  return getLatestCorrectionValuesForLedgersScoped(
+    ledgerIds,
+    storeScope.storeIds,
+  );
 }
 
 // WO-G/WO-E(2026-06-22): 세션 권한 게이트 없이(내부 스케줄러/배치 경로) 명시적

@@ -57,8 +57,8 @@ export function InventoryPositionReportTable({
     >
       <p className="text-muted-foreground text-xs break-words">
         남은 재고는 장부에 입력된 당일 재고 수량 기준 실측값입니다. 장부가 없는
-        지점은 0이 아닌 <strong>미입력</strong>으로, 단가·수량이 없어 금액을 구할
-        수 없으면 <strong>계산 불가</strong>로 표기합니다.
+        지점은 0이 아닌 <strong>미입력</strong>으로, 단가·수량이 없어 금액을
+        구할 수 없으면 <strong>계산 불가</strong>로 표기합니다.
       </p>
 
       <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
@@ -74,7 +74,7 @@ export function InventoryPositionReportTable({
               <TableHead className="text-right">손실</TableHead>
               <TableHead className="text-right">남은 재고</TableHead>
               <TableHead className="text-right">전산 재고</TableHead>
-              <TableHead className="text-right">차이</TableHead>
+              <TableHead className="text-right">당일 판매량</TableHead>
               <TableHead className="text-right">재고 금액</TableHead>
               <TableHead>상태</TableHead>
             </TableRow>
@@ -100,8 +100,14 @@ export function InventoryPositionReportTable({
                     row.statusLabel === "미입력" ? null : row.previousQuantity
                   }
                 />
-                <QuantityCell value={row.statusLabel === "미입력" ? null : row.purchasedQuantity} />
-                <QuantityCell value={row.statusLabel === "미입력" ? null : row.lossQuantity} />
+                <QuantityCell
+                  value={
+                    row.statusLabel === "미입력" ? null : row.purchasedQuantity
+                  }
+                />
+                <QuantityCell
+                  value={row.statusLabel === "미입력" ? null : row.lossQuantity}
+                />
                 <QuantityCell value={row.currentQuantity} highlight />
                 <QuantityCell value={row.systemQuantity} />
                 <QuantityCell value={row.differenceQuantity} signed />
@@ -192,10 +198,7 @@ export function InventoryPositionReportTable({
                 나머지 지표
               </summary>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
-                <MobileMetric
-                  label="분류"
-                  value={row.productCategory || "—"}
-                />
+                <MobileMetric label="분류" value={row.productCategory || "—"} />
                 <MobileMetric
                   label="손실"
                   value={
@@ -209,7 +212,7 @@ export function InventoryPositionReportTable({
                   value={formatQuantity(row.systemQuantity)}
                 />
                 <MobileMetric
-                  label="차이"
+                  label="당일 판매량"
                   value={formatSignedQuantity(row.differenceQuantity)}
                 />
               </dl>
@@ -263,17 +266,11 @@ function HistoryQuantityCell({
   );
 }
 
-function MobileMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function MobileMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium tabular-nums break-words">{value}</dd>
+      <dd className="font-medium break-words tabular-nums">{value}</dd>
     </div>
   );
 }

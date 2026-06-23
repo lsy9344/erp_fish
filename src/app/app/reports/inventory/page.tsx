@@ -199,7 +199,10 @@ export default async function InventoryPositionReportPage({
               </select>
             </div>
             <div className="grid gap-1">
-              <label className="text-muted-foreground text-xs" htmlFor="product">
+              <label
+                className="text-muted-foreground text-xs"
+                htmlFor="product"
+              >
                 품목
               </label>
               <Input

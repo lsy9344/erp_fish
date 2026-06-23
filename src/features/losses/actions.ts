@@ -1,9 +1,7 @@
 "use server";
 
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import {
-  calculatePlannedPriceLossAmount,
-} from "~/features/losses/amount";
+import { calculatePlannedPriceLossAmount } from "~/features/losses/amount";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";

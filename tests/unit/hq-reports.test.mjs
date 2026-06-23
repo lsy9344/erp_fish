@@ -242,7 +242,8 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
   assert.match(chartSource, /`이익률 \$\{percentFormatter/);
   assert.doesNotMatch(chartSource, /`마진 \$\{percentFormatter/);
   assert.match(chartSource, /추정 이익률/);
-  assert.match(chartSource, /확정 매출·원가가 아닙니다/);
+  // JSX는 줄바꿈을 공백으로 합쳐 렌더링하므로 소스 줄바꿈에 영향받지 않게 \s+로 매칭한다.
+  assert.match(chartSource, /확정\s+매출·원가가 아닙니다/);
 
   // 정책 문서는 원문 요구에 맞춰 "계산 불가" 고정이 아니라 추정 이익률 노출을 허용한다.
   assert.match(policyDocSource, /추정 이익률/);

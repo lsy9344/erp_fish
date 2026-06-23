@@ -175,9 +175,8 @@ export async function getHeadquartersExpenseReportSummary({
 }: {
   month?: unknown;
 } = {}): Promise<HeadquartersExpenseReportSummary> {
-  const { requireSettingsAccess, getHeadquartersStoreScope } = await import(
-    "../../server/authz.ts"
-  );
+  const { requireSettingsAccess, getHeadquartersStoreScope } =
+    await import("../../server/authz.ts");
   const { db } = await import("../../server/db.ts");
   await requireSettingsAccess();
   const scope = await getHeadquartersStoreScope();

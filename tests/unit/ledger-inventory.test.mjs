@@ -641,9 +641,7 @@ test("LedgerInventoryFifoLot has sourceBusinessDate column and migration", () =>
   const migrationDir = assertProjectFile("prisma", "migrations");
   const sql = readdirSync(migrationDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) =>
-      path.join(migrationDir, entry.name, "migration.sql"),
-    )
+    .map((entry) => path.join(migrationDir, entry.name, "migration.sql"))
     .filter((sqlPath) => existsSync(sqlPath))
     .map((sqlPath) => readFileSync(sqlPath, "utf8"))
     .find((content) =>
@@ -1046,6 +1044,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
   assert.match(inventoryUiSource, /당일 판매량/);
+  assert.match(
+    componentSource,
+    /return systemQuantity - actualQuantity;/,
+    "당일 판매량은 기준재고에서 당일재고를 뺀 판매 흐름으로 표시해야 한다",
+  );
+  assert.match(
+    componentSource,
+    /조정 차이/,
+    "강제 실사 보정의 signed 차이는 당일 판매량과 별도 라벨로 보여야 한다",
+  );
   assert.match(inventoryUiSource, /실제 POS 판매 수량과 다를 수 있습니다/);
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);

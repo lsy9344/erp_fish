@@ -85,7 +85,9 @@ export function EmployeeManagementClient({
       ]);
     }
 
-    toast.success(editingId ? "직원 정보를 수정했습니다." : "직원을 추가했습니다.");
+    toast.success(
+      editingId ? "직원 정보를 수정했습니다." : "직원을 추가했습니다.",
+    );
     handleCancel();
   }
 
@@ -98,9 +100,7 @@ export function EmployeeManagementClient({
     }
 
     setEmployees((prev) =>
-      prev.map((emp) =>
-        emp.id === id ? { ...emp, isActive: false } : emp,
-      ),
+      prev.map((emp) => (emp.id === id ? { ...emp, isActive: false } : emp)),
     );
 
     toast.success("직원을 비활성화했습니다.");
@@ -116,9 +116,9 @@ export function EmployeeManagementClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted-foreground border-b text-left">
-              <th className="pb-2 pr-3 font-normal">이름</th>
-              <th className="pb-2 pr-3 font-normal">입사일</th>
-              <th className="pb-2 pr-3 font-normal">상태</th>
+              <th className="pr-3 pb-2 font-normal">이름</th>
+              <th className="pr-3 pb-2 font-normal">입사일</th>
+              <th className="pr-3 pb-2 font-normal">상태</th>
             </tr>
           </thead>
           <tbody>
@@ -159,7 +159,9 @@ export function EmployeeManagementClient({
             <Input
               id="employee-name"
               value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: e.target.value }))
+              }
               placeholder="이름"
               disabled={isSaving}
             />
@@ -208,10 +210,10 @@ export function EmployeeManagementClient({
 
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th className="pb-2 pr-3 font-normal">이름</th>
-            <th className="pb-2 pr-3 font-normal">입사일</th>
-            <th className="pb-2 pr-3 font-normal">상태</th>
+          <tr className="text-muted-foreground border-b text-left">
+            <th className="pr-3 pb-2 font-normal">이름</th>
+            <th className="pr-3 pb-2 font-normal">입사일</th>
+            <th className="pr-3 pb-2 font-normal">상태</th>
             <th className="pb-2 font-normal"></th>
           </tr>
         </thead>
@@ -219,7 +221,9 @@ export function EmployeeManagementClient({
           {employees.map((emp) => (
             <tr key={emp.id} className="border-b last:border-0">
               <td className="py-2 pr-3">{emp.name}</td>
-              <td className="py-2 pr-3 text-muted-foreground">{emp.hireDate}</td>
+              <td className="text-muted-foreground py-2 pr-3">
+                {emp.hireDate}
+              </td>
               <td className="py-2 pr-3">
                 <span
                   className={

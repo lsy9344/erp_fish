@@ -744,7 +744,7 @@ export function InventoryStepClient({
       return null;
     }
 
-    return actualQuantity - systemQuantity;
+    return systemQuantity - actualQuantity;
   }
 
   function formatDifference(value: number | null) {
@@ -752,7 +752,11 @@ export function InventoryStepClient({
       return "계산 불가";
     }
 
-    return `${formatSignedQuantity(value)}개`;
+    if (value < 0) {
+      return `${formatSignedQuantity(value)}개`;
+    }
+
+    return `${formatQuantity(value)}개`;
   }
 
   function formatDate(value: string | null) {
@@ -1349,7 +1353,7 @@ export function InventoryStepClient({
                 {adjustmentNeeded
                   ? renderBadgeWithTooltip({
                       label: "조정 필요",
-                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 당일 판매량 사유를 남겨 주세요.`,
+                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 조정 사유를 남겨 주세요.`,
                       className:
                         "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
                     })
@@ -1358,7 +1362,7 @@ export function InventoryStepClient({
                   ? renderBadgeWithTooltip({
                       label: "조정됨",
                       detail: item.adjustment
-                        ? `조정 사유가 저장됐습니다. 당일 판매량 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
+                        ? `조정 사유가 저장됐습니다. 조정 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
                         : "조정 사유가 저장됐습니다.",
                       className:
                         "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
@@ -1489,7 +1493,7 @@ export function InventoryStepClient({
                       </span>
                     </p>
                     <p>
-                      당일 판매량{" "}
+                      조정 차이{" "}
                       <span className="tabular-nums">
                         {formatSignedQuantity(
                           item.adjustment.differenceQuantity,

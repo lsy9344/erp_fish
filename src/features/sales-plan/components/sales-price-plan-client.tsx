@@ -89,9 +89,7 @@ function hasPrice(value: string) {
 }
 
 function findProductIndex(data: SalesPricePlanStepData, productId: string) {
-  return data.productOptions.findIndex(
-    (product) => product.id === productId,
-  );
+  return data.productOptions.findIndex((product) => product.id === productId);
 }
 
 export function SalesPricePlanClient({
@@ -126,7 +124,9 @@ export function SalesPricePlanClient({
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
-      const pricedItems = items.filter((item) => hasPrice(item.plannedUnitPrice));
+      const pricedItems = items.filter((item) =>
+        hasPrice(item.plannedUnitPrice),
+      );
 
       for (let index = 0; index < pricedItems.length; index += 1) {
         if (errors[`plans.${index}.plannedUnitPrice`]?.length) {

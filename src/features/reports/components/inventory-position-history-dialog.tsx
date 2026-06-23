@@ -34,13 +34,15 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
 });
 const quantityFormatter = new Intl.NumberFormat("ko-KR");
 
-const sourceTypeLabels: Record<InventoryPositionFifoLotRow["sourceType"], string> =
-  {
-    OPENING: "기초 재고",
-    PREVIOUS_CARRYOVER: "전일 이월",
-    PURCHASE: "매입",
-    LEGACY_OPENING: "기존 재고",
-  };
+const sourceTypeLabels: Record<
+  InventoryPositionFifoLotRow["sourceType"],
+  string
+> = {
+  OPENING: "기초 재고",
+  PREVIOUS_CARRYOVER: "전일 이월",
+  PURCHASE: "매입",
+  LEGACY_OPENING: "기존 재고",
+};
 
 export function InventoryPositionHistoryDialog({
   row,
@@ -63,7 +65,7 @@ export function InventoryPositionHistoryDialog({
           variant="link"
           size="sm"
           className={cn(
-            "h-auto min-h-0 whitespace-normal p-0 text-sm font-medium tabular-nums",
+            "h-auto min-h-0 p-0 text-sm font-medium whitespace-normal tabular-nums",
             align === "right" ? "justify-end text-right" : "justify-start",
           )}
           aria-label={`${row.storeName} ${row.productName} ${metricLabel} FIFO 매입 이력 보기`}
@@ -173,7 +175,9 @@ function filterLots(
   const cutoffDateInput = subtractOneMonth(dateInput);
 
   return lots.filter((lot) => {
-    const lotDateInput = toDateInput(lot.sourceBusinessDate ?? lot.purchaseDate);
+    const lotDateInput = toDateInput(
+      lot.sourceBusinessDate ?? lot.purchaseDate,
+    );
 
     return (
       lotDateInput !== null &&

@@ -22,7 +22,7 @@ export const inventoryTerms = {
 
   // 도움말/안내 문구
   dailySalesQuantityHelp:
-    "기준재고와 입력한 당일재고의 차이입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
+    "기준재고에서 입력한 당일재고를 뺀 재고 흐름상 판매 수량입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
   carryoverHistoryTitle: "전일재고 이력",
 
   // FIFO 재고금액 / 판매 lot 이력

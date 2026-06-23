@@ -543,11 +543,10 @@ export function calculateLedgerReviewSummary({
         );
   const hasSalesDifferenceContext =
     inventoryAdjustments !== undefined && lossItems !== undefined;
-  const hasLegacyFifoOpening = inventoryItems.some(
-    (item) => hasLegacyOpeningFifoLot(item),
+  const hasLegacyFifoOpening = inventoryItems.some((item) =>
+    hasLegacyOpeningFifoLot(item),
   );
-  const usesUnapprovedFifoCostBasis =
-    canUseFifoConsumedAmounts(inventoryItems);
+  const usesUnapprovedFifoCostBasis = canUseFifoConsumedAmounts(inventoryItems);
   const usesUnapprovedFifoInventoryBasis =
     canUseFifoRemainingAmounts(inventoryItems);
   const hasUnapprovedFifoCostBasis =
@@ -610,7 +609,7 @@ export function calculateLedgerReviewSummary({
                 costOfGoodsSold,
                 fifoPolicyReason,
               )
-          : asKrwMetric("costOfGoodsSold", costOfGoodsSold),
+            : asKrwMetric("costOfGoodsSold", costOfGoodsSold),
     grossProfit:
       costOfGoodsSoldResult.kind === "error"
         ? dependentCalculationUnavailable(
@@ -624,7 +623,7 @@ export function calculateLedgerReviewSummary({
                 grossProfit,
                 fifoPolicyReason,
               )
-          : asKrwMetric("grossProfit", grossProfit),
+            : asKrwMetric("grossProfit", grossProfit),
     grossMarginRate:
       costOfGoodsSoldResult.kind === "error"
         ? dependentCalculationUnavailable(
@@ -640,7 +639,7 @@ export function calculateLedgerReviewSummary({
                 grossMarginRate,
                 fifoPolicyReason,
               )
-          : asRatioMetric("grossMarginRate", grossMarginRate),
+            : asRatioMetric("grossMarginRate", grossMarginRate),
     operatingProfit:
       costOfGoodsSoldResult.kind === "error"
         ? dependentCalculationUnavailable(
@@ -654,7 +653,7 @@ export function calculateLedgerReviewSummary({
                 operatingProfit,
                 fifoPolicyReason,
               )
-          : asKrwMetric("operatingProfit", operatingProfit),
+            : asKrwMetric("operatingProfit", operatingProfit),
     productivity:
       productivity === null
         ? dataInsufficient("근무인원이 입력되지 않았거나 1명 미만입니다.")
@@ -670,7 +669,7 @@ export function calculateLedgerReviewSummary({
                 inventoryAmount,
                 fifoPolicyReason,
               )
-          : asKrwMetric("inventoryAmount", inventoryAmount),
+            : asKrwMetric("inventoryAmount", inventoryAmount),
     paymentDifference,
     salesDifference: !hasSalesDifferenceContext
       ? createPolicyUnconfirmedMetric("salesDifferenceMeaningChange")
@@ -684,7 +683,7 @@ export function calculateLedgerReviewSummary({
                 salesDifference,
                 fifoPolicyReason,
               )
-          : asKrwMetric("salesDifference", salesDifference),
+            : asKrwMetric("salesDifference", salesDifference),
   };
 }
 

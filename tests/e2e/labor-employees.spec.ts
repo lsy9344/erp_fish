@@ -36,9 +36,7 @@ test("본사는 직원을 추가하고 월간 급여 롤업 영역을 본다", a
   await login(page, "hq@example.com");
   await page.goto("/app/labor/employees");
 
-  await expect(
-    page.getByRole("heading", { name: "직원 관리" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "직원 관리" })).toBeVisible();
   await expect(page.getByText("직원별 월간 급여 롤업")).toBeVisible();
 
   await page.getByLabel("이름").fill(EMPLOYEE_NAME);
@@ -51,9 +49,7 @@ test("본사는 직원을 추가하고 월간 급여 롤업 영역을 본다", a
   ).toBeVisible();
 
   await expect
-    .poll(async () =>
-      prisma.employee.count({ where: { name: EMPLOYEE_NAME } }),
-    )
+    .poll(async () => prisma.employee.count({ where: { name: EMPLOYEE_NAME } }))
     .toBe(1);
 });
 
@@ -62,9 +58,7 @@ test("지점장은 직원 관리 화면을 직접 열 수 없다", async ({ page
 
   await page.goto("/app/labor/employees");
   await expect(page).toHaveURL(/\/app\/unauthorized/);
-  await expect(
-    page.getByRole("heading", { name: "직원 관리" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "직원 관리" })).toHaveCount(0);
 });
 
 // WO-D(2026-06-22): REPORT_VIEW만 가진 본사 조회 전용 사용자는 직원을 볼 수는 있어도

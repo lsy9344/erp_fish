@@ -112,7 +112,7 @@ function HeadquartersExpenseSummary({
           <p className="text-muted-foreground text-sm break-words">
             본사 지출 합계
           </p>
-          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+          <p className="mt-2 text-lg font-semibold break-words tabular-nums">
             {krwFormatter.format(summary.totalAmount)}
           </p>
         </div>
@@ -120,7 +120,7 @@ function HeadquartersExpenseSummary({
           <p className="text-muted-foreground text-sm break-words">
             지점 귀속 지출
           </p>
-          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+          <p className="mt-2 text-lg font-semibold break-words tabular-nums">
             {krwFormatter.format(summary.storeAttributedAmount)}
           </p>
         </div>
@@ -128,7 +128,7 @@ function HeadquartersExpenseSummary({
           <p className="text-muted-foreground text-sm break-words">
             본사 공통 지출
           </p>
-          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+          <p className="mt-2 text-lg font-semibold break-words tabular-nums">
             {krwFormatter.format(summary.unattributedAmount)}
           </p>
         </div>
@@ -449,7 +449,7 @@ function RevenueRankingList({
               key={item.productId}
               className="bg-muted/40 flex min-w-0 items-start justify-between gap-3 rounded-md px-3 py-2"
             >
-              <span className="min-w-0 break-words text-sm">
+              <span className="min-w-0 text-sm break-words">
                 <span className="text-muted-foreground tabular-nums">
                   {index + 1}.
                 </span>{" "}
@@ -460,7 +460,9 @@ function RevenueRankingList({
               </span>
               <span className="shrink-0 text-right text-sm font-medium tabular-nums">
                 {krwFormatter.format(item.estimatedSalesAmount)}
-                <span className="text-muted-foreground block text-xs">추정</span>
+                <span className="text-muted-foreground block text-xs">
+                  추정
+                </span>
               </span>
             </li>
           ))}

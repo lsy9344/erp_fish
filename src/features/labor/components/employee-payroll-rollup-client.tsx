@@ -58,9 +58,9 @@ export function EmployeePayrollRollupClient({
       </div>
 
       <p className="text-muted-foreground text-xs">
-        직원이 연결된 급여 행만 직원별로 합산합니다. 자유 입력(직원 미연결) 급여는
-        아래 “미연결” 합계로 별도 표시되며, 직원 마스터와 연결하면 직원별 분석에
-        반영됩니다.
+        직원이 연결된 급여 행만 직원별로 합산합니다. 자유 입력(직원 미연결)
+        급여는 아래 “미연결” 합계로 별도 표시되며, 직원 마스터와 연결하면 직원별
+        분석에 반영됩니다.
       </p>
 
       {unlinked.rowCount > 0 ? (
@@ -73,8 +73,8 @@ export function EmployeePayrollRollupClient({
             {formatKrw(unlinked.payrollTotal)}
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
-            월말 급여 계산에서 누락되지 않도록 합계를 함께 표시합니다. 직원별 분석에
-            포함하려면 해당 급여 행을 직원 마스터와 연결해 주세요.
+            월말 급여 계산에서 누락되지 않도록 합계를 함께 표시합니다. 직원별
+            분석에 포함하려면 해당 급여 행을 직원 마스터와 연결해 주세요.
           </p>
         </div>
       ) : null}

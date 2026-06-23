@@ -30,7 +30,7 @@ test("morning summary message keeps all four required sections", () => {
   );
 
   assert.match(source, /export function formatMorningSummaryMessage/);
-  assert.match(source, /전날 장기 적자 매장/);
+  assert.match(source, /당일 적자 발생 지점/);
   assert.match(source, /전날 결산 미입력 지점/);
   assert.match(source, /한 달 이상 장기 체화 재고/);
   assert.match(source, /목표 마진율 미달 지점/);
@@ -77,7 +77,16 @@ test("morning summary payload builder computes stagnant stock and uses active th
   );
   // 메인 반환 경로는 실제 계산 결과를 사용한다(하드코딩 빈 배열 아님).
   // 줄바꿈은 OS에 따라 \n 또는 \r\n일 수 있으므로 \r?\n을 허용한다.
-  assert.match(source, /longTermStagnantProducts,\r?\n\s*belowTargetMarginStores,/);
+  assert.match(
+    source,
+    /longTermStagnantProducts,\r?\n\s*belowTargetMarginStores,/,
+  );
+
+  // change.md(2026-06-22): 당일 적자는 reportDate 하루 기준으로 본다.
+  assert.match(source, /const dailyProfitSummaries/);
+  assert.match(source, /startDate:\s*targetDate/);
+  assert.match(source, /endDate:\s*targetDate/);
+  assert.match(source, /dailyDeficitStores/);
 
   // WO-G(2026-06-22): 마진/적자는 본사 리포트 기준(correction-aware)을 재사용한다.
   // 단순 (총매출 - 지출)이 아니라 grossMarginRate / operatingProfit을 사용한다.
@@ -181,8 +190,7 @@ test("ledger review summary yields negative operating profit when COGS+expense e
 
   assert.equal(summary.grossProfit.value, 2_000);
   assert.ok(
-    summary.operatingProfit.value !== null &&
-      summary.operatingProfit.value < 0,
+    summary.operatingProfit.value !== null && summary.operatingProfit.value < 0,
     "operating profit should be negative (long-term deficit candidate)",
   );
 });

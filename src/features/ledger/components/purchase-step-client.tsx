@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 

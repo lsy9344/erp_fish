@@ -276,9 +276,8 @@ export async function getEmployeeProductivityAnalysis(
   // getLedgerProfitSummariesForRange는 [start, end] 포함 범위이므로 마지막 날 23:59까지 포함.
   const endInclusive = new Date(endExclusive.getTime() - 1);
 
-  const { getLedgerProfitSummariesForRange } = await import(
-    "../reports/queries"
-  );
+  const { getLedgerProfitSummariesForRange } =
+    await import("../reports/queries");
 
   const stores = await db.store.findMany({ select: { id: true } });
   const storeIds = stores.map((store) => store.id);
@@ -346,7 +345,10 @@ export async function getEmployeeProductivityAnalysis(
         acc.salesDayCount += 1;
       }
 
-      if (profit?.grossMarginRate !== null && profit?.grossMarginRate !== undefined) {
+      if (
+        profit?.grossMarginRate !== null &&
+        profit?.grossMarginRate !== undefined
+      ) {
         acc.marginSum += profit.grossMarginRate;
         acc.marginDayCount += 1;
       } else {
@@ -420,7 +422,8 @@ export async function getEmployeeProductivityAnalysis(
       workerCount,
       ledgerCount: acc.ledgerCount,
       avgSales: acc.salesCount > 0 ? acc.salesSum / acc.salesCount : null,
-      avgMarginRate: acc.marginCount > 0 ? acc.marginSum / acc.marginCount : null,
+      avgMarginRate:
+        acc.marginCount > 0 ? acc.marginSum / acc.marginCount : null,
       marginUnavailableReason:
         acc.marginCount > 0
           ? null

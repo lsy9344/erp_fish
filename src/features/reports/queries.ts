@@ -718,9 +718,8 @@ export async function getStoreProfitSummariesForRange({
   }
 
   const { db } = await import("../../server/db.ts");
-  const { getLatestCorrectionValuesForLedgersScoped } = await import(
-    "../corrections/queries.ts"
-  );
+  const { getLatestCorrectionValuesForLedgersScoped } =
+    await import("../corrections/queries.ts");
 
   const ledgers = await db.dailyLedger.findMany({
     where: {
@@ -890,9 +889,8 @@ export async function getLedgerProfitSummariesForRange({
   }
 
   const { db } = await import("../../server/db.ts");
-  const { getLatestCorrectionValuesForLedgersScoped } = await import(
-    "../corrections/queries.ts"
-  );
+  const { getLatestCorrectionValuesForLedgersScoped } =
+    await import("../corrections/queries.ts");
 
   const ledgers = await db.dailyLedger.findMany({
     where: {
@@ -1923,7 +1921,9 @@ function buildMonthlyRevenueRanking(
       soldQuantity: value.soldQuantity,
       estimatedSalesAmount: value.estimatedSalesAmount,
     }))
-    .sort((left, right) => right.estimatedSalesAmount - left.estimatedSalesAmount);
+    .sort(
+      (left, right) => right.estimatedSalesAmount - left.estimatedSalesAmount,
+    );
 
   if (ranked.length === 0) {
     return {

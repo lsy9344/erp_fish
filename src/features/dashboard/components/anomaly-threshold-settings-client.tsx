@@ -247,8 +247,8 @@ export function AnomalyThresholdSettingsClient({
 
               <FieldDescription>
                 재고 오차 허용 범위는 제로화되어, 수량이 1개라도 틀어지면 본사
-                관제판에 재고 이상 신호가 표시됩니다. 별도 기준값 입력은 필요하지
-                않습니다.
+                관제판에 재고 이상 신호가 표시됩니다. 별도 기준값 입력은
+                필요하지 않습니다.
               </FieldDescription>
 
               <Field data-invalid={Boolean(activeError)}>

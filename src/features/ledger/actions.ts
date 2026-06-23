@@ -173,9 +173,7 @@ function parseLedgerWorkInfoInput(
   return actionOk(parsed.data);
 }
 
-function parseLedgerLaborInput(
-  input: unknown,
-): ActionResult<LedgerLaborInput> {
+function parseLedgerLaborInput(input: unknown): ActionResult<LedgerLaborInput> {
   const parsed = ledgerLaborSchema.safeParse(input);
 
   if (!parsed.success) {
@@ -549,10 +547,9 @@ export async function submitLedgerForReview(
     return parsed;
   }
 
-  const dateGuard =
-    guardStoreManagerClosingDate<LedgerSubmitForReviewResult>(
-      parsed.data.closingDate,
-    );
+  const dateGuard = guardStoreManagerClosingDate<LedgerSubmitForReviewResult>(
+    parsed.data.closingDate,
+  );
 
   if (dateGuard) {
     return dateGuard;

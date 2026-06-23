@@ -118,11 +118,7 @@ const hqLedgerLossItemSchema = z.object({
   recoveredAmount: z
     .unknown()
     .transform((value, context) =>
-      parseRequiredInteger(
-        value,
-        context,
-        recoveredAmountError,
-      ),
+      parseRequiredInteger(value, context, recoveredAmountError),
     ),
   reason: z.unknown().transform((value, context) => {
     if (typeof value === "string") {

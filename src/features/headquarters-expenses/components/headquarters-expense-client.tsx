@@ -168,14 +168,13 @@ export function HeadquartersExpenseClient({
       }
 
       toast.success(
-        editingId
-          ? "본사 지출을 수정했습니다."
-          : "본사 지출을 등록했습니다.",
+        editingId ? "본사 지출을 수정했습니다." : "본사 지출을 등록했습니다.",
       );
       resetForm();
       router.refresh();
     } catch {
-      const message = "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+      const message =
+        "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
       setFormError(message);
       toast.error(message);
     } finally {
@@ -253,9 +252,7 @@ export function HeadquartersExpenseClient({
               </Field>
 
               <Field data-invalid={Boolean(storeIdError)}>
-                <FieldLabel htmlFor="expense-store">
-                  귀속 지점(선택)
-                </FieldLabel>
+                <FieldLabel htmlFor="expense-store">귀속 지점(선택)</FieldLabel>
                 <select
                   id="expense-store"
                   value={formValues.storeId}
@@ -275,9 +272,7 @@ export function HeadquartersExpenseClient({
                 <FieldDescription>
                   특정 지점에 귀속할 지출만 선택하세요.
                 </FieldDescription>
-                {storeIdError ? (
-                  <FieldError>{storeIdError}</FieldError>
-                ) : null}
+                {storeIdError ? <FieldError>{storeIdError}</FieldError> : null}
               </Field>
 
               <Field data-invalid={Boolean(categoryError)}>
@@ -309,9 +304,7 @@ export function HeadquartersExpenseClient({
                   }
                   aria-invalid={Boolean(amountError)}
                 />
-                {amountError ? (
-                  <FieldError>{amountError}</FieldError>
-                ) : null}
+                {amountError ? <FieldError>{amountError}</FieldError> : null}
               </Field>
 
               <Field
@@ -390,7 +383,7 @@ export function HeadquartersExpenseClient({
                   key={expense.id}
                   data-testid={`hq-expense-row-${expense.id}`}
                 >
-                  <TableCell className="tabular-nums whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap tabular-nums">
                     {expense.expenseDateLabel}
                   </TableCell>
                   <TableCell className="break-words">

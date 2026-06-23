@@ -1,11 +1,7 @@
 "use server";
 
 import type { ZodError } from "zod";
-import {
-  actionError,
-  actionOk,
-  type ActionResult,
-} from "~/lib/action-result";
+import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { requireEmployeeManageAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { employeeFormSchema } from "./employees-schemas";
@@ -21,9 +17,7 @@ export type EmployeeSaveResult = {
   name: string;
 };
 
-function toFieldErrors(
-  error: ZodError,
-): Record<string, string[]> {
+function toFieldErrors(error: ZodError): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
 
   for (const issue of error.issues) {

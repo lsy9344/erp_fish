@@ -19,7 +19,12 @@ function readProjectFile(...segments) {
 }
 
 test("HQ inventory position report source files follow WO-08 boundaries", () => {
-  assertProjectFile("src", "features", "reports", "inventory-position-types.ts");
+  assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "inventory-position-types.ts",
+  );
   assertProjectFile(
     "src",
     "features",
@@ -115,6 +120,8 @@ test("HQ inventory position report source files follow WO-08 boundaries", () => 
   assert.match(tableSource, /InventoryPositionHistoryDialog/);
   assert.match(tableSource, /전일재고/);
   assert.match(tableSource, /재고 금액/);
+  assert.match(tableSource, />당일 판매량</);
+  assert.match(tableSource, /label="당일 판매량"/);
   assert.match(fifoDialogSource, /최근 1개월/);
   assert.match(fifoDialogSource, /전체/);
   assert.match(fifoDialogSource, /sourceBusinessDate/);
@@ -234,6 +241,12 @@ test("inventory position export keeps allowlisted labels without leaking raw sen
   assert.deepEqual(
     exportData.columns,
     REPORT_EXPORT_COLUMN_ALLOWLISTS.inventory,
+  );
+  assert.ok(
+    exportData.columns.some(
+      (column) =>
+        column.key === "differenceQuantity" && column.label === "당일 판매량",
+    ),
   );
   assert.deepEqual(exportData.scopedStoreIds, ["store-1", "store-2"]);
 

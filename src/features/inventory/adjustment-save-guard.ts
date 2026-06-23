@@ -47,9 +47,7 @@ export function getInventorySaveAdjustmentErrors(
       continue;
     }
 
-    errors[`items.${index}.currentQuantity`] = [
-      missingAdjustmentReasonMessage,
-    ];
+    errors[`items.${index}.currentQuantity`] = [missingAdjustmentReasonMessage];
   }
 
   return errors;
