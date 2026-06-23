@@ -5,7 +5,7 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const STORY53_STORE_ID = "store-gangnam";
-const STORY53_LEDGER_DATE = "2026-06-06";
+const STORY53_LEDGER_DATE = getTodayKstInput();
 
 test.beforeEach(async () => {
   await cleanupStory53Data();
@@ -23,6 +23,19 @@ type ProductSeed = {
   defaultUnitPrice?: number;
   isActive?: boolean;
 };
+
+function getTodayKstInput() {
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .split("-");
+
+  return `${year}-${month}-${day}`;
+}
 
 async function tableExists(tableName: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ table_name: string }>>(

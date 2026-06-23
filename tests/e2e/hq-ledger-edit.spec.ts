@@ -163,6 +163,7 @@ async function seedEditableStoryData() {
       cardAmount: 6000,
       otherPaymentAmount: 0,
       workerCount: 2,
+      authorDisplayName: "스토리4-3 작성자",
       workMemo: STORY_MARKER,
       createdById: actorId,
       updatedById: actorId,
@@ -520,8 +521,11 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await expect(workPanel).toBeVisible();
   await replaceControlValue(workPanel.getByLabel("근무인원"), "5");
   await replaceControlValue(workPanel.getByLabel("특이사항 메모"), "본사 보완");
-  await fillHqEditReason(workPanel, "근무 원본 보완");
-  await workPanel.getByRole("button", { name: "저장" }).click();
+  await replaceControlValue(
+    workPanel.locator("#work-hq-edit-reason"),
+    "근무 원본 보완",
+  );
+  await workPanel.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     workPanel.getByRole("status").filter({ hasText: "저장됐습니다." }),
   ).toBeVisible();
@@ -538,9 +542,12 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
 
   await workPanel.getByRole("button", { name: "직원 추가" }).click();
   await replaceControlValue(workPanel.getByLabel("직원명"), "본사 직원");
-  await replaceControlValue(workPanel.getByLabel("급여 금액"), "1500000");
+  await replaceKrwControlValue(workPanel.getByLabel("급여 금액"), "1500000");
   await replaceControlValue(workPanel.getByLabel("특이사항 (선택)"), "야근");
-  await fillHqEditReason(workPanel, "급여 원본 보완");
+  await replaceControlValue(
+    workPanel.locator("#labor-hq-edit-reason"),
+    "급여 원본 보완",
+  );
   await workPanel.getByRole("button", { name: "급여 저장" }).click();
   await expect(
     workPanel

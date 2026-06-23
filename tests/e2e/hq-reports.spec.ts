@@ -1151,7 +1151,7 @@ test("본사는 월간 리포트에서 손익 준비도와 추정 매출 순위 
   ).toContainText("실측");
   await expect(
     page.getByTestId("hq-report-monthly-pl-input-labor"),
-  ).toContainText("미구현");
+  ).toContainText("실측");
   await expect(
     page.getByTestId("hq-report-monthly-pl-input-productSales"),
   ).toContainText("추정");
