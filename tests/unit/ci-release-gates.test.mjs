@@ -24,14 +24,15 @@ function readWorkflowJob(workflow, jobName) {
   return match[0];
 }
 
-test("PR CI keeps release gates while sharding core e2e smoke", () => {
+test("PR CI keeps release gates while running representative e2e smoke", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
   const qualityJob = readWorkflowJob(workflow, "quality");
   const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
+  const scripts = packageJson.scripts;
 
-  assert.match(packageJson.scripts["release:preflight"], /pnpm test:api/);
-  assert.match(packageJson.scripts["release:preflight"], /pnpm test:e2e:core/);
+  assert.match(scripts["release:preflight"], /pnpm test:api/);
+  assert.match(scripts["release:preflight"], /pnpm test:e2e:core/);
   assert.match(workflow, /run:\s*pnpm test:api/);
   assert.match(
     smokeJob,
@@ -44,16 +45,28 @@ test("PR CI keeps release gates while sharding core e2e smoke", () => {
   assert.match(smokeJob, /group:\s*\[ledger, hq, admin\]/);
   assert.match(
     smokeJob,
-    /run:\s*pnpm test:e2e:core:\$\{\{\s*matrix\.group\s*\}\}/,
+    /run:\s*pnpm test:e2e:smoke:\$\{\{\s*matrix\.group\s*\}\}/,
   );
-  assert.doesNotMatch(smokeJob, /run:\s*pnpm test:e2e:core\s*(?:\r?\n|$)/);
+  assert.doesNotMatch(smokeJob, /run:\s*pnpm test:e2e:core/);
   assert.match(qualityJob, /Restore Next\.js cache/);
-  assert.doesNotMatch(qualityJob, /Install Chromium/);
-  assert.doesNotMatch(qualityJob, /ms-playwright/);
+  assert.match(qualityJob, /Restore Playwright browser cache/);
+  assert.match(qualityJob, /Install Chromium/);
+  assert.match(qualityJob, /ms-playwright/);
   assert.doesNotMatch(
     workflow,
     /Run smoke e2e[\s\S]*tests\/e2e\/auth\.spec\.ts:16/,
   );
+
+  for (const scriptName of [
+    "test:e2e:smoke:ledger",
+    "test:e2e:smoke:hq",
+    "test:e2e:smoke:admin",
+  ]) {
+    assert.match(
+      scripts[scriptName],
+      /^node scripts\/run-playwright-clean\.mjs tests\/e2e\/.+\.spec\.ts:\d+$/,
+    );
+  }
 });
 
 test("scheduled burn-in repeats the smoke test inside one Playwright run", () => {
@@ -120,6 +133,7 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.doesNotMatch(startDatabase, /docker\.io\/postgres/);
   assert.match(ciDocs, /Pushes to feature branches run/);
   assert.match(ciDocs, /three parallel groups/);
+  assert.match(ciDocs, /representative E2E smoke/);
   assert.doesNotMatch(ciDocs, /new_function/);
 
   for (const phrase of [

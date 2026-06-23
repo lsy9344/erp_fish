@@ -82,8 +82,19 @@ jobs:
           restore-keys: |
             nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Validate Prisma schema
         run: pnpm exec prisma validate
@@ -183,8 +194,8 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run core e2e shard
-        run: pnpm test:e2e:core:${{ matrix.group }}
+      - name: Run representative e2e smoke
+        run: pnpm test:e2e:smoke:${{ matrix.group }}
 
       - name: Upload Playwright artifacts
         if: failure()

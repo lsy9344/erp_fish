@@ -6,8 +6,10 @@ The workflow lives at `.github/workflows/ci.yml`.
 
 - Pull requests run `Quality Gate` and `Playwright Smoke`.
 - Pushes to feature branches run the same fast checks.
-- `Playwright Smoke` runs the core E2E bundle as three parallel groups:
+- `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.
+- The broader core E2E bundle stays in `pnpm test:e2e:core` for local release
+  checks.
 - Pushes to `main` or `master` also run the full Playwright suite in 4 shards.
   The smoke job is skipped on those pushes because the full suite covers it.
 - A weekly schedule runs a 10-iteration smoke burn-in to catch flaky UI timing.
@@ -24,6 +26,7 @@ pnpm test:unit:file tests/unit/example.test.mjs
 pnpm test:unit
 pnpm typecheck
 pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --reporter=line
+pnpm test:e2e:smoke:ledger
 ```
 
 Run the heavier checks before pushing important work:
@@ -84,7 +87,9 @@ Artifacts are kept for 14 days.
 - If CI fails during install, rerun once. Dependency or browser cache may be cold.
 - If Playwright fails, download the failed job artifact and inspect `test-results`.
 - If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
-  matching local command: `pnpm test:e2e:core:ledger`,
-  `pnpm test:e2e:core:hq`, or `pnpm test:e2e:core:admin`.
+  matching local command: `pnpm test:e2e:smoke:ledger`,
+  `pnpm test:e2e:smoke:hq`, or `pnpm test:e2e:smoke:admin`.
+- If smoke passes but a release path needs broader coverage, run
+  `pnpm test:e2e:core` or the matching core group locally.
 - If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
 - If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.
