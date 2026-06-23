@@ -18,9 +18,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: "list",
+  timeout: process.env.CI ? 60_000 : 30_000,
   globalSetup: "./tests/e2e/global-setup.ts",
   expect: {
-    timeout: 15_000,
+    timeout: process.env.CI ? 25_000 : 15_000,
   },
   use: {
     baseURL,
