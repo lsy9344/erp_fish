@@ -173,7 +173,7 @@ test.beforeEach(async () => {
   await cleanupStoryTwoFiveData();
 });
 
-test("지점장 재고 화면 응답은 단가와 재고금액, 조정 금액을 직렬화하지 않는다", async ({
+test("지점장 재고 화면은 FIFO 재고금액은 노출하되 단가와 조정 금액은 직렬화하지 않는다", async ({
   page,
 }) => {
   const inventoryResponseBodies: string[] = [];
@@ -248,17 +248,19 @@ test("지점장 재고 화면 응답은 단가와 재고금액, 조정 금액을
   await expect(row).toContainText("10");
   await expect(row).toContainText("9");
   await expect(row.getByText("조정됨").first()).toBeVisible();
+  // 보완(2026-06-22): FIFO 재고금액은 지점장에게도 노출한다.
+  await expect(row).toContainText("8,888,886원");
+  // 단가/조정 금액(조정 전·후·차이)은 계속 차단한다.
   await expect(row).not.toContainText("987,654원");
-  await expect(row).not.toContainText("8,888,886원");
   await expect(row).not.toContainText("9,876,540원");
   await expect(row).not.toContainText("987654");
-  await expect(row).not.toContainText("8888886");
   await expect(row).not.toContainText("9876540");
   await expect(row).not.toContainText(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 
   const responsePayload = inventoryResponseBodies.join("\n");
+  // inventoryAmount(FIFO 재고금액)는 노출되므로 차단 목록에서 제외한다.
   expect(responsePayload).not.toMatch(
-    /unitPrice|purchaseAmount|lossAmount|inventoryAmount|beforeAmount|afterAmount|differenceAmount/,
+    /unitPrice|purchaseAmount|lossAmount|beforeAmount|afterAmount|differenceAmount/,
   );
   expect(responsePayload).not.toMatch(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 });

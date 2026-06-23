@@ -184,7 +184,6 @@ export async function buildHqLedgerClosePreflightInTx(
       where: { scope: ANOMALY_THRESHOLD_SCOPE },
       select: {
         marginRateBps: true,
-        inventoryDifferenceQuantity: true,
         isActive: true,
       },
     }),

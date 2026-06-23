@@ -107,6 +107,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
       grossMarginRate: { value: 0.7 },
       operatingProfit: { value: 60_000 },
       productivity: { value: 30_000 },
+      workerCount: { value: 3 },
       inventoryAmount: { value: 8_000 },
       salesDifference: { value: 2_000 },
       hopedSalePriceLossAmount: {
@@ -114,9 +115,18 @@ test("store manager response shaping recursively removes sensitive ledger metric
         status: "policy-unconfirmed",
       },
       paymentDifference: { value: 0 },
+      paymentTotal: { value: 100_000 },
+      expenseTotal: { value: 10_000 },
     },
     missingItems: [],
-    warnings: [],
+    warnings: [
+      {
+        id: "payment-difference",
+        label: "결제수단 합계와 총매출 불일치",
+        detail: "결제수단 합계가 총매출과 일치하지 않습니다.",
+        amount: -5_000,
+      },
+    ],
     signals: [
       {
         id: "inventory-product-1",
@@ -124,6 +134,14 @@ test("store manager response shaping recursively removes sensitive ledger metric
         detail: "광어 실제 재고 차이",
         quantity: -2,
         amount: -2_000,
+      },
+    ],
+    topSoldItems: [
+      {
+        productId: "product-1",
+        productName: "광어",
+        soldQuantity: 12,
+        estimatedSalesAmount: 120_000,
       },
     ],
     stepSummaries: [
@@ -167,10 +185,32 @@ test("store manager response shaping recursively removes sensitive ledger metric
     ],
   });
 
-  assertNoSensitiveKeys(safeReview);
-  assert.deepEqual(Object.keys(safeReview.summary), [
-    "totalSales",
+  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장에게 노출한다.
+  // 보완(2026-06-22 WO-01): 결제차액은 제거, 근무인원 수 추가.
+  // 매출원가·매출이익·영업이익·인당생산성·매출차이·FIFO·lot 근거는 계속 차단한다.
+  const stillBlockedSummaryKeys = [
+    "costOfGoodsSold",
+    "grossProfit",
+    "operatingProfit",
+    "productivity",
+    "salesDifference",
+    "hopedSalePriceLossAmount",
     "paymentDifference",
+  ];
+
+  for (const blockedKey of stillBlockedSummaryKeys) {
+    assert.equal(
+      Object.hasOwn(safeReview.summary, blockedKey),
+      false,
+      `summary.${blockedKey} should stay blocked for store managers`,
+    );
+  }
+
+  assert.deepEqual(Object.keys(safeReview.summary).sort(), [
+    "grossMarginRate",
+    "inventoryAmount",
+    "totalSales",
+    "workerCount",
   ]);
   assert.deepEqual(safeReview.signals[0], {
     id: "inventory-product-1",
@@ -178,18 +218,54 @@ test("store manager response shaping recursively removes sensitive ledger metric
     detail: "광어 실제 재고 차이",
     quantity: -2,
   });
+  // 역산 부정행위 방지(point_summary.md:37): 합계 불일치 경고도 차액 금액(amount)을
+  // 지점장 화면에 노출하지 않는다. 경고 사실(label/detail)만 남고 amount는 제거된다.
+  assert.deepEqual(safeReview.warnings[0], {
+    id: "payment-difference",
+    label: "결제수단 합계와 총매출 불일치",
+    detail: "결제수단 합계가 총매출과 일치하지 않습니다.",
+  });
+  assert.equal(Object.hasOwn(safeReview.warnings[0], "amount"), false);
+  // 화이트리스트(WO-01 수정): inventoryAmount는 통과, paymentDifference는 제거됨.
   assert.deepEqual(
-    safeReview.stepSummaries[0].metrics.map((metric) => metric.id),
-    ["paymentDifference"],
+    safeReview.stepSummaries[0].metrics.map((metric) => metric.id).sort(),
+    ["inventoryAmount"],
   );
+  // 매출원가와 희망 판매가 손실액은 단계 요약에서 차단된다.
   assert.equal(
     safeReview.stepSummaries[0].metrics.some((metric) =>
-      /매출원가|재고금액|costOfGoodsSold|inventoryAmount/.test(
+      /매출원가|costOfGoodsSold|hopedSalePrice|희망 판매가/.test(
         `${metric.id} ${metric.label}`,
       ),
     ),
     false,
   );
+
+  // WO-04(2026-06-22): 오늘 많이 팔린 품목 카드는 품목명/판매수량/추정매출만 노출한다.
+  assert.deepEqual(safeReview.topSoldItems, [
+    {
+      productId: "product-1",
+      productName: "광어",
+      soldQuantity: 12,
+      estimatedSalesAmount: 120_000,
+    },
+  ]);
+  for (const item of safeReview.topSoldItems) {
+    for (const blockedKey of [
+      "unitPrice",
+      "salesDifference",
+      "paymentDifference",
+      "grossProfit",
+      "fifoLots",
+      "inventoryAmount",
+    ]) {
+      assert.equal(
+        Object.hasOwn(item, blockedKey),
+        false,
+        `topSoldItems should not expose ${blockedKey} to store managers`,
+      );
+    }
+  }
 });
 
 test("common sensitive field helper removes derived and OQ-gated metric keys", async () => {
@@ -340,8 +416,7 @@ test("store manager inventory and loss contracts define safe response types", ()
   assert.match(inventoryTypes, /StoreManagerInventoryStepLine/);
   assert.match(lossTypes, /StoreManagerLossStepData/);
   assert.match(lossTypes, /StoreManagerLossLineItem/);
-  assert.match(lossTypes, /StoreManagerLossLineItem[\s\S]*"unitPrice"/);
-  assert.doesNotMatch(
+  assert.match(
     lossTypes,
     /StoreManagerLossLineItem[\s\S]*"unitPrice"\s*\|\s*"amount"/,
   );
@@ -361,7 +436,7 @@ test("store manager inventory and loss contracts define safe response types", ()
 
   assert.match(
     lossQueries,
-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,\s*\.\.\.item\s*}\)/,
   );
   assert.match(
     lossQueries,

@@ -11,6 +11,7 @@ const storeEntryPaths = {
   root: "/app/store-entry",
   inventory: "/app/store-entry/inventory",
   losses: "/app/store-entry/losses",
+  "sales-plan": "/app/store-entry/sales-plan",
 } as const;
 
 const masterDataPaths = {

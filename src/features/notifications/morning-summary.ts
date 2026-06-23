@@ -1,0 +1,280 @@
+import { db } from "~/server/db";
+import { getStoreProfitSummariesForRange } from "~/features/reports/queries";
+
+export type MorningSummaryPayload = {
+  reportDate: string;
+  longTermDeficitStores: string[];
+  missingEntryStores: string[];
+  longTermStagnantProducts: Array<{
+    storeName: string;
+    productName: string;
+    staleDays: number;
+  }>;
+  belowTargetMarginStores: string[];
+};
+
+export function formatMorningSummaryMessage(
+  payload: MorningSummaryPayload,
+): string {
+  const lines: string[] = [`[ERP 아침 요약] ${payload.reportDate}`];
+
+  lines.push("");
+  lines.push(
+    `📉 전날 장기 적자 매장 (${payload.longTermDeficitStores.length}건)`,
+  );
+
+  if (payload.longTermDeficitStores.length === 0) {
+    lines.push("없음");
+  } else {
+    for (const store of payload.longTermDeficitStores) {
+      lines.push(`• ${store}`);
+    }
+  }
+
+  lines.push("");
+  lines.push(
+    `📋 전날 결산 미입력 지점 (${payload.missingEntryStores.length}건)`,
+  );
+
+  if (payload.missingEntryStores.length === 0) {
+    lines.push("없음");
+  } else {
+    for (const store of payload.missingEntryStores) {
+      lines.push(`• ${store}`);
+    }
+  }
+
+  lines.push("");
+  lines.push(
+    `📦 한 달 이상 장기 체화 재고 (${payload.longTermStagnantProducts.length}건)`,
+  );
+
+  if (payload.longTermStagnantProducts.length === 0) {
+    lines.push("없음");
+  } else {
+    for (const item of payload.longTermStagnantProducts.slice(0, 5)) {
+      lines.push(
+        `• ${item.storeName} / ${item.productName} (${item.staleDays}일)`,
+      );
+    }
+
+    if (payload.longTermStagnantProducts.length > 5) {
+      lines.push(
+        `  외 ${payload.longTermStagnantProducts.length - 5}건`,
+      );
+    }
+  }
+
+  lines.push("");
+  lines.push(
+    `📊 목표 마진율 미달 지점 (${payload.belowTargetMarginStores.length}건)`,
+  );
+
+  if (payload.belowTargetMarginStores.length === 0) {
+    lines.push("없음");
+  } else {
+    for (const store of payload.belowTargetMarginStores) {
+      lines.push(`• ${store}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export async function buildMorningSummaryPayload(
+  reportDate: string,
+): Promise<MorningSummaryPayload> {
+  const [year, month, day] = reportDate.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return {
+      reportDate,
+      longTermDeficitStores: [],
+      missingEntryStores: [],
+      longTermStagnantProducts: [],
+      belowTargetMarginStores: [],
+    };
+  }
+
+  const targetDate = new Date(Date.UTC(year, month - 1, day));
+  const thirtyDaysAgo = new Date(
+    Date.UTC(year, month - 1, day - 30),
+  );
+
+  const [activeStores, ledgersYesterday] = await Promise.all([
+    db.store.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+    }),
+    db.dailyLedger.findMany({
+      where: { closingDate: targetDate },
+      select: {
+        storeId: true,
+        status: true,
+      },
+    }),
+  ]);
+
+  const activeStoreIds = new Set(activeStores.map((s) => s.id));
+  const submittedStoreIds = new Set(
+    ledgersYesterday
+      .filter(
+        (l) =>
+          l.status === "IN_REVIEW" || l.status === "HEADQUARTERS_CLOSED",
+      )
+      .map((l) => l.storeId),
+  );
+
+  const missingEntryStores = activeStores
+    .filter((store) => !submittedStoreIds.has(store.id))
+    .map((store) => store.name);
+
+  const storeNameById = new Map(activeStores.map((s) => [s.id, s.name]));
+
+  // WO-G(2026-06-22): 장기 적자/마진 미달 판정은 본사 리포트와 같은 기준을 쓴다.
+  // 단순 (총매출 - 지출)이 아니라 매출원가(COGS) 기반 grossProfit/grossMarginRate,
+  // 그리고 본사 정정(correction) 반영 상태를 함께 사용한다.
+  // - 장기 적자: 최근 30일 누적 영업이익(operatingProfit)이 음수인 지점.
+  // - 마진 미달: 최근 30일 누적 grossMarginRate가 활성 목표 마진율 미만인 지점.
+  const profitSummaries = await getStoreProfitSummariesForRange({
+    storeIds: [...activeStoreIds],
+    startDate: thirtyDaysAgo,
+    endDate: targetDate,
+  });
+
+  // WO-10(2026-06-22): 목표 마진율은 활성 이상 신호 기준값(marginRateBps)을 사용한다.
+  // 기준값이 없거나 비활성이면 마진율 미달 판정을 생략한다.
+  const thresholdSetting = await db.anomalyThresholdSetting.findUnique({
+    where: { scope: "GLOBAL" },
+    select: { marginRateBps: true, isActive: true },
+  });
+  const targetMarginRate = thresholdSetting?.isActive
+    ? thresholdSetting.marginRateBps / 10000
+    : null;
+
+  const belowTargetMarginStores: string[] = [];
+  const longTermDeficitStores: string[] = [];
+
+  for (const [storeId, summary] of profitSummaries) {
+    const storeName = storeNameById.get(storeId) ?? storeId;
+
+    // 본사 리포트 기준 영업이익이 음수면 장기 적자 후보.
+    if (summary.operatingProfit !== null && summary.operatingProfit < 0) {
+      longTermDeficitStores.push(storeName);
+    }
+
+    // 목표 마진율이 설정되어 있고, grossMarginRate가 계산 가능하며 목표 미만이면 후보.
+    if (
+      targetMarginRate !== null &&
+      summary.grossMarginRate !== null &&
+      summary.grossMarginRate < targetMarginRate
+    ) {
+      belowTargetMarginStores.push(storeName);
+    }
+  }
+
+  const longTermStagnantProducts = await buildLongTermStagnantProducts({
+    activeStoreIds: [...activeStoreIds],
+    storeNameById,
+    targetDate,
+    staleBeforeDate: thirtyDaysAgo,
+  });
+
+  return {
+    reportDate,
+    longTermDeficitStores,
+    missingEntryStores,
+    longTermStagnantProducts,
+    belowTargetMarginStores,
+  };
+}
+
+// WO-G(2026-06-22): 한 달 이상 장기 체화 재고.
+// 각 활성 매장의 reportDate 이전 최신 장부에서 잔량이 남은 FIFO lot 중,
+// lot의 실제 영업 기준일(sourceBusinessDate)이 30일 이상 지난 품목을 후보로 본다.
+// 매입 행이 없는 이월/기초/legacy lot도 sourceBusinessDate를 보존하므로 함께 포함된다.
+async function buildLongTermStagnantProducts({
+  activeStoreIds,
+  storeNameById,
+  targetDate,
+  staleBeforeDate,
+}: {
+  activeStoreIds: string[];
+  storeNameById: Map<string, string>;
+  targetDate: Date;
+  staleBeforeDate: Date;
+}): Promise<MorningSummaryPayload["longTermStagnantProducts"]> {
+  if (activeStoreIds.length === 0) {
+    return [];
+  }
+
+  // 매장별 reportDate 이전 최신 장부 1건을 찾는다.
+  const latestLedgers = await db.dailyLedger.findMany({
+    where: {
+      storeId: { in: activeStoreIds },
+      closingDate: { lte: targetDate },
+    },
+    orderBy: [{ storeId: "asc" }, { closingDate: "desc" }],
+    select: { id: true, storeId: true, closingDate: true },
+  });
+
+  const latestLedgerByStore = new Map<string, { id: string; storeId: string }>();
+
+  for (const ledger of latestLedgers) {
+    if (!latestLedgerByStore.has(ledger.storeId)) {
+      latestLedgerByStore.set(ledger.storeId, {
+        id: ledger.id,
+        storeId: ledger.storeId,
+      });
+    }
+  }
+
+  const latestLedgerIds = [...latestLedgerByStore.values()].map(
+    (ledger) => ledger.id,
+  );
+
+  if (latestLedgerIds.length === 0) {
+    return [];
+  }
+
+  const stagnantLots = await db.ledgerInventoryFifoLot.findMany({
+    where: {
+      dailyLedgerId: { in: latestLedgerIds },
+      remainingQuantity: { gt: 0 },
+      sourceBusinessDate: { lte: staleBeforeDate },
+    },
+    select: {
+      dailyLedgerId: true,
+      sourceBusinessDate: true,
+      sourcePurchaseItem: { select: { productName: true } },
+      product: { select: { name: true } },
+    },
+  });
+
+  const ledgerStoreById = new Map(
+    [...latestLedgerByStore.values()].map((ledger) => [
+      ledger.id,
+      ledger.storeId,
+    ]),
+  );
+  const stagnant: MorningSummaryPayload["longTermStagnantProducts"] = [];
+
+  for (const lot of stagnantLots) {
+    if (!lot.sourceBusinessDate) {
+      continue;
+    }
+
+    const storeId = ledgerStoreById.get(lot.dailyLedgerId);
+    const storeName = storeId ? (storeNameById.get(storeId) ?? storeId) : "";
+    const productName =
+      lot.product?.name ?? lot.sourcePurchaseItem?.productName ?? "품목";
+    const staleDays = Math.floor(
+      (targetDate.getTime() - lot.sourceBusinessDate.getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+
+    stagnant.push({ storeName, productName, staleDays });
+  }
+
+  return stagnant.sort((a, b) => b.staleDays - a.staleDays);
+}

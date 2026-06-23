@@ -5,11 +5,11 @@ import {
   parseRequiredNonNegativeInteger,
   toFieldErrors,
 } from "../../lib/validation.ts";
+import { recoveredAmountError } from "./amount.ts";
 
 const productError = "품목을 선택해 주세요.";
 const lossTypeError = "손실 유형을 선택해 주세요.";
 const quantityError = "수량은 0 이상의 정수여야 합니다.";
-const amountError = "손실 금액은 0원 이상의 정수여야 합니다.";
 const reasonError = "사유/특이사항을 입력해 주세요.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
@@ -64,10 +64,10 @@ const ledgerLossItemSchema = z.object({
     .transform((value, context) =>
       parseRequiredInteger(value, context, quantityError),
     ),
-  amount: z
+  recoveredAmount: z
     .unknown()
     .transform((value, context) =>
-      parseRequiredInteger(value, context, amountError),
+      parseRequiredInteger(value, context, recoveredAmountError),
     ),
   reason: z.unknown().transform((value, context) => {
     if (typeof value === "string") {
@@ -110,17 +110,17 @@ export const ledgerLossesSchema = ledgerLossesContextSchema
     value.losses.forEach((loss, index) => {
       if (
         typeof loss.quantity !== "number" ||
-        typeof loss.amount !== "number" ||
+        typeof loss.recoveredAmount !== "number" ||
         !isNonNegativeIntegerInRange(loss.quantity) ||
-        !isNonNegativeIntegerInRange(loss.amount)
+        !isNonNegativeIntegerInRange(loss.recoveredAmount)
       ) {
         return;
       }
 
-      if (loss.quantity === 0 && loss.amount === 0) {
+      if (loss.quantity === 0 && loss.recoveredAmount === 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "수량 또는 손실액 중 하나는 0보다 커야 합니다.",
+          message: "수량 또는 실제 판매/회수액 중 하나는 0보다 커야 합니다.",
           path: ["losses", index, "quantity"],
         });
       }

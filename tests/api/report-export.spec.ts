@@ -48,7 +48,7 @@ const DAILY_HEADER = [
 
 const COMPARISON_HEADER = [
   "지점",
-  "본사마감 일수",
+  "본사 마감 일수",
   "미마감 일수",
   "미입력 일수",
   "매출",
@@ -65,6 +65,21 @@ const COMPARISON_HEADER = [
 ];
 
 const MONTHLY_HEADER = ["구분", "항목", "일자", "지점", "값", "상태", "사유"];
+
+const INVENTORY_HEADER = [
+  "지점",
+  "품목",
+  "분류",
+  "규격",
+  "전일재고",
+  "매입",
+  "손실",
+  "남은 재고",
+  "전산 재고",
+  "차이",
+  "재고 금액",
+  "상태",
+];
 
 /*
  * Provider Contract Evidence:
@@ -127,6 +142,11 @@ test.describe("Report export API", () => {
         name: "invalid monthly month",
         params: { report: "monthly", month: "2026-13", format: "csv" },
         message: "조회 월을 확인해 주세요.",
+      },
+      {
+        name: "invalid inventory date",
+        params: { report: "inventory", date: "2026-02-30", format: "csv" },
+        message: "조회 날짜를 확인해 주세요.",
       },
     ];
 
@@ -294,6 +314,40 @@ test.describe("Report export API", () => {
 
     expect(parseCsvLine(firstCsvLine(csv))).toEqual(MONTHLY_HEADER);
     assertCsvDoesNotExposeRawSensitiveKeys(csv);
+  });
+
+  test("[P0] exports inventory CSV with only allowlisted columns and no raw sensitive keys", async ({
+    request,
+  }) => {
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "inventory",
+        date: getTodayKstInput(),
+        format: "csv",
+      }),
+    );
+    const csv = await expectCsvResponse(
+      response,
+      /^erp-fish-report-inventory-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
+
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(parseCsvLine(firstCsvLine(csv))).toEqual(INVENTORY_HEADER);
+    // 장부 없는 시드 지점은 0이 아니라 "미입력"으로 노출된다.
+    expect(csv).toContain("미입력");
+    // CSV 인젝션 방지: 시드 지점명(=SUM...)이 이스케이프된다.
+    expect(csv).toContain('"\'=SUM(1,1), ""quoted"""');
+    assertCsvDoesNotExposeRawSensitiveKeys(csv);
+
+    const auditLogs = await prisma.auditLog.findMany({
+      where: { targetType: "ReportExport" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditLogs).toHaveLength(1);
+    expect(auditLogs[0]?.action).toBe("report.export.created");
+    expect(auditLogs[0]?.targetId).toMatch(/^inventory:/);
   });
 
   test("[P1] preserves attachment headers, BOM, CSV escaping, and audit creation on success", async ({

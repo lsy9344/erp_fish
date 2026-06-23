@@ -14,9 +14,9 @@ function assertProjectFile(...segments) {
   return filePath;
 }
 
+// WO-01(2026-06-22): 재고 오차 허용 범위 제로화. 활성 기준값이 있으면 수량 차이 1개도 이상 신호다.
 const thresholds = {
   marginRateBps: 3500,
-  inventoryDifferenceQuantity: 10,
 };
 
 const completeInventoryItem = {
@@ -143,14 +143,15 @@ test("inventory/loss anomaly helper emits only inventory critical signals with a
   );
   assert.match(signals[0].detail, /꽃게/);
   assert.match(signals[0].detail, /12개/);
-  assert.match(signals[0].detail, /기준 10개/);
+  // WO-01(2026-06-22): 허용 기준 제거로 detail에 "기준 Nn개" 문구를 더 이상 넣지 않는다.
+  assert.doesNotMatch(signals[0].detail, /기준 \d+개/);
   assert.ok(
     signals.every((signal) => signal.id !== "loss-amount-exceeded"),
     "손실액 이상 신호는 삭제된 기준값이므로 더 이상 생성하지 않습니다.",
   );
 });
 
-test("inventory/loss anomaly helper requires values to exceed thresholds", async () => {
+test("inventory/loss anomaly helper flags any non-zero difference once thresholds are active (WO-01 재고 오차 제로화)", async () => {
   const anomalyPath = assertProjectFile(
     "src",
     "server",
@@ -161,6 +162,41 @@ test("inventory/loss anomaly helper requires values to exceed thresholds", async
     pathToFileURL(anomalyPath).href
   );
 
+  const signals = evaluateInventoryLossAnomalySignals({
+    thresholds,
+    current: {
+      inventoryItems: [completeInventoryItem],
+      inventoryAdjustments: [
+        {
+          productName: "꽃게",
+          differenceQuantity: 1,
+          differenceAmount: 1000,
+          reason: "실사 차이",
+        },
+      ],
+      lossItems: [],
+    },
+  });
+
+  assert.deepEqual(
+    signals.map((signal) => [signal.id, signal.label, signal.severity]),
+    [["inventory-difference-exceeded", "재고 이상", "critical"]],
+  );
+  assert.match(signals[0].detail, /1개/);
+});
+
+test("inventory/loss anomaly helper stays silent only when there is zero quantity difference", async () => {
+  const anomalyPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "anomaly.ts",
+  );
+  const { evaluateInventoryLossAnomalySignals } = await import(
+    pathToFileURL(anomalyPath).href
+  );
+
+  // WO-01(2026-06-22): 차이 수량이 정확히 0일 때만 이상 신호가 생기지 않는다.
   assert.deepEqual(
     evaluateInventoryLossAnomalySignals({
       thresholds,
@@ -169,9 +205,9 @@ test("inventory/loss anomaly helper requires values to exceed thresholds", async
         inventoryAdjustments: [
           {
             productName: "꽃게",
-            differenceQuantity: -10,
-            differenceAmount: -10000,
-            reason: "실사 차이",
+            differenceQuantity: 0,
+            differenceAmount: 0,
+            reason: "차이 없음",
           },
         ],
         lossItems: [
@@ -185,6 +221,28 @@ test("inventory/loss anomaly helper requires values to exceed thresholds", async
       },
     }),
     [],
+  );
+
+  // 음수 차이도 1개라도 있으면 이상 신호로 본다.
+  const negativeSignals = evaluateInventoryLossAnomalySignals({
+    thresholds,
+    current: {
+      inventoryItems: [completeInventoryItem],
+      inventoryAdjustments: [
+        {
+          productName: "꽃게",
+          differenceQuantity: -1,
+          differenceAmount: -1000,
+          reason: "실사 차이",
+        },
+      ],
+      lossItems: [],
+    },
+  });
+
+  assert.deepEqual(
+    negativeSignals.map((signal) => [signal.id, signal.severity]),
+    [["inventory-difference-exceeded", "critical"]],
   );
 });
 

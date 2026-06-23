@@ -7,6 +7,9 @@ export type DashboardSortMode = "priority" | "store-name";
 
 export type DashboardFilterMode = "all" | "needs-attention";
 
+// WO-07(2026-06-22): 관제판 표시 밀도. 요약 카드 그리드와 표 컨테이너 폭에 적용한다.
+export type DashboardDensity = "default" | "wide" | "compact";
+
 export type DashboardEmptyStateReason =
   | "no-active-stores"
   | "no-authorized-stores"
@@ -17,7 +20,7 @@ export type DashboardLedgerStatusKey = DailyLedgerStatus | "EMPTY";
 
 export type DashboardLedgerStatus = {
   key: DashboardLedgerStatusKey;
-  label: "미입력" | "입력중" | "검토대기" | "본사마감" | "휴무";
+  label: "미입력" | "입력 중" | "검토 대기" | "본사 마감" | "휴무";
 };
 
 export type DashboardBusinessStatus = {
@@ -40,13 +43,24 @@ export type DashboardCorrectionState = {
   hasUnappliedCorrections: boolean;
 };
 
+/**
+ * 미팅 결정(2026-06-21): 관제판 마진율은 "현재 / 기준" 형태로 읽기 쉽게 보여주고,
+ * 기준 미달 시 미달 금액을 툴팁이 아닌 표/카드에 직접 노출한다.
+ * UI는 이미 계산된 라벨만 렌더링하고 마진 계산을 React에서 중복하지 않는다.
+ */
+export type DashboardMarginDisplay = {
+  currentLabel: string;
+  targetLabel: string | null;
+  shortfallAmountLabel: string | null;
+};
+
 export type HqDashboardPriority = {
   rank: number;
   label:
     | "심각 이상"
     | "경고 이상"
-    | "검토대기"
-    | "입력중"
+    | "검토 대기"
+    | "입력 중"
     | "미입력"
     | "확인 필요"
     | "정상"
@@ -63,6 +77,7 @@ export type HqDashboardRow = {
   ledgerStatus: DashboardLedgerStatus;
   salesAmount: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
+  marginDisplay: DashboardMarginDisplay;
   salesDifference: LedgerReviewMetric;
   hasLoss: boolean | null;
   latestReflectedAt: string | null;

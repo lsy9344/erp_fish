@@ -1,6 +1,7 @@
 "use server";
 
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import { assertStoreManagerClosingDateIsToday } from "~/features/ledger/date";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import {
@@ -23,6 +24,7 @@ import {
   type LedgerInventoryStoreAccessInput,
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { getInventorySaveAdjustmentErrors } from "./adjustment-save-guard";
 import {
   persistLedgerInventoryCarryoverDetail,
@@ -215,6 +217,14 @@ export async function saveLedgerInventoryItems(
     return parsed;
   }
 
+  const dateGuard = assertStoreManagerClosingDateIsToday(
+    parsed.data.closingDate,
+  );
+
+  if (!dateGuard.ok) {
+    return actionError(dateGuard.code, dateGuard.message);
+  }
+
   try {
     const result = await db.$transaction(async (tx) => {
       const before = await getInventoryStepDataInTx(
@@ -327,6 +337,9 @@ export async function saveLedgerInventoryItems(
 
       await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
+      // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+      await refreshLedgerInventoryFifoLots(tx, before.id);
+
       const after = await getInventoryStepDataInTx(
         tx,
         parsed.data.storeId,
@@ -381,6 +394,14 @@ export async function saveLedgerInventoryAdjustment(
 
   if (!parsed.ok) {
     return parsed;
+  }
+
+  const dateGuard = assertStoreManagerClosingDateIsToday(
+    parsed.data.closingDate,
+  );
+
+  if (!dateGuard.ok) {
+    return actionError(dateGuard.code, dateGuard.message);
   }
 
   try {
@@ -583,6 +604,9 @@ export async function saveLedgerInventoryAdjustment(
           updatedById: actor.user.id,
         },
       });
+
+      // WO-02(2026-06-22): 재고 조정 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+      await refreshLedgerInventoryFifoLots(tx, before.id);
 
       const after = await getInventoryStepDataInTx(
         tx,

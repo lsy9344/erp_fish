@@ -96,6 +96,22 @@ export type LedgerInputCodeStatusInput = z.infer<
   typeof ledgerInputCodeStatusSchema
 >;
 
+// 지점별 표시명 덮어쓰기. 빈 문자열이면 alias를 삭제(본사 등록명으로 복귀)한다.
+export const ledgerInputCodeStoreAliasSchema = z.object({
+  storeId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, "지점을 확인해 주세요.")),
+  displayName: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(80, "표시명은 80자 이하여야 합니다.")),
+});
+
+export type LedgerInputCodeStoreAliasInput = z.infer<
+  typeof ledgerInputCodeStoreAliasSchema
+>;
+
 export function getLedgerInputCodeGroupLabel(value: LedgerInputCodeGroupValue) {
   return (
     LEDGER_INPUT_CODE_GROUPS.find((group) => group.value === value)?.label ??

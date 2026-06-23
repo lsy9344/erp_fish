@@ -130,6 +130,9 @@ export async function getLedgerInputCodesForHeadquarters(
 
 export async function getActiveLedgerInputCodeOptions(
   group?: LedgerInputCodeGroupValue,
+  // WO-09: 지점 컨텍스트가 있으면 해당 지점의 표시명 alias를 우선 적용한다.
+  // storeId가 없으면(본사 화면 등) 본사 등록명을 그대로 반환한다.
+  storeId?: string,
 ) {
   await requireAppUser();
 
@@ -152,6 +155,12 @@ export async function getActiveLedgerInputCodeOptions(
     },
   });
 
+  // 미팅 결정(2026-06-21): 코드 표시명은 지점별 덮어쓰기(alias)가 있으면
+  // 해당 지점 화면에서 우선 적용한다. 코드 자체는 본사 등록값을 유지한다.
+  const aliasByCodeId = storeId
+    ? await getStoreAliasByCodeId(storeId, group)
+    : new Map<string, string>();
+
   return codes.map<LedgerInputCodeOption>((code) => {
     const groupValue = code.group;
 
@@ -159,8 +168,27 @@ export async function getActiveLedgerInputCodeOptions(
       id: code.id,
       group: groupValue,
       groupLabel: getLedgerInputCodeGroupLabel(groupValue),
-      name: code.name,
+      name: aliasByCodeId.get(code.id) ?? code.name,
       displayOrder: code.displayOrder,
     };
   });
+}
+
+// 지점별 표시명 alias를 codeId -> displayName 맵으로 조회한다.
+// 본사 등록명은 그대로 두고, 화면 표시명만 alias로 덮어쓰기 위한 용도다.
+async function getStoreAliasByCodeId(
+  storeId: string,
+  group?: LedgerInputCodeGroupValue,
+) {
+  const aliases = await db.ledgerInputCodeStoreAlias.findMany({
+    where: {
+      storeId,
+      ...(group ? { ledgerInputCode: { group } } : {}),
+    },
+    select: { ledgerInputCodeId: true, displayName: true },
+  });
+
+  return new Map(
+    aliases.map((alias) => [alias.ledgerInputCodeId, alias.displayName]),
+  );
 }

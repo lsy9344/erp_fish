@@ -286,9 +286,22 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(actionSource, /version:\s*parsed\.data\.version/);
   assert.match(actionSource, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.match(actionSource, /parsed\.data\.closingDate/);
+  // WO-B(2026-06-22): 최초 작성자 표시명 보존. 기존 값이 있으면 덮어쓰지 않고,
+  // 최초 저장에서만 클라이언트 입력값을 기록한다.
   assert.match(
     actionSource,
-    /authorDisplayName:\s*parsed\.data\.authorDisplayName/,
+    /const\s+authorDisplayNameToPersist\s*=/,
+    "sales save should compute a preserved author display name",
+  );
+  assert.match(
+    actionSource,
+    /beforeLedger\.authorDisplayName/,
+    "sales save should read the existing author display name to preserve it",
+  );
+  assert.match(
+    actionSource,
+    /authorDisplayName:\s*authorDisplayNameToPersist/,
+    "sales save should persist the preserved author display name",
   );
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /revalidateDashboardAndReports\(\)/);

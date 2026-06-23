@@ -15,6 +15,10 @@ import {
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "../../server/calculations/inventory.ts";
+import {
+  calculateMarginShortfall,
+  formatMarginShortfallAmount,
+} from "../../server/calculations/anomaly.ts";
 import type {
   AnomalySignalSummary,
   AnomalyThresholdSignalSettings,
@@ -27,9 +31,11 @@ import type { LedgerReviewMissingItem } from "../ledger/review-types.ts";
 import type {
   DashboardBusinessStatus,
   DashboardDatePreset,
+  DashboardDensity,
   DashboardEmptyStateReason,
   DashboardFilterMode,
   DashboardLedgerStatus,
+  DashboardMarginDisplay,
   DashboardSortMode,
   HqDashboardData,
   HqDashboardPriority,
@@ -127,16 +133,23 @@ export function getDashboardFilterMode(value: unknown): DashboardFilterMode {
   return value === "needs-attention" ? "needs-attention" : "all";
 }
 
+// WO-07(2026-06-22): density URL 파라미터를 정규화한다. 기본값은 "default".
+export function getDashboardDensity(value: unknown): DashboardDensity {
+  return value === "wide" || value === "compact" ? value : "default";
+}
+
 export function getDashboardPath({
   datePreset,
   sortMode,
   filterMode,
+  density = "default",
 }: {
   datePreset: DashboardDatePreset;
   sortMode: DashboardSortMode;
   filterMode: DashboardFilterMode;
+  density?: DashboardDensity;
 }) {
-  return `/app/dashboard?date=${datePreset}&sort=${sortMode}&filter=${filterMode}`;
+  return `/app/dashboard?date=${datePreset}&sort=${sortMode}&filter=${filterMode}&density=${density}`;
 }
 
 export function getDashboardDate(
@@ -404,11 +417,11 @@ function getDashboardPriority(
   }
 
   if (row.ledgerStatus.key === "IN_REVIEW") {
-    return { rank: 30, label: "검토대기", reasons: ["본사 검토 필요"] };
+    return { rank: 30, label: "검토 대기", reasons: ["본사 검토 필요"] };
   }
 
   if (row.ledgerStatus.key === "IN_PROGRESS") {
-    return { rank: 40, label: "입력중", reasons: ["미마감"] };
+    return { rank: 40, label: "입력 중", reasons: ["미마감"] };
   }
 
   if (row.ledgerStatus.key === "EMPTY") {
@@ -463,6 +476,11 @@ function toDashboardRow(
       ledgerStatus: mapDashboardLedgerStatus(null),
       salesAmount: metrics.totalSales,
       grossMarginRate: metrics.grossMarginRate,
+      marginDisplay: buildMarginDisplay(
+        thresholdSettings,
+        metrics.totalSales,
+        metrics.grossMarginRate,
+      ),
       salesDifference: metrics.salesDifference,
       hasLoss: null,
       latestReflectedAt: null,
@@ -552,6 +570,11 @@ function toDashboardRow(
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
     grossMarginRate: reviewSummary.grossMarginRate,
+    marginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      reviewSummary.totalSales,
+      reviewSummary.grossMarginRate,
+    ),
     salesDifference: reviewSummary.salesDifference,
     hasLoss,
     latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
@@ -751,6 +774,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: correctedReviewSummary.totalSales,
     grossMarginRate: correctedReviewSummary.grossMarginRate,
+    marginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      correctedReviewSummary.totalSales,
+      correctedReviewSummary.grossMarginRate,
+    ),
     salesDifference: correctedReviewSummary.salesDifference,
     hasLoss: hasCorrectedLoss(correctionOverlay.lossItems),
     latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),
@@ -842,7 +870,7 @@ function getMetricStatusSignals(revenueCurrent: DashboardRevenueCurrent) {
     ),
     metricStatusSignal(
       "salesDifference",
-      "매출차액",
+      "매출 차액",
       revenueCurrent.salesDifference,
     ),
   ].filter((signal) => signal !== null);
@@ -869,12 +897,15 @@ function metricStatusSignal(
     return null;
   }
 
-  const statusLabel =
-    metric.status === "policy-unconfirmed"
-      ? "기준 확인 필요"
-      : metric.status === "data-insufficient"
-        ? "데이터 부족"
-        : "계산 불가";
+  // WO-05(2026-06-22): 관제판 신호 라벨은 원문(point_summary.md:14)의
+  // 확정 문구로 고정하고, 세부 상태(data-insufficient/policy-unconfirmed 등)는
+  // id/detail에만 남겨 혼동을 줄인다.
+  const statusLabelByMetric = {
+    totalSales: "매출 기준 확인 필요",
+    grossMarginRate: "이익률 계산 불가",
+    salesDifference: "매출 차액 계산 불가",
+  } as const;
+  const statusLabel = statusLabelByMetric[id];
   const detail =
     metric.reason ??
     metric.unavailableReason ??
@@ -908,17 +939,16 @@ function normalizeDashboardAnomalySignals(signals: AnomalySignalSummary[]) {
   });
 }
 
+// 이 맵은 "FIFO 원가/재고금액 같은 정책-의존 신호"를 기준 확인 info로 강등할 때만 사용한다.
+// 재고 수량 불일치(inventory-difference-exceeded)는 FIFO 원가 정책(OQ-7/OQ-17)과 무관한
+// 데이터 품질 사실이다. 원문(point_summary.md:18)은 "재고 오차 허용 제로화 — 단 1개라도
+// 틀어지면 무조건 이상 신호 팝업"을 요구하므로, 수량 불일치는 anomaly.ts가 산출한 원래
+// severity(critical)를 그대로 노출한다. 따라서 이 맵에서 inventory-difference-exceeded를 제외한다.
+// 향후 FIFO 원가가 신호로 노출될 때만 이 맵에 항목을 추가한다.
 const policyRequiredSignalByAnomalyId: Record<
   string,
   { id: string; label: string; detail: string }
-> = {
-  "inventory-difference-exceeded": {
-    id: "inventory-policy-required",
-    label: "재고 기준 확인",
-    detail:
-      "OQ-7/OQ-17 FIFO 재고 기준 정책이 확정되지 않아 확정 재고 이상으로 표시하지 않습니다.",
-  },
-};
+> = {};
 
 function toInventoryLossInventoryItems(items: LedgerReviewInventoryInput[]) {
   return items.map((item) => ({
@@ -1087,6 +1117,71 @@ function getDashboardEmptyStateReason({
   return storeScopeMode === StoreAccessMode.ASSIGNED_STORES
     ? "no-authorized-stores"
     : "no-active-stores";
+}
+
+const marginPercentFormatter = new Intl.NumberFormat("ko-KR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/**
+ * 미팅 결정(2026-06-21): 마진율을 "현재 / 기준" 형태로 보여주고, 기준 미달 시
+ * 미달 금액을 표/카드에 직접 노출한다. 마진 계산은 서버 anomaly 계산을 재사용하고
+ * UI에는 라벨만 내려 보낸다. 기준값이 없거나 마진율을 계산할 수 없으면 기준/금액
+ * 라벨은 null로 두어 현재 마진율 또는 계산 상태만 깔끔하게 보이게 한다.
+ */
+export function buildMarginDisplay(
+  thresholdSettings: AnomalyThresholdSignalSettings | null,
+  totalSales: LedgerReviewMetric,
+  grossMarginRate: LedgerReviewMetric,
+): DashboardMarginDisplay {
+  const currentLabel =
+    grossMarginRate.value === null
+      ? (grossMarginRate.label ??
+        grossMarginRate.unavailableReason ??
+        grossMarginRate.reason ??
+        "-")
+      : `${formatMarginPercent(grossMarginRate.value)}%`;
+
+  if (thresholdSettings === null || grossMarginRate.value === null) {
+    return {
+      currentLabel,
+      targetLabel: null,
+      shortfallAmountLabel: null,
+    };
+  }
+
+  const targetLabel = `${formatMarginPercent(
+    thresholdSettings.marginRateBps / 10000,
+  )}%`;
+  const shortfall = calculateMarginShortfall(thresholdSettings, {
+    totalSales: toAnomalyMetric(totalSales),
+    grossMarginRate: toAnomalyMetric(grossMarginRate),
+  });
+
+  return {
+    currentLabel,
+    targetLabel,
+    shortfallAmountLabel: shortfall
+      ? formatMarginShortfallAmount(shortfall)
+      : null,
+  };
+}
+
+function formatMarginPercent(rate: number) {
+  return marginPercentFormatter.format(rate * 100);
+}
+
+function toAnomalyMetric(metric: LedgerReviewMetric) {
+  return {
+    value: metric.value,
+    unavailableReason:
+      metric.status === "policy-unconfirmed"
+        ? ("계산 기준 확인 필요" as const)
+        : metric.value === null
+          ? ("계산 불가" as const)
+          : undefined,
+  };
 }
 
 function dataInsufficient(reason: string): LedgerReviewMetric {

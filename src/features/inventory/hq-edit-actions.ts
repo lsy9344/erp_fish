@@ -30,6 +30,7 @@ import {
   isLedgerEditable,
 } from "~/features/ledger/status-policy";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -341,6 +342,9 @@ export async function saveHqLedgerInventoryItems(
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
+        // WO-02(2026-06-22): 본사 재고 마감 수정 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(tx, before.id);
+
         const after = await getInventoryStepDataByLedgerIdInTx(tx, ledgerId);
 
         if (!after) {
@@ -583,6 +587,9 @@ export async function saveHqLedgerInventoryAdjustment(
             updatedById: actor.user.id,
           },
         });
+
+        // WO-02(2026-06-22): 본사 재고 조정 저장 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(tx, before.id);
 
         const after = await getInventoryStepDataByLedgerIdInTx(tx, ledgerId);
 

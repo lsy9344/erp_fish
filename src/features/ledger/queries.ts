@@ -5,6 +5,7 @@ import {
   calculateGrossProfit,
   calculatePaymentDifference,
   calculatePurchaseTotal,
+  calculatePayrollTotal,
   calculateProductivity,
 } from "~/server/calculations/ledger";
 import { writeAuditLog } from "~/server/audit";
@@ -49,6 +50,16 @@ const ledgerPurchaseSelect = {
   referenceInfo: true,
 } as const;
 
+const ledgerLaborSelect = {
+  id: true,
+  employeeId: true,
+  workerName: true,
+  amount: true,
+  lateMemo: true,
+  earlyLeaveMemo: true,
+  specialMemo: true,
+} as const;
+
 export const ledgerSelect = {
   id: true,
   storeId: true,
@@ -79,6 +90,12 @@ export const ledgerSelect = {
       createdAt: "asc",
     },
   },
+  ledgerLaborItems: {
+    select: ledgerLaborSelect,
+    orderBy: {
+      createdAt: "asc",
+    },
+  },
   _count: {
     select: {
       ledgerInventoryItems: true,
@@ -93,6 +110,7 @@ type DailyLedgerPayload = Prisma.DailyLedgerGetPayload<{
 
 type LedgerExpensePayload = DailyLedgerPayload["ledgerExpenses"][number];
 type LedgerPurchasePayload = DailyLedgerPayload["ledgerPurchaseItems"][number];
+type LedgerLaborPayload = DailyLedgerPayload["ledgerLaborItems"][number];
 
 type LedgerAuditPayload = {
   status: DailyLedgerPayload["status"];
@@ -110,8 +128,10 @@ type LedgerAuditPayload = {
   closedAt: string | null;
   expenseItems: LedgerCostStepData["expenseItems"];
   purchaseItems: LedgerCostStepData["purchaseItems"];
+  laborItems: LedgerCostStepData["laborItems"];
   expenseTotal: number;
   purchaseTotal: number;
+  payrollTotal: number;
   grossProfit: number;
   productivity: number | null;
   paymentDifferenceAmount: number;
@@ -134,6 +154,7 @@ type LedgerAuditInput = Pick<
   | "closedAt"
   | "ledgerExpenses"
   | "ledgerPurchaseItems"
+  | "ledgerLaborItems"
 >;
 
 export function getTodayKstMidnight(inputDate = new Date()) {
@@ -198,6 +219,20 @@ function getLedgerPurchaseItems(ledger: {
   }));
 }
 
+function getLedgerLaborItems(ledger: {
+  ledgerLaborItems: LedgerLaborPayload[];
+}): LedgerCostStepData["laborItems"] {
+  return ledger.ledgerLaborItems.map((item: LedgerLaborPayload) => ({
+    id: item.id,
+    employeeId: item.employeeId ?? null,
+    workerName: item.workerName,
+    amount: item.amount,
+    lateMemo: item.lateMemo ?? null,
+    earlyLeaveMemo: item.earlyLeaveMemo ?? null,
+    specialMemo: item.specialMemo ?? null,
+  }));
+}
+
 export function toLedgerCostStepData(
   ledger: DailyLedgerPayload,
 ): LedgerCostStepData {
@@ -206,6 +241,7 @@ export function toLedgerCostStepData(
     expenseItems.map((item) => item.amount),
   );
   const purchaseItems = getLedgerPurchaseItems(ledger);
+  const laborItems = getLedgerLaborItems(ledger);
   const grossProfit = calculateGrossProfit(
     ledger.totalSalesAmount,
     expenseTotal,
@@ -221,6 +257,8 @@ export function toLedgerCostStepData(
     purchaseTotal: calculatePurchaseTotal(
       purchaseItems.map((item) => item.amount),
     ),
+    laborItems,
+    payrollTotal: calculatePayrollTotal(laborItems.map((item) => item.amount)),
     grossProfit,
     productivity: calculateProductivity(
       grossProfit,
@@ -259,6 +297,10 @@ export function toLedgerAuditPayload(
       (purchase: LedgerPurchasePayload) => purchase.amount,
     ),
   );
+  const laborItems = getLedgerLaborItems(ledger);
+  const payrollTotal = calculatePayrollTotal(
+    laborItems.map((item) => item.amount),
+  );
   const grossProfit = calculateGrossProfit(
     ledger.totalSalesAmount,
     expenseTotal,
@@ -280,8 +322,10 @@ export function toLedgerAuditPayload(
     workMemo: ledger.workMemo ?? null,
     expenseItems: getLedgerExpenseItems(ledger),
     purchaseItems: getLedgerPurchaseItems(ledger),
+    laborItems,
     expenseTotal,
     purchaseTotal,
+    payrollTotal,
     grossProfit,
     productivity: calculateProductivity(
       grossProfit,

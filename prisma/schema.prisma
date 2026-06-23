@@ -575,6 +575,10 @@ model LedgerInventoryFifoLot {
   consumedAmount        Int
   remainingAmount       Int
   sortOrder             Int
+  // WO-G(2026-06-22): lot의 실제 영업 기준일. 장기 체화 재고 판정이 데이터 입력 시각
+  // (createdAt)이 아니라 영업일을 기준으로 동작하도록 한다.
+  // PURCHASE는 매입 장부의 closingDate, 이월/기초 lot은 원천 영업일을 보존한다.
+  sourceBusinessDate    DateTime?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
@@ -589,6 +593,7 @@ model LedgerInventoryFifoLot {
   @@index([productId])
   @@index([sourceType])
   @@index([sourcePurchaseItemId])
+  @@index([sourceBusinessDate])
 }
 
 model LedgerInventoryAdjustment {
@@ -637,6 +642,7 @@ model LedgerLossItem {
   unitPrice         Int
   lossTypeName      String
   quantity          Int
+  recoveredAmount   Int      @default(0)
   amount            Int
   reason            String
   createdById       String

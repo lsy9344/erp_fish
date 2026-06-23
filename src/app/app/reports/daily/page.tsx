@@ -9,6 +9,7 @@ import { Input } from "~/components/ui/input";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { DailyMeetingReportTable } from "~/features/reports/components/daily-meeting-report-table";
+import { ProductCategoryMarginChart } from "~/features/reports/components/product-category-margin-chart";
 import {
   getDailyMeetingReportDateQuery,
   getDailyMeetingReportPath,
@@ -49,7 +50,7 @@ export default async function DailyMeetingReportPage({
       variant: "default" as const,
     },
     {
-      label: "본사마감",
+      label: "본사 마감",
       value: report.summary.closedCount,
       variant: "success" as const,
     },
@@ -95,6 +96,9 @@ export default async function DailyMeetingReportPage({
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/comparison">기간 비교</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/inventory">재고 현황</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/monthly">월간</Link>
@@ -172,6 +176,16 @@ export default async function DailyMeetingReportPage({
             variant={item.variant}
           />
         ))}
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">냉동/생물 매출 (추정)</h2>
+        <p className="text-muted-foreground mt-1 text-xs">
+          품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.
+        </p>
+        <div className="mt-3">
+          <ProductCategoryMarginChart data={report.categoryPerformance} />
+        </div>
       </section>
 
       <DailyMeetingReportTable report={report} />

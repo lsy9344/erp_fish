@@ -6,6 +6,7 @@ import type { DailyLedgerStatus, Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import {
+  getHeadquartersStoreScope,
   requireHeadquartersLedgerScope,
   requireLedgerHqCloseAccess,
 } from "~/server/authz";
@@ -52,8 +53,31 @@ const closePreflightInputSchema = z.object({
     .pipe(z.string().min(1, "장부를 확인해 주세요.")),
 });
 
+const bulkCloseLedgerInputSchema = z.object({
+  ledgerIds: z
+    .array(
+      z
+        .string()
+        .transform((value) => value.trim())
+        .pipe(z.string().min(1, "장부를 확인해 주세요.")),
+    )
+    .min(1, "마감할 장부를 선택해 주세요.")
+    .max(100, "한 번에 최대 100개 장부만 마감할 수 있습니다."),
+  reason: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(
+      z
+        .string()
+        .min(1, "일괄 마감 사유를 입력해 주세요.")
+        .max(500, "일괄 마감 사유는 500자 이하여야 합니다."),
+    ),
+  simplified: z.literal(true),
+});
+
 type LedgerCloseInput = z.infer<typeof closeLedgerInputSchema>;
 type LedgerClosePreflightInput = z.infer<typeof closePreflightInputSchema>;
+type BulkLedgerCloseInput = z.infer<typeof bulkCloseLedgerInputSchema>;
 
 const closeLedgerAuditSelect = {
   ...ledgerSelect,
@@ -79,6 +103,21 @@ function parseClosePreflightInput(
   }
 
   return actionOk(parsed.data);
+}
+
+function parseBulkCloseLedgerInput(
+  input: unknown,
+): ActionResult<BulkLedgerCloseInput> {
+  const parsed = bulkCloseLedgerInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.");
+  }
+
+  return actionOk({
+    ...parsed.data,
+    ledgerIds: [...new Set(parsed.data.ledgerIds)],
+  });
 }
 
 function revalidateHqLedgerPaths(ledgerId: string) {
@@ -171,7 +210,7 @@ async function closeConflictError<T = never>(
     section: "hq-close",
     clientToken: input.ledgerUpdatedAt,
     serverToken: current?.updatedAt.toISOString() ?? "unknown",
-    clientValues: { 요청: "본사마감" },
+    clientValues: { 요청: "본사 마감" },
     serverValues: { 현재상태: current?.status ?? null },
     lastModifiedAt: current?.updatedAt.toISOString(),
     reloadRequired: true,
@@ -188,6 +227,14 @@ function parseExpectedUpdatedAt(value: string): Date | null {
 export type HqCloseLedgerResult = {
   id: string;
   status: DailyLedgerStatus;
+  closedAt: string;
+};
+
+export type HqBulkCloseLedgerResult = {
+  closedCount: number;
+  skippedCount: number;
+  closedLedgerIds: string[];
+  skippedLedgerIds: string[];
   closedAt: string;
 };
 
@@ -350,4 +397,122 @@ export async function closeHqLedger(
   }
 
   return result;
+}
+
+export async function bulkCloseHqLedgers(
+  input: unknown,
+): Promise<ActionResult<HqBulkCloseLedgerResult>> {
+  const parsed = parseBulkCloseLedgerInput(input);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const actor = { user: await requireLedgerHqCloseAccess() };
+  const storeScope = await getHeadquartersStoreScope();
+  const scopedStoreIds = new Set(storeScope.storeIds);
+  const closedAt = new Date();
+
+  try {
+    const result = await db.$transaction<ActionResult<HqBulkCloseLedgerResult>>(
+      async (tx) => {
+        const beforeLedgers = await tx.dailyLedger.findMany({
+          where: {
+            id: { in: parsed.data.ledgerIds },
+            storeId: { in: [...scopedStoreIds] },
+          },
+          select: closeLedgerAuditSelect,
+        });
+        const beforeById = new Map(
+          beforeLedgers.map((ledger) => [ledger.id, ledger]),
+        );
+        const closeableLedgers = beforeLedgers.filter((ledger) =>
+          editableLedgerStatuses.some((status) => status === ledger.status),
+        );
+        const closeableLedgerIds = closeableLedgers.map((ledger) => ledger.id);
+
+        if (closeableLedgerIds.length > 0) {
+          await tx.dailyLedger.updateMany({
+            where: {
+              id: { in: closeableLedgerIds },
+              status: { in: [...editableLedgerStatuses] },
+            },
+            data: {
+              status: "HEADQUARTERS_CLOSED",
+              closedById: actor.user.id,
+              closedAt,
+              updatedById: actor.user.id,
+            },
+          });
+        }
+
+        const afterLedgers =
+          closeableLedgerIds.length === 0
+            ? []
+            : await tx.dailyLedger.findMany({
+                where: { id: { in: closeableLedgerIds } },
+                select: closeLedgerAuditSelect,
+              });
+        const closedLedgerIds: string[] = [];
+
+        for (const after of afterLedgers) {
+          const before = beforeById.get(after.id);
+
+          if (!before || after.status !== "HEADQUARTERS_CLOSED") {
+            continue;
+          }
+
+          closedLedgerIds.push(after.id);
+          await writeAuditLog(tx, {
+            action: "ledger.hq.bulk_closed",
+            targetType: "DailyLedger",
+            targetId: after.id,
+            actorId: actor.user.id,
+            before: {
+              ...toLedgerAuditPayload(before),
+              bulkClose: {
+                simplified: true,
+                reason: parsed.data.reason,
+              },
+            },
+            after: {
+              ...toLedgerAuditPayload(after),
+              bulkClose: {
+                simplified: true,
+                reason: parsed.data.reason,
+              },
+            },
+            reason: parsed.data.reason,
+          });
+        }
+
+        const closedIdSet = new Set(closedLedgerIds);
+        const skippedLedgerIds = parsed.data.ledgerIds.filter(
+          (ledgerId) => !closedIdSet.has(ledgerId),
+        );
+
+        return actionOk({
+          closedCount: closedLedgerIds.length,
+          skippedCount: skippedLedgerIds.length,
+          closedLedgerIds,
+          skippedLedgerIds,
+          closedAt: closedAt.toISOString(),
+        });
+      },
+    );
+
+    if (result.ok) {
+      revalidateBestEffort(() => {
+        for (const ledgerId of result.data.closedLedgerIds) {
+          revalidateLedgerDetailPath(ledgerId);
+        }
+
+        revalidateDashboardAndReports();
+      });
+    }
+
+    return result;
+  } catch {
+    return mapCloseActionError();
+  }
 }

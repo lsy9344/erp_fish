@@ -219,7 +219,7 @@ test("review submit UI exposes non-blocking warnings, status feedback, retry, an
   assert.match(componentSource, /Object\.entries\(feedback\.fieldErrors\)/);
   assert.match(componentSource, /다시 시도/);
   assert.match(componentSource, /제출 중\.\.\./);
-  assert.match(componentSource, /검토대기/);
+  assert.match(componentSource, /검토 대기/);
   assert.match(componentSource, /type="button"/);
   assert.match(componentSource, /disabled=\{isSubmitting\}/);
   assert.match(componentSource, /min-w-0/);

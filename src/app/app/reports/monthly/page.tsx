@@ -12,6 +12,8 @@ import {
   getHqMonthlyClosingAnomalyReport,
   getMonthlyClosingAnomalyReportPath,
 } from "~/features/reports/queries";
+import { getHeadquartersExpenseReportSummary } from "~/features/headquarters-expenses/queries";
+import type { MonthlyHeadquartersExpenseSummary } from "~/features/reports/types";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type MonthlyClosingAnomalyReportPageProps = {
@@ -36,6 +38,17 @@ export default async function MonthlyClosingAnomalyReportPage({
     ? params.storeId[0]
     : params.storeId;
   const report = await getHqMonthlyClosingAnomalyReport({ month, storeId });
+  const canManageHeadquartersExpenses = await hasActionPermission(
+    user.id,
+    PermissionAction.SETTINGS_MANAGE,
+  );
+  let headquartersExpense: MonthlyHeadquartersExpenseSummary | null = null;
+
+  if (canManageHeadquartersExpenses) {
+    headquartersExpense = await getHeadquartersExpenseReportSummary({
+      month: report.monthRange.monthInput,
+    });
+  }
   const reportTargetDescription = report.selectedStoreName
     ? `${report.monthRange.monthInput} ${report.selectedStoreName}의`
     : report.stores.length > 0
@@ -71,6 +84,9 @@ export default async function MonthlyClosingAnomalyReportPage({
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/comparison">기간 비교</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/inventory">재고 현황</Link>
             </Button>
             <Button asChild size="sm">
               <Link
@@ -153,7 +169,10 @@ export default async function MonthlyClosingAnomalyReportPage({
         </div>
       ) : null}
 
-      <MonthlyClosingAnomalyReport report={report} />
+      <MonthlyClosingAnomalyReport
+        report={report}
+        headquartersExpense={headquartersExpense}
+      />
     </HeadquartersShell>
   );
 }

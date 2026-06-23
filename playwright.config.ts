@@ -36,6 +36,13 @@ export default defineConfig({
       AUTH_URL: baseURL,
       DATABASE_URL: databaseURL,
       SKIP_ENV_VALIDATION: "1",
+      // WO-10(2026-06-22): LINE 아침 요약 알림 API 테스트 구성.
+      // INTERNAL_CRON_SECRET로 인증을 검증하고, LINE 전송은 로컬 스텁(/api/test/line-stub)으로
+      // 우회하여 실제 LINE 채널 없이 전송 성공·전송 로그 기록 경로를 검증한다.
+      INTERNAL_CRON_SECRET: "test-internal-cron-secret",
+      LINE_CHANNEL_ACCESS_TOKEN: "test-line-channel-token",
+      LINE_MORNING_SUMMARY_RECIPIENT_IDS: "U-test-exec-1,U-test-exec-2",
+      LINE_API_BASE_URL: `${baseURL}/api/test/line-stub`,
     },
   },
   projects: [

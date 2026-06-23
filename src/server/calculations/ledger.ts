@@ -57,6 +57,13 @@ export function calculatePurchaseTotal(purchases: number[]) {
   );
 }
 
+export function calculatePayrollTotal(amounts: number[]) {
+  return amounts.reduce(
+    (sum, value) => sum + (Number.isFinite(value) ? value : 0),
+    0,
+  );
+}
+
 export function calculateGrossProfit(
   totalSalesAmount: number,
   expenseTotal: number,

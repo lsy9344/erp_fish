@@ -4,7 +4,13 @@ import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getInventoryStepDataByLedgerIdInTx } from "~/features/inventory/queries";
+import {
+  calculatePlannedPriceLossAmount,
+  recoveredAmountError,
+  isValidKrwInteger,
+} from "~/features/losses/amount";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import {
   getLedgerConflictMetaInTx,
@@ -57,14 +63,13 @@ type NormalizedLossItem = {
   unitPrice: number;
   lossTypeName: string;
   quantity: number;
+  recoveredAmount: number;
   amount: number;
   reason: string;
 };
 
-const MAX_KRW_INTEGER = 2_147_483_647;
-
 function isValidInteger(value: number) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
+  return isValidKrwInteger(value);
 }
 
 function parseRequiredInteger(
@@ -110,13 +115,13 @@ const hqLedgerLossItemSchema = z.object({
     .transform((value, context) =>
       parseRequiredInteger(value, context, "수량은 0 이상의 정수여야 합니다."),
     ),
-  amount: z
+  recoveredAmount: z
     .unknown()
     .transform((value, context) =>
       parseRequiredInteger(
         value,
         context,
-        "손실 금액은 0원 이상의 정수여야 합니다.",
+        recoveredAmountError,
       ),
     ),
   reason: z.unknown().transform((value, context) => {
@@ -147,17 +152,17 @@ const hqLedgerLossesSchema = z
     value.losses.forEach((loss, index) => {
       if (
         typeof loss.quantity !== "number" ||
-        typeof loss.amount !== "number" ||
+        typeof loss.recoveredAmount !== "number" ||
         !isValidInteger(loss.quantity) ||
-        !isValidInteger(loss.amount)
+        !isValidInteger(loss.recoveredAmount)
       ) {
         return;
       }
 
-      if (loss.quantity === 0 && loss.amount === 0) {
+      if (loss.quantity === 0 && loss.recoveredAmount === 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "수량 또는 손실액 중 하나는 0보다 커야 합니다.",
+          message: "수량 또는 실제 판매/회수액 중 하나는 0보다 커야 합니다.",
           path: ["losses", index, "quantity"],
         });
       }
@@ -258,7 +263,7 @@ function toLossClientValues(input: HqLedgerLossesInput) {
   return Object.fromEntries(
     input.losses.map((item, index) => [
       `손실 ${index + 1}`,
-      `${item.productId} / ${item.ledgerInputCodeId} / ${item.quantity}개 / ${item.amount}원 / ${item.reason}`,
+      `${item.productId} / ${item.ledgerInputCodeId} / ${item.quantity}개 / ${item.recoveredAmount}원 회수 / ${item.reason}`,
     ]),
   );
 }
@@ -331,7 +336,8 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount,
+      recoveredAmount: loss.recoveredAmount,
+      amount: existing.amount,
       reason: loss.reason,
     };
   }
@@ -350,7 +356,8 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount,
+    recoveredAmount: loss.recoveredAmount,
+    amount: 0,
     reason: loss.reason,
   };
 }
@@ -396,7 +403,7 @@ export async function saveHqLedgerLosses(
         const lossTypeIds = [
           ...new Set(parsed.data.losses.map((loss) => loss.ledgerInputCodeId)),
         ];
-        const [products, lossTypes] = await Promise.all([
+        const [products, lossTypes, salesPricePlans] = await Promise.all([
           tx.product.findMany({
             where: { id: { in: productIds }, isActive: true },
             select: {
@@ -415,12 +422,29 @@ export async function saveHqLedgerLosses(
             },
             select: { id: true, name: true },
           }),
+          tx.storeSalesPricePlan.findMany({
+            where: {
+              storeId: before.storeId,
+              businessDate: new Date(before.closingDate),
+              productId: { in: productIds },
+            },
+            select: {
+              productId: true,
+              plannedUnitPrice: true,
+            },
+          }),
         ]);
         const productsById = new Map(
           products.map((product) => [product.id, product]),
         );
         const lossTypesById = new Map(
           lossTypes.map((lossType) => [lossType.id, lossType]),
+        );
+        const plannedUnitPriceByProductId = new Map(
+          salesPricePlans.map((plan) => [
+            plan.productId,
+            plan.plannedUnitPrice,
+          ]),
         );
         const existingById = new Map(
           before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
@@ -451,6 +475,16 @@ export async function saveHqLedgerLosses(
             );
           }
 
+          const plannedUnitPrice =
+            plannedUnitPriceByProductId.get(normalized.productId) ??
+            normalized.unitPrice;
+
+          normalized.unitPrice = plannedUnitPrice;
+          normalized.amount = calculatePlannedPriceLossAmount({
+            plannedUnitPrice,
+            quantity: normalized.quantity,
+            recoveredAmount: normalized.recoveredAmount,
+          });
           normalizedLosses.push(normalized);
         }
 
@@ -545,6 +579,7 @@ export async function saveHqLedgerLosses(
             unitPrice: loss.unitPrice,
             lossTypeName: loss.lossTypeName,
             quantity: loss.quantity,
+            recoveredAmount: loss.recoveredAmount,
             amount: loss.amount,
             reason: loss.reason,
             updatedById: actor.user.id,
@@ -568,6 +603,9 @@ export async function saveHqLedgerLosses(
         }
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
+
+        // WO-02(2026-06-22): 본사 손실 수정 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(tx, before.id);
 
         const after = await getLossStepDataByLedgerIdInTx(tx, ledgerId);
 

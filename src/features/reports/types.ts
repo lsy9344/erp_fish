@@ -67,6 +67,8 @@ export type DailyMeetingReportData = {
   closingDate: string;
   rows: DailyMeetingReportRow[];
   summary: HqDashboardSummary;
+  // WO-03(2026-06-22): 냉동/생물 카테고리별 추정 매출 차트 데이터.
+  categoryPerformance: ProductCategoryPerformance[];
 };
 
 export type StoreComparisonReportDateRange = {
@@ -246,6 +248,34 @@ export type MonthlyTopRevenueItemSummary = {
   note: string;
 };
 
+// 미팅 요구(매출 상위5/하위5 품목)는 품목별 매출액이 필요하나 시스템은 매출을
+// 일단위 총액으로만 기록한다. 따라서 판매량(전일재고+매입-당일재고) × 단가로
+// '추정 매출'을 산출해 순위를 매긴다. 추정치임을 basisLabel/note로 명시한다.
+export type MonthlyRevenueRankingItem = {
+  productId: string;
+  productName: string;
+  soldQuantity: number;
+  estimatedSalesAmount: number;
+};
+
+export type MonthlyRevenueRankingSummary = {
+  status: "available" | "data-insufficient";
+  statusLabel: string;
+  basisLabel: string;
+  note: string;
+  top: MonthlyRevenueRankingItem[];
+  bottom: MonthlyRevenueRankingItem[];
+};
+
+// WO-07(2026-06-22): 본사 전용 지출 합계. 지점 일일 장부와 분리된 별도 라인으로,
+// 월간 리포트에는 총액과 지점 귀속/본사 공통 분리 금액을 함께 노출한다.
+export type MonthlyHeadquartersExpenseSummary = {
+  totalAmount: number;
+  storeAttributedAmount: number;
+  unattributedAmount: number;
+  count: number;
+};
+
 export type MonthlyCalculationDay = {
   dateInput: string;
   dateLabel: string;
@@ -253,6 +283,31 @@ export type MonthlyCalculationDay = {
   reason: string;
   ledgerStatusLabel: string;
   ledgerDetailHref: string | null;
+};
+
+// WO-08(2026-06-22): 손익(P&L) 리포트 준비도. 손익 계산에 필요한 입력값 중 어떤 것이
+// 실측으로 확보됐고, 어떤 것이 추정/미구현 상태인지 화면에 명시해 의사결정 혼선을 줄인다.
+export type MonthlyProfitAndLossInputAvailability =
+  | "actual"
+  | "estimated"
+  | "unavailable";
+
+export type MonthlyProfitAndLossInput = {
+  key: string;
+  label: string;
+  availability: MonthlyProfitAndLossInputAvailability;
+  availabilityLabel: string;
+  source: string;
+  note: string;
+};
+
+export type MonthlyProfitAndLossReadiness = {
+  statusLabel: string;
+  actualCount: number;
+  estimatedCount: number;
+  unavailableCount: number;
+  note: string;
+  inputs: MonthlyProfitAndLossInput[];
 };
 
 export type MonthlyClosingAnomalyReportData = {
@@ -267,8 +322,19 @@ export type MonthlyClosingAnomalyReportData = {
   monthlyLossSummary: MonthlyLossSummary;
   monthlyInventoryFlow: MonthlyInventoryFlowSummary;
   topRevenueItem: MonthlyTopRevenueItemSummary;
+  revenueRanking: MonthlyRevenueRankingSummary;
+  profitAndLossReadiness: MonthlyProfitAndLossReadiness;
   calculationDays: MonthlyCalculationDay[];
   days: MonthlyClosingAnomalyDay[];
   anomalyItems: MonthlyAnomalyItem[];
   errorMessages: string[];
+  // WO-03(2026-06-22): 냉동/생물 카테고리별 추정 매출 차트 데이터.
+  categoryPerformance: ProductCategoryPerformance[];
+};
+
+export type ProductCategoryPerformance = {
+  category: "냉동" | "생물" | "기타";
+  salesAmount: number;
+  grossMarginRate: number | null;
+  statusLabel: "확정" | "추정" | "계산 불가";
 };

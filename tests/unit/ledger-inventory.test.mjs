@@ -566,9 +566,101 @@ test("FIFO lot calculation consumes oldest lots first and marks legacy opening l
   assert.equal(carriedLegacyResult.consumedAmount, 200);
   assert.equal(carriedLegacyResult.remainingAmount, 300);
   assert.equal(carriedLegacyResult.lots[0].sourceType, "LEGACY_OPENING");
+
+  // WO-G(2026-06-22): lot의 영업 기준일(sourceBusinessDate)을 보존/지정한다.
+  // - PURCHASE / 기초 lot: 현재 장부의 businessDate를 사용한다.
+  // - 이월 lot(PREVIOUS_CARRYOVER): 원천 영업일을 그대로 보존한다.
+  const businessDate = new Date("2026-06-22T00:00:00.000Z");
+  const carryoverDate = new Date("2026-05-01T00:00:00.000Z");
+  const dateResult = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        sourceBusinessDate: carryoverDate,
+        unitPrice: 100,
+        remainingQuantity: 5,
+      },
+    ],
+    legacyOpening: { unitPrice: 100, quantity: 0 },
+    purchases: [{ id: "purchase-1", unitPrice: 200, quantity: 5 }],
+    closingQuantity: 10,
+    businessDate,
+  });
+
+  const carryoverLot = dateResult.lots.find(
+    (lot) => lot.sourceType === "PREVIOUS_CARRYOVER",
+  );
+  const purchaseLot = dateResult.lots.find(
+    (lot) => lot.sourceType === "PURCHASE",
+  );
+  assert.equal(
+    carryoverLot.sourceBusinessDate.getTime(),
+    carryoverDate.getTime(),
+    "carryover lot must preserve its original business date",
+  );
+  assert.equal(
+    purchaseLot.sourceBusinessDate.getTime(),
+    businessDate.getTime(),
+    "purchase lot must use the current ledger business date",
+  );
+
+  // 원천 영업일이 없는 이월 lot은 현재 businessDate로 보정한다.
+  const fallbackResult = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        sourceBusinessDate: null,
+        unitPrice: 100,
+        remainingQuantity: 5,
+      },
+    ],
+    legacyOpening: { unitPrice: 100, quantity: 0 },
+    purchases: [],
+    closingQuantity: 5,
+    businessDate,
+  });
+  assert.equal(
+    fallbackResult.lots[0].sourceBusinessDate.getTime(),
+    businessDate.getTime(),
+  );
 });
 
-test("pre-approval product actions do not refresh FIFO lot snapshots", () => {
+// WO-G(2026-06-22): 스키마와 마이그레이션에 FIFO lot 영업 기준일이 추가된다.
+test("LedgerInventoryFifoLot has sourceBusinessDate column and migration", () => {
+  const schema = readProjectFile("prisma", "schema.prisma");
+
+  assert.match(
+    schema,
+    /model\s+LedgerInventoryFifoLot\s*{[^}]*sourceBusinessDate\s+DateTime\?/s,
+  );
+
+  const migrationDir = assertProjectFile("prisma", "migrations");
+  const sql = readdirSync(migrationDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) =>
+      path.join(migrationDir, entry.name, "migration.sql"),
+    )
+    .filter((sqlPath) => existsSync(sqlPath))
+    .map((sqlPath) => readFileSync(sqlPath, "utf8"))
+    .find((content) =>
+      /ALTER TABLE "LedgerInventoryFifoLot" ADD COLUMN "sourceBusinessDate"/.test(
+        content,
+      ),
+    );
+
+  assert.ok(
+    sql,
+    "a migration must add LedgerInventoryFifoLot.sourceBusinessDate",
+  );
+});
+
+test("purchase, loss, and inventory save actions refresh FIFO lot snapshots", () => {
+  // WO-02(2026-06-22): 매입/손실/재고 저장 후 FIFO lot snapshot과 inventoryAmount가
+  // 자동 최신화되도록, 각 저장 액션이 refreshLedgerInventoryFifoLots를 호출해야 한다.
   const actionFiles = [
     ["src", "features", "inventory", "actions.ts"],
     ["src", "features", "inventory", "hq-edit-actions.ts"],
@@ -582,15 +674,15 @@ test("pre-approval product actions do not refresh FIFO lot snapshots", () => {
     const source = readProjectFile(...segments);
     const label = segments.join("/");
 
-    assert.doesNotMatch(
+    assert.match(
       source,
-      /refreshLedgerInventoryFifoLots/,
-      `${label} should not run FIFO refresh before OQ-7/OQ-17 approval`,
+      /refreshLedgerInventoryFifoLots\(/,
+      `${label} should call refreshLedgerInventoryFifoLots after saving`,
     );
-    assert.doesNotMatch(
+    assert.match(
       source,
-      /fifo-lots/,
-      `${label} should not import FIFO lot engine before OQ-7/OQ-17 approval`,
+      /from\s+"[^"]*fifo-lots"/,
+      `${label} should import the FIFO lot engine`,
     );
   }
 });
@@ -891,7 +983,17 @@ test("inventory UI is wired to the canonical inventory route", () => {
     "components",
     "inventory-step-client.tsx",
   );
+  // 재고 화면 용어는 중앙 사전(terms.ts)으로 분리됐다. 화면에 노출되는 용어가
+  // 컴포넌트 또는 용어 사전 중 한 곳에 존재하는지 함께 확인한다.
+  const termsSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "terms.ts",
+  );
+  const inventoryUiSource = `${componentSource}\n${termsSource}`;
   assert.match(componentSource, /saveLedgerInventoryItems/);
+  assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);
   assert.match(componentSource, /생물/);
   assert.match(
@@ -910,7 +1012,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /inputMode="numeric"/);
   assert.match(componentSource, /className="h-11 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
-  assert.match(componentSource, /전일재고 이력/);
+  assert.match(inventoryUiSource, /전일재고 이력/);
   assert.match(componentSource, /previousQuantityDetail/);
   assert.match(componentSource, /전일재고 이력 보기/);
   assert.match(componentSource, /날짜별 수량 흐름/);
@@ -943,11 +1045,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 사유/);
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
-  assert.match(componentSource, /당일 판매량/);
-  assert.match(componentSource, /실제 POS 판매 수량과 다를 수 있습니다/);
+  assert.match(inventoryUiSource, /당일 판매량/);
+  assert.match(inventoryUiSource, /실제 POS 판매 수량과 다를 수 있습니다/);
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
-  assert.match(componentSource, /상태\/조정/);
+  assert.match(inventoryUiSource, /상태\/조정/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
   assert.match(componentSource, /isLedgerReadOnly/);

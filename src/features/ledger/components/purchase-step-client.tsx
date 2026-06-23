@@ -551,6 +551,14 @@ export function PurchaseStepClient({
                 isFormSaving ||
                 isOriginalEditBlocked ||
                 isUploadedLineLocked(line);
+              // 본사 단가 수동 오버라이트(point_summary.md:22): 수산물 출고가가 매일 유동적이라
+              // 본사 관리자는 이카운트 업로드 행이라도 단가만은 강제 수정할 수 있다. 지점장 화면
+              // (hqEditReasonRequired=false)에서는 업로드 행 단가도 계속 잠근다. 품목/규격/수량/삭제는
+              // 업로드 행 식별을 보존하기 위해 본사에서도 계속 잠근다.
+              const isUnitPriceEditBlocked =
+                isFormSaving ||
+                isOriginalEditBlocked ||
+                (isUploadedLineLocked(line) && !hqEditReasonRequired);
 
               return (
                 <div key={line.id} className="grid gap-2 rounded-md border p-3">
@@ -796,7 +804,7 @@ export function PurchaseStepClient({
                       inputMode="numeric"
                       autoComplete="off"
                       value={line.unitPrice}
-                      disabled={isLineEditBlocked}
+                      disabled={isUnitPriceEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           unitPrice: event.currentTarget.value,
@@ -814,6 +822,14 @@ export function PurchaseStepClient({
                       <FieldError id={`purchase-unit-price-${line.id}-error`}>
                         {unitPriceError}
                       </FieldError>
+                    ) : null}
+                    {isUploadedLineLocked(line) &&
+                    hqEditReasonRequired &&
+                    !isUnitPriceEditBlocked ? (
+                      <p className="text-muted-foreground text-xs">
+                        이카운트 업로드 매입이지만 본사 단가 수동 오버라이트가
+                        가능합니다.
+                      </p>
                     ) : null}
                   </Field>
 

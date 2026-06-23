@@ -2,19 +2,11 @@ import { z } from "zod";
 
 export const ANOMALY_THRESHOLD_SCOPE = "GLOBAL";
 
-const MAX_INTEGER = 2_147_483_647;
 const percentError = {
   marginRate: "마진률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
 } as const;
-const integerError = {
-  inventoryDifferenceQuantity: "재고 차이 기준은 0 이상의 정수여야 합니다.",
-} as const;
 const activeStatusError = "활성 상태는 활성 또는 비활성 중 하나여야 합니다.";
 const reasonError = "변경 사유를 입력해 주세요.";
-
-function isValidInteger(value: number) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_INTEGER;
-}
 
 function parsePercentBps(
   value: unknown,
@@ -41,33 +33,6 @@ function parsePercentBps(
   }
 
   return Math.round(parsed * 100);
-}
-
-function parseInteger(
-  value: unknown,
-  context: z.RefinementCtx,
-  message: string,
-) {
-  const normalized =
-    typeof value === "number"
-      ? String(value)
-      : typeof value === "string"
-        ? value.trim()
-        : "";
-
-  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(normalized)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message });
-    return z.NEVER;
-  }
-
-  const parsed = Number(normalized.replaceAll(",", ""));
-
-  if (!isValidInteger(parsed)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message });
-    return z.NEVER;
-  }
-
-  return parsed;
 }
 
 function parseActiveStatus(value: unknown, context: z.RefinementCtx) {
@@ -111,11 +76,6 @@ export const anomalyThresholdFormSchema = z
       .transform((value, context) =>
         parsePercentBps(value, context, percentError.marginRate),
       ),
-    inventoryDifferenceQuantity: z
-      .unknown()
-      .transform((value, context) =>
-        parseInteger(value, context, integerError.inventoryDifferenceQuantity),
-      ),
     isActive: z
       .unknown()
       .transform((value, context) => parseActiveStatus(value, context)),
@@ -125,7 +85,6 @@ export const anomalyThresholdFormSchema = z
   })
   .transform((value) => ({
     marginRateBps: value.marginRate,
-    inventoryDifferenceQuantity: value.inventoryDifferenceQuantity,
     isActive: value.isActive,
     reason: value.reason,
   }));
@@ -140,8 +99,4 @@ export function toAnomalyThresholdFieldErrors(error: z.ZodError) {
 
 export function formatBpsAsPercent(value: number) {
   return String(value / 100).replace(/\.0$/, "");
-}
-
-export function formatIntegerInput(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
 }

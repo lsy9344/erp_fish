@@ -98,15 +98,15 @@ function normalizeStatusLabel(
   status: StoreManagerLedgerReviewStepData["status"],
 ) {
   if (status === "IN_PROGRESS") {
-    return "입력중";
+    return "입력 중";
   }
 
   if (status === "IN_REVIEW") {
-    return "검토대기";
+    return "검토 대기";
   }
 
   if (status === "HEADQUARTERS_CLOSED") {
-    return "본사마감";
+    return "본사 마감";
   }
 
   return "휴무";
@@ -350,6 +350,39 @@ export function ReviewSummaryClient({
           </div>
         </section>
 
+        {currentReviewData.topSoldItems.length > 0 ? (
+          <section
+            aria-labelledby="review-top-sold-heading"
+            className="bg-card text-card-foreground rounded-lg border p-4"
+          >
+            <h2
+              id="review-top-sold-heading"
+              className="text-base font-semibold"
+            >
+              오늘 많이 팔린 품목
+            </h2>
+            <p className="text-muted-foreground mt-1 text-xs">
+              품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.
+            </p>
+            <ul className="mt-3 flex flex-col gap-2">
+              {currentReviewData.topSoldItems.map((item) => (
+                <li
+                  key={item.productId}
+                  className="bg-muted/40 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-3 py-2"
+                >
+                  <span className="min-w-0 text-sm font-medium break-words">
+                    {item.productName}
+                  </span>
+                  <span className="text-muted-foreground text-sm tabular-nums">
+                    {item.soldQuantity}개 · 추정 매출{" "}
+                    {formatKrw(item.estimatedSalesAmount)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {currentReviewData.missingItems.length > 0 ? (
           <section
             aria-labelledby="review-missing-heading"
@@ -412,12 +445,9 @@ export function ReviewSummaryClient({
                 <TriangleAlertIcon className="size-4" aria-hidden="true" />
                 <AlertTitle className="break-words">{warning.label}</AlertTitle>
                 <AlertDescription>
+                  {/* 역산 부정행위 방지(point_summary.md:37): 결제 차액 금액은
+                      지점장 화면에 노출하지 않는다. 경고 사실만 표시한다. */}
                   <p className="break-words">{warning.detail}</p>
-                  {warning.amount !== undefined ? (
-                    <p className="mt-1 font-medium tabular-nums">
-                      차액 {formatSignedKrw(warning.amount)}
-                    </p>
-                  ) : null}
                 </AlertDescription>
               </Alert>
             ))}

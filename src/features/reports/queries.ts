@@ -19,6 +19,7 @@ import type {
   evaluateRevenueAnomalySignals as evaluateRevenueAnomalySignalsFunction,
 } from "../../server/calculations/anomaly.ts";
 import {
+  buildMarginDisplay,
   mapDashboardBusinessStatus,
   mapDashboardLedgerStatus,
   summarizeDashboardRows,
@@ -42,7 +43,11 @@ import type {
   MonthlyClosingAnomalyReportMonthRange,
   MonthlyInventoryFlowSummary,
   MonthlyLossSummary,
+  MonthlyProfitAndLossReadiness,
+  MonthlyRevenueRankingItem,
+  MonthlyRevenueRankingSummary,
   MonthlyTopRevenueItemSummary,
+  ProductCategoryPerformance,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -310,6 +315,86 @@ export function getMonthlyClosingAnomalyReportPath({
   return `/app/reports/monthly?${params.toString()}`;
 }
 
+// WO-03(2026-06-22): 냉동/생물 카테고리별 추정 매출.
+// 품목별 실제 POS 매출이 없으므로 재고 흐름(전일+매입-당일)을 판매 수량으로 보고 추정한다.
+//
+// 검토 후속(point_summary.md:26): 카테고리별 이익률을 함께 보여준다. 매출원가(COGS)는
+// 점포 단위 계산과 동일하게 FIFO 소진금액(fifoLots[].consumedAmount)을 우선 사용하고,
+// FIFO lot이 없으면 (판매수량 * 단가)로 추정한다(점포 COGS 폴백과 동일 규칙).
+// 추정 매출과 추정 COGS에서 산출하므로 statusLabel은 "추정"으로 유지한다.
+// OQ-7/OQ-17 FIFO 정책 확정 전이라도, 재고 단계에서 이미 FIFO 재고금액/lot 이력을
+// 양 역할에 노출하기로 한 결정과 일관되게 추정 이익률을 노출한다.
+type CategoryPerformanceItem = {
+  productCategory: string;
+  previousQuantity: number;
+  purchasedQuantity: number;
+  currentQuantity: number | null;
+  unitPrice: number;
+  fifoLots?: Array<{ consumedAmount: number }>;
+};
+
+function getItemSoldQuantity(item: CategoryPerformanceItem) {
+  if (item.currentQuantity === null) return null;
+
+  const soldQuantity =
+    item.previousQuantity + item.purchasedQuantity - item.currentQuantity;
+
+  return Number.isFinite(soldQuantity) ? soldQuantity : null;
+}
+
+function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
+  if (item.fifoLots && item.fifoLots.length > 0) {
+    return item.fifoLots.reduce((sum, lot) => sum + lot.consumedAmount, 0);
+  }
+
+  return soldQuantity * item.unitPrice;
+}
+
+export function buildProductCategoryPerformance(
+  ledgers: Array<{
+    ledgerInventoryItems: CategoryPerformanceItem[];
+  }>,
+): ProductCategoryPerformance[] {
+  const byCategory = new Map<
+    "냉동" | "생물" | "기타",
+    { sales: number; cogs: number }
+  >();
+
+  for (const ledger of ledgers) {
+    for (const item of ledger.ledgerInventoryItems) {
+      const soldQuantity = getItemSoldQuantity(item);
+
+      if (soldQuantity === null || soldQuantity <= 0) continue;
+
+      const category =
+        item.productCategory === "냉동" || item.productCategory === "생물"
+          ? item.productCategory
+          : "기타";
+
+      const stats = byCategory.get(category) ?? { sales: 0, cogs: 0 };
+      stats.sales += soldQuantity * item.unitPrice;
+      stats.cogs += getItemCogs(item, soldQuantity);
+      byCategory.set(category, stats);
+    }
+  }
+
+  return (["냉동", "생물"] as const).map((category) => {
+    const stats = byCategory.get(category);
+    const salesAmount = stats?.sales ?? 0;
+    const cogs = stats?.cogs ?? 0;
+    // 매출이 0이면 이익률을 계산할 수 없다(0 나눗셈 방지).
+    const grossMarginRate =
+      salesAmount > 0 ? (salesAmount - cogs) / salesAmount : null;
+
+    return {
+      category,
+      salesAmount,
+      grossMarginRate,
+      statusLabel: "추정",
+    };
+  });
+}
+
 export async function getHqDailyMeetingReport({
   datePreset = "today",
   dateQuery,
@@ -367,6 +452,7 @@ export async function getHqDailyMeetingReport({
                 id: true,
                 productId: true,
                 productName: true,
+                productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
                 currentQuantity: true,
@@ -442,6 +528,7 @@ export async function getHqDailyMeetingReport({
     closingDate: closingDate.toISOString(),
     rows,
     summary: summarizeDashboardRows(rows),
+    categoryPerformance: buildProductCategoryPerformance(ledgers),
   };
 }
 
@@ -510,6 +597,7 @@ export async function getHqStoreComparisonReport({
                 id: true,
                 productId: true,
                 productName: true,
+                productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
                 currentQuantity: true,
@@ -598,6 +686,314 @@ export async function getHqStoreComparisonReport({
   };
 }
 
+// WO-G(2026-06-22): LINE 아침 요약의 장기 적자/마진 미달 판정을 본사 리포트와 같은
+// 기준(correction-aware grossProfit/grossMarginRate)으로 계산하기 위한 재사용 헬퍼.
+// 단순 (총매출 - 지출)이 아니라 매출원가(COGS), 본사 정정 반영 상태를 함께 반영한다.
+// 권한 게이트가 없으므로 내부 호출(스케줄러)에서만 사용한다.
+export type StoreProfitSummary = {
+  storeId: string;
+  totalSales: number;
+  // 매출원가/재고 입력이 없어 grossProfit을 계산할 수 없는 장부는 제외하고 합산한다.
+  grossProfit: number | null;
+  operatingProfit: number | null;
+  grossMarginRate: number | null;
+  ledgerCount: number;
+  // grossProfit을 계산할 수 있었던(매출원가 산출 가능) 장부 수.
+  computableLedgerCount: number;
+};
+
+export async function getStoreProfitSummariesForRange({
+  storeIds,
+  startDate,
+  endDate,
+}: {
+  storeIds: string[];
+  startDate: Date;
+  endDate: Date;
+}): Promise<Map<string, StoreProfitSummary>> {
+  const summaries = new Map<string, StoreProfitSummary>();
+
+  if (storeIds.length === 0) {
+    return summaries;
+  }
+
+  const { db } = await import("../../server/db.ts");
+  const { getLatestCorrectionValuesForLedgersScoped } = await import(
+    "../corrections/queries.ts"
+  );
+
+  const ledgers = await db.dailyLedger.findMany({
+    where: {
+      storeId: { in: storeIds },
+      closingDate: { gte: startDate, lte: endDate },
+      status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+    },
+    select: {
+      id: true,
+      storeId: true,
+      closingDate: true,
+      status: true,
+      totalSalesAmount: true,
+      cashAmount: true,
+      cardAmount: true,
+      otherPaymentAmount: true,
+      workerCount: true,
+      updatedAt: true,
+      updatedBy: { select: { name: true, email: true } },
+      ledgerInventoryItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          quantity: true,
+          unitPrice: true,
+          inventoryAmount: true,
+          fifoLots: {
+            select: {
+              sourceType: true,
+              consumedAmount: true,
+              remainingAmount: true,
+            },
+          },
+        },
+      },
+      ledgerExpenses: { select: { id: true, amount: true } },
+      ledgerInventoryAdjustments: {
+        select: {
+          ledgerInventoryItemId: true,
+          productId: true,
+          productName: true,
+          beforeQuantity: true,
+          beforeAmount: true,
+          afterQuantity: true,
+          afterAmount: true,
+          unitPrice: true,
+          differenceQuantity: true,
+          differenceAmount: true,
+          reason: true,
+        },
+      },
+      ledgerLossItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          lossTypeName: true,
+          quantity: true,
+          amount: true,
+        },
+      },
+    },
+  });
+
+  const correctionValuesByLedgerId =
+    await getLatestCorrectionValuesForLedgersScoped(
+      ledgers.map((ledger) => ledger.id),
+      storeIds,
+    );
+
+  type StoreAccumulator = {
+    totalSales: number;
+    grossProfit: number | null;
+    operatingProfit: number | null;
+    ledgerCount: number;
+    computableLedgerCount: number;
+  };
+  const accumulators = new Map<string, StoreAccumulator>();
+
+  for (const ledger of ledgers) {
+    const accumulator = accumulators.get(ledger.storeId) ?? {
+      totalSales: 0,
+      grossProfit: null,
+      operatingProfit: null,
+      ledgerCount: 0,
+      computableLedgerCount: 0,
+    };
+
+    const summary = toReportLedgerCalculationSummary(
+      ledger,
+      correctionValuesByLedgerId.get(ledger.id),
+    );
+    const applied = summary.applied;
+
+    accumulator.ledgerCount += 1;
+
+    if (applied.totalSales.value !== null) {
+      accumulator.totalSales += applied.totalSales.value;
+    }
+
+    // grossProfit/operatingProfit은 매출원가 산출이 가능한 장부에서만 합산한다.
+    if (applied.grossProfit.value !== null) {
+      accumulator.grossProfit =
+        (accumulator.grossProfit ?? 0) + applied.grossProfit.value;
+      accumulator.computableLedgerCount += 1;
+    }
+
+    if (applied.operatingProfit.value !== null) {
+      accumulator.operatingProfit =
+        (accumulator.operatingProfit ?? 0) + applied.operatingProfit.value;
+    }
+
+    accumulators.set(ledger.storeId, accumulator);
+  }
+
+  for (const [storeId, accumulator] of accumulators) {
+    const grossMarginRate =
+      accumulator.grossProfit !== null && accumulator.totalSales > 0
+        ? accumulator.grossProfit / accumulator.totalSales
+        : null;
+
+    summaries.set(storeId, {
+      storeId,
+      totalSales: accumulator.totalSales,
+      grossProfit: accumulator.grossProfit,
+      operatingProfit: accumulator.operatingProfit,
+      grossMarginRate,
+      ledgerCount: accumulator.ledgerCount,
+      computableLedgerCount: accumulator.computableLedgerCount,
+    });
+  }
+
+  return summaries;
+}
+
+// WO-E(2026-06-22): HR 생산성 분석이 장부별 매출/마진을 본사 리포트와 같은
+// correction-aware 기준으로 사용할 수 있도록, 장부 단위 요약을 노출한다.
+// grossMarginRate가 계산 불가일 때는 사유(reason)를 함께 돌려준다.
+export type LedgerProfitSummary = {
+  ledgerId: string;
+  storeId: string;
+  closingDate: Date;
+  workerCount: number | null;
+  totalSales: number | null;
+  grossProfit: number | null;
+  grossMarginRate: number | null;
+  grossMarginReason: string | null;
+};
+
+export async function getLedgerProfitSummariesForRange({
+  storeIds,
+  startDate,
+  endDate,
+}: {
+  storeIds: string[];
+  startDate: Date;
+  endDate: Date;
+}): Promise<Map<string, LedgerProfitSummary>> {
+  const result = new Map<string, LedgerProfitSummary>();
+
+  if (storeIds.length === 0) {
+    return result;
+  }
+
+  const { db } = await import("../../server/db.ts");
+  const { getLatestCorrectionValuesForLedgersScoped } = await import(
+    "../corrections/queries.ts"
+  );
+
+  const ledgers = await db.dailyLedger.findMany({
+    where: {
+      storeId: { in: storeIds },
+      closingDate: { gte: startDate, lte: endDate },
+      status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+    },
+    select: {
+      id: true,
+      storeId: true,
+      closingDate: true,
+      status: true,
+      totalSalesAmount: true,
+      cashAmount: true,
+      cardAmount: true,
+      otherPaymentAmount: true,
+      workerCount: true,
+      updatedAt: true,
+      updatedBy: { select: { name: true, email: true } },
+      ledgerInventoryItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          quantity: true,
+          unitPrice: true,
+          inventoryAmount: true,
+          fifoLots: {
+            select: {
+              sourceType: true,
+              consumedAmount: true,
+              remainingAmount: true,
+            },
+          },
+        },
+      },
+      ledgerExpenses: { select: { id: true, amount: true } },
+      ledgerInventoryAdjustments: {
+        select: {
+          ledgerInventoryItemId: true,
+          productId: true,
+          productName: true,
+          beforeQuantity: true,
+          beforeAmount: true,
+          afterQuantity: true,
+          afterAmount: true,
+          unitPrice: true,
+          differenceQuantity: true,
+          differenceAmount: true,
+          reason: true,
+        },
+      },
+      ledgerLossItems: {
+        select: {
+          id: true,
+          productId: true,
+          productName: true,
+          lossTypeName: true,
+          quantity: true,
+          amount: true,
+        },
+      },
+    },
+  });
+
+  const correctionValuesByLedgerId =
+    await getLatestCorrectionValuesForLedgersScoped(
+      ledgers.map((ledger) => ledger.id),
+      storeIds,
+    );
+
+  for (const ledger of ledgers) {
+    const summary = toReportLedgerCalculationSummary(
+      ledger,
+      correctionValuesByLedgerId.get(ledger.id),
+    );
+    const applied = summary.applied;
+
+    result.set(ledger.id, {
+      ledgerId: ledger.id,
+      storeId: ledger.storeId,
+      closingDate: ledger.closingDate,
+      workerCount: summary.workerCount,
+      totalSales: applied.totalSales.value,
+      grossProfit: applied.grossProfit.value,
+      grossMarginRate: applied.grossMarginRate.value,
+      grossMarginReason:
+        applied.grossMarginRate.value === null
+          ? (applied.grossMarginRate.reason ??
+            applied.grossMarginRate.label ??
+            "계산 불가")
+          : null,
+    });
+  }
+
+  return result;
+}
+
 export async function getHqMonthlyClosingAnomalyReport({
   month,
   storeId,
@@ -676,6 +1072,7 @@ export async function getHqMonthlyClosingAnomalyReport({
           id: true,
           productId: true,
           productName: true,
+          productCategory: true,
           previousQuantity: true,
           purchasedQuantity: true,
           currentQuantity: true,
@@ -778,6 +1175,7 @@ export async function getHqMonthlyClosingAnomalyReport({
     ),
     ledgerSummaries,
     errorMessages,
+    categoryPerformance: buildProductCategoryPerformance(ledgers),
   });
 }
 
@@ -850,6 +1248,7 @@ export function buildMonthlyClosingAnomalyReportForTest({
   dateInputs,
   ledgerSummaries,
   errorMessages = [],
+  categoryPerformance = [],
 }: {
   store: ReportStoreRecord;
   stores?: ReportStoreRecord[];
@@ -858,6 +1257,7 @@ export function buildMonthlyClosingAnomalyReportForTest({
   dateInputs: string[];
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[];
   errorMessages?: string[];
+  categoryPerformance?: ProductCategoryPerformance[];
 }): MonthlyClosingAnomalyReportData {
   const ledgerSummaryByDateInput = new Map(
     ledgerSummaries.map((summary) => [summary.dateInput, summary]),
@@ -905,10 +1305,13 @@ export function buildMonthlyClosingAnomalyReportForTest({
     monthlyLossSummary: buildMonthlyLossSummary(ledgerSummaries),
     monthlyInventoryFlow: buildMonthlyInventoryFlow(ledgerSummaries),
     topRevenueItem: buildMonthlyTopRevenueItemSummary(),
+    revenueRanking: buildMonthlyRevenueRanking(ledgerSummaries),
+    profitAndLossReadiness: buildMonthlyProfitAndLossReadiness(),
     calculationDays: buildMonthlyCalculationDays(days, ledgerSummaries),
     days,
     anomalyItems: buildMonthlyAnomalyItems(days),
     errorMessages,
+    categoryPerformance,
   };
 }
 
@@ -939,10 +1342,13 @@ function buildEmptyMonthlyClosingAnomalyReport({
     monthlyLossSummary: buildMonthlyLossSummary([]),
     monthlyInventoryFlow: buildMonthlyInventoryFlow([]),
     topRevenueItem: buildMonthlyTopRevenueItemSummary(),
+    revenueRanking: buildMonthlyRevenueRanking([]),
+    profitAndLossReadiness: buildMonthlyProfitAndLossReadiness(),
     calculationDays: [],
     days: [],
     anomalyItems: [],
     errorMessages,
+    categoryPerformance: buildProductCategoryPerformance([]),
   };
 }
 
@@ -1360,6 +1766,189 @@ function buildMonthlyTopRevenueItemSummary(): MonthlyTopRevenueItemSummary {
     productName: null,
     salesAmount: unavailable("계산 기준 확인 필요"),
     note: "상품별 판매금액 산출 기준이 아직 확정되지 않아 임의로 품목을 선택하지 않습니다.",
+  };
+}
+
+// WO-08(2026-06-22): 손익 리포트에 필요한 입력값 준비도. 실측/추정/미구현을 명확히
+// 구분해 노출한다. 출처와 사유는 docs/goal/2026-06-22-wo-08 문서의 'P&L Data Inputs'와
+// 일치시킨다. 실제 입력이 확보된 항목은 actual로 유지하고, 품목별 매출처럼
+// 아직 직접 기록되지 않는 값만 estimated로 둔다.
+function buildMonthlyProfitAndLossReadiness(): MonthlyProfitAndLossReadiness {
+  const availabilityLabels: Record<
+    MonthlyProfitAndLossReadiness["inputs"][number]["availability"],
+    string
+  > = {
+    actual: "실측",
+    estimated: "추정",
+    unavailable: "미구현",
+  };
+  const definitions: {
+    key: string;
+    label: string;
+    availability: MonthlyProfitAndLossReadiness["inputs"][number]["availability"];
+    source: string;
+    note: string;
+  }[] = [
+    {
+      key: "sales",
+      label: "매출",
+      availability: "actual",
+      source: "일일 장부 총매출",
+      note: "지점 일일 장부의 총매출 합계로 실측 집계합니다.",
+    },
+    {
+      key: "purchaseCost",
+      label: "매입 원가 / 매출원가",
+      availability: "estimated",
+      source: "재고/FIFO 정책 의존",
+      note: "재고·FIFO 정책 확정 전까지 재고 흐름 기반 추정으로만 산출합니다.",
+    },
+    {
+      key: "branchExpense",
+      label: "지점 일일 비용",
+      availability: "actual",
+      source: "일일 장부 비용",
+      note: "지점 일일 장부의 비용 항목으로 실측 집계합니다.",
+    },
+    {
+      key: "headquartersExpense",
+      label: "본사 지출",
+      availability: "actual",
+      source: "본사 지출 입력",
+      note: "본사 지출 입력 화면에서 실측 집계합니다.",
+    },
+    {
+      key: "labor",
+      label: "인건비 / 급여",
+      availability: "actual",
+      source: "일일 장부 직원별 급여",
+      note: "지점 일일 장부의 직원별 급여 금액으로 실측 집계합니다.",
+    },
+    {
+      key: "inventoryValue",
+      label: "재고 가치",
+      availability: "actual",
+      source: "재고 금액",
+      note: "장부 재고 금액으로 실측하나 FIFO 정책 확정에 따라 달라질 수 있습니다.",
+    },
+    {
+      key: "productSales",
+      label: "품목별 매출",
+      availability: "estimated",
+      source: "판매량 × 단가 추정",
+      note: "품목별 매출이 기록되지 않아 매출 상위/하위 순위는 추정값입니다.",
+    },
+  ];
+  const inputs = definitions.map((definition) => ({
+    ...definition,
+    availabilityLabel: availabilityLabels[definition.availability],
+  }));
+  const actualCount = inputs.filter(
+    (input) => input.availability === "actual",
+  ).length;
+  const estimatedCount = inputs.filter(
+    (input) => input.availability === "estimated",
+  ).length;
+  const unavailableCount = inputs.filter(
+    (input) => input.availability === "unavailable",
+  ).length;
+
+  return {
+    statusLabel: `실측 ${actualCount} · 추정 ${estimatedCount} · 미구현 ${unavailableCount}`,
+    actualCount,
+    estimatedCount,
+    unavailableCount,
+    note: "손익(P&L) 산출에 필요한 입력값별 확보 상태입니다. 추정·미구현 항목은 실측값과 구분해 해석해 주세요.",
+    inputs,
+  };
+}
+
+const revenueRankingSize = 5;
+
+// 미팅 요구: 매출 상위5/하위5 품목. 품목별 매출액이 시스템에 없으므로
+// 판매량(전일재고+매입-당일재고) × 단가를 '추정 매출'로 보고 순위를 매긴다.
+function buildMonthlyRevenueRanking(
+  ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
+): MonthlyRevenueRankingSummary {
+  const basisLabel = "판매량 × 단가 추정";
+  const note =
+    "품목별 매출액 데이터가 없어 판매량(전일재고+매입-당일재고)에 단가를 곱한 추정 매출로 순위를 산출합니다.";
+  const aggregates = new Map<
+    string,
+    { productName: string; soldQuantity: number; estimatedSalesAmount: number }
+  >();
+
+  for (const summary of ledgerSummaries.filter(
+    (item) => item.status !== "HOLIDAY",
+  )) {
+    for (const item of summary.inventoryItems ?? []) {
+      if (!item.productId) {
+        continue;
+      }
+
+      const currentQuantity = item.currentQuantity ?? item.quantity;
+
+      if (currentQuantity === null || !Number.isFinite(currentQuantity)) {
+        continue;
+      }
+
+      const soldQuantity =
+        item.previousQuantity + item.purchasedQuantity - currentQuantity;
+
+      if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) {
+        continue;
+      }
+
+      const estimatedSalesAmount = soldQuantity * item.unitPrice;
+      const current = aggregates.get(item.productId);
+
+      if (current) {
+        current.soldQuantity += soldQuantity;
+        current.estimatedSalesAmount += estimatedSalesAmount;
+        continue;
+      }
+
+      aggregates.set(item.productId, {
+        productName: item.productName ?? "이름 미상 품목",
+        soldQuantity,
+        estimatedSalesAmount,
+      });
+    }
+  }
+
+  const ranked: MonthlyRevenueRankingItem[] = [...aggregates.entries()]
+    .map(([productId, value]) => ({
+      productId,
+      productName: value.productName,
+      soldQuantity: value.soldQuantity,
+      estimatedSalesAmount: value.estimatedSalesAmount,
+    }))
+    .sort((left, right) => right.estimatedSalesAmount - left.estimatedSalesAmount);
+
+  if (ranked.length === 0) {
+    return {
+      status: "data-insufficient",
+      statusLabel: "데이터 부족",
+      basisLabel,
+      note: "판매량을 계산할 수 있는 재고 데이터가 아직 없습니다.",
+      top: [],
+      bottom: [],
+    };
+  }
+
+  const top = ranked.slice(0, revenueRankingSize);
+  const bottom = [...ranked]
+    .reverse()
+    .slice(0, revenueRankingSize)
+    .filter((item) => !top.includes(item));
+
+  return {
+    status: "available",
+    statusLabel: "추정 매출 기준",
+    basisLabel,
+    note,
+    top,
+    bottom,
   };
 }
 
@@ -2340,6 +2929,11 @@ function toEmptyReportRow({
     ledgerStatus: mapDashboardLedgerStatus(null),
     salesAmount: metrics.totalSales,
     grossMarginRate: metrics.grossMarginRate,
+    marginDisplay: buildMarginDisplay(
+      thresholdSettings,
+      metrics.totalSales,
+      metrics.grossMarginRate,
+    ),
     salesDifference: metrics.salesDifference,
     hasLoss: null,
     latestReflectedAt: null,
@@ -2485,6 +3079,11 @@ function toLedgerReportRow({
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
     grossMarginRate: reviewSummary.grossMarginRate,
+    marginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      reviewSummary.totalSales,
+      reviewSummary.grossMarginRate,
+    ),
     salesDifference: reviewSummary.salesDifference,
     hasLoss: appliedHasLoss,
     latestReflectedAt: getLatestReflectedAt(ledger.updatedAt, corrections),

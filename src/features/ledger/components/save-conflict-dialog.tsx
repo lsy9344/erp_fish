@@ -32,7 +32,7 @@ const sectionLabels: Record<string, string> = {
   losses: "손실/폐기",
   work: "근무",
   review: "검토 제출",
-  "hq-close": "본사마감",
+  "hq-close": "본사 마감",
 };
 
 function formatModifiedAt(value: string) {

@@ -442,17 +442,23 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
   assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
+  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장 요약에 노출한다.
+  // 보완(2026-06-22 WO-01): 근무인원 수도 노출, 결제차액은 제거.
   assert.match(
-    responseShapeSource,
-    /paymentDifference:\s*data\.summary\.paymentDifference/,
-  );
-  assert.doesNotMatch(
     responseShapeSource,
     /grossMarginRate:\s*data\.summary\.grossMarginRate/,
   );
-  assert.doesNotMatch(
+  assert.match(
+    responseShapeSource,
+    /workerCount:\s*data\.summary\.workerCount/,
+  );
+  assert.match(
     responseShapeSource,
     /inventoryAmount:\s*data\.summary\.inventoryAmount/,
+  );
+  assert.doesNotMatch(
+    responseShapeSource,
+    /paymentDifference:\s*data\.summary\.paymentDifference/,
   );
 
   assert.doesNotMatch(clientSource, /summary\.costOfGoodsSold/);
@@ -496,21 +502,38 @@ test("store manager ledger review response omits sensitive accounting metrics", 
       grossMarginRate: ok(0.7),
       operatingProfit: ok(60_000),
       productivity: ok(30_000),
+      workerCount: ok(3),
       inventoryAmount: ok(8_000),
       salesDifference: ok(2_000),
       paymentDifference: ok(0),
+      paymentTotal: ok(100_000),
+      expenseTotal: ok(10_000),
     },
     missingItems: [],
     warnings: [],
     signals: [],
     stepSummaries: [
       {
-        id: "sales",
-        label: "매출/결제",
+        id: "work",
+        label: "근무/급여",
         status: "saved",
-        detail: "총매출과 결제수단 합계를 확인했습니다.",
-        href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=sales",
+        detail: "근무인원을 확인했습니다.",
+        href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=work",
         metrics: [
+          {
+            id: "workerCount",
+            label: "근무인원",
+            value: 3,
+            kind: "text",
+            status: "ok",
+          },
+          {
+            id: "inventoryAmount",
+            label: "재고금액",
+            value: 8_000,
+            kind: "krw",
+            status: "ok",
+          },
           {
             id: "paymentDifference",
             label: "결제수단 합계와 총매출 차이",
@@ -523,18 +546,76 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
-  assert.deepEqual(Object.keys(safeReview.summary), [
+  assert.deepEqual(Object.keys(safeReview.summary).sort(), [
+    "grossMarginRate",
+    "inventoryAmount",
     "totalSales",
-    "paymentDifference",
+    "workerCount",
   ]);
+  assert.equal(Object.hasOwn(safeReview.summary, "totalSales"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "workerCount"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "paymentDifference"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "costOfGoodsSold"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "grossProfit"), false);
-  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "operatingProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
-  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), false);
-  assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
-  assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.kind, "signed-krw");
+  // workerCount와 inventoryAmount가 보이고, paymentDifference는 제거됨
+  assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.kind, "text");
+  assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.id, "workerCount");
+  assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.kind, "krw");
+  assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.id, "inventoryAmount");
+  assert.equal(safeReview.stepSummaries[0]?.metrics.length, 2);
+});
+
+test("store manager review exposes estimated top sold items derived from inventory flow (WO-04)", () => {
+  const typeSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-types.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-queries.ts",
+  );
+  const clientSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "review-summary-client.tsx",
+  );
+
+  // 타입 계약: 품목ID/품목명/판매수량/추정매출만 노출한다.
+  assert.match(
+    typeSource,
+    /export type StoreManagerTopSoldItem\s*=\s*{[^}]*productId:\s*string[^}]*productName:\s*string[^}]*soldQuantity:\s*number[^}]*estimatedSalesAmount:\s*number[^}]*}/s,
+  );
+  assert.match(typeSource, /topSoldItems:\s*StoreManagerTopSoldItem\[\]/);
+
+  // 판매수량은 재고 흐름(전일+매입-당일)으로만 추정한다.
+  assert.match(querySource, /buildStoreManagerTopSoldItems/);
+  assert.match(
+    querySource,
+    /item\.previousQuantity\s*\+\s*item\.purchasedQuantity\s*-\s*item\.currentQuantity/,
+  );
+  assert.match(querySource, /estimatedSalesAmount:\s*soldQuantity\s*\*\s*item\.unitPrice/);
+  // currentQuantity가 null이거나 판매수량이 0 이하인 행은 제외한다.
+  assert.match(querySource, /item\.currentQuantity === null/);
+  assert.match(querySource, /soldQuantity <= 0/);
+
+  // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 단가/FIFO는 노출하지 않는다.
+  assert.match(clientSource, /오늘 많이 팔린 품목/);
+  assert.match(clientSource, /추정 매출/);
+  assert.match(clientSource, /품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다\./);
+  assert.match(clientSource, /topSoldItems/);
+  assert.doesNotMatch(clientSource, /item\.unitPrice/);
+  assert.doesNotMatch(clientSource, /item\.fifoLots/);
 });
 
 test("headquarters ledger detail keeps review summary read access separate from action permissions", () => {

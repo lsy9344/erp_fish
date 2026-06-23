@@ -63,7 +63,6 @@ function isSameAnomalyThreshold(
 ) {
   return (
     setting.marginRateBps === input.marginRateBps &&
-    setting.inventoryDifferenceQuantity === input.inventoryDifferenceQuantity &&
     setting.isActive === input.isActive
   );
 }
@@ -75,7 +74,6 @@ function toAnomalyThresholdAuditValue(
     targetName: "이상 신호 기준값",
     scope: ANOMALY_THRESHOLD_SCOPE,
     marginRateBps: setting.marginRateBps,
-    inventoryDifferenceQuantity: setting.inventoryDifferenceQuantity,
     isActive: setting.isActive,
   };
 }
@@ -111,13 +109,14 @@ export async function updateAnomalyThresholdSettings(
       create: {
         scope: ANOMALY_THRESHOLD_SCOPE,
         marginRateBps: parsed.data.marginRateBps,
-        inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
+        // WO-01(2026-06-22): 재고 오차 허용 범위 제로화. DB 호환을 위해 컬럼은 유지하되 항상 0으로 고정한다.
+        inventoryDifferenceQuantity: 0,
         isActive: parsed.data.isActive,
         updatedById: actor.id,
       },
       update: {
         marginRateBps: parsed.data.marginRateBps,
-        inventoryDifferenceQuantity: parsed.data.inventoryDifferenceQuantity,
+        inventoryDifferenceQuantity: 0,
         isActive: parsed.data.isActive,
         updatedById: actor.id,
       },

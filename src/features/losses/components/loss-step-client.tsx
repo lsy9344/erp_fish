@@ -28,8 +28,8 @@ import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-st
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import { saveLedgerLosses } from "~/features/losses/actions";
+import { lossTerms } from "~/features/losses/terms";
 import {
-  type LossProductOption,
   type LossStepData,
   type StoreManagerLossStepData,
 } from "~/features/losses/types";
@@ -46,7 +46,8 @@ type LossLineState = {
   unitPrice?: number;
   lossTypeName: string;
   quantity: string;
-  amount: string;
+  recoveredAmount: string;
+  amount?: string;
   reason: string;
 };
 
@@ -76,7 +77,7 @@ function createLineState(clientKey: string): LossLineState {
     productSpec: "",
     lossTypeName: "",
     quantity: "",
-    amount: "",
+    recoveredAmount: "",
     reason: "",
   };
 }
@@ -93,15 +94,11 @@ function toLineState(data: LossDisplayData): LossLineState[] {
     unitPrice: "unitPrice" in item ? item.unitPrice : undefined,
     lossTypeName: item.lossTypeName,
     quantity: String(item.quantity),
-    amount: "amount" in item ? String(item.amount) : "",
+    recoveredAmount:
+      "recoveredAmount" in item ? String(item.recoveredAmount) : "",
+    amount: "amount" in item ? String(item.amount) : undefined,
     reason: item.reason,
   }));
-}
-
-function hasDefaultUnitPrice(
-  product: LossDisplayData["productOptions"][number] | undefined,
-): product is LossProductOption {
-  return Boolean(product && "defaultUnitPrice" in product);
 }
 
 function parseNumber(value: string) {
@@ -132,7 +129,7 @@ export function LossStepClient({
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const lossTypeRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const amountRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const recoveredAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
   const reasonRefs = useRef<(HTMLInputElement | null)[]>([]);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const nextDraftLineNumberRef = useRef(0);
@@ -188,8 +185,8 @@ export function LossStepClient({
           return;
         }
 
-        if (errors[`losses.${index}.amount`]?.length) {
-          amountRefs.current[index]?.focus();
+        if (errors[`losses.${index}.recoveredAmount`]?.length) {
+          recoveredAmountRefs.current[index]?.focus();
           return;
         }
 
@@ -238,9 +235,7 @@ export function LossStepClient({
       productName: product?.name ?? "",
       productCategory: product?.category ?? "",
       productSpec: product?.spec ?? "",
-      unitPrice: hasDefaultUnitPrice(product)
-        ? product.defaultUnitPrice
-        : undefined,
+      unitPrice: undefined,
     });
   }
 
@@ -274,7 +269,8 @@ export function LossStepClient({
           ledgerInputCodeId:
             lossTypeRefs.current[index]?.value ?? item.ledgerInputCodeId,
           quantity: quantityRefs.current[index]?.value ?? item.quantity,
-          amount: amountRefs.current[index]?.value ?? item.amount,
+          recoveredAmount:
+            recoveredAmountRefs.current[index]?.value ?? item.recoveredAmount,
           reason: reasonRefs.current[index]?.value ?? item.reason,
         })),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
@@ -334,7 +330,7 @@ export function LossStepClient({
     0,
   );
   const draftTotalAmount = items.reduce(
-    (sum, item) => sum + parseNumber(item.amount),
+    (sum, item) => sum + parseNumber(item.amount ?? "0"),
     0,
   );
   const isOriginalEditBlocked = isLedgerReadOnly(data.status);
@@ -397,7 +393,13 @@ export function LossStepClient({
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["손실 품목", "손실 유형", "수량", "손실액", "사유"]}
+        unsavedFields={[
+          "손실 품목",
+          "손실 유형",
+          "수량",
+          "실제 판매/회수액",
+          "사유",
+        ]}
         onRetry={handleRetry}
         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
       />
@@ -405,14 +407,18 @@ export function LossStepClient({
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="bg-muted/40 rounded-md p-3">
-            <p className="text-muted-foreground text-sm">총 손실 수량</p>
+            <p className="text-muted-foreground text-sm">
+              {lossTerms.totalLossQuantity}
+            </p>
             <p className="text-xl font-semibold tabular-nums">
               {draftTotalQuantity}
             </p>
           </div>
           {showsSensitiveLossAmounts ? (
             <div className="bg-muted/40 rounded-md p-3">
-              <p className="text-muted-foreground text-sm">총 손실액</p>
+              <p className="text-muted-foreground text-sm">
+                {lossTerms.totalLossAmount}
+              </p>
               <p className="text-xl font-semibold tabular-nums">
                 {formatKrw(draftTotalAmount)}
               </p>
@@ -472,7 +478,7 @@ export function LossStepClient({
 
           {!hasOptions ? (
             <p className="text-destructive mb-3 text-sm">
-              선택 가능한 active 품목 또는 active 손실 유형이 없습니다.
+              {lossTerms.noOptions}
             </p>
           ) : null}
 
@@ -489,9 +495,10 @@ export function LossStepClient({
                   fieldErrors[`losses.${index}.ledgerInputCodeId`]?.[0];
                 const quantityError =
                   fieldErrors[`losses.${index}.quantity`]?.[0];
-                const amountError = fieldErrors[`losses.${index}.amount`]?.[0];
+                const recoveredAmountError =
+                  fieldErrors[`losses.${index}.recoveredAmount`]?.[0];
                 const reasonError = fieldErrors[`losses.${index}.reason`]?.[0];
-                const amountDescriptionId = `loss-amount-${item.clientKey}-description`;
+                const recoveredAmountDescriptionId = `loss-recovered-${item.clientKey}-description`;
                 const productActive = data.productOptions.some(
                   (option) => option.id === item.productId,
                 );
@@ -523,7 +530,7 @@ export function LossStepClient({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field data-invalid={Boolean(productError)}>
                         <FieldLabel htmlFor={`loss-product-${item.clientKey}`}>
-                          품목
+                          {lossTerms.product}
                         </FieldLabel>
                         <select
                           id={`loss-product-${item.clientKey}`}
@@ -569,7 +576,7 @@ export function LossStepClient({
 
                       <Field data-invalid={Boolean(lossTypeError)}>
                         <FieldLabel htmlFor={`loss-type-${item.clientKey}`}>
-                          처리 유형
+                          {lossTerms.lossType}
                         </FieldLabel>
                         <select
                           id={`loss-type-${item.clientKey}`}
@@ -617,14 +624,14 @@ export function LossStepClient({
                       {item.productCategory || "-"} · 규격:{" "}
                       {item.productSpec || "-"}
                       {item.unitPrice !== undefined
-                        ? ` · 기준 단가: ${formatKrw(item.unitPrice)}`
-                        : ""}
+                        ? ` · 손실액 산정 기준 단가: ${formatKrw(item.unitPrice)}`
+                        : " · 저장 시 개점 전 판매가 계획으로 손실액 자동 산정"}
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field data-invalid={Boolean(quantityError)}>
                         <FieldLabel htmlFor={`loss-quantity-${item.clientKey}`}>
-                          수량
+                          {lossTerms.quantity}
                         </FieldLabel>
                         <Input
                           id={`loss-quantity-${item.clientKey}`}
@@ -657,43 +664,45 @@ export function LossStepClient({
                         ) : null}
                       </Field>
 
-                      <Field data-invalid={Boolean(amountError)}>
-                        <FieldLabel htmlFor={`loss-amount-${item.clientKey}`}>
-                          손실액(원)
+                      <Field data-invalid={Boolean(recoveredAmountError)}>
+                        <FieldLabel
+                          htmlFor={`loss-recovered-${item.clientKey}`}
+                        >
+                          {lossTerms.recoveredAmount}
                         </FieldLabel>
                         <Input
-                          id={`loss-amount-${item.clientKey}`}
+                          id={`loss-recovered-${item.clientKey}`}
                           ref={(node) => {
-                            amountRefs.current[index] = node;
+                            recoveredAmountRefs.current[index] = node;
                           }}
                           inputMode="numeric"
                           autoComplete="off"
-                          value={item.amount}
+                          value={item.recoveredAmount}
                           onChange={(event) =>
                             updateLine(item.clientKey, {
-                              amount: event.currentTarget.value,
+                              recoveredAmount: event.currentTarget.value,
                             })
                           }
                           disabled={isSaving || isOriginalEditBlocked}
                           className="min-h-11 tabular-nums"
-                          aria-invalid={Boolean(amountError)}
+                          aria-invalid={Boolean(recoveredAmountError)}
                           aria-describedby={[
-                            amountDescriptionId,
-                            amountError
-                              ? `loss-amount-${item.clientKey}-error`
+                            recoveredAmountDescriptionId,
+                            recoveredAmountError
+                              ? `loss-recovered-${item.clientKey}-error`
                               : undefined,
                           ]
                             .filter(Boolean)
                             .join(" ")}
                         />
-                        <FieldDescription id={amountDescriptionId}>
-                          판매금액이 아니라 손해 본 금액을 입력합니다.
+                        <FieldDescription id={recoveredAmountDescriptionId}>
+                          {lossTerms.recoveredAmountHelp}
                         </FieldDescription>
-                        {amountError ? (
+                        {recoveredAmountError ? (
                           <FieldError
-                            id={`loss-amount-${item.clientKey}-error`}
+                            id={`loss-recovered-${item.clientKey}-error`}
                           >
-                            {amountError}
+                            {recoveredAmountError}
                           </FieldError>
                         ) : null}
                       </Field>
@@ -701,7 +710,7 @@ export function LossStepClient({
 
                     <Field data-invalid={Boolean(reasonError)}>
                       <FieldLabel htmlFor={`loss-reason-${item.clientKey}`}>
-                        사유/특이사항
+                        {lossTerms.reason}
                       </FieldLabel>
                       <Input
                         id={`loss-reason-${item.clientKey}`}

@@ -1,9 +1,11 @@
 export type AnomalyThresholdSignalSettings = {
   marginRateBps: number;
-  inventoryDifferenceQuantity: number;
 };
 
+// WO-01(2026-06-22): 재고 오차 허용 범위를 제로화한다. inventoryDifferenceQuantity는
+// 더 이상 편집 가능한 기준이 아니며, DB 호환을 위해 입력에는 남을 수 있으나 신호 계산에서는 무시한다.
 type AnomalyThresholdSignalSettingsInput = AnomalyThresholdSignalSettings & {
+  inventoryDifferenceQuantity?: number;
   isActive?: boolean;
 };
 
@@ -85,6 +87,56 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 1,
 });
 
+export type MarginShortfall = {
+  currentBps: number;
+  targetBps: number;
+  shortfallBps: number;
+  shortfallAmount: number | null;
+};
+
+/**
+ * 현재 마진률이 기준 미달인지 판정하고, 미달분(%p)과 그 미달 금액을 계산한다.
+ * 미팅 결정(2026-06-21): 마진률 미달 금액을 관제판에 직접 노출하기 위해
+ * 마진률 이상 신호와 동일한 계산을 재사용한다. 마진률을 계산할 수 없거나
+ * 기준 이상이면 null을 돌려준다.
+ */
+export function calculateMarginShortfall(
+  thresholds: AnomalyThresholdSignalSettings,
+  current: Pick<RevenueAnomalyMetrics, "totalSales" | "grossMarginRate">,
+): MarginShortfall | null {
+  const currentRate = current.grossMarginRate.value;
+
+  if (currentRate === null || !Number.isFinite(currentRate)) {
+    return null;
+  }
+
+  const currentBps = currentRate * 10000;
+
+  if (currentBps >= thresholds.marginRateBps) {
+    return null;
+  }
+
+  const shortfallBps = thresholds.marginRateBps - currentBps;
+  const totalSales = current.totalSales.value;
+  const shortfallAmount =
+    totalSales !== null && Number.isFinite(totalSales)
+      ? (shortfallBps / 10000) * totalSales
+      : null;
+
+  return {
+    currentBps,
+    targetBps: thresholds.marginRateBps,
+    shortfallBps,
+    shortfallAmount,
+  };
+}
+
+export function formatMarginShortfallAmount(shortfall: MarginShortfall) {
+  return shortfall.shortfallAmount === null
+    ? "총매출 미확정으로 금액 계산 불가"
+    : `미달 금액 ${formatKrw(Math.round(shortfall.shortfallAmount))}`;
+}
+
 export function getAnomalyThresholdSignalSummary(
   settings: AnomalyThresholdSignalSettings | null,
 ) {
@@ -108,7 +160,6 @@ export function normalizeAnomalyThresholdSignalSettings(
 
   return {
     marginRateBps: settings.marginRateBps,
-    inventoryDifferenceQuantity: settings.inventoryDifferenceQuantity,
   };
 }
 
@@ -139,11 +190,10 @@ export function evaluateInventoryLossAnomalySignals({
     return [pendingSignal];
   }
 
-  return [...evaluateInventoryDifferenceSignal(thresholds, current)];
+  return [...evaluateInventoryDifferenceSignal(current)];
 }
 
 function evaluateInventoryDifferenceSignal(
-  thresholds: AnomalyThresholdSignalSettings,
   current: InventoryLossAnomalyMetrics,
 ): AnomalySignalSummary[] {
   if (
@@ -195,11 +245,8 @@ function evaluateInventoryDifferenceSignal(
       null,
     );
 
-  if (
-    !largestAdjustment ||
-    Math.abs(largestAdjustment.differenceQuantity) <=
-      thresholds.inventoryDifferenceQuantity
-  ) {
+  // WO-01(2026-06-22): 재고 오차 허용 범위 제로화. 수량 차이가 1개라도 있으면 이상 신호로 본다.
+  if (!largestAdjustment || largestAdjustment.differenceQuantity === 0) {
     return [];
   }
 
@@ -210,8 +257,6 @@ function evaluateInventoryDifferenceSignal(
       severity: "critical",
       detail: `${largestAdjustment.productName} 재고 차이 ${formatQuantity(
         Math.abs(largestAdjustment.differenceQuantity),
-      )}, 기준 ${formatQuantity(
-        thresholds.inventoryDifferenceQuantity,
       )}, 차이금액 ${formatKrw(
         Math.abs(largestAdjustment.differenceAmount),
       )}, 사유 ${largestAdjustment.reason}`,
@@ -228,17 +273,21 @@ function evaluateMarginRateSignal(
   if (currentRate === null || !Number.isFinite(currentRate)) {
     return [
       {
+        // WO-05(2026-06-22): 원문(point_summary.md:14) 확정 문구 "이익률 계산 불가"를 사용한다.
         id: "margin-rate-unavailable",
-        label: "마진률 계산 불가",
+        label: "이익률 계산 불가",
         severity: "info",
         detail:
-          "마진률 기준 판정에 필요한 현재 장부 마진률을 계산할 수 없습니다.",
+          "이익률 기준 판정에 필요한 현재 장부 이익률을 계산할 수 없습니다.",
       },
     ];
   }
 
-  const currentBps = currentRate * 10000;
-  if (currentBps >= thresholds.marginRateBps) {
+  // 미팅 결정(2026-06-21): 매출 차액 금액은 삭제하고, 마진률이 기준 대비
+  // 몇 %p 미달했는지와 그 미달분에 해당하는 금액을 함께 보여준다.
+  const shortfall = calculateMarginShortfall(thresholds, current);
+
+  if (shortfall === null) {
     return [];
   }
 
@@ -247,11 +296,17 @@ function evaluateMarginRateSignal(
       id: "margin-rate-below-threshold",
       label: "마진률 미달",
       severity: "warning",
-      detail: `마진률 ${formatBps(currentBps)}, 기준 ${formatBps(
-        thresholds.marginRateBps,
-      )}`,
+      detail: `마진률 ${formatBps(shortfall.currentBps)}, 기준 ${formatBps(
+        shortfall.targetBps,
+      )}, ${formatPercentagePoints(
+        shortfall.shortfallBps,
+      )} 미달, ${formatMarginShortfallAmount(shortfall)}`,
     },
   ];
+}
+
+function formatPercentagePoints(bps: number) {
+  return `${percentFormatter.format(bps / 100)}%p`;
 }
 
 function formatBps(value: number) {

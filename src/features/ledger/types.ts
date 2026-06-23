@@ -48,6 +48,16 @@ export type LedgerPurchaseLine = {
   referenceInfo: string | null;
 };
 
+export type LedgerLaborLine = {
+  id: string;
+  employeeId: string | null;
+  workerName: string;
+  amount: number;
+  lateMemo: string | null;
+  earlyLeaveMemo: string | null;
+  specialMemo: string | null;
+};
+
 export type LedgerCostStepData = LedgerSalesStepData & {
   workerCount: number | null;
   workMemo: string | null;
@@ -55,6 +65,8 @@ export type LedgerCostStepData = LedgerSalesStepData & {
   expenseTotal: number;
   purchaseItems: LedgerPurchaseLine[];
   purchaseTotal: number;
+  laborItems: LedgerLaborLine[];
+  payrollTotal: number;
   grossProfit: number;
   productivity: number | null;
   stepCompletion: StoreEntryStepCompletion;

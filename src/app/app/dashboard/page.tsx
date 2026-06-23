@@ -6,13 +6,21 @@ import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { HqDashboardTable } from "~/features/dashboard/components/hq-dashboard-table";
+import { HqDashboardBulkClosePanel } from "~/features/dashboard/components/hq-dashboard-bulk-close-panel";
 import {
+  DashboardLayoutControls,
+  getDashboardSummaryGridClass,
+  getDashboardTableContainerClass,
+} from "~/features/dashboard/components/dashboard-layout-controls";
+import {
+  getDashboardDensity,
   getDashboardFilterMode,
   getDashboardDatePreset,
   getDashboardPath,
   getDashboardSortMode,
   getHqDashboardRows,
 } from "~/features/dashboard/queries";
+import { bulkCloseHqLedgers } from "~/features/ledger/hq-close-actions";
 import { requireReportAccess } from "~/server/authz";
 
 type DashboardPageProps = {
@@ -20,6 +28,7 @@ type DashboardPageProps = {
     date?: string | string[];
     sort?: string | string[];
     filter?: string | string[];
+    density?: string | string[];
   }>;
 };
 
@@ -37,6 +46,9 @@ export default async function DashboardPage({
   );
   const filterMode = getDashboardFilterMode(
     Array.isArray(params.filter) ? params.filter[0] : params.filter,
+  );
+  const density = getDashboardDensity(
+    Array.isArray(params.density) ? params.density[0] : params.density,
   );
   const dashboard = await getHqDashboardRows({
     datePreset,
@@ -56,7 +68,7 @@ export default async function DashboardPage({
       variant: "warning" as const,
     },
     {
-      label: "본사마감",
+      label: "본사 마감",
       value: dashboard.summary.closedCount,
       variant: "success" as const,
     },
@@ -97,6 +109,7 @@ export default async function DashboardPage({
                   datePreset: "today",
                   sortMode: dashboard.sortMode,
                   filterMode: dashboard.filterMode,
+                  density,
                 })}
                 aria-current={
                   dashboard.datePreset === "today" ? "page" : undefined
@@ -116,6 +129,7 @@ export default async function DashboardPage({
                   datePreset: "yesterday",
                   sortMode: dashboard.sortMode,
                   filterMode: dashboard.filterMode,
+                  density,
                 })}
                 aria-current={
                   dashboard.datePreset === "yesterday" ? "page" : undefined
@@ -140,6 +154,7 @@ export default async function DashboardPage({
                   datePreset: dashboard.datePreset,
                   sortMode: "priority",
                   filterMode: dashboard.filterMode,
+                  density,
                 })}
                 aria-current={
                   dashboard.sortMode === "priority" ? "page" : undefined
@@ -159,6 +174,7 @@ export default async function DashboardPage({
                   datePreset: dashboard.datePreset,
                   sortMode: "store-name",
                   filterMode: dashboard.filterMode,
+                  density,
                 })}
                 aria-current={
                   dashboard.sortMode === "store-name" ? "page" : undefined
@@ -181,6 +197,7 @@ export default async function DashboardPage({
                   datePreset: dashboard.datePreset,
                   sortMode: dashboard.sortMode,
                   filterMode: "all",
+                  density,
                 })}
                 aria-current={
                   dashboard.filterMode === "all" ? "page" : undefined
@@ -202,6 +219,7 @@ export default async function DashboardPage({
                   datePreset: dashboard.datePreset,
                   sortMode: dashboard.sortMode,
                   filterMode: "needs-attention",
+                  density,
                 })}
                 aria-current={
                   dashboard.filterMode === "needs-attention"
@@ -213,12 +231,19 @@ export default async function DashboardPage({
               </Link>
             </Button>
           </div>
+          <DashboardLayoutControls
+            datePreset={dashboard.datePreset}
+            sortMode={dashboard.sortMode}
+            filterMode={dashboard.filterMode}
+            density={density}
+          />
         </div>
       </div>
 
       <section
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+        className={getDashboardSummaryGridClass(density)}
         aria-label="관제판 요약"
+        data-density={density}
       >
         {summaryItems.map((item) => (
           <MetricCard
@@ -230,7 +255,18 @@ export default async function DashboardPage({
         ))}
       </section>
 
-      <HqDashboardTable dashboard={dashboard} />
+      <HqDashboardBulkClosePanel
+        dashboard={dashboard}
+        closeAction={bulkCloseHqLedgers}
+      />
+
+      <div
+        className={getDashboardTableContainerClass(density)}
+        data-testid="dashboard-table-container"
+        data-density={density}
+      >
+        <HqDashboardTable dashboard={dashboard} />
+      </div>
     </HeadquartersShell>
   );
 }

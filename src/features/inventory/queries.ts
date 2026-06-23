@@ -5,6 +5,7 @@ import {
 import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
+import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
 import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
@@ -397,6 +398,7 @@ function toInventoryLine(
     currentQuantity,
     quantity,
     inventoryAmount: calculateInventoryAmount(quantity, base.unitPrice),
+    fifoLots: [],
     carryoverSource: base.carryoverSource,
     carryoverStatus: base.carryoverStatus,
     carryoverLedgerId: base.carryoverLedgerId,
@@ -449,6 +451,7 @@ function toExistingInventoryLine(
     currentQuantity: item.currentQuantity,
     quantity: item.quantity,
     inventoryAmount: item.inventoryAmount,
+    fifoLots: [],
     carryoverSource: item.carryoverSource,
     carryoverStatus,
     carryoverLedgerId: item.carryoverLedgerId,
@@ -1032,6 +1035,22 @@ async function attachCarryoverHistories(
   }));
 }
 
+async function attachFifoLots(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+  items: InventoryStepLine[],
+) {
+  const lotsByProductId = await getLedgerInventoryFifoLotsByProductId(
+    tx,
+    dailyLedgerId,
+  );
+
+  return items.map((item) => ({
+    ...item,
+    fifoLots: lotsByProductId.get(item.productId) ?? [],
+  }));
+}
+
 async function getInventoryStepDataForLedgerInTx(
   tx: Prisma.TransactionClient,
   ledger: InventoryLedgerPayload,
@@ -1079,6 +1098,11 @@ async function getInventoryStepDataForLedgerInTx(
       ledger.closingDate,
       items,
     );
+    const itemsWithFifoLots = await attachFifoLots(
+      tx,
+      ledger.id,
+      itemsWithHistory,
+    );
     const carryoverStatus = getPrimaryCarryoverStatus(items);
 
     return {
@@ -1090,7 +1114,7 @@ async function getInventoryStepDataForLedgerInTx(
       authorDisplayName: ledger.authorDisplayName ?? null,
       status: ledger.status,
       stepCompletion,
-      items: itemsWithHistory,
+      items: itemsWithFifoLots,
       carryover: {
         status: toCarryoverLoadStatus(carryoverStatus),
         source,
@@ -1196,19 +1220,13 @@ export function toStoreManagerInventoryStepData(
 ): StoreManagerInventoryStepData {
   return {
     ...data,
+    // 2026-06-22 결정: inventoryAmount(FIFO 재고금액)와 fifoLots(판매 lot 이력)는
+    // 지점장에게도 노출한다. unitPrice/매입액/손실액과 조정 금액은 계속 차단한다.
     items: data.items.map(
-      ({
-        unitPrice,
-        purchaseAmount,
-        lossAmount,
-        inventoryAmount,
-        adjustment,
-        ...item
-      }) => {
+      ({ unitPrice, purchaseAmount, lossAmount, adjustment, ...item }) => {
         void unitPrice;
         void purchaseAmount;
         void lossAmount;
-        void inventoryAmount;
 
         return {
           ...item,

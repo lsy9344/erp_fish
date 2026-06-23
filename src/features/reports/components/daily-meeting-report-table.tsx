@@ -380,11 +380,11 @@ function getDailyMeetingStatusMessage(row: DailyMeetingReportRow) {
 
   switch (row.ledgerStatus.key) {
     case "HEADQUARTERS_CLOSED":
-      return `본사마감 - ${timingMessage ?? "회의 반영 완료"}`;
+      return `본사 마감 - ${timingMessage ?? "회의 반영 완료"}`;
     case "IN_REVIEW":
       return `검토 대기 - ${timingMessage ?? "본사 확인 필요"}`;
     case "IN_PROGRESS":
-      return `입력중 - ${timingMessage ?? "제출 전"}`;
+      return `입력 중 - ${timingMessage ?? "제출 전"}`;
     default:
       return `${row.businessStatus.label} - ${formatLoss(row)}`;
   }

@@ -14,14 +14,17 @@ import {
   getKstBusinessDateParam,
   getStoreLedger,
 } from "~/features/ledger/queries";
+import { isTodayKstDateParam } from "~/features/ledger/date";
 import { getStoreManagerLedgerReviewStepData } from "~/features/ledger/review-queries";
 import { CorrectionReadonlySummary } from "~/features/corrections/components/correction-readonly-summary";
 import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
 import type { CorrectionRecordListItem } from "~/features/corrections/types";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { ExpenseStepClient } from "~/features/ledger/components/expense-step-client";
+import { InputCodeAliasEditor } from "~/features/master-data/components/input-code-alias-editor";
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
+import { getActiveEmployeeOptions } from "~/features/labor/employees-queries";
 import { ReviewSummaryClient } from "~/features/ledger/components/review-summary-client";
 
 type StoreEntryPageProps = {
@@ -44,6 +47,9 @@ type ProductOption = Awaited<
 >[number];
 type PurchaseStandardOption = Awaited<
   ReturnType<typeof getActivePurchaseStandardOptions>
+>[number];
+type EmployeeOption = Awaited<
+  ReturnType<typeof getActiveEmployeeOptions>
 >[number];
 
 function normalizeStoreEntryStep(
@@ -85,6 +91,7 @@ type StoreEntryContentProps = {
   expenseCodeOptions: LedgerInputCodeOption[];
   productOptions: ProductOption[];
   purchaseStandardOptions: PurchaseStandardOption[];
+  employeeOptions: EmployeeOption[];
 };
 
 function StoreEntryContent({
@@ -96,6 +103,7 @@ function StoreEntryContent({
   expenseCodeOptions,
   productOptions,
   purchaseStandardOptions,
+  employeeOptions,
 }: StoreEntryContentProps) {
   let content;
 
@@ -109,12 +117,22 @@ function StoreEntryContent({
     );
   } else if (step === "cost") {
     content = (
-      <ExpenseStepClient
-        initialLedger={initialLedger}
-        expenseCodeOptions={expenseCodeOptions}
-        storeName={storeName}
-        currentStep={step}
-      />
+      <div className="flex flex-col gap-4">
+        <ExpenseStepClient
+          initialLedger={initialLedger}
+          expenseCodeOptions={expenseCodeOptions}
+          storeName={storeName}
+          currentStep={step}
+        />
+        <InputCodeAliasEditor
+          storeId={initialLedger.storeId}
+          groupKey="expenseItem"
+          options={expenseCodeOptions.map((option) => ({
+            id: option.id,
+            name: option.name,
+          }))}
+        />
+      </div>
     );
   } else if (step === "purchase") {
     content = (
@@ -132,6 +150,7 @@ function StoreEntryContent({
         initialLedger={initialLedger}
         storeName={storeName}
         currentStep={step}
+        employeeOptions={employeeOptions}
       />
     );
   } else {
@@ -166,14 +185,23 @@ export default async function StoreEntryPage({
     redirect("/app/unauthorized");
   }
 
+  if (closingDate && !isTodayKstDateParam(closingDate)) {
+    redirect("/app/unauthorized");
+  }
+
   if (storeId) {
     const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
-    const expenseCodeOptions =
-      await getActiveLedgerInputCodeOptions("EXPENSE_ITEM");
-    const [productOptions, purchaseStandardOptions] = await Promise.all([
-      getActiveProductOptions(),
-      getActivePurchaseStandardOptions(),
-    ]);
+    // WO-09: 지점장 화면이므로 비용 항목 표시명에 지점별 alias를 적용한다.
+    const expenseCodeOptions = await getActiveLedgerInputCodeOptions(
+      "EXPENSE_ITEM",
+      store.id,
+    );
+    const [productOptions, purchaseStandardOptions, employeeOptions] =
+      await Promise.all([
+        getActiveProductOptions(),
+        getActivePurchaseStandardOptions(),
+        getActiveEmployeeOptions(),
+      ]);
     const [initialLedger, reviewData] = await Promise.all([
       getStoreLedger(store.id, closingDate, user.id),
       step === "review"
@@ -203,6 +231,7 @@ export default async function StoreEntryPage({
           expenseCodeOptions={expenseCodeOptions}
           productOptions={productOptions}
           purchaseStandardOptions={purchaseStandardOptions}
+          employeeOptions={employeeOptions}
         />
       </StoreManagerShell>
     );
@@ -222,12 +251,17 @@ export default async function StoreEntryPage({
     );
   }
 
-  const expenseCodeOptions =
-    await getActiveLedgerInputCodeOptions("EXPENSE_ITEM");
-  const [productOptions, purchaseStandardOptions] = await Promise.all([
-    getActiveProductOptions(),
-    getActivePurchaseStandardOptions(),
-  ]);
+  // WO-09: 지점장 활성 지점 화면에서도 비용 항목 표시명에 지점별 alias를 적용한다.
+  const expenseCodeOptions = await getActiveLedgerInputCodeOptions(
+    "EXPENSE_ITEM",
+    workspace.store.id,
+  );
+  const [productOptions, purchaseStandardOptions, employeeOptions] =
+    await Promise.all([
+      getActiveProductOptions(),
+      getActivePurchaseStandardOptions(),
+      getActiveEmployeeOptions(),
+    ]);
   const initialLedger = await getStoreLedger(
     workspace.store.id,
     closingDate,
@@ -264,6 +298,7 @@ export default async function StoreEntryPage({
         expenseCodeOptions={expenseCodeOptions}
         productOptions={productOptions}
         purchaseStandardOptions={purchaseStandardOptions}
+        employeeOptions={employeeOptions}
       />
     </StoreManagerShell>
   );

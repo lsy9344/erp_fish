@@ -5,8 +5,13 @@ import type {
   MonthlyClosingAnomalyReportData,
   StoreComparisonReportData,
 } from "./types";
+import type { InventoryPositionReportData } from "./inventory-position-types";
 
-export type ReportExportType = "daily" | "comparison" | "monthly";
+export type ReportExportType =
+  | "daily"
+  | "comparison"
+  | "monthly"
+  | "inventory";
 export type ReportExportFormat = "csv";
 
 type ReportExportColumn = {
@@ -45,7 +50,7 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
   ],
   comparison: [
     { key: "storeName", label: "지점" },
-    { key: "closedCount", label: "본사마감 일수" },
+    { key: "closedCount", label: "본사 마감 일수" },
     { key: "unfinishedCount", label: "미마감 일수" },
     { key: "missingDayCount", label: "미입력 일수" },
     { key: "salesAmount", label: "매출" },
@@ -68,6 +73,20 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "value", label: "값" },
     { key: "status", label: "상태" },
     { key: "reason", label: "사유" },
+  ],
+  inventory: [
+    { key: "storeName", label: "지점" },
+    { key: "productName", label: "품목" },
+    { key: "productCategory", label: "분류" },
+    { key: "productSpec", label: "규격" },
+    { key: "previousQuantity", label: "전일재고" },
+    { key: "purchasedQuantity", label: "매입" },
+    { key: "lossQuantity", label: "손실" },
+    { key: "currentQuantity", label: "남은 재고" },
+    { key: "systemQuantity", label: "전산 재고" },
+    { key: "differenceQuantity", label: "차이" },
+    { key: "amount", label: "재고 금액" },
+    { key: "statusLabel", label: "상태" },
   ],
 } as const satisfies Record<ReportExportType, readonly ReportExportColumn[]>;
 
@@ -225,6 +244,51 @@ export function buildMonthlyClosingAnomalyReportExport(
     scopedStoreIds: [...new Set(report.days.map((day) => day.storeId))],
     rows,
   };
+}
+
+export function buildInventoryPositionReportExport(
+  report: Pick<InventoryPositionReportData, "filters" | "rows">,
+): ReportExportData {
+  return {
+    report: "inventory",
+    period: report.filters.dateInput,
+    filters: {
+      date: report.filters.dateInput,
+      storeId: report.filters.storeId,
+      category: report.filters.category,
+      product: report.filters.productQuery,
+    },
+    columns: [...REPORT_EXPORT_COLUMN_ALLOWLISTS.inventory],
+    scopedStoreIds: [...new Set(report.rows.map((row) => row.storeId))],
+    rows: report.rows.map((row) => ({
+      storeName: row.storeName,
+      productName: row.productName,
+      productCategory: row.productCategory,
+      productSpec: row.productSpec,
+      previousQuantity:
+        row.statusLabel === "미입력" ? "미입력" : row.previousQuantity,
+      purchasedQuantity:
+        row.statusLabel === "미입력" ? "미입력" : row.purchasedQuantity,
+      lossQuantity: row.statusLabel === "미입력" ? "미입력" : row.lossQuantity,
+      currentQuantity: formatExportQuantity(row.currentQuantity),
+      systemQuantity: formatExportQuantity(row.systemQuantity),
+      differenceQuantity: formatExportSignedQuantity(row.differenceQuantity),
+      amount: row.inventoryAmount ?? "계산 불가",
+      statusLabel: row.statusLabel,
+    })),
+  };
+}
+
+function formatExportQuantity(value: number | null) {
+  return value ?? "계산 불가";
+}
+
+function formatExportSignedQuantity(value: number | null) {
+  if (value === null) {
+    return "계산 불가";
+  }
+
+  return value > 0 ? `+${value}` : String(value);
 }
 
 export function buildReportCsv(exportData: ReportExportData) {

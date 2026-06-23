@@ -137,7 +137,7 @@ async function cleanupStoryFourThreeData() {
   });
 }
 
-test("본사는 본사마감 장부에 정정 기록을 추가하고 원본 값은 보존한다", async ({
+test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값은 보존한다", async ({
   page,
 }) => {
   const { actorId, ledger } = await seedClosedLedger();

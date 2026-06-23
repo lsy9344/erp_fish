@@ -177,7 +177,7 @@ export function HqLedgerCloseDialog({
       >
         <DialogTrigger asChild>
           <Button type="button" variant="outline">
-            본사마감
+            본사 마감
           </Button>
         </DialogTrigger>
         <DialogContent>

@@ -191,7 +191,9 @@ test("Story 5.4 expense and loss integrations reject inactive or wrong-group dir
     "loss-step-client.tsx",
   );
 
-  assert.match(storePage, /getActiveLedgerInputCodeOptions\("EXPENSE_ITEM"\)/);
+  // WO-09: 지점장 store-entry 화면은 비용 항목 표시명에 지점별 alias를 적용하므로
+  // store id 인자를 함께 넘긴다. 본사(hq) 화면은 본사 등록명을 유지하기 위해 인자 없이 호출한다.
+  assert.match(storePage, /getActiveLedgerInputCodeOptions\(\s*"EXPENSE_ITEM"/);
   assert.match(hqPage, /getActiveLedgerInputCodeOptions\("EXPENSE_ITEM"\)/);
   assert.match(ledgerActions, /validateActiveExpenseCodesInTx/);
   assert.match(

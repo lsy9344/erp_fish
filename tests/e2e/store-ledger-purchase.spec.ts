@@ -8,7 +8,23 @@ import {
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
 const UNAUTHORIZED_STORE_ID = "store-hongdae";
-const SELECTED_LEDGER_DATE = "2026-06-03";
+
+// WO-A(2026-06-22): 지점장 저장/제출 서버 액션이 KST 오늘 날짜만 허용하므로,
+// 하드코딩 과거 날짜 대신 동적 KST 오늘 날짜를 사용한다.
+function getTodayKstDateParam(inputDate = new Date()) {
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(inputDate)
+    .split("-");
+
+  return `${year}-${month}-${day}`;
+}
+
+const SELECTED_LEDGER_DATE = getTodayKstDateParam();
 
 test.afterAll(async () => {
   await cleanupStoryTwoFourData();
@@ -379,7 +395,7 @@ test("stale version 매입 저장은 거부되고 기존 데이터가 바뀌지 
     .toBe(0);
 });
 
-test("본사마감과 휴무 장부에서는 매입 원본 저장 UI가 차단된다", async ({
+test("본사 마감과 휴무 장부에서는 매입 원본 저장 UI가 차단된다", async ({
   page,
 }) => {
   await login(page);

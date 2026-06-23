@@ -54,10 +54,10 @@ test("HQ shell and sidebar preserve menu labels while adding mockup active navig
     "코드 관리",
     "사용자/권한",
     "변경 이력",
-    "설정",
   ]) {
     assert.match(sidebarSource, new RegExp(label));
   }
+  assert.doesNotMatch(sidebarSource, /label: "설정"/);
 
   assert.doesNotMatch(sidebarSource, /^"use client";/);
   assert.doesNotMatch(sidebarSource, /usePathname/);

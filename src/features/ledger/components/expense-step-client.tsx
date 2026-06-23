@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerExpenses } from "~/features/ledger/actions";
+import { ledgerTerms } from "~/features/ledger/terms";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
@@ -406,7 +407,7 @@ export function ExpenseStepClient({
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-medium">비용 항목</p>
+          <p className="text-sm font-medium">{ledgerTerms.expenseItem}</p>
           <Button
             type="button"
             variant="outline"
@@ -419,7 +420,7 @@ export function ExpenseStepClient({
             className="min-h-11 gap-2"
           >
             <PlusIcon data-icon="inline-start" />
-            항목 추가
+            {ledgerTerms.addLine}
           </Button>
         </div>
 
@@ -458,13 +459,13 @@ export function ExpenseStepClient({
                       className="min-h-11 gap-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
-                      삭제
+                      {ledgerTerms.removeLine}
                     </Button>
                   </div>
 
                   <Field data-invalid={Boolean(lineCodeError)}>
                     <FieldLabel htmlFor={`expense-code-${line.id}`}>
-                      비용 항목
+                      {ledgerTerms.expenseItem}
                     </FieldLabel>
                     <select
                       id={`expense-code-${line.id}`}
@@ -509,7 +510,7 @@ export function ExpenseStepClient({
 
                   <Field data-invalid={Boolean(lineAmountError)}>
                     <FieldLabel htmlFor={`expense-amount-${line.id}`}>
-                      금액
+                      {ledgerTerms.expenseAmount}
                     </FieldLabel>
                     <Input
                       id={`expense-amount-${line.id}`}
@@ -550,7 +551,7 @@ export function ExpenseStepClient({
 
                   <Field data-invalid={Boolean(lineMemoError)}>
                     <FieldLabel htmlFor={`expense-memo-${line.id}`}>
-                      메모 (선택)
+                      {ledgerTerms.expenseMemo}
                     </FieldLabel>
                     <Input
                       id={`expense-memo-${line.id}`}
@@ -609,7 +610,9 @@ export function ExpenseStepClient({
           </div>
           {showSensitiveAccountingMetrics ? (
             <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">영업이익</span>
+              <span className="text-muted-foreground">
+                {ledgerTerms.grossProfit}
+              </span>
               <span className="font-semibold tabular-nums">
                 {formatKrw(draftGrossProfit)}
               </span>

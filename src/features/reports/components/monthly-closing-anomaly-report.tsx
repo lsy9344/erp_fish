@@ -12,6 +12,7 @@ import {
 } from "~/components/ui/table";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
+import { ProductCategoryMarginChart } from "./product-category-margin-chart";
 import { cn } from "~/lib/utils";
 import type {
   DailyMeetingReportMetricEvidence,
@@ -19,10 +20,12 @@ import type {
   MonthlyAnomalyItem,
   MonthlyClosingAnomalyDay,
   MonthlyClosingAnomalyReportData,
+  MonthlyHeadquartersExpenseSummary,
 } from "../types";
 
 type MonthlyClosingAnomalyReportProps = {
   report: MonthlyClosingAnomalyReportData;
+  headquartersExpense?: MonthlyHeadquartersExpenseSummary | null;
 };
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
@@ -37,6 +40,7 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
 
 export function MonthlyClosingAnomalyReport({
   report,
+  headquartersExpense = null,
 }: MonthlyClosingAnomalyReportProps) {
   if (!report.selectedStoreId) {
     return (
@@ -50,12 +54,89 @@ export function MonthlyClosingAnomalyReport({
   return (
     <section className="space-y-5" aria-label="월간 요약 리포트">
       <MonthlyKpiSummary report={report} />
+      {headquartersExpense ? (
+        <HeadquartersExpenseSummary summary={headquartersExpense} />
+      ) : null}
       <LossInventoryFlowSummary report={report} />
+      <CategoryPerformanceSummary report={report} />
       <TopRevenueItemSummary report={report} />
+      <RevenueRankingSummary report={report} />
+      <ProfitAndLossReadinessSummary report={report} />
       <StatusSummary report={report} />
       <CalculationDaySummary report={report} />
       <DayStatusTable days={report.days} />
       <AnomalyList items={report.anomalyItems} />
+    </section>
+  );
+}
+
+// WO-03(2026-06-22): 냉동/생물 카테고리별 매출 차트. 품목별 POS 매출이 없어 추정값이다.
+function CategoryPerformanceSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  return (
+    <section
+      className="space-y-3"
+      aria-label="냉동/생물 매출"
+      data-testid="hq-report-monthly-category-performance"
+    >
+      <h2 className="text-lg font-semibold tracking-normal">
+        냉동/생물 매출 (추정)
+      </h2>
+      <p className="text-muted-foreground text-xs break-words">
+        품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.
+      </p>
+      <div className="bg-card rounded-lg border p-4 shadow-sm">
+        <ProductCategoryMarginChart data={report.categoryPerformance} />
+      </div>
+    </section>
+  );
+}
+
+function HeadquartersExpenseSummary({
+  summary,
+}: {
+  summary: MonthlyHeadquartersExpenseSummary;
+}) {
+  return (
+    <section
+      className="space-y-3"
+      aria-label="본사 지출"
+      data-testid="hq-report-monthly-headquarters-expense"
+    >
+      <h2 className="text-lg font-semibold tracking-normal">본사 지출</h2>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm break-words">
+            본사 지출 합계
+          </p>
+          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+            {krwFormatter.format(summary.totalAmount)}
+          </p>
+        </div>
+        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm break-words">
+            지점 귀속 지출
+          </p>
+          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+            {krwFormatter.format(summary.storeAttributedAmount)}
+          </p>
+        </div>
+        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm break-words">
+            본사 공통 지출
+          </p>
+          <p className="mt-2 text-lg font-semibold tabular-nums break-words">
+            {krwFormatter.format(summary.unattributedAmount)}
+          </p>
+        </div>
+      </div>
+      <p className="text-muted-foreground text-xs break-words">
+        지점 일일 장부 비용과 분리된 본사 전용 지출입니다. 지점장 화면에는
+        포함되지 않습니다.
+      </p>
     </section>
   );
 }
@@ -299,15 +380,173 @@ function TopRevenueItemSummary({
   );
 }
 
+function RevenueRankingSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  const ranking = report.revenueRanking;
+
+  return (
+    <section
+      className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
+      aria-label="매출 상위·하위 품목"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-normal">
+            매출 상위5 / 하위5 품목 (추정)
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm break-words">
+            {ranking.note}
+          </p>
+        </div>
+        <Badge variant="outline" className="max-w-full break-words">
+          {ranking.statusLabel}
+        </Badge>
+      </div>
+
+      {ranking.status === "data-insufficient" ? (
+        <p className="text-muted-foreground mt-4 text-sm">
+          순위를 계산할 데이터가 아직 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <RevenueRankingList
+            title="상위 5"
+            emptyLabel="표시할 품목이 없습니다."
+            items={ranking.top}
+          />
+          <RevenueRankingList
+            title="하위 5"
+            emptyLabel="표시할 품목이 없습니다."
+            items={ranking.bottom}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RevenueRankingList({
+  title,
+  emptyLabel,
+  items,
+}: {
+  title: string;
+  emptyLabel: string;
+  items: MonthlyClosingAnomalyReportData["revenueRanking"]["top"];
+}) {
+  return (
+    <div className="min-w-0">
+      <h3 className="text-muted-foreground text-sm font-semibold">{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-muted-foreground mt-2 text-sm">{emptyLabel}</p>
+      ) : (
+        <ol className="mt-2 flex flex-col gap-2">
+          {items.map((item, index) => (
+            <li
+              key={item.productId}
+              className="bg-muted/40 flex min-w-0 items-start justify-between gap-3 rounded-md px-3 py-2"
+            >
+              <span className="min-w-0 break-words text-sm">
+                <span className="text-muted-foreground tabular-nums">
+                  {index + 1}.
+                </span>{" "}
+                {item.productName}
+                <span className="text-muted-foreground block text-xs">
+                  판매량 {item.soldQuantity.toLocaleString("ko-KR")}개
+                </span>
+              </span>
+              <span className="shrink-0 text-right text-sm font-medium tabular-nums">
+                {krwFormatter.format(item.estimatedSalesAmount)}
+                <span className="text-muted-foreground block text-xs">추정</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+const profitAndLossAvailabilityBadgeVariant: Record<
+  MonthlyClosingAnomalyReportData["profitAndLossReadiness"]["inputs"][number]["availability"],
+  "secondary" | "outline" | "destructive"
+> = {
+  actual: "secondary",
+  estimated: "outline",
+  unavailable: "destructive",
+};
+
+function ProfitAndLossReadinessSummary({
+  report,
+}: {
+  report: MonthlyClosingAnomalyReportData;
+}) {
+  const readiness = report.profitAndLossReadiness;
+
+  return (
+    <section
+      className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
+      aria-label="손익 리포트 준비도"
+      data-testid="hq-report-monthly-pl-readiness"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-normal">
+            손익(P&amp;L) 리포트 준비도
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm break-words">
+            {readiness.note}
+          </p>
+        </div>
+        <Badge variant="outline" className="max-w-full break-words">
+          {readiness.statusLabel}
+        </Badge>
+      </div>
+
+      <ul className="mt-4 flex flex-col gap-2">
+        {readiness.inputs.map((input) => (
+          <li
+            key={input.key}
+            data-testid={`hq-report-monthly-pl-input-${input.key}`}
+            className="bg-muted/40 flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-md px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium break-words">{input.label}</p>
+              <p className="text-muted-foreground text-xs break-words">
+                {input.note}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+              <Badge
+                variant={
+                  profitAndLossAvailabilityBadgeVariant[input.availability]
+                }
+              >
+                {input.availabilityLabel}
+              </Badge>
+              <span className="text-muted-foreground text-xs break-words">
+                {input.source}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function StatusSummary({
   report,
 }: {
   report: MonthlyClosingAnomalyReportData;
 }) {
   const items = [
-    ["본사마감", report.statusCounts.closedCount],
-    ["검토대기", report.statusCounts.reviewCount],
-    ["입력중", report.statusCounts.inProgressCount],
+    ["본사 마감", report.statusCounts.closedCount],
+    ["검토 대기", report.statusCounts.reviewCount],
+    ["입력 중", report.statusCounts.inProgressCount],
     ["미입력", report.statusCounts.missingDayCount],
     ["휴무", report.statusCounts.holidayCount],
   ];

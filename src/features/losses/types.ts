@@ -25,6 +25,7 @@ export type LossLineItem = {
   unitPrice: number;
   lossTypeName: string;
   quantity: number;
+  recoveredAmount: number;
   amount: number;
   reason: string;
 };
@@ -66,7 +67,7 @@ export type StoreManagerLossProductOption = Omit<
   "defaultUnitPrice"
 >;
 
-export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice">;
+export type StoreManagerLossLineItem = Omit<LossLineItem, "unitPrice" | "amount">;
 
 export type StoreManagerLossProductSummary = Omit<LossProductSummary, "amount">;
 

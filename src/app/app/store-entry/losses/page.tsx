@@ -3,13 +3,18 @@ import { redirect } from "next/navigation";
 import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
+import { LossTypeAliasEditor } from "~/features/master-data/components/loss-type-alias-editor";
 import { getLossStepData } from "~/features/losses/queries";
+import { SalesPlanLossContext } from "~/features/sales-plan/components/sales-plan-loss-context";
+import { getSalesPlanLossContext } from "~/features/sales-plan/queries";
+import { type SalesPlanLossContextItem } from "~/features/sales-plan/types";
 import {
   getStoreManagerLedgerEditWorkspace,
   normalizeStoreIdParam,
   requireStoreManagerLedgerEditAccess,
 } from "~/server/authz";
 import { getKstBusinessDateParam } from "~/features/ledger/queries";
+import { isTodayKstDateParam } from "~/features/ledger/date";
 
 type LossEntryPageProps = {
   searchParams: Promise<{
@@ -21,10 +26,27 @@ type LossEntryPageProps = {
 type LossContentProps = {
   storeName: string;
   initialData: Awaited<ReturnType<typeof getLossStepData>>;
+  salesPlanContext: SalesPlanLossContextItem[];
 };
 
-function LossContent({ storeName, initialData }: LossContentProps) {
-  return <LossStepClient storeName={storeName} initialData={initialData} />;
+function LossContent({
+  storeName,
+  initialData,
+  salesPlanContext,
+}: LossContentProps) {
+  return (
+    <div className="flex flex-col gap-4">
+      <SalesPlanLossContext items={salesPlanContext} />
+      <LossStepClient storeName={storeName} initialData={initialData} />
+      <LossTypeAliasEditor
+        storeId={initialData.storeId}
+        options={initialData.lossTypeOptions.map((option) => ({
+          id: option.id,
+          name: option.name,
+        }))}
+      />
+    </div>
+  );
 }
 
 function normalizeClosingDateParam(value: string | string[] | undefined) {
@@ -50,9 +72,16 @@ export default async function LossEntryPage({
     redirect("/app/unauthorized");
   }
 
+  if (closingDate && !isTodayKstDateParam(closingDate)) {
+    redirect("/app/unauthorized");
+  }
+
   if (storeId) {
     const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
-    const initialData = await getLossStepData(store.id, closingDate, user.id);
+    const [initialData, salesPlanContext] = await Promise.all([
+      getLossStepData(store.id, closingDate, user.id),
+      getSalesPlanLossContext(store.id, closingDate),
+    ]);
 
     return (
       <StoreManagerShell
@@ -60,7 +89,11 @@ export default async function LossEntryPage({
         storeName={store.name}
         storeId={store.id}
       >
-        <LossContent storeName={store.name} initialData={initialData} />
+        <LossContent
+          storeName={store.name}
+          initialData={initialData}
+          salesPlanContext={salesPlanContext}
+        />
       </StoreManagerShell>
     );
   }
@@ -79,6 +112,11 @@ export default async function LossEntryPage({
     );
   }
 
+  const [workspaceLossData, workspaceSalesPlanContext] = await Promise.all([
+    getLossStepData(workspace.store.id, closingDate, workspace.user.id),
+    getSalesPlanLossContext(workspace.store.id, closingDate),
+  ]);
+
   return (
     <StoreManagerShell
       userName={workspace.user.name ?? "지점장"}
@@ -87,11 +125,8 @@ export default async function LossEntryPage({
     >
       <LossContent
         storeName={workspace.store.name}
-        initialData={await getLossStepData(
-          workspace.store.id,
-          closingDate,
-          workspace.user.id,
-        )}
+        initialData={workspaceLossData}
+        salesPlanContext={workspaceSalesPlanContext}
       />
     </StoreManagerShell>
   );

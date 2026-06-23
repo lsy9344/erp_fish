@@ -5,6 +5,9 @@ import {
   type InventoryCarryoverStatus,
 } from "../../../generated/prisma";
 import { type StoreEntryStepCompletion } from "~/features/ledger/step-completion";
+import { type InventoryFifoLotView } from "~/features/inventory/fifo-lots";
+
+export type { InventoryFifoLotView };
 
 export type InventoryStepLine = {
   id: string;
@@ -21,6 +24,7 @@ export type InventoryStepLine = {
   currentQuantity: number | null;
   quantity: number | null;
   inventoryAmount: number | null;
+  fifoLots: InventoryFifoLotView[];
   carryoverSource: InventoryCarryoverSource;
   carryoverStatus: InventoryCarryoverStatus;
   carryoverLedgerId: string | null;
@@ -97,13 +101,11 @@ export type StoreManagerInventoryAdjustmentView = Omit<
   "beforeAmount" | "afterAmount" | "differenceAmount"
 >;
 
+// 2026-06-22 결정: FIFO 재고금액(inventoryAmount)과 판매 lot 이력(fifoLots)은
+// 지점장에게도 노출한다. 단가/매입액/손실액과 조정 금액은 계속 차단한다.
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
-  | "unitPrice"
-  | "purchaseAmount"
-  | "lossAmount"
-  | "inventoryAmount"
-  | "adjustment"
+  "unitPrice" | "purchaseAmount" | "lossAmount" | "adjustment"
 > & {
   adjustment: StoreManagerInventoryAdjustmentView | null;
 };

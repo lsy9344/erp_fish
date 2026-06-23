@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   HomeIcon,
-  SettingsIcon,
+  ReceiptIcon,
   SlidersHorizontalIcon,
   TrendingUpIcon,
 } from "lucide-react";
@@ -19,7 +19,7 @@ import {
 } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
 
-type AppSidebarIcon = "home" | "reports" | "master-data" | "settings";
+type AppSidebarIcon = "home" | "reports" | "master-data" | "expenses";
 
 export type AppSidebarNavigationItem = {
   label: string;
@@ -31,7 +31,7 @@ const iconByKey = {
   home: HomeIcon,
   reports: TrendingUpIcon,
   "master-data": SlidersHorizontalIcon,
-  settings: SettingsIcon,
+  expenses: ReceiptIcon,
 };
 
 type AppSidebarNavProps = {
@@ -85,10 +85,6 @@ function isNavigationItemActive(
   pathname: string,
   item: AppSidebarNavigationItem,
 ) {
-  if (item.label === "설정") {
-    return false;
-  }
-
   if (item.href === "/app/dashboard") {
     return pathname === item.href || pathname.startsWith("/app/ledgers/");
   }

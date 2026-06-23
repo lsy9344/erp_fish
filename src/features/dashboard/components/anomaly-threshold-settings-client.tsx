@@ -37,7 +37,6 @@ type FormValues = ThresholdFormValues & {
 
 const emptyFormValues: FormValues = {
   marginRate: "",
-  inventoryDifferenceQuantity: "",
   isActive: true,
   reason: "",
 };
@@ -64,7 +63,6 @@ export function AnomalyThresholdSettingsClient({
   settings,
 }: AnomalyThresholdSettingsClientProps) {
   const marginRateRef = useRef<HTMLInputElement>(null);
-  const inventoryDifferenceRef = useRef<HTMLInputElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const [formValues, setFormValues] = useState<FormValues>(
     toFormValues(settings),
@@ -92,11 +90,6 @@ export function AnomalyThresholdSettingsClient({
     window.setTimeout(() => {
       if (errors.marginRate?.length) {
         marginRateRef.current?.focus();
-        return;
-      }
-
-      if (errors.inventoryDifferenceQuantity?.length) {
-        inventoryDifferenceRef.current?.focus();
         return;
       }
 
@@ -152,7 +145,6 @@ export function AnomalyThresholdSettingsClient({
   }
 
   const marginRateError = fieldErrors.marginRate?.[0];
-  const inventoryDifferenceError = fieldErrors.inventoryDifferenceQuantity?.[0];
   const activeError = fieldErrors.isActive?.[0];
   const reasonError = fieldErrors.reason?.[0];
   const thresholdRows = savedSettings
@@ -160,10 +152,6 @@ export function AnomalyThresholdSettingsClient({
         {
           type: "마진률",
           value: `${savedSettings.formValues.marginRate}%`,
-        },
-        {
-          type: "재고 차이 기준",
-          value: `${savedSettings.formValues.inventoryDifferenceQuantity}개`,
         },
       ]
     : [];
@@ -257,37 +245,11 @@ export function AnomalyThresholdSettingsClient({
                 ) : null}
               </Field>
 
-              <Field data-invalid={Boolean(inventoryDifferenceError)}>
-                <FieldLabel htmlFor="inventory-difference-quantity">
-                  재고 차이 기준(수량)
-                </FieldLabel>
-                <Input
-                  ref={inventoryDifferenceRef}
-                  id="inventory-difference-quantity"
-                  inputMode="numeric"
-                  value={formValues.inventoryDifferenceQuantity}
-                  onChange={(event) =>
-                    setFieldValue(
-                      "inventoryDifferenceQuantity",
-                      event.currentTarget.value,
-                    )
-                  }
-                  aria-invalid={Boolean(inventoryDifferenceError)}
-                  aria-describedby={
-                    inventoryDifferenceError
-                      ? "inventory-difference-quantity-error"
-                      : undefined
-                  }
-                />
-                <FieldDescription>
-                  장부 재고와 실사 재고의 수량 차이 기준입니다.
-                </FieldDescription>
-                {inventoryDifferenceError ? (
-                  <FieldError id="inventory-difference-quantity-error">
-                    {inventoryDifferenceError}
-                  </FieldError>
-                ) : null}
-              </Field>
+              <FieldDescription>
+                재고 오차 허용 범위는 제로화되어, 수량이 1개라도 틀어지면 본사
+                관제판에 재고 이상 신호가 표시됩니다. 별도 기준값 입력은 필요하지
+                않습니다.
+              </FieldDescription>
 
               <Field data-invalid={Boolean(activeError)}>
                 <FieldLabel htmlFor="threshold-active">활성 상태</FieldLabel>

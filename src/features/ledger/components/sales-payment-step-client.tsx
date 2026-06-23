@@ -130,6 +130,11 @@ export function SalesPaymentStepClient({
   );
   const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  // WO-B(2026-06-22): 최초 작성자 표시명은 한 번 기록되면 보존한다.
+  // 이미 작성자가 있는 장부는 작성자 입력을 읽기 전용으로 표시한다.
+  const isAuthorLocked = Boolean(
+    ledger.authorDisplayName && ledger.authorDisplayName.trim().length > 0,
+  );
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "cost");
   const isDirty =
     authorDisplayName.trim() !== (ledger.authorDisplayName ?? "") ||
@@ -340,7 +345,8 @@ export function SalesPaymentStepClient({
               autoComplete="name"
               maxLength={50}
               value={authorDisplayName}
-              disabled={!isHydrated || isOriginalEditBlocked}
+              disabled={!isHydrated || isOriginalEditBlocked || isAuthorLocked}
+              readOnly={isAuthorLocked}
               onChange={(event) => {
                 setAuthorDisplayName(event.currentTarget.value);
                 setResultMessage(null);
@@ -357,7 +363,9 @@ export function SalesPaymentStepClient({
               id="author-display-name-help"
               className="text-muted-foreground mt-1 text-xs"
             >
-              감사 실행 계정과 별도로 장부 화면에 표시되는 이름입니다.
+              {isAuthorLocked
+                ? "최초 작성자 표시명은 보존되며 수정할 수 없습니다. 수정 이력은 감사 로그로 추적됩니다."
+                : "감사 실행 계정과 별도로 장부 화면에 표시되는 이름입니다."}
             </p>
             {authorDisplayNameError ? (
               <FieldError id="author-display-name-error">

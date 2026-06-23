@@ -242,9 +242,9 @@ function StatusSummary({
   className?: string;
 }) {
   const items = [
-    ["본사마감", row.statusCounts.closedCount],
-    ["검토대기", row.statusCounts.reviewCount],
-    ["입력중", row.statusCounts.inProgressCount],
+    ["본사 마감", row.statusCounts.closedCount],
+    ["검토 대기", row.statusCounts.reviewCount],
+    ["입력 중", row.statusCounts.inProgressCount],
     ["미입력", row.statusCounts.missingDayCount],
     ["휴무", row.statusCounts.holidayCount],
   ].filter(([, count]) => Number(count) > 0);

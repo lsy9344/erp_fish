@@ -27,5 +27,6 @@ export function getLossQuantityErrorMessage({
 
   const availableQuantity = previousQuantity + purchasedQuantity;
 
-  return `${productLabel} 손실 수량을 저장할 수 없습니다. 입력한 총 손실 수량 ${requestedLossQuantity}이(가) 현재 차감 가능 수량 ${availableQuantity}보다 큽니다. 재고 흐름: 전일재고 ${previousQuantity} + 오늘매입 ${purchasedQuantity}.`;
+  // WO-09: 사용자 피드백대로 쉬운 단어와 구체적 숫자로 다듬은 안내 문구.
+  return `${productLabel} 손실 수량이 재고보다 많습니다. 입력 수량 ${requestedLossQuantity}개, 손실 가능 수량 ${availableQuantity}개입니다. 전일재고 ${previousQuantity}개 + 오늘매입 ${purchasedQuantity}개를 확인해 주세요.`;
 }

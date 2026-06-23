@@ -134,6 +134,129 @@ test("HQ daily meeting report UI reuses status and signal components without UI 
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
 });
 
+test("HQ reports build frozen/live category performance with 추정 이익률 from FIFO consumed amount (WO-03 + point_summary.md:26)", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildProductCategoryPerformance } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const performance = buildProductCategoryPerformance([
+    {
+      ledgerInventoryItems: [
+        {
+          // 냉동: 판매 10+5-3 = 12개, 단가 1,000 → 추정 매출 12,000원
+          // FIFO 소진금액 9,000 → 추정 이익률 (12,000-9,000)/12,000 = 0.25
+          productCategory: "냉동",
+          previousQuantity: 10,
+          purchasedQuantity: 5,
+          currentQuantity: 3,
+          unitPrice: 1_000,
+          fifoLots: [{ consumedAmount: 6_000 }, { consumedAmount: 3_000 }],
+        },
+        {
+          // 생물: 판매 8+0-3 = 5개, 단가 2,000 → 추정 매출 10,000원
+          // FIFO lot 없음 → COGS 폴백 (판매수량 * 단가) = 10,000 → 이익률 0
+          productCategory: "생물",
+          previousQuantity: 8,
+          purchasedQuantity: 0,
+          currentQuantity: 3,
+          unitPrice: 2_000,
+        },
+        {
+          // 당일 재고 미입력(null) 행은 제외한다.
+          productCategory: "냉동",
+          previousQuantity: 4,
+          purchasedQuantity: 0,
+          currentQuantity: null,
+          unitPrice: 5_000,
+          fifoLots: [{ consumedAmount: 1_000 }],
+        },
+        {
+          // 판매 수량 0 이하 행은 제외한다.
+          productCategory: "생물",
+          previousQuantity: 2,
+          purchasedQuantity: 0,
+          currentQuantity: 5,
+          unitPrice: 5_000,
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(performance, [
+    { category: "냉동", salesAmount: 12_000, grossMarginRate: 0.25, statusLabel: "추정" },
+    { category: "생물", salesAmount: 10_000, grossMarginRate: 0, statusLabel: "추정" },
+  ]);
+});
+
+test("HQ daily and monthly reports render the category margin chart with 추정 labeling", () => {
+  const policyDocSource = readProjectFile(
+    "docs",
+    "meeting",
+    "point-summary-policy-decisions-2026-06-22.md",
+  );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const monthlyComponentSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "monthly-closing-anomaly-report.tsx",
+  );
+  const chartSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "product-category-margin-chart.tsx",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+
+  assert.match(dailyPageSource, /ProductCategoryMarginChart/);
+  assert.match(dailyPageSource, /report\.categoryPerformance/);
+  assert.match(dailyPageSource, /재고 흐름 기반 추정값/);
+
+  assert.match(monthlyComponentSource, /ProductCategoryMarginChart/);
+  assert.match(monthlyComponentSource, /report\.categoryPerformance/);
+  assert.match(monthlyComponentSource, /재고 흐름 기반 추정값/);
+
+  // 차트는 추정 라벨을 명시하고 확정 매출처럼 보이지 않게 한다.
+  assert.match(chartSource, /추정 매출/);
+  assert.match(chartSource, /`이익률 \$\{percentFormatter/);
+  assert.doesNotMatch(chartSource, /`마진 \$\{percentFormatter/);
+  assert.match(chartSource, /추정 이익률/);
+  assert.match(chartSource, /확정 매출·원가가 아닙니다/);
+
+  // 정책 문서는 원문 요구에 맞춰 "계산 불가" 고정이 아니라 추정 이익률 노출을 허용한다.
+  assert.match(policyDocSource, /추정 이익률/);
+  assert.match(policyDocSource, /FIFO 소진금액/);
+  assert.doesNotMatch(policyDocSource, /카테고리 이익률은 "계산 불가"/);
+  assert.doesNotMatch(policyDocSource, /`grossMarginRate`는 `null`/);
+
+  // 쿼리는 두 리포트 모두에 categoryPerformance를 채운다.
+  assert.match(
+    querySource,
+    /categoryPerformance:\s*buildProductCategoryPerformance\(ledgers\)/,
+  );
+});
+
 test("correction creation revalidates daily reports after correction values change", () => {
   const actionSource = readProjectFile(
     "src",
@@ -366,9 +489,9 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
   assert.match(loadingSource, /md:hidden/);
   assert.match(componentSource, /DashboardStatusBadge/);
   assert.match(componentSource, /DashboardSignalSummary/);
-  assert.match(componentSource, /본사마감/);
-  assert.match(componentSource, /검토대기/);
-  assert.match(componentSource, /입력중/);
+  assert.match(componentSource, /본사 마감/);
+  assert.match(componentSource, /검토 대기/);
+  assert.match(componentSource, /입력 중/);
   assert.match(componentSource, /미입력/);
   assert.match(componentSource, /휴무/);
   assert.match(componentSource, /주요 이상/);
@@ -2242,7 +2365,7 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
       {
         storeId: "store-1",
         storeName: '=강남 "본점"',
-        ledgerStatus: { label: "본사마감" },
+        ledgerStatus: { label: "본사 마감" },
         businessStatus: { label: "영업" },
         latestReflectedAt: "2026-06-12T01:00:00.000Z",
         statusMessage: "회의 반영 완료",
@@ -2434,7 +2557,7 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
     },
     calculationDays: [
       {
-        ledgerStatusLabel: "입력중",
+        ledgerStatusLabel: "입력 중",
         dateInput: "2026-06-12",
         inclusion: "excluded",
         reason: "미마감 장부 제외",
@@ -2650,12 +2773,12 @@ test("monthly report lists P&L inputs as actual, estimated, or unavailable", asy
   // 매입원가/품목별 매출은 추정.
   assert.equal(byKey.get("purchaseCost")?.availability, "estimated");
   assert.equal(byKey.get("productSales")?.availability, "estimated");
-  // 인건비는 아직 미구현.
-  assert.equal(byKey.get("labor")?.availability, "unavailable");
+  // 인건비는 직원별 급여 입력으로 실측.
+  assert.equal(byKey.get("labor")?.availability, "actual");
 
   assert.equal(byKey.get("sales")?.availabilityLabel, "실측");
   assert.equal(byKey.get("productSales")?.availabilityLabel, "추정");
-  assert.equal(byKey.get("labor")?.availabilityLabel, "미구현");
+  assert.equal(byKey.get("labor")?.availabilityLabel, "실측");
 
   const actualCount = readiness.inputs.filter(
     (input) => input.availability === "actual",
@@ -2670,6 +2793,7 @@ test("monthly report lists P&L inputs as actual, estimated, or unavailable", asy
   assert.equal(readiness.actualCount, actualCount);
   assert.equal(readiness.estimatedCount, estimatedCount);
   assert.equal(readiness.unavailableCount, unavailableCount);
+  assert.equal(readiness.unavailableCount, 0);
   assert.match(readiness.statusLabel, /실측.*추정.*미구현/);
 });
 

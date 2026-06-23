@@ -421,6 +421,14 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     storeInventorySyncIndex < storeAdjustmentReconcileIndex,
     "store purchase save should sync inventory purchased quantity before reconciling adjustments",
   );
+  // WO-02(2026-06-22): 매입 저장은 조정 정합화 이후 FIFO lot snapshot을 최신화한다.
+  assert.match(actionSource, /from\s+"[^"]*fifo-lots"/);
+  assert.match(actionSource, /refreshLedgerInventoryFifoLots\(/);
+  assert.ok(
+    storeAdjustmentReconcileIndex <
+      actionSource.indexOf("await refreshLedgerInventoryFifoLots"),
+    "store purchase save should refresh FIFO lots after reconciling adjustments",
+  );
   assert.match(
     actionSource,
     /unitPrice\s*\*\s*quantity|quantity\s*\*\s*unitPrice/,
@@ -436,7 +444,20 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     "ledger",
     "hq-edit-actions.ts",
   );
-  assert.match(hqActionSource, /getStoreEcountPurchaseEditErrors/);
+  // WO-08(2026-06-22): 최종 정책은 본사 ECOUNT_UPLOAD 오버라이트 허용이므로
+  // HQ 매입 저장 경로는 getStoreEcountPurchaseEditErrors를 호출하지 않는다.
+  // 해당 차단 검증은 지점장 저장 경로(actions.ts)에만 남는다.
+  assert.doesNotMatch(hqActionSource, /getStoreEcountPurchaseEditErrors/);
+  // HQ 매입 저장은 HQ 입력값으로 sourceType/unitPrice/quantity를 그대로 기록한다.
+  assert.match(hqActionSource, /sourceType:\s*purchase\.sourceType/);
+  assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
+  assert.match(hqActionSource, /quantity:\s*purchase\.quantity/);
+  assert.match(
+    hqActionSource,
+    /purchase\.unitPrice\s*\*\s*purchase\.quantity|purchase\.quantity\s*\*\s*purchase\.unitPrice/,
+  );
+  assert.match(hqActionSource, /action:\s*"ledger\.hq\.purchases\.saved"/);
+  assert.match(hqActionSource, /writeAuditLog\(/);
   assert.match(hqActionSource, /syncLedgerInventoryPurchasedQuantitiesInTx/);
   const hqInventorySyncIndex = hqActionSource.indexOf(
     "await syncLedgerInventoryPurchasedQuantitiesInTx",
@@ -453,7 +474,17 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     hqInventorySyncIndex < hqAdjustmentReconcileIndex,
     "HQ purchase save should sync inventory purchased quantity before reconciling adjustments",
   );
+  // WO-02(2026-06-22): HQ 매입 수정도 조정 정합화 이후 FIFO lot snapshot을 최신화한다.
+  assert.match(hqActionSource, /from\s+"[^"]*fifo-lots"/);
+  assert.match(hqActionSource, /refreshLedgerInventoryFifoLots\(/);
+  assert.ok(
+    hqAdjustmentReconcileIndex <
+      hqActionSource.indexOf("await refreshLedgerInventoryFifoLots"),
+    "HQ purchase save should refresh FIFO lots after reconciling adjustments",
+  );
 
+  // 2026-06-23: 일일 장부용 ECount 업로드는 의도된 기능이 아니므로(매입 기준 추출만 유지)
+  // 장부 매입 업로드 액션/매칭 파일은 제거됐다. importPurchaseStandardsFromEcount만 남는다.
   assert.equal(
     existsSync(
       path.join(
@@ -465,6 +496,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
       ),
     ),
     false,
+    "daily-ledger ECount upload action must be removed",
   );
   assert.equal(
     existsSync(
@@ -477,6 +509,14 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
       ),
     ),
     false,
+  );
+
+  const meetingChangeSource = readProjectFile("docs", "meeting", "change.md");
+  assert.match(meetingChangeSource, /관리자[\s\S]*매입 기준 추출/);
+  assert.match(meetingChangeSource, /importPurchaseStandardsFromEcount/);
+  assert.doesNotMatch(
+    meetingChangeSource,
+    /매입 장부가 자동 생성|장부 매입.*자동 생성/,
   );
 });
 

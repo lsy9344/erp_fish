@@ -31,6 +31,7 @@ import {
 import { HqLedgerCloseDialog } from "~/features/ledger/components/hq-ledger-close-dialog";
 import {
   saveHqLedgerExpenses,
+  saveHqLedgerLaborInfo,
   saveHqLedgerPurchases,
   saveHqLedgerSalesPayment,
   saveHqLedgerWorkInfo,
@@ -53,6 +54,7 @@ import { getLossStepDataByLedgerId } from "~/features/losses/queries";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
 import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
+import { getActiveEmployeeOptions } from "~/features/labor/employees-queries";
 import { PermissionAction } from "../../../../../generated/prisma";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
@@ -149,14 +151,19 @@ export default async function LedgerDetailPage({
     notFound();
   }
 
-  const [expenseCodeOptions, productOptions, purchaseStandardOptions] =
-    canEditLedger
-      ? await Promise.all([
-          getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
-          getActiveProductOptions(),
-          getActivePurchaseStandardOptions(),
-        ])
-      : [[], [], []];
+  const [
+    expenseCodeOptions,
+    productOptions,
+    purchaseStandardOptions,
+    employeeOptions,
+  ] = canEditLedger
+    ? await Promise.all([
+        getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
+        getActiveProductOptions(),
+        getActivePurchaseStandardOptions(),
+        getActiveEmployeeOptions(),
+      ])
+    : [[], [], [], []];
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const lastModifiedBy =
     detail.lastModifiedBy?.name ??
@@ -481,6 +488,8 @@ export default async function LedgerDetailPage({
               initialLedger={ledger}
               currentStep="work"
               saveAction={saveHqLedgerWorkInfo}
+              laborSaveAction={saveHqLedgerLaborInfo}
+              employeeOptions={employeeOptions}
               showStepNavigation={false}
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}

@@ -15,6 +15,7 @@ type LedgerConflictSection =
   | "inventory-adjustment"
   | "losses"
   | "work"
+  | "labor"
   | "review"
   | "hq-close";
 

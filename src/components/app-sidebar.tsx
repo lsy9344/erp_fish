@@ -30,6 +30,12 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.REPORT_VIEW,
   },
   {
+    label: "본사 지출",
+    href: "/app/headquarters-expenses",
+    icon: "expenses",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
+  },
+  {
     label: "기준정보",
     href: "/app/master-data/stores",
     icon: "master-data",
@@ -70,12 +76,6 @@ const headquartersNavigationItems = [
     href: "/app/master-data/history",
     icon: "master-data",
     requiredAction: PermissionAction.SETTINGS_MANAGE,
-  },
-  {
-    label: "설정",
-    href: "/app/master-data/users",
-    icon: "settings",
-    requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
   },
 ] satisfies PermissionAwareNavigationItem[];
 

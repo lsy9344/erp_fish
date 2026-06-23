@@ -10,6 +10,7 @@ import {
   requireStoreManagerLedgerEditAccess,
 } from "~/server/authz";
 import { getKstBusinessDateParam } from "~/features/ledger/queries";
+import { isTodayKstDateParam } from "~/features/ledger/date";
 
 type InventoryEntryPageProps = {
   searchParams: Promise<{
@@ -49,6 +50,10 @@ export default async function InventoryEntryPage({
   const closingDate = normalizeClosingDateParam(params.date);
 
   if ((params.storeId !== undefined && !storeId) || !closingDate) {
+    redirect("/app/unauthorized");
+  }
+
+  if (closingDate && !isTodayKstDateParam(closingDate)) {
     redirect("/app/unauthorized");
   }
 

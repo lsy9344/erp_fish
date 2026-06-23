@@ -1,16 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2Icon } from "lucide-react";
+import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
-import { saveLedgerWorkInfo } from "~/features/ledger/actions";
+import {
+  saveLedgerLaborInfo,
+  saveLedgerWorkInfo,
+} from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import {
+  formatKrwInput,
+  parseKrwInputValue,
+  toRawKrwInputValue,
+} from "~/features/ledger/components/krw-input-format";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
@@ -30,11 +38,28 @@ import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 type WorkLedgerData = StoreManagerLedgerCostStepData | LedgerCostStepData;
 
+type LaborLine = {
+  id: string;
+  employeeId: string;
+  workerName: string;
+  amount: string;
+  lateMemo: string;
+  earlyLeaveMemo: string;
+  specialMemo: string;
+};
+
+export type WorkStepEmployeeOption = {
+  id: string;
+  name: string;
+};
+
 type WorkStepClientProps = {
   storeName: string;
   initialLedger: WorkLedgerData;
   currentStep: "sales" | "cost" | "purchase" | "work";
   saveAction?: (input: unknown) => Promise<ActionResult<WorkLedgerData>>;
+  laborSaveAction?: (input: unknown) => Promise<ActionResult<WorkLedgerData>>;
+  employeeOptions?: WorkStepEmployeeOption[];
   showStepNavigation?: boolean;
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
@@ -73,11 +98,52 @@ function formatProductivity(value: number | null) {
   return formatKrw(value);
 }
 
+function createLaborLineId() {
+  return typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createLaborLine(): LaborLine {
+  return {
+    id: createLaborLineId(),
+    employeeId: "",
+    workerName: "",
+    amount: "",
+    lateMemo: "",
+    earlyLeaveMemo: "",
+    specialMemo: "",
+  };
+}
+
+function toLaborLines(items: WorkLedgerData["laborItems"]): LaborLine[] {
+  return items.map<LaborLine>((item) => ({
+    id: item.id,
+    employeeId: item.employeeId ?? "",
+    workerName: item.workerName,
+    amount: formatKrwInput(String(item.amount)),
+    lateMemo: item.lateMemo ?? "",
+    earlyLeaveMemo: item.earlyLeaveMemo ?? "",
+    specialMemo: item.specialMemo ?? "",
+  }));
+}
+
+function areLaborLinesEqual(left: LaborLine[], right: LaborLine[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function getDraftPayrollTotal(lines: LaborLine[]) {
+  return lines.reduce((sum, line) => sum + parseKrwInputValue(line.amount), 0);
+}
+
 export function WorkStepClient({
   storeName,
   initialLedger,
   currentStep = "work",
   saveAction = saveLedgerWorkInfo,
+  laborSaveAction = saveLedgerLaborInfo,
+  employeeOptions = [],
   showStepNavigation = true,
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
@@ -87,6 +153,7 @@ export function WorkStepClient({
   const workerCountInputRef = useRef<HTMLInputElement>(null);
   const workMemoInputRef = useRef<HTMLTextAreaElement>(null);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
+  const laborHqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
   const [workerCount, setWorkerCount] = useState(
@@ -98,14 +165,31 @@ export function WorkStepClient({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [laborItems, setLaborItems] = useState(() =>
+    toLaborLines(initialLedger.laborItems),
+  );
+  const [laborHqEditReason, setLaborHqEditReason] = useState("");
+  const [isLaborSaving, setIsLaborSaving] = useState(false);
+  const [laborResultMessage, setLaborResultMessage] = useState<string | null>(
+    null,
+  );
+  const [laborFieldErrors, setLaborFieldErrors] = useState<FieldErrors>({});
+  const [laborFormError, setLaborFormError] = useState<string | null>(null);
+
   const saveConflict = useSaveConflictDialog();
   const workerCountError = fieldErrors.workerCount?.[0];
   const workMemoError = fieldErrors.workMemo?.[0];
   const hqEditReasonError = fieldErrors.reason?.[0];
+  const laborHqEditReasonError = laborFieldErrors.reason?.[0];
   const isDirty =
     workerCount !==
       (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
     workMemo !== (ledger.workMemo ?? "");
+  const isLaborDirty = !areLaborLinesEqual(
+    laborItems,
+    toLaborLines(ledger.laborItems),
+  );
   const previousInitialLedgerRef = useRef(initialLedger);
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
@@ -118,6 +202,8 @@ export function WorkStepClient({
       previousInitialLedger.workerCount === null
         ? ""
         : String(previousInitialLedger.workerCount);
+    const previousLaborItems = toLaborLines(previousInitialLedger.laborItems);
+    const nextLaborItems = toLaborLines(initialLedger.laborItems);
 
     setLedger(initialLedger);
     setWorkerCount((current) =>
@@ -130,6 +216,11 @@ export function WorkStepClient({
     setWorkMemo((current) =>
       current === (previousInitialLedger.workMemo ?? "")
         ? (initialLedger.workMemo ?? "")
+        : current,
+    );
+    setLaborItems((current) =>
+      areLaborLinesEqual(current, previousLaborItems)
+        ? nextLaborItems
         : current,
     );
     previousInitialLedgerRef.current = initialLedger;
@@ -169,6 +260,19 @@ export function WorkStepClient({
     notifyLedgerUpdated(next.id, next.updatedAt);
     setResultMessage("저장됐습니다.");
     toast.success("근무인원 정보를 저장했습니다.");
+  }
+
+  function fillLaborLedger(next: WorkLedgerData) {
+    setLedger(next);
+    setLaborItems(toLaborLines(next.laborItems));
+    notifyLedgerUpdated(next.id, next.updatedAt);
+    const savedCount = next.laborItems.length;
+    const message =
+      savedCount > 0
+        ? `급여 항목 ${savedCount}건을 저장했습니다.`
+        : "저장됐습니다.";
+    setLaborResultMessage(message);
+    toast.success(message);
   }
 
   async function saveCurrentDraft() {
@@ -217,9 +321,66 @@ export function WorkStepClient({
     }
   }
 
+  async function saveCurrentLaborDraft() {
+    setIsLaborSaving(true);
+    setLaborResultMessage(null);
+    setLaborFormError(null);
+    setLaborFieldErrors({});
+
+    try {
+      const result = await laborSaveAction({
+        ledgerId: ledger.id,
+        storeId: ledger.storeId,
+        closingDate: getKstLedgerDateParam(ledger.closingDate),
+        version: ledger.version,
+        ledgerUpdatedAt: ledger.updatedAt,
+        labor: laborItems.map((line) => ({
+          employeeId: line.employeeId || null,
+          workerName: line.workerName,
+          amount: toRawKrwInputValue(line.amount),
+          lateMemo: line.lateMemo,
+          earlyLeaveMemo: line.earlyLeaveMemo,
+          specialMemo: line.specialMemo,
+        })),
+        ...(hqEditReasonRequired ? { reason: laborHqEditReason } : {}),
+      });
+
+      if (!result.ok) {
+        if (saveConflict.captureConflict(result)) {
+          setLaborFormError(result.error.message);
+          toast.error(result.error.message);
+          return false;
+        }
+
+        const nextErrors = result.error.fieldErrors ?? {};
+
+        setLaborFieldErrors(nextErrors);
+        setLaborFormError(result.error.message);
+        toast.error(result.error.message);
+        return false;
+      }
+
+      fillLaborLedger(result.data);
+      setLaborFormError(null);
+      return true;
+    } catch {
+      setLaborFormError("저장에 실패했습니다. 다시 시도해 주세요.");
+      setLaborResultMessage(null);
+      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+      return false;
+    } finally {
+      setIsLaborSaving(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await saveCurrentDraft();
+  }
+
+  async function handleLaborSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCurrentLaborDraft();
   }
 
   function handleRetry() {
@@ -230,20 +391,49 @@ export function WorkStepClient({
     formRef.current.requestSubmit();
   }
 
+  function clearLaborRowState() {
+    setLaborFieldErrors({});
+    setLaborFormError(null);
+    setLaborResultMessage(null);
+  }
+
+  function addLaborLine() {
+    clearLaborRowState();
+    setLaborItems((current) => [...current, createLaborLine()]);
+  }
+
+  function removeLaborLine(lineId: string) {
+    clearLaborRowState();
+    setLaborItems((current) => current.filter((line) => line.id !== lineId));
+  }
+
+  function updateLaborLine(lineId: string, next: Partial<LaborLine>) {
+    clearLaborRowState();
+    setLaborItems((current) =>
+      current.map((line) => (line.id === lineId ? { ...line, ...next } : line)),
+    );
+  }
+
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
+  const draftPayrollTotal = getDraftPayrollTotal(laborItems);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const guard = useUnsavedStepGuard({
-    isDirty,
-    onSave: saveCurrentDraft,
+    isDirty: isDirty || isLaborDirty,
+    onSave: async () => {
+      const workSaved = isDirty ? await saveCurrentDraft() : true;
+      const laborSaved = isLaborDirty ? await saveCurrentLaborDraft() : true;
+
+      return workSaved && laborSaved;
+    },
   });
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <UnsavedChangeDialog
         open={guard.isDialogOpen}
-        isSaving={isSaving}
+        isSaving={isSaving || isLaborSaving}
         onOpenChange={guard.setIsDialogOpen}
         onSave={guard.saveAndContinue}
         onDiscard={guard.discard}
@@ -416,7 +606,301 @@ export function WorkStepClient({
             >
               {isSaving ? "저장 중..." : "저장"}
             </Button>
-            {resultMessage ? (
+          </div>
+        </form>
+      </section>
+
+      <section className="bg-card text-card-foreground rounded-lg border p-4">
+        <form
+          onSubmit={handleLaborSubmit}
+          className="flex flex-col gap-3"
+          noValidate
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">급여 / 인건비</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addLaborLine}
+              disabled={isLaborSaving || isOriginalEditBlocked}
+              className="min-h-11 gap-2"
+            >
+              <PlusIcon data-icon="inline-start" />
+              직원 추가
+            </Button>
+          </div>
+
+          {laborItems.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              등록된 급여 항목이 없습니다. 직원을 추가해 주세요.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {laborItems.map((line, index) => {
+                const nameError =
+                  laborFieldErrors[`labor.${index}.workerName`]?.[0];
+                const amountError =
+                  laborFieldErrors[`labor.${index}.amount`]?.[0];
+                const lateError =
+                  laborFieldErrors[`labor.${index}.lateMemo`]?.[0];
+                const earlyError =
+                  laborFieldErrors[`labor.${index}.earlyLeaveMemo`]?.[0];
+                const specialError =
+                  laborFieldErrors[`labor.${index}.specialMemo`]?.[0];
+                const nameErrorId = `labor-name-${line.id}-error`;
+                const amountErrorId = `labor-amount-${line.id}-error`;
+                const lateErrorId = `labor-late-${line.id}-error`;
+                const earlyErrorId = `labor-early-${line.id}-error`;
+                const specialErrorId = `labor-special-${line.id}-error`;
+
+                return (
+                  <div key={line.id} className="grid gap-2 rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-xs font-medium">
+                        직원 {index + 1}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => removeLaborLine(line.id)}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        className="min-h-11 gap-2"
+                      >
+                        <Trash2Icon data-icon="inline-start" />
+                        삭제
+                      </Button>
+                    </div>
+
+                    {employeeOptions.length > 0 ? (
+                      <Field>
+                        <FieldLabel htmlFor={`labor-employee-${line.id}`}>
+                          직원 연결 (선택)
+                        </FieldLabel>
+                        <select
+                          id={`labor-employee-${line.id}`}
+                          value={line.employeeId}
+                          disabled={isLaborSaving || isOriginalEditBlocked}
+                          onChange={(event) => {
+                            const employeeId = event.currentTarget.value;
+                            const selected = employeeOptions.find(
+                              (option) => option.id === employeeId,
+                            );
+
+                            updateLaborLine(line.id, {
+                              employeeId,
+                              // 직원을 선택하면 이름을 자동 채우되, 자유 텍스트 수정은 그대로 허용한다.
+                              ...(selected ? { workerName: selected.name } : {}),
+                            });
+                          }}
+                          className="border-input focus-visible:border-ring focus-visible:ring-ring/50 min-h-11 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                        >
+                          <option value="">연결 안 함 (자유 입력)</option>
+                          {employeeOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다. 연결하지
+                          않으면 “미연결” 합계로만 집계되어 직원별 분석에서 빠집니다.
+                        </p>
+                      </Field>
+                    ) : null}
+
+                    <Field data-invalid={Boolean(nameError)}>
+                      <FieldLabel htmlFor={`labor-name-${line.id}`}>
+                        직원명
+                      </FieldLabel>
+                      <Input
+                        id={`labor-name-${line.id}`}
+                        inputMode="text"
+                        autoComplete="off"
+                        maxLength={50}
+                        value={line.workerName}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updateLaborLine(line.id, {
+                            workerName: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11"
+                        aria-invalid={Boolean(nameError)}
+                        aria-describedby={nameError ? nameErrorId : undefined}
+                      />
+                      {nameError ? (
+                        <FieldError id={nameErrorId}>{nameError}</FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(amountError)}>
+                      <FieldLabel htmlFor={`labor-amount-${line.id}`}>
+                        급여 금액
+                      </FieldLabel>
+                      <Input
+                        id={`labor-amount-${line.id}`}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={line.amount}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updateLaborLine(line.id, {
+                            amount: formatKrwInput(event.currentTarget.value),
+                          })
+                        }
+                        className="min-h-11 tabular-nums"
+                        aria-invalid={Boolean(amountError)}
+                        aria-describedby={
+                          amountError ? amountErrorId : undefined
+                        }
+                      />
+                      <p
+                        id={`labor-amount-${line.id}-preview`}
+                        className="text-muted-foreground mt-1 text-xs tabular-nums"
+                      >
+                        표시: {formatKrw(parseKrwInputValue(line.amount))}
+                      </p>
+                      {amountError ? (
+                        <FieldError id={amountErrorId}>{amountError}</FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(lateError)}>
+                      <FieldLabel htmlFor={`labor-late-${line.id}`}>
+                        지각 (선택)
+                      </FieldLabel>
+                      <Input
+                        id={`labor-late-${line.id}`}
+                        inputMode="text"
+                        maxLength={500}
+                        value={line.lateMemo}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updateLaborLine(line.id, {
+                            lateMemo: event.currentTarget.value,
+                          })
+                        }
+                        aria-invalid={Boolean(lateError)}
+                        aria-describedby={lateError ? lateErrorId : undefined}
+                      />
+                      {lateError ? (
+                        <FieldError id={lateErrorId}>{lateError}</FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(earlyError)}>
+                      <FieldLabel htmlFor={`labor-early-${line.id}`}>
+                        조퇴 (선택)
+                      </FieldLabel>
+                      <Input
+                        id={`labor-early-${line.id}`}
+                        inputMode="text"
+                        maxLength={500}
+                        value={line.earlyLeaveMemo}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updateLaborLine(line.id, {
+                            earlyLeaveMemo: event.currentTarget.value,
+                          })
+                        }
+                        aria-invalid={Boolean(earlyError)}
+                        aria-describedby={earlyError ? earlyErrorId : undefined}
+                      />
+                      {earlyError ? (
+                        <FieldError id={earlyErrorId}>{earlyError}</FieldError>
+                      ) : null}
+                    </Field>
+
+                    <Field data-invalid={Boolean(specialError)}>
+                      <FieldLabel htmlFor={`labor-special-${line.id}`}>
+                        특이사항 (선택)
+                      </FieldLabel>
+                      <Input
+                        id={`labor-special-${line.id}`}
+                        inputMode="text"
+                        maxLength={500}
+                        value={line.specialMemo}
+                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updateLaborLine(line.id, {
+                            specialMemo: event.currentTarget.value,
+                          })
+                        }
+                        aria-invalid={Boolean(specialError)}
+                        aria-describedby={
+                          specialError ? specialErrorId : undefined
+                        }
+                      />
+                      {specialError ? (
+                        <FieldError id={specialErrorId}>
+                          {specialError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="bg-muted/40 rounded-md p-3">
+            <div className="flex justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">입력 중 급여 합계</span>
+              <span className="font-semibold tabular-nums">
+                {formatKrw(draftPayrollTotal)}
+              </span>
+            </div>
+            <div className="mt-2 flex justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">마지막 서버 저장 합계</span>
+              <span className="font-semibold tabular-nums">
+                {formatKrw(ledger.payrollTotal)}
+              </span>
+            </div>
+          </div>
+
+          {hqEditReasonRequired ? (
+            <HqEditReasonField
+              id="labor-hq-edit-reason"
+              value={laborHqEditReason}
+              error={laborHqEditReasonError}
+              disabled={isLaborSaving || isOriginalEditBlocked}
+              inputRef={laborHqEditReasonInputRef}
+              onChange={(value) => {
+                setLaborHqEditReason(value);
+                setLaborResultMessage(null);
+              }}
+            />
+          ) : null}
+
+          {laborResultMessage ? (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+              <p
+                className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+                role="status"
+                aria-live="polite"
+              >
+                <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+                {laborResultMessage}
+              </p>
+            </div>
+          ) : null}
+
+          {laborFormError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {laborFormError}
+            </p>
+          ) : null}
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="submit"
+              variant={laborResultMessage ? "outline" : "default"}
+              className="min-h-11 w-full sm:w-auto"
+              disabled={isLaborSaving || isOriginalEditBlocked}
+            >
+              {isLaborSaving ? "저장 중..." : "급여 저장"}
+            </Button>
+            {resultMessage || laborResultMessage ? (
               <Button
                 type="button"
                 className="min-h-11 w-full sm:w-auto"

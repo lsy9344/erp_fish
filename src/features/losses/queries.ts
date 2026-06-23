@@ -24,6 +24,7 @@ const lossItemSelect = {
   unitPrice: true,
   lossTypeName: true,
   quantity: true,
+  recoveredAmount: true,
   amount: true,
   reason: true,
 } as const;
@@ -95,6 +96,22 @@ async function getLossStepDataForLedgerInTx(
         where: { dailyLedgerId: ledger.id },
       }),
     ]);
+  // 미팅 결정(2026-06-21): 코드 표시명은 지점별 덮어쓰기(alias)가 있으면
+  // 해당 지점 화면에서 우선 적용한다. 코드 자체는 본사 등록값을 유지한다.
+  const lossTypeAliases = await tx.ledgerInputCodeStoreAlias.findMany({
+    where: {
+      storeId: ledger.storeId,
+      ledgerInputCode: { group: "LOSS_TYPE" },
+    },
+    select: { ledgerInputCodeId: true, displayName: true },
+  });
+  const lossTypeAliasByCodeId = new Map(
+    lossTypeAliases.map((alias) => [alias.ledgerInputCodeId, alias.displayName]),
+  );
+  const lossTypeOptionsWithAlias = lossTypeOptions.map((option) => ({
+    ...option,
+    name: lossTypeAliasByCodeId.get(option.id) ?? option.name,
+  }));
   const summary = summarizeLossItems(lossItems);
 
   return {
@@ -111,7 +128,7 @@ async function getLossStepDataForLedgerInTx(
       lossItemCount: lossItems.length,
     }),
     productOptions,
-    lossTypeOptions,
+    lossTypeOptions: lossTypeOptionsWithAlias,
     lossItems,
     summary,
     signalCandidates: getLossSignalCandidates(summary.byProduct, thresholds),
@@ -180,8 +197,9 @@ export function toStoreManagerLossStepData(
         return option;
       },
     ),
-    lossItems: data.lossItems.map(({ unitPrice, ...item }) => {
+    lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
       void unitPrice;
+      void amount;
 
       return item;
     }),

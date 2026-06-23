@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpenIcon, PackageIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  PackageIcon,
+  TagIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 
 import { cn } from "~/lib/utils";
 
@@ -11,6 +16,11 @@ const storeNavItems = [
     label: "장부",
     href: "/app/store-entry",
     icon: BookOpenIcon,
+  },
+  {
+    label: "판매가 계획",
+    href: "/app/store-entry/sales-plan",
+    icon: TagIcon,
   },
   {
     label: "재고",
@@ -89,7 +99,7 @@ export function StoreManagerNavigation({
       className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(15_23_42/0.08)] md:hidden"
       aria-label="지점장 하단 업무"
     >
-      <div className="grid min-h-14 grid-cols-3">
+      <div className="grid min-h-14 grid-cols-4">
         {storeNavItems.map((item) => {
           const isActive = isStoreNavItemActive(pathname, item.href);
 

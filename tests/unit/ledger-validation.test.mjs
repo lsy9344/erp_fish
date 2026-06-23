@@ -145,14 +145,16 @@ test("validation helper preserves dotted field paths for nested step errors", as
         productId: "product-1",
         ledgerInputCodeId: "loss-code-1",
         quantity: "0",
-        amount: "0",
+        recoveredAmount: "0",
         reason: "폐기 처리",
       },
     ],
   });
   assert.equal(lossesInvalid.success, false);
   assert.deepEqual(toFieldErrors(lossesInvalid.error), {
-    "losses.0.quantity": ["수량 또는 손실액 중 하나는 0보다 커야 합니다."],
+    "losses.0.quantity": [
+      "수량 또는 실제 판매/회수액 중 하나는 0보다 커야 합니다.",
+    ],
   });
 });
 

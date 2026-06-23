@@ -186,6 +186,13 @@ export async function requireReportAccess() {
   return requireHeadquartersActionPermission(PermissionAction.REPORT_VIEW);
 }
 
+// WO-D(2026-06-22): 직원 마스터 조회는 REPORT_VIEW, 직원 생성/수정/비활성화 등
+// 쓰기 작업은 SETTINGS_MANAGE로 분리한다. REPORT_VIEW만 가진 읽기 전용 본사
+// 사용자가 인사 마스터를 변경하지 못하도록 막는다.
+export async function requireEmployeeManageAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.SETTINGS_MANAGE);
+}
+
 export async function requireLedgerHqEditAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
 }

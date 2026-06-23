@@ -193,6 +193,16 @@ export async function getLatestCorrectionValuesForLedgers(ledgerIds: string[]) {
   await requireReportAccess();
   const storeScope = await getHeadquartersStoreScope();
 
+  return getLatestCorrectionValuesForLedgersScoped(ledgerIds, storeScope.storeIds);
+}
+
+// WO-G/WO-E(2026-06-22): 세션 권한 게이트 없이(내부 스케줄러/배치 경로) 명시적
+// storeIds 범위로 최신 정정 값을 조회한다. 호출자는 자신이 권한을 가진 storeIds만
+// 넘겨야 한다. (예: LINE 아침 요약 cron, HR 생산성 분석은 전체 활성 매장 범위.)
+export async function getLatestCorrectionValuesForLedgersScoped(
+  ledgerIds: string[],
+  storeIds: string[],
+) {
   if (ledgerIds.length === 0) {
     return new Map<string, ReturnType<typeof getLatestCorrectionValueMap>>();
   }
@@ -201,7 +211,7 @@ export async function getLatestCorrectionValuesForLedgers(ledgerIds: string[]) {
     where: {
       dailyLedgerId: { in: ledgerIds },
       dailyLedger: {
-        storeId: { in: storeScope.storeIds },
+        storeId: { in: storeIds },
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],

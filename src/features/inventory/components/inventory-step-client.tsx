@@ -43,6 +43,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { inventoryTerms } from "~/features/inventory/terms";
 import {
   getLedgerEditBlockReason,
   isLedgerReadOnly,
@@ -132,22 +133,6 @@ function hasSensitiveAdjustmentAmounts(
   );
 }
 
-function getInventoryAmount(value: string, unitPrice: number) {
-  const quantity = parseQuantityInput(value);
-
-  if (quantity === null) {
-    return null;
-  }
-
-  const amount = quantity * unitPrice;
-
-  if (!Number.isSafeInteger(amount) || amount > MAX_INVENTORY_INTEGER) {
-    return null;
-  }
-
-  return amount;
-}
-
 function toLineState(data: InventoryDisplayData): InventoryLineState[] {
   return data.items.map((item) => ({
     ...item,
@@ -225,6 +210,8 @@ export function InventoryStepClient({
   });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
+  const [selectedFifoLotItem, setSelectedFifoLotItem] =
+    useState<InventoryLineState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -236,7 +223,6 @@ export function InventoryStepClient({
     string | null
   >(null);
   const saveConflict = useSaveConflictDialog();
-  const showsSensitiveAmounts = items.some(hasSensitiveInventoryAmounts);
   const hqEditReasonError = fieldErrors.reason?.[0];
 
   useLedgerUpdatedAtSync(data.id, (updatedAt) => {
@@ -543,7 +529,7 @@ export function InventoryStepClient({
       } else {
         setAdjustmentErrors((current) => ({
           ...current,
-          [item.productId]: "조정 사유를 입력해 주세요.",
+          [item.productId]: inventoryTerms.adjustmentReasonRequired,
         }));
       }
 
@@ -787,6 +773,22 @@ export function InventoryStepClient({
     }
   }
 
+  function formatFifoLotSource(
+    sourceType: InventoryLineState["fifoLots"][number]["sourceType"],
+  ) {
+    switch (sourceType) {
+      case "PURCHASE":
+        return "당일 매입";
+      case "PREVIOUS_CARRYOVER":
+        return "전일 이월";
+      case "OPENING":
+        return "월초 이월";
+      case "LEGACY_OPENING":
+      default:
+        return "기초 재고";
+    }
+  }
+
   function formatStatusLabel(status: InventoryLineState["carryoverStatus"]) {
     switch (status) {
       case "PREVIOUS_CARRYOVER":
@@ -888,7 +890,7 @@ export function InventoryStepClient({
         badges.push({
           label: "기준 확인 필요",
           detail:
-            "FIFO, 30%단가, 확정 재고금액 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다.",
+            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 재고금액은 선입선출(FIFO) 기준으로 계산해 표시합니다.",
           className:
             "border-purple-600 text-purple-700 dark:border-purple-400 dark:text-purple-300",
         });
@@ -962,8 +964,7 @@ export function InventoryStepClient({
     );
   }
 
-  const dailySalesQuantityHelp =
-    "기준재고와 입력한 당일재고의 차이입니다. 실제 POS 판매 수량과 다를 수 있습니다.";
+  const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
 
   function renderCarryoverDetailDialog() {
     if (!selectedCarryoverItem) {
@@ -993,7 +994,7 @@ export function InventoryStepClient({
       >
         <DialogContent className="h-[min(90vh,42rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="px-4 pt-4 pr-12 pb-3">
-            <DialogTitle>전일재고 이력</DialogTitle>
+            <DialogTitle>{inventoryTerms.carryoverHistoryTitle}</DialogTitle>
             <DialogDescription>
               {selectedCarryoverItem.productName} 전일재고가 어느 날짜의 몇
               개에서 넘어왔는지 확인합니다.
@@ -1140,6 +1141,147 @@ export function InventoryStepClient({
     );
   }
 
+  function renderFifoLotDialog() {
+    if (!selectedFifoLotItem) {
+      return null;
+    }
+
+    const lots = selectedFifoLotItem.fifoLots;
+    const consumedAmount = lots.reduce(
+      (sum, lot) => sum + lot.consumedAmount,
+      0,
+    );
+    const remainingAmount = lots.reduce(
+      (sum, lot) => sum + lot.remainingAmount,
+      0,
+    );
+
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedFifoLotItem(null);
+          }
+        }}
+      >
+        <DialogContent className="h-[min(90vh,42rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="px-4 pt-4 pr-12 pb-3">
+            <DialogTitle>{inventoryTerms.fifoLotHistoryTitle}</DialogTitle>
+            <DialogDescription>
+              {selectedFifoLotItem.productName}:{" "}
+              {inventoryTerms.fifoLotHistoryDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
+            <div className="grid gap-4">
+              <section className="bg-muted/30 grid gap-3 rounded-md border p-3 sm:grid-cols-2">
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs">
+                    {inventoryTerms.fifoLotConsumedQuantity} 금액 (판매/소진)
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {formatKrw(consumedAmount)}
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs">
+                    {inventoryTerms.inventoryAmount} (잔량)
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {formatKrw(remainingAmount)}
+                  </p>
+                </div>
+              </section>
+              {lots.length === 0 ? (
+                <p className="text-muted-foreground rounded-md border px-3 py-6 text-center text-sm">
+                  {inventoryTerms.fifoLotEmpty}
+                </p>
+              ) : (
+                <div className="overflow-auto overscroll-contain rounded-md border">
+                  <Table className="min-w-[640px]">
+                    <TableHeader className="bg-background sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead scope="col" className="w-24">
+                          {inventoryTerms.fifoLotSource}
+                        </TableHead>
+                        <TableHead scope="col" className="w-28">
+                          {inventoryTerms.fifoLotPurchaseDate}
+                        </TableHead>
+                        <TableHead scope="col" className="w-24 text-right">
+                          {inventoryTerms.fifoLotUnitPrice}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotOriginalQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotConsumedQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotRemainingQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-28 text-right">
+                          {inventoryTerms.fifoLotRemainingAmount}
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lots.map((lot) => (
+                        <TableRow
+                          key={`${lot.sortOrder}-${lot.sourcePurchaseItemId ?? lot.sourceLedgerId ?? lot.sourceType}`}
+                          className={
+                            lot.consumedQuantity > 0
+                              ? "bg-amber-500/5"
+                              : undefined
+                          }
+                        >
+                          <TableCell>
+                            {formatFifoLotSource(lot.sourceType)}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {/* "며칠 자에 입고된 물량인지"(point_summary.md:56) 추적용으로
+                                입고 영업일(sourceBusinessDate)을 우선 표시하고, 없으면 매입일로 대체. */}
+                            {formatDate(
+                              lot.sourceBusinessDate ?? lot.purchaseDate,
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatKrw(lot.unitPrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.originalQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {lot.consumedQuantity > 0 ? (
+                              <span className="font-medium text-amber-700 dark:text-amber-300">
+                                {formatQuantity(lot.consumedQuantity)}
+                              </span>
+                            ) : (
+                              formatQuantity(lot.consumedQuantity)
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.remainingQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatKrw(lot.remainingAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {inventoryTerms.inventoryAmountHelp}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function renderRows(category: string) {
     const visibleItems = getCategoryItems(category);
     const normalizedCategory = normalizeCategory(category);
@@ -1153,7 +1295,7 @@ export function InventoryStepClient({
       return (
         <TableRow>
           <TableCell
-            colSpan={showsSensitiveAmounts ? 10 : 9}
+            colSpan={10}
             className="text-muted-foreground h-24 text-center"
           >
             표시할 품목이 없습니다.
@@ -1171,9 +1313,6 @@ export function InventoryStepClient({
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
-      const amount = hasSensitiveInventoryAmounts(item)
-        ? getInventoryAmount(item.currentQuantityInput, item.unitPrice)
-        : null;
       const systemQuantity = getSystemQuantity(item);
       const quantityDifference = getQuantityDifference(item);
       const reasonError = adjustmentErrors[item.productId];
@@ -1306,11 +1445,24 @@ export function InventoryStepClient({
               {formatDifference(quantityDifference)}
             </span>
           </TableCell>
-          {showsSensitiveAmounts ? (
-            <TableCell className="w-28 text-right tabular-nums">
-              {formatKrw(amount)}
-            </TableCell>
-          ) : null}
+          <TableCell className="w-28 text-right tabular-nums">
+            {item.fifoLots.length > 0 ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                aria-label={`${item.productName} FIFO 판매 lot 이력 보기`}
+                onClick={() => setSelectedFifoLotItem(item)}
+                className="h-11 min-w-11 justify-end px-1 text-right tabular-nums"
+              >
+                {formatKrw(item.inventoryAmount)}
+              </Button>
+            ) : (
+              <span className="text-muted-foreground">
+                {formatKrw(item.inventoryAmount)}
+              </span>
+            )}
+          </TableCell>
           <TableCell className="w-56">
             {isClosed ? (
               <p className="text-muted-foreground text-xs">정정 기록 사용</p>
@@ -1357,7 +1509,7 @@ export function InventoryStepClient({
                     ref={(node) => {
                       reasonRefs.current[item.productId] = node;
                     }}
-                    aria-label={`${item.productName} 조정 사유`}
+                    aria-label={`${item.productName} ${inventoryTerms.adjustmentReason}`}
                     aria-invalid={Boolean(reasonError)}
                     aria-describedby={
                       reasonError
@@ -1374,7 +1526,7 @@ export function InventoryStepClient({
                     }
                     disabled={isAdjustmentSavePending || isClosed}
                     className="h-11 min-w-0 flex-1"
-                    placeholder="조정 사유"
+                    placeholder={inventoryTerms.adjustmentReasonPlaceholder}
                   />
                   <Button
                     type="button"
@@ -1459,6 +1611,7 @@ export function InventoryStepClient({
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderCarryoverDetailDialog()}
+        {renderFifoLotDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}
@@ -1576,44 +1729,39 @@ export function InventoryStepClient({
               <TabsContent key={category} value={category}>
                 {renderPagingControls(category)}
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                  <Table
-                    aria-label="재고 품목"
-                    className={
-                      showsSensitiveAmounts ? "min-w-[940px]" : "min-w-[820px]"
-                    }
-                  >
+                  <Table aria-label="재고 품목" className="min-w-[940px]">
                     <TableHeader className="sticky top-0 z-10">
                       <TableRow>
                         <TableHead scope="col" className="w-40">
-                          품목
+                          {inventoryTerms.product}
                         </TableHead>
                         <TableHead scope="col" className="w-20">
-                          규격
+                          {inventoryTerms.spec}
                         </TableHead>
                         <TableHead scope="col" className="w-16 text-right">
-                          전일재고
+                          {inventoryTerms.previousStock}
                         </TableHead>
                         <TableHead scope="col" className="w-16 text-right">
-                          매입
+                          {inventoryTerms.purchase}
                         </TableHead>
                         <TableHead scope="col" className="w-20 text-right">
-                          손실
+                          {inventoryTerms.loss}
                         </TableHead>
                         <TableHead scope="col" className="w-20 text-right">
-                          기준재고
+                          {inventoryTerms.baselineStock}
                         </TableHead>
                         <TableHead scope="col" className="w-28">
-                          당일재고
+                          {inventoryTerms.currentStock}
                         </TableHead>
                         <TableHead scope="col" className="w-28 text-right">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
                                 tabIndex={0}
-                                aria-label={`당일 판매량: ${dailySalesQuantityHelp}`}
+                                aria-label={`${inventoryTerms.dailySalesQuantity}: ${dailySalesQuantityHelp}`}
                                 className="inline-flex cursor-help outline-none"
                               >
-                                당일 판매량
+                                {inventoryTerms.dailySalesQuantity}
                               </span>
                             </TooltipTrigger>
                             <TooltipContent
@@ -1624,13 +1772,27 @@ export function InventoryStepClient({
                             </TooltipContent>
                           </Tooltip>
                         </TableHead>
-                        {showsSensitiveAmounts ? (
-                          <TableHead scope="col" className="w-28 text-right">
-                            재고금액
-                          </TableHead>
-                        ) : null}
+                        <TableHead scope="col" className="w-28 text-right">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                tabIndex={0}
+                                aria-label={`${inventoryTerms.inventoryAmount}: ${inventoryTerms.inventoryAmountHelp}`}
+                                className="inline-flex cursor-help outline-none"
+                              >
+                                {inventoryTerms.inventoryAmount}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-64 leading-relaxed"
+                            >
+                              {inventoryTerms.inventoryAmountHelp}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TableHead>
                         <TableHead scope="col" className="w-56">
-                          상태/조정
+                          {inventoryTerms.statusAndAdjustment}
                         </TableHead>
                       </TableRow>
                     </TableHeader>

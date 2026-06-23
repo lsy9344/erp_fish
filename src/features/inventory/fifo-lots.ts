@@ -16,6 +16,8 @@ export type FifoPreviousLotInput = {
   sourcePurchaseItemId: string | null;
   unitPrice: number;
   remainingQuantity: number;
+  // WO-G(2026-06-22): 이월 lot의 원천 영업 기준일. 이월 시에도 그대로 보존한다.
+  sourceBusinessDate: Date | null;
 };
 
 export type FifoPurchaseLotInput = {
@@ -33,6 +35,7 @@ export type FifoLotSnapshot = {
   sourceType: InventoryLotSourceValue;
   sourceLedgerId: string | null;
   sourcePurchaseItemId: string | null;
+  sourceBusinessDate: Date | null;
   unitPrice: number;
   originalQuantity: number;
   consumedQuantity: number;
@@ -62,16 +65,21 @@ export function calculateFifoLotSnapshots({
   legacyOpening,
   purchases,
   closingQuantity,
+  businessDate = null,
 }: {
   previousLots: FifoPreviousLotInput[];
   legacyOpening: FifoLegacyOpeningInput;
   purchases: FifoPurchaseLotInput[];
   closingQuantity: number;
+  // WO-G(2026-06-22): 현재 장부의 영업 기준일(closingDate). PURCHASE lot과
+  // 원천 영업일이 없는 기초/LEGACY lot의 fallback 기준일로 쓴다.
+  businessDate?: Date | null;
 }) {
   const sourceLots: Array<{
     sourceType: InventoryLotSourceValue;
     sourceLedgerId: string | null;
     sourcePurchaseItemId: string | null;
+    sourceBusinessDate: Date | null;
     unitPrice: number;
     quantity: number;
   }> = [];
@@ -84,6 +92,8 @@ export function calculateFifoLotSnapshots({
         sourceType: lot.sourceType,
         sourceLedgerId: lot.sourceLedgerId,
         sourcePurchaseItemId: lot.sourcePurchaseItemId,
+        // 이월 lot은 원천 영업일을 보존한다. 없으면 현재 영업일로 보정한다.
+        sourceBusinessDate: lot.sourceBusinessDate ?? businessDate,
         unitPrice: lot.unitPrice,
         quantity: lot.remainingQuantity,
       });
@@ -93,6 +103,7 @@ export function calculateFifoLotSnapshots({
       sourceType: "LEGACY_OPENING",
       sourceLedgerId: null,
       sourcePurchaseItemId: null,
+      sourceBusinessDate: businessDate,
       unitPrice: legacyOpening.unitPrice,
       quantity: legacyOpening.quantity,
     });
@@ -105,6 +116,8 @@ export function calculateFifoLotSnapshots({
       sourceType: "PURCHASE",
       sourceLedgerId: null,
       sourcePurchaseItemId: purchase.id,
+      // 매입 lot의 영업일은 매입이 기록된 현재 장부의 closingDate다.
+      sourceBusinessDate: businessDate,
       unitPrice: purchase.unitPrice,
       quantity: purchase.quantity,
     });
@@ -120,6 +133,7 @@ export function calculateFifoLotSnapshots({
       sourceType: "LEGACY_OPENING",
       sourceLedgerId: null,
       sourcePurchaseItemId: null,
+      sourceBusinessDate: businessDate,
       unitPrice: legacyOpening.unitPrice,
       quantity: closingQuantity - availableQuantity,
     });
@@ -141,6 +155,7 @@ export function calculateFifoLotSnapshots({
       sourceType: lot.sourceType,
       sourceLedgerId: lot.sourceLedgerId,
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
       originalQuantity: lot.quantity,
       consumedQuantity,
@@ -160,6 +175,85 @@ export function calculateFifoLotSnapshots({
       (lot) => lot.sourceType === "LEGACY_OPENING",
     ),
   };
+}
+
+export type InventoryFifoLotView = {
+  sourceType: InventoryLotSourceValue;
+  sourceLedgerId: string | null;
+  sourcePurchaseItemId: string | null;
+  // purchaseDate는 매입 레코드 생성 시각(createdAt)이라 "며칠 자 입고분"을 정확히
+  // 나타내지 못한다. sourceBusinessDate는 입고 영업일(매입 장부 closingDate / 이월 원천 영업일)을
+  // 보존하므로, 팝업에서 "며칠 자에 입고된 물량인지"(point_summary.md:56) 추적의 근거로 쓴다.
+  purchaseDate: string | null;
+  sourceBusinessDate: string | null;
+  unitPrice: number;
+  originalQuantity: number;
+  consumedQuantity: number;
+  remainingQuantity: number;
+  originalAmount: number;
+  consumedAmount: number;
+  remainingAmount: number;
+  sortOrder: number;
+};
+
+const fifoLotViewSelect = {
+  ledgerInventoryItemId: true,
+  productId: true,
+  sourceType: true,
+  sourceLedgerId: true,
+  sourcePurchaseItemId: true,
+  sourceBusinessDate: true,
+  unitPrice: true,
+  originalQuantity: true,
+  consumedQuantity: true,
+  remainingQuantity: true,
+  originalAmount: true,
+  consumedAmount: true,
+  remainingAmount: true,
+  sortOrder: true,
+  sourcePurchaseItem: {
+    select: {
+      createdAt: true,
+    },
+  },
+} as const;
+
+// 재고 화면의 "어떤 lot을 팔았는지" 판매 lot 이력 팝업용 read 경로.
+// 품목별로 매입(또는 이월) lot의 단가·원수량·소진수량·잔량을 sortOrder(FIFO 순서)대로 반환한다.
+export async function getLedgerInventoryFifoLotsByProductId(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+): Promise<Map<string, InventoryFifoLotView[]>> {
+  const lots = await tx.ledgerInventoryFifoLot.findMany({
+    where: { dailyLedgerId },
+    select: fifoLotViewSelect,
+    orderBy: [{ productId: "asc" }, { sortOrder: "asc" }],
+  });
+
+  const byProductId = new Map<string, InventoryFifoLotView[]>();
+
+  for (const lot of lots) {
+    const rows = byProductId.get(lot.productId) ?? [];
+
+    rows.push({
+      sourceType: lot.sourceType,
+      sourceLedgerId: lot.sourceLedgerId,
+      sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      purchaseDate: lot.sourcePurchaseItem?.createdAt.toISOString() ?? null,
+      sourceBusinessDate: lot.sourceBusinessDate?.toISOString() ?? null,
+      unitPrice: lot.unitPrice,
+      originalQuantity: lot.originalQuantity,
+      consumedQuantity: lot.consumedQuantity,
+      remainingQuantity: lot.remainingQuantity,
+      originalAmount: lot.originalAmount,
+      consumedAmount: lot.consumedAmount,
+      remainingAmount: lot.remainingAmount,
+      sortOrder: lot.sortOrder,
+    });
+    byProductId.set(lot.productId, rows);
+  }
+
+  return byProductId;
 }
 
 function groupByProductId<T extends { productId: string }>(items: T[]) {
@@ -182,6 +276,13 @@ export async function refreshLedgerInventoryFifoLots(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,
 ) {
+  // WO-G(2026-06-22): lot의 영업 기준일은 현재 장부의 closingDate를 사용한다.
+  const currentLedger = await tx.dailyLedger.findUnique({
+    where: { id: dailyLedgerId },
+    select: { closingDate: true },
+  });
+  const businessDate = currentLedger?.closingDate ?? null;
+
   const items = await tx.ledgerInventoryItem.findMany({
     where: { dailyLedgerId },
     select: {
@@ -243,6 +344,7 @@ export async function refreshLedgerInventoryFifoLots(
             productId: true,
             sourceType: true,
             sourcePurchaseItemId: true,
+            sourceBusinessDate: true,
             unitPrice: true,
             remainingQuantity: true,
             sortOrder: true,
@@ -253,7 +355,9 @@ export async function refreshLedgerInventoryFifoLots(
 
   const purchasesByProductId = groupByProductId(
     purchases.flatMap((purchase) =>
-      purchase.productId ? [{ ...purchase, productId: purchase.productId }] : [],
+      purchase.productId
+        ? [{ ...purchase, productId: purchase.productId }]
+        : [],
     ),
   );
   const lossesByProductId = groupByProductId(losses);
@@ -263,6 +367,7 @@ export async function refreshLedgerInventoryFifoLots(
       sourceType: lot.sourceType as FifoPreviousLotInput["sourceType"],
       sourceLedgerId: lot.dailyLedgerId,
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
       remainingQuantity: lot.remainingQuantity,
     })),
@@ -272,14 +377,19 @@ export async function refreshLedgerInventoryFifoLots(
   for (const item of items) {
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
     const purchasedQuantity = sumQuantity(productPurchases);
-    const lossQuantity = sumQuantity(lossesByProductId.get(item.productId) ?? []);
+    const lossQuantity = sumQuantity(
+      lossesByProductId.get(item.productId) ?? [],
+    );
     const systemQuantity = calculateSystemInventoryQuantity({
       previousQuantity: item.previousQuantity,
       purchasedQuantity,
       lossQuantity,
     });
     const closingQuantity =
-      item.currentQuantity ?? item.quantity ?? systemQuantity ?? item.previousQuantity;
+      item.currentQuantity ??
+      item.quantity ??
+      systemQuantity ??
+      item.previousQuantity;
     const fifo = calculateFifoLotSnapshots({
       previousLots: previousLotsByProductId.get(item.productId) ?? [],
       legacyOpening: {
@@ -292,6 +402,7 @@ export async function refreshLedgerInventoryFifoLots(
         quantity: purchase.quantity,
       })),
       closingQuantity,
+      businessDate,
     });
 
     await tx.ledgerInventoryItem.update({
@@ -310,6 +421,7 @@ export async function refreshLedgerInventoryFifoLots(
         sourceType: lot.sourceType,
         sourceLedgerId: lot.sourceLedgerId,
         sourcePurchaseItemId: lot.sourcePurchaseItemId,
+        sourceBusinessDate: lot.sourceBusinessDate,
         unitPrice: lot.unitPrice,
         originalQuantity: lot.originalQuantity,
         consumedQuantity: lot.consumedQuantity,

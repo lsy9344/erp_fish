@@ -192,6 +192,215 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   ]);
 });
 
+test("ledger labor schema validates worker name, amount, and memo edge cases", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const { ledgerLaborSchema } = await import(pathToFileURL(schemaPath).href);
+
+  const laborBase = {
+    storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-22",
+    version: 1,
+    labor: [
+      {
+        workerName: "홍길동",
+        amount: "1200000",
+        lateMemo: "10분 지각",
+        earlyLeaveMemo: "",
+        specialMemo: "   ",
+      },
+    ],
+  };
+
+  const normalized = ledgerLaborSchema.parse({
+    ...laborBase,
+    labor: [
+      {
+        employeeId: "  employee-1  ",
+        workerName: "  김철수  ",
+        amount: "1000",
+        lateMemo: "  지각  ",
+        earlyLeaveMemo: "   ",
+        specialMemo: "특이",
+      },
+    ],
+  });
+  assert.equal(normalized.labor[0].workerName, "김철수");
+  assert.equal(normalized.labor[0].amount, 1000);
+  assert.equal(normalized.labor[0].lateMemo, "지각");
+  assert.equal(normalized.labor[0].earlyLeaveMemo, null);
+  assert.equal(normalized.labor[0].specialMemo, "특이");
+  // WO-05(2026-06-22): employeeId는 트림되며, 빈 값/누락 시 null로 정규화된다.
+  assert.equal(normalized.labor[0].employeeId, "employee-1");
+
+  const withoutEmployee = ledgerLaborSchema.parse({
+    ...laborBase,
+    labor: [{ workerName: "홍길동", amount: "1000" }],
+  });
+  assert.equal(withoutEmployee.labor[0].employeeId, null);
+  // 콤마가 포함된 금액은 조용히 보정하지 않고 거부되어야 한다.
+  const formattedAmount = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [{ workerName: "홍길동", amount: "1,000" }],
+  });
+  assert.equal(formattedAmount.success, false);
+  const amountIssue = formattedAmount.error.issues.find((issue) =>
+    issue.path.includes("amount"),
+  );
+  assert.equal(amountIssue?.message, "급여 금액은 0원 이상의 정수여야 합니다.");
+  assert.deepEqual(amountIssue?.path, ["labor", 0, "amount"]);
+
+  const trimmedMemos = ledgerLaborSchema.parse(laborBase);
+  assert.equal(trimmedMemos.labor[0].lateMemo, "10분 지각");
+  assert.equal(trimmedMemos.labor[0].earlyLeaveMemo, null);
+  assert.equal(trimmedMemos.labor[0].specialMemo, null);
+
+  const emptyName = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [{ workerName: "  ", amount: 1000 }],
+  });
+  assert.equal(emptyName.success, false);
+  assert.equal(
+    emptyName.error.issues.some(
+      (issue) => issue.message === "직원명을 1~50자로 입력해 주세요.",
+    ),
+    true,
+  );
+
+  const longName = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [{ workerName: "a".repeat(51), amount: 1000 }],
+  });
+  assert.equal(longName.success, false);
+
+  const negativeAmount = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [{ workerName: "홍길동", amount: -1 }],
+  });
+  assert.equal(negativeAmount.success, false);
+
+  const decimalAmount = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [{ workerName: "홍길동", amount: 12.5 }],
+  });
+  assert.equal(decimalAmount.success, false);
+
+  const memoOverflow = ledgerLaborSchema.safeParse({
+    ...laborBase,
+    labor: [
+      { workerName: "홍길동", amount: 1000, specialMemo: "a".repeat(501) },
+    ],
+  });
+  assert.equal(memoOverflow.success, false);
+
+  // 빈 급여 배열도 유효해야 한다(근무인원 입력이 최소 요건).
+  assert.equal(
+    ledgerLaborSchema.safeParse({ ...laborBase, labor: [] }).success,
+    true,
+  );
+});
+
+test("ledger labor model, query payload, and save actions follow expected contracts", () => {
+  const schema = readProjectFile("prisma", "schema.prisma");
+  assert.match(
+    schema,
+    /model\s+LedgerLaborItem\s*{[^}]*dailyLedgerId\s+String\s+[^}]*workerName\s+String\s+[^}]*amount\s+Int\s+[^}]*lateMemo\s+String\?\s+[^}]*earlyLeaveMemo\s+String\?\s+[^}]*specialMemo\s+String\?[^}]*\@index\(\[dailyLedgerId\]\)/s,
+  );
+  assert.match(schema, /ledgerLaborItems\s+LedgerLaborItem\[\]/);
+
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+  assert.match(querySource, /const\s+ledgerLaborSelect\s*=\s*{/);
+  assert.match(querySource, /ledgerLaborItems:\s*{/);
+  assert.match(querySource, /payrollTotal:\s*calculatePayrollTotal/);
+  // WO-05(2026-06-22): 급여 행에 선택적 employeeId가 노출되어야 직원 롤업에 연결할 수 있다.
+  assert.match(querySource, /employeeId:\s*true/);
+  assert.match(querySource, /employeeId:\s*item\.employeeId\s*\?\?\s*null/);
+
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
+  assert.match(actionSource, /export\s+async\s+function\s+saveLedgerLaborInfo/);
+  assert.match(
+    actionSource,
+    /action:\s*"ledger\.labor\.saved"|action:\s*'ledger\.labor\.saved'/,
+  );
+  assert.match(actionSource, /tx\.ledgerLaborItem\.deleteMany/);
+  assert.match(actionSource, /tx\.ledgerLaborItem\.createMany/);
+  // WO-05(2026-06-22): 저장 시 검증된 employeeId만 연결한다.
+  assert.match(actionSource, /resolveValidEmployeeIdsInTx/);
+  assert.match(actionSource, /employeeId:\s*\n?\s*item\.employeeId/);
+
+  const hqActionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  assert.match(
+    hqActionSource,
+    /export\s+async\s+function\s+saveHqLedgerLaborInfo/,
+  );
+  assert.match(
+    hqActionSource,
+    /action:\s*"ledger\.hq\.labor\.saved"|action:\s*'ledger\.hq\.labor\.saved'/,
+  );
+  assert.match(hqActionSource, /resolveValidEmployeeIdsInTx/);
+  assert.match(hqActionSource, /employeeId:\s*\n?\s*item\.employeeId/);
+
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "workstep-client.tsx",
+  );
+  assert.match(componentSource, /급여 저장/);
+  assert.match(componentSource, /직원 추가|직원 연결/);
+  assert.match(componentSource, /laborSaveAction/);
+  // WO-05(2026-06-22): 작업 단계에 직원 선택 드롭다운과 employeeId 전달이 있어야 한다.
+  assert.match(componentSource, /employeeOptions/);
+  assert.match(componentSource, /employeeId:\s*line\.employeeId/);
+});
+
+test("ledger labor migration exists and creates the LedgerLaborItem table", () => {
+  const migrationName = migrationDirNames().find((name) =>
+    name.includes("add_ledger_labor_payroll"),
+  );
+  assert.ok(migrationName, "Labor payroll migration should exist");
+
+  const migration = readProjectFile(
+    "prisma",
+    "migrations",
+    migrationName,
+    "migration.sql",
+  );
+  assert.ok(
+    migration.includes('CREATE TABLE "LedgerLaborItem" ('),
+    "Migration should create LedgerLaborItem table",
+  );
+  assert.ok(
+    migration.includes('"workerName" TEXT NOT NULL'),
+    "Migration should add workerName column",
+  );
+  assert.ok(
+    migration.includes('"amount" INTEGER NOT NULL'),
+    "Migration should add amount column",
+  );
+});
+
 test("work step client preserves invalid worker count text for server validation", () => {
   const componentSource = readProjectFile(
     "src",
@@ -376,6 +585,17 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
     expenseTotal: 30_000,
     purchaseItems: [],
     purchaseTotal: 0,
+    laborItems: [
+      {
+        id: "labor-1",
+        workerName: "홍길동",
+        amount: 20_000,
+        lateMemo: null,
+        earlyLeaveMemo: null,
+        specialMemo: null,
+      },
+    ],
+    payrollTotal: 20_000,
     grossProfit: 70_000,
     productivity: 35_000,
     stepCompletion: {
@@ -391,6 +611,9 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   assert.equal(Object.hasOwn(safeLedger, "grossProfit"), false);
   assert.equal(Object.hasOwn(safeLedger, "productivity"), false);
   assert.equal(safeLedger.expenseTotal, 30_000);
+  // 급여(인건비)는 지점장이 직접 입력하는 운영 데이터이므로 응답에 유지된다.
+  assert.equal(safeLedger.payrollTotal, 20_000);
+  assert.equal(safeLedger.laborItems.length, 1);
 });
 
 test("expense step provides 기타 fallback and disables amount when no HQ expense codes exist", () => {
@@ -433,7 +656,7 @@ test("expense step preserves inactive historical code display without adding it 
 
   assert.match(
     pageSource,
-    /getActiveLedgerInputCodeOptions\("EXPENSE_ITEM"\)/,
+    /getActiveLedgerInputCodeOptions\(\s*"EXPENSE_ITEM"/,
     "new expense options should come from active EXPENSE_ITEM codes only",
   );
   assert.match(

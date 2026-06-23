@@ -1,8 +1,13 @@
 "use server";
 
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import {
+  calculatePlannedPriceLossAmount,
+} from "~/features/losses/amount";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
+import { assertStoreManagerClosingDateIsToday } from "~/features/ledger/date";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
@@ -124,6 +129,7 @@ type NormalizedLossItem = {
   unitPrice: number;
   lossTypeName: string;
   quantity: number;
+  recoveredAmount: number;
   amount: number;
   reason: string;
 };
@@ -154,7 +160,8 @@ function normalizeLossItem({
       unitPrice: existing.unitPrice,
       lossTypeName: existing.lossTypeName,
       quantity: loss.quantity,
-      amount: loss.amount,
+      recoveredAmount: loss.recoveredAmount,
+      amount: existing.amount,
       reason: loss.reason,
     };
   }
@@ -173,7 +180,8 @@ function normalizeLossItem({
     unitPrice: product.defaultUnitPrice,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
-    amount: loss.amount,
+    recoveredAmount: loss.recoveredAmount,
+    amount: 0,
     reason: loss.reason,
   };
 }
@@ -193,6 +201,14 @@ export async function saveLedgerLosses(
 
   if (!parsed.ok) {
     return parsed;
+  }
+
+  const dateGuard = assertStoreManagerClosingDateIsToday(
+    parsed.data.closingDate,
+  );
+
+  if (!dateGuard.ok) {
+    return actionError(dateGuard.code, dateGuard.message);
   }
 
   try {
@@ -232,7 +248,7 @@ export async function saveLedgerLosses(
       const lossTypeIds = [
         ...new Set(parsed.data.losses.map((loss) => loss.ledgerInputCodeId)),
       ];
-      const [products, lossTypes] = await Promise.all([
+      const [products, lossTypes, salesPricePlans] = await Promise.all([
         tx.product.findMany({
           where: { id: { in: productIds }, isActive: true },
           select: {
@@ -251,12 +267,26 @@ export async function saveLedgerLosses(
           },
           select: { id: true, name: true },
         }),
+        tx.storeSalesPricePlan.findMany({
+          where: {
+            storeId: before.storeId,
+            businessDate: new Date(before.closingDate),
+            productId: { in: productIds },
+          },
+          select: {
+            productId: true,
+            plannedUnitPrice: true,
+          },
+        }),
       ]);
       const productsById = new Map(
         products.map((product) => [product.id, product]),
       );
       const lossTypesById = new Map(
         lossTypes.map((lossType) => [lossType.id, lossType]),
+      );
+      const plannedUnitPriceByProductId = new Map(
+        salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
       );
       const existingById = new Map(
         before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
@@ -287,6 +317,16 @@ export async function saveLedgerLosses(
           );
         }
 
+        const plannedUnitPrice =
+          plannedUnitPriceByProductId.get(normalized.productId) ??
+          normalized.unitPrice;
+
+        normalized.unitPrice = plannedUnitPrice;
+        normalized.amount = calculatePlannedPriceLossAmount({
+          plannedUnitPrice,
+          quantity: normalized.quantity,
+          recoveredAmount: normalized.recoveredAmount,
+        });
         normalizedLosses.push(normalized);
       }
 
@@ -391,6 +431,7 @@ export async function saveLedgerLosses(
           unitPrice: loss.unitPrice,
           lossTypeName: loss.lossTypeName,
           quantity: loss.quantity,
+          recoveredAmount: loss.recoveredAmount,
           amount: loss.amount,
           reason: loss.reason,
           updatedById: actor.user.id,
@@ -414,6 +455,9 @@ export async function saveLedgerLosses(
       }
 
       await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
+
+      // WO-02(2026-06-22): 손실 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+      await refreshLedgerInventoryFifoLots(tx, before.id);
 
       const after = await getLossStepDataInTx(
         tx,

@@ -50,6 +50,7 @@ test("ledger loss model and migration persist snapshots and relations", () => {
     schema,
     /model\s+LedgerLossItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInputCodeId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*lossTypeName\s+String[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[ledgerInputCodeId\]\)/s,
   );
+  assert.match(schema, /recoveredAmount\s+Int/);
 
   const migrationName = migrationDirNames().find((name) =>
     name.includes("add_ledger_loss_items"),
@@ -69,11 +70,32 @@ test("ledger loss model and migration persist snapshots and relations", () => {
       migration.includes('"quantity" INTEGER NOT NULL') &&
       migration.includes('"amount" INTEGER NOT NULL') &&
       migration.includes('"reason" TEXT NOT NULL'),
-    "migration should store loss snapshots, quantity, amount, and reason",
+    "migration should store loss snapshots, quantity, loss amount, and reason",
+  );
+
+  const recoveredAmountMigration = migrationDirNames().find((name) =>
+    name.includes("add_ledger_loss_recovered_amount"),
+  );
+  assert.ok(
+    recoveredAmountMigration,
+    "ledger loss recovered amount migration should exist",
+  );
+  const recoveredAmountSql = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      recoveredAmountMigration,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    recoveredAmountSql.includes('"recoveredAmount" INTEGER'),
+    "migration should add recoveredAmount column",
   );
 });
 
-test("ledger loss schema validates rows and requires Korean reason message", async () => {
+test("ledger loss schema validates recovered sales rows and requires Korean reason message", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -93,7 +115,7 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
         productId: "product-1",
         ledgerInputCodeId: "loss-code-1",
         quantity: "2",
-        amount: "3000",
+        recoveredAmount: "3000",
         reason: "폐기 처리",
       },
     ],
@@ -118,7 +140,7 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
-      losses: [{ ...payload.losses[0], id: "loss-1", amount: "" }],
+      losses: [{ ...payload.losses[0], id: "loss-1", recoveredAmount: "" }],
     }).success,
     false,
   );
@@ -132,6 +154,35 @@ test("ledger loss schema validates rows and requires Korean reason message", asy
   assert.equal(
     invalidReason.error.issues[0].message,
     "사유/특이사항을 입력해 주세요.",
+  );
+});
+
+test("planned sale price loss amount uses target price minus recovered sales", async () => {
+  const amountPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "amount.ts",
+  );
+  const { calculatePlannedPriceLossAmount } = await import(
+    pathToFileURL(amountPath).href
+  );
+
+  assert.equal(
+    calculatePlannedPriceLossAmount({
+      plannedUnitPrice: 15000,
+      quantity: 2,
+      recoveredAmount: 18000,
+    }),
+    12000,
+  );
+  assert.equal(
+    calculatePlannedPriceLossAmount({
+      plannedUnitPrice: 15000,
+      quantity: 1,
+      recoveredAmount: 20000,
+    }),
+    0,
   );
 });
 
@@ -211,7 +262,7 @@ test("ledger loss quantity errors explain product and inventory flow", async () 
       purchasedQuantity: 0,
       requestedLossQuantity: 2,
     }),
-    "포크오징어 / M2 손실 수량을 저장할 수 없습니다. 입력한 총 손실 수량 2이(가) 현재 차감 가능 수량 0보다 큽니다. 재고 흐름: 전일재고 0 + 오늘매입 0.",
+    "포크오징어 / M2 손실 수량이 재고보다 많습니다. 입력 수량 2개, 손실 가능 수량 0개입니다. 전일재고 0개 + 오늘매입 0개를 확인해 주세요.",
   );
 
   assert.equal(
@@ -261,8 +312,20 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /serverValues:\s*toLossConflictValues/);
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
   assert.match(actionSource, /getLossQuantityErrorMessage/);
+  assert.match(actionSource, /calculatePlannedPriceLossAmount/);
+  assert.match(actionSource, /storeSalesPricePlan\.findMany/);
+  assert.match(actionSource, /recoveredAmount:\s*loss\.recoveredAmount/);
+  assert.match(actionSource, /normalized\.amount\s*=\s*calculatePlannedPriceLossAmount/);
   assert.match(actionSource, /existing\.productName/);
   assert.match(actionSource, /reconcileLedgerInventoryAdjustments\(/);
+  // WO-02(2026-06-22): 손실 저장은 조정 정합화 이후 FIFO lot snapshot을 최신화한다.
+  assert.match(actionSource, /from\s+"[^"]*fifo-lots"/);
+  assert.match(actionSource, /refreshLedgerInventoryFifoLots\(/);
+  assert.ok(
+    actionSource.indexOf("await reconcileLedgerInventoryAdjustments") <
+      actionSource.indexOf("await refreshLedgerInventoryFifoLots"),
+    "loss save should refresh FIFO lots after reconciling adjustments",
+  );
   assert.match(actionSource, /action:\s*"ledger\.losses\.saved"/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLossPaths\(\)/);
@@ -283,12 +346,24 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /inputMode="numeric"/);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /기준 초과/);
-  assert.match(componentSource, /총 손실 수량/);
-  assert.match(componentSource, /총 손실액/);
-  assert.match(componentSource, /손실액\(원\)/);
+  // WO-09: 사용자 화면 라벨/문구는 lossTerms 사전을 통해 렌더링한다.
+  assert.match(componentSource, /lossTerms/);
+  assert.match(componentSource, /lossTerms\.totalLossQuantity/);
+  assert.match(componentSource, /lossTerms\.totalLossAmount/);
+  assert.match(componentSource, /lossTerms\.recoveredAmount/);
+  assert.match(componentSource, /lossTerms\.recoveredAmountHelp/);
+  const lossTermsSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "terms.ts",
+  );
+  assert.match(lossTermsSource, /totalLossQuantity:\s*"총 손실 수량"/);
+  assert.match(lossTermsSource, /totalLossAmount:\s*"총 손실액"/);
+  assert.match(lossTermsSource, /recoveredAmount:\s*"실제 판매\/회수액\(원\)"/);
   assert.match(
-    componentSource,
-    /판매금액이 아니라 손해 본 금액을 입력합니다\./,
+    lossTermsSource,
+    /recoveredAmountHelp:\s*"손실액은 개점 전 판매가 계획에서 이 금액을 뺀 값으로 자동 계산됩니다\."/,
   );
   assert.match(componentSource, /clientKey/);
   assert.match(componentSource, /id:\s*""/);
@@ -317,10 +392,7 @@ test("ledger loss review fixes keep thresholds, stale guards, safe amount displa
     "schemas.ts",
   );
   assert.match(schemaSource, /versionSchema/);
-  assert.match(
-    schemaSource,
-    /parseRequiredInteger\(value, context, amountError\)/,
-  );
+  assert.match(schemaSource, /recoveredAmountError/);
   assert.doesNotMatch(schemaSource, /parseOptionalInteger/);
 
   const lossQuerySource = readProjectFile(
@@ -333,12 +405,9 @@ test("ledger loss review fixes keep thresholds, stale guards, safe amount displa
   assert.match(lossQuerySource, /amount:\s*0/);
   assert.match(
     lossQuerySource,
-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*\.\.\.item\s*}\)/,
+    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,\s*\.\.\.item\s*}\)/,
   );
-  assert.doesNotMatch(
-    lossQuerySource,
-    /lossItems:\s*data\.lossItems\.map\(\(\{\s*unitPrice,\s*amount,/,
-  );
+  assert.doesNotMatch(lossQuerySource, /recoveredAmount,\s*\.\.\.item/);
 
   const inventoryQuerySource = readProjectFile(
     "src",

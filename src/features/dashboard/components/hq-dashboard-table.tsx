@@ -34,7 +34,7 @@ type HqDashboardTableProps = {
 };
 
 const dashboardColumnWidthsStorageKey =
-  "erp-fish:hq-dashboard-column-widths:v1";
+  "erp-fish:hq-dashboard-column-widths:v2";
 const dashboardRefreshIntervalMs = 30_000;
 
 const dashboardColumnWidthConfig = [
@@ -69,14 +69,6 @@ const dashboardColumnWidthConfig = [
   {
     id: "salesAmount",
     label: "매출",
-    defaultWidth: 130,
-    minWidth: 120,
-    maxWidth: 220,
-    className: "text-right tabular-nums",
-  },
-  {
-    id: "salesDifference",
-    label: "매출 차이",
     defaultWidth: 130,
     minWidth: 120,
     maxWidth: 220,
@@ -151,10 +143,6 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
   currency: "KRW",
   maximumFractionDigits: 0,
-});
-const percentFormatter = new Intl.NumberFormat("ko-KR", {
-  style: "percent",
-  maximumFractionDigits: 1,
 });
 const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
@@ -461,14 +449,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                       {formatKrw(row.salesAmount.value)}
                     </TableCell>
                     <TableCell
-                      className={getColumnCellClassName("salesDifference")}
-                    >
-                      {formatKrwMetric(row.salesDifference)}
-                    </TableCell>
-                    <TableCell
                       className={getColumnCellClassName("grossMarginRate")}
                     >
-                      {formatPercentMetric(row.grossMarginRate)}
+                      <MarginCell row={row} />
                     </TableCell>
                     <TableCell className={getColumnCellClassName("loss")}>
                       {formatLoss(row)}
@@ -545,15 +528,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                     <dd className="font-medium">{formatLoss(row)}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">매출 차이</dt>
-                    <dd className="font-medium tabular-nums">
-                      {formatKrwMetric(row.salesDifference)}
-                    </dd>
-                  </div>
-                  <div>
                     <dt className="text-muted-foreground">마진율</dt>
                     <dd className="font-medium tabular-nums">
-                      {formatPercentMetric(row.grossMarginRate)}
+                      <MarginCell row={row} />
                     </dd>
                   </div>
                   <div>
@@ -738,6 +715,26 @@ function DetailLink({
   );
 }
 
+function MarginCell({ row }: { row: HqDashboardRow }) {
+  const { currentLabel, targetLabel, shortfallAmountLabel } = row.marginDisplay;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
+      <span>
+        {currentLabel}
+        {targetLabel ? (
+          <span className="text-muted-foreground"> / {targetLabel}</span>
+        ) : null}
+      </span>
+      {shortfallAmountLabel ? (
+        <span className="text-warning text-xs font-normal whitespace-nowrap">
+          {shortfallAmountLabel}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function PriorityBadge({
   row,
   className,
@@ -797,30 +794,6 @@ function getRowClassName(row: HqDashboardRow) {
 
 function formatKrw(value: number | null) {
   return value === null ? "-" : krwFormatter.format(value);
-}
-
-function formatKrwMetric(metric: HqDashboardRow["salesDifference"]) {
-  if (metric.value === null) {
-    return formatUnavailableMetric(metric);
-  }
-
-  return krwFormatter.format(metric.value);
-}
-
-function formatPercentMetric(metric: HqDashboardRow["grossMarginRate"]) {
-  if (metric.value === null) {
-    return formatUnavailableMetric(metric);
-  }
-
-  return percentFormatter.format(metric.value);
-}
-
-function formatUnavailableMetric(metric: HqDashboardRow["salesDifference"]) {
-  if (metric.status === "data-insufficient") {
-    return metric.label ?? metric.unavailableReason ?? "-";
-  }
-
-  return metric.label ?? metric.unavailableReason ?? "-";
 }
 
 function formatLoss(row: HqDashboardRow) {

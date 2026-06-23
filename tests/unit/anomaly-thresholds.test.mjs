@@ -153,24 +153,31 @@ test("anomaly threshold schema parses display input, active state, and required 
   } = await import(pathToFileURL(schemaPath).href);
 
   assert.equal(ANOMALY_THRESHOLD_SCOPE, "GLOBAL");
+  // WO-01(2026-06-22): 재고 오차 허용 범위 제로화. 폼은 더 이상 재고 차이 기준을 받지 않는다.
   assert.deepEqual(
     anomalyThresholdFormSchema.parse({
       marginRate: "12.5",
-      inventoryDifferenceQuantity: "7",
       isActive: "true",
       reason: "월간 운영 기준 정비",
     }),
     {
       marginRateBps: 1250,
-      inventoryDifferenceQuantity: 7,
       isActive: true,
       reason: "월간 운영 기준 정비",
     },
   );
 
+  const parsedWithStaleField = anomalyThresholdFormSchema.parse({
+    marginRate: "12.5",
+    inventoryDifferenceQuantity: "7",
+    isActive: "true",
+    reason: "잔여 필드 무시",
+  });
+
+  assert.equal(parsedWithStaleField.inventoryDifferenceQuantity, undefined);
+
   const invalid = anomalyThresholdFormSchema.safeParse({
     marginRate: "",
-    inventoryDifferenceQuantity: "1.5",
     isActive: "invalid",
     reason: "   ",
   });
@@ -181,27 +188,11 @@ test("anomaly threshold schema parses display input, active state, and required 
   assert.deepEqual(errors.marginRate, [
     "마진률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
   ]);
-  assert.deepEqual(errors.inventoryDifferenceQuantity, [
-    "재고 차이 기준은 0 이상의 정수여야 합니다.",
-  ]);
+  assert.equal(errors.inventoryDifferenceQuantity, undefined);
   assert.deepEqual(errors.isActive, [
     "활성 상태는 활성 또는 비활성 중 하나여야 합니다.",
   ]);
   assert.deepEqual(errors.reason, ["변경 사유를 입력해 주세요."]);
-
-  const malformedComma = anomalyThresholdFormSchema.safeParse({
-    marginRate: "12.5",
-    inventoryDifferenceQuantity: "1,00",
-    isActive: "true",
-    reason: "콤마 검증",
-  });
-
-  assert.equal(malformedComma.success, false);
-  const commaErrors = toAnomalyThresholdFieldErrors(malformedComma.error);
-
-  assert.deepEqual(commaErrors.inventoryDifferenceQuantity, [
-    "재고 차이 기준은 0 이상의 정수여야 합니다.",
-  ]);
 });
 
 test("anomaly calculation helper normalizes only active saved threshold settings for signal consumers", async () => {
@@ -216,6 +207,7 @@ test("anomaly calculation helper normalizes only active saved threshold settings
   );
 
   assert.equal(normalizeAnomalyThresholdSignalSettings(null), null);
+  // WO-01(2026-06-22): 재고 오차 허용 범위 제로화. 정규화 결과에는 marginRateBps만 남는다.
   assert.deepEqual(
     normalizeAnomalyThresholdSignalSettings({
       marginRateBps: 1250,
@@ -225,13 +217,11 @@ test("anomaly calculation helper normalizes only active saved threshold settings
     }),
     {
       marginRateBps: 1250,
-      inventoryDifferenceQuantity: 7,
     },
   );
   assert.equal(
     normalizeAnomalyThresholdSignalSettings({
       marginRateBps: 1250,
-      inventoryDifferenceQuantity: 7,
       isActive: false,
     }),
     null,
@@ -364,9 +354,11 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /reasonRef/);
   assert.match(clientSource, /toast/);
   assert.match(clientSource, /inputMode="decimal"/);
-  assert.match(clientSource, /inputMode="numeric"/);
+  // WO-01(2026-06-22): 재고 차이 기준 입력 필드를 제거했다.
+  assert.doesNotMatch(clientSource, /inputMode="numeric"/);
   assert.match(clientSource, /마진률\(%\)/);
-  assert.match(clientSource, /재고 차이 기준\(수량\)/);
+  assert.doesNotMatch(clientSource, /재고 차이 기준\(수량\)/);
+  assert.match(clientSource, /재고 오차 허용 범위는 제로화/);
   assert.doesNotMatch(clientSource, /매출 하락률/);
   assert.doesNotMatch(clientSource, /이익률 하락폭/);
   assert.doesNotMatch(clientSource, /매출차액 금액/);

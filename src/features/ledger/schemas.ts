@@ -21,6 +21,9 @@ const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.
 const purchaseQuantityError = "수량은 0 이상의 정수여야 합니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
 const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
+const laborWorkerNameError = "직원명을 1~50자로 입력해 주세요.";
+const laborAmountError = "급여 금액은 0원 이상의 정수여야 합니다.";
+const laborMemoError = "메모는 0~500자 사이여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const authorDisplayNameError = "작성자 표시명은 50자 이하여야 합니다.";
@@ -62,6 +65,31 @@ function parseOptionalMemo(value: unknown, context: z.RefinementCtx) {
   context.addIssue({
     code: z.ZodIssueCode.custom,
     message: expenseMemoError,
+  });
+
+  return z.NEVER;
+}
+
+function parseOptionalLaborMemo(value: unknown, context: z.RefinementCtx) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const memo = value.trim();
+
+    if (memo === "") {
+      return null;
+    }
+
+    if (memo.length <= 500) {
+      return memo;
+    }
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: laborMemoError,
   });
 
   return z.NEVER;
@@ -340,6 +368,58 @@ export const ledgerWorkInfoSchema = ledgerMutationContextSchema.extend({
 });
 
 export type LedgerWorkInfoInput = z.infer<typeof ledgerWorkInfoSchema>;
+
+const ledgerLaborItemSchema = z.object({
+  // WO-05(2026-06-22): 급여 행을 직원 마스터(Employee)와 선택적으로 연결한다.
+  // 선택하지 않으면 null로 저장되고 직원별 월간 롤업에서 제외된다.
+  employeeId: z.unknown().transform((value) => {
+    if (typeof value === "string") {
+      const employeeId = value.trim();
+
+      if (employeeId.length > 0) {
+        return employeeId;
+      }
+    }
+
+    return null;
+  }),
+  workerName: z.unknown().transform((value, context) => {
+    if (typeof value === "string") {
+      const workerName = value.trim();
+
+      if (workerName.length >= 1 && workerName.length <= 50) {
+        return workerName;
+      }
+    }
+
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: laborWorkerNameError,
+    });
+
+    return z.NEVER;
+  }),
+  amount: z
+    .unknown()
+    .transform((value, context) =>
+      parseRequiredNonNegativeInteger(value, context, laborAmountError),
+    ),
+  lateMemo: z
+    .unknown()
+    .transform((value, context) => parseOptionalLaborMemo(value, context)),
+  earlyLeaveMemo: z
+    .unknown()
+    .transform((value, context) => parseOptionalLaborMemo(value, context)),
+  specialMemo: z
+    .unknown()
+    .transform((value, context) => parseOptionalLaborMemo(value, context)),
+});
+
+export const ledgerLaborSchema = ledgerMutationContextSchema.extend({
+  labor: z.array(ledgerLaborItemSchema),
+});
+
+export type LedgerLaborInput = z.infer<typeof ledgerLaborSchema>;
 
 export const ledgerSubmitSchema = ledgerMutationContextSchema;
 

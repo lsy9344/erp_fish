@@ -11,6 +11,8 @@ import {
   reconcileLedgerInventoryAdjustments,
   syncLedgerInventoryPurchasedQuantitiesInTx,
 } from "~/features/inventory/adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
+import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { db } from "~/server/db";
@@ -23,6 +25,7 @@ import {
   ledgerConflictErrorFromMeta,
   type LedgerConflictMeta,
 } from "./conflicts";
+import { assertStoreManagerClosingDateIsToday } from "./date";
 import {
   getLedgerCostStepDataByIdInTx,
   ledgerSelect,
@@ -40,6 +43,7 @@ import {
 import {
   ledgerSalesPaymentSchema,
   ledgerExpenseSchema,
+  ledgerLaborSchema,
   ledgerPurchaseSchema,
   ledgerStoreAccessSchema,
   ledgerSubmitSchema,
@@ -48,6 +52,7 @@ import {
   type LedgerStoreAccessInput,
   type LedgerSalesPaymentInput,
   type LedgerExpensesInput,
+  type LedgerLaborInput,
   type LedgerPurchasesInput,
   type LedgerSubmitInput,
   type LedgerWorkInfoInput,
@@ -73,6 +78,19 @@ function revalidateLedgerSalesPaths() {
 function revalidateLedgerSubmitPaths() {
   revalidateStoreEntryPaths();
   revalidateDashboardAndReports();
+}
+
+// WO-A(2026-06-22): store-manager action entrypoint에서 과거 날짜 저장/제출을 차단한다.
+function guardStoreManagerClosingDate<T>(
+  closingDate: string,
+): ActionResult<T> | null {
+  const guard = assertStoreManagerClosingDateIsToday(closingDate);
+
+  if (!guard.ok) {
+    return actionError<T>(guard.code, guard.message);
+  }
+
+  return null;
 }
 
 function parseLedgerSalesInput(
@@ -155,6 +173,22 @@ function parseLedgerWorkInfoInput(
   return actionOk(parsed.data);
 }
 
+function parseLedgerLaborInput(
+  input: unknown,
+): ActionResult<LedgerLaborInput> {
+  const parsed = ledgerLaborSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toFieldErrors(parsed.error),
+    );
+  }
+
+  return actionOk(parsed.data);
+}
+
 function parseLedgerSubmitInput(
   input: unknown,
 ): ActionResult<LedgerSubmitInput> {
@@ -202,6 +236,7 @@ type StoreLedgerConflictInput =
   | LedgerExpensesInput
   | LedgerPurchasesInput
   | LedgerWorkInfoInput
+  | LedgerLaborInput
   | LedgerSubmitInput;
 
 function toStoreLedgerConflictValues(
@@ -210,8 +245,9 @@ function toStoreLedgerConflictValues(
 ): Record<string, ActionConflictValue> {
   switch (section) {
     case "sales":
+      // WO-B(2026-06-22): 작성자 표시명은 최초 작성자 보존 정책에 따라
+      // 매출 저장에서 덮어쓰지 않으므로 충돌 후보로 노출하지 않는다.
       return {
-        "작성자 표시명": data.authorDisplayName,
         총매출: data.totalSalesAmount,
         현금: data.cashAmount,
         카드: data.cardAmount,
@@ -236,6 +272,13 @@ function toStoreLedgerConflictValues(
         근무인원: data.workerCount,
         특이사항: data.workMemo,
       };
+    case "labor":
+      return Object.fromEntries(
+        data.laborItems.map((item, index) => [
+          `급여 ${index + 1}`,
+          `${item.workerName} ${item.amount}원`,
+        ]),
+      );
     case "review":
       return {
         제출상태: data.status,
@@ -253,8 +296,9 @@ function toStoreLedgerClientValues(
   switch (section) {
     case "sales": {
       const sales = input as LedgerSalesPaymentInput;
+      // WO-B(2026-06-22): 작성자 표시명은 최초 작성자 보존 정책에 따라
+      // 매출 저장에서 덮어쓰지 않으므로 충돌 후보로 노출하지 않는다.
       return {
-        "작성자 표시명": sales.authorDisplayName,
         총매출: sales.totalSalesAmount,
         현금: sales.cashAmount,
         카드: sales.cardAmount,
@@ -282,6 +326,13 @@ function toStoreLedgerClientValues(
         특이사항: work.workMemo,
       };
     }
+    case "labor":
+      return Object.fromEntries(
+        (input as LedgerLaborInput).labor.map((item, index) => [
+          `급여 ${index + 1}`,
+          `${item.workerName} ${item.amount}원`,
+        ]),
+      );
     case "review":
       return { 제출상태: "검토 대기 제출 시도" };
     default:
@@ -498,6 +549,15 @@ export async function submitLedgerForReview(
     return parsed;
   }
 
+  const dateGuard =
+    guardStoreManagerClosingDate<LedgerSubmitForReviewResult>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
+  }
+
   let result: ActionResult<LedgerSubmitForReviewResult>;
 
   try {
@@ -647,6 +707,15 @@ export async function saveLedgerSalesPayment(
     return parsed;
   }
 
+  const dateGuard =
+    guardStoreManagerClosingDate<StoreManagerLedgerCostStepData>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
+  }
+
   try {
     const result = await db.$transaction(async (tx) => {
       const beforeLedger = await getStoreLedgerInTx(
@@ -664,12 +733,21 @@ export async function saveLedgerSalesPayment(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      // WO-B(2026-06-22): authorDisplayName은 최초 작성자 표시명이다.
+      // 이미 값이 있으면 store-manager 매출 저장에서 덮어쓰지 않고 보존한다.
+      // 최초 저장(값 없음)에서만 클라이언트 입력값으로 기록한다.
+      const existingAuthorDisplayName = beforeLedger.authorDisplayName?.trim();
+      const authorDisplayNameToPersist =
+        existingAuthorDisplayName && existingAuthorDisplayName.length > 0
+          ? existingAuthorDisplayName
+          : parsed.data.authorDisplayName;
+
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
         parsed.data.version,
         {
-          authorDisplayName: parsed.data.authorDisplayName,
+          authorDisplayName: authorDisplayNameToPersist,
           totalSalesAmount: parsed.data.totalSalesAmount,
           cashAmount: parsed.data.cashAmount,
           cardAmount: parsed.data.cardAmount,
@@ -735,6 +813,15 @@ export async function saveLedgerExpenses(
 
   if (!parsed.ok) {
     return parsed;
+  }
+
+  const dateGuard =
+    guardStoreManagerClosingDate<StoreManagerLedgerCostStepData>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
   }
 
   try {
@@ -841,6 +928,15 @@ export async function saveLedgerPurchases(
 
   if (!parsed.ok) {
     return parsed;
+  }
+
+  const dateGuard =
+    guardStoreManagerClosingDate<StoreManagerLedgerCostStepData>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
   }
 
   try {
@@ -1068,6 +1164,9 @@ export async function saveLedgerPurchases(
         actor.user.id,
       );
 
+      // WO-02(2026-06-22): 매입 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+      await refreshLedgerInventoryFifoLots(tx, beforeLedger.id);
+
       const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
         where: { id: beforeLedger.id },
         select: ledgerSelect,
@@ -1126,6 +1225,15 @@ export async function saveLedgerWorkInfo(
     return parsed;
   }
 
+  const dateGuard =
+    guardStoreManagerClosingDate<StoreManagerLedgerCostStepData>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
+  }
+
   try {
     const result = await db.$transaction(async (tx) => {
       const beforeLedger = await getStoreLedgerInTx(
@@ -1177,6 +1285,120 @@ export async function saveLedgerWorkInfo(
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("work", parsed.data);
+    }
+
+    if (error instanceof OriginalLedgerBlockedError) {
+      return actionError(error.code, error.message);
+    }
+
+    return mapStoreActionError();
+  }
+}
+
+export async function saveLedgerLaborInfo(
+  input: unknown,
+): Promise<ActionResult<StoreManagerLedgerCostStepData>> {
+  const access = parseLedgerStoreAccessInput(input);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
+
+  const parsed = parseLedgerLaborInput(input);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const dateGuard =
+    guardStoreManagerClosingDate<StoreManagerLedgerCostStepData>(
+      parsed.data.closingDate,
+    );
+
+  if (dateGuard) {
+    return dateGuard;
+  }
+
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const beforeLedger = await getStoreLedgerInTx(
+        tx,
+        parsed.data.storeId,
+        parsed.data.closingDate,
+        actor.user.id,
+      );
+
+      if (hasLedgerContextChanged(beforeLedger, parsed.data)) {
+        throw new Error("LEDGER_CONFLICT");
+      }
+
+      if (!isLedgerEditable(beforeLedger.status)) {
+        throw originalLedgerBlockedError(beforeLedger.status);
+      }
+
+      await updateEditableDailyLedgerInTx(
+        tx,
+        beforeLedger.id,
+        parsed.data.version,
+        {
+          updatedById: actor.user.id,
+        },
+      );
+
+      await tx.ledgerLaborItem.deleteMany({
+        where: { dailyLedgerId: beforeLedger.id },
+      });
+
+      if (parsed.data.labor.length > 0) {
+        // WO-05(2026-06-22): 선택된 employeeId가 실제 직원 마스터에 존재할 때만 연결한다.
+        const validEmployeeIds = await resolveValidEmployeeIdsInTx(
+          tx,
+          parsed.data.labor,
+        );
+
+        await tx.ledgerLaborItem.createMany({
+          data: parsed.data.labor.map((item) => ({
+            dailyLedgerId: beforeLedger.id,
+            employeeId:
+              item.employeeId && validEmployeeIds.has(item.employeeId)
+                ? item.employeeId
+                : null,
+            workerName: item.workerName,
+            amount: item.amount,
+            lateMemo: item.lateMemo,
+            earlyLeaveMemo: item.earlyLeaveMemo,
+            specialMemo: item.specialMemo,
+            createdById: actor.user.id,
+            updatedById: actor.user.id,
+          })),
+        });
+      }
+
+      const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
+        where: { id: beforeLedger.id },
+        select: ledgerSelect,
+      });
+
+      await writeAuditLog(tx, {
+        action: "ledger.labor.saved",
+        targetType: "DailyLedger",
+        targetId: afterLedger.id,
+        actorId: actor.user.id,
+        before: toLedgerAuditPayload(beforeLedger),
+        after: toLedgerAuditPayload(afterLedger),
+      });
+
+      return toStoreManagerLedgerCostStepData(afterLedger);
+    });
+
+    revalidateLedgerSalesPaths();
+
+    return actionOk(result);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
+      return await mapLedgerConflictError("labor", parsed.data);
     }
 
     if (error instanceof OriginalLedgerBlockedError) {

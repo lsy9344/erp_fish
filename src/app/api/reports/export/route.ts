@@ -4,6 +4,7 @@ import { PermissionAction } from "../../../../../generated/prisma";
 import {
   buildDailyMeetingReportExport,
   buildForbiddenReportExportResponsePayload,
+  buildInventoryPositionReportExport,
   buildMonthlyClosingAnomalyReportExport,
   buildReportCsv,
   buildReportExportAuditSnapshot,
@@ -17,6 +18,7 @@ import {
   getHqMonthlyClosingAnomalyReport,
   getHqStoreComparisonReport,
 } from "~/features/reports/queries";
+import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
 import { requireExportCreateAccess } from "~/server/authz";
 import { withAuditActorContext, writeAuditLog } from "~/server/audit";
 import { db } from "~/server/db";
@@ -110,6 +112,13 @@ type ParsedExportRequest =
       report: "monthly";
       month: string;
       storeId: string | null;
+    }
+  | {
+      report: "inventory";
+      date: string;
+      storeId: string | null;
+      category: string | null;
+      product: string | null;
     };
 
 function parseExportRequest(
@@ -161,6 +170,25 @@ function parseExportRequest(
     };
   }
 
+  if (report === "inventory") {
+    const date = params.get("date");
+
+    if (!date || !isValidDateInput(date)) {
+      return { ok: false, message: "조회 날짜를 확인해 주세요." };
+    }
+
+    return {
+      ok: true,
+      value: {
+        report,
+        date,
+        storeId: normalizeOptionalParam(params.get("storeId")),
+        category: normalizeOptionalParam(params.get("category")),
+        product: normalizeOptionalParam(params.get("product")),
+      },
+    };
+  }
+
   const month = params.get("month");
 
   if (!month || !isValidMonthInput(month)) {
@@ -200,6 +228,15 @@ async function loadReportExportData(
           storeId: request.storeId,
         }),
       );
+    case "inventory":
+      return buildInventoryPositionReportExport(
+        await getHqInventoryPositionReport({
+          date: request.date,
+          storeId: request.storeId,
+          category: request.category,
+          product: request.product,
+        }),
+      );
   }
 }
 
@@ -221,7 +258,12 @@ function forbiddenResponse(request: Request) {
 }
 
 function isReportExportType(value: string | null): value is ReportExportType {
-  return value === "daily" || value === "comparison" || value === "monthly";
+  return (
+    value === "daily" ||
+    value === "comparison" ||
+    value === "monthly" ||
+    value === "inventory"
+  );
 }
 
 function normalizeOptionalParam(value: string | null) {

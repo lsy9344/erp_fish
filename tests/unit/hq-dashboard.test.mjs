@@ -100,6 +100,78 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(loadingSource, /repeat\(13/);
 });
 
+test("HQ dashboard density control keeps column resizing and stores density in URL (WO-07)", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { getDashboardDensity, getDashboardPath } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  // density 정규화: 기본값 default, wide/compact만 허용.
+  assert.equal(getDashboardDensity(undefined), "default");
+  assert.equal(getDashboardDensity("nope"), "default");
+  assert.equal(getDashboardDensity("wide"), "wide");
+  assert.equal(getDashboardDensity("compact"), "compact");
+
+  // URL 계약: density 쿼리 파라미터를 유지한다.
+  assert.equal(
+    getDashboardPath({
+      datePreset: "today",
+      sortMode: "priority",
+      filterMode: "all",
+      density: "wide",
+    }),
+    "/app/dashboard?date=today&sort=priority&filter=all&density=wide",
+  );
+  assert.match(
+    getDashboardPath({
+      datePreset: "today",
+      sortMode: "priority",
+      filterMode: "all",
+    }),
+    /density=default$/,
+  );
+
+  const controlsSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "dashboard-layout-controls.tsx",
+  );
+  assert.match(controlsSource, /기본/);
+  assert.match(controlsSource, /넓게/);
+  assert.match(controlsSource, /압축/);
+  assert.match(controlsSource, /getDashboardSummaryGridClass/);
+  assert.match(controlsSource, /getDashboardTableContainerClass/);
+
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "dashboard",
+    "page.tsx",
+  );
+  assert.match(pageSource, /getDashboardDensity/);
+  assert.match(pageSource, /DashboardLayoutControls/);
+  assert.match(pageSource, /getDashboardSummaryGridClass\(density\)/);
+  assert.match(pageSource, /getDashboardTableContainerClass\(density\)/);
+
+  // 표 컬럼 리사이즈 기능은 그대로 유지한다.
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+  assert.match(tableSource, /resize|Resize|columnWidth|onPointerDown|onMouseDown/);
+});
+
 test("HQ ledger detail shows anomaly signal details as visible text", () => {
   const summarySource = readProjectFile(
     "src",
@@ -294,6 +366,82 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   assert.doesNotMatch(tableSource, /lossAmount/);
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
   assert.doesNotMatch(tableSource, /baselineSales/);
+  // 미팅 결정(2026-06-21): 마진율 "현재 / 기준"과 미달 금액은 쿼리에서 만든
+  // marginDisplay 라벨만 렌더링하고, UI에서 마진 계산을 다시 하지 않는다.
+  assert.match(tableSource, /row\.marginDisplay/);
+  assert.match(tableSource, /shortfallAmountLabel/);
+  assert.doesNotMatch(tableSource, /marginRateBps/);
+});
+
+test("HQ dashboard does not render a 매출 차이 column or signal label", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.doesNotMatch(tableSource, /매출 차이/);
+  assert.doesNotMatch(tableSource, /salesDifference/);
+});
+
+test("HQ dashboard margin display shows 현재 / 기준 and visible shortfall money", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { buildMarginDisplay } = await import(pathToFileURL(queryPath).href);
+
+  // 18% 마진 + 20% 기준 → "18.0% / 20.0%" 와 미달 금액 노출.
+  const belowThreshold = buildMarginDisplay(
+    { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
+    { value: 1000000, status: "ok" },
+    { value: 0.18, status: "ok" },
+  );
+  assert.equal(belowThreshold.currentLabel, "18.0%");
+  assert.equal(belowThreshold.targetLabel, "20.0%");
+  assert.equal(belowThreshold.shortfallAmountLabel, "미달 금액 20,000원");
+
+  // 기준 이상이면 미달 금액 라인을 만들지 않는다.
+  const aboveThreshold = buildMarginDisplay(
+    { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
+    { value: 1000000, status: "ok" },
+    { value: 0.25, status: "ok" },
+  );
+  assert.equal(aboveThreshold.currentLabel, "25.0%");
+  assert.equal(aboveThreshold.targetLabel, "20.0%");
+  assert.equal(aboveThreshold.shortfallAmountLabel, null);
+
+  // 총매출을 계산할 수 없으면 미달 %p는 알리되 금액은 계산 불가로 표시한다.
+  const noSales = buildMarginDisplay(
+    { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
+    { value: null, status: "data-insufficient", label: "데이터 부족" },
+    { value: 0.18, status: "ok" },
+  );
+  assert.equal(noSales.shortfallAmountLabel, "총매출 미확정으로 금액 계산 불가");
+
+  // 기준값이 없으면 현재 마진율만 깔끔하게 보여준다.
+  const noThreshold = buildMarginDisplay(
+    null,
+    { value: 1000000, status: "ok" },
+    { value: 0.18, status: "ok" },
+  );
+  assert.equal(noThreshold.currentLabel, "18.0%");
+  assert.equal(noThreshold.targetLabel, null);
+  assert.equal(noThreshold.shortfallAmountLabel, null);
+
+  // 마진율을 계산할 수 없으면 상태 라벨을 그대로 보여주고 기준 비교는 생략한다.
+  const unavailable = buildMarginDisplay(
+    { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
+    { value: null, status: "data-insufficient", label: "데이터 부족" },
+    { value: null, status: "data-insufficient", label: "데이터 부족" },
+  );
+  assert.equal(unavailable.currentLabel, "데이터 부족");
+  assert.equal(unavailable.targetLabel, null);
+  assert.equal(unavailable.shortfallAmountLabel, null);
 });
 
 test("HQ dashboard e2e setup clears story 3.2 threshold state before asserting pending signals", () => {
@@ -330,15 +478,15 @@ test("HQ dashboard status and date helpers map story states", async () => {
   });
   assert.deepEqual(mapDashboardLedgerStatus("IN_PROGRESS"), {
     key: "IN_PROGRESS",
-    label: "입력중",
+    label: "입력 중",
   });
   assert.deepEqual(mapDashboardLedgerStatus("IN_REVIEW"), {
     key: "IN_REVIEW",
-    label: "검토대기",
+    label: "검토 대기",
   });
   assert.deepEqual(mapDashboardLedgerStatus("HEADQUARTERS_CLOSED"), {
     key: "HEADQUARTERS_CLOSED",
-    label: "본사마감",
+    label: "본사 마감",
   });
   assert.deepEqual(mapDashboardLedgerStatus("HOLIDAY"), {
     key: "HOLIDAY",
@@ -362,7 +510,7 @@ test("HQ dashboard priority presentation orders problem rows first", async () =>
     makeDashboardRow({
       storeId: "normal",
       storeName: "정상점",
-      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
       isHeadquartersClosed: true,
     }),
     makeDashboardRow({
@@ -378,7 +526,7 @@ test("HQ dashboard priority presentation orders problem rows first", async () =>
     makeDashboardRow({
       storeId: "review",
       storeName: "검토점",
-      ledgerStatus: { key: "IN_REVIEW", label: "검토대기" },
+      ledgerStatus: { key: "IN_REVIEW", label: "검토 대기" },
     }),
     makeDashboardRow({
       storeId: "empty",
@@ -401,7 +549,7 @@ test("HQ dashboard priority presentation orders problem rows first", async () =>
   );
   assert.deepEqual(
     presented.map((row) => row.priority.label),
-    ["심각 이상", "경고 이상", "검토대기", "미입력", "정상"],
+    ["심각 이상", "경고 이상", "검토 대기", "미입력", "정상"],
   );
   assert.deepEqual(
     applyDashboardPresentation(rows, {
@@ -472,17 +620,17 @@ test("HQ dashboard keeps calculation and policy states as distinct info signals"
       },
       {
         id: "calculation-totalSales-data-insufficient",
-        label: "데이터 부족",
+        label: "매출 기준 확인 필요",
         severity: "info",
       },
       {
         id: "calculation-grossMarginRate-calculation-unavailable",
-        label: "계산 불가",
+        label: "이익률 계산 불가",
         severity: "info",
       },
       {
         id: "calculation-salesDifference-policy-unconfirmed",
-        label: "기준 확인 필요",
+        label: "매출 차액 계산 불가",
         severity: "info",
       },
     ],
@@ -545,12 +693,12 @@ test("HQ dashboard keeps policy-unconfirmed revenue metrics out of threshold ano
     [
       {
         id: "calculation-grossMarginRate-policy-unconfirmed",
-        label: "기준 확인 필요",
+        label: "이익률 계산 불가",
         severity: "info",
       },
       {
         id: "calculation-salesDifference-policy-unconfirmed",
-        label: "기준 확인 필요",
+        label: "매출 차액 계산 불가",
         severity: "info",
       },
     ],
@@ -564,7 +712,7 @@ test("HQ dashboard keeps policy-unconfirmed revenue metrics out of threshold ano
   );
 });
 
-test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confirmed", async () => {
+test("HQ dashboard surfaces inventory quantity mismatch as a critical anomaly (zero-tolerance, policy-independent)", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -624,23 +772,17 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
     ],
   });
 
+  // point_summary.md:18 재고 오차 제로화: 수량 불일치는 FIFO 원가 정책(OQ-7/OQ-17)과
+  // 무관한 데이터 품질 사실이므로 anomaly.ts가 산출한 critical을 그대로 노출한다.
   assert.deepEqual(
     signals.map(({ id, label, severity }) => ({ id, label, severity })),
     [
       {
-        id: "inventory-policy-required",
-        label: "재고 기준 확인",
-        severity: "info",
+        id: "inventory-difference-exceeded",
+        label: "재고 이상",
+        severity: "critical",
       },
     ],
-  );
-  assert.ok(signals.every((signal) => signal.severity === "info"));
-  assert.ok(
-    signals.every(
-      (signal) =>
-        !/초과|급락|이상/.test(signal.label) &&
-        /OQ-|정책|기준/.test(signal.detail ?? ""),
-    ),
   );
 
   const [row] = applyDashboardPresentation(
@@ -653,8 +795,8 @@ test("HQ dashboard downgrades OQ-gated threshold anomalies until policy is confi
     ],
     { sortMode: "priority", filterMode: "needs-attention" },
   );
-  assert.equal(row.priority.label, "확인 필요");
-  assert.deepEqual(row.priority.reasons, ["재고 기준 확인"]);
+  assert.equal(row.priority.label, "심각 이상");
+  assert.deepEqual(row.priority.reasons, ["재고 이상"]);
 });
 
 test("HQ dashboard treats inactive anomaly thresholds as policy-required info state", async () => {
@@ -743,7 +885,7 @@ test("HQ dashboard summary stays based on all active stores when rows are filter
     makeDashboardRow({
       storeId: "normal",
       storeName: "정상점",
-      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+      ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
       isHeadquartersClosed: true,
     }),
     makeDashboardRow({
@@ -997,17 +1139,20 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     ledgerReviewTypesSource,
     /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
   );
+  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장 요약에 노출한다.
+  // 보완(2026-06-22 WO-01): 결제차액 제거, 근무인원 수 추가.
   assert.match(
     ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"paymentDifference"/s,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"grossMarginRate"\s*\|\s*"workerCount"\s*\|\s*"inventoryAmount"/s,
   );
   assert.match(
     ledgerReviewResponseSource,
     /const\s+storeManagerReviewMetricIds/,
   );
+  // 매출 차이는 계속 지점장에게 차단한다.
   assert.doesNotMatch(
     ledgerReviewResponseSource,
-    /storeManagerReviewMetricIds[\s\S]*grossMarginRate|storeManagerReviewMetricIds[\s\S]*inventoryAmount|storeManagerReviewMetricIds[\s\S]*salesDifference/s,
+    /storeManagerReviewMetricIds[\s\S]*salesDifference/s,
   );
   assert.match(
     ledgerReviewResponseSource,
@@ -1017,9 +1162,15 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     inventoryTypesSource,
     /StoreManagerInventoryAdjustmentView\s*=\s*Omit<[\s\S]*"beforeAmount"\s*\|\s*"afterAmount"\s*\|\s*"differenceAmount"/s,
   );
+  // 보완(2026-06-22): FIFO 재고금액(inventoryAmount)과 판매 lot 이력(fifoLots)은
+  // 지점장에게도 노출한다. 단가/매입액/손실액·조정 금액은 계속 차단한다.
   assert.match(
     inventoryTypesSource,
-    /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"inventoryAmount"/s,
+    /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"adjustment"/s,
+  );
+  assert.doesNotMatch(
+    inventoryTypesSource,
+    /StoreManagerInventoryStepLine\s*=\s*Omit<[^>]*"inventoryAmount"/s,
   );
 });
 
@@ -1030,9 +1181,14 @@ function makeDashboardRow(overrides = {}) {
     ledgerId: "ledger",
     closingDate: "2026-06-01T00:00:00.000Z",
     businessStatus: { key: "OPEN", label: "영업일" },
-    ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사마감" },
+    ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
     salesAmount: { value: 1000 },
     grossMarginRate: { value: 0.3 },
+    marginDisplay: {
+      currentLabel: "30.0%",
+      targetLabel: null,
+      shortfallAmountLabel: null,
+    },
     salesDifference: { value: 0 },
     hasLoss: false,
     lastModifiedBy: null,

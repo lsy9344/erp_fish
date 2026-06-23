@@ -7,6 +7,8 @@ import {
   reconcileLedgerInventoryAdjustments,
   syncLedgerInventoryPurchasedQuantitiesInTx,
 } from "~/features/inventory/adjustment-reconciliation";
+import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
+import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
 import {
   actionError,
   actionOk,
@@ -185,8 +187,9 @@ function toHqLedgerServerConflictValues(
 ): Record<string, ActionConflictValue> {
   switch (section) {
     case "sales":
+      // WO-B(2026-06-22): 작성자 표시명은 최초 작성자 보존 정책에 따라 본사 수정에서도
+      // 변경하지 않으므로 충돌 후보로 노출하지 않는다.
       return {
-        "작성자 표시명": data.authorDisplayName,
         총매출: data.totalSalesAmount,
         현금: data.cashAmount,
         카드: data.cardAmount,
@@ -228,8 +231,9 @@ function toHqLedgerClientConflictValues(
   switch (section) {
     case "sales": {
       const sales = input as LedgerSalesPaymentInput;
+      // WO-B(2026-06-22): 작성자 표시명은 최초 작성자 보존 정책에 따라 본사 수정에서도
+      // 변경하지 않으므로 충돌 후보로 노출하지 않는다.
       return {
-        "작성자 표시명": sales.authorDisplayName,
         총매출: sales.totalSalesAmount,
         현금: sales.cashAmount,
         카드: sales.cardAmount,
@@ -791,6 +795,9 @@ export async function saveHqLedgerPurchases(
           actor.user.id,
         );
 
+        // WO-02(2026-06-22): 본사 매입 수정 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(tx, beforeLedger.id);
+
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
           where: { id: ledgerId },
           select: ledgerSelect,
@@ -951,9 +958,19 @@ export async function saveHqLedgerLaborInfo(
         });
 
         if (parsed.data.labor.length > 0) {
+          // WO-05(2026-06-22): 선택된 employeeId가 실제 직원 마스터에 존재할 때만 연결한다.
+          const validEmployeeIds = await resolveValidEmployeeIdsInTx(
+            tx,
+            parsed.data.labor,
+          );
+
           await tx.ledgerLaborItem.createMany({
             data: parsed.data.labor.map((item) => ({
               dailyLedgerId: beforeLedger.id,
+              employeeId:
+                item.employeeId && validEmployeeIds.has(item.employeeId)
+                  ? item.employeeId
+                  : null,
               workerName: item.workerName,
               amount: item.amount,
               lateMemo: item.lateMemo,

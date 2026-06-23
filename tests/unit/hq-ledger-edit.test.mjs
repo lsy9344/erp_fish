@@ -465,6 +465,7 @@ test("HQ close action has idempotent close handling and same-tx audit path", () 
   );
 
   assert.match(source, /export\s+async\s+function\s+closeHqLedger/);
+  assert.match(source, /export\s+async\s+function\s+bulkCloseHqLedgers/);
   assert.match(
     source,
     /"ledger\.hq\.closed"/,
@@ -493,6 +494,38 @@ test("HQ close action has idempotent close handling and same-tx audit path", () 
     /revalidateHqLedgerPathsBestEffort/,
     "cache revalidation should not turn a committed close into a false failure",
   );
+});
+
+test("HQ bulk close supports simplified dashboard close without preflight", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-actions.ts",
+  );
+  const dashboardPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "dashboard",
+    "page.tsx",
+  );
+
+  assert.match(actionSource, /bulkCloseLedgerInputSchema/);
+  assert.match(actionSource, /simplified:\s*true/);
+  assert.match(actionSource, /ledgerIds:\s*z\s*\.\s*array/);
+  assert.match(
+    actionSource,
+    /status:\s*\{\s*in:\s*\[\.\.\.editableLedgerStatuses\]\s*\}/s,
+  );
+  assert.match(actionSource, /action:\s*"ledger\.hq\.bulk_closed"/);
+
+  const bulkCloseSource = actionSource.slice(
+    actionSource.indexOf("export async function bulkCloseHqLedgers"),
+  );
+  assert.doesNotMatch(bulkCloseSource, /buildHqLedgerClosePreflightInTx/);
+  assert.match(dashboardPageSource, /HqDashboardBulkClosePanel/);
+  assert.match(dashboardPageSource, /bulkCloseHqLedgers/);
 });
 
 test("HQ close preflight server contract is exported and permission-gated", () => {

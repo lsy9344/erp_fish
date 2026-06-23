@@ -2,6 +2,7 @@ import type { LossSignalThresholds } from "~/server/calculations/inventory";
 import {
   calculateExpenseTotal,
   calculateLedgerReviewSummary,
+  calculatePayrollTotal,
   type LedgerReviewMetric,
 } from "~/server/calculations/ledger";
 // OQ-gated calculation policy is centralized in ~/server/calculations/policy-gates.
@@ -24,6 +25,7 @@ import type {
   LedgerReviewStepData,
   LedgerReviewWarning,
   StoreManagerLedgerReviewStepData,
+  StoreManagerTopSoldItem,
 } from "./review-types";
 
 type LedgerReviewThresholds = {
@@ -39,6 +41,8 @@ const reviewLossSignalThresholds: LossSignalThresholds = {
 };
 
 const reviewInventoryItemSelect = {
+  productId: true,
+  productName: true,
   previousQuantity: true,
   purchasedQuantity: true,
   currentQuantity: true,
@@ -168,6 +172,38 @@ function moneyMetric(
   };
 }
 
+const marginRateFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+function ratioMetric(
+  id: string,
+  label: string,
+  metric: LedgerReviewMetric,
+): LedgerReviewStepMetric {
+  if (metric.status !== "ok" || metric.value === null) {
+    const detail = metricDetail(metric);
+
+    return {
+      id,
+      label,
+      value: metricStatusText(metric),
+      kind: "status",
+      status: metric.status,
+      ...(detail ? { detail } : {}),
+    };
+  }
+
+  return {
+    id,
+    label,
+    value: marginRateFormatter.format(metric.value),
+    kind: "text",
+    status: metric.status,
+  };
+}
+
 function textMetric(
   id: string,
   label: string,
@@ -255,6 +291,8 @@ export function buildLedgerReviewStepSummaries({
   inventoryCount,
   lossCount,
   workerCount,
+  laborCount,
+  payrollTotal,
 }: {
   storeId: string;
   closingDate: string;
@@ -265,6 +303,8 @@ export function buildLedgerReviewStepSummaries({
   inventoryCount: number;
   lossCount: number;
   workerCount: number | null;
+  laborCount: number;
+  payrollTotal: number;
 }): LedgerReviewStepSummary[] {
   const missingById = new Map(missingItems.map((item) => [item.id, item]));
 
@@ -289,6 +329,7 @@ export function buildLedgerReviewStepSummaries({
           summary.paymentDifference,
           "signed-krw",
         ),
+        ratioMetric("grossMarginRate", "마진율", summary.grossMarginRate),
       ],
     },
     {
@@ -328,6 +369,7 @@ export function buildLedgerReviewStepSummaries({
       href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
       metrics: [
         textMetric("inventoryCount", "재고 저장", `${inventoryCount}건`),
+        moneyMetric("inventoryAmount", "재고금액", summary.inventoryAmount),
         statusMetric("reviewStatus", "계산 상태", summary.inventoryAmount),
       ],
     },
@@ -366,9 +408,54 @@ export function buildLedgerReviewStepSummaries({
           "근무인원",
           workerCount === null ? "미입력" : `${workerCount}명`,
         ),
+        textMetric("laborCount", "급여 항목", `${laborCount}건`),
+        {
+          id: "payrollTotal",
+          label: "급여 합계",
+          value: payrollTotal,
+          kind: "krw",
+          status: "ok",
+        },
       ],
     },
   ];
+}
+
+// WO-04(2026-06-22): 지점장 "오늘 많이 팔린 품목" 카드 데이터.
+// 판매 수량은 재고 흐름(전일+매입-당일)으로만 추정하고, 추정 매출만 노출한다.
+// 단가/FIFO/차액 같은 민감값은 이 카드 데이터에 담지 않는다.
+function buildStoreManagerTopSoldItems(
+  items: Array<{
+    productId: string;
+    productName: string;
+    previousQuantity: number;
+    purchasedQuantity: number;
+    currentQuantity: number | null;
+    unitPrice: number;
+  }>,
+  limit = 5,
+): StoreManagerTopSoldItem[] {
+  const topItems: StoreManagerTopSoldItem[] = [];
+
+  for (const item of items) {
+    if (item.currentQuantity === null) continue;
+
+    const soldQuantity =
+      item.previousQuantity + item.purchasedQuantity - item.currentQuantity;
+
+    if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) continue;
+
+    topItems.push({
+      productId: item.productId,
+      productName: item.productName,
+      soldQuantity,
+      estimatedSalesAmount: soldQuantity * item.unitPrice,
+    });
+  }
+
+  return topItems
+    .sort((a, b) => b.estimatedSalesAmount - a.estimatedSalesAmount)
+    .slice(0, limit);
 }
 
 export async function getLedgerReviewStepData(
@@ -399,6 +486,9 @@ export async function getLedgerReviewStepData(
     });
     const expenseTotal = calculateExpenseTotal(
       ledger.ledgerExpenses.map((expense) => expense.amount),
+    );
+    const payrollTotal = calculatePayrollTotal(
+      ledger.ledgerLaborItems.map((item) => item.amount),
     );
     const summary = calculateLedgerReviewSummary({
       totalSalesAmount: ledger.totalSalesAmount,
@@ -467,7 +557,19 @@ export async function getLedgerReviewStepData(
         inventoryCount: savedInventoryItems.length,
         lossCount: losses.lossItems.length,
         workerCount: ledger.workerCount,
+        laborCount: ledger.ledgerLaborItems.length,
+        payrollTotal,
       }),
+      topSoldItems: buildStoreManagerTopSoldItems(
+        savedInventoryItems.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          previousQuantity: item.previousQuantity,
+          purchasedQuantity: item.purchasedQuantity,
+          currentQuantity: item.currentQuantity,
+          unitPrice: item.unitPrice,
+        })),
+      ),
     };
   });
 }
