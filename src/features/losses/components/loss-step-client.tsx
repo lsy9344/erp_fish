@@ -636,8 +636,8 @@ export function LossStepClient({
                       {item.usedPlannedPrice === false ? (
                         <span className="mt-1 block text-amber-600 dark:text-amber-500">
                           이 품목은 개점 전 판매가 계획이 없어 손실액이 산정되지
-                          않았습니다(미산정). 희망 판매가 기준 손실액을 반영하려면
-                          판매가 계획을 먼저 입력하세요.
+                          않았습니다(미산정). 희망 판매가 기준 손실액을
+                          반영하려면 판매가 계획을 먼저 입력하세요.
                         </span>
                       ) : null}
                     </div>

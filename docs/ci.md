@@ -5,15 +5,15 @@
 The workflow lives at `.github/workflows/ci.yml`.
 
 - Pull requests run `Quality Gate`, `API Tests`, and `Playwright Smoke`.
-- Pushes to feature branches, `develop`, `staging`, `main`, and `master` run the
-  same fast checks.
+- Pushes to feature branches and `develop` run the same fast checks.
 - Pull request updates and pushes from the same branch cancel older in-progress runs.
 - `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.
-- The broader core E2E bundle stays in `pnpm test:e2e:core` for local release
-  checks.
-- Pushes do not run the full Playwright suite automatically. This keeps deploy
-  test pushes fast, including pushes to `main`.
+- Pushes to `staging` run `Quality Gate`, `API Tests`, and the broader core E2E
+  bundle split into three parallel groups: `ledger`, `hq`, and `admin`.
+- Pushes to `main` or `master` run `Quality Gate`, `API Tests`, and the full
+  Playwright suite in 4 shards. The smoke job is skipped on those pushes because
+  the full suite covers it.
 - The nightly schedule runs the full Playwright suite in 4 shards at 19:00 UTC
   (04:00 KST). The full Playwright shards run only `tests/e2e`; API tests stay
   in `API Tests`.
@@ -77,7 +77,9 @@ Current Vercel branch setup:
 - Staging-specific Preview env: `AUTH_SECRET`, `AUTH_TRUST_HOST`.
 
 Pushes to `staging` create/update that Vercel Preview URL. Use it for quick
-deployment checks before merging or promoting production changes.
+deployment checks before merging or promoting production changes. GitHub Actions
+also runs the core E2E `ledger`, `hq`, and `admin` groups on `staging` so
+multiple feature branches are tested together before promotion.
 
 ## Database Used In CI
 
@@ -112,8 +114,10 @@ Artifacts are kept for 14 days.
 - Small code change: unit file, typecheck.
 - Server logic change: related unit tests, full unit tests, typecheck.
 - UI/navigation/auth change: one targeted Playwright test.
-- Before merge: PR CI.
-- Before release or after broad UI changes: manual full e2e.
+- Before merging a feature branch: PR CI.
+- Before promoting to production: merge to `staging` and wait for core E2E.
+- After `main` or `master` push: full Playwright runs automatically.
+- After broad risky UI changes: manual full e2e can still be run before merge.
 - Suspected flaky test: manual burn-in.
 
 ## Troubleshooting
@@ -123,7 +127,8 @@ Artifacts are kept for 14 days.
 - If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
   matching local command: `pnpm test:e2e:smoke:ledger`,
   `pnpm test:e2e:smoke:hq`, or `pnpm test:e2e:smoke:admin`.
-- If smoke passes but a release path needs broader coverage, run
-  `pnpm test:e2e:core` or the matching core group locally.
+- If staging core E2E fails, run the matching local group:
+  `pnpm test:e2e:core:ledger`, `pnpm test:e2e:core:hq`, or
+  `pnpm test:e2e:core:admin`.
 - If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
 - If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.

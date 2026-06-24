@@ -314,6 +314,42 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   await expect(productRow).toHaveAttribute("aria-label", /조정됨/);
 });
 
+test("전체 탭이 기본으로 냉동·생물 품목을 모두 보여주고 분류 탭은 해당 분류만 거른다", async ({
+  page,
+}) => {
+  await login(page);
+  const frozenProduct = await seedProduct("스토리2-5 전체 냉동 광어", "냉동");
+  const liveProduct = await seedProduct("스토리2-5 전체 생물 우럭", "생물");
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
+
+  // "전체" 탭이 맨 왼쪽에 있고 기본 선택 상태여야 한다.
+  const allTab = page.getByRole("tab", { name: "전체" });
+  await expect(allTab).toBeVisible();
+  await expect(allTab).toHaveAttribute("aria-selected", "true");
+
+  // 기본(전체)에서는 냉동·생물 품목이 동시에 보인다.
+  await expect(page.getByText(frozenProduct.name)).toBeVisible();
+  await expect(page.getByText(liveProduct.name)).toBeVisible();
+
+  // 냉동 탭은 냉동 품목만 거른다.
+  await page.getByRole("tab", { name: "냉동" }).click();
+  await expect(page.getByText(frozenProduct.name)).toBeVisible();
+  await expect(page.getByText(liveProduct.name)).not.toBeVisible();
+
+  // 생물 탭은 생물 품목만 거른다.
+  await page.getByRole("tab", { name: "생물" }).click();
+  await expect(page.getByText(liveProduct.name)).toBeVisible();
+  await expect(page.getByText(frozenProduct.name)).not.toBeVisible();
+
+  // 다시 전체 탭으로 돌아오면 둘 다 보인다.
+  await allTab.click();
+  await expect(page.getByText(frozenProduct.name)).toBeVisible();
+  await expect(page.getByText(liveProduct.name)).toBeVisible();
+});
+
 test("직전 본사 마감 장부의 당일재고를 이후 영업일 전일재고로 불러온다", async ({
   page,
 }) => {

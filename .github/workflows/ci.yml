@@ -175,7 +175,9 @@ jobs:
     timeout-minutes: 25
     if: >-
       github.event_name != 'schedule' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e)
+      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/staging') &&
+      !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
@@ -230,6 +232,67 @@ jobs:
             playwright-report/
           retention-days: 14
 
+  playwright-core:
+    name: Playwright Core ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+    timeout-minutes: 35
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [ledger, hq, admin]
+    env:
+      DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+      PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run core e2e group
+        run: pnpm test:e2e:core:${{ matrix.group }}
+
+      - name: Upload Playwright artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-core-${{ matrix.group }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
   playwright-full:
     name: Playwright Full ${{ matrix.shard }}
     runs-on: ubuntu-latest
@@ -238,7 +301,8 @@ jobs:
     timeout-minutes: 30
     if: >-
       github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && inputs.run_full_e2e)
+      (github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     strategy:
       fail-fast: false
       matrix:
@@ -367,6 +431,7 @@ jobs:
       - quality
       - api-tests
       - playwright-smoke
+      - playwright-core
       - playwright-full
       - playwright-burn-in
     if: always()
@@ -381,6 +446,7 @@ jobs:
       QUALITY_RESULT: ${{ needs.quality.result }}
       API_TESTS_RESULT: ${{ needs.api-tests.result }}
       PLAYWRIGHT_SMOKE_RESULT: ${{ needs.playwright-smoke.result }}
+      PLAYWRIGHT_CORE_RESULT: ${{ needs.playwright-core.result }}
       PLAYWRIGHT_FULL_RESULT: ${{ needs.playwright-full.result }}
       PLAYWRIGHT_BURN_IN_RESULT: ${{ needs.playwright-burn-in.result }}
     steps:
@@ -392,7 +458,7 @@ jobs:
           fi
 
           overall="success"
-          for result in "$QUALITY_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
+          for result in "$QUALITY_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_CORE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               overall="failure"
             fi
@@ -430,6 +496,7 @@ jobs:
               "Quality Gate": os.environ["QUALITY_RESULT"],
               "API Tests": os.environ["API_TESTS_RESULT"],
               "Playwright Smoke": os.environ["PLAYWRIGHT_SMOKE_RESULT"],
+              "Playwright Core": os.environ["PLAYWRIGHT_CORE_RESULT"],
               "Playwright Full": os.environ["PLAYWRIGHT_FULL_RESULT"],
               "Playwright Smoke Burn-In": os.environ["PLAYWRIGHT_BURN_IN_RESULT"],
           }

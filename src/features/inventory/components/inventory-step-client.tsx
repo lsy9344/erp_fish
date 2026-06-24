@@ -83,6 +83,12 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
 };
 
 const categories = ["냉동", "생물"] as const;
+// 탭은 "전체"를 맨 왼쪽에 두고 기본값으로 사용한다. "전체"는 실제 품목 분류가
+// 아니라 모든 분류를 한 번에 보여주는 보기 전용 탭이다. 데이터 정규화에는 여전히
+// 실제 분류(categories)만 쓴다.
+const viewTabs = ["전체", ...categories] as const;
+type ViewTab = (typeof viewTabs)[number];
+const DEFAULT_VIEW_TAB: ViewTab = "전체";
 const MAX_INVENTORY_INTEGER = 2_147_483_647;
 const ROW_PAGING_THRESHOLD = 30;
 const ROW_PAGE_SIZE = 50;
@@ -174,6 +180,12 @@ function normalizeCategory(value: string): (typeof categories)[number] {
   return value === "생물" ? "생물" : "냉동";
 }
 
+function normalizeViewTab(value: string): ViewTab {
+  return (viewTabs as readonly string[]).includes(value)
+    ? (value as ViewTab)
+    : DEFAULT_VIEW_TAB;
+}
+
 function areInventoryLinesEqual(
   left: InventoryLineState[],
   right: InventoryLineState[],
@@ -201,13 +213,14 @@ export function InventoryStepClient({
   const [items, setItems] = useState(() => toLineState(initialData));
   const [hqEditReason, setHqEditReason] = useState("");
   const [activeCategory, setActiveCategory] =
-    useState<(typeof categories)[number]>("냉동");
-  const [pageByCategory, setPageByCategory] = useState<
-    Record<(typeof categories)[number], number>
-  >({
-    냉동: 1,
-    생물: 1,
-  });
+    useState<ViewTab>(DEFAULT_VIEW_TAB);
+  const [pageByCategory, setPageByCategory] = useState<Record<ViewTab, number>>(
+    {
+      전체: 1,
+      냉동: 1,
+      생물: 1,
+    },
+  );
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
   const [selectedFifoLotItem, setSelectedFifoLotItem] =
@@ -261,11 +274,16 @@ export function InventoryStepClient({
     previousInitialDataRef.current = initialData;
   }, [initialData]);
 
-  function getCategoryItems(category: string) {
+  function getCategoryItems(category: ViewTab) {
+    // "전체" 탭은 분류와 무관하게 모든 품목을 보여준다.
+    if (category === "전체") {
+      return items;
+    }
+
     return items.filter((item) => item.productCategory === category);
   }
 
-  function getCategoryPage(category: (typeof categories)[number]) {
+  function getCategoryPage(category: ViewTab) {
     const visibleItems = getCategoryItems(category);
     const pageCount = Math.max(
       1,
@@ -275,11 +293,28 @@ export function InventoryStepClient({
     return Math.min(pageByCategory[category] ?? 1, pageCount);
   }
 
-  function setCategoryPage(
-    category: (typeof categories)[number],
-    page: number,
-  ) {
+  function setCategoryPage(category: ViewTab, page: number) {
     setPageByCategory((current) => ({ ...current, [category]: page }));
+  }
+
+  // 오류/조정 항목으로 이동할 탭을 고른다. 현재 탭이 그 품목을 이미 보여주고
+  // 있으면(=현재 탭이 "전체"거나 품목 분류와 일치) 탭을 바꾸지 않고, 아니면
+  // 품목의 실제 분류 탭으로 전환한다. "전체" 보기에서 불필요하게 이탈하지 않도록.
+  function resolveItemViewTab(item: InventoryLineState): ViewTab {
+    if (activeCategory === "전체") {
+      return "전체";
+    }
+
+    return normalizeCategory(item.productCategory);
+  }
+
+  function focusItemRow(item: InventoryLineState) {
+    const tab = resolveItemViewTab(item);
+    const tabIndex = getCategoryItems(tab).findIndex(
+      (candidate) => candidate.productId === item.productId,
+    );
+    setActiveCategory(tab);
+    setCategoryPage(tab, Math.floor(Math.max(0, tabIndex) / ROW_PAGE_SIZE) + 1);
   }
 
   function focusFirstError(errors: FieldErrors) {
@@ -287,32 +322,11 @@ export function InventoryStepClient({
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index]!;
 
-        if (errors[`items.${index}.currentQuantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
-          window.setTimeout(() => {
-            currentQuantityRefs.current[item.productId]?.focus();
-          }, 0);
-          return;
-        }
-
-        if (errors[`items.${index}.quantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
+        if (
+          errors[`items.${index}.currentQuantity`]?.length ||
+          errors[`items.${index}.quantity`]?.length
+        ) {
+          focusItemRow(item);
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -356,7 +370,7 @@ export function InventoryStepClient({
 
     setAdjustmentErrors(nextErrors);
     setFormError(missingAdjustmentReasonMessage);
-    setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
+    focusItemRow(firstInvalidItem);
     window.setTimeout(() => {
       reasonRefs.current[firstInvalidItem.productId]?.focus();
     }, 0);
@@ -603,7 +617,7 @@ export function InventoryStepClient({
             }));
           }
 
-          setActiveCategory(normalizeCategory(item.productCategory));
+          focusItemRow(item);
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -1286,10 +1300,9 @@ export function InventoryStepClient({
     );
   }
 
-  function renderRows(category: string) {
+  function renderRows(category: ViewTab) {
     const visibleItems = getCategoryItems(category);
-    const normalizedCategory = normalizeCategory(category);
-    const page = getCategoryPage(normalizedCategory);
+    const page = getCategoryPage(category);
     const pagedItems =
       visibleItems.length > ROW_PAGING_THRESHOLD
         ? visibleItems.slice((page - 1) * ROW_PAGE_SIZE, page * ROW_PAGE_SIZE)
@@ -1565,7 +1578,7 @@ export function InventoryStepClient({
     });
   }
 
-  function renderPagingControls(category: (typeof categories)[number]) {
+  function renderPagingControls(category: ViewTab) {
     const visibleItems = getCategoryItems(category);
 
     if (visibleItems.length <= ROW_PAGING_THRESHOLD) {
@@ -1711,27 +1724,23 @@ export function InventoryStepClient({
           <Tabs
             value={activeCategory}
             onValueChange={(value) =>
-              setActiveCategory(normalizeCategory(value))
+              setActiveCategory(normalizeViewTab(value))
             }
           >
             <TabsList
               variant="line"
               className="min-h-11 w-full justify-start border-b bg-transparent"
             >
-              {categories.map((category) => (
-                <TabsTrigger
-                  key={category}
-                  value={category}
-                  className="min-h-9 px-4"
-                >
-                  {category}
+              {viewTabs.map((tab) => (
+                <TabsTrigger key={tab} value={tab} className="min-h-9 px-4">
+                  {tab}
                 </TabsTrigger>
               ))}
             </TabsList>
 
-            {categories.map((category) => (
-              <TabsContent key={category} value={category}>
-                {renderPagingControls(category)}
+            {viewTabs.map((tab) => (
+              <TabsContent key={tab} value={tab}>
+                {renderPagingControls(tab)}
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
                   <Table aria-label="재고 품목" className="min-w-[940px]">
                     <TableHeader className="sticky top-0 z-10">
@@ -1800,7 +1809,7 @@ export function InventoryStepClient({
                         </TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>{renderRows(category)}</TableBody>
+                    <TableBody>{renderRows(tab)}</TableBody>
                   </Table>
                 </div>
               </TabsContent>
