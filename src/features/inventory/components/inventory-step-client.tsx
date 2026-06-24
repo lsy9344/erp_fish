@@ -375,7 +375,7 @@ export function InventoryStepClient({
     }
 
     if (isAdjustmentSavePending) {
-      const message = "재고 조정 저장이 끝난 뒤 다시 저장해 주세요.";
+      const message = "재고를 고친 이유 저장이 끝난 뒤 다시 저장해 주세요.";
       setResultMessage(null);
       setFormError(message);
       toast.error(message);
@@ -621,8 +621,8 @@ export function InventoryStepClient({
       );
       setFieldErrors({});
       setAdjustmentErrors({});
-      setResultMessage("조정이 저장됐습니다.");
-      toast.success("재고 조정을 저장했습니다.");
+      setResultMessage("고친 내용이 저장됐습니다.");
+      toast.success("재고를 고친 이유를 저장했습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
@@ -753,10 +753,10 @@ export function InventoryStepClient({
     }
 
     if (value < 0) {
-      return `${formatSignedQuantity(value)}개`;
+      return formatSignedQuantity(value);
     }
 
-    return `${formatQuantity(value)}개`;
+    return formatQuantity(value);
   }
 
   function formatDate(value: string | null) {
@@ -1323,15 +1323,15 @@ export function InventoryStepClient({
       const isSavingThisAdjustment =
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
-      const adjustmentActionLabel = adjusted ? "수정" : "조정";
-      const adjustmentButtonLabel = `${item.productName} 조정 기록`;
+      const adjustmentActionLabel = adjusted ? "수정" : "저장";
+      const adjustmentButtonLabel = `${item.productName} 고친 이유 저장`;
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
 
       return (
         <TableRow
           key={item.productId}
-          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 조정됨" : ""}`}
+          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 고침 완료" : ""}`}
           className={
             modified || adjusted
               ? "border-primary bg-primary/5 border-l-4"
@@ -1352,18 +1352,18 @@ export function InventoryStepClient({
                 ) : null}
                 {adjustmentNeeded
                   ? renderBadgeWithTooltip({
-                      label: "조정 필요",
-                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 조정 사유를 남겨 주세요.`,
+                      label: "고칠 내용 있음",
+                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 바꾼 이유를 남겨 주세요.`,
                       className:
                         "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
                     })
                   : null}
                 {adjusted
                   ? renderBadgeWithTooltip({
-                      label: "조정됨",
+                      label: "고침 완료",
                       detail: item.adjustment
-                        ? `조정 사유가 저장됐습니다. 조정 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
-                        : "조정 사유가 저장됐습니다.",
+                        ? `바꾼 이유가 저장됐습니다. 바뀐 수량 ${formatSignedQuantity(item.adjustment.differenceQuantity)}.`
+                        : "바꾼 이유가 저장됐습니다.",
                       className:
                         "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
                     })
@@ -1475,7 +1475,7 @@ export function InventoryStepClient({
                 {adjusted && item.adjustment ? (
                   <div className="text-muted-foreground grid gap-0.5 text-xs">
                     <p>
-                      조정 전{" "}
+                      고치기 전{" "}
                       <span className="tabular-nums">
                         {item.adjustment.beforeQuantity}
                         {hasSensitiveAdjustmentAmounts(item.adjustment)
@@ -1484,7 +1484,7 @@ export function InventoryStepClient({
                       </span>
                     </p>
                     <p>
-                      조정 후{" "}
+                      고친 후{" "}
                       <span className="tabular-nums">
                         {item.adjustment.afterQuantity}
                         {hasSensitiveAdjustmentAmounts(item.adjustment)
@@ -1493,7 +1493,7 @@ export function InventoryStepClient({
                       </span>
                     </p>
                     <p>
-                      조정 차이{" "}
+                      바뀐 수량{" "}
                       <span className="tabular-nums">
                         {formatSignedQuantity(
                           item.adjustment.differenceQuantity,
@@ -1659,7 +1659,7 @@ export function InventoryStepClient({
           isSaving={isSaving || isAdjustmentSavePending}
           errorMessage={formError}
           successMessage={resultMessage}
-          unsavedFields={["현재 재고", "재고 조정 사유"]}
+          unsavedFields={["현재 재고", "바꾼 이유"]}
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
         />

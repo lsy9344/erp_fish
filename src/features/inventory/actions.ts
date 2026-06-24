@@ -25,7 +25,10 @@ import {
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
-import { getInventorySaveAdjustmentErrors } from "./adjustment-save-guard";
+import {
+  getInventorySaveAdjustmentErrors,
+  missingAdjustmentReasonMessage,
+} from "./adjustment-save-guard";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -269,7 +272,7 @@ export async function saveLedgerInventoryItems(
       if (Object.keys(adjustmentErrors).length > 0) {
         return actionError<StoreManagerInventoryStepData>(
           "VALIDATION_ERROR",
-          "재고 차이 조정 사유를 먼저 저장해 주세요.",
+          missingAdjustmentReasonMessage,
           adjustmentErrors,
         );
       }

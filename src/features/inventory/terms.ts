@@ -13,12 +13,12 @@ export const inventoryTerms = {
   currentStock: "당일재고",
   dailySalesQuantity: "당일 판매량",
   inventoryAmount: "재고금액",
-  statusAndAdjustment: "상태/조정",
+  statusAndAdjustment: "확인/고치기",
 
-  // 조정 사유 관련
-  adjustmentReason: "조정 사유",
-  adjustmentReasonPlaceholder: "조정 사유",
-  adjustmentReasonRequired: "조정 사유를 입력해 주세요.",
+  // 재고 수량을 바꾼 이유 관련
+  adjustmentReason: "바꾼 이유",
+  adjustmentReasonPlaceholder: "바꾼 이유",
+  adjustmentReasonRequired: "바꾼 이유를 입력해 주세요.",
 
   // 도움말/안내 문구
   dailySalesQuantityHelp:

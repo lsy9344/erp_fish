@@ -361,7 +361,7 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
       reason,
     });
     assert.equal(invalid.success, false);
-    assert.equal(invalid.error.issues[0].message, "조정 사유를 입력해 주세요.");
+    assert.equal(invalid.error.issues[0].message, "바꾼 이유를 입력해 주세요.");
   }
 
   for (const actualQuantity of [-1, 1.5, "1,000", ""]) {
@@ -720,14 +720,14 @@ test("inventory normal save requires matching adjustment record for changed actu
   ];
 
   assert.deepEqual(getInventorySaveAdjustmentErrors(items, []), {
-    "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+    "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
   });
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
       { productId: "product-1", afterQuantity: 8 },
     ]),
     {
-      "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+      "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
     },
   );
   assert.deepEqual(
@@ -1038,11 +1038,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /aria-label=.*수정됨/s);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /saveLedgerInventoryAdjustment/);
-  assert.match(componentSource, /조정 필요/);
-  assert.match(componentSource, /조정됨/);
-  assert.match(componentSource, /조정 사유/);
-  assert.match(componentSource, /조정 전/);
-  assert.match(componentSource, /조정 후/);
+  assert.match(componentSource, /고칠 내용 있음/);
+  assert.match(componentSource, /고침 완료/);
+  assert.match(componentSource, /바꾼 이유/);
+  assert.match(componentSource, /고치기 전/);
+  assert.match(componentSource, /고친 후/);
   assert.match(inventoryUiSource, /당일 판매량/);
   assert.match(
     componentSource,
@@ -1051,20 +1051,25 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /조정 차이/,
+    /바뀐 수량/,
     "강제 실사 보정의 signed 차이는 당일 판매량과 별도 라벨로 보여야 한다",
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /format(?:Signed)?Quantity\([^)]*\)}개/,
+    "수량 formatter가 이미 '개'를 붙이므로 화면에서 '개'를 다시 붙이면 안 된다",
   );
   assert.match(inventoryUiSource, /실제 POS 판매 수량과 다를 수 있습니다/);
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
-  assert.match(inventoryUiSource, /상태\/조정/);
+  assert.match(inventoryUiSource, /확인\/고치기/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
   assert.match(componentSource, /isLedgerReadOnly/);
   assert.match(componentSource, /휴무 장부/);
   assert.match(
     componentSource,
-    /재고 조정 저장이 끝난 뒤 다시 저장해 주세요\./,
+    /재고를 고친 이유 저장이 끝난 뒤 다시 저장해 주세요\./,
   );
   assert.match(componentSource, /reasonRefs/);
   assert.match(componentSource, /setAdjustmentErrors\({}\)/);
@@ -1086,7 +1091,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /const adjustmentActionLabel = adjusted \? "수정" : "조정"/,
+    /const adjustmentActionLabel = adjusted \? "수정" : "저장"/,
   );
   assert.match(
     componentSource,

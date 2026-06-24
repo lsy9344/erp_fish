@@ -1,7 +1,7 @@
 import { calculateSystemInventoryQuantity } from "../../server/calculations/inventory.ts";
 
 export const missingAdjustmentReasonMessage =
-  "재고 차이 조정 사유를 먼저 저장해 주세요.";
+  "재고 차이를 고친 이유를 먼저 저장해 주세요.";
 
 export type InventorySaveAdjustmentGuardItem = {
   productId: string;
