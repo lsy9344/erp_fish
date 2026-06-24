@@ -1055,6 +1055,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
     /return systemQuantity - actualQuantity;/,
     "당일 판매량은 기준재고에서 당일재고를 뺀 판매 흐름으로 표시해야 한다",
   );
+  assert.doesNotMatch(
+    componentSource,
+    /return `\$\{formatQuantity\(value\)\}개`;/,
+    "당일 판매량 수량 단위는 한 번만 표시해야 한다",
+  );
   assert.match(
     componentSource,
     /조정 차이/,

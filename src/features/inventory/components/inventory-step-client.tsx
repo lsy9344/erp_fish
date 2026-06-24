@@ -770,7 +770,7 @@ export function InventoryStepClient({
       return `${formatSignedQuantity(value)}개`;
     }
 
-    return `${formatQuantity(value)}개`;
+    return formatQuantity(value);
   }
 
   function formatDate(value: string | null) {

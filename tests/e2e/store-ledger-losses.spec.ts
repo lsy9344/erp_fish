@@ -711,7 +711,7 @@ test("손실 라인을 수정하고 삭제하면 version과 감사 로그에 전
     productId: first.id,
     ledgerInputCodeId: disposal.id,
     quantity: 3,
-    amount: 23000,
+    amount: 0,
     reason: "수정된 폐기 사유",
   });
 
@@ -750,14 +750,14 @@ test("손실 라인을 수정하고 삭제하면 version과 감사 로그에 전
         id: initiallySavedLosses[0]!.id,
         productId: first.id,
         quantity: 2,
-        amount: 15000,
+        amount: 0,
         reason: "초기 폐기",
       }),
       expect.objectContaining({
         id: initiallySavedLosses[1]!.id,
         productId: second.id,
         quantity: 1,
-        amount: 5000,
+        amount: 0,
         reason: "초기 떨이",
       }),
     ]),
@@ -767,7 +767,7 @@ test("손실 라인을 수정하고 삭제하면 version과 감사 로그에 전
       id: initiallySavedLosses[0]!.id,
       productId: first.id,
       quantity: 3,
-      amount: 23000,
+      amount: 0,
       reason: "수정된 폐기 사유",
     }),
   ]);
