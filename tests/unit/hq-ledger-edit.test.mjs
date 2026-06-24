@@ -655,6 +655,36 @@ test("HQ close preflight reuses review, calculation, correction, and carryover c
   assert.match(source, /getDashboardSignals/);
 });
 
+test("HQ close preflight wires planned sales inputs into ledger calculations", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
+
+  assert.match(source, /storeSalesPricePlan\.findMany/);
+  assert.match(source, /plannedUnitPriceByProductId/);
+  assert.match(source, /plannedSalesItems:/);
+  assert.match(source, /plannedUnitPrice:\s*getPlannedUnitPrice/);
+});
+
+test("HQ close preflight keeps planned-sales calculation gaps as warnings", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
+
+  assert.match(source, /isPlannedSalesMetric/);
+  assert.match(source, /metricId\.startsWith\("planned"\)/);
+  assert.match(
+    source,
+    /metric\.status === "data-insufficient"[\s\S]*!isPlannedSalesMetric\(metricId\)[\s\S]*"exception-allowed"/,
+  );
+});
+
 test("HQ close preflight required-input checks use correction-applied required values", () => {
   const source = readProjectFile(
     "src",

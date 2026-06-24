@@ -13,6 +13,7 @@ import {
   calculateLedgerReviewSummary,
   calculatePaymentTotal,
   type LedgerReviewInventoryInput,
+  type LedgerReviewMetric,
 } from "~/server/calculations/ledger";
 import {
   evaluateInventoryLossAnomalySignals,
@@ -155,6 +156,7 @@ export const hqLedgerClosePreflightLedgerSelect = {
 type HqLedgerClosePreflightLedger = Prisma.DailyLedgerGetPayload<{
   select: typeof hqLedgerClosePreflightLedgerSelect;
 }>;
+type PlannedUnitPriceByProductId = Map<string, number>;
 
 const severityLabels: Record<HqLedgerClosePreflightSeverity, string> = {
   blocking: "차단",
@@ -194,11 +196,16 @@ export async function buildHqLedgerClosePreflightInTx(
     return null;
   }
 
+  const plannedUnitPriceByProductId = await getPlannedUnitPriceByProductId(
+    tx,
+    ledger,
+  );
   const items = buildHqLedgerClosePreflightItems(
     ledger,
     actor,
     normalizeAnomalyThresholdSignalSettings(thresholdSettings),
     correctionRecords,
+    plannedUnitPriceByProductId,
   );
   const summary = summarizePreflightItems(items);
 
@@ -223,6 +230,7 @@ function buildHqLedgerClosePreflightItems(
     typeof getDashboardSignals
   >[0]["thresholdSettings"],
   correctionRecords: CorrectionRecordListItem[],
+  plannedUnitPriceByProductId: PlannedUnitPriceByProductId,
 ) {
   const items: HqLedgerClosePreflightItem[] = [
     ...buildAuthorizationItems(actor),
@@ -245,10 +253,22 @@ function buildHqLedgerClosePreflightItems(
     lossItems: ledger.ledgerLossItems,
     corrections: getLatestCorrectionValueMap(correctionRecords).values(),
   });
+  const getPlannedUnitPrice = (productId: string | undefined) =>
+    productId ? (plannedUnitPriceByProductId.get(productId) ?? null) : null;
   const reviewSummary = calculateLedgerReviewSummary({
     ...correctionOverlay.reviewInput,
     inventoryAdjustments: ledger.ledgerInventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
+    plannedSalesItems: correctionOverlay.reviewInput.inventoryItems.map(
+      (item) => ({
+        productId: item.productId,
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity: item.purchasedQuantity,
+        currentQuantity: item.currentQuantity,
+        quantity: item.quantity,
+        plannedUnitPrice: getPlannedUnitPrice(item.productId),
+      }),
+    ),
   });
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.storeId,
@@ -404,6 +424,35 @@ function buildStatusItems(ledger: HqLedgerClosePreflightLedger) {
   ];
 }
 
+async function getPlannedUnitPriceByProductId(
+  tx: Prisma.TransactionClient,
+  ledger: HqLedgerClosePreflightLedger,
+): Promise<PlannedUnitPriceByProductId> {
+  const productIds = [
+    ...new Set(ledger.ledgerInventoryItems.map((item) => item.productId)),
+  ];
+
+  if (productIds.length === 0) {
+    return new Map();
+  }
+
+  const salesPricePlans = await tx.storeSalesPricePlan.findMany({
+    where: {
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+      productId: { in: productIds },
+    },
+    select: {
+      productId: true,
+      plannedUnitPrice: true,
+    },
+  });
+
+  return new Map(
+    salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+  );
+}
+
 function buildCalculationItems(
   reviewSummary: ReturnType<typeof calculateLedgerReviewSummary>,
 ) {
@@ -412,12 +461,7 @@ function buildCalculationItems(
       return [];
     }
 
-    const severity =
-      metric.status === "calculation-unavailable"
-        ? "blocking"
-        : metric.status === "data-insufficient"
-          ? "exception-allowed"
-          : "warning";
+    const severity = getCalculationPreflightSeverity(metricId, metric);
 
     return [
       item({
@@ -438,6 +482,28 @@ function buildCalculationItems(
       }),
     ];
   });
+}
+
+function getCalculationPreflightSeverity(
+  metricId: string,
+  metric: LedgerReviewMetric,
+): HqLedgerClosePreflightSeverity {
+  if (metric.status === "calculation-unavailable") {
+    return "blocking";
+  }
+
+  if (
+    metric.status === "data-insufficient" &&
+    !isPlannedSalesMetric(metricId)
+  ) {
+    return "exception-allowed";
+  }
+
+  return "warning";
+}
+
+function isPlannedSalesMetric(metricId: string) {
+  return metricId.startsWith("planned");
 }
 
 function buildCorrectionItems(

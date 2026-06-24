@@ -545,7 +545,7 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
   await login(page, "hq@example.com");
   await page.goto("/app/dashboard?date=today");
 
-  const summary = page.getByLabel("관제판 요약");
+  const summary = page.getByLabel("관제판 요약", { exact: true });
   const tableContainer = page.getByTestId("dashboard-table-container");
 
   // 기본 밀도.
