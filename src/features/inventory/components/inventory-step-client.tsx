@@ -1805,7 +1805,23 @@ export function InventoryStepClient({
                           </Tooltip>
                         </TableHead>
                         <TableHead scope="col" className="w-56">
-                          {inventoryTerms.statusAndAdjustment}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                tabIndex={0}
+                                aria-label={`${inventoryTerms.statusAndAdjustment}: ${inventoryTerms.statusAndAdjustmentHelp}`}
+                                className="inline-flex cursor-help outline-none"
+                              >
+                                {inventoryTerms.statusAndAdjustment}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-64 leading-relaxed"
+                            >
+                              {inventoryTerms.statusAndAdjustmentHelp}
+                            </TooltipContent>
+                          </Tooltip>
                         </TableHead>
                       </TableRow>
                     </TableHeader>

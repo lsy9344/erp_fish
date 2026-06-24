@@ -1069,6 +1069,17 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
   assert.match(inventoryUiSource, /상태\/조정/);
+  assert.match(termsSource, /statusAndAdjustmentHelp:/);
+  assert.match(
+    componentSource,
+    /\$\{inventoryTerms\.statusAndAdjustment\}: \$\{inventoryTerms\.statusAndAdjustmentHelp\}/,
+    "status/adjustment table header should expose help text through an accessible tooltip label",
+  );
+  assert.match(
+    componentSource,
+    /<TooltipContent[\s\S]*\{inventoryTerms\.statusAndAdjustmentHelp\}[\s\S]*<\/TooltipContent>/,
+    "status/adjustment table header should show the same tooltip content pattern as neighboring headers",
+  );
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
   assert.match(componentSource, /isLedgerReadOnly/);
