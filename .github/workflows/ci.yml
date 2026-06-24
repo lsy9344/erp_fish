@@ -21,7 +21,7 @@ on:
         type: string
         default: ""
   schedule:
-    - cron: "0 19 * * 0"
+    - cron: "0 19 * * *"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -175,8 +175,7 @@ jobs:
     timeout-minutes: 25
     if: >-
       github.event_name != 'schedule' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) &&
-      !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e)
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
@@ -222,7 +221,7 @@ jobs:
         run: pnpm test:e2e:smoke:${{ matrix.group }}
 
       - name: Upload Playwright artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-${{ matrix.group }}-${{ github.run_attempt }}
@@ -238,8 +237,8 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 30
     if: >-
-      github.event_name == 'workflow_dispatch' && inputs.run_full_e2e ||
-      github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_full_e2e)
     strategy:
       fail-fast: false
       matrix:
@@ -285,6 +284,7 @@ jobs:
 
       - name: Run Playwright shard
         run: |
+          echo "Running Playwright shard ${{ matrix.shard }}/4"
           # Security: inputs passed through env: to prevent script injection
           if [ -n "$E2E_GREP" ]; then
             pnpm test:playwright -- tests/e2e --grep "$E2E_GREP" --shard=${{ matrix.shard }}/4 --reporter=line
@@ -293,7 +293,7 @@ jobs:
           fi
 
       - name: Upload Playwright artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-full-shard-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -308,7 +308,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && inputs.run_burn_in
+    if: github.event_name == 'workflow_dispatch' && inputs.run_burn_in
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
@@ -350,7 +350,7 @@ jobs:
         run: pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --repeat-each=10 --reporter=line
 
       - name: Upload Playwright artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-burn-in-${{ github.run_attempt }}
@@ -392,7 +392,7 @@ jobs:
           fi
 
           overall="success"
-          for result in "$QUALITY_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
+          for result in "$QUALITY_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               overall="failure"
             fi
