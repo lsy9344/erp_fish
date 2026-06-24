@@ -418,6 +418,27 @@ test("work step client preserves invalid worker count text for server validation
   assert.doesNotMatch(componentSource, /sanitizeAmount/);
 });
 
+test("work step client keeps form controls disabled until hydration", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "workstep-client.tsx",
+  );
+
+  assert.match(componentSource, /isHydrated/);
+  assert.match(componentSource, /setIsHydrated\(true\)/);
+  assert.match(
+    componentSource,
+    /retryDisabled=\{!isHydrated \|\| isSaving \|\| isOriginalEditBlocked\}/,
+  );
+  assert.match(
+    componentSource,
+    /disabled=\{!isHydrated \|\| isSaving \|\| isOriginalEditBlocked\}/,
+  );
+});
+
 test("ledger cost calculation helpers validate edge cases", async () => {
   const calcPath = assertProjectFile(
     "src",

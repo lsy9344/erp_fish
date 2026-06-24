@@ -398,11 +398,13 @@ test("지점장이 손실 유형 표시명(alias)을 바꾸면 처리 유형 선
     page.getByRole("heading", { name: "손실 유형 표시명" }),
   ).toBeVisible();
   const aliasInput = page.getByLabel(`${lossType.name} 표시명`);
+  await expect(aliasInput).toBeEnabled();
   await aliasInput.fill(aliasName);
-  await aliasInput
+  const saveAliasButton = aliasInput
     .locator("xpath=ancestor::li[1]")
-    .getByRole("button", { name: "저장" })
-    .click();
+    .getByRole("button", { name: "저장" });
+  await expect(saveAliasButton).toBeEnabled();
+  await saveAliasButton.click();
   await expect(page.getByText("표시명을 저장했습니다.")).toBeVisible();
 
   // 저장된 alias는 DB에 지점 범위로 남고, 본사 등록명은 그대로다.
@@ -428,11 +430,13 @@ test("지점장이 손실 유형 표시명(alias)을 바꾸면 처리 유형 선
 
   // 표시명을 비우고 저장하면 본사 등록명으로 되돌아간다(alias 삭제).
   const aliasInputAfter = page.getByLabel(`${aliasName} 표시명`);
+  await expect(aliasInputAfter).toBeEnabled();
   await aliasInputAfter.fill("");
-  await aliasInputAfter
+  const clearAliasButton = aliasInputAfter
     .locator("xpath=ancestor::li[1]")
-    .getByRole("button", { name: "저장" })
-    .click();
+    .getByRole("button", { name: "저장" });
+  await expect(clearAliasButton).toBeEnabled();
+  await clearAliasButton.click();
   await expect(page.getByText("표시명을 저장했습니다.")).toBeVisible();
 
   const clearedAlias = await prisma.ledgerInputCodeStoreAlias.findFirst({

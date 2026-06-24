@@ -146,6 +146,12 @@ test("store manager loss page renders the alias editor", () => {
   // 일반화 편집기가 alias 저장 action과 본사 등록명 fallback 안내를 담당한다.
   assert.match(editorSource, /setLedgerInputCodeStoreAlias/);
   assert.match(editorSource, /codeAliasTerms\.fallbackPlaceholder/);
+  assert.match(editorSource, /isHydrated/);
+  assert.match(editorSource, /setIsHydrated\(true\)/);
+  assert.match(
+    editorSource,
+    /disabled=\{!isHydrated \|\| pendingId === option\.id\}/,
+  );
   const aliasTermsSource = readProjectFile(
     "src",
     "features",

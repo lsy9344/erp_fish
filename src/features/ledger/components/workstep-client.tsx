@@ -154,6 +154,7 @@ export function WorkStepClient({
   const workMemoInputRef = useRef<HTMLTextAreaElement>(null);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const laborHqEditReasonInputRef = useRef<HTMLInputElement>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const [ledger, setLedger] = useState(initialLedger);
   const [workerCount, setWorkerCount] = useState(
@@ -195,6 +196,10 @@ export function WorkStepClient({
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
   });
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     const previousInitialLedger = previousInitialLedgerRef.current;
@@ -384,7 +389,7 @@ export function WorkStepClient({
   }
 
   function handleRetry() {
-    if (!formRef.current || isSaving) {
+    if (!isHydrated || !formRef.current || isSaving) {
       return;
     }
 
@@ -476,7 +481,7 @@ export function WorkStepClient({
         successMessage={resultMessage}
         unsavedFields={["근무인원", "특이사항 메모"]}
         onRetry={handleRetry}
-        retryDisabled={isSaving || isOriginalEditBlocked}
+        retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
@@ -494,7 +499,7 @@ export function WorkStepClient({
               inputMode="numeric"
               autoComplete="off"
               value={workerCount}
-              disabled={isSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
               onChange={(event) => setWorkerCount(event.currentTarget.value)}
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(workerCountError)}
@@ -516,7 +521,7 @@ export function WorkStepClient({
               id="work-memo"
               maxLength={500}
               value={workMemo}
-              disabled={isSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
               onChange={(event) => setWorkMemo(event.currentTarget.value)}
               rows={3}
               className="min-h-11 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-sm"
@@ -533,7 +538,7 @@ export function WorkStepClient({
               id="work-hq-edit-reason"
               value={hqEditReason}
               error={hqEditReasonError}
-              disabled={isSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
               inputRef={hqEditReasonInputRef}
               onChange={(value) => {
                 setHqEditReason(value);
@@ -589,7 +594,7 @@ export function WorkStepClient({
                 type="button"
                 variant="outline"
                 onClick={handleRetry}
-                disabled={isSaving || isOriginalEditBlocked}
+                disabled={!isHydrated || isSaving || isOriginalEditBlocked}
                 className="min-h-11 w-full"
               >
                 다시 시도
@@ -602,7 +607,7 @@ export function WorkStepClient({
               type="submit"
               variant={resultMessage ? "outline" : "default"}
               className="min-h-11 w-full sm:w-auto"
-              disabled={isSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
             >
               {isSaving ? "저장 중..." : "저장"}
             </Button>
@@ -622,7 +627,7 @@ export function WorkStepClient({
               type="button"
               variant="outline"
               onClick={addLaborLine}
-              disabled={isLaborSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isLaborSaving || isOriginalEditBlocked}
               className="min-h-11 gap-2"
             >
               <PlusIcon data-icon="inline-start" />
@@ -666,7 +671,9 @@ export function WorkStepClient({
                         type="button"
                         variant="outline"
                         onClick={() => removeLaborLine(line.id)}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         className="min-h-11 gap-2"
                       >
                         <Trash2Icon data-icon="inline-start" />
@@ -682,7 +689,11 @@ export function WorkStepClient({
                         <select
                           id={`labor-employee-${line.id}`}
                           value={line.employeeId}
-                          disabled={isLaborSaving || isOriginalEditBlocked}
+                          disabled={
+                            !isHydrated ||
+                            isLaborSaving ||
+                            isOriginalEditBlocked
+                          }
                           onChange={(event) => {
                             const employeeId = event.currentTarget.value;
                             const selected = employeeOptions.find(
@@ -724,7 +735,9 @@ export function WorkStepClient({
                         autoComplete="off"
                         maxLength={50}
                         value={line.workerName}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         onChange={(event) =>
                           updateLaborLine(line.id, {
                             workerName: event.currentTarget.value,
@@ -748,7 +761,9 @@ export function WorkStepClient({
                         inputMode="numeric"
                         autoComplete="off"
                         value={line.amount}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         onChange={(event) =>
                           updateLaborLine(line.id, {
                             amount: formatKrwInput(event.currentTarget.value),
@@ -782,7 +797,9 @@ export function WorkStepClient({
                         inputMode="text"
                         maxLength={500}
                         value={line.lateMemo}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         onChange={(event) =>
                           updateLaborLine(line.id, {
                             lateMemo: event.currentTarget.value,
@@ -805,7 +822,9 @@ export function WorkStepClient({
                         inputMode="text"
                         maxLength={500}
                         value={line.earlyLeaveMemo}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         onChange={(event) =>
                           updateLaborLine(line.id, {
                             earlyLeaveMemo: event.currentTarget.value,
@@ -828,7 +847,9 @@ export function WorkStepClient({
                         inputMode="text"
                         maxLength={500}
                         value={line.specialMemo}
-                        disabled={isLaborSaving || isOriginalEditBlocked}
+                        disabled={
+                          !isHydrated || isLaborSaving || isOriginalEditBlocked
+                        }
                         onChange={(event) =>
                           updateLaborLine(line.id, {
                             specialMemo: event.currentTarget.value,
@@ -873,7 +894,7 @@ export function WorkStepClient({
               id="labor-hq-edit-reason"
               value={laborHqEditReason}
               error={laborHqEditReasonError}
-              disabled={isLaborSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isLaborSaving || isOriginalEditBlocked}
               inputRef={laborHqEditReasonInputRef}
               onChange={(value) => {
                 setLaborHqEditReason(value);
@@ -906,7 +927,7 @@ export function WorkStepClient({
               type="submit"
               variant={laborResultMessage ? "outline" : "default"}
               className="min-h-11 w-full sm:w-auto"
-              disabled={isLaborSaving || isOriginalEditBlocked}
+              disabled={!isHydrated || isLaborSaving || isOriginalEditBlocked}
             >
               {isLaborSaving ? "저장 중..." : "급여 저장"}
             </Button>
@@ -914,6 +935,7 @@ export function WorkStepClient({
               <Button
                 type="button"
                 className="min-h-11 w-full sm:w-auto"
+                disabled={!isHydrated}
                 onClick={(event) =>
                   guard.requestNavigation(nextStepHref, event.currentTarget)
                 }

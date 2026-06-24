@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2Icon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,6 +37,11 @@ export function InputCodeAliasEditor({
     Object.fromEntries(options.map((option) => [option.id, option.name])),
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   if (options.length === 0) {
     return null;
@@ -46,6 +51,10 @@ export function InputCodeAliasEditor({
   const headingId = `input-code-alias-heading-${groupKey}`;
 
   async function handleSave(codeId: string) {
+    if (!isHydrated || pendingId === codeId) {
+      return;
+    }
+
     setPendingId(codeId);
 
     try {
@@ -101,6 +110,7 @@ export function InputCodeAliasEditor({
                 }));
               }}
               maxLength={80}
+              disabled={!isHydrated || pendingId === option.id}
               className="h-11 min-w-0 flex-1"
               placeholder={codeAliasTerms.fallbackPlaceholder}
             />
@@ -109,7 +119,7 @@ export function InputCodeAliasEditor({
               variant="outline"
               size="sm"
               className="min-h-9"
-              disabled={pendingId === option.id}
+              disabled={!isHydrated || pendingId === option.id}
               onClick={() => handleSave(option.id)}
             >
               <CheckCircle2Icon aria-hidden="true" />

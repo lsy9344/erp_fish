@@ -727,11 +727,18 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
   await expect(page.getByText("검토 대기").first()).toBeVisible();
-  await page.getByRole("textbox", { name: "근무인원" }).fill("5");
-  await page
-    .getByRole("textbox", { name: "특이사항 메모" })
-    .fill("제출 후 보완 수정");
-  await page.getByRole("button", { name: "저장", exact: true }).click();
+  const workerCountInput = page.getByRole("textbox", { name: "근무인원" });
+  const workMemoInput = page.getByRole("textbox", { name: "특이사항 메모" });
+  const workSaveButton = page.getByRole("button", {
+    name: "저장",
+    exact: true,
+  });
+  await expect(workerCountInput).toBeEnabled();
+  await expect(workMemoInput).toBeEnabled();
+  await workerCountInput.fill("5");
+  await workMemoInput.fill("제출 후 보완 수정");
+  await expect(workSaveButton).toBeEnabled();
+  await workSaveButton.click();
 
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
