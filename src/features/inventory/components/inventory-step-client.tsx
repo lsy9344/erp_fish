@@ -964,7 +964,8 @@ export function InventoryStepClient({
     );
   }
 
-  const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
+  const inventoryFlowDifferenceHelp =
+    inventoryTerms.inventoryFlowDifferenceHelp;
 
   function renderCarryoverDetailDialog() {
     if (!selectedCarryoverItem) {
@@ -1593,17 +1594,17 @@ export function InventoryStepClient({
                             <TooltipTrigger asChild>
                               <span
                                 tabIndex={0}
-                                aria-label={`${inventoryTerms.dailySalesQuantity}: ${dailySalesQuantityHelp}`}
+                                aria-label={`${inventoryTerms.inventoryFlowDifference}: ${inventoryFlowDifferenceHelp}`}
                                 className="inline-flex cursor-help outline-none"
                               >
-                                {inventoryTerms.dailySalesQuantity}
+                                {inventoryTerms.inventoryFlowDifference}
                               </span>
                             </TooltipTrigger>
                             <TooltipContent
                               side="top"
                               className="max-w-64 leading-relaxed"
                             >
-                              {dailySalesQuantityHelp}
+                              {inventoryFlowDifferenceHelp}
                             </TooltipContent>
                           </Tooltip>
                         </TableHead>

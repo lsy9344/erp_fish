@@ -11,7 +11,7 @@ export const inventoryTerms = {
   loss: "손실",
   baselineStock: "기준재고",
   currentStock: "당일재고",
-  dailySalesQuantity: "당일 판매량",
+  inventoryFlowDifference: "재고 흐름 차이",
   inventoryAmount: "재고금액",
   statusAndAdjustment: "상태/조정",
 
@@ -21,8 +21,8 @@ export const inventoryTerms = {
   adjustmentReasonRequired: "조정 사유를 입력해 주세요.",
 
   // 도움말/안내 문구
-  dailySalesQuantityHelp:
-    "기준재고에서 입력한 당일재고를 뺀 재고 흐름상 판매 수량입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
+  inventoryFlowDifferenceHelp:
+    "기준재고에서 입력한 당일재고를 뺀 수량입니다. 판매, 손실/폐기, 실사 오차 등이 섞일 수 있습니다. 실제 POS 판매 수량이 아닙니다.",
   statusAndAdjustmentHelp:
     "시스템이 계산한 재고와 입력한 재고(당일재고)가 다릅니다. 다른 사유를 입력하세요.",
   carryoverHistoryTitle: "전일재고 이력",
