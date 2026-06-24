@@ -14,10 +14,11 @@ function readProjectFile(...segments) {
 }
 
 function readWorkflowJob(workflow, jobName) {
+  const normalizedWorkflow = workflow.replace(/\r\n/g, "\n");
   const pattern = new RegExp(
     `\\n  ${jobName}:\\n[\\s\\S]*?(?=\\n  [a-zA-Z0-9_-]+:\\n|\\n$)`,
   );
-  const match = workflow.match(pattern);
+  const match = normalizedWorkflow.match(pattern);
 
   assert.ok(match, `${jobName} job should exist`);
 
