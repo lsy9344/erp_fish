@@ -5,8 +5,8 @@
 The workflow lives at `.github/workflows/ci.yml`.
 
 - Pull requests run `Quality Gate`, `API Tests`, and `Playwright Smoke`.
-- Pushes to feature, `develop`, `staging`, `main`, and `master` branches run
-  the same fast checks.
+- Pushes to feature branches, `develop`, `staging`, `main`, and `master` run the
+  same fast checks.
 - Pull request updates and pushes from the same branch cancel older in-progress runs.
 - `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.

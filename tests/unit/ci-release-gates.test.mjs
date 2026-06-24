@@ -46,12 +46,15 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   assert.doesNotMatch(qualityJob, /run:\s*pnpm test:api/);
   assert.match(
     smokeJob,
-    /github\.event_name != 'schedule' &&[\s\S]*refs\/heads\/main[\s\S]*refs\/heads\/master/,
+    /github\.event_name != 'schedule' &&[\s\S]*!\(github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e\)/,
   );
+  assert.doesNotMatch(smokeJob, /refs\/heads\/main/);
+  assert.doesNotMatch(smokeJob, /refs\/heads\/master/);
   assert.match(
-    smokeJob,
-    /!\(github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e\)/,
+    fullJob,
+    /github\.event_name == 'schedule' \|\|[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e/,
   );
+  assert.doesNotMatch(fullJob, /github\.event_name == 'push'/);
   assert.match(smokeJob, /group:\s*\[ledger, hq, admin\]/);
   assert.match(
     smokeJob,
@@ -162,7 +165,7 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.match(startDatabase, /deprecated/i);
   assert.match(startDatabase, /docker compose up -d/);
   assert.doesNotMatch(startDatabase, /docker\.io\/postgres/);
-  assert.match(ciDocs, /Pushes to feature branches run/);
+  assert.match(ciDocs, /Pushes to feature branches/);
   assert.match(ciDocs, /same branch cancel older in-progress runs/);
   assert.match(ciDocs, /three parallel groups/);
   assert.match(ciDocs, /full Playwright shards run only `tests\/e2e`/);
