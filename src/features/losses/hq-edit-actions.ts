@@ -43,7 +43,6 @@ type ActiveProduct = {
   name: string;
   category: string;
   spec: string;
-  defaultUnitPrice: number;
 };
 
 type ActiveLossType = {
@@ -65,6 +64,7 @@ type NormalizedLossItem = {
   quantity: number;
   recoveredAmount: number;
   amount: number;
+  usedPlannedPrice: boolean;
   reason: string;
 };
 
@@ -334,6 +334,7 @@ function normalizeLossItem({
       quantity: loss.quantity,
       recoveredAmount: loss.recoveredAmount,
       amount: existing.amount,
+      usedPlannedPrice: existing.usedPlannedPrice,
       reason: loss.reason,
     };
   }
@@ -349,11 +350,14 @@ function normalizeLossItem({
     productName: product.name,
     productCategory: product.category,
     productSpec: product.spec,
-    unitPrice: product.defaultUnitPrice,
+    // 가격 정책 전환(2026-06-24): 품목 마스터 단가를 손실 단가로 쓰지 않는다.
+    // 실제 단가/금액은 판매가 계획이 있을 때만 아래에서 채운다(없으면 0·미산정).
+    unitPrice: 0,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
     recoveredAmount: loss.recoveredAmount,
     amount: 0,
+    usedPlannedPrice: false,
     reason: loss.reason,
   };
 }
@@ -407,7 +411,6 @@ export async function saveHqLedgerLosses(
               name: true,
               category: true,
               spec: true,
-              defaultUnitPrice: true,
             },
           }),
           tx.ledgerInputCode.findMany({
@@ -471,16 +474,29 @@ export async function saveHqLedgerLosses(
             );
           }
 
-          const plannedUnitPrice =
-            plannedUnitPriceByProductId.get(normalized.productId) ??
-            normalized.unitPrice;
+          // 가격 정책 전환(2026-06-24): 판매가 계획이 있을 때만 손실액을 산정한다.
+          // 계획이 없으면 품목 마스터 단가로 폴백하지 않고 단가/금액을 미산정(0)으로 둔다.
+          const usedPlannedPrice = plannedUnitPriceByProductId.has(
+            normalized.productId,
+          );
 
-          normalized.unitPrice = plannedUnitPrice;
-          normalized.amount = calculatePlannedPriceLossAmount({
-            plannedUnitPrice,
-            quantity: normalized.quantity,
-            recoveredAmount: normalized.recoveredAmount,
-          });
+          if (usedPlannedPrice) {
+            const plannedUnitPrice = plannedUnitPriceByProductId.get(
+              normalized.productId,
+            )!;
+
+            normalized.unitPrice = plannedUnitPrice;
+            normalized.amount = calculatePlannedPriceLossAmount({
+              plannedUnitPrice,
+              quantity: normalized.quantity,
+              recoveredAmount: normalized.recoveredAmount,
+            });
+          } else {
+            normalized.unitPrice = 0;
+            normalized.amount = 0;
+          }
+
+          normalized.usedPlannedPrice = usedPlannedPrice;
           normalizedLosses.push(normalized);
         }
 
@@ -577,6 +593,7 @@ export async function saveHqLedgerLosses(
             quantity: loss.quantity,
             recoveredAmount: loss.recoveredAmount,
             amount: loss.amount,
+            usedPlannedPrice: loss.usedPlannedPrice,
             reason: loss.reason,
             updatedById: actor.user.id,
           };

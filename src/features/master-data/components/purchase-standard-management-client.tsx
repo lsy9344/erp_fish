@@ -40,7 +40,8 @@ type ActiveProductOption = {
   name: string;
   category: string;
   spec: string;
-  defaultUnitPrice: number;
+  // 선택적 참고 단가(없으면 null). 이 화면에서는 표시/사용하지 않는다.
+  defaultUnitPrice: number | null;
 };
 
 type PurchaseStandardManagementClientProps = {

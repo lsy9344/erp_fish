@@ -110,7 +110,6 @@ export async function getActivePurchaseStandardOptions() {
           name: true,
           category: true,
           spec: true,
-          defaultUnitPrice: true,
         },
       },
     },

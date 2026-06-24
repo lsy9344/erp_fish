@@ -143,7 +143,7 @@ async function seedStoryThreeOneData() {
     },
   });
 
-  const product = await prisma.product.create({
+  const createdProduct = await prisma.product.create({
     data: {
       name: STORY_PRODUCT_NAME,
       category: "관제판",
@@ -152,6 +152,7 @@ async function seedStoryThreeOneData() {
       updatedById: actorId,
     },
   });
+  const product = { ...createdProduct, defaultUnitPrice: 1000 };
   const lossCode = await prisma.ledgerInputCode.create({
     data: {
       group: "LOSS_TYPE",

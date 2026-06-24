@@ -3,7 +3,8 @@ import { z } from "zod";
 export const PRODUCT_CATEGORY_VALUES = ["냉동", "생물"] as const;
 
 const MAX_KRW_INTEGER = 2_147_483_647;
-const krwError = "기본 단가는 0원 이상의 정수여야 합니다.";
+// 정책 전환(2026-06-24): 단가는 선택적 "참고 단가"다. 비워두면 단가 없음(null)으로 저장한다.
+const krwError = "참고 단가는 0원 이상의 정수여야 합니다.";
 
 function isValidKrwInteger(value: number) {
   return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;
@@ -46,13 +47,23 @@ const productSpecSchema = z
       .max(80, "규격은 80자 이하여야 합니다."),
   );
 
-function parseRequiredKrw(value: unknown, context: z.RefinementCtx) {
+// 단가는 선택값이다. 비어 있으면(undefined/null/빈 문자열) null로 저장하고,
+// 값이 있으면 0 이상의 정수만 허용한다. 잘못된 값은 오류로 막는다.
+function parseOptionalKrw(value: unknown, context: z.RefinementCtx) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
   if (typeof value === "number" && isValidKrwInteger(value)) {
     return value;
   }
 
   if (typeof value === "string") {
     const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
 
     if (/^\d+$/.test(trimmed)) {
       const parsed = Number(trimmed);
@@ -75,7 +86,7 @@ export const productFormSchema = z.object({
   name: productNameSchema,
   category: productCategorySchema,
   spec: productSpecSchema,
-  defaultUnitPrice: z.unknown().transform(parseRequiredKrw),
+  defaultUnitPrice: z.unknown().transform(parseOptionalKrw),
   isActive: z.boolean().default(true),
 });
 

@@ -251,11 +251,16 @@ export type MonthlyTopRevenueItemSummary = {
 // 미팅 요구(매출 상위5/하위5 품목)는 품목별 매출액이 필요하나 시스템은 매출을
 // 일단위 총액으로만 기록한다. 따라서 판매량(전일재고+매입-당일재고) × 단가로
 // '추정 매출'을 산출해 순위를 매긴다. 추정치임을 basisLabel/note로 명시한다.
+//
+// point_summary 검토 후속(2026-06-24): 단가는 회의 결정대로 지점장 판매가 계획
+// (plannedUnitPrice)을 우선 사용하고, 없으면 매입단가로 폴백한다. 폴백한 품목은
+// salesBasis="cost"로 표시한다.
 export type MonthlyRevenueRankingItem = {
   productId: string;
   productName: string;
   soldQuantity: number;
   estimatedSalesAmount: number;
+  salesBasis: "planned" | "cost";
 };
 
 export type MonthlyRevenueRankingSummary = {
@@ -265,6 +270,8 @@ export type MonthlyRevenueRankingSummary = {
   note: string;
   top: MonthlyRevenueRankingItem[];
   bottom: MonthlyRevenueRankingItem[];
+  // 판매가 계획이 없어 매입단가로 폴백한 품목 수.
+  salesPriceFallbackItemCount: number;
 };
 
 // WO-07(2026-06-22): 본사 전용 지출 합계. 지점 일일 장부와 분리된 별도 라인으로,
@@ -337,4 +344,8 @@ export type ProductCategoryPerformance = {
   salesAmount: number;
   grossMarginRate: number | null;
   statusLabel: "확정" | "추정" | "계산 불가";
+  // point_summary 검토 후속(2026-06-24): 추정 매출은 지점장 판매가 계획 기준.
+  // 판매가 계획이 없어 매입단가로 폴백한 판매 품목 수. 0보다 크면 "판매가 일부 미반영"
+  // 안내를 화면에 띄운다.
+  salesPriceFallbackItemCount: number;
 };

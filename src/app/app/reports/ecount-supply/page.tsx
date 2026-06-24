@@ -85,6 +85,16 @@ export default async function EcountSupplyReportPage({
       value: report.summary.unmappedSalesPlanCount.toLocaleString("ko-KR"),
       variant: "muted" as const,
     },
+    {
+      label: "기대 매출(추정)",
+      value: krwFormatter.format(report.summary.estimatedSalesAmount),
+      variant: "default" as const,
+    },
+    {
+      label: "기대 이익(추정)",
+      value: krwFormatter.format(report.summary.estimatedGrossProfit),
+      variant: "default" as const,
+    },
   ];
 
   return (
@@ -246,6 +256,19 @@ export default async function EcountSupplyReportPage({
           />
         ))}
       </section>
+
+      <p className="text-muted-foreground text-xs">
+        기대 매출/이익은 판매 예정가(지점 판매가 계획)가 매핑된{" "}
+        {report.summary.plannedRowCount.toLocaleString("ko-KR")}개 라인만으로
+        산출한 추정값입니다. 기대 매출 = Σ(수량 × 판매 예정가), 기대 이익 = 기대
+        매출 − 해당 라인 공급가액(
+        {krwFormatter.format(report.summary.matchedSupplyAmount)}).
+        {report.summary.unmappedSalesPlanCount > 0
+          ? ` 판매가 계획이 없는 ${report.summary.unmappedSalesPlanCount.toLocaleString(
+              "ko-KR",
+            )}개 라인은 기대 매출/이익에서 제외됩니다.`
+          : ""}
+      </p>
 
       <div className="overflow-x-auto rounded-lg border">
         <Table>

@@ -86,6 +86,125 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
   assert.deepEqual(summary.salesDifference, ok(91_000));
 });
 
+// point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+test("ledger review summary computes planned-sales metrics from planned unit price", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  // 품목 A: 판매 10+5-8=7개, 매입단가 1,000, 계획 판매가 1,500.
+  // 품목 B: 판매 3+2-4=1개, 매입단가 2,000, 계획 판매가 3,000.
+  // 계획 매출 = 7×1,500 + 1×3,000 = 13,500. COGS = 7×1,000 + 1×2,000 = 9,000.
+  // 계획 매출이익 = 13,500-9,000 = 4,500. 계획 마진율 = 4,500/13,500 = 0.333...
+  // 실제 총매출 100,000 → 계획 대비 차이 = 100,000-13,500 = 86,500.
+  const baseInput = {
+    totalSalesAmount: 100_000,
+    cashAmount: 100_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 4,
+    expenseTotal: 0,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+      },
+      {
+        previousQuantity: 3,
+        purchasedQuantity: 2,
+        currentQuantity: 4,
+        quantity: 4,
+        unitPrice: 2_000,
+        inventoryAmount: 8_000,
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  };
+
+  const plannedItem = (overrides) => ({
+    previousQuantity: 0,
+    purchasedQuantity: 0,
+    currentQuantity: 0,
+    quantity: 0,
+    plannedUnitPrice: null,
+    ...overrides,
+  });
+
+  // 1) 모든 판매 품목에 판매가 계획이 있으면 ok 값으로 노출.
+  const fullPlan = calculateLedgerReviewSummary({
+    ...baseInput,
+    plannedSalesItems: [
+      plannedItem({
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        plannedUnitPrice: 1_500,
+      }),
+      plannedItem({
+        previousQuantity: 3,
+        purchasedQuantity: 2,
+        currentQuantity: 4,
+        quantity: 4,
+        plannedUnitPrice: 3_000,
+      }),
+    ],
+  });
+
+  assert.deepEqual(fullPlan.plannedSalesTotal, ok(13_500));
+  assert.deepEqual(fullPlan.plannedGrossProfit, ok(4_500));
+  assert.equal(fullPlan.plannedGrossMarginRate.status, "ok");
+  assert.ok(Math.abs(fullPlan.plannedGrossMarginRate.value - 1 / 3) < 1e-9);
+  assert.deepEqual(fullPlan.plannedVsActualSalesDifference, ok(86_500));
+
+  // 2) 일부 품목만 판매가 계획이 있으면 과소 추정이므로 policy-unconfirmed로 내린다.
+  const partialPlan = calculateLedgerReviewSummary({
+    ...baseInput,
+    plannedSalesItems: [
+      plannedItem({
+        previousQuantity: 10,
+        purchasedQuantity: 5,
+        currentQuantity: 8,
+        quantity: 8,
+        plannedUnitPrice: 1_500,
+      }),
+      plannedItem({
+        previousQuantity: 3,
+        purchasedQuantity: 2,
+        currentQuantity: 4,
+        quantity: 4,
+        plannedUnitPrice: null,
+      }),
+    ],
+  });
+
+  // 계획가 있는 품목(7×1,500=10,500)만 합산하되, status는 기준 확인 필요로 노출.
+  assert.equal(partialPlan.plannedSalesTotal.status, "policy-unconfirmed");
+  assert.equal(partialPlan.plannedSalesTotal.value, 10_500);
+  assert.equal(partialPlan.plannedGrossMarginRate.status, "policy-unconfirmed");
+
+  // 3) 판매가 계획 입력 자체가 없으면(plannedSalesItems 미제공) 데이터 부족으로 노출.
+  const noPlan = calculateLedgerReviewSummary(baseInput);
+
+  assert.equal(noPlan.plannedSalesTotal.value, null);
+  assert.equal(noPlan.plannedSalesTotal.status, "data-insufficient");
+  assert.equal(
+    noPlan.plannedVsActualSalesDifference.status,
+    "data-insufficient",
+  );
+});
+
 test("ledger review summary helper does not calculate sales difference without adjustment and loss context", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -131,7 +250,10 @@ test("ledger review summary helper does not calculate sales difference without a
       "OQ-14 차이를 당일 판매량으로 바꾸는 계산 의미 변경이 확정되지 않아 기존 차이 외 파생 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
     ),
   );
-  assert.equal(summary.salesDifference.metricId, "salesDifferenceMeaningChange");
+  assert.equal(
+    summary.salesDifference.metricId,
+    "salesDifferenceMeaningChange",
+  );
   assert.equal(
     summary.salesDifference.policyLabel,
     "차이의 당일 판매량 의미 변경",
@@ -508,6 +630,11 @@ test("store manager ledger review response omits sensitive accounting metrics", 
       paymentDifference: ok(0),
       paymentTotal: ok(100_000),
       expenseTotal: ok(10_000),
+      // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+      plannedSalesTotal: ok(130_000),
+      plannedGrossProfit: ok(100_000),
+      plannedGrossMarginRate: ok(0.769),
+      plannedVsActualSalesDifference: ok(-30_000),
     },
     missingItems: [],
     warnings: [],
@@ -546,9 +673,13 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
+  // point_summary 검토 후속(2026-06-24): 계획 매출/계획 대비 차이/계획 마진율을 추가 노출한다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
     "grossMarginRate",
     "inventoryAmount",
+    "plannedGrossMarginRate",
+    "plannedSalesTotal",
+    "plannedVsActualSalesDifference",
     "totalSales",
     "workerCount",
   ]);
@@ -562,6 +693,8 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.equal(Object.hasOwn(safeReview.summary, "grossProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "operatingProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
+  // 계획 매출이익(절대 이익)은 계속 차단한다.
+  assert.equal(Object.hasOwn(safeReview.summary, "plannedGrossProfit"), false);
   // workerCount와 inventoryAmount가 보이고, paymentDifference는 제거됨
   assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.kind, "text");
   assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.id, "workerCount");
@@ -591,10 +724,10 @@ test("store manager review exposes estimated top sold items derived from invento
     "review-summary-client.tsx",
   );
 
-  // 타입 계약: 품목ID/품목명/판매수량/추정매출만 노출한다.
+  // 타입 계약: 품목ID/품목명/판매수량/추정매출 + 판매가 기준(salesBasis)을 노출한다.
   assert.match(
     typeSource,
-    /export type StoreManagerTopSoldItem\s*=\s*{[^}]*productId:\s*string[^}]*productName:\s*string[^}]*soldQuantity:\s*number[^}]*estimatedSalesAmount:\s*number[^}]*}/s,
+    /export type StoreManagerTopSoldItem\s*=\s*{[^}]*productId:\s*string[^}]*productName:\s*string[^}]*soldQuantity:\s*number[^}]*estimatedSalesAmount:\s*number[^}]*salesBasis:\s*"planned"\s*\|\s*"cost"[^}]*}/s,
   );
   assert.match(typeSource, /topSoldItems:\s*StoreManagerTopSoldItem\[\]/);
 
@@ -604,16 +737,32 @@ test("store manager review exposes estimated top sold items derived from invento
     querySource,
     /item\.previousQuantity\s*\+\s*item\.purchasedQuantity\s*-\s*item\.currentQuantity/,
   );
-  assert.match(querySource, /estimatedSalesAmount:\s*soldQuantity\s*\*\s*item\.unitPrice/);
+  // point_summary 검토 후속(2026-06-24): 추정 매출은 판매가 계획(plannedUnitPrice) 기준이고,
+  // 계획이 없으면 매입단가(unitPrice)로 폴백해 salesBasis="cost"로 표시한다.
+  assert.match(
+    querySource,
+    /estimatedSalesAmount:\s*soldQuantity\s*\*\s*salesUnitPrice/,
+  );
+  assert.match(
+    querySource,
+    /salesBasis:\s*usePlannedPrice\s*\?\s*"planned"\s*:\s*"cost"/,
+  );
+  assert.match(querySource, /plannedUnitPrice/);
   // currentQuantity가 null이거나 판매수량이 0 이하인 행은 제외한다.
   assert.match(querySource, /item\.currentQuantity === null/);
   assert.match(querySource, /soldQuantity <= 0/);
 
-  // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 단가/FIFO는 노출하지 않는다.
+  // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 판매가 미반영(cost 폴백)을 구분 표시한다.
   assert.match(clientSource, /오늘 많이 팔린 품목/);
   assert.match(clientSource, /추정 매출/);
-  assert.match(clientSource, /품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다\./);
+  assert.match(
+    clientSource,
+    /품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다\./,
+  );
+  assert.match(clientSource, /판매가 미반영/);
+  assert.match(clientSource, /item\.salesBasis === "cost"/);
   assert.match(clientSource, /topSoldItems/);
+  // 카드에는 여전히 단가/FIFO 같은 민감값을 직접 노출하지 않는다.
   assert.doesNotMatch(clientSource, /item\.unitPrice/);
   assert.doesNotMatch(clientSource, /item\.fifoLots/);
 });

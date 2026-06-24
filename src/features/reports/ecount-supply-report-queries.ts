@@ -48,6 +48,15 @@ export type EcountSupplyReportSummary = {
   totalQuantity: number;
   totalSupplyAmount: number;
   unmappedSalesPlanCount: number;
+  // point_summary 검토 후속(2026-06-24): 판매 예정가(plannedUnitPrice) 기반 기대 매출/이익 합계.
+  // 기대 매출 = Σ(수량 × 판매 예정가), 기대 이익 = 기대 매출 − 공급금액(원가).
+  // 판매 예정가가 매핑된 행만 합산하며, 그 행들의 공급금액 합계(matchedSupplyAmount)와 함께
+  // 노출해 어느 범위에서 산출됐는지 알 수 있게 한다.
+  estimatedSalesAmount: number;
+  estimatedGrossProfit: number;
+  // 기대 매출/이익 계산에 포함된 행 수와 그 행들의 공급금액 합계.
+  plannedRowCount: number;
+  matchedSupplyAmount: number;
 };
 
 export type EcountSupplyReportData = {
@@ -252,6 +261,17 @@ export async function getHeadquartersSupplyReport(
       spec: item.productSpec,
     }));
 
+  // 판매 예정가가 매핑된 행만 기대 매출/이익에 합산한다(예정가 없는 행은 제외 + 카운트).
+  const plannedRows = rows.filter((row) => row.plannedUnitPrice !== null);
+  const estimatedSalesAmount = plannedRows.reduce(
+    (sum, row) => sum + row.quantity * (row.plannedUnitPrice ?? 0),
+    0,
+  );
+  const matchedSupplyAmount = plannedRows.reduce(
+    (sum, row) => sum + row.supplyAmount,
+    0,
+  );
+
   return {
     rows,
     summary: {
@@ -261,6 +281,11 @@ export async function getHeadquartersSupplyReport(
       unmappedSalesPlanCount: rows.filter(
         (row) => row.plannedUnitPrice === null,
       ).length,
+      estimatedSalesAmount,
+      // 기대 이익 = 기대 매출 − (예정가 매핑 행들의) 공급금액. 같은 행 범위로 맞춘다.
+      estimatedGrossProfit: estimatedSalesAmount - matchedSupplyAmount,
+      plannedRowCount: plannedRows.length,
+      matchedSupplyAmount,
     },
     storeOptions: scope.stores.map((store) => ({
       id: store.id,

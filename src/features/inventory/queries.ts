@@ -923,7 +923,6 @@ async function getActiveProductBases(
       name: true,
       category: true,
       spec: true,
-      defaultUnitPrice: true,
     },
   });
 
@@ -936,7 +935,10 @@ async function getActiveProductBases(
       productName: product.name,
       productCategory: product.category,
       productSpec: product.spec,
-      unitPrice: product.defaultUnitPrice,
+      // 가격 정책 전환(2026-06-24): 이월 공백/근거 부족 상태에서 품목 마스터 단가를
+      // 재고 평가 단가로 박지 않는다. 이 경로는 previousQuantity=0이라 금액도 0이며,
+      // 실제 단가는 매입/스냅샷(item.unitPrice/snapshot.unitPrice)에서만 들어온다.
+      unitPrice: 0,
       previousQuantity: 0,
       carryoverSource: InventoryCarryoverSource.MANUAL,
       carryoverStatus,

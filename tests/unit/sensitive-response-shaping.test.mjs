@@ -117,6 +117,14 @@ test("store manager response shaping recursively removes sensitive ledger metric
       paymentDifference: { value: 0 },
       paymentTotal: { value: 100_000 },
       expenseTotal: { value: 10_000 },
+      // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+      // 계획 매출/계획 대비 차이는 지점장 본인 판매가 계획·총매출만으로 산출되어 노출,
+      // 계획 마진율은 status가 ok일 때만 노출(아래에서 ok이므로 값 유지),
+      // 계획 매출이익(plannedGrossProfit)은 절대 이익이라 지점장 요약에서 제외된다.
+      plannedSalesTotal: { value: 130_000, status: "ok" },
+      plannedGrossProfit: { value: 100_000, status: "ok" },
+      plannedGrossMarginRate: { value: 0.769, status: "ok" },
+      plannedVsActualSalesDifference: { value: -30_000, status: "ok" },
     },
     missingItems: [],
     warnings: [
@@ -142,6 +150,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
         productName: "광어",
         soldQuantity: 12,
         estimatedSalesAmount: 120_000,
+        salesBasis: "planned",
       },
     ],
     stepSummaries: [
@@ -188,6 +197,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
   // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장에게 노출한다.
   // 보완(2026-06-22 WO-01): 결제차액은 제거, 근무인원 수 추가.
   // 매출원가·매출이익·영업이익·인당생산성·매출차이·FIFO·lot 근거는 계속 차단한다.
+  // point_summary 검토 후속(2026-06-24): 계획 매출이익(plannedGrossProfit)도 절대 이익이라 차단한다.
   const stillBlockedSummaryKeys = [
     "costOfGoodsSold",
     "grossProfit",
@@ -196,6 +206,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
     "salesDifference",
     "hopedSalePriceLossAmount",
     "paymentDifference",
+    "plannedGrossProfit",
   ];
 
   for (const blockedKey of stillBlockedSummaryKeys) {
@@ -206,12 +217,23 @@ test("store manager response shaping recursively removes sensitive ledger metric
     );
   }
 
+  // point_summary 검토 후속(2026-06-24): 계획 매출/계획 대비 차이/계획 마진율을 추가로 노출한다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
     "grossMarginRate",
     "inventoryAmount",
+    "plannedGrossMarginRate",
+    "plannedSalesTotal",
+    "plannedVsActualSalesDifference",
     "totalSales",
     "workerCount",
   ]);
+  // 계획 마진율은 status가 ok이므로 값이 그대로 노출된다.
+  assert.equal(safeReview.summary.plannedGrossMarginRate.value, 0.769);
+  assert.equal(safeReview.summary.plannedSalesTotal.value, 130_000);
+  assert.equal(
+    safeReview.summary.plannedVsActualSalesDifference.value,
+    -30_000,
+  );
   assert.deepEqual(safeReview.signals[0], {
     id: "inventory-product-1",
     label: "재고 차이",
@@ -242,12 +264,14 @@ test("store manager response shaping recursively removes sensitive ledger metric
   );
 
   // WO-04(2026-06-22): 오늘 많이 팔린 품목 카드는 품목명/판매수량/추정매출만 노출한다.
+  // point_summary 검토 후속(2026-06-24): 추정 매출이 판매가 계획 기준인지(salesBasis)도 함께 노출한다.
   assert.deepEqual(safeReview.topSoldItems, [
     {
       productId: "product-1",
       productName: "광어",
       soldQuantity: 12,
       estimatedSalesAmount: 120_000,
+      salesBasis: "planned",
     },
   ]);
   for (const item of safeReview.topSoldItems) {

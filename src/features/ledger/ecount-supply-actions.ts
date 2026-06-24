@@ -410,7 +410,6 @@ export async function createEcountProductFromLine(input: {
           productName: true,
           productCategory: true,
           productSpec: true,
-          unitPrice: true,
         },
       });
 
@@ -437,7 +436,9 @@ export async function createEcountProductFromLine(input: {
             name,
             category,
             spec,
-            defaultUnitPrice: sampleLine.unitPrice,
+            // 정책 전환(2026-06-24): 이카운트 원본 단가를 품목 마스터의 고정 단가로
+            // 박지 않는다. 입고 원가는 EcountImportLine.unitPrice와 장부 적용 단가
+            // (LedgerPurchaseItem.unitPrice)에서만 보존한다. 마스터 단가는 미입력(null).
             isActive: true,
             updatedById: actor.id,
           },

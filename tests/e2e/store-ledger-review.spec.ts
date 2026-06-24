@@ -117,7 +117,7 @@ async function seedLossType(name: string) {
 async function seedProduct(name: string, unitPrice: number) {
   const actorId = await getHeadquartersUserId();
 
-  return prisma.product.create({
+  const product = await prisma.product.create({
     data: {
       name,
       category: "검토",
@@ -126,6 +126,8 @@ async function seedProduct(name: string, unitPrice: number) {
       updatedById: actorId,
     },
   });
+
+  return { ...product, defaultUnitPrice: unitPrice };
 }
 
 async function seedLedger(data: {

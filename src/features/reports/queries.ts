@@ -321,15 +321,19 @@ export function getMonthlyClosingAnomalyReportPath({
 // 검토 후속(point_summary.md:26): 카테고리별 이익률을 함께 보여준다. 매출원가(COGS)는
 // 점포 단위 계산과 동일하게 FIFO 소진금액(fifoLots[].consumedAmount)을 우선 사용하고,
 // FIFO lot이 없으면 (판매수량 * 단가)로 추정한다(점포 COGS 폴백과 동일 규칙).
-// 추정 매출과 추정 COGS에서 산출하므로 statusLabel은 "추정"으로 유지한다.
-// OQ-7/OQ-17 FIFO 정책 확정 전이라도, 재고 단계에서 이미 FIFO 재고금액/lot 이력을
-// 양 역할에 노출하기로 한 결정과 일관되게 추정 이익률을 노출한다.
+//
+// point_summary 재검토(2026-06-24): 추정 "매출"은 매입/적용 단가가 아니라 회의 결정대로
+// 지점장 판매가 계획(plannedUnitPrice) 기준으로 계산한다. 판매가 계획이 없는 품목은
+// 매입 단가(unitPrice)로 폴백하되 fallbackItemCount로 집계해 "판매가 미반영분"을 알린다.
+// COGS는 여전히 원가(FIFO 소진금액 또는 매입단가)로 계산한다(매출-원가 정의 일관성).
 type CategoryPerformanceItem = {
   productCategory: string;
   previousQuantity: number;
   purchasedQuantity: number;
   currentQuantity: number | null;
   unitPrice: number;
+  // 지점장 판매가 계획. 없으면 null(매입단가로 폴백).
+  plannedUnitPrice?: number | null;
   fifoLots?: Array<{ consumedAmount: number }>;
 };
 
@@ -350,6 +354,22 @@ function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
   return soldQuantity * item.unitPrice;
 }
 
+// 추정 매출 단가: 판매가 계획이 있으면 그 값, 없으면 매입단가로 폴백.
+function getItemSalesUnitPrice(item: CategoryPerformanceItem): {
+  unitPrice: number;
+  usedPlannedPrice: boolean;
+} {
+  if (
+    item.plannedUnitPrice !== null &&
+    item.plannedUnitPrice !== undefined &&
+    Number.isFinite(item.plannedUnitPrice)
+  ) {
+    return { unitPrice: item.plannedUnitPrice, usedPlannedPrice: true };
+  }
+
+  return { unitPrice: item.unitPrice, usedPlannedPrice: false };
+}
+
 export function buildProductCategoryPerformance(
   ledgers: Array<{
     ledgerInventoryItems: CategoryPerformanceItem[];
@@ -357,7 +377,12 @@ export function buildProductCategoryPerformance(
 ): ProductCategoryPerformance[] {
   const byCategory = new Map<
     "냉동" | "생물" | "기타",
-    { sales: number; cogs: number }
+    {
+      sales: number;
+      cogs: number;
+      soldItemCount: number;
+      fallbackCount: number;
+    }
   >();
 
   for (const ledger of ledgers) {
@@ -371,9 +396,20 @@ export function buildProductCategoryPerformance(
           ? item.productCategory
           : "기타";
 
-      const stats = byCategory.get(category) ?? { sales: 0, cogs: 0 };
-      stats.sales += soldQuantity * item.unitPrice;
+      const stats = byCategory.get(category) ?? {
+        sales: 0,
+        cogs: 0,
+        soldItemCount: 0,
+        fallbackCount: 0,
+      };
+      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
+        getItemSalesUnitPrice(item);
+      stats.sales += soldQuantity * salesUnitPrice;
       stats.cogs += getItemCogs(item, soldQuantity);
+      stats.soldItemCount += 1;
+      if (!usedPlannedPrice) {
+        stats.fallbackCount += 1;
+      }
       byCategory.set(category, stats);
     }
   }
@@ -382,6 +418,7 @@ export function buildProductCategoryPerformance(
     const stats = byCategory.get(category);
     const salesAmount = stats?.sales ?? 0;
     const cogs = stats?.cogs ?? 0;
+    const fallbackCount = stats?.fallbackCount ?? 0;
     // 매출이 0이면 이익률을 계산할 수 없다(0 나눗셈 방지).
     const grossMarginRate =
       salesAmount > 0 ? (salesAmount - cogs) / salesAmount : null;
@@ -391,6 +428,7 @@ export function buildProductCategoryPerformance(
       salesAmount,
       grossMarginRate,
       statusLabel: "추정",
+      salesPriceFallbackItemCount: fallbackCount,
     };
   });
 }
@@ -504,6 +542,29 @@ export async function getHqDailyMeetingReport({
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
+  // point_summary 검토 후속(2026-06-24): 카테고리별 추정 매출을 판매가 계획 기준으로 내기 위해
+  // 각 마감 (storeId, closingDate)의 판매가 계획을 일괄 조회한다.
+  const { getPlannedUnitPriceLookup } =
+    await import("../sales-plan/queries.ts");
+  const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
+    ledgers.map((ledger) => ({
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+    })),
+  );
+  const ledgersWithPlannedPrice = ledgers.map((ledger) => ({
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+      ...item,
+      plannedUnitPrice: item.productId
+        ? plannedUnitPriceLookup(
+            ledger.storeId,
+            ledger.closingDate,
+            item.productId,
+          )
+        : null,
+    })),
+  }));
   const ledgerByStoreId = new Map<string, ReportLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
@@ -528,7 +589,9 @@ export async function getHqDailyMeetingReport({
     closingDate: closingDate.toISOString(),
     rows,
     summary: summarizeDashboardRows(rows),
-    categoryPerformance: buildProductCategoryPerformance(ledgers),
+    categoryPerformance: buildProductCategoryPerformance(
+      ledgersWithPlannedPrice,
+    ),
   };
 }
 
@@ -1122,6 +1185,29 @@ export async function getHqMonthlyClosingAnomalyReport({
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
+  // point_summary 검토 후속(2026-06-24): 월간 추정 매출/랭킹/카테고리 매출도 판매가 계획
+  // 기준으로 산출한다. 단일 점포·여러 마감일이므로 (storeId, closingDate)별 계획을 일괄 조회한다.
+  const { getPlannedUnitPriceLookup: getMonthlyPlannedUnitPriceLookup } =
+    await import("../sales-plan/queries.ts");
+  const monthlyPlannedUnitPriceLookup = await getMonthlyPlannedUnitPriceLookup(
+    ledgers.map((ledger) => ({
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+    })),
+  );
+  const ledgersWithPlannedPrice = ledgers.map((ledger) => ({
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+      ...item,
+      plannedUnitPrice: item.productId
+        ? monthlyPlannedUnitPriceLookup(
+            ledger.storeId,
+            ledger.closingDate,
+            item.productId,
+          )
+        : null,
+    })),
+  }));
   const ledgerSummaries = ledgers.map((ledger) => {
     const corrections = correctionValuesByLedgerId.get(ledger.id);
     const row = toDailyMeetingReportRow({
@@ -1137,6 +1223,14 @@ export async function getHqMonthlyClosingAnomalyReport({
       ledger,
       corrections,
     );
+    const getItemPlannedUnitPrice = (productId?: string) =>
+      productId
+        ? monthlyPlannedUnitPriceLookup(
+            ledger.storeId,
+            ledger.closingDate,
+            productId,
+          )
+        : null;
 
     return {
       dateInput: getDailyMeetingReportDateInput(ledger.closingDate),
@@ -1152,7 +1246,11 @@ export async function getHqMonthlyClosingAnomalyReport({
       originalLossItems: calculationSummary.originalLossItems,
       lossItems: calculationSummary.lossItems,
       originalInventoryItems: calculationSummary.originalInventoryItems,
-      inventoryItems: calculationSummary.inventoryItems,
+      // 랭킹용 추정 매출 단가를 위해 품목별 판매가 계획을 붙인다.
+      inventoryItems: calculationSummary.inventoryItems.map((item) => ({
+        ...item,
+        plannedUnitPrice: getItemPlannedUnitPrice(item.productId),
+      })),
       originalInventoryAdjustments:
         calculationSummary.originalInventoryAdjustments,
       inventoryAdjustments: calculationSummary.inventoryAdjustments,
@@ -1173,7 +1271,9 @@ export async function getHqMonthlyClosingAnomalyReport({
     ),
     ledgerSummaries,
     errorMessages,
-    categoryPerformance: buildProductCategoryPerformance(ledgers),
+    categoryPerformance: buildProductCategoryPerformance(
+      ledgersWithPlannedPrice,
+    ),
   });
 }
 
@@ -1231,7 +1331,10 @@ type MonthlyReportLossItem = {
   amount: number;
 };
 
-type MonthlyReportInventoryItem = LedgerReviewInventoryInput;
+type MonthlyReportInventoryItem = LedgerReviewInventoryInput & {
+  // point_summary 검토 후속(2026-06-24): 랭킹 추정 매출을 판매가 계획 기준으로 내기 위한 단가.
+  plannedUnitPrice?: number | null;
+};
 
 type MonthlyReportInventoryAdjustment = {
   differenceQuantity: number;
@@ -1865,15 +1968,24 @@ const revenueRankingSize = 5;
 
 // 미팅 요구: 매출 상위5/하위5 품목. 품목별 매출액이 시스템에 없으므로
 // 판매량(전일재고+매입-당일재고) × 단가를 '추정 매출'로 보고 순위를 매긴다.
+//
+// point_summary 검토 후속(2026-06-24): 단가는 매입/적용 단가가 아니라 회의 결정대로
+// 지점장 판매가 계획(plannedUnitPrice)을 우선 쓴다. 계획이 없는 날/품목은 매입단가로
+// 폴백하고 그 품목은 salesBasis="cost"로 표시한다.
 function buildMonthlyRevenueRanking(
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
 ): MonthlyRevenueRankingSummary {
-  const basisLabel = "판매량 × 단가 추정";
+  const basisLabel = "판매량 × 판매가 계획 추정";
   const note =
-    "품목별 매출액 데이터가 없어 판매량(전일재고+매입-당일재고)에 단가를 곱한 추정 매출로 순위를 산출합니다.";
+    "품목별 매출액 데이터가 없어 판매량(전일재고+매입-당일재고)에 지점 판매가 계획을 곱한 추정 매출로 순위를 산출합니다. 판매가 계획이 없는 품목은 매입 단가로 대체(판매가 미반영)합니다.";
   const aggregates = new Map<
     string,
-    { productName: string; soldQuantity: number; estimatedSalesAmount: number }
+    {
+      productName: string;
+      soldQuantity: number;
+      estimatedSalesAmount: number;
+      usedCostFallback: boolean;
+    }
   >();
 
   for (const summary of ledgerSummaries.filter(
@@ -1897,12 +2009,20 @@ function buildMonthlyRevenueRanking(
         continue;
       }
 
-      const estimatedSalesAmount = soldQuantity * item.unitPrice;
+      const usePlannedPrice =
+        item.plannedUnitPrice !== null &&
+        item.plannedUnitPrice !== undefined &&
+        Number.isFinite(item.plannedUnitPrice);
+      const salesUnitPrice = usePlannedPrice
+        ? item.plannedUnitPrice!
+        : item.unitPrice;
+      const estimatedSalesAmount = soldQuantity * salesUnitPrice;
       const current = aggregates.get(item.productId);
 
       if (current) {
         current.soldQuantity += soldQuantity;
         current.estimatedSalesAmount += estimatedSalesAmount;
+        current.usedCostFallback = current.usedCostFallback || !usePlannedPrice;
         continue;
       }
 
@@ -1910,6 +2030,7 @@ function buildMonthlyRevenueRanking(
         productName: item.productName ?? "이름 미상 품목",
         soldQuantity,
         estimatedSalesAmount,
+        usedCostFallback: !usePlannedPrice,
       });
     }
   }
@@ -1920,10 +2041,16 @@ function buildMonthlyRevenueRanking(
       productName: value.productName,
       soldQuantity: value.soldQuantity,
       estimatedSalesAmount: value.estimatedSalesAmount,
+      salesBasis: value.usedCostFallback
+        ? ("cost" as const)
+        : ("planned" as const),
     }))
     .sort(
       (left, right) => right.estimatedSalesAmount - left.estimatedSalesAmount,
     );
+  const salesPriceFallbackItemCount = ranked.filter(
+    (item) => item.salesBasis === "cost",
+  ).length;
 
   if (ranked.length === 0) {
     return {
@@ -1933,6 +2060,7 @@ function buildMonthlyRevenueRanking(
       note: "판매량을 계산할 수 있는 재고 데이터가 아직 없습니다.",
       top: [],
       bottom: [],
+      salesPriceFallbackItemCount: 0,
     };
   }
 
@@ -1949,6 +2077,7 @@ function buildMonthlyRevenueRanking(
     note,
     top,
     bottom,
+    salesPriceFallbackItemCount,
   };
 }
 

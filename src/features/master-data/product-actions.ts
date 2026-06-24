@@ -19,7 +19,7 @@ type ProductActionData = {
   name: string;
   category: string;
   spec: string;
-  defaultUnitPrice: number;
+  defaultUnitPrice: number | null;
   isActive: boolean;
 };
 

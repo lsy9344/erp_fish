@@ -128,6 +128,21 @@ export type LedgerReviewInventoryAdjustmentInput = {
   differenceAmount: number;
 };
 
+// point_summary 검토 후속(2026-06-24): 지점장 "아침에 정한 판매가 vs 저녁 실제 결과"
+// 비교를 위한 계획 판매가 입력. 품목별 판매수량(전일+매입-당일) × 계획 판매가로 계획 매출을
+// 산출한다. 판매가 계획이 한 품목이라도 빠지면 비교 자체가 왜곡되므로, 비교 지표는 모든
+// 판매 품목에 계획 판매가가 있을 때만 "ok"로 노출하고, 일부라도 빠지면 기준 확인 필요로
+// 내린다(매입단가로 조용히 메우지 않는다).
+export type LedgerReviewPlannedSalesInput = {
+  productId?: string;
+  previousQuantity: number;
+  purchasedQuantity: number;
+  currentQuantity: number | null;
+  quantity: number | null;
+  // 지점장 판매가 계획(StoreSalesPricePlan.plannedUnitPrice). 없으면 null.
+  plannedUnitPrice: number | null;
+};
+
 export type LedgerReviewSummaryInput = {
   totalSalesAmount: number;
   cashAmount: number;
@@ -138,6 +153,8 @@ export type LedgerReviewSummaryInput = {
   inventoryItems: LedgerReviewInventoryInput[];
   inventoryAdjustments?: LedgerReviewInventoryAdjustmentInput[];
   lossItems?: Pick<LedgerReviewLossInput, "amount">[];
+  // 계획 판매가 기반 비교 입력. 미제공 시 비교 지표는 "기준 확인 필요"로 노출한다.
+  plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 };
 
 export type LedgerReviewCorrectionValue = {
@@ -182,6 +199,15 @@ export type LedgerReviewSummary = {
   inventoryAmount: LedgerReviewMetric;
   paymentDifference: LedgerReviewMetric;
   salesDifference: LedgerReviewMetric;
+  // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+  // plannedSalesTotal: Σ(판매수량 × 계획 판매가)
+  // plannedGrossProfit: plannedSalesTotal - 매출원가(COGS)
+  // plannedGrossMarginRate: plannedGrossProfit / plannedSalesTotal
+  // plannedVsActualSalesDifference: 실제 총매출 - plannedSalesTotal (양수=계획 초과 달성)
+  plannedSalesTotal: LedgerReviewMetric;
+  plannedGrossProfit: LedgerReviewMetric;
+  plannedGrossMarginRate: LedgerReviewMetric;
+  plannedVsActualSalesDifference: LedgerReviewMetric;
 };
 
 const available = (value: number): LedgerReviewMetric => ({
@@ -499,6 +525,50 @@ function calculateSalesDifference({
   return totalSalesAmount - productSalesAmount;
 }
 
+function getPlannedSalesSoldQuantity(item: LedgerReviewPlannedSalesInput) {
+  const currentQuantity = item.currentQuantity ?? item.quantity;
+
+  if (!isUsableNumber(currentQuantity)) {
+    return null;
+  }
+
+  const soldQuantity =
+    item.previousQuantity + item.purchasedQuantity - currentQuantity;
+
+  return Number.isFinite(soldQuantity) ? soldQuantity : null;
+}
+
+// point_summary 검토 후속(2026-06-24): 계획 판매가 기준 계획 매출 합계.
+// 판매 수량이 양수인 품목만 합산한다. 판매 품목 중 계획 판매가가 하나라도 빠지면
+// 비교가 왜곡되므로 missingPlanCount로 알리고, 합계는 빠진 품목을 제외하고 계산한다.
+function calculatePlannedSalesTotal(items: LedgerReviewPlannedSalesInput[]) {
+  let total = 0;
+  let soldItemCount = 0;
+  let missingPlanCount = 0;
+
+  for (const item of items) {
+    const soldQuantity = getPlannedSalesSoldQuantity(item);
+
+    if (soldQuantity === null || soldQuantity <= 0) {
+      continue;
+    }
+
+    soldItemCount += 1;
+
+    if (
+      item.plannedUnitPrice === null ||
+      !Number.isFinite(item.plannedUnitPrice)
+    ) {
+      missingPlanCount += 1;
+      continue;
+    }
+
+    total += soldQuantity * item.plannedUnitPrice;
+  }
+
+  return { total, soldItemCount, missingPlanCount };
+}
+
 export function calculateLedgerReviewSummary({
   totalSalesAmount,
   cashAmount,
@@ -509,6 +579,7 @@ export function calculateLedgerReviewSummary({
   inventoryItems,
   inventoryAdjustments,
   lossItems,
+  plannedSalesItems,
 }: LedgerReviewSummaryInput): LedgerReviewSummary {
   const costOfGoodsSoldResult = safelyCalculateNumber("costOfGoodsSold", () =>
     calculateCostOfGoodsSold(inventoryItems),
@@ -592,6 +663,67 @@ export function calculateLedgerReviewSummary({
     inventoryItems.length === 0
       ? "재고 입력이 없어 계산할 수 없습니다."
       : "재고 수량 또는 단가 입력이 부족합니다.";
+
+  // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+  // 계획 판매가 입력이 없으면(plannedSalesItems === undefined) "기준 확인 필요"로 노출한다.
+  const plannedSalesResult = plannedSalesItems
+    ? calculatePlannedSalesTotal(plannedSalesItems)
+    : null;
+  const plannedSalesMissingReason =
+    "판매가 계획이 입력되지 않아 계획 대비 비교를 계산할 수 없습니다.";
+  const plannedSalesPartialReason =
+    "일부 판매 품목에 판매가 계획이 없어 계획 매출/마진이 과소 추정됩니다.";
+
+  const plannedSalesNotEnteredMetric = dataInsufficient(
+    plannedSalesMissingReason,
+  );
+
+  function buildPlannedKrwMetric(
+    metricId: string,
+    value: number | null,
+  ): LedgerReviewMetric {
+    if (plannedSalesResult === null) {
+      return plannedSalesNotEnteredMetric;
+    }
+
+    if (value === null) {
+      return dataInsufficient(
+        "판매 수량을 계산할 수 있는 품목이 없어 계획 매출을 산출할 수 없습니다.",
+      );
+    }
+
+    if (plannedSalesResult.soldItemCount === 0) {
+      return dataInsufficient(
+        "판매 수량을 계산할 수 있는 품목이 없어 계획 매출을 산출할 수 없습니다.",
+      );
+    }
+
+    if (plannedSalesResult.missingPlanCount > 0) {
+      return asPolicyUnconfirmedKrwMetric(
+        metricId,
+        value,
+        plannedSalesPartialReason,
+      );
+    }
+
+    return asKrwMetric(metricId, value);
+  }
+
+  const plannedSalesTotalValue = plannedSalesResult?.total ?? null;
+  const plannedGrossProfitValue =
+    plannedSalesResult === null || costOfGoodsSold === null
+      ? null
+      : plannedSalesResult.total - costOfGoodsSold;
+  const plannedGrossMarginRateValue =
+    plannedGrossProfitValue === null ||
+    plannedSalesResult === null ||
+    plannedSalesResult.total <= 0
+      ? null
+      : plannedGrossProfitValue / plannedSalesResult.total;
+  const plannedVsActualSalesDifferenceValue =
+    plannedSalesResult === null
+      ? null
+      : totalSalesAmount - plannedSalesResult.total;
 
   return {
     totalSales,
@@ -684,6 +816,82 @@ export function calculateLedgerReviewSummary({
                 fifoPolicyReason,
               )
             : asKrwMetric("salesDifference", salesDifference),
+    plannedSalesTotal: buildPlannedKrwMetric(
+      "plannedSalesTotal",
+      plannedSalesTotalValue,
+    ),
+    // 계획 매출과 매출원가(COGS)를 모두 알아야 계획 마진을 낼 수 있다.
+    // COGS가 FIFO 미승인 기준이면 그 표시를 우선 따른다.
+    plannedGrossProfit:
+      plannedSalesResult === null
+        ? plannedSalesNotEnteredMetric
+        : costOfGoodsSoldResult.kind === "error"
+          ? dependentCalculationUnavailable(
+              "매출원가 계산 오류로 계획 매출이익을 계산할 수 없습니다.",
+            )
+          : plannedGrossProfitValue === null
+            ? dataInsufficient(
+                "매출원가 또는 계획 매출이 부족해 계획 매출이익을 계산할 수 없습니다.",
+              )
+            : plannedSalesResult.missingPlanCount > 0
+              ? asPolicyUnconfirmedKrwMetric(
+                  "plannedGrossProfit",
+                  plannedGrossProfitValue,
+                  plannedSalesPartialReason,
+                )
+              : hasUnapprovedFifoCostBasis
+                ? asPolicyUnconfirmedKrwMetric(
+                    "plannedGrossProfit",
+                    plannedGrossProfitValue,
+                    fifoPolicyReason,
+                  )
+                : asKrwMetric("plannedGrossProfit", plannedGrossProfitValue),
+    plannedGrossMarginRate:
+      plannedSalesResult === null
+        ? plannedSalesNotEnteredMetric
+        : costOfGoodsSoldResult.kind === "error"
+          ? dependentCalculationUnavailable(
+              "매출원가 계산 오류로 계획 마진율을 계산할 수 없습니다.",
+            )
+          : plannedGrossMarginRateValue === null
+            ? dataInsufficient(
+                "계획 매출 또는 매출이익이 부족해 계획 마진율을 계산할 수 없습니다.",
+              )
+            : plannedSalesResult.missingPlanCount > 0
+              ? asPolicyUnconfirmedRatioMetric(
+                  "plannedGrossMarginRate",
+                  plannedGrossMarginRateValue,
+                  plannedSalesPartialReason,
+                )
+              : hasUnapprovedFifoCostBasis
+                ? asPolicyUnconfirmedRatioMetric(
+                    "plannedGrossMarginRate",
+                    plannedGrossMarginRateValue,
+                    fifoPolicyReason,
+                  )
+                : asRatioMetric(
+                    "plannedGrossMarginRate",
+                    plannedGrossMarginRateValue,
+                  ),
+    plannedVsActualSalesDifference:
+      plannedSalesResult === null
+        ? plannedSalesNotEnteredMetric
+        : plannedVsActualSalesDifferenceValue === null
+          ? dataInsufficient(plannedSalesMissingReason)
+          : plannedSalesResult.soldItemCount === 0
+            ? dataInsufficient(
+                "판매 수량을 계산할 수 있는 품목이 없어 계획 대비 차이를 산출할 수 없습니다.",
+              )
+            : plannedSalesResult.missingPlanCount > 0
+              ? asPolicyUnconfirmedKrwMetric(
+                  "plannedVsActualSalesDifference",
+                  plannedVsActualSalesDifferenceValue,
+                  plannedSalesPartialReason,
+                )
+              : asKrwMetric(
+                  "plannedVsActualSalesDifference",
+                  plannedVsActualSalesDifferenceValue,
+                ),
   };
 }
 

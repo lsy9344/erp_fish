@@ -49,6 +49,9 @@ type LossLineState = {
   recoveredAmount: string;
   amount?: string;
   reason: string;
+  // 저장된 손실 라인이 판매가 계획 기준으로 산정됐는지(false면 판매가 미반영 폴백).
+  // 새 라인은 아직 저장 전이라 undefined.
+  usedPlannedPrice?: boolean;
 };
 
 type LossDisplayData = LossStepData | StoreManagerLossStepData;
@@ -98,6 +101,8 @@ function toLineState(data: LossDisplayData): LossLineState[] {
       "recoveredAmount" in item ? String(item.recoveredAmount) : "",
     amount: "amount" in item ? String(item.amount) : undefined,
     reason: item.reason,
+    usedPlannedPrice:
+      "usedPlannedPrice" in item ? item.usedPlannedPrice : undefined,
   }));
 }
 
@@ -623,9 +628,18 @@ export function LossStepClient({
                       품목명: {item.productName || "선택 전"} · 구분:{" "}
                       {item.productCategory || "-"} · 규격:{" "}
                       {item.productSpec || "-"}
-                      {item.unitPrice !== undefined
-                        ? ` · 손실액 산정 기준 단가: ${formatKrw(item.unitPrice)}`
-                        : " · 저장 시 개점 전 판매가 계획으로 손실액 자동 산정"}
+                      {item.usedPlannedPrice === false
+                        ? " · 손실액: 판매가 계획 없음 · 미산정"
+                        : item.unitPrice !== undefined
+                          ? ` · 손실액 산정 기준 단가: ${formatKrw(item.unitPrice)}`
+                          : " · 저장 시 개점 전 판매가 계획으로 손실액 자동 산정"}
+                      {item.usedPlannedPrice === false ? (
+                        <span className="mt-1 block text-amber-600 dark:text-amber-500">
+                          이 품목은 개점 전 판매가 계획이 없어 손실액이 산정되지
+                          않았습니다(미산정). 희망 판매가 기준 손실액을 반영하려면
+                          판매가 계획을 먼저 입력하세요.
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">

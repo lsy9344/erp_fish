@@ -136,7 +136,7 @@ async function seedProduct(name: string, category = "냉동", unitPrice = 12000)
   const actorId = await getHeadquartersUserId();
   const suffix = randomUUID().slice(0, 8);
 
-  return prisma.product.create({
+  const product = await prisma.product.create({
     data: {
       name: `${name} ${suffix}`,
       category,
@@ -145,6 +145,8 @@ async function seedProduct(name: string, category = "냉동", unitPrice = 12000)
       updatedById: actorId,
     },
   });
+
+  return { ...product, defaultUnitPrice: unitPrice };
 }
 
 async function seedLossType(name: string, isActive = true) {

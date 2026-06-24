@@ -43,7 +43,11 @@ export function ProductCategoryMarginChart({
       salesAmount: item.salesAmount,
       grossMarginRate: item.grossMarginRate,
       statusLabel: item.statusLabel,
+      salesPriceFallbackItemCount: item.salesPriceFallbackItemCount,
     }));
+  const hasSalesPriceFallback = chartData.some(
+    (item) => item.salesPriceFallbackItemCount > 0,
+  );
 
   if (chartData.length === 0) {
     return (
@@ -112,14 +116,20 @@ export function ProductCategoryMarginChart({
           </span>
         ))}
       </div>
-      {/* 검토 후속(point_summary.md:26): 매출은 재고 흐름 기반 추정값이고, 이익률은
-          추정 매출과 FIFO 소진금액(없으면 단가) 기반 추정 매출원가로 산출한 추정값이다.
-          확정 POS 매출/원가가 아님을 명시한다. */}
+      {/* 검토 후속(point_summary.md:26 / 2026-06-24 재검토): 추정 매출은 지점 판매가 계획
+          기준이고(없으면 매입단가 폴백), 이익률은 추정 매출과 FIFO 소진금액(없으면 단가)
+          기반 추정 매출원가로 산출한 추정값이다. 확정 POS 매출/원가가 아님을 명시한다. */}
       <p className="text-muted-foreground text-xs">
-        매출은 재고 흐름(전일+매입−당일) 기반 추정값이며, 추정 이익률은 추정
-        매출과 FIFO 소진금액 기반 추정 원가로 계산한 추정값입니다. 확정
-        매출·원가가 아닙니다.
+        추정 매출은 판매량(전일+매입−당일)에 지점 판매가 계획을 곱한 추정값이며,
+        추정 이익률은 추정 매출과 FIFO 소진금액 기반 추정 원가로 계산한
+        추정값입니다. 확정 매출·원가가 아닙니다.
       </p>
+      {hasSalesPriceFallback ? (
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          일부 품목은 판매가 계획이 없어 매입 단가로 대체(판매가 미반영)되어
+          추정 매출·이익률이 실제 의도보다 낮게 보일 수 있습니다.
+        </p>
+      ) : null}
     </div>
   );
 }
