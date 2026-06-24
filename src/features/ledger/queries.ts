@@ -133,7 +133,7 @@ type LedgerAuditPayload = {
   closedById: string | null;
   closedAt: string | null;
   expenseItems: LedgerCostStepData["expenseItems"];
-  purchaseItems: LedgerCostStepData["purchaseItems"];
+  purchaseItems: LedgerAuditPurchaseItem[];
   laborItems: LedgerCostStepData["laborItems"];
   expenseTotal: number;
   purchaseTotal: number;
@@ -412,6 +412,63 @@ export async function getOrCreateStoreLedgerInTx(
   }
 
   return ledger;
+}
+
+/**
+ * WO(2026-06-24) Task 8/9: 장부 매입 행은 저장 시 delete+recreate되므로
+ * 재생성된 LedgerPurchaseItem.ecountImportLineId(권위 있는 링크)를 기준으로
+ * EcountImportLine.ledgerPurchaseItemId back-pointer를 다시 맞춘다.
+ *
+ * - 재생성된 행이 가리키는 import line은 새 장부 행 id를 가리키게 한다.
+ * - 더 이상 어떤 장부 행도 가리키지 않게 된 import line(행 삭제 등)은 back-pointer를 null로 비운다.
+ */
+export async function syncEcountImportLineBackPointersInTx(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+): Promise<void> {
+  // 재생성된 장부 행이 가리키는 import line(권위 있는 ecountImportLineId 링크).
+  const items = await tx.ledgerPurchaseItem.findMany({
+    where: { dailyLedgerId, ecountImportLineId: { not: null } },
+    select: { id: true, ecountImportLineId: true },
+  });
+  const itemByImportLineId = new Map(
+    items.map((item) => [item.ecountImportLineId!, item.id]),
+  );
+  const linkedImportLineIds = [...itemByImportLineId.keys()];
+
+  // 영향받은 batch 안에서, 더 이상 이 장부의 어떤 행도 가리키지 않게 된
+  // import line의 back-pointer를 정리한다. ledgerPurchaseItemId는 FK가 아닌
+  // 비정규화 컬럼이라 행 삭제만으로는 자동 정리되지 않는다.
+  const affectedBatchIds = [
+    ...new Set(
+      (
+        await tx.ecountImportLine.findMany({
+          where: { id: { in: linkedImportLineIds } },
+          select: { batchId: true },
+        })
+      ).map((line) => line.batchId),
+    ),
+  ];
+
+  if (affectedBatchIds.length > 0) {
+    await tx.ecountImportLine.updateMany({
+      where: {
+        batchId: { in: affectedBatchIds },
+        ledgerPurchaseItemId: { not: null },
+        id: {
+          notIn: linkedImportLineIds.length > 0 ? linkedImportLineIds : [""],
+        },
+      },
+      data: { ledgerPurchaseItemId: null },
+    });
+  }
+
+  for (const [importLineId, itemId] of itemByImportLineId) {
+    await tx.ecountImportLine.update({
+      where: { id: importLineId },
+      data: { ledgerPurchaseItemId: itemId },
+    });
+  }
 }
 
 export async function getTodayStoreLedger(

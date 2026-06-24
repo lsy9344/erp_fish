@@ -490,14 +490,12 @@ export function PurchaseStepClient({
                 isFormSaving ||
                 isOriginalEditBlocked ||
                 isUploadedLineLocked(line);
-              // 본사 단가 수동 오버라이트(point_summary.md:22): 수산물 출고가가 매일 유동적이라
-              // 본사 관리자는 이카운트 업로드 행이라도 단가만은 강제 수정할 수 있다. 지점장 화면
-              // (hqEditReasonRequired=false)에서는 업로드 행 단가도 계속 잠근다. 품목/규격/수량/삭제는
-              // 업로드 행 식별을 보존하기 위해 본사에서도 계속 잠근다.
+              // WO(2026-06-24) Task 14: 이카운트 업로드 행이라도 "장부 적용 단가(unitPrice)"는
+              // 본사와 지점장 모두 수정할 수 있다. 원본 정보(품목/구분/규격/수량/삭제)는 업로드 행
+              // 식별을 보존하기 위해 양쪽 모두 계속 잠근다. 서버 정책(getStoreEcountPurchaseEditErrors,
+              // HQ 보정)도 unitPrice만 허용하므로 UI 잠금과 서버 정책을 일치시킨다.
               const isUnitPriceEditBlocked =
-                isFormSaving ||
-                isOriginalEditBlocked ||
-                (isUploadedLineLocked(line) && !hqEditReasonRequired);
+                isFormSaving || isOriginalEditBlocked;
 
               return (
                 <div key={line.id} className="grid gap-2 rounded-md border p-3">
@@ -712,12 +710,10 @@ export function PurchaseStepClient({
                         {unitPriceError}
                       </FieldError>
                     ) : null}
-                    {isUploadedLineLocked(line) &&
-                    hqEditReasonRequired &&
-                    !isUnitPriceEditBlocked ? (
+                    {isUploadedLineLocked(line) && !isUnitPriceEditBlocked ? (
                       <p className="text-muted-foreground text-xs">
-                        이카운트 업로드 매입이지만 본사 단가 수동 오버라이트가
-                        가능합니다.
+                        이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고 장부
+                        적용 단가만 수정할 수 있습니다.
                       </p>
                     ) : null}
                   </Field>

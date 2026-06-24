@@ -645,6 +645,7 @@ export async function saveHqLedgerPurchases(
           products.map((product) => [product.id, product]),
         );
         const purchaseRows = [];
+        const unitPriceOverrides: UnitPriceOverrideAudit[] = [];
 
         for (let index = 0; index < parsed.data.purchases.length; index += 1) {
           const purchase = parsed.data.purchases[index]!;
@@ -703,60 +704,80 @@ export async function saveHqLedgerPurchases(
             );
           }
 
-          const snapshot = standard
+          // WO(2026-06-24) Task 14/15: 본사 보정은 이카운트 원본 행을 직접 바꾸지 않는다.
+          // 적용 단가(unitPrice)만 보정 가능하고, 품목/구분/규격/수량/원본 거래처(referenceInfo)
+          // 등 원본 식별 정보는 기존 행(existing)에서 그대로 가져온다. 입력값이 달라도 무시한다.
+          const isEcountUpload = existing?.sourceType === "ECOUNT_UPLOAD";
+
+          const snapshot = isEcountUpload
             ? {
-                productId: standard.product.id,
-                purchaseStandardId: standard.id,
-                sourceType: purchase.sourceType,
-                productName: purchase.productName || standard.product.name,
-                productCategory:
-                  purchase.productCategory || standard.product.category,
-                productSpec: purchase.productSpec || standard.product.spec,
-                referenceInfo: purchase.referenceInfo ?? standard.referenceInfo,
+                productId: existing!.productId,
+                purchaseStandardId: existing!.purchaseStandardId,
+                sourceType: existing!.sourceType,
+                productName: existing!.productName,
+                productCategory: existing!.productCategory,
+                productSpec: existing!.productSpec,
+                referenceInfo: existing!.referenceInfo,
               }
-            : product
+            : standard
               ? {
-                  productId: product.id,
-                  purchaseStandardId: null,
+                  productId: standard.product.id,
+                  purchaseStandardId: standard.id,
                   sourceType: purchase.sourceType,
-                  productName: purchase.productName || product.name,
-                  productCategory: purchase.productCategory || product.category,
-                  productSpec: purchase.productSpec || product.spec,
-                  referenceInfo: purchase.referenceInfo,
+                  productName: purchase.productName || standard.product.name,
+                  productCategory:
+                    purchase.productCategory || standard.product.category,
+                  productSpec: purchase.productSpec || standard.product.spec,
+                  referenceInfo:
+                    purchase.referenceInfo ?? standard.referenceInfo,
                 }
-              : purchase.productId && existing
+              : product
                 ? {
-                    productId: existing.productId,
-                    purchaseStandardId: existing.purchaseStandardId,
-                    sourceType: purchase.sourceType,
-                    productName: purchase.productName || existing.productName,
-                    productCategory:
-                      purchase.productCategory || existing.productCategory,
-                    productSpec: purchase.productSpec || existing.productSpec,
-                    referenceInfo: purchase.referenceInfo,
-                  }
-                : {
-                    productId: null,
+                    productId: product.id,
                     purchaseStandardId: null,
                     sourceType: purchase.sourceType,
-                    productName: purchase.productName,
-                    productCategory: purchase.productCategory,
-                    productSpec: purchase.productSpec,
+                    productName: purchase.productName || product.name,
+                    productCategory:
+                      purchase.productCategory || product.category,
+                    productSpec: purchase.productSpec || product.spec,
                     referenceInfo: purchase.referenceInfo,
-                  };
+                  }
+                : purchase.productId && existing
+                  ? {
+                      productId: existing.productId,
+                      purchaseStandardId: existing.purchaseStandardId,
+                      sourceType: purchase.sourceType,
+                      productName: purchase.productName || existing.productName,
+                      productCategory:
+                        purchase.productCategory || existing.productCategory,
+                      productSpec: purchase.productSpec || existing.productSpec,
+                      referenceInfo: purchase.referenceInfo,
+                    }
+                  : {
+                      productId: null,
+                      purchaseStandardId: null,
+                      sourceType: purchase.sourceType,
+                      productName: purchase.productName,
+                      productCategory: purchase.productCategory,
+                      productSpec: purchase.productSpec,
+                      referenceInfo: purchase.referenceInfo,
+                    };
 
           // 이카운트 원본 추적 + 적용 단가 override 메타 보존.
           // delete+recreate로 행이 재생성되므로 기존 행(existing)에서 source linkage를
           // 이월하고, 적용 단가(unitPrice)가 바뀐 경우에만 override 메타를 갱신한다.
-          // NOTE: EcountImportLine.ledgerPurchaseItemId back-pointer는 이 시점에 stale 해진다
-          //       (삭제된 행 id를 가리킴). 권위 있는 링크는 LedgerPurchaseItem.ecountImportLineId
-          //       이므로 여기서는 EcountImportLine을 갱신하지 않는다.
-          const isEcountUpload = existing?.sourceType === "ECOUNT_UPLOAD";
+          // 재생성 후 EcountImportLine.ledgerPurchaseItems back-pointer는 별도로 재동기화한다
+          // (syncEcountImportLineBackPointersInTx). 권위 있는 링크는
+          // LedgerPurchaseItem.ecountImportLineId이다.
           // 수동 행은 기존에 값이 있을 때만 유지된다(없으면 null).
           const ecountImportLineId = existing?.ecountImportLineId ?? null;
           const sourceUnitPrice = isEcountUpload
             ? (existing?.sourceUnitPrice ?? existing?.unitPrice ?? null)
             : (existing?.sourceUnitPrice ?? null);
+          // 이카운트 행은 수량도 원본 식별 정보이므로 기존 행에서 가져온다.
+          const quantity = isEcountUpload
+            ? existing!.quantity
+            : purchase.quantity;
           const unitPriceChanged = Boolean(
             existing && existing.unitPrice !== purchase.unitPrice,
           );
@@ -766,10 +787,26 @@ export async function saveHqLedgerPurchases(
           const unitPriceUpdatedAt = unitPriceChanged
             ? new Date()
             : (existing?.unitPriceUpdatedAt ?? null);
-          // HQ 매입 저장은 별도의 적용 단가 override 사유를 받지 않으므로
-          // (parseHqLedgerInput의 reason은 본사 수정 감사 사유) 기존 값을 이월한다.
-          const unitPriceOverrideReason =
-            existing?.unitPriceOverrideReason ?? null;
+          // 적용 단가가 바뀌면 본사 수정 사유(parsed.data.reason)를 override 사유로 남긴다.
+          // 변경이 없으면 기존 값을 이월한다.
+          const unitPriceOverrideReason = unitPriceChanged
+            ? (parsed.data.reason ?? existing?.unitPriceOverrideReason ?? null)
+            : (existing?.unitPriceOverrideReason ?? null);
+
+          // WO(2026-06-24) Task 15: 적용 단가 보정은 원본 단가 / 변경 전 적용 단가 /
+          // 변경 후 적용 단가 / 수정자 / 사유를 구분해 감사 로그에 남긴다.
+          if (unitPriceChanged && existing) {
+            unitPriceOverrides.push({
+              ledgerPurchaseItemId: existing.id,
+              productName: snapshot.productName,
+              productSpec: snapshot.productSpec,
+              sourceType: snapshot.sourceType,
+              sourceUnitPrice,
+              previousUnitPrice: existing.unitPrice,
+              nextUnitPrice: purchase.unitPrice,
+              reason: parsed.data.reason ?? null,
+            });
+          }
 
           purchaseRows.push({
             dailyLedgerId: beforeLedger.id,
@@ -780,8 +817,8 @@ export async function saveHqLedgerPurchases(
             productCategory: snapshot.productCategory,
             productSpec: snapshot.productSpec,
             unitPrice: purchase.unitPrice,
-            quantity: purchase.quantity,
-            amount: purchase.unitPrice * purchase.quantity,
+            quantity,
+            amount: purchase.unitPrice * quantity,
             referenceInfo: snapshot.referenceInfo,
             ecountImportLineId,
             sourceUnitPrice,
@@ -814,6 +851,10 @@ export async function saveHqLedgerPurchases(
           await tx.ledgerPurchaseItem.createMany({ data: purchaseRows });
         }
 
+        // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
+        // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
+        await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
+
         await syncLedgerInventoryPurchasedQuantitiesInTx(
           tx,
           beforeLedger.id,
@@ -843,6 +884,32 @@ export async function saveHqLedgerPurchases(
           after: toLedgerAuditPayload(afterLedger),
           reason: parsed.data.reason,
         });
+
+        // WO(2026-06-24) Task 15: 적용 단가 보정 라인마다 원본 단가/변경 전·후 적용 단가/
+        // 수정자/사유를 구분해 "이카운트 출고/입고" 기준 감사 로그로 남긴다.
+        for (const override of unitPriceOverrides) {
+          await writeAuditLog(tx, {
+            action: "ledger.hq.ecount_unit_price.overridden",
+            targetType: "LedgerPurchaseItem",
+            targetId: override.ledgerPurchaseItemId,
+            actorId: actor.user.id,
+            before: {
+              productName: override.productName,
+              productSpec: override.productSpec,
+              sourceType: override.sourceType,
+              sourceUnitPrice: override.sourceUnitPrice,
+              appliedUnitPrice: override.previousUnitPrice,
+            },
+            after: {
+              productName: override.productName,
+              productSpec: override.productSpec,
+              sourceType: override.sourceType,
+              sourceUnitPrice: override.sourceUnitPrice,
+              appliedUnitPrice: override.nextUnitPrice,
+            },
+            reason: override.reason,
+          });
+        }
 
         return actionOk(toLedgerCostStepData(afterLedger));
       },
