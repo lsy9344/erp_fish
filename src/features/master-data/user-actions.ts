@@ -19,9 +19,11 @@ import {
   createUserAccountSchema,
   toUserFieldErrors,
   updateUserAccountSchema,
+  userPermissionProfilesSchema,
   userStatusSchema,
   type CreateUserAccountInput,
   type UpdateUserAccountInput,
+  type UserPermissionProfilesInput,
   type UserStatusInput,
 } from "./user-schemas";
 
@@ -42,6 +44,8 @@ type UserSnapshot = {
   isActive: boolean;
   storeIds: string[];
   storeNames: string[];
+  profileIds: string[];
+  profileNames: string[];
 };
 
 const userSelect = {
@@ -90,6 +94,22 @@ function parseUpdateUserInput(
 
 function parseUserStatusInput(input: unknown): ActionResult<UserStatusInput> {
   const parsed = userStatusSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toUserFieldErrors(parsed.error),
+    );
+  }
+
+  return actionOk(parsed.data);
+}
+
+function parseUserPermissionProfilesInput(
+  input: unknown,
+): ActionResult<UserPermissionProfilesInput> {
+  const parsed = userPermissionProfilesSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -210,6 +230,21 @@ async function getUserSnapshot(
           },
         },
       },
+      permissionProfiles: {
+        orderBy: {
+          profile: {
+            name: "asc",
+          },
+        },
+        select: {
+          profileId: true,
+          profile: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -226,6 +261,12 @@ async function getUserSnapshot(
     storeIds: user.storeAssignments.map((assignment) => assignment.storeId),
     storeNames: user.storeAssignments.map(
       (assignment) => assignment.store.name,
+    ),
+    profileIds: user.permissionProfiles.map(
+      (assignment) => assignment.profileId,
+    ),
+    profileNames: user.permissionProfiles.map(
+      (assignment) => assignment.profile.name,
     ),
   };
 }
@@ -253,6 +294,8 @@ function toAuditUserSnapshot(
       isActive: snapshot.isActive,
       storeIds: snapshot.storeIds,
       storeNames: snapshot.storeNames,
+      profileIds: snapshot.profileIds,
+      profileNames: snapshot.profileNames,
     },
     actorContext,
   );
@@ -330,6 +373,19 @@ async function writeUserChangeAudits(
       after: toAuditUserSnapshot(after, actorContext),
     });
   }
+
+  const beforeProfileIds = before?.profileIds ?? [];
+
+  if (!sameStringArray(beforeProfileIds, after.profileIds)) {
+    await writeAuditLog(tx, {
+      action: "user.permission_profiles_changed",
+      targetType: "User",
+      targetId: userId,
+      actorId,
+      before: before ? toAuditUserSnapshot(before, actorContext) : null,
+      after: toAuditUserSnapshot(after, actorContext),
+    });
+  }
 }
 
 async function replaceStoreAssignments(
@@ -349,6 +405,28 @@ async function replaceStoreAssignments(
     data: storeIds.map((storeId) => ({
       userId,
       storeId,
+    })),
+    skipDuplicates: true,
+  });
+}
+
+async function replacePermissionProfiles(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  profileIds: string[],
+) {
+  await tx.userPermissionProfile.deleteMany({
+    where: { userId },
+  });
+
+  if (profileIds.length === 0) {
+    return;
+  }
+
+  await tx.userPermissionProfile.createMany({
+    data: profileIds.map((profileId) => ({
+      userId,
+      profileId,
     })),
     skipDuplicates: true,
   });
@@ -616,6 +694,124 @@ export async function updateUserStatus(
   if (result.status === "updated") {
     revalidateUserPaths();
   }
+
+  return actionOk(toActionData(result.user, result.storeIds));
+}
+
+export async function updateUserPermissionProfiles(
+  userId: string,
+  input: unknown,
+): Promise<ActionResult<UserActionData>> {
+  const actor = await requireUserPermissionAccess();
+  const parsed = parseUserPermissionProfilesInput(input);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const profileIds = [...new Set(parsed.data.profileIds)];
+
+  const result = await db.$transaction(async (tx) => {
+    const before = await getUserSnapshot(tx, userId);
+
+    if (!before) {
+      return { status: "missing" as const };
+    }
+
+    const profiles =
+      profileIds.length === 0
+        ? []
+        : await tx.permissionProfile.findMany({
+            where: {
+              id: { in: profileIds },
+              isActive: true,
+            },
+            select: {
+              id: true,
+              actions: {
+                select: { action: true },
+              },
+            },
+          });
+
+    if (profiles.length !== profileIds.length) {
+      return { status: "invalid-profiles" as const };
+    }
+
+    // 자기 자신의 권한을 편집할 때는, 권한 관리(USER_PERMISSION_MANAGE) action을
+    // 부여하는 활성 프로필이 최소 하나는 남아 있어야 한다. 그렇지 않으면 본인이
+    // 권한 관리 화면에서 스스로를 잠가버릴 수 있다.
+    if (actor.id === userId) {
+      const retainsPermissionManage = profiles.some((profile) =>
+        profile.actions.some(
+          (entry) => entry.action === PermissionAction.USER_PERMISSION_MANAGE,
+        ),
+      );
+
+      if (!retainsPermissionManage) {
+        return { status: "self-lockout" as const };
+      }
+    }
+
+    await replacePermissionProfiles(tx, userId, profileIds);
+
+    const updated = await tx.user.findUnique({
+      where: { id: userId },
+      select: userSelect,
+    });
+
+    if (!updated) {
+      return { status: "missing" as const };
+    }
+
+    const after = await getUserSnapshot(tx, userId);
+
+    if (!after) {
+      throw new Error("Updated user could not be loaded for audit.");
+    }
+
+    await writeUserChangeAudits(tx, {
+      actorId: actor.id,
+      actorRole: actor.role,
+      userId,
+      before,
+      after,
+    });
+
+    return {
+      status: "updated" as const,
+      user: updated,
+      storeIds: after.storeIds,
+    };
+  });
+
+  if (result.status === "missing") {
+    return actionError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
+  }
+
+  if (result.status === "invalid-profiles") {
+    return actionError(
+      "INVALID_PERMISSION_PROFILE",
+      "활성 권한 프로필만 배정할 수 있습니다.",
+      {
+        profileIds: ["활성 권한 프로필만 배정할 수 있습니다."],
+      },
+    );
+  }
+
+  if (result.status === "self-lockout") {
+    return actionError(
+      "SELF_PERMISSION_CHANGE",
+      "현재 로그인한 본사 계정의 권한 관리 권한은 직접 제거할 수 없습니다.",
+      {
+        profileIds: [
+          "권한 관리(USER_PERMISSION_MANAGE) 권한을 가진 프로필을 최소 하나 유지해야 합니다.",
+        ],
+      },
+    );
+  }
+
+  revalidateUserPaths();
 
   return actionOk(toActionData(result.user, result.storeIds));
 }

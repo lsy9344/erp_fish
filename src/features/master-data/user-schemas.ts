@@ -59,9 +59,16 @@ export const userStatusSchema = z.object({
   isActive: z.boolean(),
 });
 
+export const userPermissionProfilesSchema = z.object({
+  profileIds: z.array(z.string().min(1)).default([]),
+});
+
 export type CreateUserAccountInput = z.infer<typeof createUserAccountSchema>;
 export type UpdateUserAccountInput = z.infer<typeof updateUserAccountSchema>;
 export type UserStatusInput = z.infer<typeof userStatusSchema>;
+export type UserPermissionProfilesInput = z.infer<
+  typeof userPermissionProfilesSchema
+>;
 
 export function toUserFieldErrors(error: z.ZodError) {
   return error.flatten().fieldErrors as Record<string, string[]>;

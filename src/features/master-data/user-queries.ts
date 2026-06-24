@@ -14,6 +14,15 @@ export type UserListItem = {
   updatedAt: string;
   storeIds: string[];
   storeNames: string[];
+  profileIds: string[];
+  profileNames: string[];
+};
+
+export type PermissionProfileOption = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
 };
 
 export type UserListFilters = {
@@ -81,6 +90,26 @@ export async function getUsersForHeadquarters(filters: UserListFilters = {}) {
           },
         },
       },
+      permissionProfiles: {
+        where: {
+          profile: {
+            isActive: true,
+          },
+        },
+        orderBy: {
+          profile: {
+            name: "asc",
+          },
+        },
+        select: {
+          profileId: true,
+          profile: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -95,20 +124,38 @@ export async function getUsersForHeadquarters(filters: UserListFilters = {}) {
     storeNames: user.storeAssignments.map(
       (assignment) => assignment.store.name,
     ),
+    profileIds: user.permissionProfiles.map(
+      (assignment) => assignment.profileId,
+    ),
+    profileNames: user.permissionProfiles.map(
+      (assignment) => assignment.profile.name,
+    ),
   }));
 }
 
 export async function getUserManagementOptions() {
   await requireUserPermissionAccess();
 
-  const stores = await db.store.findMany({
-    where: { isActive: true },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    select: {
-      id: true,
-      name: true,
-    },
-  });
+  const [stores, profiles] = await Promise.all([
+    db.store.findMany({
+      where: { isActive: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    db.permissionProfile.findMany({
+      where: { isActive: true },
+      orderBy: [{ name: "asc" }, { code: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        description: true,
+      },
+    }),
+  ]);
 
-  return { stores };
+  return { stores, profiles };
 }

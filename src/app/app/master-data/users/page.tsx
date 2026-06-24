@@ -45,6 +45,7 @@ export default async function UserManagementPage({
       <UserManagementClient
         users={users}
         stores={options.stores}
+        profiles={options.profiles}
         filters={filters}
       />
     </HeadquartersShell>
