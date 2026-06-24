@@ -45,6 +45,38 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+async function fetchCsvFromVisibleLink(
+  page: Page,
+  expectedFilename: RegExp | string,
+) {
+  const csvLink = page.getByRole("link", { name: "CSV" });
+  await expect(csvLink).toBeVisible();
+
+  const href = await csvLink.getAttribute("href");
+
+  expect(href).toBeTruthy();
+
+  const response = await page.request.get(href!);
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("text/csv");
+
+  const contentDisposition = response.headers()["content-disposition"] ?? "";
+
+  expect(contentDisposition).toContain("attachment");
+  if (typeof expectedFilename === "string") {
+    expect(contentDisposition).toContain(`filename="${expectedFilename}"`);
+  } else {
+    expect(contentDisposition).toMatch(expectedFilename);
+  }
+
+  const csv = await response.text();
+
+  expect(csv.charCodeAt(0)).toBe(0xfeff);
+
+  return csv;
+}
+
 async function getHeadquartersUserId() {
   const user = await prisma.user.findUnique({
     where: { email: "hq@example.com" },
@@ -837,18 +869,10 @@ test("본사는 일별 기간비교 월간 리포트를 CSV로 다운로드하�
   await login(page, "hq@example.com");
 
   await page.goto("/app/reports/daily?date=today");
-  await expect(page.getByRole("link", { name: "CSV" })).toBeVisible();
-
-  const dailyDownloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "CSV" }).click();
-  const dailyDownload = await dailyDownloadPromise;
-  expect(dailyDownload.suggestedFilename()).toMatch(
-    /^erp-fish-report-daily-\d{4}-\d{2}-\d{2}\.csv$/,
+  const dailyCsv = await fetchCsvFromVisibleLink(
+    page,
+    /filename="erp-fish-report-daily-\d{4}-\d{2}-\d{2}\.csv"/,
   );
-  const dailyDownloadPath = await dailyDownload.path();
-  expect(dailyDownloadPath).toBeTruthy();
-  const dailyCsv = await readFile(dailyDownloadPath, "utf8");
-  expect(dailyCsv.charCodeAt(0)).toBe(0xfeff);
   expect(dailyCsv).toContain("정정 반영");
   expect(dailyCsv).not.toContain("300000");
   expect(dailyCsv).not.toContain("inventoryAmount");
@@ -858,29 +882,19 @@ test("본사는 일별 기간비교 월간 리포트를 CSV로 다운로드하�
   await page.goto(
     `/app/reports/comparison?startDate=2026-05-31&endDate=${getTodayKstInput()}`,
   );
-  const comparisonDownloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "CSV" }).click();
-  const comparisonDownload = await comparisonDownloadPromise;
-  expect(comparisonDownload.suggestedFilename()).toMatch(
-    /^erp-fish-report-comparison-2026-05-31-\d{4}-\d{2}-\d{2}\.csv$/,
+  const comparisonCsv = await fetchCsvFromVisibleLink(
+    page,
+    /filename="erp-fish-report-comparison-2026-05-31-\d{4}-\d{2}-\d{2}\.csv"/,
   );
-  const comparisonDownloadPath = await comparisonDownload.path();
-  expect(comparisonDownloadPath).toBeTruthy();
-  const comparisonCsv = await readFile(comparisonDownloadPath, "utf8");
   expect(comparisonCsv).not.toMatch(THIRTY_PERCENT_EXPORT_PATTERN);
 
   await page.goto(
     `/app/reports/monthly?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
   );
-  const monthlyDownloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "CSV" }).click();
-  const monthlyDownload = await monthlyDownloadPromise;
-  expect(monthlyDownload.suggestedFilename()).toBe(
+  const monthlyCsv = await fetchCsvFromVisibleLink(
+    page,
     `erp-fish-report-monthly-${getCurrentMonthInput()}.csv`,
   );
-  const monthlyDownloadPath = await monthlyDownload.path();
-  expect(monthlyDownloadPath).toBeTruthy();
-  const monthlyCsv = await readFile(monthlyDownloadPath, "utf8");
   expect(monthlyCsv).not.toMatch(THIRTY_PERCENT_EXPORT_PATTERN);
 
   const auditLogs = await prisma.auditLog.findMany({
