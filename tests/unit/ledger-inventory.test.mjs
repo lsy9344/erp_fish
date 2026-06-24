@@ -1132,26 +1132,26 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /조정 사유/);
   assert.match(componentSource, /조정 전/);
   assert.match(componentSource, /조정 후/);
-  assert.match(inventoryUiSource, /재고 흐름 차이/);
+  assert.match(inventoryUiSource, /inventoryFlowDifference:\s*"재고 차이"/);
   assert.doesNotMatch(
     inventoryUiSource,
-    /dailySalesQuantity:\s*"당일 판매량"/,
-    "재고 흐름 차이는 실제 판매량으로 단정하면 안 된다",
+    /inventoryFlowDifference:\s*"재고 흐름 차이"/,
+    "재고 차이는 실제 판매량으로 단정하거나 흐름 용어로 길게 표시하지 않는다",
   );
   assert.match(
     componentSource,
     /return systemQuantity - actualQuantity;/,
-    "재고 흐름 차이는 기준재고에서 당일재고를 뺀 값으로 표시해야 한다",
+    "재고 차이는 기준재고에서 당일재고를 뺀 값으로 표시해야 한다",
   );
   assert.doesNotMatch(
     componentSource,
     /return `\$\{formatQuantity\(value\)\}개`;/,
-    "재고 흐름 차이 수량 단위는 한 번만 표시해야 한다",
+    "재고 차이 수량 단위는 한 번만 표시해야 한다",
   );
   assert.match(
     componentSource,
     /조정 차이/,
-    "강제 실사 보정의 signed 차이는 재고 흐름 차이와 별도 라벨로 보여야 한다",
+    "강제 실사 보정의 signed 차이는 재고 차이와 별도 라벨로 보여야 한다",
   );
   assert.match(
     inventoryUiSource,

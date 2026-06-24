@@ -11,7 +11,7 @@ export const inventoryTerms = {
   loss: "손실",
   baselineStock: "기준재고",
   currentStock: "당일재고",
-  inventoryFlowDifference: "재고 흐름 차이",
+  inventoryFlowDifference: "재고 차이",
   inventoryAmount: "재고금액",
   statusAndAdjustment: "상태/조정",
 
