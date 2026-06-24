@@ -1069,7 +1069,10 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
   assert.match(inventoryUiSource, /상태\/조정/);
-  assert.match(termsSource, /statusAndAdjustmentHelp:/);
+  assert.match(
+    termsSource,
+    /statusAndAdjustmentHelp:\s*\n\s*"시스템이 계산한 재고와 입력한 재고\(당일재고\)가 다릅니다\. 다른 사유를 입력하세요\."/,
+  );
   assert.match(
     componentSource,
     /\$\{inventoryTerms\.statusAndAdjustment\}: \$\{inventoryTerms\.statusAndAdjustmentHelp\}/,

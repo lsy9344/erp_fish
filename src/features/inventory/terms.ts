@@ -24,7 +24,7 @@ export const inventoryTerms = {
   dailySalesQuantityHelp:
     "기준재고에서 입력한 당일재고를 뺀 재고 흐름상 판매 수량입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
   statusAndAdjustmentHelp:
-    "수정됨, 조정 필요, 조정됨 상태와 조정 사유 입력을 함께 보여줍니다. 기준재고와 당일재고가 다르면 조정 사유를 저장한 뒤 재고를 저장하세요.",
+    "시스템이 계산한 재고와 입력한 재고(당일재고)가 다릅니다. 다른 사유를 입력하세요.",
   carryoverHistoryTitle: "전일재고 이력",
 
   // FIFO 재고금액 / 판매 lot 이력
