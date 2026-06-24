@@ -2,18 +2,23 @@
 
 ## What Runs
 
-The workflow lives at `.github/workflows/ci.yml`.
+The workflow lives at `.github/workflows/ci.yml`. The design goal is fast
+feedback on the common case (a small change pushed to a feature branch) and
+heavier verification only at integration points (PR, `staging`, `main`).
 
-- Pull requests run `Quality Gate`, `API Tests`, and `Playwright Smoke`.
-- Pushes to feature branches and `develop` run the same fast checks.
+- Pushes to feature branches run only `Fast Checks` (lint + typecheck + unit,
+  no DB, no build, no browser) — about 1-2 minutes. This is the everyday loop.
+- Pull requests run `Fast Checks`, `Production Build`, `API Tests`, and
+  `Playwright Smoke`.
 - Pull request updates and pushes from the same branch cancel older in-progress runs.
 - `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.
-- Pushes to `staging` run `Quality Gate`, `API Tests`, and the broader core E2E
-  bundle split into three parallel groups: `ledger`, `hq`, and `admin`.
-- Pushes to `main` or `master` run `Quality Gate`, `API Tests`, and the full
-  Playwright suite in 4 shards. The smoke job is skipped on those pushes because
-  the full suite covers it.
+- Pushes to `staging` run `Fast Checks`, `Production Build`, `API Tests`, and the
+  broader core E2E bundle split into three parallel groups: `ledger`, `hq`, and
+  `admin`. Smoke is skipped here because core covers it.
+- Pushes to `main` or `master` run `Fast Checks`, `Production Build`, `API Tests`,
+  and the full Playwright suite in 4 shards. The smoke job is skipped on those
+  pushes because the full suite covers it.
 - The nightly schedule runs the full Playwright suite in 4 shards at 19:00 UTC
   (04:00 KST). The full Playwright shards run only `tests/e2e`; API tests stay
   in `API Tests`.
@@ -41,6 +46,27 @@ pnpm lint
 pnpm format:check
 pnpm build
 ```
+
+## Pre-Push Hook
+
+A shared git hook at `.githooks/pre-push` runs `lint + typecheck + unit` locally
+before every push, so the same failures `Fast Checks` would catch on CI are
+caught in seconds on your machine. It is the same gate, just earlier.
+
+Enable it once per clone (the hook file is committed; the `core.hooksPath`
+pointer is local git config and is not):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook works regardless of which tool performs the push (plain git, Claude
+Code, Codex CLI) because it is a git-level hook, not tied to any one tool.
+
+Bypass options:
+
+- One push only: `git push --no-verify`
+- Persistently in a shell: set `SKIP_PREPUSH=1`
 
 ## Manual GitHub Run
 
@@ -91,8 +117,8 @@ postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e
 
 The Playwright wrapper forces test runs to use a test-like database, so inherited local values such as `DATABASE_URL=rider` cannot leak into CI.
 
-The quality job also creates a short-lived test `.env` file from CI environment
-values. Playwright commands use `PLAYWRIGHT_DATABASE_URL` through
+The build and test jobs also create a short-lived test `.env` file from CI
+environment values. Playwright commands use `PLAYWRIGHT_DATABASE_URL` through
 `scripts/run-playwright-clean.mjs`, and the wrapper refuses production-like
 database names before tests start.
 

@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# Local pre-push gate. Mirrors the CI "Fast Checks" job so failures are caught
+# in seconds on your machine instead of ~10 min later on GitHub Actions.
+#
+# Runs: lint + typecheck + unit tests (NO build, NO e2e — those run at staging
+# merge time on CI, by design).
+#
+# Shared via `git config core.hooksPath .githooks`, so it applies no matter
+# which tool (Claude Code, Codex CLI, plain git) performs the push.
+#
+# Skip once (emergency):   git push --no-verify
+# Skip persistently:       set SKIP_PREPUSH=1 in your environment.
+
+if [ "${SKIP_PREPUSH:-0}" = "1" ]; then
+  echo "pre-push: SKIP_PREPUSH=1 set — skipping local checks."
+  exit 0
+fi
+
+echo "pre-push: running fast checks (lint + typecheck + unit)…"
+echo "pre-push: (skip with 'git push --no-verify' if you must)"
+
+run() {
+  echo ""
+  echo "▶ $1"
+  shift
+  if ! "$@"; then
+    echo ""
+    echo "✖ pre-push failed at: $*"
+    echo "  Fix the above, or push with --no-verify to bypass."
+    exit 1
+  fi
+}
+
+run "lint"      pnpm lint
+run "typecheck" pnpm typecheck
+run "unit"      pnpm test:unit
+
+echo ""
+echo "✔ pre-push checks passed — pushing."
+exit 0

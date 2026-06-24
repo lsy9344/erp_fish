@@ -38,11 +38,60 @@ env:
   PW_REUSE_EXISTING_SERVER: "0"
 
 jobs:
-  quality:
-    name: Quality Gate
+  # Fast gate: runs on EVERY push to any branch (incl. feature branches) and on PRs.
+  # Cheap, no DB, no browser, no build — gives ~1-2 min feedback on the common case.
+  fast-checks:
+    name: Fast Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Check CI YAML and docs formatting
+        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+  # Heavy build: only on PRs and on pushes to integration branches (staging/main).
+  # Feature-branch pushes skip this — you build locally / it runs at merge time.
+  build:
+    name: Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    if: github.event_name != 'schedule'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout
@@ -70,9 +119,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate Prisma schema
-        run: pnpm exec prisma validate
-
       - name: Create test env file
         run: |
           cat > .env <<EOF
@@ -90,21 +136,6 @@ jobs:
           ALLOW_SEED_PASSWORD_ROTATION=""
           EOF
 
-      - name: Check formatting
-        run: pnpm format:check
-
-      - name: Check CI YAML and docs formatting
-        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Unit tests
-        run: pnpm test:unit
-
       - name: Production build
         run: pnpm build
 
@@ -112,7 +143,10 @@ jobs:
     name: API Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name != 'schedule'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      github.event_name == 'workflow_dispatch'
 
     services:
       postgres:
@@ -173,11 +207,11 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 25
+    # Runs on PRs and on staging/main pushes the core/full jobs do NOT already cover.
+    # Plain feature-branch pushes skip smoke entirely — that is the slow common case we removed.
     if: >-
-      github.event_name != 'schedule' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) &&
-      !(github.event_name == 'push' && github.ref == 'refs/heads/staging') &&
-      !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.run_full_e2e)
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
@@ -428,7 +462,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
-      - quality
+      - fast-checks
+      - build
       - api-tests
       - playwright-smoke
       - playwright-core
@@ -443,7 +478,8 @@ jobs:
       COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title || github.event_name }}
-      QUALITY_RESULT: ${{ needs.quality.result }}
+      FAST_CHECKS_RESULT: ${{ needs.fast-checks.result }}
+      BUILD_RESULT: ${{ needs.build.result }}
       API_TESTS_RESULT: ${{ needs.api-tests.result }}
       PLAYWRIGHT_SMOKE_RESULT: ${{ needs.playwright-smoke.result }}
       PLAYWRIGHT_CORE_RESULT: ${{ needs.playwright-core.result }}
@@ -458,7 +494,7 @@ jobs:
           fi
 
           overall="success"
-          for result in "$QUALITY_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_CORE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
+          for result in "$FAST_CHECKS_RESULT" "$BUILD_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_CORE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               overall="failure"
             fi
@@ -493,7 +529,8 @@ jobs:
           run_url = os.environ["RUN_URL"]
           commit_message = os.environ["COMMIT_MESSAGE"]
           results = {
-              "Quality Gate": os.environ["QUALITY_RESULT"],
+              "Fast Checks": os.environ["FAST_CHECKS_RESULT"],
+              "Production Build": os.environ["BUILD_RESULT"],
               "API Tests": os.environ["API_TESTS_RESULT"],
               "Playwright Smoke": os.environ["PLAYWRIGHT_SMOKE_RESULT"],
               "Playwright Core": os.environ["PLAYWRIGHT_CORE_RESULT"],

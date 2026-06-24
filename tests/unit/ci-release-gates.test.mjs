@@ -28,7 +28,8 @@ function readWorkflowJob(workflow, jobName) {
 test("PR CI keeps release gates while running representative e2e smoke", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
-  const qualityJob = readWorkflowJob(workflow, "quality");
+  const fastChecksJob = readWorkflowJob(workflow, "fast-checks");
+  const buildJob = readWorkflowJob(workflow, "build");
   const apiTestsJob = readWorkflowJob(workflow, "api-tests");
   const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
   const coreJob = readWorkflowJob(workflow, "playwright-core");
@@ -42,17 +43,39 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
   assert.match(scripts["release:preflight"], /pnpm test:api/);
   assert.match(scripts["release:preflight"], /pnpm test:e2e:core/);
+
+  // Fast gate runs on every push (incl. feature branches): lint + typecheck + unit,
+  // no DB, no build, no browser. This is the cheap common-case feedback loop.
+  assert.match(fastChecksJob, /if: github\.event_name != 'schedule'/);
+  assert.match(fastChecksJob, /run:\s*pnpm lint/);
+  assert.match(fastChecksJob, /run:\s*pnpm typecheck/);
+  assert.match(fastChecksJob, /run:\s*pnpm test:unit/);
+  assert.doesNotMatch(fastChecksJob, /services:[\s\S]*postgres:/);
+  assert.doesNotMatch(fastChecksJob, /run:\s*pnpm test:api/);
+  assert.doesNotMatch(fastChecksJob, /run:\s*pnpm build/);
+
+  // Heavy build is gated to PRs and integration-branch (staging/main) pushes,
+  // so plain feature-branch pushes do not pay the build cost.
+  assert.match(buildJob, /run:\s*pnpm build/);
+  assert.match(buildJob, /Restore Next\.js cache/);
+  assert.match(buildJob, /github\.event_name == 'pull_request'/);
+  assert.match(buildJob, /refs\/heads\/staging/);
+  assert.match(buildJob, /refs\/heads\/main/);
+
+  // API tests are likewise gated off feature-branch pushes.
   assert.match(apiTestsJob, /run:\s*pnpm test:api/);
   assert.match(apiTestsJob, /services:[\s\S]*postgres:/);
-  assert.doesNotMatch(qualityJob, /services:[\s\S]*postgres:/);
-  assert.doesNotMatch(qualityJob, /run:\s*pnpm test:api/);
+  assert.match(apiTestsJob, /github\.event_name == 'pull_request'/);
+  assert.match(apiTestsJob, /refs\/heads\/staging/);
+
+  // Smoke runs on PRs (and non-full manual dispatch), NOT on plain feature pushes
+  // and NOT on staging/main pushes (core/full cover those).
+  assert.match(smokeJob, /github\.event_name == 'pull_request'/);
   assert.match(
     smokeJob,
-    /github\.event_name != 'schedule' &&[\s\S]*!\(github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e\)/,
+    /github\.event_name == 'workflow_dispatch' && !inputs\.run_full_e2e/,
   );
-  assert.match(smokeJob, /refs\/heads\/staging/);
-  assert.match(smokeJob, /refs\/heads\/main/);
-  assert.match(smokeJob, /refs\/heads\/master/);
+  assert.doesNotMatch(smokeJob, /github\.event_name == 'push'/);
   assert.match(coreJob, /github\.event_name == 'push'/);
   assert.match(coreJob, /github\.ref == 'refs\/heads\/staging'/);
   assert.match(coreJob, /run:\s*pnpm test:e2e:core/);
@@ -69,10 +92,9 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
     /run:\s*pnpm test:e2e:smoke:\$\{\{\s*matrix\.group\s*\}\}/,
   );
   assert.doesNotMatch(smokeJob, /run:\s*pnpm test:e2e:core/);
-  assert.match(qualityJob, /Restore Next\.js cache/);
-  assert.doesNotMatch(qualityJob, /Restore Playwright browser cache/);
-  assert.doesNotMatch(qualityJob, /Install Chromium/);
-  assert.doesNotMatch(qualityJob, /ms-playwright/);
+  assert.doesNotMatch(buildJob, /Restore Playwright browser cache/);
+  assert.doesNotMatch(buildJob, /Install Chromium/);
+  assert.doesNotMatch(buildJob, /ms-playwright/);
   assert.doesNotMatch(
     workflow,
     /Run smoke e2e[\s\S]*tests\/e2e\/auth\.spec\.ts:16/,
