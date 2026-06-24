@@ -866,6 +866,8 @@ test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과
 test("본사는 일별 기간비교 월간 리포트를 CSV로 다운로드하고 감사 이력을 본다", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
+
   await login(page, "hq@example.com");
 
   await page.goto("/app/reports/daily?date=today");

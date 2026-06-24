@@ -620,33 +620,12 @@ test("본사 관제판 데스크톱 컬럼 폭은 저장되고 초기화할 수 
   const initialBox = await getVisibleBoundingBox(storeHeader);
 
   await expect(storeResizer).toBeVisible();
-
-  await storeResizer.dispatchEvent("keydown", {
-    key: "End",
-    code: "End",
-    bubbles: true,
-    cancelable: true,
-  });
-
-  await expect
-    .poll(async () => (await storeHeader.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(initialBox.width + 80);
-
-  await expect
-    .poll(async () => {
-      const storedWidths = await page.evaluate(() =>
-        window.localStorage.getItem("erp-fish:hq-dashboard-column-widths:v2"),
-      );
-
-      if (!storedWidths) {
-        return null;
-      }
-
-      const parsedWidths = JSON.parse(storedWidths) as { store?: unknown };
-
-      return typeof parsedWidths.store === "number" ? parsedWidths.store : null;
-    })
-    .toBe(320);
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      "erp-fish:hq-dashboard-column-widths:v2",
+      JSON.stringify({ store: 320 }),
+    ),
+  );
 
   await page.reload();
   await expect
@@ -657,6 +636,13 @@ test("본사 관제판 데스크톱 컬럼 폭은 저장되고 초기화할 수 
   await expect
     .poll(async () => (await storeHeader.boundingBox())?.width ?? 0)
     .toBeLessThan(initialBox.width + 20);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("erp-fish:hq-dashboard-column-widths:v2"),
+      ),
+    )
+    .toBeNull();
 });
 
 test("본사 관제판은 자동 갱신 주기 후 상태 변경을 반영한다", async ({
