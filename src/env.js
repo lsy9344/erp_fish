@@ -3,6 +3,17 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
+const exampleAuthSecret =
+  "replace-with-a-random-string-of-at-least-32-characters";
+const productionAuthSecretSchema = z
+  .string()
+  .trim()
+  .min(32)
+  .refine((value) => value !== exampleAuthSecret, {
+    message:
+      "AUTH_SECRET must not use the .env.example placeholder in production.",
+  });
+
 /**
  * Some local shells expose SQLAlchemy-style PostgreSQL URLs. Prisma accepts the
  * same connection details, but only with the standard PostgreSQL protocol.
@@ -59,7 +70,10 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    AUTH_SECRET: z.string().trim().min(32).optional(),
+    AUTH_SECRET:
+      process.env.NODE_ENV === "production"
+        ? productionAuthSecretSchema
+        : z.string().trim().min(32).optional(),
     DATABASE_URL: z.string().url(),
     SEED_HQ_EMAIL: z.string().email().optional(),
     SEED_HQ_PASSWORD: z.string().min(12).optional(),
