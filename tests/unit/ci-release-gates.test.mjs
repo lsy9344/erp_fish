@@ -31,6 +31,7 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   const qualityJob = readWorkflowJob(workflow, "quality");
   const apiTestsJob = readWorkflowJob(workflow, "api-tests");
   const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
+  const coreJob = readWorkflowJob(workflow, "playwright-core");
   const fullJob = readWorkflowJob(workflow, "playwright-full");
   const burnInJob = readWorkflowJob(workflow, "playwright-burn-in");
   const scripts = packageJson.scripts;
@@ -49,13 +50,19 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
     smokeJob,
     /github\.event_name != 'schedule' &&[\s\S]*!\(github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e\)/,
   );
-  assert.doesNotMatch(smokeJob, /refs\/heads\/main/);
-  assert.doesNotMatch(smokeJob, /refs\/heads\/master/);
+  assert.match(smokeJob, /refs\/heads\/staging/);
+  assert.match(smokeJob, /refs\/heads\/main/);
+  assert.match(smokeJob, /refs\/heads\/master/);
+  assert.match(coreJob, /github\.event_name == 'push'/);
+  assert.match(coreJob, /github\.ref == 'refs\/heads\/staging'/);
+  assert.match(coreJob, /run:\s*pnpm test:e2e:core/);
   assert.match(
     fullJob,
     /github\.event_name == 'schedule' \|\|[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e/,
   );
-  assert.doesNotMatch(fullJob, /github\.event_name == 'push'/);
+  assert.match(fullJob, /github\.event_name == 'push'/);
+  assert.match(fullJob, /refs\/heads\/main/);
+  assert.match(fullJob, /refs\/heads\/master/);
   assert.match(smokeJob, /group:\s*\[ledger, hq, admin\]/);
   assert.match(
     smokeJob,
@@ -71,7 +78,7 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
     /Run smoke e2e[\s\S]*tests\/e2e\/auth\.spec\.ts:16/,
   );
 
-  for (const browserJob of [smokeJob, fullJob, burnInJob]) {
+  for (const browserJob of [smokeJob, coreJob, fullJob, burnInJob]) {
     assert.match(
       browserJob,
       /container:\s*\n\s+image:\s*mcr\.microsoft\.com\/playwright:v1\.60\.0-noble/,

@@ -1031,7 +1031,13 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /overflow-x-auto/);
   assert.match(
     componentSource,
-    /setActiveCategory\(normalizeCategory\(item\.productCategory\)\)/,
+    /const viewTabs = \["전체", \.\.\.categories\]/,
+  );
+  assert.match(componentSource, /function resolveItemViewTab/);
+  assert.match(componentSource, /if \(activeCategory === "전체"\)/);
+  assert.match(
+    componentSource,
+    /return normalizeCategory\(item\.productCategory\)/,
   );
   assert.match(componentSource, /MAX_INVENTORY_INTEGER/);
   assert.match(componentSource, /수정됨/);

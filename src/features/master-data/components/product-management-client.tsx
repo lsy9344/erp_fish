@@ -169,9 +169,7 @@ export function ProductManagementClient({
     setCategory(product.category);
     setSpec(product.spec);
     setDefaultUnitPrice(
-      product.defaultUnitPrice === null
-        ? ""
-        : String(product.defaultUnitPrice),
+      product.defaultUnitPrice === null ? "" : String(product.defaultUnitPrice),
     );
     setFieldErrors({});
     setFormError(null);
@@ -472,8 +470,8 @@ export function ProductManagementClient({
               {dialogState?.mode === "edit" ? "품목 정보 수정" : "품목 추가"}
             </DialogTitle>
             <DialogDescription>
-              품목 식별/분류/규격 등 기준 정보를 관리합니다. 단가는 선택 입력이며
-              본사 매입가가 아닌 참고용입니다.
+              품목 식별/분류/규격 등 기준 정보를 관리합니다. 단가는 선택
+              입력이며 본사 매입가가 아닌 참고용입니다.
             </DialogDescription>
           </DialogHeader>
           <form
