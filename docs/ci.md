@@ -59,8 +59,7 @@ pnpm build
 Recommended branch roles:
 
 - `main`: production deployment branch.
-- `staging` or `develop`: deployment branch for testing on a real preview or
-  staging URL.
+- `staging`: deployment branch for testing on a real preview URL.
 - Feature branches: short-lived implementation branches.
 
 Code in this repository controls GitHub Actions, Vercel cron entries in
@@ -69,12 +68,16 @@ controls which Git branch is the production branch, which branches receive
 preview/staging deployments, production and preview environment variables,
 domains, aliases, and GitHub integration settings.
 
-The current production deployment record in `docs/production-deployment.md`
-mentions Vercel and an earlier `new_function` deployment path. If Git push
-deployments should become the normal production path, set Vercel's Production
-Branch to `main` in the Vercel project settings. If a stable test URL is needed,
-create a `staging` or `develop` branch in GitHub and configure Vercel preview or
-a separate Vercel project/environment for that branch.
+Current Vercel branch setup:
+
+- Production Branch: `main`.
+- Preview Branch: `staging`, covered by Vercel's Preview target.
+- Stable staging URL:
+  `https://erp-fish-git-staging-noahs-projects-731be159.vercel.app`.
+- Staging-specific Preview env: `AUTH_SECRET`, `AUTH_TRUST_HOST`.
+
+Pushes to `staging` create/update that Vercel Preview URL. Use it for quick
+deployment checks before merging or promoting production changes.
 
 ## Database Used In CI
 
