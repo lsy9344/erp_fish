@@ -60,6 +60,7 @@ import {
   type StoreManagerInventoryStepData,
 } from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import { cn } from "~/lib/utils";
 
 type InventoryStepClientProps = {
   storeName: string;
@@ -1193,9 +1194,14 @@ export function InventoryStepClient({
               : undefined
           }
         >
-          <TableCell className="w-40">
+          <TableCell
+            className={cn(
+              "bg-card sticky left-0 z-10 align-top whitespace-normal",
+              modified || adjusted ? "bg-primary/5" : undefined,
+            )}
+          >
             <div className="flex flex-col gap-1">
-              <span className="font-medium">{item.productName}</span>
+              <span className="font-medium break-keep">{item.productName}</span>
               <div className="flex flex-wrap gap-1">
                 {modified ? (
                   <Badge
@@ -1227,8 +1233,10 @@ export function InventoryStepClient({
               </div>
             </div>
           </TableCell>
-          <TableCell className="w-20 text-sm">{item.productSpec}</TableCell>
-          <TableCell className="w-16 text-right tabular-nums">
+          <TableCell className="text-muted-foreground align-top text-sm break-keep whitespace-normal">
+            {item.productSpec}
+          </TableCell>
+          <TableCell className="text-right align-top tabular-nums">
             <Button
               type="button"
               variant="link"
@@ -1240,10 +1248,10 @@ export function InventoryStepClient({
               {item.previousQuantity}
             </Button>
           </TableCell>
-          <TableCell className="w-16 text-right tabular-nums">
+          <TableCell className="text-right align-top tabular-nums">
             {item.purchasedQuantity}
           </TableCell>
-          <TableCell className="w-20 text-right tabular-nums">
+          <TableCell className="text-right align-top tabular-nums">
             <div className="grid gap-0.5">
               <span>{item.lossQuantity}</span>
               {hasSensitiveInventoryAmounts(item) ? (
@@ -1253,10 +1261,10 @@ export function InventoryStepClient({
               ) : null}
             </div>
           </TableCell>
-          <TableCell className="w-20 text-right tabular-nums">
+          <TableCell className="text-right align-top font-medium tabular-nums">
             {formatQuantity(systemQuantity)}
           </TableCell>
-          <TableCell className="w-28">
+          <TableCell className="align-top">
             <Input
               ref={(node) => {
                 currentQuantityRefs.current[item.productId] = node;
@@ -1293,7 +1301,7 @@ export function InventoryStepClient({
               </p>
             ) : null}
           </TableCell>
-          <TableCell className="w-28 text-right tabular-nums">
+          <TableCell className="text-right align-top tabular-nums">
             <span
               className={
                 quantityDifference === null || quantityDifference === 0
@@ -1304,7 +1312,7 @@ export function InventoryStepClient({
               {formatDifference(quantityDifference)}
             </span>
           </TableCell>
-          <TableCell className="w-56">
+          <TableCell className="align-top whitespace-normal">
             {isClosed ? (
               <p className="text-muted-foreground text-xs">정정 기록 사용</p>
             ) : (
@@ -1565,31 +1573,48 @@ export function InventoryStepClient({
               <TabsContent key={tab} value={tab}>
                 {renderPagingControls(tab)}
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                  <Table aria-label="재고 품목" className="min-w-[820px]">
-                    <TableHeader className="sticky top-0 z-10">
+                  {/* table-fixed + colgroup: 열 폭을 내용과 무관하게 고정해
+                      셀 내용(뱃지·조정 상세)이 바뀌어도 칸 간격이 흔들리지 않게 한다. */}
+                  <Table
+                    aria-label="재고 품목"
+                    className="min-w-[880px] table-fixed"
+                  >
+                    <colgroup>
+                      <col className="w-56" />
+                      <col className="w-14" />
+                      <col className="w-14" />
+                      <col className="w-14" />
+                      <col className="w-16" />
+                      <col className="w-16" />
+                      <col className="w-28" />
+                      <col className="w-24" />
+                      <col className="w-64" />
+                    </colgroup>
+                    <TableHeader className="bg-muted/70 sticky top-0 z-10">
                       <TableRow>
-                        <TableHead scope="col" className="w-40">
+                        <TableHead
+                          scope="col"
+                          className="bg-muted/70 sticky left-0 z-20"
+                        >
                           {inventoryTerms.product}
                         </TableHead>
-                        <TableHead scope="col" className="w-20">
-                          {inventoryTerms.spec}
-                        </TableHead>
-                        <TableHead scope="col" className="w-16 text-right">
+                        <TableHead scope="col">{inventoryTerms.spec}</TableHead>
+                        <TableHead scope="col" className="text-right">
                           {inventoryTerms.previousStock}
                         </TableHead>
-                        <TableHead scope="col" className="w-16 text-right">
+                        <TableHead scope="col" className="text-right">
                           {inventoryTerms.purchase}
                         </TableHead>
-                        <TableHead scope="col" className="w-20 text-right">
+                        <TableHead scope="col" className="text-right">
                           {inventoryTerms.loss}
                         </TableHead>
-                        <TableHead scope="col" className="w-20 text-right">
+                        <TableHead scope="col" className="text-right">
                           {inventoryTerms.baselineStock}
                         </TableHead>
-                        <TableHead scope="col" className="w-28">
+                        <TableHead scope="col">
                           {inventoryTerms.currentStock}
                         </TableHead>
-                        <TableHead scope="col" className="w-28 text-right">
+                        <TableHead scope="col" className="text-right">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
@@ -1608,7 +1633,7 @@ export function InventoryStepClient({
                             </TooltipContent>
                           </Tooltip>
                         </TableHead>
-                        <TableHead scope="col" className="w-56">
+                        <TableHead scope="col">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
