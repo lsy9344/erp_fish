@@ -117,7 +117,11 @@ export async function commitEcountSupplyImport(
 
       // 영향받은 장부별로 재고 purchased quantity, 조정 정합, FIFO lot을 갱신한다.
       for (const ledgerId of affectedLedgerIds) {
-        await syncLedgerInventoryPurchasedQuantitiesInTx(tx, ledgerId, actor.id);
+        await syncLedgerInventoryPurchasedQuantitiesInTx(
+          tx,
+          ledgerId,
+          actor.id,
+        );
         await reconcileLedgerInventoryAdjustments(tx, ledgerId, actor.id);
         await refreshLedgerInventoryFifoLots(tx, ledgerId);
       }

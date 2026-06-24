@@ -110,7 +110,9 @@ export function EcountSupplyUploadClient({
         noValidate
       >
         <Field data-invalid={Boolean(fileError)} className="flex-1">
-          <FieldLabel htmlFor="ecount-upload-file">이카운트 엑셀 파일</FieldLabel>
+          <FieldLabel htmlFor="ecount-upload-file">
+            이카운트 엑셀 파일
+          </FieldLabel>
           <Input
             ref={fileInputRef}
             id="ecount-upload-file"
@@ -118,7 +120,9 @@ export function EcountSupplyUploadClient({
             type="file"
             accept=".xlsx"
             aria-invalid={Boolean(fileError)}
-            aria-describedby={fileError ? "ecount-upload-file-error" : undefined}
+            aria-describedby={
+              fileError ? "ecount-upload-file-error" : undefined
+            }
           />
           {fileError ? (
             <FieldError id="ecount-upload-file-error">{fileError}</FieldError>

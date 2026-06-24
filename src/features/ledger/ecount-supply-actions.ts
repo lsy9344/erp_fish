@@ -44,9 +44,7 @@ type AliasMaps = {
   productByRaw: Map<string, string>;
 };
 
-async function loadAliasMaps(
-  tx: Prisma.TransactionClient,
-): Promise<AliasMaps> {
+async function loadAliasMaps(tx: Prisma.TransactionClient): Promise<AliasMaps> {
   const [storeAliases, productAliases] = await Promise.all([
     tx.storeExternalAlias.findMany({
       where: { provider: ECOUNT_PROVIDER },
@@ -133,26 +131,36 @@ async function recomputeBatchMappingInTx(
   });
 }
 
-export async function previewEcountSupplyUpload(
-  formData: FormData,
-): Promise<
-  ActionResult<{ batchId: string; duplicate: boolean; detail: EcountImportBatchDetail }>
+export async function previewEcountSupplyUpload(formData: FormData): Promise<
+  ActionResult<{
+    batchId: string;
+    duplicate: boolean;
+    detail: EcountImportBatchDetail;
+  }>
 > {
   const actor = await requireEcountUploadPreviewAccess();
   const file = formData.get("file");
 
   if (!isUploadFile(file)) {
-    return actionError("VALIDATION_ERROR", "이카운트 엑셀 파일을 선택해 주세요.", {
-      file: ["이카운트 엑셀 파일을 선택해 주세요."],
-    });
+    return actionError(
+      "VALIDATION_ERROR",
+      "이카운트 엑셀 파일을 선택해 주세요.",
+      {
+        file: ["이카운트 엑셀 파일을 선택해 주세요."],
+      },
+    );
   }
 
   const fileName = "name" in file ? String(file.name) : "";
 
   if (!fileName.toLowerCase().endsWith(".xlsx")) {
-    return actionError("VALIDATION_ERROR", "xlsx 파일만 업로드할 수 있습니다.", {
-      file: ["xlsx 파일만 업로드할 수 있습니다."],
-    });
+    return actionError(
+      "VALIDATION_ERROR",
+      "xlsx 파일만 업로드할 수 있습니다.",
+      {
+        file: ["xlsx 파일만 업로드할 수 있습니다."],
+      },
+    );
   }
 
   const bytes = await file.arrayBuffer();
@@ -197,7 +205,9 @@ export async function previewEcountSupplyUpload(
     );
   }
 
-  const businessDate = inferBusinessDate(parsed.lines.map((line) => line.dateNo));
+  const businessDate = inferBusinessDate(
+    parsed.lines.map((line) => line.dateNo),
+  );
 
   const batchId = await db.$transaction(async (tx) => {
     const aliases = await loadAliasMaps(tx);
@@ -343,11 +353,15 @@ export async function saveEcountStoreAlias(input: {
     });
 
     await writeAuditLog(tx, {
-      action: before ? "store_external_alias.updated" : "store_external_alias.created",
+      action: before
+        ? "store_external_alias.updated"
+        : "store_external_alias.created",
       targetType: "StoreExternalAlias",
       targetId: alias.id,
       actorId: actor.id,
-      before: before ? { rawName: before.rawName, storeId: before.storeId } : null,
+      before: before
+        ? { rawName: before.rawName, storeId: before.storeId }
+        : null,
       after: { rawName, storeId },
     });
 
@@ -372,8 +386,12 @@ export async function saveEcountProductAlias(input: {
   productId: string;
 }): Promise<ActionResult<{ detail: EcountImportBatchDetail }>> {
   const actor = await requireSettingsAccess();
-  const rawName = String(input.rawName ?? "").trim().replace(/\s+/g, " ");
-  const rawSpec = String(input.rawSpec ?? "").trim().replace(/\s+/g, " ");
+  const rawName = String(input.rawName ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  const rawSpec = String(input.rawSpec ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
   const productId = String(input.productId ?? "");
 
   if (!rawName || !productId) {
@@ -423,7 +441,11 @@ export async function saveEcountProductAlias(input: {
       targetId: alias.id,
       actorId: actor.id,
       before: before
-        ? { rawName: before.rawName, rawSpec: before.rawSpec, productId: before.productId }
+        ? {
+            rawName: before.rawName,
+            rawSpec: before.rawSpec,
+            productId: before.productId,
+          }
         : null,
       after: { rawName, rawSpec, productId },
     });

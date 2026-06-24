@@ -159,7 +159,10 @@ export default async function EcountSupplyReportPage({
           </select>
         </div>
         <div className="grid gap-1">
-          <label className="text-muted-foreground text-xs" htmlFor="minUnitPrice">
+          <label
+            className="text-muted-foreground text-xs"
+            htmlFor="minUnitPrice"
+          >
             단가 최소
           </label>
           <Input
@@ -172,7 +175,10 @@ export default async function EcountSupplyReportPage({
           />
         </div>
         <div className="grid gap-1">
-          <label className="text-muted-foreground text-xs" htmlFor="maxUnitPrice">
+          <label
+            className="text-muted-foreground text-xs"
+            htmlFor="maxUnitPrice"
+          >
             단가 최대
           </label>
           <Input
@@ -241,7 +247,10 @@ export default async function EcountSupplyReportPage({
           <TableBody>
             {report.rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-muted-foreground py-6 text-center">
+                <TableCell
+                  colSpan={11}
+                  className="text-muted-foreground py-6 text-center"
+                >
                   조건에 맞는 출고/입고 내역이 없습니다.
                 </TableCell>
               </TableRow>

@@ -194,9 +194,9 @@ export async function getHeadquartersSupplyReport(
 
   const rows: EcountSupplyReportRow[] = items.map((item) => {
     const plannedUnitPrice = item.productId
-      ? planByKey.get(
+      ? (planByKey.get(
           `${item.dailyLedger.storeId}|${item.dailyLedger.closingDate.toISOString()}|${item.productId}`,
-        ) ?? null
+        ) ?? null)
       : null;
 
     return {
@@ -212,7 +212,8 @@ export async function getHeadquartersSupplyReport(
       unitPrice: item.unitPrice,
       sourceUnitPrice: item.sourceUnitPrice,
       unitPriceOverridden:
-        item.sourceUnitPrice !== null && item.sourceUnitPrice !== item.unitPrice,
+        item.sourceUnitPrice !== null &&
+        item.sourceUnitPrice !== item.unitPrice,
       supplyAmount: item.amount,
       ledgerStatus: item.dailyLedger.status,
       fifoLinked: item.ledgerInventoryFifoLots.length > 0,

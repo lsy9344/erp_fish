@@ -343,14 +343,11 @@ function findHeaderRow(rows: { rowNumber: number; cells: CellValue[] }[]) {
     }
   }
 
-  throw new EcountSupplyImportError(
-    "이카운트 엑셀 헤더를 찾을 수 없습니다.",
-    {
-      file: [
-        "2행 헤더가 일자-No., 거래처명, 품목명(규격), 수량, 단가, 공급가액, 합계 형식인지 확인해 주세요.",
-      ],
-    },
-  );
+  throw new EcountSupplyImportError("이카운트 엑셀 헤더를 찾을 수 없습니다.", {
+    file: [
+      "2행 헤더가 일자-No., 거래처명, 품목명(규격), 수량, 단가, 공급가액, 합계 형식인지 확인해 주세요.",
+    ],
+  });
 }
 
 function buildHeaderIndex(cells: string[]): Record<RequiredHeader, number> {
@@ -416,7 +413,12 @@ export function parseEcountSupplyWorkbook(
     const supplyAmount =
       supplyAmountText === ""
         ? cellNumber(row.cells, headerIndex["합계"], "합계", row.rowNumber)
-        : cellNumber(row.cells, headerIndex["공급가액"], "공급가액", row.rowNumber);
+        : cellNumber(
+            row.cells,
+            headerIndex["공급가액"],
+            "공급가액",
+            row.rowNumber,
+          );
     const totalText = cellText(row.cells, headerIndex["합계"]);
     const totalAmount =
       totalText === ""
@@ -448,7 +450,9 @@ export function parseEcountSupplyWorkbook(
   }
 
   if (lines.length === 0) {
-    throw new EcountSupplyImportError("가져올 이카운트 출고/입고 행이 없습니다.");
+    throw new EcountSupplyImportError(
+      "가져올 이카운트 출고/입고 행이 없습니다.",
+    );
   }
 
   const storeGroupMap = new Map<string, EcountSupplyStoreGroup>();
