@@ -6,6 +6,7 @@ import {
 } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getOrCreateStoreLedgerInTx } from "~/features/ledger/queries";
+import { ecountDateNoToDate } from "~/features/ledger/ecount-supply-mapping";
 import {
   getEcountSupplyImportDetail,
   type EcountImportBatchDetail,
@@ -18,17 +19,8 @@ import { revalidateEcountImportPaths } from "~/server/revalidation";
 
 class EcountCommitError extends Error {}
 
-function normalizeDateNoToBusinessDate(dateNo: string): string | null {
-  const match = /(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(dateNo);
-
-  if (!match) {
-    return null;
-  }
-
-  const [, year, month, day] = match;
-
-  return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`;
-}
+// "일자-No." 원문에서 영업일(YYYY-MM-DD)을 읽는다. 전표 번호(-1 등)는 무시한다.
+const normalizeDateNoToBusinessDate = ecountDateNoToDate;
 
 export async function commitEcountSupplyImport(
   batchId: string,

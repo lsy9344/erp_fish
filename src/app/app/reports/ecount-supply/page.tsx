@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { formatEcountDateNo } from "~/features/ledger/ecount-supply-mapping";
 import {
   getHeadquartersSupplyReport,
   type EcountSupplyReportFilters,
@@ -276,7 +277,9 @@ export default async function EcountSupplyReportPage({
             ) : (
               report.rows.map((row) => (
                 <TableRow key={row.ledgerPurchaseItemId}>
-                  <TableCell>{row.dateNo ?? "—"}</TableCell>
+                  <TableCell>
+                    {row.dateNo ? formatEcountDateNo(row.dateNo) : "—"}
+                  </TableCell>
                   <TableCell>{row.storeName}</TableCell>
                   <TableCell>{row.productName}</TableCell>
                   <TableCell>{row.productSpec}</TableCell>

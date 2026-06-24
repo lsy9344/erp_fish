@@ -273,6 +273,21 @@ test("resolveBatchStatus aggregates line statuses with FAILED/MAPPING_REQUIRED p
   assert.equal(resolveBatchStatus([]), ECOUNT_BATCH_STATUS.FAILED);
 });
 
+test("formatEcountDateNo shows the excel date and drops the -No. suffix", async () => {
+  const { formatEcountDateNo, ecountDateNoToDate } = await importMapping();
+
+  // 전표 번호(-1, -2 등)는 무시하고 엑셀 파일 날짜만 남긴다.
+  assert.equal(formatEcountDateNo("2026/06/17 -1"), "2026-06-17");
+  assert.equal(formatEcountDateNo("2026/06/17 -11"), "2026-06-17");
+  // 다양한 구분자/한 자리 월·일도 0 padding으로 정규화한다.
+  assert.equal(formatEcountDateNo("2026.6.7-3"), "2026-06-07");
+  assert.equal(ecountDateNoToDate("2026-6-7 -2"), "2026-06-07");
+
+  // 날짜를 못 읽으면 원문을 그대로 둔다(요약/총합계 등).
+  assert.equal(formatEcountDateNo("총합계"), "총합계");
+  assert.equal(ecountDateNoToDate("총합계"), null);
+});
+
 test("alias keys normalize whitespace for reuse across uploads", async () => {
   const { storeAliasKey, productAliasKey } = await importMapping();
 

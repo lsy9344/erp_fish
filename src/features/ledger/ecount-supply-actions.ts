@@ -8,6 +8,7 @@ import {
 } from "~/features/ledger/ecount-supply-import";
 import {
   ECOUNT_PROVIDER,
+  ecountDateNoToDate,
   productAliasKey,
   resolveBatchStatus,
   resolveEcountLine,
@@ -300,13 +301,10 @@ export async function previewEcountSupplyUpload(formData: FormData): Promise<
 
 function inferBusinessDate(dateNos: string[]): Date | null {
   for (const dateNo of dateNos) {
-    const match = /(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(dateNo);
+    const isoDate = ecountDateNoToDate(dateNo);
 
-    if (match) {
-      const [, year, month, day] = match;
-      const date = new Date(
-        Date.UTC(Number(year), Number(month) - 1, Number(day)),
-      );
+    if (isoDate) {
+      const date = new Date(`${isoDate}T00:00:00.000Z`);
 
       if (!Number.isNaN(date.getTime())) {
         return date;
