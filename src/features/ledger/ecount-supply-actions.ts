@@ -379,6 +379,151 @@ export async function saveEcountStoreAlias(input: {
   return actionOk({ detail });
 }
 
+/**
+ * WO(2026-06-24) Task 7: 미매핑 이카운트 품목을 기존 앱 품목에 연결하는 대신
+ * 새 앱 품목을 만들어 연결한다. batch line의 원문 품목명/구분/규격/단가로 Product를 만들고
+ * (이미 같은 name/category/spec이 있으면 재사용) ProductExternalAlias를 저장한 뒤 매핑을 재계산한다.
+ */
+export async function createEcountProductFromLine(input: {
+  batchId: string;
+  rawName: string;
+  rawSpec: string;
+}): Promise<ActionResult<{ detail: EcountImportBatchDetail }>> {
+  const actor = await requireSettingsAccess();
+  const batchId = String(input.batchId ?? "");
+  const rawName = String(input.rawName ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  const rawSpec = String(input.rawSpec ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!batchId || !rawName) {
+    return actionError("VALIDATION_ERROR", "품목 정보를 확인해 주세요.");
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      // 원문 품목명/규격에 해당하는 batch line에서 품목 속성을 가져온다.
+      const sampleLine = await tx.ecountImportLine.findFirst({
+        where: { batchId, rawProductName: rawName, productSpec: rawSpec },
+        orderBy: { rowNumber: "asc" },
+        select: {
+          productName: true,
+          productCategory: true,
+          productSpec: true,
+          unitPrice: true,
+        },
+      });
+
+      if (!sampleLine) {
+        throw new EcountSupplyImportError(
+          "해당 품목의 업로드 행을 찾을 수 없습니다.",
+        );
+      }
+
+      const name = sampleLine.productName.trim() || rawName;
+      const category = sampleLine.productCategory.trim();
+      const spec = sampleLine.productSpec.trim();
+
+      // 동일 name/category/spec 품목이 이미 있으면 재사용한다(중복 생성 방지).
+      const existingProduct = await tx.product.findUnique({
+        where: { name_category_spec: { name, category, spec } },
+        select: { id: true },
+      });
+
+      const product =
+        existingProduct ??
+        (await tx.product.create({
+          data: {
+            name,
+            category,
+            spec,
+            defaultUnitPrice: sampleLine.unitPrice,
+            isActive: true,
+            updatedById: actor.id,
+          },
+          select: { id: true },
+        }));
+
+      if (!existingProduct) {
+        await writeAuditLog(tx, {
+          action: "product.created",
+          targetType: "Product",
+          targetId: product.id,
+          actorId: actor.id,
+          before: null,
+          after: { name, category, spec },
+          reason: "이카운트 업로드 미매핑 품목 신규 생성",
+        });
+      }
+
+      const before = await tx.productExternalAlias.findUnique({
+        where: {
+          provider_rawName_rawSpec: {
+            provider: ECOUNT_PROVIDER,
+            rawName,
+            rawSpec,
+          },
+        },
+      });
+
+      const alias = await tx.productExternalAlias.upsert({
+        where: {
+          provider_rawName_rawSpec: {
+            provider: ECOUNT_PROVIDER,
+            rawName,
+            rawSpec,
+          },
+        },
+        create: {
+          provider: ECOUNT_PROVIDER,
+          rawName,
+          rawSpec,
+          productId: product.id,
+          updatedById: actor.id,
+        },
+        update: { productId: product.id, updatedById: actor.id },
+      });
+
+      await writeAuditLog(tx, {
+        action: before
+          ? "product_external_alias.updated"
+          : "product_external_alias.created",
+        targetType: "ProductExternalAlias",
+        targetId: alias.id,
+        actorId: actor.id,
+        before: before
+          ? {
+              rawName: before.rawName,
+              rawSpec: before.rawSpec,
+              productId: before.productId,
+            }
+          : null,
+        after: { rawName, rawSpec, productId: product.id },
+      });
+
+      await recomputeBatchMappingInTx(tx, batchId);
+    });
+  } catch (error) {
+    if (error instanceof EcountSupplyImportError) {
+      return actionError("VALIDATION_ERROR", error.message);
+    }
+
+    throw error;
+  }
+
+  revalidateEcountImportPaths(batchId);
+
+  const detail = await getEcountSupplyImportDetail(batchId);
+
+  if (!detail) {
+    return actionError("NOT_FOUND", "업로드 batch를 찾을 수 없습니다.");
+  }
+
+  return actionOk({ detail });
+}
+
 export async function saveEcountProductAlias(input: {
   batchId: string;
   rawName: string;

@@ -162,10 +162,15 @@ export async function commitEcountSupplyImport(
     return actionOk({ detail, committedLineCount });
   } catch (error) {
     if (error instanceof EcountCommitError) {
-      // 일부 지점 실패 시 transaction 전체가 rollback된다. batch에 실패 사유를 남긴다.
-      await db.ecountImportBatch.update({
-        where: { id: batchId },
-        data: { errorMessage: error.message },
+      // 일부 지점 실패 시 transaction 전체가 rollback된다. batch를 FAILED로 내려
+      // 실패 사유를 남기고, READY 상태가 아니므로 다시 commit되지 않게 한다.
+      // (이미 COMMITTED/VOIDED인 batch는 상태를 덮어쓰지 않는다.)
+      await db.ecountImportBatch.updateMany({
+        where: {
+          id: batchId,
+          status: { notIn: ["COMMITTED", "VOIDED"] },
+        },
+        data: { status: "FAILED", errorMessage: error.message },
       });
 
       revalidateEcountImportPaths(batchId);

@@ -144,6 +144,25 @@ export default async function EcountSupplyReportPage({
           </select>
         </div>
         <div className="grid gap-1">
+          <label className="text-muted-foreground text-xs" htmlFor="productId">
+            품목
+          </label>
+          <select
+            id="productId"
+            name="productId"
+            defaultValue={report.filters.productId}
+            className="border-input bg-card h-9 min-w-44 rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <option value="">전체 품목</option>
+            {report.productOptions.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+                {product.spec ? ` · ${product.spec}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid gap-1">
           <label className="text-muted-foreground text-xs" htmlFor="category">
             분류
           </label>

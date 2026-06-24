@@ -54,6 +54,7 @@ export type EcountSupplyReportData = {
   rows: EcountSupplyReportRow[];
   summary: EcountSupplyReportSummary;
   storeOptions: { id: string; name: string }[];
+  productOptions: { id: string; name: string; spec: string }[];
   batchOptions: { id: string; fileName: string }[];
   filters: EcountSupplyReportFilters;
   /** 화면/문서에서 추정 표기 필요 여부. 항상 true(실제 판매 데이터 없음). */
@@ -230,6 +231,27 @@ export async function getHeadquartersSupplyReport(
     select: { id: true, fileName: true },
   });
 
+  // 품목 필터 옵션: scope 내 이카운트 입고 라인에 실제로 등장한 품목만 노출한다.
+  const productItems = await db.ledgerPurchaseItem.findMany({
+    where: {
+      sourceType: "ECOUNT_UPLOAD",
+      productId: { not: null },
+      dailyLedger: { storeId: { in: scope.storeIds } },
+    },
+    distinct: ["productId"],
+    orderBy: { productName: "asc" },
+    select: { productId: true, productName: true, productSpec: true },
+  });
+  const productOptions = productItems
+    .filter((item): item is typeof item & { productId: string } =>
+      Boolean(item.productId),
+    )
+    .map((item) => ({
+      id: item.productId,
+      name: item.productName,
+      spec: item.productSpec,
+    }));
+
   return {
     rows,
     summary: {
@@ -244,6 +266,7 @@ export async function getHeadquartersSupplyReport(
       id: store.id,
       name: store.name,
     })),
+    productOptions,
     batchOptions: batches.map((batch) => ({
       id: batch.id,
       fileName: batch.fileName,

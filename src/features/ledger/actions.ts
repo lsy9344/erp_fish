@@ -31,6 +31,7 @@ import {
   ledgerSelect,
   getStoreLedger,
   getStoreLedgerInTx,
+  syncEcountImportLineBackPointersInTx,
   toLedgerAuditPayload,
   toStoreManagerLedgerCostStepData,
 } from "./queries";
@@ -1177,6 +1178,10 @@ export async function saveLedgerPurchases(
           }),
         });
       }
+
+      // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
+      // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
+      await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
 
       await syncLedgerInventoryPurchasedQuantitiesInTx(
         tx,

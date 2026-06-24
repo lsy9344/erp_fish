@@ -37,8 +37,6 @@ type PurchaseStandardAuditValue = {
 };
 
 const maxUploadBytes = 5 * 1024 * 1024;
-const duplicateImportPurchaseStandardCode =
-  "DUPLICATE_IMPORT_PURCHASE_STANDARD";
 
 const productSelect = {
   id: true,
@@ -81,35 +79,6 @@ function getImportedPurchaseKey(purchase: EcountPurchaseImportLine) {
     purchase.productCategory,
     purchase.productSpec,
   ].join("\u001f");
-}
-
-function findDuplicateImportedPurchaseConflict(
-  purchases: EcountPurchaseImportLine[],
-) {
-  const firstByKey = new Map<string, EcountPurchaseImportLine>();
-
-  for (const purchase of purchases) {
-    const key = getImportedPurchaseKey(purchase);
-    const first = firstByKey.get(key);
-
-    if (!first) {
-      firstByKey.set(key, purchase);
-      continue;
-    }
-
-    if (
-      first.unitPrice !== purchase.unitPrice ||
-      first.referenceUnitPrice !== purchase.referenceUnitPrice
-    ) {
-      return {
-        productName: purchase.productName,
-        productCategory: purchase.productCategory,
-        productSpec: purchase.productSpec,
-      };
-    }
-  }
-
-  return null;
 }
 
 function toUniqueImportedPurchases(purchases: EcountPurchaseImportLine[]) {
@@ -218,22 +187,6 @@ export async function importPurchaseStandardsFromEcount(
       "VALIDATION_ERROR",
       "이카운트 엑셀 파일을 읽을 수 없습니다.",
       { file: ["이카운트 엑셀 파일을 읽을 수 없습니다."] },
-    );
-  }
-
-  const duplicateConflict = findDuplicateImportedPurchaseConflict(
-    imported.purchases,
-  );
-
-  if (duplicateConflict) {
-    return actionError(
-      "VALIDATION_ERROR",
-      "업로드 파일에 같은 품목의 서로 다른 매입 기준이 있습니다.",
-      {
-        file: [
-          `${duplicateImportPurchaseStandardCode}: ${duplicateConflict.productName} (${duplicateConflict.productCategory}, ${duplicateConflict.productSpec})의 단가가 서로 다릅니다.`,
-        ],
-      },
     );
   }
 

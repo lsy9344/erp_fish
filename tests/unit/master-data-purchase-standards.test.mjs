@@ -260,7 +260,7 @@ test("purchase standard screen keeps headquarters shell, URL filter, and form ac
   assert.doesNotMatch(clientSource, /deletePurchaseStandard|\.delete\(/);
 });
 
-test("purchase standard ECount import action saves xlsx rows into purchase standards", () => {
+test("purchase standard ECount import action accepts duplicate product rows with different prices", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -276,9 +276,13 @@ test("purchase standard ECount import action saves xlsx rows into purchase stand
   assert.match(source, /requireSettingsAccess\(\)/);
   assert.match(source, /parseEcountPurchaseWorkbook/);
   assert.doesNotMatch(source, /validateLedgerScope:\s*true/);
-  assert.match(source, /findDuplicateImportedPurchaseConflict/);
-  assert.match(source, /DUPLICATE_IMPORT_PURCHASE_STANDARD/);
-  assert.match(source, /return actionError\(\s*"VALIDATION_ERROR"[\s\S]*file:/);
+  assert.doesNotMatch(source, /findDuplicateImportedPurchaseConflict/);
+  assert.doesNotMatch(source, /DUPLICATE_IMPORT_PURCHASE_STANDARD/);
+  assert.doesNotMatch(
+    source,
+    /업로드 파일에 같은 품목의 서로 다른 매입 기준이 있습니다/,
+  );
+  assert.match(source, /toUniqueImportedPurchases\(imported\.purchases\)/);
   assert.match(source, /tx\.product\.upsert/);
   assert.match(
     source,

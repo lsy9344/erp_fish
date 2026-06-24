@@ -649,5 +649,170 @@ export default async function globalSetup() {
     update: {},
   });
 
+  // WO(2026-06-24) Task 18: 이카운트 출고/입고 전체 흐름(업로드→매핑→commit→장부→리포트)을
+  // e2e에서 검증하기 위한 commit 완료 fixture. 서초점 장부에 ECOUNT_UPLOAD 매입 1건을 심고,
+  // 원본 EcountImportLine과 1:1로 연결한다. 단가는 원본(sourceUnitPrice)과 적용(unitPrice)을 분리한다.
+  // 서초점을 쓰는 이유: store-ledger-purchase 스펙이 강남/홍대 장부를 정리하므로 충돌을 피한다.
+  const ecountBusinessDate = new Date("2026-06-20T00:00:00.000Z");
+  const ecountDateNo = "2026-06-20-1";
+
+  const ecountProduct = await prisma.product.upsert({
+    where: {
+      name_category_spec: {
+        name: "제주갈치",
+        category: "생물",
+        spec: "31-35미",
+      },
+    },
+    create: {
+      name: "제주갈치",
+      category: "생물",
+      spec: "31-35미",
+      defaultUnitPrice: 12000,
+      isActive: true,
+      updatedById: hqUser.id,
+    },
+    update: { isActive: true, updatedById: hqUser.id },
+    select: { id: true },
+  });
+
+  await prisma.storeExternalAlias.upsert({
+    where: {
+      provider_rawName: {
+        provider: "ECOUNT",
+        rawName: "E2E강남점",
+      },
+    },
+    create: {
+      provider: "ECOUNT",
+      rawName: "E2E강남점",
+      storeId: gangnamStore.id,
+      updatedById: hqUser.id,
+    },
+    update: { storeId: gangnamStore.id, updatedById: hqUser.id },
+  });
+
+  await prisma.productExternalAlias.upsert({
+    where: {
+      provider_rawName_rawSpec: {
+        provider: "ECOUNT",
+        rawName: "E2E업로드갈치",
+        rawSpec: "31-35미",
+      },
+    },
+    create: {
+      provider: "ECOUNT",
+      rawName: "E2E업로드갈치",
+      rawSpec: "31-35미",
+      productId: ecountProduct.id,
+      updatedById: hqUser.id,
+    },
+    update: { productId: ecountProduct.id, updatedById: hqUser.id },
+  });
+
+  // 멱등성을 위해 기존 e2e 이카운트 fixture를 정리한 뒤 다시 만든다.
+  const existingEcountLedger = await prisma.dailyLedger.findUnique({
+    where: {
+      storeId_closingDate: {
+        storeId: seochoStore.id,
+        closingDate: ecountBusinessDate,
+      },
+    },
+    select: { id: true },
+  });
+
+  if (existingEcountLedger) {
+    await prisma.ledgerInventoryFifoLot.deleteMany({
+      where: { dailyLedgerId: existingEcountLedger.id },
+    });
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: existingEcountLedger.id },
+    });
+    await prisma.ledgerInventoryAdjustment.deleteMany({
+      where: { dailyLedgerId: existingEcountLedger.id },
+    });
+    await prisma.ledgerPurchaseItem.deleteMany({
+      where: { dailyLedgerId: existingEcountLedger.id },
+    });
+    await prisma.dailyLedger.delete({
+      where: { id: existingEcountLedger.id },
+    });
+  }
+  await prisma.ecountImportBatch.deleteMany({
+    where: { fileHash: "e2e-ecount-supply-fixture" },
+  });
+
+  const ecountBatch = await prisma.ecountImportBatch.create({
+    data: {
+      fileName: "이카운트 엑셀파일.xlsx",
+      fileHash: "e2e-ecount-supply-fixture",
+      sheetName: "Sheet1",
+      businessDate: ecountBusinessDate,
+      status: "COMMITTED",
+      uploadedById: hqUser.id,
+      committedById: hqUser.id,
+      committedAt: new Date("2026-06-20T01:00:00.000Z"),
+    },
+    select: { id: true },
+  });
+
+  const ecountLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: seochoStore.id,
+      closingDate: ecountBusinessDate,
+      status: "IN_PROGRESS",
+      version: 1,
+      createdById: hqUser.id,
+      updatedById: hqUser.id,
+    },
+    select: { id: true },
+  });
+
+  const ecountLine = await prisma.ecountImportLine.create({
+    data: {
+      batchId: ecountBatch.id,
+      rowNumber: 1,
+      dateNo: ecountDateNo,
+      rawStoreName: "서초",
+      storeId: seochoStore.id,
+      rawProductName: "제주갈치",
+      productId: ecountProduct.id,
+      productName: "제주갈치",
+      productCategory: "생물",
+      productSpec: "31-35미",
+      quantity: 10,
+      unitPrice: 12000,
+      supplyAmount: 120000,
+      totalAmount: 120000,
+      status: "COMMITTED",
+    },
+    select: { id: true },
+  });
+
+  const ecountPurchaseItem = await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: ecountLedger.id,
+      productId: ecountProduct.id,
+      sourceType: "ECOUNT_UPLOAD",
+      productName: "제주갈치",
+      productCategory: "생물",
+      productSpec: "31-35미",
+      unitPrice: 12000,
+      quantity: 10,
+      amount: 120000,
+      sourceUnitPrice: 12000,
+      ecountImportLineId: ecountLine.id,
+      referenceInfo: `이카운트 Sheet1 1행 · 일자-No. ${ecountDateNo} · 거래처 서초`,
+      createdById: hqUser.id,
+      updatedById: hqUser.id,
+    },
+    select: { id: true },
+  });
+
+  await prisma.ecountImportLine.update({
+    where: { id: ecountLine.id },
+    data: { ledgerPurchaseItemId: ecountPurchaseItem.id },
+  });
+
   await prisma.$disconnect();
 }
