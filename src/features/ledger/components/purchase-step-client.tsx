@@ -712,8 +712,8 @@ export function PurchaseStepClient({
                     ) : null}
                     {isUploadedLineLocked(line) && !isUnitPriceEditBlocked ? (
                       <p className="text-muted-foreground text-xs">
-                        이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고 장부
-                        적용 단가만 수정할 수 있습니다.
+                        이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
+                        장부 적용 단가만 수정할 수 있습니다.
                       </p>
                     ) : null}
                   </Field>
