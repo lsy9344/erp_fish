@@ -46,15 +46,16 @@ function isOption(value) {
 }
 
 export function buildPlaywrightArgs(args) {
-  const [first, ...rest] = args;
+  const playwrightArgs = args[0] === "--" ? args.slice(1) : args;
+  const [first, ...rest] = playwrightArgs;
 
   if (!first || isOption(first)) {
-    return args;
+    return playwrightArgs;
   }
 
   const defaultDirectory = normalizePathForPlaywright(first);
   if (!["tests/e2e", "tests/api"].includes(defaultDirectory)) {
-    return args;
+    return playwrightArgs;
   }
 
   const hasSpecificPathInDefaultDirectory = rest.some((arg) => {
@@ -69,5 +70,5 @@ export function buildPlaywrightArgs(args) {
     );
   });
 
-  return hasSpecificPathInDefaultDirectory ? rest : args;
+  return hasSpecificPathInDefaultDirectory ? rest : playwrightArgs;
 }

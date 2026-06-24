@@ -56,6 +56,13 @@ test("keeps the default e2e directory when no narrower spec path is provided", (
   ]);
 });
 
+test("drops pnpm's separator before forwarding Playwright options", () => {
+  assert.deepEqual(
+    buildPlaywrightArgs(["--", "tests/e2e", "--shard=1/4", "--reporter=line"]),
+    ["tests/e2e", "--shard=1/4", "--reporter=line"],
+  );
+});
+
 test("drops the default e2e directory when specific e2e specs are provided", () => {
   assert.deepEqual(
     buildPlaywrightArgs(["tests/e2e", "tests/e2e/auth.spec.ts"]),
