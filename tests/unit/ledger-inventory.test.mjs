@@ -1094,6 +1094,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.doesNotMatch(
     componentSource,
+    /inventoryTerms\.inventoryAmount|inventoryTerms\.inventoryAmountHelp/,
+    "inventory entry page should not render inventory amount labels",
+  );
+  assert.doesNotMatch(
+    componentSource,
     /formatKrw\(item\.inventoryAmount\)/,
     "inventory rows should not display per-item inventory amount",
   );

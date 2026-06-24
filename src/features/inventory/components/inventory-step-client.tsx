@@ -223,8 +223,6 @@ export function InventoryStepClient({
   );
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
-  const [selectedFifoLotItem, setSelectedFifoLotItem] =
-    useState<InventoryLineState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -791,22 +789,6 @@ export function InventoryStepClient({
     }
   }
 
-  function formatFifoLotSource(
-    sourceType: InventoryLineState["fifoLots"][number]["sourceType"],
-  ) {
-    switch (sourceType) {
-      case "PURCHASE":
-        return "당일 매입";
-      case "PREVIOUS_CARRYOVER":
-        return "전일 이월";
-      case "OPENING":
-        return "월초 이월";
-      case "LEGACY_OPENING":
-      default:
-        return "기초 재고";
-    }
-  }
-
   function formatStatusLabel(status: InventoryLineState["carryoverStatus"]) {
     switch (status) {
       case "PREVIOUS_CARRYOVER":
@@ -1159,147 +1141,6 @@ export function InventoryStepClient({
     );
   }
 
-  function renderFifoLotDialog() {
-    if (!selectedFifoLotItem) {
-      return null;
-    }
-
-    const lots = selectedFifoLotItem.fifoLots;
-    const consumedAmount = lots.reduce(
-      (sum, lot) => sum + lot.consumedAmount,
-      0,
-    );
-    const remainingAmount = lots.reduce(
-      (sum, lot) => sum + lot.remainingAmount,
-      0,
-    );
-
-    return (
-      <Dialog
-        open
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedFifoLotItem(null);
-          }
-        }}
-      >
-        <DialogContent className="h-[min(90vh,42rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-2xl">
-          <DialogHeader className="px-4 pt-4 pr-12 pb-3">
-            <DialogTitle>{inventoryTerms.fifoLotHistoryTitle}</DialogTitle>
-            <DialogDescription>
-              {selectedFifoLotItem.productName}:{" "}
-              {inventoryTerms.fifoLotHistoryDescription}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
-            <div className="grid gap-4">
-              <section className="bg-muted/30 grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-                <div className="grid gap-1">
-                  <p className="text-muted-foreground text-xs">
-                    {inventoryTerms.fifoLotConsumedQuantity} 금액 (판매/소진)
-                  </p>
-                  <p className="text-xl font-semibold tabular-nums">
-                    {formatKrw(consumedAmount)}
-                  </p>
-                </div>
-                <div className="grid gap-1">
-                  <p className="text-muted-foreground text-xs">
-                    {inventoryTerms.inventoryAmount} (잔량)
-                  </p>
-                  <p className="text-xl font-semibold tabular-nums">
-                    {formatKrw(remainingAmount)}
-                  </p>
-                </div>
-              </section>
-              {lots.length === 0 ? (
-                <p className="text-muted-foreground rounded-md border px-3 py-6 text-center text-sm">
-                  {inventoryTerms.fifoLotEmpty}
-                </p>
-              ) : (
-                <div className="overflow-auto overscroll-contain rounded-md border">
-                  <Table className="min-w-[640px]">
-                    <TableHeader className="bg-background sticky top-0 z-10">
-                      <TableRow>
-                        <TableHead scope="col" className="w-24">
-                          {inventoryTerms.fifoLotSource}
-                        </TableHead>
-                        <TableHead scope="col" className="w-28">
-                          {inventoryTerms.fifoLotPurchaseDate}
-                        </TableHead>
-                        <TableHead scope="col" className="w-24 text-right">
-                          {inventoryTerms.fifoLotUnitPrice}
-                        </TableHead>
-                        <TableHead scope="col" className="w-20 text-right">
-                          {inventoryTerms.fifoLotOriginalQuantity}
-                        </TableHead>
-                        <TableHead scope="col" className="w-20 text-right">
-                          {inventoryTerms.fifoLotConsumedQuantity}
-                        </TableHead>
-                        <TableHead scope="col" className="w-20 text-right">
-                          {inventoryTerms.fifoLotRemainingQuantity}
-                        </TableHead>
-                        <TableHead scope="col" className="w-28 text-right">
-                          {inventoryTerms.fifoLotRemainingAmount}
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lots.map((lot) => (
-                        <TableRow
-                          key={`${lot.sortOrder}-${lot.sourcePurchaseItemId ?? lot.sourceLedgerId ?? lot.sourceType}`}
-                          className={
-                            lot.consumedQuantity > 0
-                              ? "bg-amber-500/5"
-                              : undefined
-                          }
-                        >
-                          <TableCell>
-                            {formatFifoLotSource(lot.sourceType)}
-                          </TableCell>
-                          <TableCell className="tabular-nums">
-                            {/* "며칠 자에 입고된 물량인지"(point_summary.md:56) 추적용으로
-                                입고 영업일(sourceBusinessDate)을 우선 표시하고, 없으면 매입일로 대체. */}
-                            {formatDate(
-                              lot.sourceBusinessDate ?? lot.purchaseDate,
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatKrw(lot.unitPrice)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatQuantity(lot.originalQuantity)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {lot.consumedQuantity > 0 ? (
-                              <span className="font-medium text-amber-700 dark:text-amber-300">
-                                {formatQuantity(lot.consumedQuantity)}
-                              </span>
-                            ) : (
-                              formatQuantity(lot.consumedQuantity)
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatQuantity(lot.remainingQuantity)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatKrw(lot.remainingAmount)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              <p className="text-muted-foreground text-xs leading-relaxed">
-                {inventoryTerms.inventoryAmountHelp}
-              </p>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   function renderRows(category: ViewTab) {
     const visibleItems = getCategoryItems(category);
     const page = getCategoryPage(category);
@@ -1610,7 +1451,6 @@ export function InventoryStepClient({
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderCarryoverDetailDialog()}
-        {renderFifoLotDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}
