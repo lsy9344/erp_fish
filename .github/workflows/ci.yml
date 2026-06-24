@@ -24,7 +24,7 @@ on:
     - cron: "0 19 * * 0"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
@@ -43,21 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     if: github.event_name != 'schedule'
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: erp_fish_e2e
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: erp_fish_local_pw
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - name: Checkout
@@ -120,20 +105,81 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit
 
-      - name: API tests
-        run: pnpm test:api
-
       - name: Production build
         run: pnpm build
+
+  api-tests:
+    name: API Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'schedule'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: erp_fish_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: erp_fish_local_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d erp_fish_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create test env file
+        run: |
+          cat > .env <<EOF
+          AUTH_SECRET="${AUTH_SECRET}"
+          AUTH_TRUST_HOST="true"
+          DATABASE_URL="${DATABASE_URL}"
+          SEED_HQ_EMAIL="admin@example.com"
+          SEED_HQ_PASSWORD="test-headquarters-password"
+          SEED_HQ_NAME="CI Headquarters"
+          SEED_STORE_MANAGER_EMAIL="store-manager@example.com"
+          SEED_STORE_MANAGER_PASSWORD="test-store-manager-password"
+          SEED_STORE_MANAGER_NAME="CI Store Manager"
+          SEED_SAMPLE_STORE_NAME="CI Store"
+          ALLOW_PRODUCTION_SEED=""
+          ALLOW_SEED_PASSWORD_ROTATION=""
+          EOF
+
+      - name: API tests
+        run: pnpm test:api
 
   playwright-smoke:
     name: Playwright Smoke ${{ matrix.group }}
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 25
     if: >-
       github.event_name != 'schedule' &&
       !(github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) &&
       !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    env:
+      DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+      PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
     strategy:
       fail-fast: false
       matrix:
@@ -169,24 +215,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium system dependencies
-        run: pnpm exec playwright install-deps chromium
-
-      - name: Install Chromium browser
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium
 
       - name: Run representative e2e smoke
         run: pnpm test:e2e:smoke:${{ matrix.group }}
@@ -204,6 +234,8 @@ jobs:
   playwright-full:
     name: Playwright Full ${{ matrix.shard }}
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 30
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.run_full_e2e ||
@@ -229,6 +261,8 @@ jobs:
           --health-retries 10
 
     env:
+      DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+      PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       E2E_GREP: ${{ github.event_name == 'workflow_dispatch' && inputs.e2e_grep || '' }}
 
     steps:
@@ -246,32 +280,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium system dependencies
-        run: pnpm exec playwright install-deps chromium
-
-      - name: Install Chromium browser
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium
 
       - name: Run Playwright shard
         run: |
           # Security: inputs passed through env: to prevent script injection
           if [ -n "$E2E_GREP" ]; then
-            pnpm test:playwright -- --grep "$E2E_GREP" --shard=${{ matrix.shard }}/4 --reporter=line
+            pnpm test:playwright -- tests/e2e --grep "$E2E_GREP" --shard=${{ matrix.shard }}/4 --reporter=line
           else
-            pnpm test:playwright -- --shard=${{ matrix.shard }}/4 --reporter=line
+            pnpm test:playwright -- tests/e2e --shard=${{ matrix.shard }}/4 --reporter=line
           fi
 
       - name: Upload Playwright artifacts
@@ -287,8 +305,13 @@ jobs:
   playwright-burn-in:
     name: Playwright Smoke Burn-In
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && inputs.run_burn_in
+    env:
+      DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+      PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
 
     services:
       postgres:
@@ -320,24 +343,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium system dependencies
-        run: pnpm exec playwright install-deps chromium
-
-      - name: Install Chromium browser
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium
 
       - name: Run smoke burn-in
         run: pnpm test:playwright -- tests/e2e/auth.spec.ts:16 --repeat-each=10 --reporter=line
@@ -358,6 +365,7 @@ jobs:
     timeout-minutes: 5
     needs:
       - quality
+      - api-tests
       - playwright-smoke
       - playwright-full
       - playwright-burn-in
@@ -371,6 +379,7 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title || github.event_name }}
       QUALITY_RESULT: ${{ needs.quality.result }}
+      API_TESTS_RESULT: ${{ needs.api-tests.result }}
       PLAYWRIGHT_SMOKE_RESULT: ${{ needs.playwright-smoke.result }}
       PLAYWRIGHT_FULL_RESULT: ${{ needs.playwright-full.result }}
       PLAYWRIGHT_BURN_IN_RESULT: ${{ needs.playwright-burn-in.result }}
@@ -419,6 +428,7 @@ jobs:
           commit_message = os.environ["COMMIT_MESSAGE"]
           results = {
               "Quality Gate": os.environ["QUALITY_RESULT"],
+              "API Tests": os.environ["API_TESTS_RESULT"],
               "Playwright Smoke": os.environ["PLAYWRIGHT_SMOKE_RESULT"],
               "Playwright Full": os.environ["PLAYWRIGHT_FULL_RESULT"],
               "Playwright Smoke Burn-In": os.environ["PLAYWRIGHT_BURN_IN_RESULT"],

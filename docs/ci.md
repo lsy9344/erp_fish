@@ -4,14 +4,17 @@
 
 The workflow lives at `.github/workflows/ci.yml`.
 
-- Pull requests run `Quality Gate` and `Playwright Smoke`.
+- Pull requests run `Quality Gate`, `API Tests`, and `Playwright Smoke`.
 - Pushes to feature branches run the same fast checks.
+- Pull request updates and pushes from the same branch cancel older in-progress runs.
 - `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.
 - The broader core E2E bundle stays in `pnpm test:e2e:core` for local release
   checks.
 - Pushes to `main` or `master` also run the full Playwright suite in 4 shards.
   The smoke job is skipped on those pushes because the full suite covers it.
+  The full Playwright shards run only `tests/e2e`; API tests stay in
+  `Quality Gate`.
 - A weekly schedule runs a 10-iteration smoke burn-in to catch flaky UI timing.
 - Manual runs can trigger full Playwright and burn-in when needed.
   Manual full Playwright runs skip the smoke job because the full suite covers
@@ -64,6 +67,10 @@ values. Playwright commands use `PLAYWRIGHT_DATABASE_URL` through
 `scripts/run-playwright-clean.mjs`, and the wrapper refuses production-like
 database names before tests start.
 
+Playwright jobs run inside the official Playwright container image, so they use
+the same PostgreSQL service through the `postgres` service hostname instead of
+`localhost`.
+
 ## Artifacts
 
 Playwright uploads artifacts only on failure:
@@ -84,7 +91,7 @@ Artifacts are kept for 14 days.
 
 ## Troubleshooting
 
-- If CI fails during install, rerun once. Dependency or browser cache may be cold.
+- If CI fails during install, rerun once. Dependency cache may be cold.
 - If Playwright fails, download the failed job artifact and inspect `test-results`.
 - If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
   matching local command: `pnpm test:e2e:smoke:ledger`,

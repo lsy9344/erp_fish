@@ -28,14 +28,22 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
   const qualityJob = readWorkflowJob(workflow, "quality");
+  const apiTestsJob = readWorkflowJob(workflow, "api-tests");
   const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
   const fullJob = readWorkflowJob(workflow, "playwright-full");
   const burnInJob = readWorkflowJob(workflow, "playwright-burn-in");
   const scripts = packageJson.scripts;
 
+  assert.match(
+    workflow,
+    /group:\s*ci-\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.head_ref \|\| github\.ref_name\s*\}\}/,
+  );
   assert.match(scripts["release:preflight"], /pnpm test:api/);
   assert.match(scripts["release:preflight"], /pnpm test:e2e:core/);
-  assert.match(workflow, /run:\s*pnpm test:api/);
+  assert.match(apiTestsJob, /run:\s*pnpm test:api/);
+  assert.match(apiTestsJob, /services:[\s\S]*postgres:/);
+  assert.doesNotMatch(qualityJob, /services:[\s\S]*postgres:/);
+  assert.doesNotMatch(qualityJob, /run:\s*pnpm test:api/);
   assert.match(
     smokeJob,
     /github\.event_name != 'schedule' &&[\s\S]*refs\/heads\/main[\s\S]*refs\/heads\/master/,
@@ -60,17 +68,25 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
 
   for (const browserJob of [smokeJob, fullJob, burnInJob]) {
-    assert.match(browserJob, /id:\s*playwright-cache/);
     assert.match(
       browserJob,
-      /run:\s*pnpm exec playwright install-deps chromium/,
+      /container:\s*\n\s+image:\s*mcr\.microsoft\.com\/playwright:v1\.60\.0-noble/,
     );
-    assert.match(
-      browserJob,
-      /if:\s*steps\.playwright-cache\.outputs\.cache-hit != 'true'/,
-    );
-    assert.match(browserJob, /run:\s*pnpm exec playwright install chromium/);
+    assert.doesNotMatch(browserJob, /playwright-cache/);
+    assert.doesNotMatch(browserJob, /ms-playwright/);
+    assert.doesNotMatch(browserJob, /install-deps chromium/);
+    assert.doesNotMatch(browserJob, /install chromium/);
   }
+
+  assert.match(
+    fullJob,
+    /pnpm test:playwright -- tests\/e2e --grep "\$E2E_GREP" --shard=\$\{\{\s*matrix\.shard\s*\}\}\/4 --reporter=line/,
+  );
+  assert.match(
+    fullJob,
+    /pnpm test:playwright -- tests\/e2e --shard=\$\{\{\s*matrix\.shard\s*\}\}\/4 --reporter=line/,
+  );
+  assert.doesNotMatch(fullJob, /pnpm test:playwright -- --shard/);
 
   for (const scriptName of [
     "test:e2e:smoke:ledger",
@@ -147,7 +163,9 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.match(startDatabase, /docker compose up -d/);
   assert.doesNotMatch(startDatabase, /docker\.io\/postgres/);
   assert.match(ciDocs, /Pushes to feature branches run/);
+  assert.match(ciDocs, /same branch cancel older in-progress runs/);
   assert.match(ciDocs, /three parallel groups/);
+  assert.match(ciDocs, /full Playwright shards run only `tests\/e2e`/);
   assert.match(ciDocs, /representative E2E smoke/);
   assert.doesNotMatch(ciDocs, /new_function/);
 
