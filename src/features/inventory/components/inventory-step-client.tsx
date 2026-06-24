@@ -1312,7 +1312,7 @@ export function InventoryStepClient({
       return (
         <TableRow>
           <TableCell
-            colSpan={10}
+            colSpan={9}
             className="text-muted-foreground h-24 text-center"
           >
             표시할 품목이 없습니다.
@@ -1461,24 +1461,6 @@ export function InventoryStepClient({
             >
               {formatDifference(quantityDifference)}
             </span>
-          </TableCell>
-          <TableCell className="w-28 text-right tabular-nums">
-            {item.fifoLots.length > 0 ? (
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                aria-label={`${item.productName} FIFO 판매 lot 이력 보기`}
-                onClick={() => setSelectedFifoLotItem(item)}
-                className="h-11 min-w-11 justify-end px-1 text-right tabular-nums"
-              >
-                {formatKrw(item.inventoryAmount)}
-              </Button>
-            ) : (
-              <span className="text-muted-foreground">
-                {formatKrw(item.inventoryAmount)}
-              </span>
-            )}
           </TableCell>
           <TableCell className="w-56">
             {isClosed ? (
@@ -1742,7 +1724,7 @@ export function InventoryStepClient({
               <TabsContent key={tab} value={tab}>
                 {renderPagingControls(tab)}
                 <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                  <Table aria-label="재고 품목" className="min-w-[940px]">
+                  <Table aria-label="재고 품목" className="min-w-[820px]">
                     <TableHeader className="sticky top-0 z-10">
                       <TableRow>
                         <TableHead scope="col" className="w-40">
@@ -1782,25 +1764,6 @@ export function InventoryStepClient({
                               className="max-w-64 leading-relaxed"
                             >
                               {dailySalesQuantityHelp}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableHead>
-                        <TableHead scope="col" className="w-28 text-right">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                tabIndex={0}
-                                aria-label={`${inventoryTerms.inventoryAmount}: ${inventoryTerms.inventoryAmountHelp}`}
-                                className="inline-flex cursor-help outline-none"
-                              >
-                                {inventoryTerms.inventoryAmount}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              className="max-w-64 leading-relaxed"
-                            >
-                              {inventoryTerms.inventoryAmountHelp}
                             </TooltipContent>
                           </Tooltip>
                         </TableHead>

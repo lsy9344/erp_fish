@@ -990,6 +990,10 @@ test("inventory UI is wired to the canonical inventory route", () => {
     "terms.ts",
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
+  const inventoryTableSource = componentSource.slice(
+    componentSource.indexOf('<Table aria-label="재고 품목"'),
+    componentSource.indexOf("<TableBody>{renderRows(tab)}</TableBody>"),
+  );
   assert.match(componentSource, /saveLedgerInventoryItems/);
   assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);
@@ -1082,6 +1086,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
     componentSource,
     /<TooltipContent[\s\S]*\{inventoryTerms\.statusAndAdjustmentHelp\}[\s\S]*<\/TooltipContent>/,
     "status/adjustment table header should show the same tooltip content pattern as neighboring headers",
+  );
+  assert.doesNotMatch(
+    inventoryTableSource,
+    /inventoryTerms\.inventoryAmount|inventoryTerms\.inventoryAmountHelp/,
+    "inventory entry table should not show inventory amount column or help",
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /formatKrw\(item\.inventoryAmount\)/,
+    "inventory rows should not display per-item inventory amount",
   );
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
