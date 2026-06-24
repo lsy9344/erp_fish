@@ -293,6 +293,9 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(client, /변경자 필터/);
   assert.match(client, /from "~\/components\/ui\/select"/);
   assert.doesNotMatch(client, /<select/);
+  assert.match(client, /isHydrated/);
+  assert.match(client, /setIsHydrated\(true\)/);
+  assert.match(client, /disabled=\{!isHydrated\}/);
   assert.match(client, /시작일/);
   assert.match(client, /종료일/);
   assert.match(client, /변경 시각/);

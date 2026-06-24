@@ -58,6 +58,7 @@ export function HqLedgerCloseDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [preflight, setPreflight] =
     useState<HqLedgerClosePreflightResult | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [currentLedgerUpdatedAt, setCurrentLedgerUpdatedAt] =
     useState(ledgerUpdatedAt);
   const [exceptionReason, setExceptionReason] = useState("");
@@ -84,6 +85,10 @@ export function HqLedgerCloseDialog({
     !isSubmitting;
 
   useLedgerUpdatedAtSync(ledgerId, setCurrentLedgerUpdatedAt);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -176,7 +181,7 @@ export function HqLedgerCloseDialog({
         }}
       >
         <DialogTrigger asChild>
-          <Button type="button" variant="outline">
+          <Button type="button" variant="outline" disabled={!isHydrated}>
             본사 마감
           </Button>
         </DialogTrigger>

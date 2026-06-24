@@ -784,6 +784,9 @@ test("HQ close dialog opens with a ClosePreflight table before enabling confirm"
   assert.match(source, /preflight\.ledgerUpdatedAt/);
   assert.match(source, /재점검/);
   assert.match(source, /overflow-x-auto/);
+  assert.match(source, /isHydrated/);
+  assert.match(source, /setIsHydrated\(true\)/);
+  assert.match(source, /disabled=\{!isHydrated\}/);
 });
 
 test("HQ close dialog requires exception reason for exception-only preflight results", () => {

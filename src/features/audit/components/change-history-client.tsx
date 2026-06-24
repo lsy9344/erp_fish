@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { EyeIcon } from "lucide-react";
 
@@ -74,11 +74,16 @@ export function ChangeHistoryClient({
   const router = useRouter();
   const [selectedHistory, setSelectedHistory] =
     useState<AuditHistoryItem | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const displayedActorOptions =
     filters.actorId === "all" ||
     actorOptions.some((option) => option.id === filters.actorId)
       ? actorOptions
       : [{ id: filters.actorId, label: filters.actorId }, ...actorOptions];
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   function pushFilters(next: Partial<AuditHistoryFilters>) {
     const merged = { ...filters, ...next };
@@ -136,7 +141,11 @@ export function ChangeHistoryClient({
               })
             }
           >
-            <SelectTrigger id="audit-target-type-filter" className="w-40">
+            <SelectTrigger
+              id="audit-target-type-filter"
+              className="w-40"
+              disabled={!isHydrated}
+            >
               <SelectValue placeholder="대상 유형" />
             </SelectTrigger>
             <SelectContent>
@@ -157,7 +166,11 @@ export function ChangeHistoryClient({
             value={filters.actorId}
             onValueChange={(value) => pushFilters({ actorId: value || "all" })}
           >
-            <SelectTrigger id="audit-actor-filter" className="w-40">
+            <SelectTrigger
+              id="audit-actor-filter"
+              className="w-40"
+              disabled={!isHydrated}
+            >
               <SelectValue placeholder="변경자" />
             </SelectTrigger>
             <SelectContent>
