@@ -32,6 +32,7 @@ import {
 } from "./conflicts";
 import {
   ledgerSelect,
+  syncEcountImportLineBackPointersInTx,
   toLedgerAuditPayload,
   toLedgerCostStepData,
 } from "./queries";
@@ -48,6 +49,18 @@ import {
   type LedgerSalesPaymentInput,
   type LedgerWorkInfoInput,
 } from "./schemas";
+
+// WO(2026-06-24) Task 15: 적용 단가 보정 감사 로그 1건의 입력.
+type UnitPriceOverrideAudit = {
+  ecountImportLineId: string;
+  productName: string;
+  productSpec: string;
+  sourceType: "ECOUNT_UPLOAD";
+  sourceUnitPrice: number | null;
+  previousUnitPrice: number;
+  nextUnitPrice: number;
+  reason: string | null;
+};
 import {
   editableLedgerStatuses,
   getLedgerEditBlockReason,
@@ -590,6 +603,29 @@ export async function saveHqLedgerPurchases(
         const existingPurchaseItemsById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
         );
+        const existingEcountPurchaseIds = new Set(
+          beforeLedger.ledgerPurchaseItems
+            .filter((item) => item.sourceType === "ECOUNT_UPLOAD")
+            .map((item) => item.id),
+        );
+        const incomingExistingIds = new Set(
+          parsed.data.purchases
+            .map((purchase) => purchase.id)
+            .filter((id) => existingPurchaseItemsById.has(id)),
+        );
+        const missingEcountPurchaseIds = [...existingEcountPurchaseIds].filter(
+          (id) => !incomingExistingIds.has(id),
+        );
+
+        if (missingEcountPurchaseIds.length > 0) {
+          return actionError<LedgerCostStepData>(
+            "VALIDATION_ERROR",
+            "입력값을 확인해 주세요.",
+            {
+              purchases: ["이카운트 원본 행은 삭제할 수 없습니다."],
+            },
+          );
+        }
 
         const standardIds = [
           ...new Set(
@@ -709,15 +745,27 @@ export async function saveHqLedgerPurchases(
           // 등 원본 식별 정보는 기존 행(existing)에서 그대로 가져온다. 입력값이 달라도 무시한다.
           const isEcountUpload = existing?.sourceType === "ECOUNT_UPLOAD";
 
+          if (purchase.sourceType === "ECOUNT_UPLOAD" && !isEcountUpload) {
+            return actionError<LedgerCostStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              {
+                [`purchases.${index}.sourceType`]: [
+                  "이카운트 업로드 행은 업로드/반영으로만 만들 수 있습니다.",
+                ],
+              },
+            );
+          }
+
           const snapshot = isEcountUpload
             ? {
-                productId: existing!.productId,
-                purchaseStandardId: existing!.purchaseStandardId,
-                sourceType: existing!.sourceType,
-                productName: existing!.productName,
-                productCategory: existing!.productCategory,
-                productSpec: existing!.productSpec,
-                referenceInfo: existing!.referenceInfo,
+                productId: existing.productId,
+                purchaseStandardId: existing.purchaseStandardId,
+                sourceType: existing.sourceType,
+                productName: existing.productName,
+                productCategory: existing.productCategory,
+                productSpec: existing.productSpec,
+                referenceInfo: existing.referenceInfo,
               }
             : standard
               ? {
@@ -776,7 +824,7 @@ export async function saveHqLedgerPurchases(
             : (existing?.sourceUnitPrice ?? null);
           // 이카운트 행은 수량도 원본 식별 정보이므로 기존 행에서 가져온다.
           const quantity = isEcountUpload
-            ? existing!.quantity
+            ? existing.quantity
             : purchase.quantity;
           const unitPriceChanged = Boolean(
             existing && existing.unitPrice !== purchase.unitPrice,
@@ -795,12 +843,12 @@ export async function saveHqLedgerPurchases(
 
           // WO(2026-06-24) Task 15: 적용 단가 보정은 원본 단가 / 변경 전 적용 단가 /
           // 변경 후 적용 단가 / 수정자 / 사유를 구분해 감사 로그에 남긴다.
-          if (unitPriceChanged && existing) {
+          if (isEcountUpload && unitPriceChanged && ecountImportLineId) {
             unitPriceOverrides.push({
-              ledgerPurchaseItemId: existing.id,
+              ecountImportLineId,
               productName: snapshot.productName,
               productSpec: snapshot.productSpec,
-              sourceType: snapshot.sourceType,
+              sourceType: "ECOUNT_UPLOAD",
               sourceUnitPrice,
               previousUnitPrice: existing.unitPrice,
               nextUnitPrice: purchase.unitPrice,
@@ -874,6 +922,31 @@ export async function saveHqLedgerPurchases(
           where: { id: ledgerId },
           select: ledgerSelect,
         });
+        const overrideImportLineIds = [
+          ...new Set(
+            unitPriceOverrides.map((override) => override.ecountImportLineId),
+          ),
+        ];
+        const newEcountPurchaseItemsByImportLineId = new Map<string, string>();
+
+        if (overrideImportLineIds.length > 0) {
+          const newEcountPurchaseItems = await tx.ledgerPurchaseItem.findMany({
+            where: {
+              dailyLedgerId: beforeLedger.id,
+              ecountImportLineId: { in: overrideImportLineIds },
+            },
+            select: { id: true, ecountImportLineId: true },
+          });
+
+          for (const item of newEcountPurchaseItems) {
+            if (item.ecountImportLineId) {
+              newEcountPurchaseItemsByImportLineId.set(
+                item.ecountImportLineId,
+                item.id,
+              );
+            }
+          }
+        }
 
         await writeAuditLog(tx, {
           action: "ledger.hq.purchases.saved",
@@ -888,10 +961,18 @@ export async function saveHqLedgerPurchases(
         // WO(2026-06-24) Task 15: 적용 단가 보정 라인마다 원본 단가/변경 전·후 적용 단가/
         // 수정자/사유를 구분해 "이카운트 출고/입고" 기준 감사 로그로 남긴다.
         for (const override of unitPriceOverrides) {
+          const targetId = newEcountPurchaseItemsByImportLineId.get(
+            override.ecountImportLineId,
+          );
+
+          if (!targetId) {
+            continue;
+          }
+
           await writeAuditLog(tx, {
             action: "ledger.hq.ecount_unit_price.overridden",
             targetType: "LedgerPurchaseItem",
-            targetId: override.ledgerPurchaseItemId,
+            targetId,
             actorId: actor.user.id,
             before: {
               productName: override.productName,

@@ -457,15 +457,23 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // HQ 매입 저장 경로는 getStoreEcountPurchaseEditErrors를 호출하지 않는다.
   // 해당 차단 검증은 지점장 저장 경로(actions.ts)에만 남는다.
   assert.doesNotMatch(hqActionSource, /getStoreEcountPurchaseEditErrors/);
-  // HQ 매입 저장은 HQ 입력값으로 sourceType/unitPrice/quantity를 그대로 기록한다.
-  assert.match(hqActionSource, /sourceType:\s*purchase\.sourceType/);
-  assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
-  assert.match(hqActionSource, /quantity:\s*purchase\.quantity/);
+  // WO(2026-06-24) 검토 #2: 본사 보정은 "적용 단가(unitPrice)"만 바꿀 수 있고,
+  // 이카운트 원본 식별 정보(품목/구분/규격/수량)는 기존 행에서 그대로 가져온다.
+  // 따라서 HQ 저장은 ECOUNT 행에 한해 입력값 quantity/원본필드를 그대로 신뢰하지 않는다.
+  assert.match(hqActionSource, /const snapshot = isEcountUpload/);
   assert.match(
     hqActionSource,
-    /purchase\.unitPrice\s*\*\s*purchase\.quantity|purchase\.quantity\s*\*\s*purchase\.unitPrice/,
+    /const quantity = isEcountUpload\s*\?\s*existing\.quantity/,
   );
+  // 적용 단가는 입력값을 그대로 반영한다(본사 단가 보정 허용).
+  assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
+  assert.match(hqActionSource, /amount:\s*purchase\.unitPrice\s*\*\s*quantity/);
   assert.match(hqActionSource, /action:\s*"ledger\.hq\.purchases\.saved"/);
+  // WO(2026-06-24) 검토 #4: 적용 단가 보정 감사 로그가 원본/적용 단가를 구분해 남는다.
+  assert.match(
+    hqActionSource,
+    /action:\s*"ledger\.hq\.ecount_unit_price\.overridden"/,
+  );
   assert.match(hqActionSource, /writeAuditLog\(/);
   assert.match(hqActionSource, /syncLedgerInventoryPurchasedQuantitiesInTx/);
   const hqInventorySyncIndex = hqActionSource.indexOf(
@@ -583,10 +591,7 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.doesNotMatch(componentSource, /saveImportedPurchases/);
   assert.doesNotMatch(componentSource, /hasUnmappedEcountLine/);
   assert.doesNotMatch(componentSource, /ecountUploadEnabled/);
-  assert.match(
-    componentSource,
-    /sourceType\s*===\s*"ECOUNT_UPLOAD"/,
-  );
+  assert.match(componentSource, /sourceType\s*===\s*"ECOUNT_UPLOAD"/);
   assert.match(componentSource, /sourceType:\s*line\.sourceType/);
   assert.match(componentSource, /inputMode="numeric"/);
   assert.match(componentSource, /focusFirstError/);
