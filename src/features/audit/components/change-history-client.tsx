@@ -237,6 +237,7 @@ export function ChangeHistoryClient({
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={!isHydrated}
                       onClick={() => setSelectedHistory(item)}
                     >
                       <EyeIcon data-icon="inline-start" />

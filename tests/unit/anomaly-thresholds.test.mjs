@@ -350,7 +350,9 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /FieldGroup/);
   assert.match(clientSource, /FieldError/);
   assert.match(clientSource, /aria-invalid/);
-  assert.match(clientSource, /focusFirstError/);
+  assert.match(clientSource, /pendingFocusErrorsRef/);
+  assert.match(clientSource, /useEffect[\s\S]*marginRateRef\.current\?\.focus/);
+  assert.match(clientSource, /formVersionRef/);
   assert.match(clientSource, /reasonRef/);
   assert.match(clientSource, /toast/);
   assert.match(clientSource, /inputMode="decimal"/);

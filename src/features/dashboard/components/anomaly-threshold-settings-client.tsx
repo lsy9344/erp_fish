@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { RefreshCwIcon, SaveIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +64,8 @@ export function AnomalyThresholdSettingsClient({
 }: AnomalyThresholdSettingsClientProps) {
   const marginRateRef = useRef<HTMLInputElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const pendingFocusErrorsRef = useRef<FieldErrors | null>(null);
+  const formVersionRef = useRef(0);
   const [formValues, setFormValues] = useState<FormValues>(
     toFormValues(settings),
   );
@@ -77,6 +79,7 @@ export function AnomalyThresholdSettingsClient({
     name: K,
     value: FormValues[K],
   ) {
+    formVersionRef.current += 1;
     setFormValues((current) => ({ ...current, [name]: value }));
     setFormError(null);
     setFieldErrors((current) => {
@@ -86,7 +89,14 @@ export function AnomalyThresholdSettingsClient({
     });
   }
 
-  function focusFirstError(errors: FieldErrors) {
+  useEffect(() => {
+    if (isSaving || !pendingFocusErrorsRef.current) {
+      return;
+    }
+
+    const errors = pendingFocusErrorsRef.current;
+    pendingFocusErrorsRef.current = null;
+
     window.setTimeout(() => {
       if (errors.marginRate?.length) {
         marginRateRef.current?.focus();
@@ -97,9 +107,11 @@ export function AnomalyThresholdSettingsClient({
         reasonRef.current?.focus();
       }
     }, 0);
-  }
+  }, [isSaving]);
 
   async function saveSettings() {
+    const submittedFormVersion = formVersionRef.current;
+
     setIsSaving(true);
     setFormError(null);
     setFieldErrors({});
@@ -111,7 +123,8 @@ export function AnomalyThresholdSettingsClient({
         const nextErrors = result.error.fieldErrors ?? {};
         setFieldErrors(nextErrors);
         setFormError(result.error.message);
-        focusFirstError(nextErrors);
+        pendingFocusErrorsRef.current = nextErrors;
+        setIsSaving(false);
         toast.error(result.error.message, {
           action: {
             label: "재시도",
@@ -122,7 +135,9 @@ export function AnomalyThresholdSettingsClient({
       }
 
       setSavedSettings(result.data);
-      setFormValues(toFormValues(result.data));
+      if (formVersionRef.current === submittedFormVersion) {
+        setFormValues(toFormValues(result.data));
+      }
       toast.success("기준값을 저장했습니다.");
     } catch {
       const message =
@@ -227,6 +242,7 @@ export function AnomalyThresholdSettingsClient({
                   id="margin-rate"
                   inputMode="decimal"
                   value={formValues.marginRate}
+                  disabled={isSaving}
                   onChange={(event) =>
                     setFieldValue("marginRate", event.currentTarget.value)
                   }
@@ -256,6 +272,7 @@ export function AnomalyThresholdSettingsClient({
                 <select
                   id="threshold-active"
                   value={formValues.isActive ? "active" : "inactive"}
+                  disabled={isSaving}
                   onChange={(event) =>
                     setFieldValue(
                       "isActive",
@@ -287,6 +304,7 @@ export function AnomalyThresholdSettingsClient({
                   ref={reasonRef}
                   id="threshold-reason"
                   value={formValues.reason}
+                  disabled={isSaving}
                   onChange={(event) =>
                     setFieldValue("reason", event.currentTarget.value)
                   }
@@ -328,6 +346,7 @@ export function AnomalyThresholdSettingsClient({
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  formVersionRef.current += 1;
                   setFormValues(toFormValues(savedSettings));
                   setFieldErrors({});
                   setFormError(null);
