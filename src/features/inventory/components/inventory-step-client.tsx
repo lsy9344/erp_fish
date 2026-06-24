@@ -908,7 +908,7 @@ export function InventoryStepClient({
         badges.push({
           label: "기준 확인 필요",
           detail:
-            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 재고금액은 선입선출(FIFO) 기준으로 계산해 표시합니다.",
+            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 선입선출(FIFO) 기준 금액도 표에 표시하지 않습니다.",
           className:
             "border-purple-600 text-purple-700 dark:border-purple-400 dark:text-purple-300",
         });

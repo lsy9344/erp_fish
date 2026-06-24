@@ -1097,6 +1097,11 @@ test("inventory UI is wired to the canonical inventory route", () => {
     /formatKrw\(item\.inventoryAmount\)/,
     "inventory rows should not display per-item inventory amount",
   );
+  assert.doesNotMatch(
+    componentSource,
+    /재고금액은 선입선출/,
+    "inventory entry help text should not mention inventory amount",
+  );
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
   assert.match(componentSource, /isLedgerReadOnly/);
