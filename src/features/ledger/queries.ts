@@ -118,6 +118,16 @@ type LedgerExpensePayload = DailyLedgerPayload["ledgerExpenses"][number];
 type LedgerPurchasePayload = DailyLedgerPayload["ledgerPurchaseItems"][number];
 type LedgerLaborPayload = DailyLedgerPayload["ledgerLaborItems"][number];
 
+// WO(2026-06-24) Task 15: 감사 payload의 매입 항목에는 원본 단가(sourceUnitPrice)와
+// 적용 단가 override 메타를 포함해, 본사 보정 이력을 원본/적용값으로 구분해 볼 수 있게 한다.
+type LedgerAuditPurchaseItem = LedgerCostStepData["purchaseItems"][number] & {
+  sourceUnitPrice: number | null;
+  unitPriceOverridden: boolean;
+  unitPriceOverrideReason: string | null;
+  unitPriceUpdatedById: string | null;
+  ecountImportLineId: string | null;
+};
+
 type LedgerAuditPayload = {
   status: DailyLedgerPayload["status"];
   version: number;
@@ -225,6 +235,32 @@ function getLedgerPurchaseItems(ledger: {
   }));
 }
 
+function getLedgerAuditPurchaseItems(ledger: {
+  ledgerPurchaseItems: LedgerPurchasePayload[];
+}): LedgerAuditPurchaseItem[] {
+  return ledger.ledgerPurchaseItems.map((item: LedgerPurchasePayload) => ({
+    id: item.id,
+    productId: item.productId,
+    purchaseStandardId: item.purchaseStandardId,
+    sourceType: item.sourceType,
+    productName: item.productName,
+    productCategory: item.productCategory,
+    productSpec: item.productSpec,
+    unitPrice: item.unitPrice,
+    quantity: item.quantity,
+    amount: item.amount,
+    referenceInfo: item.referenceInfo ?? null,
+    sourceUnitPrice: item.sourceUnitPrice ?? null,
+    unitPriceOverridden:
+      item.sourceUnitPrice !== null &&
+      item.sourceUnitPrice !== undefined &&
+      item.sourceUnitPrice !== item.unitPrice,
+    unitPriceOverrideReason: item.unitPriceOverrideReason ?? null,
+    unitPriceUpdatedById: item.unitPriceUpdatedById ?? null,
+    ecountImportLineId: item.ecountImportLineId ?? null,
+  }));
+}
+
 function getLedgerLaborItems(ledger: {
   ledgerLaborItems: LedgerLaborPayload[];
 }): LedgerCostStepData["laborItems"] {
@@ -327,7 +363,7 @@ export function toLedgerAuditPayload(
     workerCount: ledger.workerCount ?? null,
     workMemo: ledger.workMemo ?? null,
     expenseItems: getLedgerExpenseItems(ledger),
-    purchaseItems: getLedgerPurchaseItems(ledger),
+    purchaseItems: getLedgerAuditPurchaseItems(ledger),
     laborItems,
     expenseTotal,
     purchaseTotal,
@@ -431,10 +467,12 @@ export async function syncEcountImportLineBackPointersInTx(
     where: { dailyLedgerId, ecountImportLineId: { not: null } },
     select: { id: true, ecountImportLineId: true },
   });
-  const itemByImportLineId = new Map(
-    items.map((item) => [item.ecountImportLineId!, item.id]),
+  const links = items.flatMap((item) =>
+    item.ecountImportLineId
+      ? [{ importLineId: item.ecountImportLineId, itemId: item.id }]
+      : [],
   );
-  const linkedImportLineIds = [...itemByImportLineId.keys()];
+  const linkedImportLineIds = links.map((link) => link.importLineId);
 
   // 영향받은 batch 안에서, 더 이상 이 장부의 어떤 행도 가리키지 않게 된
   // import line의 back-pointer를 정리한다. ledgerPurchaseItemId는 FK가 아닌
@@ -463,10 +501,10 @@ export async function syncEcountImportLineBackPointersInTx(
     });
   }
 
-  for (const [importLineId, itemId] of itemByImportLineId) {
+  for (const link of links) {
     await tx.ecountImportLine.update({
-      where: { id: importLineId },
-      data: { ledgerPurchaseItemId: itemId },
+      where: { id: link.importLineId },
+      data: { ledgerPurchaseItemId: link.itemId },
     });
   }
 }
