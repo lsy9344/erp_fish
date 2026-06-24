@@ -400,6 +400,13 @@ function RevenueRankingSummary({
           <p className="text-muted-foreground mt-1 text-sm break-words">
             {ranking.note}
           </p>
+          {ranking.salesPriceFallbackItemCount > 0 ? (
+            <p className="mt-1 text-xs break-words text-amber-600 dark:text-amber-500">
+              판매가 계획이 없어 매입 단가로 대체한 품목{" "}
+              {ranking.salesPriceFallbackItemCount.toLocaleString("ko-KR")}건이
+              포함되어 있습니다(판매가 미반영).
+            </p>
+          ) : null}
         </div>
         <Badge variant="outline" className="max-w-full break-words">
           {ranking.statusLabel}
@@ -461,7 +468,7 @@ function RevenueRankingList({
               <span className="shrink-0 text-right text-sm font-medium tabular-nums">
                 {krwFormatter.format(item.estimatedSalesAmount)}
                 <span className="text-muted-foreground block text-xs">
-                  추정
+                  {item.salesBasis === "cost" ? "추정 · 판매가 미반영" : "추정"}
                 </span>
               </span>
             </li>

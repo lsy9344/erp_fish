@@ -100,3 +100,38 @@
     사용 중단(deprecated)한다.
   - `PurchaseStandard`는 즉시 물리 삭제하지 않고 단계적 비활성화한다(메뉴/장부 select 제거,
     마감 전 점검에서 `매입 기준 없음`을 차단 사유로 보지 않음).
+
+## 검토 후속(2026-06-24): 추정 매출/마진은 "판매가 계획" 기준
+
+회의의 핵심 의도는 "아침에 정한 **판매가**(예: 1만 원짜리를 1만 3천 원에 팔겠다)로
+차익/이익률을 보고, 저녁 실제 결과와 비교해 어디서 새는지 본다"이다. 그런데 일부
+추정 매출/손실 계산이 **매입/적용 단가(`unitPrice`)** 기준이라 판매가 계획을 입력해도
+반영되지 않았다. 이를 모두 **지점장 판매가 계획**(`StoreSalesPricePlan.plannedUnitPrice`)
+기준으로 정렬한다.
+
+- **추정 매출/랭킹/카테고리 매출(P1):** 추정 매출은 `판매수량 × 판매가 계획`으로 계산한다.
+  - 지점장 "오늘 많이 팔린 품목"(`buildStoreManagerTopSoldItems`), 월간 매출 상위/하위
+    랭킹(`buildMonthlyRevenueRanking`), 냉동/생물 카테고리 매출(`buildProductCategoryPerformance`)
+    모두 판매가 계획을 우선 사용한다.
+  - **폴백 정책:** 품목에 판매가 계획이 없으면 매입/적용 단가로 폴백하되, 폴백한 품목을
+    `salesBasis="cost"` / `salesPriceFallbackItemCount`로 표시해 "판매가 미반영(추정)"임을
+    화면에 명시한다(데이터 연속성 유지). COGS(원가)는 종전대로 원가 기준으로 둔다.
+- **계획 판매가 대비 실제 비교(P1):** `calculateLedgerReviewSummary`에 비교 지표를 추가한다.
+  - `plannedSalesTotal`(Σ 판매수량×계획 판매가), `plannedGrossProfit`(계획매출−COGS),
+    `plannedGrossMarginRate`, `plannedVsActualSalesDifference`(실제 총매출−계획매출).
+  - 판매 품목 중 계획 판매가가 하나라도 빠지면 비교가 왜곡되므로 `policy-unconfirmed`(기준
+    확인 필요)로 내리고, 입력 자체가 없으면 `data-insufficient`로 둔다(매입단가로 조용히
+    메우지 않는다).
+  - **지점장 노출 범위:** 계획 매출/계획 대비 차이는 지점장 본인 판매가 계획·총매출만으로
+    산출되므로 노출하고, 계획 마진율은 마진율(%) 노출 정책과 동일하게 status가 ok일 때만
+    노출한다. 계획 **매출이익**(절대 이익, 원가 역산 가능)은 매출이익 차단 정책에 따라
+    지점장 요약에서 제외한다.
+- **손실액 판매가 폴백(P2):** 손실액은 회의 결정대로 "팔고자 한 희망 판매가격" 기준이다.
+  손실 저장 시 실제로 판매가 계획을 사용했는지를 `LedgerLossItem.usedPlannedPrice`에 스냅샷으로
+  저장한다. 판매가 계획이 없어 매입/기본 단가로 폴백한 손실 품목은 `usedPlannedPrice=false`로
+  표시하고, 손실 입력 화면에 "판매가 미반영(폴백)"임을 경고로 안내한다(손실액이 의도보다 낮게
+  잡힐 수 있음을 입력자가 인지하도록). 폴백 자체는 데이터 연속성을 위해 유지한다.
+- **이카운트 공급 리포트 기대 매출/이익(P2):** 공급 리포트 요약에 판매 예정가 기반
+  `estimatedSalesAmount`(Σ 수량×판매 예정가), `estimatedGrossProfit`(기대 매출−공급금액)을
+  추가한다. 판매 예정가가 매핑된 행만 합산하며, 산출 범위(`plannedRowCount`/`matchedSupplyAmount`)와
+  제외된 라인 수를 함께 노출해 추정 범위를 명확히 한다.

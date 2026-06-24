@@ -11,7 +11,8 @@ export type ProductListItem = {
   name: string;
   category: ProductCategory;
   spec: string;
-  defaultUnitPrice: number;
+  // 선택적 참고 단가. 단가 없이 등록한 품목은 null이다.
+  defaultUnitPrice: number | null;
   isActive: boolean;
   updatedAt: string;
   updatedByName: string;

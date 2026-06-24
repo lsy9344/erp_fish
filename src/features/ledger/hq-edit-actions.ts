@@ -674,7 +674,6 @@ export async function saveHqLedgerPurchases(
             name: true,
             category: true,
             spec: true,
-            defaultUnitPrice: true,
           },
         });
         const productsById = new Map(

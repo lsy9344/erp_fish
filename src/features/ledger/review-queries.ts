@@ -330,6 +330,23 @@ export function buildLedgerReviewStepSummaries({
           "signed-krw",
         ),
         ratioMetric("grossMarginRate", "마진율", summary.grossMarginRate),
+        // point_summary 검토 후속(2026-06-24): 아침 판매가 계획 vs 저녁 실제 비교.
+        moneyMetric(
+          "plannedSalesTotal",
+          "계획 판매가 기준 추정 매출",
+          summary.plannedSalesTotal,
+        ),
+        moneyMetric(
+          "plannedVsActualSalesDifference",
+          "계획 대비 실제 매출 차이",
+          summary.plannedVsActualSalesDifference,
+          "signed-krw",
+        ),
+        ratioMetric(
+          "plannedGrossMarginRate",
+          "계획 판매가 기준 마진율",
+          summary.plannedGrossMarginRate,
+        ),
       ],
     },
     {
@@ -424,6 +441,10 @@ export function buildLedgerReviewStepSummaries({
 // WO-04(2026-06-22): 지점장 "오늘 많이 팔린 품목" 카드 데이터.
 // 판매 수량은 재고 흐름(전일+매입-당일)으로만 추정하고, 추정 매출만 노출한다.
 // 단가/FIFO/차액 같은 민감값은 이 카드 데이터에 담지 않는다.
+//
+// point_summary 검토 후속(2026-06-24): 회의 결정대로 추정 매출은 "지점장 판매가 계획"
+// (plannedUnitPrice) 기준으로 산출한다. 매입/적용 단가(unitPrice)는 판매가 계획이 없을 때만
+// 폴백으로 쓰고, 그 경우 salesBasis="cost"로 표시한다.
 function buildStoreManagerTopSoldItems(
   items: Array<{
     productId: string;
@@ -432,6 +453,7 @@ function buildStoreManagerTopSoldItems(
     purchasedQuantity: number;
     currentQuantity: number | null;
     unitPrice: number;
+    plannedUnitPrice: number | null;
   }>,
   limit = 5,
 ): StoreManagerTopSoldItem[] {
@@ -445,11 +467,18 @@ function buildStoreManagerTopSoldItems(
 
     if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) continue;
 
+    const usePlannedPrice =
+      item.plannedUnitPrice !== null && Number.isFinite(item.plannedUnitPrice);
+    const salesUnitPrice = usePlannedPrice
+      ? item.plannedUnitPrice!
+      : item.unitPrice;
+
     topItems.push({
       productId: item.productId,
       productName: item.productName,
       soldQuantity,
-      estimatedSalesAmount: soldQuantity * item.unitPrice,
+      estimatedSalesAmount: soldQuantity * salesUnitPrice,
+      salesBasis: usePlannedPrice ? "planned" : "cost",
     });
   }
 
@@ -484,6 +513,28 @@ export async function getLedgerReviewStepData(
       where: { dailyLedgerId: ledger.id },
       select: reviewInventoryItemSelect,
     });
+    // point_summary 검토 후속(2026-06-24): 추정 매출/계획 대비 비교는 회의 결정대로
+    // "지점장 판매가 계획"(StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다.
+    // (storeId, businessDate=closingDate, productId)로 당일 판매가 계획을 조회한다.
+    const productIdsForPlan = [
+      ...new Set(savedInventoryItems.map((item) => item.productId)),
+    ];
+    const salesPricePlans =
+      productIdsForPlan.length > 0
+        ? await tx.storeSalesPricePlan.findMany({
+            where: {
+              storeId: ledger.storeId,
+              businessDate: ledger.closingDate,
+              productId: { in: productIdsForPlan },
+            },
+            select: { productId: true, plannedUnitPrice: true },
+          })
+        : [];
+    const plannedUnitPriceByProductId = new Map(
+      salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+    );
+    const getPlannedUnitPrice = (productId: string): number | null =>
+      plannedUnitPriceByProductId.get(productId) ?? null;
     const expenseTotal = calculateExpenseTotal(
       ledger.ledgerExpenses.map((expense) => expense.amount),
     );
@@ -510,6 +561,14 @@ export async function getLedgerReviewStepData(
         .map((item) => item.adjustment)
         .filter((adjustment) => adjustment !== null),
       lossItems: losses.lossItems,
+      plannedSalesItems: savedInventoryItems.map((item) => ({
+        productId: item.productId,
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity: item.purchasedQuantity,
+        currentQuantity: item.currentQuantity,
+        quantity: item.quantity,
+        plannedUnitPrice: getPlannedUnitPrice(item.productId),
+      })),
     });
     const hasInventoryUnavailable = savedInventoryItems.some(
       (item) =>
@@ -568,6 +627,7 @@ export async function getLedgerReviewStepData(
           purchasedQuantity: item.purchasedQuantity,
           currentQuantity: item.currentQuantity,
           unitPrice: item.unitPrice,
+          plannedUnitPrice: getPlannedUnitPrice(item.productId),
         })),
       ),
     };

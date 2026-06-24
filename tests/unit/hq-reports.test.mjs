@@ -149,23 +149,26 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
     {
       ledgerInventoryItems: [
         {
-          // 냉동: 판매 10+5-3 = 12개, 단가 1,000 → 추정 매출 12,000원
-          // FIFO 소진금액 9,000 → 추정 이익률 (12,000-9,000)/12,000 = 0.25
+          // 냉동: 판매 10+5-3 = 12개, 판매가 계획 1,500 → 추정 매출 18,000원
+          // (매입단가 1,000이 아니라 판매가 계획 기준으로 매출을 산출한다)
+          // FIFO 소진금액 9,000(원가) → 추정 이익률 (18,000-9,000)/18,000 = 0.5
           productCategory: "냉동",
           previousQuantity: 10,
           purchasedQuantity: 5,
           currentQuantity: 3,
           unitPrice: 1_000,
+          plannedUnitPrice: 1_500,
           fifoLots: [{ consumedAmount: 6_000 }, { consumedAmount: 3_000 }],
         },
         {
-          // 생물: 판매 8+0-3 = 5개, 단가 2,000 → 추정 매출 10,000원
-          // FIFO lot 없음 → COGS 폴백 (판매수량 * 단가) = 10,000 → 이익률 0
+          // 생물: 판매 8+0-3 = 5개, 판매가 계획 없음 → 매입단가 2,000으로 폴백
+          // → 추정 매출 10,000원, FIFO lot 없어 COGS 폴백 10,000 → 이익률 0
           productCategory: "생물",
           previousQuantity: 8,
           purchasedQuantity: 0,
           currentQuantity: 3,
           unitPrice: 2_000,
+          plannedUnitPrice: null,
         },
         {
           // 당일 재고 미입력(null) 행은 제외한다.
@@ -188,9 +191,22 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
     },
   ]);
 
+  // 냉동은 판매가 계획 기준이라 폴백 0건, 생물은 판매가 계획 없어 폴백 1건.
   assert.deepEqual(performance, [
-    { category: "냉동", salesAmount: 12_000, grossMarginRate: 0.25, statusLabel: "추정" },
-    { category: "생물", salesAmount: 10_000, grossMarginRate: 0, statusLabel: "추정" },
+    {
+      category: "냉동",
+      salesAmount: 18_000,
+      grossMarginRate: 0.5,
+      statusLabel: "추정",
+      salesPriceFallbackItemCount: 0,
+    },
+    {
+      category: "생물",
+      salesAmount: 10_000,
+      grossMarginRate: 0,
+      statusLabel: "추정",
+      salesPriceFallbackItemCount: 1,
+    },
   ]);
 });
 
@@ -252,10 +268,14 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
   assert.doesNotMatch(policyDocSource, /`grossMarginRate`는 `null`/);
 
   // 쿼리는 두 리포트 모두에 categoryPerformance를 채운다.
+  // point_summary 검토 후속(2026-06-24): 판매가 계획을 붙인 ledgersWithPlannedPrice를 넘긴다.
   assert.match(
     querySource,
-    /categoryPerformance:\s*buildProductCategoryPerformance\(ledgers\)/,
+    /categoryPerformance:\s*buildProductCategoryPerformance\(\s*ledgersWithPlannedPrice,?\s*\)/,
   );
+  assert.match(querySource, /getPlannedUnitPriceLookup/);
+  // 판매가 계획이 없는 품목은 매입단가로 폴백했음을 차트가 안내한다.
+  assert.match(chartSource, /판매가 미반영/);
 });
 
 test("correction creation revalidates daily reports after correction values change", () => {
@@ -2598,7 +2618,7 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
   assert.doesNotMatch(auditJson, /서초점|광어|500000|220000/);
 });
 
-test("monthly report ranks products by estimated sales (sold quantity × unit price)", async () => {
+test("monthly report ranks products by estimated sales (sold quantity × planned price, cost fallback)", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -2622,8 +2642,8 @@ test("monthly report ranks products by estimated sales (sold quantity × unit pr
     ...overrides,
   });
 
-  // 판매량 = 전일 + 매입 - 당일. 추정매출 = 판매량 × 단가.
-  // 단가 1000 고정, 판매량으로 순위를 통제한다(추정매출 = 판매량 × 1000).
+  // 판매량 = 전일 + 매입 - 당일. 추정매출 = 판매량 × 판매가(계획 우선, 없으면 매입단가 폴백).
+  // 매입단가 1000 고정, 판매량으로 순위를 통제한다(폴백 시 추정매출 = 판매량 × 1000).
   const soldItem = (productId, productName, soldQuantity) =>
     inventoryItem(productId, productName, {
       previousQuantity: soldQuantity,
@@ -2646,7 +2666,12 @@ test("monthly report ranks products by estimated sales (sold quantity × unit pr
         metricEvidence: {},
         hasUnappliedCorrections: false,
         inventoryItems: [
-          soldItem("p1", "1위품목", 70),
+          // 1위: 판매가 계획 2000이 있으므로 매입단가가 아닌 계획가 기준(70 × 2000 = 140,000).
+          {
+            ...soldItem("p1", "1위품목", 70),
+            plannedUnitPrice: 2000,
+          },
+          // 나머지는 판매가 계획이 없어 매입단가(1000)로 폴백.
           soldItem("p2", "2위품목", 60),
           soldItem("p3", "3위품목", 50),
           soldItem("p4", "4위품목", 40),
@@ -2669,17 +2694,23 @@ test("monthly report ranks products by estimated sales (sold quantity × unit pr
   const ranking = report.revenueRanking;
 
   assert.equal(ranking.status, "available");
-  assert.match(ranking.basisLabel, /판매량.*단가.*추정/);
+  assert.match(ranking.basisLabel, /판매량.*판매가 계획.*추정/);
+  // 판매가 계획이 없어 폴백한 품목 수(p2~p7 = 6건).
+  assert.equal(ranking.salesPriceFallbackItemCount, 6);
 
-  // 상위 5는 추정매출 내림차순.
+  // 상위 5는 추정매출 내림차순. 1위는 판매가 계획(2000) 기준이라 140,000.
   assert.deepEqual(
-    ranking.top.map((item) => [item.productName, item.estimatedSalesAmount]),
+    ranking.top.map((item) => [
+      item.productName,
+      item.estimatedSalesAmount,
+      item.salesBasis,
+    ]),
     [
-      ["1위품목", 70000],
-      ["2위품목", 60000],
-      ["3위품목", 50000],
-      ["4위품목", 40000],
-      ["5위품목", 30000],
+      ["1위품목", 140000, "planned"],
+      ["2위품목", 60000, "cost"],
+      ["3위품목", 50000, "cost"],
+      ["4위품목", 40000, "cost"],
+      ["5위품목", 30000, "cost"],
     ],
   );
 

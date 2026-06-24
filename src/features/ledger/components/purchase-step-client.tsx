@@ -30,7 +30,8 @@ type ProductOption = {
   name: string;
   category: string;
   spec: string;
-  defaultUnitPrice: number;
+  // 선택적 참고 단가. 단가 없이 등록한 품목은 null이다(본사 매입가 아님).
+  defaultUnitPrice: number | null;
 };
 
 type PurchaseLine = {
@@ -41,7 +42,9 @@ type PurchaseLine = {
   productName: string;
   productCategory: string;
   productSpec: string;
-  referenceUnitPrice: number;
+  // 품목 마스터의 참고 단가(선택). 없으면 null이며, 장부 적용 단가(unitPrice)는
+  // 직접 입력해야 한다.
+  referenceUnitPrice: number | null;
   unitPrice: string;
   quantity: string;
   referenceInfo: string;
@@ -60,7 +63,11 @@ type PurchaseStepClientProps = {
   hqEditReasonRequired?: boolean;
 };
 
-function formatKrw(value: number) {
+function formatKrw(value: number | null) {
+  if (value === null) {
+    return "참고 단가 없음";
+  }
+
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
@@ -86,7 +93,7 @@ function createLineState(id: string): PurchaseLine {
     productName: "",
     productCategory: "",
     productSpec: "",
-    referenceUnitPrice: 0,
+    referenceUnitPrice: null,
     unitPrice: "",
     quantity: "",
     referenceInfo: "",
@@ -369,6 +376,9 @@ export function PurchaseStepClient({
 
   function applyProduct(lineId: string, productId: string) {
     const product = productOptions.find((option) => option.id === productId);
+    // 품목 마스터의 참고 단가는 본사 매입가가 아니다. 값이 있으면 편의상 장부 적용
+    // 단가 칸을 미리 채우되, 없으면(null) 0을 박지 않고 비워 직접 입력하게 한다.
+    const referenceUnitPrice = product?.defaultUnitPrice ?? null;
 
     updatePurchaseLine(lineId, {
       productId,
@@ -376,8 +386,8 @@ export function PurchaseStepClient({
       productName: product?.name ?? "",
       productCategory: product?.category ?? "",
       productSpec: product?.spec ?? "",
-      referenceUnitPrice: product?.defaultUnitPrice ?? 0,
-      unitPrice: String(product?.defaultUnitPrice ?? 0),
+      referenceUnitPrice,
+      unitPrice: referenceUnitPrice === null ? "" : String(referenceUnitPrice),
     });
   }
 
@@ -671,8 +681,8 @@ export function PurchaseStepClient({
                       {helperProduct?.spec ?? "-"}
                     </p>
                     <p className="mt-1">
-                      기본 단가:{" "}
-                      {formatKrw(helperProduct?.defaultUnitPrice ?? 0)}
+                      참고 단가:{" "}
+                      {formatKrw(helperProduct?.defaultUnitPrice ?? null)}
                       {line.referenceInfo
                         ? ` · 참조: ${line.referenceInfo}`
                         : ""}

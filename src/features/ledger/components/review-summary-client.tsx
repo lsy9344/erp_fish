@@ -362,7 +362,9 @@ export function ReviewSummaryClient({
               오늘 많이 팔린 품목
             </h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.
+              품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다. 추정 매출은
+              지점 판매가 계획 기준이며, 판매가 계획이 없는 품목은 매입 단가로
+              대체해 표시(판매가 미반영)합니다.
             </p>
             <ul className="mt-3 flex flex-col gap-2">
               {currentReviewData.topSoldItems.map((item) => (
@@ -376,6 +378,12 @@ export function ReviewSummaryClient({
                   <span className="text-muted-foreground text-sm tabular-nums">
                     {item.soldQuantity}개 · 추정 매출{" "}
                     {formatKrw(item.estimatedSalesAmount)}
+                    {item.salesBasis === "cost" ? (
+                      <span className="text-amber-600 dark:text-amber-500">
+                        {" "}
+                        · 판매가 미반영
+                      </span>
+                    ) : null}
                   </span>
                 </li>
               ))}

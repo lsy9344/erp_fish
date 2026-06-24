@@ -70,7 +70,11 @@ function formatUpdatedAt(value: string) {
   }).format(new Date(value));
 }
 
-function formatKrw(value: number) {
+function formatKrw(value: number | null) {
+  if (value === null) {
+    return "-";
+  }
+
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
@@ -164,7 +168,11 @@ export function ProductManagementClient({
     setName(product.name);
     setCategory(product.category);
     setSpec(product.spec);
-    setDefaultUnitPrice(String(product.defaultUnitPrice));
+    setDefaultUnitPrice(
+      product.defaultUnitPrice === null
+        ? ""
+        : String(product.defaultUnitPrice),
+    );
     setFieldErrors({});
     setFormError(null);
     window.setTimeout(() => nameInputRef.current?.focus(), 0);
@@ -359,7 +367,7 @@ export function ProductManagementClient({
               <TableHead>품목명</TableHead>
               <TableHead>구분</TableHead>
               <TableHead>규격</TableHead>
-              <TableHead>기본 단가</TableHead>
+              <TableHead>참고 단가(선택)</TableHead>
               <TableHead>상태</TableHead>
               <TableHead>마지막 수정 시각</TableHead>
               <TableHead className="text-right">행 작업</TableHead>
@@ -464,7 +472,8 @@ export function ProductManagementClient({
               {dialogState?.mode === "edit" ? "품목 정보 수정" : "품목 추가"}
             </DialogTitle>
             <DialogDescription>
-              장부 입력에서 참조할 품목 기준 정보를 관리합니다.
+              품목 식별/분류/규격 등 기준 정보를 관리합니다. 단가는 선택 입력이며
+              본사 매입가가 아닌 참고용입니다.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -529,26 +538,37 @@ export function ProductManagementClient({
             </Field>
             <Field data-invalid={Boolean(priceError)}>
               <FieldLabel htmlFor="product-default-unit-price">
-                기본 단가
+                참고 단가(선택)
               </FieldLabel>
               <Input
                 ref={priceInputRef}
                 id="product-default-unit-price"
                 inputMode="numeric"
+                placeholder="비워두면 단가 없음"
                 value={defaultUnitPrice}
                 onChange={(event) =>
                   setDefaultUnitPrice(event.currentTarget.value)
                 }
                 aria-invalid={Boolean(priceError)}
                 aria-describedby={
-                  priceError ? "product-default-unit-price-error" : undefined
+                  priceError
+                    ? "product-default-unit-price-error"
+                    : "product-default-unit-price-hint"
                 }
               />
               {priceError ? (
                 <FieldError id="product-default-unit-price-error">
                   {priceError}
                 </FieldError>
-              ) : null}
+              ) : (
+                <p
+                  id="product-default-unit-price-hint"
+                  className="text-muted-foreground text-sm"
+                >
+                  본사 매입가가 아닌 참고용입니다. 실제 입고 원가는 장부 적용
+                  단가를 기준으로 합니다.
+                </p>
+              )}
             </Field>
             {formError ? (
               <p className="text-destructive text-sm" role="alert">

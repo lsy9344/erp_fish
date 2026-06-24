@@ -24,7 +24,7 @@ type ProductAuditValue = {
   name: string;
   category: string;
   spec: string;
-  defaultUnitPrice: number;
+  defaultUnitPrice: number | null;
   isActive: boolean;
 };
 
@@ -217,7 +217,8 @@ export async function importPurchaseStandardsFromEcount(
             name: purchase.productName,
             category: purchase.productCategory,
             spec: purchase.productSpec,
-            defaultUnitPrice: unitPrice,
+            // 정책 전환(2026-06-24): 이카운트 단가를 품목 마스터 고정 단가로 박지 않는다.
+            // (이 경로는 @deprecated. 입고 원가는 장부 적용 단가에서만 보존한다.)
             isActive: true,
             updatedById: actor.id,
           },

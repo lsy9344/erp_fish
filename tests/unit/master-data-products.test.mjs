@@ -50,7 +50,11 @@ test("Prisma schema keeps products, purchase standards, and ledger snapshots wit
     /model\s+Product\s*{[^}]*category\s+(?:ProductCategory|String)[^}]*}/s,
   );
   assert.match(schema, /model\s+Product\s*{[^}]*spec\s+String[^}]*}/s);
-  assert.match(schema, /model\s+Product\s*{[^}]*defaultUnitPrice\s+Int[^}]*}/s);
+  // 가격 정책 전환(2026-06-24): 품목 마스터 단가는 선택적 참고 단가다(nullable).
+  assert.match(
+    schema,
+    /model\s+Product\s*{[^}]*defaultUnitPrice\s+Int\?[^}]*}/s,
+  );
   assert.match(
     schema,
     /model\s+Product\s*{[^}]*isActive\s+Boolean\s+@default\(true\)[^}]*}/s,
@@ -154,6 +158,23 @@ test("product schemas normalize input and return Korean field errors", async () 
     isActive: false,
   });
 
+  // 가격 정책 전환(2026-06-24): 단가는 선택값이다. 비우거나 생략하면 null로 저장하고
+  // 단가 없이도 품목을 생성할 수 있어야 한다(검증 기준 #1).
+  const emptyPrice = productFormSchema.parse({
+    name: "스토리52 단가없음",
+    category: "냉동",
+    spec: "10kg",
+    defaultUnitPrice: "  ",
+  });
+  assert.equal(emptyPrice.defaultUnitPrice, null);
+
+  const omittedPrice = productFormSchema.parse({
+    name: "스토리52 단가생략",
+    category: "냉동",
+    spec: "10kg",
+  });
+  assert.equal(omittedPrice.defaultUnitPrice, null);
+
   const blank = productFormSchema.safeParse({
     name: " ",
     category: " ",
@@ -170,8 +191,9 @@ test("product schemas normalize input and return Korean field errors", async () 
   assert.deepEqual(blank.error.flatten().fieldErrors.spec, [
     "규격을 입력해 주세요.",
   ]);
+  // 값이 있는데 잘못된 경우(음수)는 여전히 오류로 막는다.
   assert.deepEqual(blank.error.flatten().fieldErrors.defaultUnitPrice, [
-    "기본 단가는 0원 이상의 정수여야 합니다.",
+    "참고 단가는 0원 이상의 정수여야 합니다.",
   ]);
 
   const decimal = productFormSchema.safeParse({
@@ -182,7 +204,7 @@ test("product schemas normalize input and return Korean field errors", async () 
   });
   assert.equal(decimal.success, false);
   assert.deepEqual(decimal.error.flatten().fieldErrors.defaultUnitPrice, [
-    "기본 단가는 0원 이상의 정수여야 합니다.",
+    "참고 단가는 0원 이상의 정수여야 합니다.",
   ]);
 
   const tooLarge = productFormSchema.safeParse({
@@ -193,7 +215,7 @@ test("product schemas normalize input and return Korean field errors", async () 
   });
   assert.equal(tooLarge.success, false);
   assert.deepEqual(tooLarge.error.flatten().fieldErrors.defaultUnitPrice, [
-    "기본 단가는 0원 이상의 정수여야 합니다.",
+    "참고 단가는 0원 이상의 정수여야 합니다.",
   ]);
 });
 

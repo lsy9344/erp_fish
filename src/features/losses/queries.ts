@@ -26,6 +26,7 @@ const lossItemSelect = {
   quantity: true,
   recoveredAmount: true,
   amount: true,
+  usedPlannedPrice: true,
   reason: true,
 } as const;
 
