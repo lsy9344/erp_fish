@@ -31,6 +31,7 @@ import {
 } from "~/features/ledger/status-policy";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
+import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -216,18 +217,6 @@ function parseExpectedUpdatedAt(value: string): Date | null {
   const expectedUpdatedAt = new Date(value);
 
   return Number.isNaN(expectedUpdatedAt.getTime()) ? null : expectedUpdatedAt;
-}
-
-function shouldPersistInventoryLine(
-  item: InventoryStepData["items"][number],
-  currentQuantity: number | null,
-  quantity: number | null,
-) {
-  return (
-    item.id !== item.productId ||
-    currentQuantity !== item.currentQuantity ||
-    quantity !== item.quantity
-  );
 }
 
 export async function saveHqLedgerInventoryItems(

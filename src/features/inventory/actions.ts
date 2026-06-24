@@ -25,6 +25,7 @@ import {
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
+import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import { getInventorySaveAdjustmentErrors } from "./adjustment-save-guard";
 import {
   persistLedgerInventoryCarryoverDetail,
@@ -291,47 +292,61 @@ export async function saveLedgerInventoryItems(
         where: { dailyLedgerId: before.id },
       });
 
-      if (before.items.length > 0) {
-        await tx.ledgerInventoryItem.createMany({
-          data: before.items.map((item) => {
-            const currentQuantity =
-              inputByProductId.get(item.productId)?.currentQuantity ??
-              item.currentQuantity;
-            const quantity =
-              inputByProductId.get(item.productId)?.quantity ?? item.quantity;
-            const inventoryAmount = calculateInventoryAmount(
-              quantity,
-              item.unitPrice,
-            );
+      // 미입력(빈칸) 행은 currentQuantity/quantity가 null로 직렬화되는데, 무조건
+      // 재기록하면 기존 저장값을 null로 덮어써 다음 날 전일재고 이월이 0이 된다.
+      // 본사 경로와 동일하게 shouldPersistInventoryLine 가드로 변경/기존 행만 기록한다.
+      const rowsToPersist = before.items.flatMap((item) => {
+        const currentQuantity =
+          inputByProductId.get(item.productId)?.currentQuantity ??
+          item.currentQuantity;
+        const quantity =
+          inputByProductId.get(item.productId)?.quantity ?? item.quantity;
 
-            return {
-              dailyLedgerId: before.id,
-              productId: item.productId,
-              productName: item.productName,
-              productCategory: item.productCategory,
-              productSpec: item.productSpec,
-              unitPrice: item.unitPrice,
-              previousQuantity: item.previousQuantity,
-              purchasedQuantity: item.purchasedQuantity,
-              currentQuantity,
-              quantity,
-              inventoryAmount,
-              isModified:
-                (currentQuantity !== null &&
-                  currentQuantity !== item.previousQuantity) ||
-                (quantity !== null && quantity !== item.previousQuantity),
-              carryoverSource: item.carryoverSource,
-              carryoverStatus: item.carryoverStatus,
-              carryoverLedgerId: item.carryoverLedgerId,
-              createdById: actor.user.id,
-              updatedById: actor.user.id,
-            };
-          }),
+        if (!shouldPersistInventoryLine(item, currentQuantity, quantity)) {
+          return [];
+        }
+
+        const inventoryAmount = calculateInventoryAmount(
+          quantity,
+          item.unitPrice,
+        );
+
+        return [
+          {
+            dailyLedgerId: before.id,
+            productId: item.productId,
+            productName: item.productName,
+            productCategory: item.productCategory,
+            productSpec: item.productSpec,
+            unitPrice: item.unitPrice,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            currentQuantity,
+            quantity,
+            inventoryAmount,
+            isModified:
+              (currentQuantity !== null &&
+                currentQuantity !== item.previousQuantity) ||
+              (quantity !== null && quantity !== item.previousQuantity),
+            carryoverSource: item.carryoverSource,
+            carryoverStatus: item.carryoverStatus,
+            carryoverLedgerId: item.carryoverLedgerId,
+            createdById: actor.user.id,
+            updatedById: actor.user.id,
+          },
+        ];
+      });
+
+      if (rowsToPersist.length > 0) {
+        await tx.ledgerInventoryItem.createMany({
+          data: rowsToPersist,
         });
         await persistLedgerInventoryCarryoverDetails(
           tx,
           before.id,
-          before.items,
+          before.items.filter((item) =>
+            rowsToPersist.some((row) => row.productId === item.productId),
+          ),
         );
       }
 

@@ -738,6 +738,85 @@ test("inventory normal save requires matching adjustment record for changed actu
   );
 });
 
+test("store inventory save does not overwrite untouched rows with null (prev-day carryover stays non-zero)", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-persist-policy.ts",
+  );
+  const { shouldPersistInventoryLine } = await import(
+    pathToFileURL(policyPath).href
+  );
+
+  // 이미 DB에 저장된 행(id !== productId)은 사용자가 값을 바꾸지 않아도 보존을
+  // 위해 항상 다시 기록한다. 그래야 delete+recreate 후에도 기존 값이 살아남는다.
+  const persistedRow = {
+    id: "inv-cuid-1",
+    productId: "product-1",
+    currentQuantity: 7,
+    quantity: 7,
+  };
+  assert.equal(shouldPersistInventoryLine(persistedRow, 7, 7), true);
+
+  // 아직 저장된 적 없는 seed 행(id === productId)을 빈 채(null)로 두면 기록하지
+  // 않는다. 기록하면 currentQuantity=null이 박혀 다음 날 전일재고가 0이 된다.
+  const untouchedSeedRow = {
+    id: "product-2",
+    productId: "product-2",
+    currentQuantity: null,
+    quantity: null,
+  };
+  assert.equal(shouldPersistInventoryLine(untouchedSeedRow, null, null), false);
+
+  // seed 행이라도 사용자가 값을 입력하면 기록한다.
+  assert.equal(shouldPersistInventoryLine(untouchedSeedRow, 5, 5), true);
+
+  // 저장된 행의 값이 바뀌면 기록한다.
+  assert.equal(shouldPersistInventoryLine(persistedRow, 9, 9), true);
+
+  // 지점장 저장 경로(actions.ts)도 본사와 동일한 가드로 빈 행을 건너뛰는지 확인한다.
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  assert.match(
+    actionSource,
+    /shouldPersistInventoryLine\(item, currentQuantity, quantity\)/,
+    "store inventory save should reuse the shared persist guard",
+  );
+  assert.match(
+    actionSource,
+    /const rowsToPersist = before\.items\.flatMap/,
+    "store inventory save should build a filtered rowsToPersist list",
+  );
+  assert.match(
+    actionSource,
+    /rowsToPersist\.length > 0[\s\S]*createMany[\s\S]*persistLedgerInventoryCarryoverDetails[\s\S]*rowsToPersist\.some/,
+    "store inventory save should only persist carryover details for persisted rows",
+  );
+
+  // 본사 경로(hq-edit-actions.ts)도 같은 공유 가드를 import해 정책을 공유한다.
+  const hqSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  assert.match(
+    hqSource,
+    /from\s+"\.\/inventory-persist-policy"/,
+    "HQ inventory save should import the shared persist guard",
+  );
+  assert.doesNotMatch(
+    hqSource,
+    /function\s+shouldPersistInventoryLine/,
+    "shouldPersistInventoryLine should be defined once in the shared module, not duplicated",
+  );
+});
+
 test("inventory queries and actions implement carryover, purchase aggregation, and audit contracts", () => {
   const typeSource = readProjectFile(
     "src",
