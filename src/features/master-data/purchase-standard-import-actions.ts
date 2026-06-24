@@ -159,6 +159,12 @@ function isSameImportedStandard(
   );
 }
 
+/**
+ * @deprecated WO(2026-06-24): 이카운트 정책 전환으로 사용 중단됨. 이카운트 엑셀은 더 이상
+ * PurchaseStandard 생성 파일이 아니다. 본사 이카운트 업로드(`previewEcountSupplyUpload` /
+ * `commitEcountSupplyImport`)를 사용한다. UI에서 호출 경로는 제거되었으며, 이 함수는
+ * 하위 호환/이력 목적으로만 남는다.
+ */
 export async function importPurchaseStandardsFromEcount(
   formData: FormData,
 ): Promise<ActionResult<PurchaseStandardImportResult>> {

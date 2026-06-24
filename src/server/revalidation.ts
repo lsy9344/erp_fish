@@ -66,6 +66,14 @@ export function revalidateLedgerDetailPath(ledgerId: string) {
   revalidatePath(`/app/ledgers/${ledgerId}`);
 }
 
+export function revalidateEcountImportPaths(batchId?: string) {
+  revalidatePath("/app/ecount-imports");
+
+  if (batchId) {
+    revalidatePath(`/app/ecount-imports/${batchId}`);
+  }
+}
+
 export function revalidateMasterDataPaths(kind: MasterDataRevalidationKind) {
   revalidatePaths(masterDataPaths[kind]);
 }

@@ -33,13 +33,6 @@ type ProductOption = {
   defaultUnitPrice: number;
 };
 
-type PurchaseStandardOption = {
-  id: string;
-  standardUnitPrice: number | null;
-  referenceInfo: string | null;
-  product: ProductOption;
-};
-
 type PurchaseLine = {
   id: string;
   productId: string;
@@ -58,7 +51,6 @@ type PurchaseStepClientProps = {
   storeName: string;
   initialLedger: StoreManagerLedgerCostStepData;
   productOptions: ProductOption[];
-  purchaseStandardOptions: PurchaseStandardOption[];
   currentStep: "sales" | "cost" | "purchase" | "work";
   saveAction?: (
     input: unknown,
@@ -139,7 +131,6 @@ export function PurchaseStepClient({
   storeName,
   initialLedger,
   productOptions,
-  purchaseStandardOptions,
   currentStep = "purchase",
   saveAction = saveLedgerPurchases,
   showStepNavigation = true,
@@ -148,7 +139,6 @@ export function PurchaseStepClient({
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
-  const standardRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const productNameRefs = useRef<(HTMLInputElement | null)[]>([]);
   const productCategoryRefs = useRef<(HTMLInputElement | null)[]>([]);
   const productSpecRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -198,11 +188,6 @@ export function PurchaseStepClient({
       for (let index = 0; index < purchaseItems.length; index += 1) {
         if (errors[`purchases.${index}.productId`]?.length) {
           productRefs.current[index]?.focus();
-          return;
-        }
-
-        if (errors[`purchases.${index}.purchaseStandardId`]?.length) {
-          standardRefs.current[index]?.focus();
           return;
         }
 
@@ -261,8 +246,7 @@ export function PurchaseStepClient({
     return purchaseItems.map((line, index) => ({
       ...line,
       productId: productRefs.current[index]?.value ?? line.productId,
-      purchaseStandardId:
-        standardRefs.current[index]?.value ?? line.purchaseStandardId,
+      purchaseStandardId: "",
       productName: productNameRefs.current[index]?.value ?? line.productName,
       productCategory:
         productCategoryRefs.current[index]?.value ?? line.productCategory,
@@ -385,47 +369,15 @@ export function PurchaseStepClient({
 
   function applyProduct(lineId: string, productId: string) {
     const product = productOptions.find((option) => option.id === productId);
-    const standard = purchaseStandardOptions.find(
-      (option) => option.product.id === productId,
-    );
 
     updatePurchaseLine(lineId, {
       productId,
-      purchaseStandardId: standard?.id ?? "",
+      purchaseStandardId: "",
       productName: product?.name ?? "",
       productCategory: product?.category ?? "",
       productSpec: product?.spec ?? "",
-      referenceUnitPrice:
-        standard?.standardUnitPrice ?? product?.defaultUnitPrice ?? 0,
-      unitPrice: String(
-        standard?.standardUnitPrice ?? product?.defaultUnitPrice ?? 0,
-      ),
-      referenceInfo: standard?.referenceInfo ?? "",
-    });
-  }
-
-  function applyStandard(lineId: string, standardId: string) {
-    const standard = purchaseStandardOptions.find(
-      (option) => option.id === standardId,
-    );
-
-    if (!standard) {
-      updatePurchaseLine(lineId, { purchaseStandardId: standardId });
-      return;
-    }
-
-    updatePurchaseLine(lineId, {
-      productId: standard.product.id,
-      purchaseStandardId: standard.id,
-      productName: standard.product.name,
-      productCategory: standard.product.category,
-      productSpec: standard.product.spec,
-      referenceUnitPrice:
-        standard.standardUnitPrice ?? standard.product.defaultUnitPrice,
-      unitPrice: String(
-        standard.standardUnitPrice ?? standard.product.defaultUnitPrice,
-      ),
-      referenceInfo: standard.referenceInfo ?? "",
+      referenceUnitPrice: product?.defaultUnitPrice ?? 0,
+      unitPrice: String(product?.defaultUnitPrice ?? 0),
     });
   }
 
@@ -487,7 +439,7 @@ export function PurchaseStepClient({
         isSaving={isFormSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["매입 품목", "매입 기준", "단가", "수량"]}
+        unsavedFields={["매입 품목", "단가", "수량"]}
         onRetry={handleRetry}
         retryDisabled={isFormSaving || isOriginalEditBlocked}
       />
@@ -516,8 +468,6 @@ export function PurchaseStepClient({
             {purchaseItems.map((line, index) => {
               const productError =
                 fieldErrors[`purchases.${index}.productId`]?.[0];
-              const standardError =
-                fieldErrors[`purchases.${index}.purchaseStandardId`]?.[0];
               const productNameError =
                 fieldErrors[`purchases.${index}.productName`]?.[0];
               const productCategoryError =
@@ -528,12 +478,6 @@ export function PurchaseStepClient({
                 fieldErrors[`purchases.${index}.unitPrice`]?.[0];
               const quantityError =
                 fieldErrors[`purchases.${index}.quantity`]?.[0];
-              const lineStandards = purchaseStandardOptions.filter(
-                (option) => option.product.id === line.productId,
-              );
-              const selectedStandard = purchaseStandardOptions.find(
-                (option) => option.id === line.purchaseStandardId,
-              );
               const helperProduct = line.productName
                 ? {
                     name: line.productName,
@@ -541,7 +485,7 @@ export function PurchaseStepClient({
                     spec: line.productSpec,
                     defaultUnitPrice: line.referenceUnitPrice,
                   }
-                : selectedStandard?.product;
+                : undefined;
               const isLineEditBlocked =
                 isFormSaving ||
                 isOriginalEditBlocked ||
@@ -612,56 +556,6 @@ export function PurchaseStepClient({
                     {productError ? (
                       <FieldError id={`purchase-product-${line.id}-error`}>
                         {productError}
-                      </FieldError>
-                    ) : null}
-                  </Field>
-
-                  <Field data-invalid={Boolean(standardError)}>
-                    <FieldLabel htmlFor={`purchase-standard-${line.id}`}>
-                      매입 기준
-                    </FieldLabel>
-                    <select
-                      id={`purchase-standard-${line.id}`}
-                      ref={(node) => {
-                        standardRefs.current[index] = node;
-                      }}
-                      value={line.purchaseStandardId}
-                      disabled={isLineEditBlocked}
-                      onChange={(event) =>
-                        applyStandard(line.id, event.currentTarget.value)
-                      }
-                      aria-invalid={Boolean(standardError)}
-                      aria-describedby={
-                        standardError
-                          ? `purchase-standard-${line.id}-error`
-                          : undefined
-                      }
-                      className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
-                    >
-                      <option value="">매입 기준 선택</option>
-                      {!purchaseStandardOptions.some(
-                        (option) => option.id === line.purchaseStandardId,
-                      ) && line.purchaseStandardId ? (
-                        <option value={line.purchaseStandardId}>
-                          저장된 매입 기준
-                        </option>
-                      ) : null}
-                      {(line.productId
-                        ? lineStandards
-                        : purchaseStandardOptions
-                      ).map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.product.name} /{" "}
-                          {formatKrw(
-                            option.standardUnitPrice ??
-                              option.product.defaultUnitPrice,
-                          )}
-                        </option>
-                      ))}
-                    </select>
-                    {standardError ? (
-                      <FieldError id={`purchase-standard-${line.id}-error`}>
-                        {standardError}
                       </FieldError>
                     ) : null}
                   </Field>
@@ -875,10 +769,9 @@ export function PurchaseStepClient({
           </div>
         )}
 
-        {productOptions.length === 0 || purchaseStandardOptions.length === 0 ? (
+        {productOptions.length === 0 ? (
           <p className="text-muted-foreground mb-3 text-sm">
-            선택 가능한 active 품목 또는 매입 기준이 없어도 수동 입력할 수
-            있습니다.
+            선택 가능한 active 품목이 없어도 수동 입력할 수 있습니다.
           </p>
         ) : null}
 

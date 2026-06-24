@@ -101,6 +101,9 @@ export default async function DailyMeetingReportPage({
               <Link href="/app/reports/inventory">재고 현황</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/ecount-supply">출고/입고</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/monthly">월간</Link>
             </Button>
           </div>

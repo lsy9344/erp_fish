@@ -74,12 +74,29 @@
   - 민감 차단 목록(원가·이익·생산성·FIFO·매출차액)은 그대로 차단한다. 단계 요약에
     새 지표를 추가할 때는 이 차단 목록과의 충돌 여부를 먼저 확인한다.
 
-## 검토 후속(2026-06-23): ECount 매입 기준 추출 범위
+## 검토 후속(2026-06-23): ECount 매입 기준 추출 범위 — 폐기됨
 
-- **확정 정책:** **관리자 > 매입 기준 추출만 유지한다.**
-  - ECount 엑셀은 관리자 기준정보 화면에서 품목(`name_category_spec`)과 매입 기준을
-    생성/갱신하는 용도로만 사용한다.
-  - 일일 장부의 매입 행을 ECount 엑셀에서 바로 만들거나 커밋하는 별도 화면과 서버 액션은
-    유지하지 않는다.
-  - 구현 기준은 `importPurchaseStandardsFromEcount`이며, 장부 매입은 본사 장부 화면의
-    직접 작성·수정 흐름을 따른다.
+- 이 절의 **`관리자 > 매입 기준 추출만 유지`** 정책은 **2026-06-24 폐기**되었다.
+  대체 정책은 아래 `정책 전환(2026-06-24)`을 따른다.
+
+## 정책 전환(2026-06-24): 이카운트 = 본사 출고 / 지점 입고 원장
+
+- **확정 정책:** 이카운트 엑셀은 품목별 단일 `매입 기준` 단가를 만드는 파일이 아니라,
+  **본사가 각 지점에 어떤 품목을 얼마에 공급했는지** 담은 `본사 출고 / 지점 입고 원장`이다.
+  - 파일의 각 행은 지점 장부의 입고/매입 라인으로 보존한다. 원본 행, 거래처명, 품목명,
+    단가, 수량, 전표 정보(`일자-No.`)를 잃지 않는다.
+  - 같은 품목/규격이라도 지점·날짜·전표에 따라 단가가 다를 수 있음을 정상 데이터로 본다.
+    전역 `PurchaseStandard` 단일 기준 단가로 합치지 않는다.
+  - 업로드는 본사 전용 **이카운트 업로드**(`/app/ecount-imports`) 흐름으로 한다.
+    서버가 원본을 `EcountImportBatch`/`EcountImportLine`으로 저장하고, 거래처명→지점
+    (`StoreExternalAlias`), 품목명/규격→품목(`ProductExternalAlias`) 매핑을 거쳐 미리보기한다.
+  - 매핑 누락이 없으면 commit 시 지점별 `DailyLedger`/`LedgerPurchaseItem`으로 반영하고
+    재고/FIFO를 갱신한다. 같은 파일 재업로드는 `fileHash`로 차단한다.
+  - `LedgerPurchaseItem.unitPrice`는 `장부 적용 단가`(재고/FIFO/마진 계산 기준)이고,
+    원본 이카운트 단가는 `EcountImportLine.unitPrice`에 보존한다. 지점장은 장부 적용 단가만
+    수정할 수 있고 원본 정보는 수정할 수 없다.
+  - 구현 기준은 `parseEcountSupplyWorkbook` + `previewEcountSupplyUpload` /
+    `commitEcountSupplyImport`이다. 기존 `importPurchaseStandardsFromEcount`(매입 기준 생성)는
+    사용 중단(deprecated)한다.
+  - `PurchaseStandard`는 즉시 물리 삭제하지 않고 단계적 비활성화한다(메뉴/장부 select 제거,
+    마감 전 점검에서 `매입 기준 없음`을 차단 사유로 보지 않음).

@@ -4,7 +4,6 @@ import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
-import { getActivePurchaseStandardOptions } from "~/features/master-data/purchase-standard-queries";
 import {
   getStoreManagerLedgerEditWorkspace,
   normalizeStoreIdParam,
@@ -44,9 +43,6 @@ type LedgerInputCodeOption = Awaited<
 >[number];
 type ProductOption = Awaited<
   ReturnType<typeof getActiveProductOptions>
->[number];
-type PurchaseStandardOption = Awaited<
-  ReturnType<typeof getActivePurchaseStandardOptions>
 >[number];
 type EmployeeOption = Awaited<
   ReturnType<typeof getActiveEmployeeOptions>
@@ -90,7 +86,6 @@ type StoreEntryContentProps = {
   step: StoreEntryStep;
   expenseCodeOptions: LedgerInputCodeOption[];
   productOptions: ProductOption[];
-  purchaseStandardOptions: PurchaseStandardOption[];
   employeeOptions: EmployeeOption[];
 };
 
@@ -102,7 +97,6 @@ function StoreEntryContent({
   step,
   expenseCodeOptions,
   productOptions,
-  purchaseStandardOptions,
   employeeOptions,
 }: StoreEntryContentProps) {
   let content;
@@ -139,7 +133,6 @@ function StoreEntryContent({
       <PurchaseStepClient
         initialLedger={initialLedger}
         productOptions={productOptions}
-        purchaseStandardOptions={purchaseStandardOptions}
         storeName={storeName}
         currentStep={step}
       />
@@ -196,12 +189,10 @@ export default async function StoreEntryPage({
       "EXPENSE_ITEM",
       store.id,
     );
-    const [productOptions, purchaseStandardOptions, employeeOptions] =
-      await Promise.all([
-        getActiveProductOptions(),
-        getActivePurchaseStandardOptions(),
-        getActiveEmployeeOptions(),
-      ]);
+    const [productOptions, employeeOptions] = await Promise.all([
+      getActiveProductOptions(),
+      getActiveEmployeeOptions(),
+    ]);
     const [initialLedger, reviewData] = await Promise.all([
       getStoreLedger(store.id, closingDate, user.id),
       step === "review"
@@ -230,7 +221,6 @@ export default async function StoreEntryPage({
           step={step}
           expenseCodeOptions={expenseCodeOptions}
           productOptions={productOptions}
-          purchaseStandardOptions={purchaseStandardOptions}
           employeeOptions={employeeOptions}
         />
       </StoreManagerShell>
@@ -256,12 +246,10 @@ export default async function StoreEntryPage({
     "EXPENSE_ITEM",
     workspace.store.id,
   );
-  const [productOptions, purchaseStandardOptions, employeeOptions] =
-    await Promise.all([
-      getActiveProductOptions(),
-      getActivePurchaseStandardOptions(),
-      getActiveEmployeeOptions(),
-    ]);
+  const [productOptions, employeeOptions] = await Promise.all([
+    getActiveProductOptions(),
+    getActiveEmployeeOptions(),
+  ]);
   const initialLedger = await getStoreLedger(
     workspace.store.id,
     closingDate,
@@ -297,7 +285,6 @@ export default async function StoreEntryPage({
         step={step}
         expenseCodeOptions={expenseCodeOptions}
         productOptions={productOptions}
-        purchaseStandardOptions={purchaseStandardOptions}
         employeeOptions={employeeOptions}
       />
     </StoreManagerShell>

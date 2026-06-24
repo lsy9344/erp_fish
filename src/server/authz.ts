@@ -197,6 +197,16 @@ export async function requireLedgerHqEditAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
 }
 
+// WO(2026-06-24): 이카운트 출고/입고 업로드는 본사 전용. preview는 UPLOAD_PREVIEW,
+// commit/void는 UPLOAD_COMMIT 권한으로 분리한다.
+export async function requireEcountUploadPreviewAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.UPLOAD_PREVIEW);
+}
+
+export async function requireEcountUploadCommitAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.UPLOAD_COMMIT);
+}
+
 export async function requireStoreManagerLedgerEditAccess(storeId: string) {
   const access = await requireStoreAccess(storeId);
 

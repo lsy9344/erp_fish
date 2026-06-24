@@ -36,8 +36,8 @@ export default async function PurchaseStandardManagementPage({
       navigationItems={navigationItems}
     >
       <PageHeader
-        title="매입 기준 관리"
-        description="품목별 기준 단가와 참조 정보를 관리합니다."
+        title="품목 참고 단가"
+        description="품목별 참고 단가입니다. 이카운트 출고/입고 단가는 본사 이카운트 업로드에서 관리합니다."
       />
       <PurchaseStandardManagementClient
         standards={standards}

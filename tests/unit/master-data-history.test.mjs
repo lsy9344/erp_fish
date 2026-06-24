@@ -94,6 +94,10 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "CorrectionRecord",
       "AnomalyThresholdSetting",
       "ReportExport",
+      // WO(2026-06-24): 이카운트 출고/입고 원장 도입으로 추가된 감사 대상 타입
+      "EcountImportBatch",
+      "StoreExternalAlias",
+      "ProductExternalAlias",
     ],
   );
   assert.equal(getAuditTargetTypeLabel("Store"), "지점");
@@ -108,6 +112,12 @@ test("audit format helpers map target/action labels and safely format JSON detai
     "이상 신호 기준값",
   );
   assert.equal(getAuditTargetTypeLabel("ReportExport"), "리포트 Export");
+  assert.equal(
+    getAuditTargetTypeLabel("EcountImportBatch"),
+    "이카운트 출고/입고",
+  );
+  assert.equal(getAuditTargetTypeLabel("StoreExternalAlias"), "지점 매핑");
+  assert.equal(getAuditTargetTypeLabel("ProductExternalAlias"), "품목 매핑");
   assert.equal(getAuditActionLabel("store.created"), "생성");
   assert.equal(getAuditActionLabel("user.role_changed"), "역할 변경");
   assert.equal(

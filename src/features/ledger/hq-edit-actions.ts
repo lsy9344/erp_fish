@@ -745,6 +745,32 @@ export async function saveHqLedgerPurchases(
                     referenceInfo: purchase.referenceInfo,
                   };
 
+          // 이카운트 원본 추적 + 적용 단가 override 메타 보존.
+          // delete+recreate로 행이 재생성되므로 기존 행(existing)에서 source linkage를
+          // 이월하고, 적용 단가(unitPrice)가 바뀐 경우에만 override 메타를 갱신한다.
+          // NOTE: EcountImportLine.ledgerPurchaseItemId back-pointer는 이 시점에 stale 해진다
+          //       (삭제된 행 id를 가리킴). 권위 있는 링크는 LedgerPurchaseItem.ecountImportLineId
+          //       이므로 여기서는 EcountImportLine을 갱신하지 않는다.
+          const isEcountUpload = existing?.sourceType === "ECOUNT_UPLOAD";
+          // 수동 행은 기존에 값이 있을 때만 유지된다(없으면 null).
+          const ecountImportLineId = existing?.ecountImportLineId ?? null;
+          const sourceUnitPrice = isEcountUpload
+            ? (existing?.sourceUnitPrice ?? existing?.unitPrice ?? null)
+            : (existing?.sourceUnitPrice ?? null);
+          const unitPriceChanged = Boolean(
+            existing && existing.unitPrice !== purchase.unitPrice,
+          );
+          const unitPriceUpdatedById = unitPriceChanged
+            ? actor.user.id
+            : (existing?.unitPriceUpdatedById ?? null);
+          const unitPriceUpdatedAt = unitPriceChanged
+            ? new Date()
+            : (existing?.unitPriceUpdatedAt ?? null);
+          // HQ 매입 저장은 별도의 적용 단가 override 사유를 받지 않으므로
+          // (parseHqLedgerInput의 reason은 본사 수정 감사 사유) 기존 값을 이월한다.
+          const unitPriceOverrideReason =
+            existing?.unitPriceOverrideReason ?? null;
+
           purchaseRows.push({
             dailyLedgerId: beforeLedger.id,
             productId: snapshot.productId,
@@ -757,6 +783,11 @@ export async function saveHqLedgerPurchases(
             quantity: purchase.quantity,
             amount: purchase.unitPrice * purchase.quantity,
             referenceInfo: snapshot.referenceInfo,
+            ecountImportLineId,
+            sourceUnitPrice,
+            unitPriceOverrideReason,
+            unitPriceUpdatedById,
+            unitPriceUpdatedAt,
             createdById: actor.user.id,
             updatedById: actor.user.id,
           });

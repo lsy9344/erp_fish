@@ -176,6 +176,8 @@ test("지점장은 매입 항목을 여러 건 저장하고 재방문 시 목록
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=purchase`);
 
   await page.getByRole("button", { name: "항목 추가" }).click();
+  // 매입 기준 select는 UI에서 제거됐다. 품목 선택만으로 단가가 채워진다.
+  await expect(page.getByLabel("매입 기준")).toHaveCount(0);
   await page
     .getByLabel("품목", { exact: true })
     .nth(0)

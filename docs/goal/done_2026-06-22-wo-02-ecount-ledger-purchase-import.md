@@ -1,5 +1,12 @@
 # WO-02 ECount Ledger Purchase Import Implementation Plan
 
+> **폐기/대체됨 (2026-06-24).** 이 문서는 이카운트 엑셀을 `매입 기준` 또는 단일 장부 범위로
+> 다루던 이전 정책에 기반한다. 2026-06-24 정책 전환으로 이카운트 엑셀은 `본사 출고 / 지점 입고
+> 원장`으로 재정의되었고, 다중 지점 업로드·원본 보존(`EcountImportBatch`/`EcountImportLine`)·
+> 지점/품목 alias 매핑·preview/commit 흐름으로 재설계되었다. 현행 기준 문서는
+> `docs/goal/2026-06-24-ecount-supply-work-order.md`와
+> `docs/ecount-supply-import-operations.md`이며, 본 문서는 이력 보존 목적으로만 남긴다.
+
 **Goal:** Let headquarters upload an ECount xlsx file into a selected daily ledger and create locked `LedgerPurchaseItem` rows with `sourceType = ECOUNT_UPLOAD`.
 
 ## Background

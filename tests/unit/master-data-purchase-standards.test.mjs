@@ -241,14 +241,18 @@ test("purchase standard screen keeps headquarters shell, URL filter, and form ac
   assert.match(clientSource, /마지막 수정 시각/);
   assert.match(clientSource, /상태 적용/);
   assert.doesNotMatch(clientSource, /\/app\/dashboard/);
-  assert.match(clientSource, /엑셀 불러오기/);
-  assert.match(clientSource, /importPurchaseStandardsFromEcount/);
+  // WO(2026-06-24): 이카운트 가져오기는 전용 이카운트 출고/입고 업로드 화면으로 이동했으므로
+  // 매입 기준 관리 화면은 "엑셀 불러오기" 버튼/가져오기 다이얼로그 배선을 더 이상 갖지 않는다.
+  assert.doesNotMatch(clientSource, /엑셀 불러오기/);
+  assert.doesNotMatch(clientSource, /importPurchaseStandardsFromEcount/);
+  assert.doesNotMatch(clientSource, /accept="\.xlsx"/);
   assert.doesNotMatch(clientSource, /\/app\/ledgers/);
-  assert.match(clientSource, /accept="\.xlsx"/);
   assert.doesNotMatch(clientSource, /import-store-id/);
   assert.doesNotMatch(clientSource, /import-closing-date/);
   assert.match(clientSource, /router\.refresh\(\)/);
-  assert.match(clientSource, /role="status"/);
+  // WO(2026-06-24): 가져오기 상태 영역(role="status")은 이카운트 가져오기 제거로 사라졌고,
+  // 폼 오류 접근성은 role="alert"로 남는다.
+  assert.match(clientSource, /role="alert"/);
   assert.match(clientSource, /inputMode="numeric"/);
   assert.match(clientSource, /aria-invalid/);
   assert.match(clientSource, /aria-describedby/);
@@ -392,12 +396,17 @@ test("ledger purchase saves keep selected purchase standards as references witho
     assert.doesNotMatch(source, /purchaseStandard.*delete/i);
   }
 
-  assert.match(clientSource, /applyStandard/);
-  assert.match(clientSource, /productName:\s*standard\.product\.name/);
+  // WO(2026-06-24): 매입 기준 select 제거 → purchase step client는 applyStandard/매입 기준을
+  // 더 이상 참조하지 않고, 품목 선택은 Product.defaultUnitPrice만 채운다.
+  // 단, saveLedgerPurchases(actions.ts/hq-edit-actions.ts)의 매입 기준 snapshot 보존 검증은 위에서 유지된다.
+  assert.doesNotMatch(clientSource, /applyStandard/);
+  assert.doesNotMatch(clientSource, /매입 기준/);
+  assert.match(clientSource, /productName:\s*product\?\.name/);
+  assert.match(clientSource, /defaultUnitPrice/);
   assert.match(clientSource, /onChange=.*productName/s);
   assert.match(clientSource, /unitPriceRefs\.current/);
   assert.match(
     clientSource,
-    /선택 가능한 active 품목 또는 매입 기준이 없어도 수동 입력할 수\s+있습니다\./,
+    /선택 가능한 active 품목이 없어도 수동 입력할 수\s+있습니다\./,
   );
 });

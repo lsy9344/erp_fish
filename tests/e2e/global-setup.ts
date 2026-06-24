@@ -18,6 +18,8 @@ const profileDefinitions = [
       PermissionAction.LEDGER_EDIT,
       PermissionAction.LEDGER_HQ_CLOSE,
       PermissionAction.CORRECTION_CREATE,
+      PermissionAction.UPLOAD_PREVIEW,
+      PermissionAction.UPLOAD_COMMIT,
       PermissionAction.REPORT_VIEW,
       PermissionAction.EXPORT_CREATE,
       PermissionAction.USER_PERMISSION_MANAGE,

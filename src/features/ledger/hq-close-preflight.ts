@@ -286,7 +286,8 @@ function buildHqLedgerClosePreflightItems(
     ...buildCorrectionItems(correctionOverlay.correctionState),
     ...buildInventoryAdjustmentPolicyItems(ledger),
     ...buildCarryoverItems(ledger),
-    ...buildPurchaseBasisItems(ledger),
+    // WO(2026-06-24): PurchaseStandard deprecated. purchaseStandardId 미연결은
+    // 정상 상태이므로 마감 전 점검 항목에서 제거한다.
     ...getDashboardSignals({
       thresholdSettings,
       revenueCurrent: {
@@ -528,26 +529,6 @@ function buildCarryoverItems(ledger: HqLedgerClosePreflightLedger) {
 
     return [];
   });
-}
-
-function buildPurchaseBasisItems(ledger: HqLedgerClosePreflightLedger) {
-  return ledger.ledgerPurchaseItems
-    .filter((purchaseItem) => purchaseItem.purchaseStandardId === null)
-    .map((purchaseItem) =>
-      item({
-        id: `purchase-basis-${purchaseItem.id}`,
-        label: "가격 기준 없음",
-        severity: "exception-allowed",
-        detail: `${purchaseItem.productName}: 매입 기준이 연결되지 않았습니다.`,
-        actionLabel: "매입 단계에서 기준 확인",
-        href: getLedgerReviewStepHref(
-          ledger.storeId,
-          ledger.closingDate.toISOString(),
-          "purchases",
-        ),
-        source: "ledgerPurchaseItems.purchaseStandardId",
-      }),
-    );
 }
 
 function summarizePreflightItems(

@@ -29,6 +29,8 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
   const qualityJob = readWorkflowJob(workflow, "quality");
   const smokeJob = readWorkflowJob(workflow, "playwright-smoke");
+  const fullJob = readWorkflowJob(workflow, "playwright-full");
+  const burnInJob = readWorkflowJob(workflow, "playwright-burn-in");
   const scripts = packageJson.scripts;
 
   assert.match(scripts["release:preflight"], /pnpm test:api/);
@@ -49,13 +51,26 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
   assert.doesNotMatch(smokeJob, /run:\s*pnpm test:e2e:core/);
   assert.match(qualityJob, /Restore Next\.js cache/);
-  assert.match(qualityJob, /Restore Playwright browser cache/);
-  assert.match(qualityJob, /Install Chromium/);
-  assert.match(qualityJob, /ms-playwright/);
+  assert.doesNotMatch(qualityJob, /Restore Playwright browser cache/);
+  assert.doesNotMatch(qualityJob, /Install Chromium/);
+  assert.doesNotMatch(qualityJob, /ms-playwright/);
   assert.doesNotMatch(
     workflow,
     /Run smoke e2e[\s\S]*tests\/e2e\/auth\.spec\.ts:16/,
   );
+
+  for (const browserJob of [smokeJob, fullJob, burnInJob]) {
+    assert.match(browserJob, /id:\s*playwright-cache/);
+    assert.match(
+      browserJob,
+      /run:\s*pnpm exec playwright install-deps chromium/,
+    );
+    assert.match(
+      browserJob,
+      /if:\s*steps\.playwright-cache\.outputs\.cache-hit != 'true'/,
+    );
+    assert.match(browserJob, /run:\s*pnpm exec playwright install chromium/);
+  }
 
   for (const scriptName of [
     "test:e2e:smoke:ledger",

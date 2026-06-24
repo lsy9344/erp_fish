@@ -48,7 +48,14 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
-    label: "매입 기준",
+    label: "이카운트 업로드",
+    href: "/app/ecount-imports",
+    icon: "expenses",
+    requiredAction: PermissionAction.UPLOAD_PREVIEW,
+  },
+  {
+    // DEPRECATED(2026-06-24): 매입 기준 단계적 비활성화. 참고 단가 조회 수준으로만 유지한다.
+    label: "품목 참고 단가",
     href: "/app/master-data/purchase-standards",
     icon: "master-data",
     requiredAction: PermissionAction.SETTINGS_MANAGE,

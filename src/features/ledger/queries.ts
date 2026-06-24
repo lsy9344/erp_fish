@@ -48,6 +48,12 @@ const ledgerPurchaseSelect = {
   quantity: true,
   amount: true,
   referenceInfo: true,
+  // 이카운트 원본 추적/적용 단가 override 메타. 저장 시 delete+recreate에서 보존한다.
+  ecountImportLineId: true,
+  sourceUnitPrice: true,
+  unitPriceOverrideReason: true,
+  unitPriceUpdatedById: true,
+  unitPriceUpdatedAt: true,
 } as const;
 
 const ledgerLaborSelect = {

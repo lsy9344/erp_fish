@@ -35,7 +35,7 @@ test("purchase-edit-policy exports getStoreEcountPurchaseEditErrors", async () =
   assert.equal(typeof getStoreEcountPurchaseEditErrors, "function");
 });
 
-test("store manager cannot edit ECOUNT_UPLOAD purchase row fields", async () => {
+test("store manager can edit ECOUNT_UPLOAD applied unitPrice but not raw fields", async () => {
   const { getStoreEcountPurchaseEditErrors } = await importPolicy();
 
   const existing = [
@@ -53,15 +53,42 @@ test("store manager cannot edit ECOUNT_UPLOAD purchase row fields", async () => 
     },
   ];
 
+  // WO(2026-06-24): 지점장은 ECOUNT_UPLOAD 라인의 "장부 적용 단가(unitPrice)"만 수정할 수 있다.
   const modifiedUnitPrice = [
     { ...existing[0], unitPrice: 99999 },
   ];
 
-  const errors = getStoreEcountPurchaseEditErrors(existing, modifiedUnitPrice);
+  const unitPriceErrors = getStoreEcountPurchaseEditErrors(
+    existing,
+    modifiedUnitPrice,
+  );
+
+  assert.equal(
+    Object.keys(unitPriceErrors).length,
+    0,
+    "store manager may edit the applied unitPrice of an ECOUNT_UPLOAD row",
+  );
+
+  // 원본 정보(수량 등) 변경은 여전히 차단된다.
+  const modifiedRawField = [{ ...existing[0], quantity: 99 }];
+
+  const rawFieldErrors = getStoreEcountPurchaseEditErrors(
+    existing,
+    modifiedRawField,
+  );
 
   assert.ok(
-    Object.keys(errors).some((k) => k.includes("purchases")),
-    "should have errors when unitPrice is changed by store manager",
+    Object.keys(rawFieldErrors).some((k) => k.includes("purchases")),
+    "should block store manager from changing ECOUNT_UPLOAD raw fields (quantity)",
+  );
+
+  const messages = Object.values(rawFieldErrors).flat();
+
+  assert.ok(
+    messages.some((message) =>
+      message.includes("원본 정보") && message.includes("장부 적용 단가만"),
+    ),
+    "raw-field block should use the new applied-unit-price message",
   );
 });
 

@@ -10,6 +10,9 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "CorrectionRecord",
   "AnomalyThresholdSetting",
   "ReportExport",
+  "EcountImportBatch",
+  "StoreExternalAlias",
+  "ProductExternalAlias",
 ] as const;
 
 export type AuditHistoryTargetType =
@@ -27,6 +30,9 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "CorrectionRecord", label: "정정 기록" },
   { value: "AnomalyThresholdSetting", label: "이상 신호 기준값" },
   { value: "ReportExport", label: "리포트 Export" },
+  { value: "EcountImportBatch", label: "이카운트 출고/입고" },
+  { value: "StoreExternalAlias", label: "지점 매핑" },
+  { value: "ProductExternalAlias", label: "품목 매핑" },
 ] as const satisfies ReadonlyArray<{
   value: AuditHistoryTargetType;
   label: string;
@@ -73,6 +79,14 @@ const actionLabels: Record<string, string> = {
   "threshold.updated": "기준값 변경",
   "report.export.created": "리포트 Export 생성",
   "report.export.denied": "리포트 Export 거부",
+  "ledger.hq.purchases.unit_price.overridden": "본사 이카운트 출고/입고 적용 단가 보정",
+  "ecount_supply_import.previewed": "이카운트 출고/입고 미리보기",
+  "ecount_supply_import.committed": "이카운트 출고/입고 반영",
+  "ecount_supply_import.voided": "이카운트 출고/입고 취소",
+  "store_external_alias.created": "지점 매핑 생성",
+  "store_external_alias.updated": "지점 매핑 수정",
+  "product_external_alias.created": "품목 매핑 생성",
+  "product_external_alias.updated": "품목 매핑 수정",
 };
 
 const snapshotNameKeys = [

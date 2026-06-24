@@ -122,6 +122,8 @@ model Store {
   ledgerInputCodeAliases    LedgerInputCodeStoreAlias[]
   salesPricePlans           StoreSalesPricePlan[]
   headquartersExpenses      HeadquartersExpense[]
+  externalAliases           StoreExternalAlias[]
+  ecountImportLines         EcountImportLine[]
 
   @@index([isActive])
   @@index([updatedById])
@@ -147,6 +149,8 @@ model Product {
   ledgerLossItems            LedgerLossItem[]
   inventoryOpeningSnapshots  InventoryOpeningSnapshot[]
   salesPricePlans            StoreSalesPricePlan[]
+  externalAliases            ProductExternalAlias[]
+  ecountImportLines          EcountImportLine[]
 
   @@unique([name, category, spec])
   @@index([category])
@@ -154,6 +158,8 @@ model Product {
   @@index([updatedById])
 }
 
+// DEPRECATED(2026-06-24): 이카운트 정책 전환으로 단계적 비활성화. 물리 삭제는 별도 migration에서 결정한다.
+// 신규 매입 라인은 PurchaseStandard를 연결하지 않고 Product.defaultUnitPrice를 참고값으로만 사용한다.
 model PurchaseStandard {
   id                String   @id @default(cuid())
   productId         String   @unique
@@ -341,6 +347,12 @@ model User {
   updatedStoreSalesPricePlans       StoreSalesPricePlan[]       @relation("StoreSalesPricePlanUpdatedBy")
   createdHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseCreatedBy")
   updatedHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseUpdatedBy")
+  unitPriceUpdatedLedgerPurchaseItems LedgerPurchaseItem[]      @relation("LedgerPurchaseItemUnitPriceUpdatedBy")
+  uploadedEcountImportBatches       EcountImportBatch[]         @relation("EcountImportBatchUploadedBy")
+  committedEcountImportBatches      EcountImportBatch[]         @relation("EcountImportBatchCommittedBy")
+  voidedEcountImportBatches         EcountImportBatch[]         @relation("EcountImportBatchVoidedBy")
+  updatedStoreExternalAliases       StoreExternalAlias[]        @relation("StoreExternalAliasUpdatedBy")
+  updatedProductExternalAliases     ProductExternalAlias[]      @relation("ProductExternalAliasUpdatedBy")
   auditLogs                         AuditLog[]                  @relation("AuditActor")
 }
 
@@ -469,15 +481,23 @@ model LedgerPurchaseItem {
   id                 String               @id @default(cuid())
   dailyLedgerId      String
   productId          String?
+  // DEPRECATED(2026-06-24): PurchaseStandard 단계적 비활성화. 신규 라인은 연결하지 않는다.
   purchaseStandardId String?
   sourceType         LedgerPurchaseSource @default(MANUAL)
   productName        String
   productCategory    String
   productSpec        String
+  // unitPrice = 장부 적용 단가(재고/FIFO/마진 계산 기준). amount = unitPrice * quantity.
   unitPrice          Int
   quantity           Int
   amount             Int
   referenceInfo      String?
+  // 이카운트 출고/입고 라인 원본 추적. 원본 단가는 sourceUnitPrice / EcountImportLine.unitPrice에 보존한다.
+  ecountImportLineId String?              @unique
+  sourceUnitPrice    Int?
+  unitPriceOverrideReason String?
+  unitPriceUpdatedById    String?
+  unitPriceUpdatedAt      DateTime?
   createdById        String
   updatedById        String
   createdAt          DateTime             @default(now())
@@ -486,14 +506,17 @@ model LedgerPurchaseItem {
   dailyLedger             DailyLedger              @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   product                 Product?                 @relation(fields: [productId], references: [id], onDelete: Restrict)
   purchaseStandard        PurchaseStandard?        @relation(fields: [purchaseStandardId], references: [id], onDelete: SetNull)
+  ecountImportLine        EcountImportLine?        @relation("EcountImportLineLedgerPurchaseItem", fields: [ecountImportLineId], references: [id], onDelete: SetNull)
   ledgerInventoryFifoLots LedgerInventoryFifoLot[]
   createdBy               User                     @relation("LedgerPurchaseItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy               User                     @relation("LedgerPurchaseItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  unitPriceUpdatedBy      User?                    @relation("LedgerPurchaseItemUnitPriceUpdatedBy", fields: [unitPriceUpdatedById], references: [id], onDelete: SetNull)
 
   @@index([dailyLedgerId])
   @@index([productId])
   @@index([purchaseStandardId])
   @@index([sourceType])
+  @@index([unitPriceUpdatedById])
 }
 
 model LedgerInventoryItem {
@@ -785,6 +808,105 @@ model EcountImportSession {
   @@index([ledgerId])
   @@index([actorId])
   @@index([expiresAt])
+}
+
+// WO(2026-06-24): 이카운트 출고/입고 업로드 batch. 원본 파일 단위 보존. 같은 파일은 fileHash로 차단한다.
+// status: PREVIEW, MAPPING_REQUIRED, READY, COMMITTED, FAILED, VOIDED
+model EcountImportBatch {
+  id           String    @id @default(cuid())
+  fileName     String
+  fileHash     String    @unique
+  sheetName    String
+  businessDate DateTime?
+  status       String    @default("PREVIEW")
+  errorMessage String?
+  voidReason   String?
+  uploadedById String
+  committedById String?
+  voidedById   String?
+  createdAt    DateTime  @default(now())
+  committedAt  DateTime?
+  voidedAt     DateTime?
+
+  lines       EcountImportLine[]
+  uploadedBy  User  @relation("EcountImportBatchUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  committedBy User? @relation("EcountImportBatchCommittedBy", fields: [committedById], references: [id], onDelete: SetNull)
+  voidedBy    User? @relation("EcountImportBatchVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([uploadedById])
+}
+
+// WO(2026-06-24): 이카운트 원본 행 1건. 원본(raw*)과 매핑/장부 반영 결과를 함께 보존한다.
+// unitPrice는 원본 이카운트 단가다. 장부 적용 단가는 LedgerPurchaseItem.unitPrice가 별도로 보존한다.
+// status: PREVIEW, MAPPING_REQUIRED, READY, COMMITTED, FAILED, VOIDED
+model EcountImportLine {
+  id                   String  @id @default(cuid())
+  batchId              String
+  rowNumber            Int
+  dateNo               String
+  rawStoreName         String
+  storeId              String?
+  rawProductName       String
+  productId            String?
+  productName          String
+  productCategory      String
+  productSpec          String
+  quantity             Int
+  unitPrice            Int
+  supplyAmount         Int
+  totalAmount          Int
+  status               String  @default("PREVIEW")
+  errorMessage         String?
+  ledgerPurchaseItemId String?
+
+  batch              EcountImportBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  store              Store?              @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  product            Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  ledgerPurchaseItem LedgerPurchaseItem? @relation("EcountImportLineLedgerPurchaseItem")
+
+  @@unique([batchId, rowNumber])
+  @@index([storeId])
+  @@index([productId])
+  @@index([status])
+}
+
+// WO(2026-06-24): 외부 거래처명 → 앱 지점 매핑. 승인된 매핑은 다음 업로드에서 자동 적용한다.
+model StoreExternalAlias {
+  id          String   @id @default(cuid())
+  provider    String   @default("ECOUNT")
+  rawName     String
+  storeId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  updatedBy User? @relation("StoreExternalAliasUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([provider, rawName])
+  @@index([storeId])
+  @@index([updatedById])
+}
+
+// WO(2026-06-24): 외부 품목명/규격 → 앱 품목 매핑. 승인된 매핑은 다음 업로드에서 자동 적용한다.
+model ProductExternalAlias {
+  id          String   @id @default(cuid())
+  provider    String   @default("ECOUNT")
+  rawName     String
+  rawSpec     String   @default("")
+  productId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("ProductExternalAliasUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([provider, rawName, rawSpec])
+  @@index([productId])
+  @@index([updatedById])
 }
 
 // WO-08(2026-06-22): 직원 마스터. 일일 장부의 LedgerLaborItem과 선택적으로 연결하여

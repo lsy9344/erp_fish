@@ -300,19 +300,28 @@ test("store purchase edit policy blocks ECount uploaded rows from store edits", 
     },
   ];
 
+  // WO(2026-06-24): 지점장은 ECOUNT_UPLOAD 라인의 장부 적용 단가(unitPrice)만 수정할 수 있다.
+  // 원본 필드(수량 등) 변경은 새 원본-정보 차단 메시지로 막힌다.
   assert.deepEqual(
     getStoreEcountPurchaseEditErrors(existingRows, [
       { ...existingRows[0], quantity: 5 },
     ]),
     {
       "purchases.0": [
-        "이카운트 업로드 매입은 장부 매입 화면에서 수정할 수 없습니다.",
+        "이카운트 출고/입고 라인의 원본 정보(품목·수량·원본 행)는 수정할 수 없습니다. 장부 적용 단가만 수정할 수 있습니다.",
       ],
     },
   );
+  // 단가만 변경하면 허용된다.
+  assert.deepEqual(
+    getStoreEcountPurchaseEditErrors(existingRows, [
+      { ...existingRows[0], unitPrice: 40000 },
+    ]),
+    {},
+  );
   assert.deepEqual(getStoreEcountPurchaseEditErrors(existingRows, []), {
     purchases: [
-      "이카운트 업로드 매입은 장부 매입 화면에서 삭제할 수 없습니다.",
+      "이카운트 출고/입고 라인은 장부 매입 화면에서 삭제할 수 없습니다.",
     ],
   });
   assert.deepEqual(
@@ -336,7 +345,7 @@ test("store purchase edit policy blocks ECount uploaded rows from store edits", 
     ),
     {
       "purchases.0.sourceType": [
-        "이카운트 엑셀은 본사 매입 기준 화면에서 불러와 주세요.",
+        "이카운트 출고/입고 라인은 본사 이카운트 업로드 화면에서만 만들 수 있습니다.",
       ],
     },
   );
@@ -483,8 +492,33 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     "HQ purchase save should refresh FIFO lots after reconciling adjustments",
   );
 
-  // 2026-06-23: 일일 장부용 ECount 업로드는 의도된 기능이 아니므로(매입 기준 추출만 유지)
-  // 장부 매입 업로드 액션/매칭 파일은 제거됐다. importPurchaseStandardsFromEcount만 남는다.
+  // WO(2026-06-24): 정책 전환으로 일일 장부용 ECount "출고/입고 원장" 업로드가 지원 기능이 됐다.
+  // 새 supply 플로우는 ecount-supply-* 파일에 구현되며 previewEcountSupplyUpload/commitEcountSupplyImport를 노출한다.
+  // (구버전 파일명 ecount-purchase-actions.ts/ecount-purchase-matching.ts는 여전히 존재하지 않는다.)
+  const supplyActionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "ecount-supply-actions.ts",
+  );
+  assert.match(
+    supplyActionSource,
+    /export\s+async\s+function\s+previewEcountSupplyUpload/,
+    "daily-ledger ECount supply upload preview must exist",
+  );
+
+  const supplyCommitSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "ecount-supply-commit.ts",
+  );
+  assert.match(
+    supplyCommitSource,
+    /export\s+async\s+function\s+commitEcountSupplyImport/,
+    "daily-ledger ECount supply commit must exist",
+  );
+
   assert.equal(
     existsSync(
       path.join(
@@ -496,7 +530,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
       ),
     ),
     false,
-    "daily-ledger ECount upload action must be removed",
+    "legacy ecount-purchase-actions.ts filename remains absent",
   );
   assert.equal(
     existsSync(
@@ -511,13 +545,10 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     false,
   );
 
+  // 회의록은 일일 장부용 이카운트 출고/입고 업로드가 지원 기능임을 설명한다.
   const meetingChangeSource = readProjectFile("docs", "meeting", "change.md");
-  assert.match(meetingChangeSource, /관리자[\s\S]*매입 기준 추출/);
-  assert.match(meetingChangeSource, /importPurchaseStandardsFromEcount/);
-  assert.doesNotMatch(
-    meetingChangeSource,
-    /매입 장부가 자동 생성|장부 매입.*자동 생성/,
-  );
+  assert.match(meetingChangeSource, /이카운트[\s\S]*출고\/입고/);
+  assert.match(meetingChangeSource, /EcountImportBatch/);
 });
 
 test("ledger purchase UI and routing are wired for the purchase step", () => {
@@ -535,7 +566,8 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(pageSource, /step === "purchase"/);
   assert.match(pageSource, /PurchaseStepClient/);
   assert.match(pageSource, /getActiveProductOptions/);
-  assert.match(pageSource, /getActivePurchaseStandardOptions/);
+  // WO(2026-06-24): 매입 기준 select 제거로 purchase step 페이지는 매입 기준 옵션 prop을 더 이상 주입하지 않는다.
+  assert.doesNotMatch(pageSource, /getActivePurchaseStandardOptions/);
 
   const componentSource = readProjectFile(
     "src",
@@ -563,9 +595,14 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /clearRowErrors/);
   assert.match(componentSource, /referenceUnitPrice/);
   assert.match(componentSource, /품목명/);
+  // WO(2026-06-24): 매입 기준 select 제거 → 헬퍼 문구에서 "매입 기준" 표현이 사라지고
+  // 품목 선택은 defaultUnitPrice만 채운다.
+  assert.doesNotMatch(componentSource, /applyStandard/);
+  assert.doesNotMatch(componentSource, /매입 기준/);
+  assert.match(componentSource, /defaultUnitPrice/);
   assert.match(
     componentSource,
-    /선택 가능한 active 품목 또는 매입 기준이 없어도 수동 입력할 수\s+있습니다\./,
+    /선택 가능한 active 품목이 없어도 수동 입력할 수\s+있습니다\./,
   );
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);

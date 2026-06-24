@@ -462,6 +462,9 @@ async function getAllowedAuditHistoryTargetTypes(currentUserId: string) {
     "DailyLedger",
     "CorrectionRecord",
     "AnomalyThresholdSetting",
+    "EcountImportBatch",
+    "StoreExternalAlias",
+    "ProductExternalAlias",
   ];
 
   if (canManageUsers) {
