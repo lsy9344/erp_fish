@@ -178,24 +178,23 @@ test.describe("Report export API", () => {
   });
 
   test("[P0] returns a safe forbidden payload for unauthenticated API requests", async ({
-    apiRequest,
+    request,
   }) => {
-    const response = await apiRequest<ForbiddenPayload>({
-      method: "GET",
-      path: exportPath({
+    const response = await request.get(
+      exportPath({
         report: "daily",
         date: getTodayKstInput(),
         format: "csv",
       }),
-      retryConfig: { maxRetries: 0 },
-    });
+    );
+    const body = (await response.json()) as ForbiddenPayload;
 
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({
+    expect(response.status()).toBe(403);
+    expect(body).toEqual({
       error: "forbidden",
       message: "export 권한이 없습니다.",
     });
-    assertSafeForbiddenBody(response.body);
+    assertSafeForbiddenBody(body);
     await expectNoReportExportAudit();
   });
 
