@@ -1,0 +1,2 @@
+# git worktrees (사본) — 본 repo 포맷 검사 대상이 아니다. eslint.config.js의 ignores와 일관.
+.claude

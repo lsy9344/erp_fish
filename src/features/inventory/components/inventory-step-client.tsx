@@ -1427,7 +1427,8 @@ export function InventoryStepClient({
                     onClick={() => setSelectedFifoLotItem(item)}
                     className="h-auto p-0 align-baseline tabular-nums"
                   >
-                    {inventoryTerms.inventoryAmount} {formatKrw(item.inventoryAmount)}
+                    {inventoryTerms.inventoryAmount}{" "}
+                    {formatKrw(item.inventoryAmount)}
                   </Button>
                 ) : (
                   <span>

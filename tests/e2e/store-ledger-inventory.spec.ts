@@ -300,7 +300,9 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`);
   await currentQuantityInput.fill("9");
   await page.getByLabel(`${product.name} 바꾼 이유`).fill("실사 재고 차이");
-  await page.getByRole("button", { name: `${product.name} 고친 이유 저장` }).click();
+  await page
+    .getByRole("button", { name: `${product.name} 고친 이유 저장` })
+    .click();
   await expect(
     page.getByRole("status").filter({ hasText: "고친 내용이 저장됐습니다." }),
   ).toBeVisible();
