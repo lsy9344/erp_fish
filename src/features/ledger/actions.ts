@@ -27,6 +27,7 @@ import {
 } from "./conflicts";
 import { assertStoreManagerClosingDateIsToday } from "./date";
 import {
+  fillPurchasePlannedUnitPricesInTx,
   getLedgerCostStepDataByIdInTx,
   ledgerSelect,
   getStoreLedger,
@@ -1313,7 +1314,15 @@ export async function saveLedgerPurchases(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      // 저장 응답도 GET 경로(getStoreLedger)와 동일하게 매입 행에 판매 예정가를 채운다.
+      // 그러지 않으면 클라이언트가 plannedUnitPrice=null로 덮어써, 저장 직후 dirty 상태가
+      // 남아 "저장하지 않은 변경이 있습니다" 경고가 잘못 뜬다.
+      return fillPurchasePlannedUnitPricesInTx(
+        tx,
+        toStoreManagerLedgerCostStepData(afterLedger),
+        afterLedger.storeId,
+        afterLedger.closingDate,
+      );
     });
 
     revalidateLedgerSalesPaths();

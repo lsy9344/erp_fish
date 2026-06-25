@@ -160,7 +160,7 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
   assert.equal(unmappedEcountUpload.success, false);
   assert.deepEqual(toFieldErrors(unmappedEcountUpload.error), {
     "purchases.0.productId": [
-      "이카운트 매입은 품목 또는 매입 기준을 선택해 주세요.",
+      "이카운트 출고/입고 라인은 앱 품목을 선택해 주세요.",
     ],
   });
 
@@ -527,8 +527,8 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /isExistingSnapshotPurchase/);
   assert.match(actionSource, /LedgerPurchaseValidationError/);
   assert.match(actionSource, /getStoreEcountPurchaseEditErrors/);
-  assert.match(actionSource, /매입 기준과 품목이 일치하지 않습니다\./);
-  assert.match(actionSource, /매입 기준을 확인해 주세요\./);
+  assert.match(actionSource, /참고 단가와 품목이 일치하지 않습니다\./);
+  assert.match(actionSource, /참고 단가를 확인해 주세요\./);
   assert.match(actionSource, /품목을 확인해 주세요\./);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.deleteMany/);
   assert.match(actionSource, /tx\.ledgerPurchaseItem\.createMany/);
@@ -570,6 +570,8 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /saveStoreSalesPricePlansForPurchasesInTx\(/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
+  // 저장 응답도 매입 행에 판매 예정가를 채워야 한다(없으면 저장 직후 미저장 변경 경고가 잘못 뜸).
+  assert.match(actionSource, /fillPurchasePlannedUnitPricesInTx\(/);
   // 계획 반영은 매입 행 생성 이후, 같은 트랜잭션에서 일어나야 한다(부분 저장 방지).
   assert.ok(
     actionSource.indexOf("tx.ledgerPurchaseItem.createMany") <

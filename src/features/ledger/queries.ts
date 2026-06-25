@@ -523,7 +523,7 @@ export async function getTodayStoreLedger(
 // StoreSalesPricePlan(storeId, businessDate=closingDate, productId)에 하루 1개 값으로
 // 저장되므로 같은 품목의 여러 매입 행에는 같은 값이 채워진다. businessDate는 review-queries와
 // 동일하게 raw Prisma closingDate(Date)를 그대로 쓴다.
-async function fillPurchasePlannedUnitPricesInTx(
+export async function fillPurchasePlannedUnitPricesInTx(
   tx: Prisma.TransactionClient,
   data: StoreManagerLedgerCostStepData,
   storeId: string,
