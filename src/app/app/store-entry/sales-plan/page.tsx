@@ -1,16 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { NoActiveStoreMessage } from "~/components/store-manager-panels";
-import { StoreManagerShell } from "~/components/store-manager-shell";
-import { SalesPricePlanClient } from "~/features/sales-plan/components/sales-price-plan-client";
-import { getSalesPricePlanStepData } from "~/features/sales-plan/queries";
-import {
-  getStoreManagerLedgerEditWorkspace,
-  normalizeStoreIdParam,
-  requireStoreManagerLedgerEditAccess,
-} from "~/server/authz";
 import { getKstBusinessDateParam } from "~/features/ledger/queries";
-import { isTodayKstDateParam } from "~/features/ledger/date";
+import { normalizeStoreIdParam } from "~/server/authz";
 
 type SalesPlanPageProps = {
   searchParams: Promise<{
@@ -31,6 +22,8 @@ function normalizeBusinessDateParam(value: string | string[] | undefined) {
   }
 }
 
+// WO(2026-06-25): 판매 예정가 입력은 3단계 매입 화면으로 통합됐다. 기존 북마크/링크가
+// 깨지지 않도록 이 route는 매입 단계로 redirect하고, storeId와 date query를 보존한다.
 export default async function SalesPlanPage({
   searchParams,
 }: SalesPlanPageProps) {
@@ -38,59 +31,13 @@ export default async function SalesPlanPage({
   const storeId = normalizeStoreIdParam(params.storeId);
   const businessDate = normalizeBusinessDateParam(params.date);
 
-  if ((params.storeId !== undefined && !storeId) || !businessDate) {
-    redirect("/app/unauthorized");
-  }
-
-  if (businessDate && !isTodayKstDateParam(businessDate)) {
-    redirect("/app/unauthorized");
-  }
-
+  const query = new URLSearchParams({ step: "purchase" });
   if (storeId) {
-    const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
-    const initialData = await getSalesPricePlanStepData(store.id, businessDate);
-
-    return (
-      <StoreManagerShell
-        userName={user.name ?? "지점장"}
-        storeName={store.name}
-        storeId={store.id}
-      >
-        <SalesPricePlanClient
-          storeName={store.name}
-          initialData={initialData}
-        />
-      </StoreManagerShell>
-    );
+    query.set("storeId", storeId);
+  }
+  if (businessDate) {
+    query.set("date", businessDate);
   }
 
-  const workspace = await getStoreManagerLedgerEditWorkspace();
-
-  if (workspace.status === "headquarters") {
-    redirect("/app/dashboard");
-  }
-
-  if (workspace.status === "no-active-store") {
-    return (
-      <StoreManagerShell userName={workspace.user.name ?? "지점장"}>
-        <NoActiveStoreMessage />
-      </StoreManagerShell>
-    );
-  }
-
-  return (
-    <StoreManagerShell
-      userName={workspace.user.name ?? "지점장"}
-      storeName={workspace.store.name}
-      storeId={workspace.store.id}
-    >
-      <SalesPricePlanClient
-        storeName={workspace.store.name}
-        initialData={await getSalesPricePlanStepData(
-          workspace.store.id,
-          businessDate,
-        )}
-      />
-    </StoreManagerShell>
-  );
+  redirect(`/app/store-entry?${query.toString()}`);
 }

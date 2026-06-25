@@ -274,6 +274,124 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
   });
 });
 
+test("ledger purchase schema treats plannedUnitPrice as optional and blocks same-product conflicts", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const { ledgerPurchaseSchema, toFieldErrors } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const base = {
+    storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-25",
+    version: 1,
+  };
+
+  // 빈 판매 예정가는 "계획 없음"(null)으로 해석한다(선택값).
+  const emptyPlan = ledgerPurchaseSchema.parse({
+    ...base,
+    purchases: [
+      {
+        productId: "product-1",
+        unitPrice: "12000",
+        quantity: "3",
+        plannedUnitPrice: "",
+      },
+    ],
+  });
+  assert.equal(emptyPlan.purchases[0].plannedUnitPrice, null);
+
+  // 값이 있으면 0 이상의 정수만 허용하고 그대로 보존한다.
+  const withPlan = ledgerPurchaseSchema.parse({
+    ...base,
+    purchases: [
+      {
+        productId: "product-1",
+        unitPrice: "12000",
+        quantity: "3",
+        plannedUnitPrice: "15000",
+      },
+    ],
+  });
+  assert.equal(withPlan.purchases[0].plannedUnitPrice, 15000);
+
+  // plannedUnitPrice를 아예 보내지 않아도(본사 경로) 유효해야 한다.
+  assert.equal(
+    ledgerPurchaseSchema.safeParse({
+      ...base,
+      purchases: [
+        { productId: "product-1", unitPrice: "12000", quantity: "3" },
+      ],
+    }).success,
+    true,
+  );
+
+  // 같은 품목의 여러 행에 같은 값이면 통과한다.
+  assert.equal(
+    ledgerPurchaseSchema.safeParse({
+      ...base,
+      purchases: [
+        {
+          productId: "product-1",
+          unitPrice: "12000",
+          quantity: "1",
+          plannedUnitPrice: "15000",
+        },
+        {
+          productId: "product-1",
+          unitPrice: "12000",
+          quantity: "2",
+          plannedUnitPrice: "15000",
+        },
+      ],
+    }).success,
+    true,
+  );
+
+  // 같은 품목의 여러 행에 서로 다른 값이면 충돌로 막는다.
+  const conflict = ledgerPurchaseSchema.safeParse({
+    ...base,
+    purchases: [
+      {
+        productId: "product-1",
+        unitPrice: "12000",
+        quantity: "1",
+        plannedUnitPrice: "15000",
+      },
+      {
+        productId: "product-1",
+        unitPrice: "12000",
+        quantity: "2",
+        plannedUnitPrice: "16000",
+      },
+    ],
+  });
+  assert.equal(conflict.success, false);
+  const conflictErrors = toFieldErrors(conflict.error);
+  assert.deepEqual(conflictErrors["purchases.1.plannedUnitPrice"], [
+    "같은 품목의 오늘 팔 가격은 하루에 하나만 입력해 주세요.",
+  ]);
+
+  // 음수 판매 예정가는 거부된다.
+  const negative = ledgerPurchaseSchema.safeParse({
+    ...base,
+    purchases: [
+      {
+        productId: "product-1",
+        unitPrice: "12000",
+        quantity: "3",
+        plannedUnitPrice: -1,
+      },
+    ],
+  });
+  assert.equal(negative.success, false);
+});
+
 test("store purchase edit policy blocks ECount uploaded rows from store edits", async () => {
   const policyPath = assertProjectFile(
     "src",
@@ -447,6 +565,20 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
 
+  // WO(2026-06-25): 매입 저장 트랜잭션이 "오늘 팔 가격(예상)"을 StoreSalesPricePlan에
+  // 함께 반영한다. 같은 품목은 upsert로 하루 1개 값, 비운 품목은 deleteMany로 계획 삭제.
+  assert.match(actionSource, /saveStoreSalesPricePlansForPurchasesInTx\(/);
+  assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
+  assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
+  // 계획 반영은 매입 행 생성 이후, 같은 트랜잭션에서 일어나야 한다(부분 저장 방지).
+  assert.ok(
+    actionSource.indexOf("tx.ledgerPurchaseItem.createMany") <
+      actionSource.indexOf("await saveStoreSalesPricePlansForPurchasesInTx("),
+    "sales price plan upsert should run after purchase rows are created",
+  );
+  // 판매 예정가가 함께 저장되므로 계획 판매가를 읽는 손실 페이지도 갱신한다.
+  assert.match(actionSource, /revalidateStoreEntryPaths\(\["losses"\]\)/);
+
   const hqActionSource = readProjectFile(
     "src",
     "features",
@@ -457,6 +589,9 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // HQ 매입 저장 경로는 getStoreEcountPurchaseEditErrors를 호출하지 않는다.
   // 해당 차단 검증은 지점장 저장 경로(actions.ts)에만 남는다.
   assert.doesNotMatch(hqActionSource, /getStoreEcountPurchaseEditErrors/);
+  // WO(2026-06-25): 판매가 계획(StoreSalesPricePlan)은 지점장 매입 화면 전용이므로
+  // 본사 매입 저장 경로는 계획을 쓰지 않는다.
+  assert.doesNotMatch(hqActionSource, /storeSalesPricePlan/i);
   // WO(2026-06-24) 검토 #2: 본사 보정은 "적용 단가(unitPrice)"만 바꿀 수 있고,
   // 이카운트 원본 식별 정보(품목/구분/규격/수량)는 기존 행에서 그대로 가져온다.
   // 따라서 HQ 저장은 ECOUNT 행에 한해 입력값 quantity/원본필드를 그대로 신뢰하지 않는다.
@@ -612,6 +747,12 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);
   assert.match(componentSource, /min-h-11/);
+  // WO(2026-06-25): 매입 행에 "오늘 팔 가격(예상)" 입력과 안내 문구가 있고, 저장 payload에
+  // plannedUnitPrice를 담는다. 본사 탭은 showSalesPricePlan으로 끌 수 있다.
+  assert.match(componentSource, /오늘 팔 가격\(예상\)/);
+  assert.match(componentSource, /7단계 추정 매출에 쓰는 판매 예정가입니다\./);
+  assert.match(componentSource, /showSalesPricePlan/);
+  assert.match(componentSource, /plannedUnitPrice/);
 
   const hqDetailSource = readProjectFile(
     "src",
@@ -626,4 +767,9 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*saveAction=\{saveHqLedgerPurchases\}/s,
   );
   assert.doesNotMatch(hqDetailSource, /ecountUploadEnabled/);
+  // WO(2026-06-25): 본사 검토 장부 탭에서는 판매 예정가 입력을 끈다(지점장 전용).
+  assert.match(
+    hqDetailSource,
+    /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*showSalesPricePlan=\{false\}/s,
+  );
 });

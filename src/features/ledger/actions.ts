@@ -523,12 +523,103 @@ async function validateLedgerSubmitRequirementsInTx(
 
 function isExistingSnapshotPurchase(
   purchase: LedgerPurchasesInput["purchases"][number],
-  existing: StoreManagerLedgerCostStepData["purchaseItems"][number] | undefined,
+  existing:
+    | { productId: string | null; purchaseStandardId: string | null }
+    | undefined,
 ) {
   return (
     existing?.productId === purchase.productId &&
     existing.purchaseStandardId === purchase.purchaseStandardId
   );
+}
+
+// WO(2026-06-25): 3단계 매입 화면에 통합한 판매 예정가(StoreSalesPricePlan)를 매입 저장
+// 트랜잭션 안에서 함께 반영한다. sales-plan/actions.ts의 저장 정책(품목당 1행 upsert,
+// 빈 값=계획 삭제)과 동일하되, 대상 범위는 "매입 화면에 나타난 품목"으로 한정한다. 매입
+// 화면에 없는 품목의 그날 계획은 건드리지 않는다(전체 동기화가 아니라 부분 반영).
+async function saveStoreSalesPricePlansForPurchasesInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    storeId: string;
+    businessDate: Date;
+    purchases: LedgerPurchasesInput["purchases"];
+    actorId: string;
+  },
+): Promise<void> {
+  // 매입 화면에 등장한 품목 행만 계획 반영 대상이다(productId 없는 자유 입력 행은 제외).
+  const plannedByProductId = new Map<string, number>();
+  const productIdsOnScreen = new Set<string>();
+  for (const purchase of input.purchases) {
+    if (!purchase.productId) {
+      continue;
+    }
+
+    productIdsOnScreen.add(purchase.productId);
+
+    // 스키마 superRefine이 같은 품목의 서로 다른 값을 이미 막으므로 첫 값만 채택한다.
+    if (
+      typeof purchase.plannedUnitPrice === "number" &&
+      !plannedByProductId.has(purchase.productId)
+    ) {
+      plannedByProductId.set(purchase.productId, purchase.plannedUnitPrice);
+    }
+  }
+
+  if (productIdsOnScreen.size === 0) {
+    return;
+  }
+
+  // 매입 화면 품목 중 값이 비어 있는 품목(계획 없음)은 그날 기존 계획을 삭제한다.
+  const productIdsToDelete = [...productIdsOnScreen].filter(
+    (productId) => !plannedByProductId.has(productId),
+  );
+
+  if (productIdsToDelete.length > 0) {
+    await tx.storeSalesPricePlan.deleteMany({
+      where: {
+        storeId: input.storeId,
+        businessDate: input.businessDate,
+        productId: { in: productIdsToDelete },
+      },
+    });
+  }
+
+  if (plannedByProductId.size === 0) {
+    return;
+  }
+
+  // 판매 예정가는 active 품목에만 저장한다(매입 스냅샷 productId가 비활성일 수 있어 방어).
+  const activeProducts = await tx.product.findMany({
+    where: { id: { in: [...plannedByProductId.keys()] }, isActive: true },
+    select: { id: true },
+  });
+
+  for (const { id: productId } of activeProducts) {
+    const plannedUnitPrice = plannedByProductId.get(productId)!;
+
+    await tx.storeSalesPricePlan.upsert({
+      where: {
+        storeId_businessDate_productId: {
+          storeId: input.storeId,
+          businessDate: input.businessDate,
+          productId,
+        },
+      },
+      update: {
+        plannedUnitPrice,
+        updatedById: input.actorId,
+      },
+      create: {
+        storeId: input.storeId,
+        businessDate: input.businessDate,
+        productId,
+        plannedUnitPrice,
+        memo: null,
+        createdById: input.actorId,
+        updatedById: input.actorId,
+      },
+    });
+  }
 }
 
 export async function submitLedgerForReview(
@@ -1178,6 +1269,17 @@ export async function saveLedgerPurchases(
         });
       }
 
+      // WO(2026-06-25): 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)"을 매입 저장과 같은
+      // 트랜잭션에서 StoreSalesPricePlan에 함께 반영한다(부분 저장 방지). 저장 대상은 productId가
+      // 있는 행만이고, 같은 품목은 하루 1개 값으로 정리한다. 같은 품목의 모든 행이 비어 있으면
+      // 그 품목의 기존 계획을 삭제한다. 매입 화면에 없는 품목의 계획은 건드리지 않는다.
+      await saveStoreSalesPricePlansForPurchasesInTx(tx, {
+        storeId: beforeLedger.storeId,
+        businessDate: beforeLedger.closingDate,
+        purchases: parsed.data.purchases,
+        actorId: actor.user.id,
+      });
+
       // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
       // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
       await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
@@ -1215,6 +1317,8 @@ export async function saveLedgerPurchases(
     });
 
     revalidateLedgerSalesPaths();
+    // 매입 저장이 판매 예정가도 함께 반영하므로, 계획 판매가를 읽는 손실 페이지도 갱신한다.
+    revalidateStoreEntryPaths(["losses"]);
 
     return actionOk(result);
   } catch (error: unknown) {

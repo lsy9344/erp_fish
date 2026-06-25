@@ -120,6 +120,12 @@ async function cleanupStoryTwoFourData() {
   });
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
+  if (productIds.length > 0) {
+    await prisma.storeSalesPricePlan.deleteMany({
+      where: { productId: { in: productIds } },
+    });
+  }
+
   if (ledgerIds.length > 0) {
     await prisma.ledgerLossItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
@@ -205,6 +211,114 @@ test("지점장은 매입 항목을 여러 건 저장하고 재방문 시 목록
   await expect(
     page.locator("section").filter({ hasText: "매입 합계" }),
   ).toContainText("54,000원");
+});
+
+test("지점장은 3단계 매입에서 오늘 팔 가격(예상)을 입력해 판매가 계획으로 저장하고 다시 불러온다", async ({
+  page,
+}) => {
+  await login(page);
+  const { product } = await seedPurchaseOption("스토리2-4 판매예정가", 12000);
+
+  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=purchase`);
+
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page.getByLabel("품목", { exact: true }).selectOption(product.id);
+  await page.getByLabel("매입 단가").fill("12000");
+  await page.getByLabel("수량").fill("3");
+  await page.getByLabel("오늘 팔 가격(예상)").fill("15000");
+
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "매입 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+
+  // 매입 저장 한 번으로 StoreSalesPricePlan에 판매 예정가가 하루 1개 값으로 저장된다.
+  await expect
+    .poll(async () => {
+      const plan = await prisma.storeSalesPricePlan.findFirst({
+        where: {
+          storeId: STORY_STORE_ID,
+          businessDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
+          productId: product.id,
+        },
+        select: { plannedUnitPrice: true },
+      });
+
+      return plan?.plannedUnitPrice ?? null;
+    })
+    .toBe(15000);
+
+  await page.reload();
+
+  // 재방문 시 같은 품목 행에 저장된 판매 예정가가 채워져 있다.
+  await expect(page.getByLabel("오늘 팔 가격(예상)")).toHaveValue("15000");
+
+  // 값을 비우고 다시 저장하면 해당 품목의 판매가 계획이 삭제된다.
+  await page.getByLabel("오늘 팔 가격(예상)").fill("");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "매입 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+
+  await expect
+    .poll(() =>
+      prisma.storeSalesPricePlan.count({
+        where: {
+          storeId: STORY_STORE_ID,
+          businessDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
+          productId: product.id,
+        },
+      }),
+    )
+    .toBe(0);
+});
+
+test("같은 품목의 오늘 팔 가격이 행마다 다르면 매입 저장이 막힌다", async ({
+  page,
+}) => {
+  await login(page);
+  const { product } = await seedPurchaseOption("스토리2-4 가격충돌", 10000);
+
+  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=purchase`);
+
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page
+    .getByLabel("품목", { exact: true })
+    .nth(0)
+    .selectOption(product.id);
+  await page.getByLabel("수량").nth(0).fill("1");
+  await page.getByLabel("오늘 팔 가격(예상)").nth(0).fill("15000");
+
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page
+    .getByLabel("품목", { exact: true })
+    .nth(1)
+    .selectOption(product.id);
+  await page.getByLabel("수량").nth(1).fill("2");
+  await page.getByLabel("오늘 팔 가격(예상)").nth(1).fill("16000");
+
+  await page.getByRole("button", { name: "저장" }).click();
+
+  await expect(
+    page.getByText("같은 품목의 오늘 팔 가격은 하루에 하나만 입력해 주세요."),
+  ).toBeVisible();
+
+  // 충돌이 막혀 판매가 계획도 저장되지 않는다.
+  await expect
+    .poll(() =>
+      prisma.storeSalesPricePlan.count({
+        where: {
+          storeId: STORY_STORE_ID,
+          businessDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
+          productId: product.id,
+        },
+      }),
+    )
+    .toBe(0);
 });
 
 test("품목 마스터가 바뀌어도 저장된 매입 항목의 원본 품목명과 규격을 유지한다", async ({

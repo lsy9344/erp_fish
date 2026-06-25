@@ -46,6 +46,10 @@ export type LedgerPurchaseLine = {
   quantity: number;
   amount: number;
   referenceInfo: string | null;
+  // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". StoreSalesPricePlan.plannedUnitPrice를
+  // (storeId, closingDate=businessDate, productId)로 조회해 채운다. 품목이 없는 자유 입력
+  // 행이나 계획이 없는 품목은 null이다. 본사 경로(toLedgerCostStepData)는 채우지 않는다.
+  plannedUnitPrice: number | null;
 };
 
 export type LedgerLaborLine = {

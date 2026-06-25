@@ -24,6 +24,7 @@ import {
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
+import { cn } from "~/lib/utils";
 
 type ProductOption = {
   id: string;
@@ -48,6 +49,9 @@ type PurchaseLine = {
   unitPrice: string;
   quantity: string;
   referenceInfo: string;
+  // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". 빈 문자열은 "계획 없음"이다.
+  // 품목이 없는 자유 입력 행은 저장 대상이 아니라 항상 빈 값으로 둔다.
+  plannedUnitPrice: string;
 };
 
 type PurchaseStepClientProps = {
@@ -61,6 +65,9 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  // 판매 예정가("오늘 팔 가격") 입력은 지점장 매입 화면 전용이다. 본사 검토 장부 탭에서는
+  // 끈다(본사 저장 경로는 판매가 계획을 쓰지 않는다).
+  showSalesPricePlan?: boolean;
 };
 
 function formatKrw(value: number | null) {
@@ -97,6 +104,7 @@ function createLineState(id: string): PurchaseLine {
     unitPrice: "",
     quantity: "",
     referenceInfo: "",
+    plannedUnitPrice: "",
   };
 }
 
@@ -115,6 +123,8 @@ function toPurchaseLines(
     unitPrice: String(item.unitPrice),
     quantity: String(item.quantity),
     referenceInfo: item.referenceInfo ?? "",
+    plannedUnitPrice:
+      item.plannedUnitPrice === null ? "" : String(item.plannedUnitPrice),
   }));
 }
 
@@ -143,6 +153,7 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  showSalesPricePlan = true,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -151,6 +162,7 @@ export function PurchaseStepClient({
   const productSpecRefs = useRef<(HTMLInputElement | null)[]>([]);
   const unitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const plannedUnitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const nextDraftLineNumberRef = useRef(0);
 
@@ -222,6 +234,11 @@ export function PurchaseStepClient({
           quantityRefs.current[index]?.focus();
           return;
         }
+
+        if (errors[`purchases.${index}.plannedUnitPrice`]?.length) {
+          plannedUnitPriceRefs.current[index]?.focus();
+          return;
+        }
       }
 
       if (errors.reason?.length) {
@@ -260,6 +277,8 @@ export function PurchaseStepClient({
       productSpec: productSpecRefs.current[index]?.value ?? line.productSpec,
       unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
       quantity: quantityRefs.current[index]?.value ?? line.quantity,
+      plannedUnitPrice:
+        plannedUnitPriceRefs.current[index]?.value ?? line.plannedUnitPrice,
     }));
   }
 
@@ -292,6 +311,10 @@ export function PurchaseStepClient({
           referenceInfo: line.referenceInfo,
           unitPrice: line.unitPrice,
           quantity: line.quantity,
+          // 판매 예정가는 지점장 매입 화면 전용이고 품목 행만 저장 대상이다.
+          ...(showSalesPricePlan
+            ? { plannedUnitPrice: line.productId ? line.plannedUnitPrice : "" }
+            : {}),
         })),
         ...(hqEditReasonRequired
           ? {
@@ -380,14 +403,36 @@ export function PurchaseStepClient({
     // 단가 칸을 미리 채우되, 없으면(null) 0을 박지 않고 비워 직접 입력하게 한다.
     const referenceUnitPrice = product?.defaultUnitPrice ?? null;
 
-    updatePurchaseLine(lineId, {
-      productId,
-      purchaseStandardId: "",
-      productName: product?.name ?? "",
-      productCategory: product?.category ?? "",
-      productSpec: product?.spec ?? "",
-      referenceUnitPrice,
-      unitPrice: referenceUnitPrice === null ? "" : String(referenceUnitPrice),
+    clearRowErrors();
+    setResultMessage(null);
+    setPurchaseItems((current) => {
+      // Task 4: 품목을 바꾸면 직전 품목의 판매 예정가가 따라오지 않게 새 품목 기준으로 다시
+      // 채운다. 같은 품목이 다른 행에 이미 있으면(하루 1개 값) 그 값을 가져와 일관성을 맞춘다.
+      const siblingPlanned = productId
+        ? (current.find(
+            (line) =>
+              line.id !== lineId &&
+              line.productId === productId &&
+              line.plannedUnitPrice !== "",
+          )?.plannedUnitPrice ?? "")
+        : "";
+
+      return current.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              productId,
+              purchaseStandardId: "",
+              productName: product?.name ?? "",
+              productCategory: product?.category ?? "",
+              productSpec: product?.spec ?? "",
+              referenceUnitPrice,
+              unitPrice:
+                referenceUnitPrice === null ? "" : String(referenceUnitPrice),
+              plannedUnitPrice: siblingPlanned,
+            }
+          : line,
+      );
     });
   }
 
@@ -488,6 +533,8 @@ export function PurchaseStepClient({
                 fieldErrors[`purchases.${index}.unitPrice`]?.[0];
               const quantityError =
                 fieldErrors[`purchases.${index}.quantity`]?.[0];
+              const plannedUnitPriceError =
+                fieldErrors[`purchases.${index}.plannedUnitPrice`]?.[0];
               const helperProduct = line.productName
                 ? {
                     name: line.productName,
@@ -689,77 +736,135 @@ export function PurchaseStepClient({
                     </p>
                   </div>
 
-                  <Field data-invalid={Boolean(unitPriceError)}>
-                    <FieldLabel htmlFor={`purchase-unit-price-${line.id}`}>
-                      단가
-                    </FieldLabel>
-                    <Input
-                      id={`purchase-unit-price-${line.id}`}
-                      ref={(node) => {
-                        unitPriceRefs.current[index] = node;
-                      }}
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={line.unitPrice}
-                      disabled={isUnitPriceEditBlocked}
-                      onChange={(event) =>
-                        updatePurchaseLine(line.id, {
-                          unitPrice: event.currentTarget.value,
-                        })
-                      }
-                      className="min-h-11 tabular-nums"
-                      aria-invalid={Boolean(unitPriceError)}
-                      aria-describedby={
-                        unitPriceError
-                          ? `purchase-unit-price-${line.id}-error`
-                          : undefined
-                      }
-                    />
-                    {unitPriceError ? (
-                      <FieldError id={`purchase-unit-price-${line.id}-error`}>
-                        {unitPriceError}
-                      </FieldError>
-                    ) : null}
-                    {isUploadedLineLocked(line) && !isUnitPriceEditBlocked ? (
-                      <p className="text-muted-foreground text-xs">
-                        이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
-                        장부 적용 단가만 수정할 수 있습니다.
-                      </p>
-                    ) : null}
-                  </Field>
+                  {/* 매입 단가 / 수량 / 오늘 팔 가격(예상)을 같은 줄에서 본다.
+                      모바일(<sm)에서는 세로로 쌓여 겹치거나 가로 overflow가 없다. */}
+                  <div
+                    className={cn(
+                      "grid gap-2",
+                      showSalesPricePlan ? "sm:grid-cols-3" : "sm:grid-cols-2",
+                    )}
+                  >
+                    <Field data-invalid={Boolean(unitPriceError)}>
+                      <FieldLabel htmlFor={`purchase-unit-price-${line.id}`}>
+                        매입 단가
+                      </FieldLabel>
+                      <Input
+                        id={`purchase-unit-price-${line.id}`}
+                        ref={(node) => {
+                          unitPriceRefs.current[index] = node;
+                        }}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={line.unitPrice}
+                        disabled={isUnitPriceEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            unitPrice: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11 tabular-nums"
+                        aria-invalid={Boolean(unitPriceError)}
+                        aria-describedby={
+                          unitPriceError
+                            ? `purchase-unit-price-${line.id}-error`
+                            : undefined
+                        }
+                      />
+                      {unitPriceError ? (
+                        <FieldError id={`purchase-unit-price-${line.id}-error`}>
+                          {unitPriceError}
+                        </FieldError>
+                      ) : null}
+                      {isUploadedLineLocked(line) && !isUnitPriceEditBlocked ? (
+                        <p className="text-muted-foreground text-xs">
+                          이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
+                          장부 적용 단가만 수정할 수 있습니다.
+                        </p>
+                      ) : null}
+                    </Field>
 
-                  <Field data-invalid={Boolean(quantityError)}>
-                    <FieldLabel htmlFor={`purchase-quantity-${line.id}`}>
-                      수량
-                    </FieldLabel>
-                    <Input
-                      id={`purchase-quantity-${line.id}`}
-                      ref={(node) => {
-                        quantityRefs.current[index] = node;
-                      }}
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={line.quantity}
-                      disabled={isLineEditBlocked}
-                      onChange={(event) =>
-                        updatePurchaseLine(line.id, {
-                          quantity: event.currentTarget.value,
-                        })
-                      }
-                      className="min-h-11 tabular-nums"
-                      aria-invalid={Boolean(quantityError)}
-                      aria-describedby={
-                        quantityError
-                          ? `purchase-quantity-${line.id}-error`
-                          : undefined
-                      }
-                    />
-                    {quantityError ? (
-                      <FieldError id={`purchase-quantity-${line.id}-error`}>
-                        {quantityError}
-                      </FieldError>
+                    <Field data-invalid={Boolean(quantityError)}>
+                      <FieldLabel htmlFor={`purchase-quantity-${line.id}`}>
+                        수량
+                      </FieldLabel>
+                      <Input
+                        id={`purchase-quantity-${line.id}`}
+                        ref={(node) => {
+                          quantityRefs.current[index] = node;
+                        }}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={line.quantity}
+                        disabled={isLineEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            quantity: event.currentTarget.value,
+                          })
+                        }
+                        className="min-h-11 tabular-nums"
+                        aria-invalid={Boolean(quantityError)}
+                        aria-describedby={
+                          quantityError
+                            ? `purchase-quantity-${line.id}-error`
+                            : undefined
+                        }
+                      />
+                      {quantityError ? (
+                        <FieldError id={`purchase-quantity-${line.id}-error`}>
+                          {quantityError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+
+                    {showSalesPricePlan ? (
+                      <Field data-invalid={Boolean(plannedUnitPriceError)}>
+                        <FieldLabel
+                          htmlFor={`purchase-planned-price-${line.id}`}
+                        >
+                          오늘 팔 가격(예상)
+                        </FieldLabel>
+                        <Input
+                          id={`purchase-planned-price-${line.id}`}
+                          ref={(node) => {
+                            plannedUnitPriceRefs.current[index] = node;
+                          }}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={line.plannedUnitPrice}
+                          // 이카운트 업로드 행이라도 판매 예정가는 지점장 판매 판단값이므로
+                          // 수정할 수 있다. 품목이 없는 자유 입력 행은 저장 대상이 아니라 잠근다.
+                          disabled={
+                            isFormSaving ||
+                            isOriginalEditBlocked ||
+                            !line.productId
+                          }
+                          onChange={(event) =>
+                            updatePurchaseLine(line.id, {
+                              plannedUnitPrice: event.currentTarget.value,
+                            })
+                          }
+                          className="min-h-11 tabular-nums"
+                          aria-invalid={Boolean(plannedUnitPriceError)}
+                          aria-describedby={`purchase-planned-price-${line.id}-help`}
+                        />
+                        <p
+                          id={`purchase-planned-price-${line.id}-help`}
+                          className="text-muted-foreground text-xs"
+                        >
+                          {line.productId
+                            ? "7단계 추정 매출에 쓰는 판매 예정가입니다."
+                            : "품목을 선택하면 입력할 수 있습니다."}
+                        </p>
+                        {plannedUnitPriceError ? (
+                          <FieldError
+                            id={`purchase-planned-price-${line.id}-error`}
+                          >
+                            {plannedUnitPriceError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
                     ) : null}
-                  </Field>
+                  </div>
 
                   <div className="bg-muted/40 rounded-md p-3">
                     <div className="flex justify-between gap-2 text-sm">

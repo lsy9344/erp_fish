@@ -363,10 +363,33 @@ export function ReviewSummaryClient({
               오늘 많이 팔린 품목
             </h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다. 추정 매출은
-              지점 판매가 계획 기준이며, 판매가 계획이 없는 품목은 매입 단가로
-              대체해 표시(판매가 미반영)합니다.
+              추정 매출은 3단계 매입의 오늘 팔 가격(예상)을 우선 사용합니다.
+              값이 없는 품목은 매입 단가로 대체해 표시합니다(판매가 미반영).
             </p>
+            {/* WO(2026-06-25): 판매가 미반영 품목이 있으면 입력 위치인 3단계 매입으로
+                바로 이동할 수 있게 안내한다. 현재 지점/영업일을 유지한 채 step=purchase로 간다. */}
+            {currentReviewData.topSoldItems.some(
+              (item) => item.salesBasis === "cost",
+            ) ? (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="mt-2 min-h-8"
+              >
+                <a
+                  href={`/app/store-entry?${new URLSearchParams({
+                    storeId: currentReviewData.storeId,
+                    date: getKstLedgerDateParam(currentReviewData.closingDate),
+                    step: "purchase",
+                  }).toString()}`}
+                  aria-label="3단계 매입에서 오늘 팔 가격 입력"
+                >
+                  <ArrowRightIcon aria-hidden="true" />
+                  3단계 매입에서 오늘 팔 가격 입력
+                </a>
+              </Button>
+            ) : null}
             <ul className="mt-3 flex flex-col gap-2">
               {currentReviewData.topSoldItems.map((item) => (
                 <li

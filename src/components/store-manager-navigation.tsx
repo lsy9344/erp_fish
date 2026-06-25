@@ -2,25 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BookOpenIcon,
-  PackageIcon,
-  TagIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { BookOpenIcon, PackageIcon, TriangleAlertIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 
+// WO(2026-06-25): 판매 예정가 입력은 3단계 매입 화면으로 통합돼 별도 "판매가 계획" 메뉴를
+// 기본 네비게이션에서 제거했다. 기존 /app/store-entry/sales-plan 링크는 매입 단계로 redirect한다.
 const storeNavItems = [
   {
     label: "장부",
     href: "/app/store-entry",
     icon: BookOpenIcon,
-  },
-  {
-    label: "판매가 계획",
-    href: "/app/store-entry/sales-plan",
-    icon: TagIcon,
   },
   {
     label: "재고",
@@ -99,7 +91,7 @@ export function StoreManagerNavigation({
       className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(15_23_42/0.08)] md:hidden"
       aria-label="지점장 하단 업무"
     >
-      <div className="grid min-h-14 grid-cols-4">
+      <div className="grid min-h-14 grid-cols-3">
         {storeNavItems.map((item) => {
           const isActive = isStoreNavItemActive(pathname, item.href);
 

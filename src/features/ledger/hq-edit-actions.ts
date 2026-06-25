@@ -354,7 +354,9 @@ async function updateEditableDailyLedgerInTx(
 
 function isExistingSnapshotPurchase(
   purchase: LedgerPurchasesInput["purchases"][number],
-  existing: LedgerCostStepData["purchaseItems"][number] | undefined,
+  existing:
+    | { productId: string | null; purchaseStandardId: string | null }
+    | undefined,
 ) {
   return (
     existing?.productId === purchase.productId &&

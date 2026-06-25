@@ -98,8 +98,7 @@ test("sales price plan schema validates store/date and per-product price input",
   assert.equal(negativePrice.success, false);
   assert.equal(
     negativePrice.error.issues.some(
-      (issue) =>
-        issue.message === "예상 판매가는 0원 이상의 정수여야 합니다.",
+      (issue) => issue.message === "예상 판매가는 0원 이상의 정수여야 합니다.",
     ),
     true,
   );
@@ -177,10 +176,7 @@ test("sales price plan model, queries, and actions follow expected contracts", (
     "sales-plan",
     "actions.ts",
   );
-  assert.match(
-    actionSource,
-    /export\s+async\s+function\s+saveSalesPricePlan/,
-  );
+  assert.match(actionSource, /export\s+async\s+function\s+saveSalesPricePlan/);
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
@@ -193,7 +189,7 @@ test("sales price plan model, queries, and actions follow expected contracts", (
   assert.match(actionSource, /"활성 품목만 저장할 수 있습니다\."/);
 });
 
-test("sales plan loss context renders loss calculation basis and store nav links the plan page", () => {
+test("sales plan loss context renders loss calculation basis; nav drops the plan menu and the old route redirects to the purchase step", () => {
   const lossContextSource = readProjectFile(
     "src",
     "features",
@@ -203,7 +199,10 @@ test("sales plan loss context renders loss calculation basis and store nav links
   );
   assert.match(lossContextSource, /추정/);
   assert.match(lossContextSource, /손실액 산정 기준/);
-  assert.doesNotMatch(lossContextSource, /손실 입력\/저장에는 영향을 주지 않습니다/);
+  assert.doesNotMatch(
+    lossContextSource,
+    /손실 입력\/저장에는 영향을 주지 않습니다/,
+  );
 
   const lossPageSource = readProjectFile(
     "src",
@@ -216,22 +215,29 @@ test("sales plan loss context renders loss calculation basis and store nav links
   assert.match(lossPageSource, /getSalesPlanLossContext/);
   assert.match(lossPageSource, /SalesPlanLossContext/);
 
+  // WO(2026-06-25): 판매 예정가 입력이 3단계 매입으로 통합돼 별도 "판매가 계획" 메뉴가
+  // 기본 네비게이션에서 사라졌다. 메뉴는 장부/재고/손실 3개로 줄고 하단 그리드는 3열이다.
   const navSource = readProjectFile(
     "src",
     "components",
     "store-manager-navigation.tsx",
   );
-  assert.match(navSource, /판매가 계획/);
-  assert.match(navSource, /\/app\/store-entry\/sales-plan/);
-  // 메뉴가 4개가 되었으므로 모바일 하단 네비게이션은 4열이어야 한다.
-  assert.match(navSource, /grid-cols-4/);
+  assert.doesNotMatch(navSource, /label:\s*"판매가 계획"/);
+  assert.match(navSource, /grid-cols-3/);
 
-  const revalidationSource = readProjectFile(
+  // 기존 /app/store-entry/sales-plan route는 삭제하지 않고 매입 단계(step=purchase)로
+  // redirect하며 storeId/date query를 보존한다(북마크/외부 링크 보호).
+  const redirectPageSource = readProjectFile(
     "src",
-    "server",
-    "revalidation.ts",
+    "app",
+    "app",
+    "store-entry",
+    "sales-plan",
+    "page.tsx",
   );
-  assert.match(revalidationSource, /"sales-plan":\s*"\/app\/store-entry\/sales-plan"/);
+  assert.match(redirectPageSource, /redirect\(/);
+  assert.match(redirectPageSource, /step.*purchase|"purchase"/);
+  assert.match(redirectPageSource, /\/app\/store-entry/);
 });
 
 test("sales price plan migration exists and creates the StoreSalesPricePlan table", () => {

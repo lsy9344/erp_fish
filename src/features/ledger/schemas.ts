@@ -20,6 +20,10 @@ const purchaseProductSpecError = "규격을 입력해 주세요.";
 const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.";
 const purchaseQuantityError = "수량은 0 이상의 정수여야 합니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
+const plannedUnitPriceError =
+  "오늘 팔 가격(예상)은 0원 이상의 정수여야 합니다.";
+const plannedUnitPriceConflictError =
+  "같은 품목의 오늘 팔 가격은 하루에 하나만 입력해 주세요.";
 const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
 const laborWorkerNameError = "직원명을 1~50자로 입력해 주세요.";
 const laborAmountError = "급여 금액은 0원 이상의 정수여야 합니다.";
@@ -273,6 +277,13 @@ const ledgerPurchaseItemSchema = z.object({
     .transform((value, context) =>
       parseRequiredKrwAmount(value, context, purchaseQuantityError),
     ),
+  // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". 선택값이라 빈 값은 "계획 없음"(null)으로
+  // 해석하고, 값이 있으면 0원 이상의 정수만 허용한다. 저장은 productId가 있는 행만 대상이다.
+  plannedUnitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalKrwAmount(value, context, plannedUnitPriceError),
+    ),
 });
 
 export const ledgerPurchaseSchema = z
@@ -349,6 +360,34 @@ export const ledgerPurchaseSchema = z
           code: z.ZodIssueCode.custom,
           message: purchaseAmountError,
           path: ["purchases", index, "quantity"],
+        });
+      }
+    });
+
+    // 같은 품목의 "오늘 팔 가격(예상)"은 하루 1개 값만 허용한다. 같은 productId의 여러 행에
+    // 서로 다른 0 이상 값이 입력되면 충돌이므로 해당 행마다 필드 오류를 표시한다.
+    const plannedPriceByProductId = new Map<string, number>();
+    value.purchases.forEach((purchase) => {
+      if (purchase.productId && typeof purchase.plannedUnitPrice === "number") {
+        if (!plannedPriceByProductId.has(purchase.productId)) {
+          plannedPriceByProductId.set(
+            purchase.productId,
+            purchase.plannedUnitPrice,
+          );
+        }
+      }
+    });
+    value.purchases.forEach((purchase, index) => {
+      if (
+        purchase.productId &&
+        typeof purchase.plannedUnitPrice === "number" &&
+        plannedPriceByProductId.get(purchase.productId) !==
+          purchase.plannedUnitPrice
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: plannedUnitPriceConflictError,
+          path: ["purchases", index, "plannedUnitPrice"],
         });
       }
     });

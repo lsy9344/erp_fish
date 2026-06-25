@@ -523,10 +523,7 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
   assert.match(validationSource, /getKstLedgerDateParam\(closingDate\)/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
   // WO(2026-06-25): work 단계 라벨은 입력 화면과 맞춰 "근무/인건비"로 노출한다.
-  assert.match(
-    querySource,
-    /id:\s*"work",\s*\n\s*label:\s*"근무\/인건비"/,
-  );
+  assert.match(querySource, /id:\s*"work",\s*\n\s*label:\s*"근무\/인건비"/);
   assert.match(querySource, /"paymentDifference"/);
   assert.match(querySource, /"결제수단 합계와 총매출 차이"/);
   assert.match(querySource, /"signed-krw"/);
@@ -777,10 +774,14 @@ test("store manager review exposes estimated top sold items derived from invento
   // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 판매가 미반영(cost 폴백)을 구분 표시한다.
   assert.match(clientSource, /오늘 많이 팔린 품목/);
   assert.match(clientSource, /추정 매출/);
+  // WO(2026-06-25): 안내 문구를 새 입력 위치(3단계 매입의 오늘 팔 가격(예상))와 맞춘다.
   assert.match(
     clientSource,
-    /품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다\./,
+    /추정 매출은 3단계 매입의 오늘 팔 가격\(예상\)을 우선 사용합니다\./,
   );
+  // 판매가 미반영 품목이 있으면 3단계 매입(step=purchase)으로 이동하는 안내 링크를 제공한다.
+  assert.match(clientSource, /3단계 매입에서 오늘 팔 가격 입력/);
+  assert.match(clientSource, /step:\s*"purchase"/);
   assert.match(clientSource, /판매가 미반영/);
   assert.match(clientSource, /item\.salesBasis === "cost"/);
   assert.match(clientSource, /topSoldItems/);

@@ -232,6 +232,8 @@ function getLedgerPurchaseItems(ledger: {
     quantity: item.quantity,
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
+    // 기본은 null. 판매 예정가는 지점장 매입 화면 전용 조회 경로(getStoreLedger)에서만 채운다.
+    plannedUnitPrice: null,
   }));
 }
 
@@ -250,6 +252,7 @@ function getLedgerAuditPurchaseItems(ledger: {
     quantity: item.quantity,
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
+    plannedUnitPrice: null,
     sourceUnitPrice: item.sourceUnitPrice ?? null,
     unitPriceOverridden:
       item.sourceUnitPrice !== null &&
@@ -516,16 +519,71 @@ export async function getTodayStoreLedger(
   return getStoreLedger(storeId, getTodayKstMidnight(), actorId);
 }
 
+// 지점장 매입 화면(3단계)에 통합한 판매 예정가를 매입 행에 채운다. 판매 예정가는
+// StoreSalesPricePlan(storeId, businessDate=closingDate, productId)에 하루 1개 값으로
+// 저장되므로 같은 품목의 여러 매입 행에는 같은 값이 채워진다. businessDate는 review-queries와
+// 동일하게 raw Prisma closingDate(Date)를 그대로 쓴다.
+async function fillPurchasePlannedUnitPricesInTx(
+  tx: Prisma.TransactionClient,
+  data: StoreManagerLedgerCostStepData,
+  storeId: string,
+  businessDate: Date,
+): Promise<StoreManagerLedgerCostStepData> {
+  const productIds = [
+    ...new Set(
+      data.purchaseItems
+        .map((item) => item.productId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  if (productIds.length === 0) {
+    return data;
+  }
+
+  const plans = await tx.storeSalesPricePlan.findMany({
+    where: {
+      storeId,
+      businessDate,
+      productId: { in: productIds },
+    },
+    select: { productId: true, plannedUnitPrice: true },
+  });
+  const plannedByProductId = new Map(
+    plans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+  );
+
+  return {
+    ...data,
+    purchaseItems: data.purchaseItems.map((item) => ({
+      ...item,
+      plannedUnitPrice: item.productId
+        ? (plannedByProductId.get(item.productId) ?? null)
+        : null,
+    })),
+  };
+}
+
 export async function getStoreLedger(
   storeId: string,
   closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerLedgerCostStepData> {
-  return db.$transaction((tx) =>
-    getOrCreateStoreLedgerInTx(tx, storeId, closingDate, actorId).then(
-      toStoreManagerLedgerCostStepData,
-    ),
-  );
+  return db.$transaction(async (tx) => {
+    const ledger = await getOrCreateStoreLedgerInTx(
+      tx,
+      storeId,
+      closingDate,
+      actorId,
+    );
+
+    return fillPurchasePlannedUnitPricesInTx(
+      tx,
+      toStoreManagerLedgerCostStepData(ledger),
+      ledger.storeId,
+      ledger.closingDate,
+    );
+  });
 }
 
 export async function getTodayStoreLedgerInTx(
