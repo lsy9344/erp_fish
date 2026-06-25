@@ -76,14 +76,15 @@ export function getDashboardSummaryGridClass(density: DashboardDensity) {
   }
 }
 
-// 표 컨테이너 폭 밀도 클래스. 넓게=전체 폭, 압축=좁은 폭으로 한눈에 보는 범위를 조절한다.
+// 표 컨테이너 폭 밀도 클래스. 압축=좁은 폭으로 한눈에 보는 범위를 줄인다.
+// 기본/넓게는 전체 폭(shell의 max-w-[1600px])을 채운다. 표 자연폭(~1620px)이
+// max-w-5xl(1024px)보다 넓어 기본에서 신호 칼럼/뒤쪽 칼럼이 잘리고 오른쪽에
+// 빈 공간이 생기던 문제를 해결한다. 넘치면 내부 overflow-x-auto가 가로 스크롤한다.
 export function getDashboardTableContainerClass(density: DashboardDensity) {
   switch (density) {
-    case "wide":
-      return "w-full max-w-none";
     case "compact":
       return "w-full max-w-3xl";
     default:
-      return "w-full max-w-5xl";
+      return "w-full max-w-none";
   }
 }
