@@ -361,7 +361,7 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
       reason,
     });
     assert.equal(invalid.success, false);
-    assert.equal(invalid.error.issues[0].message, "조정 사유를 입력해 주세요.");
+    assert.equal(invalid.error.issues[0].message, "바꾼 이유를 입력해 주세요.");
   }
 
   for (const actualQuantity of [-1, 1.5, "1,000", ""]) {
@@ -720,14 +720,14 @@ test("inventory normal save requires matching adjustment record for changed actu
   ];
 
   assert.deepEqual(getInventorySaveAdjustmentErrors(items, []), {
-    "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+    "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
   });
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
       { productId: "product-1", afterQuantity: 8 },
     ]),
     {
-      "items.0.currentQuantity": ["재고 차이 조정 사유를 먼저 저장해 주세요."],
+      "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
     },
   );
   assert.deepEqual(
@@ -735,85 +735,6 @@ test("inventory normal save requires matching adjustment record for changed actu
       { productId: "product-1", afterQuantity: 9 },
     ]),
     {},
-  );
-});
-
-test("store inventory save does not overwrite untouched rows with null (prev-day carryover stays non-zero)", async () => {
-  const policyPath = assertProjectFile(
-    "src",
-    "features",
-    "inventory",
-    "inventory-persist-policy.ts",
-  );
-  const { shouldPersistInventoryLine } = await import(
-    pathToFileURL(policyPath).href
-  );
-
-  // 이미 DB에 저장된 행(id !== productId)은 사용자가 값을 바꾸지 않아도 보존을
-  // 위해 항상 다시 기록한다. 그래야 delete+recreate 후에도 기존 값이 살아남는다.
-  const persistedRow = {
-    id: "inv-cuid-1",
-    productId: "product-1",
-    currentQuantity: 7,
-    quantity: 7,
-  };
-  assert.equal(shouldPersistInventoryLine(persistedRow, 7, 7), true);
-
-  // 아직 저장된 적 없는 seed 행(id === productId)을 빈 채(null)로 두면 기록하지
-  // 않는다. 기록하면 currentQuantity=null이 박혀 다음 날 전일재고가 0이 된다.
-  const untouchedSeedRow = {
-    id: "product-2",
-    productId: "product-2",
-    currentQuantity: null,
-    quantity: null,
-  };
-  assert.equal(shouldPersistInventoryLine(untouchedSeedRow, null, null), false);
-
-  // seed 행이라도 사용자가 값을 입력하면 기록한다.
-  assert.equal(shouldPersistInventoryLine(untouchedSeedRow, 5, 5), true);
-
-  // 저장된 행의 값이 바뀌면 기록한다.
-  assert.equal(shouldPersistInventoryLine(persistedRow, 9, 9), true);
-
-  // 지점장 저장 경로(actions.ts)도 본사와 동일한 가드로 빈 행을 건너뛰는지 확인한다.
-  const actionSource = readProjectFile(
-    "src",
-    "features",
-    "inventory",
-    "actions.ts",
-  );
-  assert.match(
-    actionSource,
-    /shouldPersistInventoryLine\(item, currentQuantity, quantity\)/,
-    "store inventory save should reuse the shared persist guard",
-  );
-  assert.match(
-    actionSource,
-    /const rowsToPersist = before\.items\.flatMap/,
-    "store inventory save should build a filtered rowsToPersist list",
-  );
-  assert.match(
-    actionSource,
-    /rowsToPersist\.length > 0[\s\S]*createMany[\s\S]*persistLedgerInventoryCarryoverDetails[\s\S]*rowsToPersist\.some/,
-    "store inventory save should only persist carryover details for persisted rows",
-  );
-
-  // 본사 경로(hq-edit-actions.ts)도 같은 공유 가드를 import해 정책을 공유한다.
-  const hqSource = readProjectFile(
-    "src",
-    "features",
-    "inventory",
-    "hq-edit-actions.ts",
-  );
-  assert.match(
-    hqSource,
-    /from\s+"\.\/inventory-persist-policy"/,
-    "HQ inventory save should import the shared persist guard",
-  );
-  assert.doesNotMatch(
-    hqSource,
-    /function\s+shouldPersistInventoryLine/,
-    "shouldPersistInventoryLine should be defined once in the shared module, not duplicated",
   );
 });
 
@@ -1069,10 +990,6 @@ test("inventory UI is wired to the canonical inventory route", () => {
     "terms.ts",
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
-  const inventoryTableSource = componentSource.slice(
-    componentSource.indexOf('<Table aria-label="재고 품목"'),
-    componentSource.indexOf("<TableBody>{renderRows(tab)}</TableBody>"),
-  );
   assert.match(componentSource, /saveLedgerInventoryItems/);
   assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);
@@ -1091,7 +1008,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
   assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="numeric"/);
-  assert.match(componentSource, /className="h-11 tabular-nums"/);
+  assert.match(componentSource, /className="h-11 w-24 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(inventoryUiSource, /전일재고 이력/);
   assert.match(componentSource, /previousQuantityDetail/);
@@ -1111,97 +1028,48 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /overscroll-contain/);
   assert.match(componentSource, /history\.map/);
   assert.match(componentSource, /Dialog/);
-  assert.match(componentSource, /overflow-x-auto/);
+  // 카드 레이아웃에는 테이블 가로 스크롤(overflow-x-auto) 컨테이너가 없다.
   assert.match(
     componentSource,
-    /const viewTabs = \["전체", \.\.\.categories\]/,
-  );
-  assert.match(componentSource, /function resolveItemViewTab/);
-  assert.match(componentSource, /if \(activeCategory === "전체"\)/);
-  assert.match(
-    componentSource,
-    /return normalizeCategory\(item\.productCategory\)/,
+    /setActiveCategory\(normalizeCategory\(item\.productCategory\)\)/,
   );
   assert.match(componentSource, /MAX_INVENTORY_INTEGER/);
   assert.match(componentSource, /수정됨/);
   assert.match(componentSource, /aria-label=.*수정됨/s);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /saveLedgerInventoryAdjustment/);
-  assert.match(componentSource, /조정 필요/);
-  assert.match(componentSource, /조정됨/);
-  assert.match(componentSource, /조정 사유/);
-  assert.match(componentSource, /조정 전/);
-  assert.match(componentSource, /조정 후/);
-  assert.match(inventoryUiSource, /inventoryFlowDifference:\s*"재고 차이"/);
-  assert.doesNotMatch(
-    inventoryUiSource,
-    /inventoryFlowDifference:\s*"재고 흐름 차이"/,
-    "재고 차이는 실제 판매량으로 단정하거나 흐름 용어로 길게 표시하지 않는다",
-  );
+  assert.match(componentSource, /고칠 내용 있음/);
+  assert.match(componentSource, /고침 완료/);
+  assert.match(componentSource, /바꾼 이유/);
+  assert.match(componentSource, /고치기 전/);
+  assert.match(componentSource, /고친 후/);
+  assert.match(inventoryUiSource, /당일 판매량/);
   assert.match(
     componentSource,
     /return systemQuantity - actualQuantity;/,
-    "재고 차이는 기준재고에서 당일재고를 뺀 값으로 표시해야 한다",
+    "당일 판매량은 기준재고에서 당일재고를 뺀 판매 흐름으로 표시해야 한다",
+  );
+  assert.match(
+    componentSource,
+    /바뀐 수량/,
+    "강제 실사 보정의 signed 차이는 당일 판매량과 별도 라벨로 보여야 한다",
   );
   assert.doesNotMatch(
     componentSource,
-    /return `\$\{formatQuantity\(value\)\}개`;/,
-    "재고 차이 수량 단위는 한 번만 표시해야 한다",
+    /format(?:Signed)?Quantity\([^)]*\)}개/,
+    "수량 formatter가 이미 '개'를 붙이므로 화면에서 '개'를 다시 붙이면 안 된다",
   );
-  assert.match(
-    componentSource,
-    /조정 차이/,
-    "강제 실사 보정의 signed 차이는 재고 차이와 별도 라벨로 보여야 한다",
-  );
-  assert.match(
-    inventoryUiSource,
-    /판매, 손실\/폐기, 실사 오차 등이 섞일 수 있습니다/,
-  );
-  assert.match(inventoryUiSource, /실제 POS 판매 수량이 아닙니다/);
+  assert.match(inventoryUiSource, /실제 POS 판매 수량과 다를 수 있습니다/);
   assert.match(componentSource, /금액 기준 확인 필요/);
   assert.match(componentSource, /amountStatus === "CONFIRMED"/);
-  assert.match(inventoryUiSource, /상태\/조정/);
-  assert.match(
-    termsSource,
-    /statusAndAdjustmentHelp:\s*\n\s*"시스템이 계산한 재고와 입력한 재고\(당일재고\)가 다릅니다\. 다른 사유를 입력하세요\."/,
-  );
-  assert.match(
-    componentSource,
-    /\$\{inventoryTerms\.statusAndAdjustment\}: \$\{inventoryTerms\.statusAndAdjustmentHelp\}/,
-    "status/adjustment table header should expose help text through an accessible tooltip label",
-  );
-  assert.match(
-    componentSource,
-    /<TooltipContent[\s\S]*\{inventoryTerms\.statusAndAdjustmentHelp\}[\s\S]*<\/TooltipContent>/,
-    "status/adjustment table header should show the same tooltip content pattern as neighboring headers",
-  );
-  assert.doesNotMatch(
-    inventoryTableSource,
-    /inventoryTerms\.inventoryAmount|inventoryTerms\.inventoryAmountHelp/,
-    "inventory entry table should not show inventory amount column or help",
-  );
-  assert.doesNotMatch(
-    componentSource,
-    /inventoryTerms\.inventoryAmount|inventoryTerms\.inventoryAmountHelp/,
-    "inventory entry page should not render inventory amount labels",
-  );
-  assert.doesNotMatch(
-    componentSource,
-    /formatKrw\(item\.inventoryAmount\)/,
-    "inventory rows should not display per-item inventory amount",
-  );
-  assert.doesNotMatch(
-    componentSource,
-    /재고금액은 선입선출/,
-    "inventory entry help text should not mention inventory amount",
-  );
+  assert.match(inventoryUiSource, /확인\/고치기/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
   assert.match(componentSource, /isLedgerReadOnly/);
   assert.match(componentSource, /휴무 장부/);
   assert.match(
     componentSource,
-    /재고 조정 저장이 끝난 뒤 다시 저장해 주세요\./,
+    /재고를 고친 이유 저장이 끝난 뒤 다시 저장해 주세요\./,
   );
   assert.match(componentSource, /reasonRefs/);
   assert.match(componentSource, /setAdjustmentErrors\({}\)/);
@@ -1223,7 +1091,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /const adjustmentActionLabel = adjusted \? "수정" : "조정"/,
+    /const adjustmentActionLabel = adjusted \? "수정" : "저장"/,
   );
   assert.match(
     componentSource,

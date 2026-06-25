@@ -111,7 +111,7 @@ export const ledgerInventoryAdjustmentSchema =
     reason: z
       .string()
       .transform((value) => value.trim())
-      .pipe(z.string().min(1, "조정 사유를 입력해 주세요.")),
+      .pipe(z.string().min(1, "바꾼 이유를 입력해 주세요.")),
   });
 
 export type LedgerInventoryInput = z.infer<typeof ledgerInventorySchema>;

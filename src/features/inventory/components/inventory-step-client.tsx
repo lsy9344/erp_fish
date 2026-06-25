@@ -60,7 +60,6 @@ import {
   type StoreManagerInventoryStepData,
 } from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
-import { cn } from "~/lib/utils";
 
 type InventoryStepClientProps = {
   storeName: string;
@@ -84,12 +83,6 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
 };
 
 const categories = ["냉동", "생물"] as const;
-// 탭은 "전체"를 맨 왼쪽에 두고 기본값으로 사용한다. "전체"는 실제 품목 분류가
-// 아니라 모든 분류를 한 번에 보여주는 보기 전용 탭이다. 데이터 정규화에는 여전히
-// 실제 분류(categories)만 쓴다.
-const viewTabs = ["전체", ...categories] as const;
-type ViewTab = (typeof viewTabs)[number];
-const DEFAULT_VIEW_TAB: ViewTab = "전체";
 const MAX_INVENTORY_INTEGER = 2_147_483_647;
 const ROW_PAGING_THRESHOLD = 30;
 const ROW_PAGE_SIZE = 50;
@@ -181,12 +174,6 @@ function normalizeCategory(value: string): (typeof categories)[number] {
   return value === "생물" ? "생물" : "냉동";
 }
 
-function normalizeViewTab(value: string): ViewTab {
-  return (viewTabs as readonly string[]).includes(value)
-    ? (value as ViewTab)
-    : DEFAULT_VIEW_TAB;
-}
-
 function areInventoryLinesEqual(
   left: InventoryLineState[],
   right: InventoryLineState[],
@@ -214,15 +201,16 @@ export function InventoryStepClient({
   const [items, setItems] = useState(() => toLineState(initialData));
   const [hqEditReason, setHqEditReason] = useState("");
   const [activeCategory, setActiveCategory] =
-    useState<ViewTab>(DEFAULT_VIEW_TAB);
-  const [pageByCategory, setPageByCategory] = useState<Record<ViewTab, number>>(
-    {
-      전체: 1,
-      냉동: 1,
-      생물: 1,
-    },
-  );
+    useState<(typeof categories)[number]>("냉동");
+  const [pageByCategory, setPageByCategory] = useState<
+    Record<(typeof categories)[number], number>
+  >({
+    냉동: 1,
+    생물: 1,
+  });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
+    useState<InventoryLineState | null>(null);
+  const [selectedFifoLotItem, setSelectedFifoLotItem] =
     useState<InventoryLineState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -273,16 +261,11 @@ export function InventoryStepClient({
     previousInitialDataRef.current = initialData;
   }, [initialData]);
 
-  function getCategoryItems(category: ViewTab) {
-    // "전체" 탭은 분류와 무관하게 모든 품목을 보여준다.
-    if (category === "전체") {
-      return items;
-    }
-
+  function getCategoryItems(category: string) {
     return items.filter((item) => item.productCategory === category);
   }
 
-  function getCategoryPage(category: ViewTab) {
+  function getCategoryPage(category: (typeof categories)[number]) {
     const visibleItems = getCategoryItems(category);
     const pageCount = Math.max(
       1,
@@ -292,28 +275,11 @@ export function InventoryStepClient({
     return Math.min(pageByCategory[category] ?? 1, pageCount);
   }
 
-  function setCategoryPage(category: ViewTab, page: number) {
+  function setCategoryPage(
+    category: (typeof categories)[number],
+    page: number,
+  ) {
     setPageByCategory((current) => ({ ...current, [category]: page }));
-  }
-
-  // 오류/조정 항목으로 이동할 탭을 고른다. 현재 탭이 그 품목을 이미 보여주고
-  // 있으면(=현재 탭이 "전체"거나 품목 분류와 일치) 탭을 바꾸지 않고, 아니면
-  // 품목의 실제 분류 탭으로 전환한다. "전체" 보기에서 불필요하게 이탈하지 않도록.
-  function resolveItemViewTab(item: InventoryLineState): ViewTab {
-    if (activeCategory === "전체") {
-      return "전체";
-    }
-
-    return normalizeCategory(item.productCategory);
-  }
-
-  function focusItemRow(item: InventoryLineState) {
-    const tab = resolveItemViewTab(item);
-    const tabIndex = getCategoryItems(tab).findIndex(
-      (candidate) => candidate.productId === item.productId,
-    );
-    setActiveCategory(tab);
-    setCategoryPage(tab, Math.floor(Math.max(0, tabIndex) / ROW_PAGE_SIZE) + 1);
   }
 
   function focusFirstError(errors: FieldErrors) {
@@ -321,11 +287,32 @@ export function InventoryStepClient({
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index]!;
 
-        if (
-          errors[`items.${index}.currentQuantity`]?.length ||
-          errors[`items.${index}.quantity`]?.length
-        ) {
-          focusItemRow(item);
+        if (errors[`items.${index}.currentQuantity`]?.length) {
+          const category = normalizeCategory(item.productCategory);
+          const categoryIndex = getCategoryItems(category).findIndex(
+            (candidate) => candidate.productId === item.productId,
+          );
+          setActiveCategory(category);
+          setCategoryPage(
+            category,
+            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+          );
+          window.setTimeout(() => {
+            currentQuantityRefs.current[item.productId]?.focus();
+          }, 0);
+          return;
+        }
+
+        if (errors[`items.${index}.quantity`]?.length) {
+          const category = normalizeCategory(item.productCategory);
+          const categoryIndex = getCategoryItems(category).findIndex(
+            (candidate) => candidate.productId === item.productId,
+          );
+          setActiveCategory(category);
+          setCategoryPage(
+            category,
+            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+          );
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -369,7 +356,7 @@ export function InventoryStepClient({
 
     setAdjustmentErrors(nextErrors);
     setFormError(missingAdjustmentReasonMessage);
-    focusItemRow(firstInvalidItem);
+    setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
     window.setTimeout(() => {
       reasonRefs.current[firstInvalidItem.productId]?.focus();
     }, 0);
@@ -388,7 +375,7 @@ export function InventoryStepClient({
     }
 
     if (isAdjustmentSavePending) {
-      const message = "재고 조정 저장이 끝난 뒤 다시 저장해 주세요.";
+      const message = "재고를 고친 이유 저장이 끝난 뒤 다시 저장해 주세요.";
       setResultMessage(null);
       setFormError(message);
       toast.error(message);
@@ -616,7 +603,7 @@ export function InventoryStepClient({
             }));
           }
 
-          focusItemRow(item);
+          setActiveCategory(normalizeCategory(item.productCategory));
           window.setTimeout(() => {
             currentQuantityRefs.current[item.productId]?.focus();
           }, 0);
@@ -634,8 +621,8 @@ export function InventoryStepClient({
       );
       setFieldErrors({});
       setAdjustmentErrors({});
-      setResultMessage("조정이 저장됐습니다.");
-      toast.success("재고 조정을 저장했습니다.");
+      setResultMessage("고친 내용이 저장됐습니다.");
+      toast.success("재고를 고친 이유를 저장했습니다.");
     } catch {
       setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
       toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
@@ -766,7 +753,7 @@ export function InventoryStepClient({
     }
 
     if (value < 0) {
-      return `${formatSignedQuantity(value)}개`;
+      return formatSignedQuantity(value);
     }
 
     return formatQuantity(value);
@@ -787,6 +774,22 @@ export function InventoryStepClient({
       case "MANUAL":
       default:
         return "수동/근거 부족";
+    }
+  }
+
+  function formatFifoLotSource(
+    sourceType: InventoryLineState["fifoLots"][number]["sourceType"],
+  ) {
+    switch (sourceType) {
+      case "PURCHASE":
+        return "당일 매입";
+      case "PREVIOUS_CARRYOVER":
+        return "전일 이월";
+      case "OPENING":
+        return "월초 이월";
+      case "LEGACY_OPENING":
+      default:
+        return "기초 재고";
     }
   }
 
@@ -891,7 +894,7 @@ export function InventoryStepClient({
         badges.push({
           label: "기준 확인 필요",
           detail:
-            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 선입선출(FIFO) 기준 금액도 표에 표시하지 않습니다.",
+            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 재고금액은 선입선출(FIFO) 기준으로 계산해 표시합니다.",
           className:
             "border-purple-600 text-purple-700 dark:border-purple-400 dark:text-purple-300",
         });
@@ -965,8 +968,7 @@ export function InventoryStepClient({
     );
   }
 
-  const inventoryFlowDifferenceHelp =
-    inventoryTerms.inventoryFlowDifferenceHelp;
+  const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
 
   function renderCarryoverDetailDialog() {
     if (!selectedCarryoverItem) {
@@ -1143,9 +1145,151 @@ export function InventoryStepClient({
     );
   }
 
-  function renderRows(category: ViewTab) {
+  function renderFifoLotDialog() {
+    if (!selectedFifoLotItem) {
+      return null;
+    }
+
+    const lots = selectedFifoLotItem.fifoLots;
+    const consumedAmount = lots.reduce(
+      (sum, lot) => sum + lot.consumedAmount,
+      0,
+    );
+    const remainingAmount = lots.reduce(
+      (sum, lot) => sum + lot.remainingAmount,
+      0,
+    );
+
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedFifoLotItem(null);
+          }
+        }}
+      >
+        <DialogContent className="h-[min(90vh,42rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="px-4 pt-4 pr-12 pb-3">
+            <DialogTitle>{inventoryTerms.fifoLotHistoryTitle}</DialogTitle>
+            <DialogDescription>
+              {selectedFifoLotItem.productName}:{" "}
+              {inventoryTerms.fifoLotHistoryDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
+            <div className="grid gap-4">
+              <section className="bg-muted/30 grid gap-3 rounded-md border p-3 sm:grid-cols-2">
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs">
+                    {inventoryTerms.fifoLotConsumedQuantity} 금액 (판매/소진)
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {formatKrw(consumedAmount)}
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs">
+                    {inventoryTerms.inventoryAmount} (잔량)
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {formatKrw(remainingAmount)}
+                  </p>
+                </div>
+              </section>
+              {lots.length === 0 ? (
+                <p className="text-muted-foreground rounded-md border px-3 py-6 text-center text-sm">
+                  {inventoryTerms.fifoLotEmpty}
+                </p>
+              ) : (
+                <div className="overflow-auto overscroll-contain rounded-md border">
+                  <Table className="min-w-[640px]">
+                    <TableHeader className="bg-background sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead scope="col" className="w-24">
+                          {inventoryTerms.fifoLotSource}
+                        </TableHead>
+                        <TableHead scope="col" className="w-28">
+                          {inventoryTerms.fifoLotPurchaseDate}
+                        </TableHead>
+                        <TableHead scope="col" className="w-24 text-right">
+                          {inventoryTerms.fifoLotUnitPrice}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotOriginalQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotConsumedQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-20 text-right">
+                          {inventoryTerms.fifoLotRemainingQuantity}
+                        </TableHead>
+                        <TableHead scope="col" className="w-28 text-right">
+                          {inventoryTerms.fifoLotRemainingAmount}
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lots.map((lot) => (
+                        <TableRow
+                          key={`${lot.sortOrder}-${lot.sourcePurchaseItemId ?? lot.sourceLedgerId ?? lot.sourceType}`}
+                          className={
+                            lot.consumedQuantity > 0
+                              ? "bg-amber-500/5"
+                              : undefined
+                          }
+                        >
+                          <TableCell>
+                            {formatFifoLotSource(lot.sourceType)}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {/* "며칠 자에 입고된 물량인지"(point_summary.md:56) 추적용으로
+                                입고 영업일(sourceBusinessDate)을 우선 표시하고, 없으면 매입일로 대체. */}
+                            {formatDate(
+                              lot.sourceBusinessDate ?? lot.purchaseDate,
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatKrw(lot.unitPrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.originalQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {lot.consumedQuantity > 0 ? (
+                              <span className="font-medium text-amber-700 dark:text-amber-300">
+                                {formatQuantity(lot.consumedQuantity)}
+                              </span>
+                            ) : (
+                              formatQuantity(lot.consumedQuantity)
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.remainingQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatKrw(lot.remainingAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {inventoryTerms.inventoryAmountHelp}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  function renderRows(category: string) {
     const visibleItems = getCategoryItems(category);
-    const page = getCategoryPage(category);
+    const normalizedCategory = normalizeCategory(category);
+    const page = getCategoryPage(normalizedCategory);
     const pagedItems =
       visibleItems.length > ROW_PAGING_THRESHOLD
         ? visibleItems.slice((page - 1) * ROW_PAGE_SIZE, page * ROW_PAGE_SIZE)
@@ -1154,10 +1298,7 @@ export function InventoryStepClient({
     if (visibleItems.length === 0) {
       return (
         <TableRow>
-          <TableCell
-            colSpan={9}
-            className="text-muted-foreground h-24 text-center"
-          >
+          <TableCell className="text-muted-foreground h-24 text-center">
             표시할 품목이 없습니다.
           </TableCell>
         </TableRow>
@@ -1179,238 +1320,314 @@ export function InventoryStepClient({
       const isSavingThisAdjustment =
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
-      const adjustmentActionLabel = adjusted ? "수정" : "조정";
-      const adjustmentButtonLabel = `${item.productName} 조정 기록`;
+      const adjustmentActionLabel = adjusted ? "수정" : "저장";
+      const adjustmentButtonLabel = `${item.productName} 고친 이유 저장`;
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
 
+      // 카드형 레이아웃: 품목당 1행(<tr>)을 유지하되 셀 1개 안에 카드를 그린다.
+      // 한 화면에서 입력·조정 버튼이 가로 스크롤 없이 바로 보이고, 조정 상세는
+      // 펼침(details)으로 빼서 셀 내용이 바뀌어도 행이 늘어나지 않게 한다.
       return (
         <TableRow
           key={item.productId}
-          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 조정됨" : ""}`}
+          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 고침 완료" : ""}`}
           className={
             modified || adjusted
               ? "border-primary bg-primary/5 border-l-4"
               : undefined
           }
         >
-          <TableCell
-            className={cn(
-              "bg-card sticky left-0 z-10 align-top whitespace-normal",
-              modified || adjusted ? "bg-primary/5" : undefined,
-            )}
-          >
-            <div className="flex flex-col gap-1">
-              <span className="font-medium break-keep">{item.productName}</span>
-              <div className="flex flex-wrap gap-1">
-                {modified ? (
-                  <Badge
-                    variant="outline"
-                    className="border-primary text-primary text-[10px]"
-                  >
-                    수정됨
-                  </Badge>
-                ) : null}
-                {adjustmentNeeded
-                  ? renderBadgeWithTooltip({
-                      label: "조정 필요",
-                      detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 조정 사유를 남겨 주세요.`,
-                      className:
-                        "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
-                    })
-                  : null}
-                {adjusted
-                  ? renderBadgeWithTooltip({
-                      label: "조정됨",
-                      detail: item.adjustment
-                        ? `조정 사유가 저장됐습니다. 조정 차이 ${formatSignedQuantity(item.adjustment.differenceQuantity)}개.`
-                        : "조정 사유가 저장됐습니다.",
-                      className:
-                        "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
-                    })
-                  : null}
-                {sourceBadges.map(renderBadgeWithTooltip)}
-              </div>
-            </div>
-          </TableCell>
-          <TableCell className="text-muted-foreground align-top text-sm break-keep whitespace-normal">
-            {item.productSpec}
-          </TableCell>
-          <TableCell className="text-right align-top tabular-nums">
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              aria-label={`${item.productName} 전일재고 이력 보기`}
-              onClick={() => setSelectedCarryoverItem(item)}
-              className="ml-auto flex h-11 min-w-11 justify-end px-0 text-right tabular-nums"
-            >
-              {item.previousQuantity}
-            </Button>
-          </TableCell>
-          <TableCell className="text-right align-top tabular-nums">
-            {item.purchasedQuantity}
-          </TableCell>
-          <TableCell className="text-right align-top tabular-nums">
-            <div className="grid gap-0.5">
-              <span>{item.lossQuantity}</span>
-              {hasSensitiveInventoryAmounts(item) ? (
-                <span className="text-muted-foreground text-xs">
-                  {formatKrw(item.lossAmount)}
+          <TableCell className="p-3 align-top whitespace-normal">
+            <div className="flex flex-col gap-2.5">
+              {/* 1줄: 품목명 + 규격 + 상태 뱃지 */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium break-keep">
+                  {item.productName}
                 </span>
-              ) : null}
-            </div>
-          </TableCell>
-          <TableCell className="text-right align-top font-medium tabular-nums">
-            {formatQuantity(systemQuantity)}
-          </TableCell>
-          <TableCell className="align-top">
-            <Input
-              ref={(node) => {
-                currentQuantityRefs.current[item.productId] = node;
-              }}
-              aria-label={`${item.productName} 당일재고`}
-              aria-invalid={Boolean(quantityError)}
-              aria-describedby={
-                quantityError
-                  ? `inventory-quantity-${item.productId}-error`
-                  : undefined
-              }
-              inputMode="numeric"
-              autoComplete="off"
-              value={item.currentQuantityInput}
-              onFocus={(event) =>
-                event.currentTarget.scrollIntoView({
-                  block: "center",
-                  inline: "nearest",
-                })
-              }
-              onChange={(event) =>
-                updateCurrentQuantity(item.productId, event.currentTarget.value)
-              }
-              disabled={isSaving || isClosed || isAdjustmentSavePending}
-              className="h-11 tabular-nums"
-            />
-            {quantityError ? (
-              <p
-                id={`inventory-quantity-${item.productId}-error`}
-                role="alert"
-                className="text-destructive mt-1 text-xs"
-              >
-                {quantityError}
-              </p>
-            ) : null}
-          </TableCell>
-          <TableCell className="text-right align-top tabular-nums">
-            <span
-              className={
-                quantityDifference === null || quantityDifference === 0
-                  ? undefined
-                  : "text-destructive font-medium"
-              }
-            >
-              {formatDifference(quantityDifference)}
-            </span>
-          </TableCell>
-          <TableCell className="align-top whitespace-normal">
-            {isClosed ? (
-              <p className="text-muted-foreground text-xs">정정 기록 사용</p>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {adjusted && item.adjustment ? (
-                  <div className="text-muted-foreground grid gap-0.5 text-xs">
-                    <p>
-                      조정 전{" "}
-                      <span className="tabular-nums">
-                        {item.adjustment.beforeQuantity}
-                        {hasSensitiveAdjustmentAmounts(item.adjustment)
-                          ? ` / ${formatKrw(item.adjustment.beforeAmount)}`
-                          : ""}
-                      </span>
-                    </p>
-                    <p>
-                      조정 후{" "}
-                      <span className="tabular-nums">
-                        {item.adjustment.afterQuantity}
-                        {hasSensitiveAdjustmentAmounts(item.adjustment)
-                          ? ` / ${formatKrw(item.adjustment.afterAmount)}`
-                          : ""}
-                      </span>
-                    </p>
-                    <p>
-                      조정 차이{" "}
-                      <span className="tabular-nums">
-                        {formatSignedQuantity(
-                          item.adjustment.differenceQuantity,
-                        )}
-                        {hasSensitiveAdjustmentAmounts(item.adjustment)
-                          ? ` / ${formatKrw(item.adjustment.differenceAmount)}`
-                          : ""}
-                      </span>
-                    </p>
-                    {adjustmentAmountPolicyUnconfirmed ? (
-                      <p>금액 기준 확인 필요</p>
-                    ) : null}
-                  </div>
+                {item.productSpec ? (
+                  <span className="text-muted-foreground text-xs">
+                    {item.productSpec}
+                  </span>
                 ) : null}
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {modified ? (
+                    <Badge
+                      variant="outline"
+                      className="border-primary text-primary text-[10px]"
+                    >
+                      수정됨
+                    </Badge>
+                  ) : null}
+                  {adjustmentNeeded
+                    ? renderBadgeWithTooltip({
+                        label: "고칠 내용 있음",
+                        detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 바꾼 이유를 남겨 주세요.`,
+                        className:
+                          "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
+                      })
+                    : null}
+                  {adjusted
+                    ? renderBadgeWithTooltip({
+                        label: "고침 완료",
+                        detail: item.adjustment
+                          ? `바꾼 이유가 저장됐습니다. 바뀐 수량 ${formatSignedQuantity(item.adjustment.differenceQuantity)}.`
+                          : "바꾼 이유가 저장됐습니다.",
+                        className:
+                          "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
+                      })
+                    : null}
+                  {sourceBadges.map(renderBadgeWithTooltip)}
+                </div>
+              </div>
+
+              {/* 2줄: 전일→기준 흐름 요약 (한 줄, 행 높이 고정) */}
+              <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums">
+                <span>
+                  {inventoryTerms.previousStock}{" "}
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    aria-label={`${item.productName} 전일재고 이력 보기`}
+                    onClick={() => setSelectedCarryoverItem(item)}
+                    className="text-foreground h-auto p-0 align-baseline font-medium tabular-nums"
+                  >
+                    {item.previousQuantity}
+                  </Button>
+                </span>
+                <span>
+                  {inventoryTerms.purchase}{" "}
+                  <span className="text-foreground font-medium">
+                    {item.purchasedQuantity}
+                  </span>
+                </span>
+                <span>
+                  {inventoryTerms.loss}{" "}
+                  <span className="text-foreground font-medium">
+                    {item.lossQuantity}
+                  </span>
+                  {hasSensitiveInventoryAmounts(item) && item.lossQuantity > 0
+                    ? ` (${formatKrw(item.lossAmount)})`
+                    : ""}
+                </span>
+                <span aria-hidden>→</span>
+                <span>
+                  {inventoryTerms.baselineStock}{" "}
+                  <span className="text-foreground font-medium">
+                    {formatQuantity(systemQuantity)}
+                  </span>
+                </span>
+                {item.fifoLots.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    aria-label={`${item.productName} FIFO 판매 lot 이력 보기`}
+                    onClick={() => setSelectedFifoLotItem(item)}
+                    className="h-auto p-0 align-baseline tabular-nums"
+                  >
+                    {inventoryTerms.inventoryAmount} {formatKrw(item.inventoryAmount)}
+                  </Button>
+                ) : (
+                  <span>
+                    {inventoryTerms.inventoryAmount}{" "}
+                    <span className="text-foreground font-medium">
+                      {formatKrw(item.inventoryAmount)}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              {/* 3줄: 당일재고 입력 + 재고 차이 */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor={`inventory-quantity-${item.productId}`}
+                    className="text-muted-foreground text-xs"
+                  >
+                    {inventoryTerms.currentStock}
+                  </label>
                   <Input
+                    id={`inventory-quantity-${item.productId}`}
                     ref={(node) => {
-                      reasonRefs.current[item.productId] = node;
+                      currentQuantityRefs.current[item.productId] = node;
                     }}
-                    aria-label={`${item.productName} ${inventoryTerms.adjustmentReason}`}
-                    aria-invalid={Boolean(reasonError)}
+                    aria-label={`${item.productName} 당일재고`}
+                    aria-invalid={Boolean(quantityError)}
                     aria-describedby={
-                      reasonError
-                        ? `inventory-adjustment-reason-${item.productId}-error`
+                      quantityError
+                        ? `inventory-quantity-${item.productId}-error`
                         : undefined
                     }
+                    inputMode="numeric"
                     autoComplete="off"
-                    value={item.adjustmentReasonInput}
+                    value={item.currentQuantityInput}
+                    onFocus={(event) =>
+                      event.currentTarget.scrollIntoView({
+                        block: "center",
+                        inline: "nearest",
+                      })
+                    }
                     onChange={(event) =>
-                      updateAdjustmentReason(
+                      updateCurrentQuantity(
                         item.productId,
                         event.currentTarget.value,
                       )
                     }
-                    disabled={isAdjustmentSavePending || isClosed}
-                    className="h-11 min-w-0 flex-1"
-                    placeholder={inventoryTerms.adjustmentReasonPlaceholder}
+                    disabled={isSaving || isClosed || isAdjustmentSavePending}
+                    className="h-11 w-24 tabular-nums"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={adjustmentButtonLabel}
-                    onClick={() => handleAdjustmentSave(item)}
-                    disabled={savingAdjustmentProductId !== null || isClosed}
-                    className="h-11 shrink-0 px-2 text-xs"
-                  >
-                    {isSavingThisAdjustment ? "저장 중" : adjustmentActionLabel}
-                  </Button>
                 </div>
-                {reasonError ? (
-                  <p
-                    id={`inventory-adjustment-reason-${item.productId}-error`}
-                    role="alert"
-                    className="text-destructive text-xs"
+                <div className="flex flex-col gap-1 pb-2.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        tabIndex={0}
+                        aria-label={`${inventoryTerms.dailySalesQuantity}: ${dailySalesQuantityHelp}`}
+                        className="text-muted-foreground inline-flex w-fit cursor-help text-xs outline-none"
+                      >
+                        {inventoryTerms.dailySalesQuantity}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="max-w-64 leading-relaxed"
+                    >
+                      {dailySalesQuantityHelp}
+                    </TooltipContent>
+                  </Tooltip>
+                  <span
+                    className={
+                      quantityDifference === null || quantityDifference === 0
+                        ? "tabular-nums"
+                        : "text-destructive font-medium tabular-nums"
+                    }
                   >
-                    {reasonError}
-                  </p>
-                ) : systemQuantity !== null ? (
-                  <p className="text-muted-foreground text-xs tabular-nums">
-                    기준 {systemQuantity}
-                  </p>
-                ) : null}
+                    {formatDifference(quantityDifference)}
+                  </span>
+                </div>
               </div>
-            )}
+              {quantityError ? (
+                <p
+                  id={`inventory-quantity-${item.productId}-error`}
+                  role="alert"
+                  className="text-destructive text-xs"
+                >
+                  {quantityError}
+                </p>
+              ) : null}
+
+              {/* 4줄: 조정 사유 입력 + 저장 버튼 (항상 보임, 가로 스크롤 불필요) */}
+              {isClosed ? (
+                <p className="text-muted-foreground text-xs">정정 기록 사용</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      ref={(node) => {
+                        reasonRefs.current[item.productId] = node;
+                      }}
+                      aria-label={`${item.productName} ${inventoryTerms.adjustmentReason}`}
+                      aria-invalid={Boolean(reasonError)}
+                      aria-describedby={
+                        reasonError
+                          ? `inventory-adjustment-reason-${item.productId}-error`
+                          : undefined
+                      }
+                      autoComplete="off"
+                      value={item.adjustmentReasonInput}
+                      onChange={(event) =>
+                        updateAdjustmentReason(
+                          item.productId,
+                          event.currentTarget.value,
+                        )
+                      }
+                      disabled={isAdjustmentSavePending || isClosed}
+                      className="h-11 min-w-0 flex-1"
+                      placeholder={inventoryTerms.adjustmentReasonPlaceholder}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={adjustmentButtonLabel}
+                      onClick={() => handleAdjustmentSave(item)}
+                      disabled={savingAdjustmentProductId !== null || isClosed}
+                      className="h-11 shrink-0 px-3 text-xs"
+                    >
+                      {isSavingThisAdjustment
+                        ? "저장 중"
+                        : adjustmentActionLabel}
+                    </Button>
+                  </div>
+                  {reasonError ? (
+                    <p
+                      id={`inventory-adjustment-reason-${item.productId}-error`}
+                      role="alert"
+                      className="text-destructive text-xs"
+                    >
+                      {reasonError}
+                    </p>
+                  ) : systemQuantity !== null ? (
+                    <p className="text-muted-foreground text-xs tabular-nums">
+                      기준 {systemQuantity}
+                    </p>
+                  ) : null}
+
+                  {/* 조정 상세는 펼침으로 분리해 행 높이를 늘리지 않는다.
+                      e2e는 상세 텍스트가 보여야 하므로 open 기본값. */}
+                  {adjusted && item.adjustment ? (
+                    <details open className="text-muted-foreground text-xs">
+                      <summary className="cursor-pointer select-none">
+                        조정 상세
+                      </summary>
+                      <div className="mt-1 grid gap-0.5">
+                        <p>
+                          고치기 전{" "}
+                          <span className="tabular-nums">
+                            {item.adjustment.beforeQuantity}
+                            {hasSensitiveAdjustmentAmounts(item.adjustment)
+                              ? ` / ${formatKrw(item.adjustment.beforeAmount)}`
+                              : ""}
+                          </span>
+                        </p>
+                        <p>
+                          고친 후{" "}
+                          <span className="tabular-nums">
+                            {item.adjustment.afterQuantity}
+                            {hasSensitiveAdjustmentAmounts(item.adjustment)
+                              ? ` / ${formatKrw(item.adjustment.afterAmount)}`
+                              : ""}
+                          </span>
+                        </p>
+                        <p>
+                          바뀐 수량{" "}
+                          <span className="tabular-nums">
+                            {formatSignedQuantity(
+                              item.adjustment.differenceQuantity,
+                            )}
+                            {hasSensitiveAdjustmentAmounts(item.adjustment)
+                              ? ` / ${formatKrw(item.adjustment.differenceAmount)}`
+                              : ""}
+                          </span>
+                        </p>
+                        {adjustmentAmountPolicyUnconfirmed ? (
+                          <p>금액 기준 확인 필요</p>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </TableCell>
         </TableRow>
       );
     });
   }
 
-  function renderPagingControls(category: ViewTab) {
+  function renderPagingControls(category: (typeof categories)[number]) {
     const visibleItems = getCategoryItems(category);
 
     if (visibleItems.length <= ROW_PAGING_THRESHOLD) {
@@ -1460,6 +1677,7 @@ export function InventoryStepClient({
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderCarryoverDetailDialog()}
+        {renderFifoLotDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}
@@ -1503,7 +1721,7 @@ export function InventoryStepClient({
           isSaving={isSaving || isAdjustmentSavePending}
           errorMessage={formError}
           successMessage={resultMessage}
-          unsavedFields={["현재 재고", "재고 조정 사유"]}
+          unsavedFields={["현재 재고", "바꾼 이유"]}
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
         />
@@ -1555,106 +1773,36 @@ export function InventoryStepClient({
           <Tabs
             value={activeCategory}
             onValueChange={(value) =>
-              setActiveCategory(normalizeViewTab(value))
+              setActiveCategory(normalizeCategory(value))
             }
           >
             <TabsList
               variant="line"
               className="min-h-11 w-full justify-start border-b bg-transparent"
             >
-              {viewTabs.map((tab) => (
-                <TabsTrigger key={tab} value={tab} className="min-h-9 px-4">
-                  {tab}
+              {categories.map((category) => (
+                <TabsTrigger
+                  key={category}
+                  value={category}
+                  className="min-h-9 px-4"
+                >
+                  {category}
                 </TabsTrigger>
               ))}
             </TabsList>
 
-            {viewTabs.map((tab) => (
-              <TabsContent key={tab} value={tab}>
-                {renderPagingControls(tab)}
-                <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-                  {/* table-fixed + colgroup: 열 폭을 내용과 무관하게 고정해
-                      셀 내용(뱃지·조정 상세)이 바뀌어도 칸 간격이 흔들리지 않게 한다. */}
+            {categories.map((category) => (
+              <TabsContent key={category} value={category}>
+                {renderPagingControls(category)}
+                <div className="bg-card overflow-hidden rounded-lg border shadow-sm">
+                  {/* 카드 리스트: 품목당 1행. 가로 스크롤이 사라져 입력·저장
+                      버튼이 한 화면에 보이고, 셀 내용 변화로 칸 폭이 흔들리지
+                      않는다(컬럼이 1개라 auto-layout 재계산 영향 없음). */}
                   <Table
                     aria-label="재고 품목"
-                    className="min-w-[880px] table-fixed"
+                    className="[&_td]:border-b [&_tr:last-child_td]:border-0"
                   >
-                    <colgroup>
-                      <col className="w-56" />
-                      <col className="w-14" />
-                      <col className="w-14" />
-                      <col className="w-14" />
-                      <col className="w-16" />
-                      <col className="w-16" />
-                      <col className="w-28" />
-                      <col className="w-24" />
-                      <col className="w-64" />
-                    </colgroup>
-                    <TableHeader className="bg-muted/70 sticky top-0 z-10">
-                      <TableRow>
-                        <TableHead
-                          scope="col"
-                          className="bg-muted/70 sticky left-0 z-20"
-                        >
-                          {inventoryTerms.product}
-                        </TableHead>
-                        <TableHead scope="col">{inventoryTerms.spec}</TableHead>
-                        <TableHead scope="col" className="text-right">
-                          {inventoryTerms.previousStock}
-                        </TableHead>
-                        <TableHead scope="col" className="text-right">
-                          {inventoryTerms.purchase}
-                        </TableHead>
-                        <TableHead scope="col" className="text-right">
-                          {inventoryTerms.loss}
-                        </TableHead>
-                        <TableHead scope="col" className="text-right">
-                          {inventoryTerms.baselineStock}
-                        </TableHead>
-                        <TableHead scope="col">
-                          {inventoryTerms.currentStock}
-                        </TableHead>
-                        <TableHead scope="col" className="text-right">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                tabIndex={0}
-                                aria-label={`${inventoryTerms.inventoryFlowDifference}: ${inventoryFlowDifferenceHelp}`}
-                                className="inline-flex cursor-help outline-none"
-                              >
-                                {inventoryTerms.inventoryFlowDifference}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              className="max-w-64 leading-relaxed"
-                            >
-                              {inventoryFlowDifferenceHelp}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableHead>
-                        <TableHead scope="col">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                tabIndex={0}
-                                aria-label={`${inventoryTerms.statusAndAdjustment}: ${inventoryTerms.statusAndAdjustmentHelp}`}
-                                className="inline-flex cursor-help outline-none"
-                              >
-                                {inventoryTerms.statusAndAdjustment}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              className="max-w-64 leading-relaxed"
-                            >
-                              {inventoryTerms.statusAndAdjustmentHelp}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>{renderRows(tab)}</TableBody>
+                    <TableBody>{renderRows(category)}</TableBody>
                   </Table>
                 </div>
               </TabsContent>

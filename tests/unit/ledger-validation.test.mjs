@@ -135,7 +135,7 @@ test("validation helper preserves dotted field paths for nested step errors", as
   assert.equal(adjustmentInvalid.success, false);
   assert.deepEqual(toFieldErrors(adjustmentInvalid.error), {
     actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."],
-    reason: ["조정 사유를 입력해 주세요."],
+    reason: ["바꾼 이유를 입력해 주세요."],
   });
 
   const lossesInvalid = ledgerLossesSchema.safeParse({

@@ -591,7 +591,7 @@ test("손실 저장 후 재고 기준 수량에 손실 수량을 반영한다", 
 
   await expect(row).toContainText("2");
   await expect(row).not.toContainText("20,000원");
-  await expect(row.getByText("조정 필요").first()).toBeVisible();
+  await expect(row.getByText("고칠 내용 있음").first()).toBeVisible();
   await expect(row.getByText("기준 5")).toBeVisible();
   await expect(row).not.toContainText(
     /lossAmount|inventoryAmount|unitPrice|purchaseAmount|20000/,
