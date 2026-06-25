@@ -926,15 +926,17 @@ export function WorkStepClient({
               </span>
             </div>
             <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">급여 행 기준 참고 인원</span>
+              <span className="text-muted-foreground">
+                급여 행 기준 참고 인원
+              </span>
               <span className="font-semibold tabular-nums">
                 {draftLaborHeadcount}명
               </span>
             </div>
             {showLaborHeadcountHint ? (
               <p className="text-muted-foreground mt-2 text-sm">
-                근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록 근무자가
-                있으면 그대로 저장할 수 있습니다.
+                근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록
+                근무자가 있으면 그대로 저장할 수 있습니다.
               </p>
             ) : null}
           </div>

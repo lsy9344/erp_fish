@@ -612,12 +612,16 @@ test("근무 단계는 근무/인건비 명칭, 근무 요약, 급여 행 기준
 
   await page.getByRole("button", { name: "급여 저장" }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "급여 항목 2건을 저장했습니다." }),
+    page
+      .getByRole("status")
+      .filter({ hasText: "급여 항목 2건을 저장했습니다." }),
   ).toBeVisible();
 
   // 재방문 후 근무인원과 급여 행이 유지된다.
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveValue("3");
+  await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveValue(
+    "3",
+  );
   await expect(page.getByLabel("직원명")).toHaveCount(2);
   await expect(page.getByLabel("직원명").nth(0)).toHaveValue("홍길동");
   await expect(page.getByLabel("직원명").nth(1)).toHaveValue("김철수");
