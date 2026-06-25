@@ -8,6 +8,7 @@ const compat = new FlatCompat({
 export default tseslint.config(
   {
     ignores: [
+      ".claude",
       ".next",
       ".tmp",
       "generated",
