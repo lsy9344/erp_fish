@@ -83,6 +83,15 @@ export type InventoryCarryoverState = {
   message: string;
 };
 
+// 근거(저장행/당일 매입/당일 손실/이월) 없이 기본 표에 자동으로 펼치지 않는 활성
+// 품목. 사용자가 "품목 추가"에서 골라야만 표에 행이 생긴다.
+export type InventoryManualProductOption = {
+  productId: string;
+  productName: string;
+  productCategory: string;
+  productSpec: string;
+};
+
 export type InventoryStepData = {
   id: string;
   storeId: string;
@@ -93,6 +102,7 @@ export type InventoryStepData = {
   status: DailyLedgerStatus;
   stepCompletion: StoreEntryStepCompletion;
   items: InventoryStepLine[];
+  manualProductOptions: InventoryManualProductOption[];
   carryover: InventoryCarryoverState;
 };
 

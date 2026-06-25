@@ -55,6 +55,7 @@ import {
 import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-save-guard";
 import {
   type InventoryAdjustmentView,
+  type InventoryManualProductOption,
   type InventoryStepData,
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
@@ -142,6 +143,57 @@ function toLineState(data: InventoryDisplayData): InventoryLineState[] {
   }));
 }
 
+// "품목 추가"로 직접 넣은 행. 근거가 없으므로 전일/매입/손실은 0, 상태는 이월 공백,
+// 입력값은 빈 값으로 시작한다(0개 재고처럼 보이지 않게). id=productId로 두어 저장
+// 정책(shouldPersistInventoryLine)이 미입력 행을 건너뛰게 한다. 저장 액션은
+// before.items에 없는 이 행을 입력값이 있을 때만 별도로 기록한다.
+function toManualLineState(
+  option: InventoryManualProductOption,
+): InventoryLineState {
+  return {
+    id: option.productId,
+    productId: option.productId,
+    productName: option.productName,
+    productCategory: option.productCategory,
+    productSpec: option.productSpec,
+    unitPrice: 0,
+    previousQuantity: 0,
+    purchasedQuantity: 0,
+    purchaseAmount: 0,
+    lossQuantity: 0,
+    lossAmount: 0,
+    currentQuantity: null,
+    quantity: null,
+    inventoryAmount: null,
+    fifoLots: [],
+    carryoverSource: "MANUAL",
+    carryoverStatus: "CARRYOVER_EMPTY",
+    carryoverLedgerId: null,
+    previousQuantityDetail: {
+      source: "MANUAL",
+      status: "CARRYOVER_EMPTY",
+      resolvedQuantity: 0,
+      sourceLedgerId: null,
+      sourceLedgerClosingDate: null,
+      sourceLedgerStatus: null,
+      sourceYearMonth: null,
+      sourceSnapshotId: null,
+      sourcePreviousQuantity: null,
+      sourcePurchasedQuantity: null,
+      sourceLossQuantity: null,
+      sourceCurrentQuantity: null,
+      sourceQuantity: null,
+      message:
+        "직접 추가한 품목입니다. 전일/매입/손실 근거가 없으니 실제 재고를 입력해 주세요.",
+      history: [],
+    },
+    isModified: false,
+    adjustment: null,
+    currentQuantityInput: "",
+    adjustmentReasonInput: "",
+  };
+}
+
 function mergeAdjustedLineState(
   data: InventoryDisplayData,
   currentItems: InventoryLineState[],
@@ -212,6 +264,12 @@ export function InventoryStepClient({
   });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
+  const [manualProductId, setManualProductId] = useState("");
+  // 직접 추가했지만 아직 저장하지 않은 행. 상태 배지를 "이월 공백" 대신 "직접 입력"으로
+  // 보여줘 0개 재고로 오해하지 않게 한다. 저장 후에는 실제 저장 행이 되므로 비운다.
+  const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -334,6 +392,13 @@ export function InventoryStepClient({
     let firstInvalidItem: InventoryLineState | null = null;
 
     for (const item of items) {
+      // 직접 추가한 신규 행은 조정할 기준 재고가 없다(매입/이월 0). 차이를 "고친 이유"로
+      // 막지 않고 일반 저장으로 처음 입력하게 둔다. 서버는 before.items에 없는 이 행을
+      // buildManualInventoryRows로 직접 기록한다.
+      if (addedManualIds.has(item.productId)) {
+        continue;
+      }
+
       const systemQuantity = getSystemQuantity(item);
       const currentQuantity = parseQuantityInput(
         currentQuantityRefs.current[item.productId]?.value ??
@@ -431,6 +496,7 @@ export function InventoryStepClient({
 
       setData(result.data);
       setItems(toLineState(result.data));
+      setAddedManualIds(new Set());
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
@@ -468,6 +534,32 @@ export function InventoryStepClient({
     );
   }
 
+  const visibleProductIds = new Set(items.map((item) => item.productId));
+  const availableManualOptions = data.manualProductOptions.filter(
+    (option) => !visibleProductIds.has(option.productId),
+  );
+
+  function handleAddManualProduct() {
+    const option = availableManualOptions.find(
+      (candidate) => candidate.productId === manualProductId,
+    );
+
+    if (!option) {
+      return;
+    }
+
+    const line = toManualLineState(option);
+
+    setItems((current) => [...current, line]);
+    setAddedManualIds((current) => new Set(current).add(option.productId));
+    setManualProductId("");
+    setActiveCategory(normalizeCategory(option.productCategory));
+    setResultMessage(null);
+    window.setTimeout(() => {
+      currentQuantityRefs.current[option.productId]?.focus();
+    }, 0);
+  }
+
   function updateAdjustmentReason(productId: string, value: string) {
     setAdjustmentErrors((current) => {
       const next = { ...current };
@@ -499,6 +591,12 @@ export function InventoryStepClient({
   }
 
   function isAdjustmentNeeded(item: InventoryLineState) {
+    // 직접 추가한 신규 행은 기준 재고(0)와의 차이를 "조정"으로 보지 않는다. 첫 입력이므로
+    // 일반 저장으로 기록한다.
+    if (addedManualIds.has(item.productId)) {
+      return false;
+    }
+
     const systemQuantity = getSystemQuantity(item);
     const actualQuantity = parseQuantityInput(item.currentQuantityInput);
 
@@ -833,6 +931,20 @@ export function InventoryStepClient({
       detail: string;
       className?: string;
     }[] = [];
+
+    // 직접 추가했지만 미저장인 행은 "이월 공백"(0 오해) 대신 "직접 입력·근거 없음"으로
+    // 표시한다. 추가 후보는 당일 매입/손실이 없는 품목뿐이라 다른 배지는 붙지 않는다.
+    if (addedManualIds.has(item.productId)) {
+      badges.push({
+        label: "직접 입력",
+        detail:
+          "직접 추가한 품목입니다. 전일/매입/손실 근거가 없으니 실제 재고를 직접 입력해 주세요. 입력 전에는 저장되지 않습니다.",
+        className:
+          "border-slate-500 text-slate-700 dark:border-slate-400 dark:text-slate-300",
+      });
+
+      return badges;
+    }
 
     switch (item.carryoverStatus) {
       case "PREVIOUS_CARRYOVER":
@@ -1596,6 +1708,48 @@ export function InventoryStepClient({
           className="flex flex-col gap-4"
           noValidate
         >
+          {!isClosed && availableManualOptions.length > 0 ? (
+            <div className="bg-muted/30 flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-end">
+              <div className="flex flex-1 flex-col gap-1">
+                <label
+                  htmlFor="inventory-manual-product"
+                  className="text-muted-foreground text-xs"
+                >
+                  품목 추가
+                </label>
+                <select
+                  id="inventory-manual-product"
+                  aria-label="추가할 품목 선택"
+                  value={manualProductId}
+                  onChange={(event) =>
+                    setManualProductId(event.currentTarget.value)
+                  }
+                  disabled={isSaving || isAdjustmentSavePending}
+                  className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
+                >
+                  <option value="">근거 없는 품목 직접 추가</option>
+                  {availableManualOptions.map((option) => (
+                    <option key={option.productId} value={option.productId}>
+                      {option.productName}
+                      {option.productSpec ? ` / ${option.productSpec}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddManualProduct}
+                disabled={
+                  !manualProductId || isSaving || isAdjustmentSavePending
+                }
+                className="min-h-11 shrink-0"
+              >
+                추가
+              </Button>
+            </div>
+          ) : null}
+
           <Tabs
             value={activeCategory}
             onValueChange={(value) =>

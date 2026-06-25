@@ -805,7 +805,9 @@ test("inventory normal save requires matching adjustment record for changed actu
       { productId: "product-1", afterQuantity: 8 },
     ]),
     {
-      "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
+      "items.0.currentQuantity": [
+        "재고 차이를 고친 이유를 먼저 저장해 주세요.",
+      ],
     },
   );
   assert.deepEqual(
@@ -830,6 +832,11 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   );
   assert.match(typeSource, /export\s+type\s+InventoryCarryoverHistoryRow/);
   assert.match(typeSource, /history:\s+InventoryCarryoverHistoryRow\[\]/);
+  assert.match(typeSource, /export\s+type\s+InventoryManualProductOption/);
+  assert.match(
+    typeSource,
+    /manualProductOptions:\s+InventoryManualProductOption\[\]/,
+  );
 
   const querySource = readProjectFile(
     "src",
@@ -875,10 +882,31 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(querySource, /attachCarryoverHistories/);
   assert.match(querySource, /historyLimit/);
   assert.match(querySource, /sourceLossQuantity/);
+  // 월초 스냅샷에 누락된 활성 품목은 여전히 데이터 부족 행으로 펼친다.
   assert.match(
     querySource,
     /getActiveProductBases/,
-    "manual and empty carryover states should still show active products",
+    "snapshot-missing products should still be shown as data-insufficient rows",
+  );
+  // 전일/월초 근거가 전혀 없을 때는 근거 없는 활성 품목을 자동 행으로 펼치지 않고
+  // "품목 추가" 후보(manualProductOptions)로만 내린다.
+  assert.match(
+    querySource,
+    /getManualProductOptions/,
+    "ungrounded active products should be offered as manual add options, not auto-listed rows",
+  );
+  assert.match(
+    querySource,
+    /manualProductOptions/,
+    "step data should carry manual product options",
+  );
+  const emptyCarryoverFallback = querySource.slice(
+    querySource.indexOf("전일 장부나 월초 스냅샷이 없습니다. 오늘 매입"),
+  );
+  assert.match(
+    emptyCarryoverFallback.slice(0, 200),
+    /bases:\s*\[\]/,
+    "empty carryover fallback should not expand active products into zero rows",
   );
 
   const actionSource = readProjectFile(
@@ -919,6 +947,60 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateInventoryPaths\(\)/);
   assert.match(actionSource, /revalidateStoreEntryPaths\(\["inventory"\]\)/);
+});
+
+test("manual product add lets ungrounded products be entered without auto-listing them", () => {
+  // 저장 경로는 before.items만 재기록하므로, "품목 추가"로 넣은(before.items에 없는)
+  // 행은 buildManualInventoryRows로 별도 기록해야 입력값이 사라지지 않는다.
+  const helperSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "manual-inventory-rows.ts",
+  );
+  assert.match(
+    helperSource,
+    /export\s+async\s+function\s+buildManualInventoryRows/,
+  );
+  // 추가만 하고 미입력(빈 값)인 행은 0개 재고로 저장되면 안 된다.
+  assert.match(
+    helperSource,
+    /item\.currentQuantity !== null \|\| item\.quantity !== null/,
+    "empty manual rows must be excluded so they are not saved as zero inventory",
+  );
+  // 클라이언트가 보낸 메타데이터를 믿지 않고 활성 품목을 DB로 확인한다.
+  assert.match(helperSource, /isActive:\s*true/);
+
+  for (const file of ["actions.ts", "hq-edit-actions.ts"]) {
+    const actionSource = readProjectFile("src", "features", "inventory", file);
+    assert.match(
+      actionSource,
+      /buildManualInventoryRows\(/,
+      `${file} should persist manually added inventory rows`,
+    );
+    assert.match(
+      actionSource,
+      /rowsToPersist\.push\(\.\.\.manualRows\)/,
+      `${file} should append manual rows to the persisted set`,
+    );
+  }
+
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  assert.match(componentSource, /품목 추가/);
+  assert.match(componentSource, /추가할 품목 선택/);
+  assert.match(componentSource, /availableManualOptions/);
+  assert.match(componentSource, /toManualLineState/);
+  // 추가 행은 0이 아니라 빈 입력으로 시작한다.
+  assert.match(componentSource, /currentQuantityInput:\s*""/);
+  // 추가 행 배지는 "이월 공백"이 아니라 "직접 입력"으로 0 오해를 막는다.
+  assert.match(componentSource, /직접 입력/);
+  assert.match(componentSource, /addedManualIds/);
 });
 
 test("inventory adjustment query action and audit contracts are wired", () => {

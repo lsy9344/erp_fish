@@ -25,6 +25,7 @@ import {
 } from "./schemas";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
+import { buildManualInventoryRows } from "./manual-inventory-rows";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
   getInventorySaveAdjustmentErrors,
@@ -339,6 +340,17 @@ export async function saveLedgerInventoryItems(
           },
         ];
       });
+
+      // "품목 추가"로 넣은(before.items에 없는) 입력 행도 값이 있으면 저장한다.
+      const manualRows = await buildManualInventoryRows(
+        tx,
+        before.id,
+        new Set(before.items.map((item) => item.productId)),
+        parsed.data.items,
+        actor.user.id,
+      );
+
+      rowsToPersist.push(...manualRows);
 
       if (rowsToPersist.length > 0) {
         await tx.ledgerInventoryItem.createMany({

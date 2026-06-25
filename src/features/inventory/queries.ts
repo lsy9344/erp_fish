@@ -17,6 +17,7 @@ import {
   type InventoryStepData,
   type InventoryCarryoverDetailView,
   type InventoryCarryoverHistoryRow,
+  type InventoryManualProductOption,
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
 } from "./types";
@@ -671,13 +672,10 @@ async function mergeExistingInventoryLines(
       ),
     ),
   );
-  const activeProductBases = await getActiveProductBases(tx);
-
-  for (const base of mergeActivityBases(
-    activeProductBases,
-    purchases,
-    losses,
-  )) {
+  // 저장 행 뒤에 모든 활성 품목을 다시 붙이면 근거 없는 품목이 "이월 공백 0"으로
+  // 보인다. 당일 매입/손실로 생긴 품목만 보강하고, 나머지 활성 품목은
+  // manualProductOptions로 내려 "품목 추가"로만 표에 넣는다.
+  for (const base of mergeActivityBases([], purchases, losses)) {
     if (!existingProductIds.has(base.productId)) {
       lines.push(
         withPurchaseAggregate(
@@ -896,14 +894,16 @@ async function getCarryoverBases(
     };
   }
 
+  // 전일 장부도 월초 스냅샷도 없을 때 모든 활성 품목을 "이월 공백 0" 행으로 펼치면
+  // 매입/이월 근거가 없는 품목을 실제 재고 0으로 오해한다. 기본 표에는 근거 있는
+  // 품목(당일 매입/손실)만 남기고, 숨긴 활성 품목은 manualProductOptions로 내려
+  // "품목 추가"로만 표에 넣게 한다. 근거 부족 상태 자체는 상단 안내로 계속 알린다.
   return {
     status: "manual" as const,
     source: InventoryCarryoverSource.MANUAL,
     message:
-      "전일 장부나 월초 스냅샷이 없어 이월 공백 상태입니다. 0이 아니라 근거 부족으로 보고 직접 확인해 주세요.",
-    bases: await getActiveProductBases(tx, {
-      carryoverStatus: InventoryCarryoverStatus.CARRYOVER_EMPTY,
-    }),
+      "전일 장부나 월초 스냅샷이 없습니다. 오늘 매입·손실·저장 품목만 표시합니다. 추가 재고는 품목 추가로 입력해 주세요.",
+    bases: [],
   };
 }
 
@@ -950,6 +950,33 @@ async function getActiveProductBases(
       }),
     };
   });
+}
+
+// 기본 표에 없는(근거 없는) 활성 품목을 "품목 추가" 후보로 내린다. visibleProductIds는
+// 최종 items의 productId 집합이며, 이미 표에 있는 품목은 후보에서 제외한다.
+async function getManualProductOptions(
+  tx: Prisma.TransactionClient,
+  visibleProductIds: ReadonlySet<string>,
+): Promise<InventoryManualProductOption[]> {
+  const products = await tx.product.findMany({
+    where: { isActive: true },
+    orderBy: [{ category: "asc" }, { name: "asc" }, { spec: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      spec: true,
+    },
+  });
+
+  return products
+    .filter((product) => !visibleProductIds.has(product.id))
+    .map((product) => ({
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+    }));
 }
 
 function toHistoryLossQuantity(item: {
@@ -1106,6 +1133,10 @@ async function getInventoryStepDataForLedgerInTx(
       itemsWithHistory,
     );
     const carryoverStatus = getPrimaryCarryoverStatus(items);
+    const manualProductOptions = await getManualProductOptions(
+      tx,
+      new Set(itemsWithFifoLots.map((item) => item.productId)),
+    );
 
     return {
       id: ledger.id,
@@ -1117,6 +1148,7 @@ async function getInventoryStepDataForLedgerInTx(
       status: ledger.status,
       stepCompletion,
       items: itemsWithFifoLots,
+      manualProductOptions,
       carryover: {
         status: toCarryoverLoadStatus(carryoverStatus),
         source,
@@ -1148,6 +1180,10 @@ async function getInventoryStepDataForLedgerInTx(
     ledger.closingDate,
     items,
   );
+  const manualProductOptions = await getManualProductOptions(
+    tx,
+    new Set(itemsWithHistory.map((item) => item.productId)),
+  );
 
   return {
     id: ledger.id,
@@ -1159,6 +1195,7 @@ async function getInventoryStepDataForLedgerInTx(
     status: ledger.status,
     stepCompletion,
     items: itemsWithHistory,
+    manualProductOptions,
     carryover: {
       status: carryover.status,
       source: carryover.source,
