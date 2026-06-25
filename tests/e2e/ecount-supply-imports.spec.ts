@@ -21,6 +21,12 @@ const ECOUNT_UPLOAD = {
   unitPrice: 12000,
   appliedUnitPrice: "₩12,000",
 };
+const ECOUNT_STORE_MAPPING_UPLOAD = {
+  fileName: "e2e-ecount-store-mapping.xlsx",
+  dateNo: "2026/06/22 -1",
+  firstRawStoreName: "E2E미매핑1호점",
+  secondRawStoreName: "E2E미매핑2호점",
+};
 const headerRow = [
   "일자-No.",
   "거래처명",
@@ -173,6 +179,35 @@ function createUploadWorkbook() {
   ]);
 }
 
+function createStoreMappingWorkbook() {
+  const supplyAmount = ECOUNT_UPLOAD.quantity * ECOUNT_UPLOAD.unitPrice;
+
+  return createWorkbook([
+    ["판매현황"],
+    headerRow,
+    [
+      ECOUNT_STORE_MAPPING_UPLOAD.dateNo,
+      ECOUNT_STORE_MAPPING_UPLOAD.firstRawStoreName,
+      `${ECOUNT_UPLOAD.productName} [${ECOUNT_UPLOAD.productSpec}]`,
+      ECOUNT_UPLOAD.quantity,
+      ECOUNT_UPLOAD.unitPrice,
+      supplyAmount,
+      null,
+      supplyAmount,
+    ],
+    [
+      ECOUNT_STORE_MAPPING_UPLOAD.dateNo,
+      ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName,
+      `${ECOUNT_UPLOAD.productName} [${ECOUNT_UPLOAD.productSpec}]`,
+      ECOUNT_UPLOAD.quantity,
+      ECOUNT_UPLOAD.unitPrice,
+      supplyAmount,
+      null,
+      supplyAmount,
+    ],
+  ]);
+}
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("이메일").fill(email);
@@ -240,6 +275,48 @@ test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트�
   await batchFilter.selectOption(uploadedBatchId ?? "");
   await page.getByRole("button", { name: "조회" }).click();
   await expect(uploadedRow.first()).toBeVisible();
+});
+
+test("본사는 두 번째 미매핑 거래처 지점 드롭다운을 선택하고 저장할 수 있다", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/ecount-imports");
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: ECOUNT_STORE_MAPPING_UPLOAD.fileName,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: createStoreMappingWorkbook(),
+  });
+  await page.getByRole("button", { name: "업로드" }).click();
+
+  await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: "매핑 필요" })).toBeVisible();
+
+  const firstStoreSelect = page.getByLabel(
+    `${ECOUNT_STORE_MAPPING_UPLOAD.firstRawStoreName} 지점 매핑`,
+  );
+  const secondStoreSelect = page.getByLabel(
+    `${ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName} 지점 매핑`,
+  );
+  await expect(firstStoreSelect).toBeVisible();
+  await expect(secondStoreSelect).toBeVisible();
+
+  await secondStoreSelect.selectOption({ label: "강남점" });
+  expect(pageErrors).toEqual([]);
+  await expect(secondStoreSelect).toHaveValue("store-gangnam");
+
+  const secondStoreRow = page
+    .getByRole("row")
+    .filter({ hasText: ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName });
+  await secondStoreRow.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText("지점 매핑을 저장했습니다.")).toBeVisible();
+  await expect(secondStoreSelect).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
 });
 
 test("본사는 출고/입고 리포트 화면을 조회 필터와 함께 본다", async ({

@@ -676,6 +676,26 @@ export default async function globalSetup() {
     select: { id: true },
   });
 
+  const ecountUploadProduct = await prisma.product.upsert({
+    where: {
+      name_category_spec: {
+        name: "E2E업로드갈치",
+        category: "생물",
+        spec: "31-35미",
+      },
+    },
+    create: {
+      name: "E2E업로드갈치",
+      category: "생물",
+      spec: "31-35미",
+      defaultUnitPrice: 12000,
+      isActive: true,
+      updatedById: hqUser.id,
+    },
+    update: { isActive: true, updatedById: hqUser.id },
+    select: { id: true },
+  });
+
   await prisma.storeExternalAlias.upsert({
     where: {
       provider_rawName: {
@@ -696,18 +716,18 @@ export default async function globalSetup() {
     where: {
       provider_rawName_rawSpec: {
         provider: "ECOUNT",
-        rawName: "E2E업로드갈치",
+        rawName: "E2E업로드갈치 [31-35미]",
         rawSpec: "31-35미",
       },
     },
     create: {
       provider: "ECOUNT",
-      rawName: "E2E업로드갈치",
+      rawName: "E2E업로드갈치 [31-35미]",
       rawSpec: "31-35미",
-      productId: ecountProduct.id,
+      productId: ecountUploadProduct.id,
       updatedById: hqUser.id,
     },
-    update: { productId: ecountProduct.id, updatedById: hqUser.id },
+    update: { productId: ecountUploadProduct.id, updatedById: hqUser.id },
   });
 
   // 멱등성을 위해 기존 e2e 이카운트 fixture를 정리한 뒤 다시 만든다.
