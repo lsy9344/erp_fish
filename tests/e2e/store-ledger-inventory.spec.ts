@@ -238,8 +238,8 @@ test("지점장 재고 화면은 FIFO 재고금액은 노출하되 단가와 조
   await expect(row).toContainText("10");
   await expect(row).toContainText("9");
   await expect(row.getByText("고침 완료").first()).toBeVisible();
-  // 보완(2026-06-22): FIFO 재고금액은 지점장에게도 노출한다.
-  await expect(row).toContainText("8,888,886원");
+  // 재고금액은 카드에서 제거됐다(2026-06-25). FIFO 금액 텍스트도 더는 노출하지 않는다.
+  await expect(row).not.toContainText("8,888,886원");
   // 단가/조정 금액(고치기 전·고친 후·바뀐 수량)은 계속 차단한다.
   await expect(row).not.toContainText("987,654원");
   await expect(row).not.toContainText("9,876,540원");
@@ -299,7 +299,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`);
   await currentQuantityInput.fill("9");
-  await page.getByLabel(`${product.name} 바꾼 이유`).fill("실사 재고 차이");
+  await page.getByLabel(`${product.name} 당일재고 바꾼 이유`).fill("실사 재고 차이");
   await page.getByRole("button", { name: `${product.name} 고친 이유 저장` }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "고친 내용이 저장됐습니다." }),

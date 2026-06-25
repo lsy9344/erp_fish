@@ -1043,16 +1043,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /바꾼 이유/);
   assert.match(componentSource, /고치기 전/);
   assert.match(componentSource, /고친 후/);
-  assert.match(inventoryUiSource, /당일 판매량/);
+  assert.match(inventoryUiSource, /처리재고/);
   assert.match(
     componentSource,
     /return systemQuantity - actualQuantity;/,
-    "당일 판매량은 기준재고에서 당일재고를 뺀 판매 흐름으로 표시해야 한다",
+    "처리재고는 기준재고에서 당일재고를 뺀 흐름으로 표시해야 한다",
   );
   assert.match(
     componentSource,
     /바뀐 수량/,
-    "강제 실사 보정의 signed 차이는 당일 판매량과 별도 라벨로 보여야 한다",
+    "강제 실사 보정의 signed 차이는 처리재고와 별도 라벨로 보여야 한다",
   );
   assert.doesNotMatch(
     componentSource,
