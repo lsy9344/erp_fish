@@ -564,6 +564,80 @@ test("지점장은 급여(인건비) 항목을 여러 건 저장하고 재방문
   expect(ledger.ledgerLaborItems[1]?.earlyLeaveMemo).toBe("조기 퇴근");
 });
 
+test("근무 단계는 근무/인건비 명칭, 근무 요약, 급여 행 기준 참고 인원과 불일치 안내를 보여준다", async ({
+  page,
+}) => {
+  await login(page);
+
+  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
+
+  // Task 1/2: 6단계 네비게이션 명칭과 근무 요약 제목.
+  await expect(
+    page.getByRole("link", { name: /6단계: 근무\/인건비/ }),
+  ).toHaveAttribute("aria-current", "step");
+  await expect(page.getByText("근무 요약")).toBeVisible();
+  await expect(
+    page.getByText(
+      "급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다.",
+    ),
+  ).toBeVisible();
+
+  // 근무인원 3명, 급여 행 2명 → 참고 인원 2명, 불일치 안내 노출.
+  await page.getByRole("textbox", { name: "근무인원" }).fill("3");
+
+  await page.getByRole("button", { name: "직원 추가" }).click();
+  await page.getByLabel("직원명").nth(0).fill("홍길동");
+  await page.getByLabel("급여 금액").nth(0).fill("1200000");
+
+  await page.getByRole("button", { name: "직원 추가" }).click();
+  await page.getByLabel("직원명").nth(1).fill("김철수");
+  await page.getByLabel("급여 금액").nth(1).fill("800000");
+
+  const laborSection = page
+    .locator("section")
+    .filter({ hasText: "급여 / 인건비" });
+  await expect(laborSection).toContainText("급여 행 기준 참고 인원");
+  await expect(laborSection).toContainText("2명");
+  await expect(
+    page.getByText("근무인원과 급여 행 기준 참고 인원이 다릅니다.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+
+  // 불일치 상태에서도 근무정보 저장과 급여 저장이 모두 성공한다.
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "급여 저장" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "급여 항목 2건을 저장했습니다." }),
+  ).toBeVisible();
+
+  // 재방문 후 근무인원과 급여 행이 유지된다.
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveValue(
+    "3",
+  );
+  await expect(page.getByLabel("직원명")).toHaveCount(2);
+  await expect(page.getByLabel("직원명").nth(0)).toHaveValue("홍길동");
+  await expect(page.getByLabel("직원명").nth(1)).toHaveValue("김철수");
+  await expect(
+    page.locator("section").filter({ hasText: "급여 / 인건비" }),
+  ).toContainText("2명");
+
+  const ledger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORY_STORE_ID },
+    orderBy: { updatedAt: "desc" },
+    include: { ledgerLaborItems: true },
+  });
+  expect(ledger.workerCount).toBe(3);
+  expect(ledger.ledgerLaborItems).toHaveLength(2);
+});
+
 test("급여 직원명이 비어 있으면 서버 검증 오류를 보여준다", async ({
   page,
 }) => {

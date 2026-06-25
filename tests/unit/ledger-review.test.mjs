@@ -522,6 +522,11 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
   assert.match(validationSource, /getLedgerReviewStepHref/);
   assert.match(validationSource, /getKstLedgerDateParam\(closingDate\)/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
+  // WO(2026-06-25): work 단계 라벨은 입력 화면과 맞춰 "근무/인건비"로 노출한다.
+  assert.match(
+    querySource,
+    /id:\s*"work",\s*\n\s*label:\s*"근무\/인건비"/,
+  );
   assert.match(querySource, /"paymentDifference"/);
   assert.match(querySource, /"결제수단 합계와 총매출 차이"/);
   assert.match(querySource, /"signed-krw"/);
