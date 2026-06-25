@@ -180,6 +180,7 @@ test("sales price plan model, queries, and actions follow expected contracts", (
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
+  assert.match(actionSource, /syncLedgerLossItemsWithSalesPricePlansInTx/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(
     actionSource,

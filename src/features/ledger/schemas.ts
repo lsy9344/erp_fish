@@ -238,6 +238,12 @@ const ledgerPurchaseItemSchema = z.object({
   id: z
     .unknown()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  // "carryover" = 전일 이월돼 오늘 팔린 품목 행(매입 아님). 판매 예정가만 저장하고
+  // ledgerPurchaseItem으로는 저장하지 않는다. 빈 값/누락은 일반 매입 행으로 본다.
+  kind: z.preprocess(
+    (value) => (value === "carryover" ? "carryover" : "purchase"),
+    z.enum(["purchase", "carryover"]),
+  ),
   sourceType: z.preprocess(
     (value) =>
       value === "" || value === null || value === undefined ? "MANUAL" : value,

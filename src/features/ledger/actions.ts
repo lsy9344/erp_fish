@@ -13,6 +13,7 @@ import {
 } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
+import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { db } from "~/server/db";
@@ -585,42 +586,47 @@ async function saveStoreSalesPricePlansForPurchasesInTx(
     });
   }
 
-  if (plannedByProductId.size === 0) {
-    return;
-  }
+  if (plannedByProductId.size > 0) {
+    // 판매 예정가는 active 품목에만 저장한다(매입 스냅샷 productId가 비활성일 수 있어 방어).
+    const activeProducts = await tx.product.findMany({
+      where: { id: { in: [...plannedByProductId.keys()] }, isActive: true },
+      select: { id: true },
+    });
 
-  // 판매 예정가는 active 품목에만 저장한다(매입 스냅샷 productId가 비활성일 수 있어 방어).
-  const activeProducts = await tx.product.findMany({
-    where: { id: { in: [...plannedByProductId.keys()] }, isActive: true },
-    select: { id: true },
-  });
+    for (const { id: productId } of activeProducts) {
+      const plannedUnitPrice = plannedByProductId.get(productId)!;
 
-  for (const { id: productId } of activeProducts) {
-    const plannedUnitPrice = plannedByProductId.get(productId)!;
-
-    await tx.storeSalesPricePlan.upsert({
-      where: {
-        storeId_businessDate_productId: {
+      await tx.storeSalesPricePlan.upsert({
+        where: {
+          storeId_businessDate_productId: {
+            storeId: input.storeId,
+            businessDate: input.businessDate,
+            productId,
+          },
+        },
+        update: {
+          plannedUnitPrice,
+          updatedById: input.actorId,
+        },
+        create: {
           storeId: input.storeId,
           businessDate: input.businessDate,
           productId,
+          plannedUnitPrice,
+          memo: null,
+          createdById: input.actorId,
+          updatedById: input.actorId,
         },
-      },
-      update: {
-        plannedUnitPrice,
-        updatedById: input.actorId,
-      },
-      create: {
-        storeId: input.storeId,
-        businessDate: input.businessDate,
-        productId,
-        plannedUnitPrice,
-        memo: null,
-        createdById: input.actorId,
-        updatedById: input.actorId,
-      },
-    });
+      });
+    }
   }
+
+  await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
+    storeId: input.storeId,
+    businessDate: input.businessDate,
+    productIds: [...productIdsOnScreen],
+    actorId: input.actorId,
+  });
 }
 
 export async function submitLedgerForReview(
@@ -1055,12 +1061,18 @@ export async function saveLedgerPurchases(
         },
       );
 
+      // carryover 행(전일 이월 품목)은 매입 행이 아니라 판매 예정가만 받는 행이다.
+      // ledgerPurchaseItem 생성/검증에서는 제외하고, 판매 예정가 저장에만 포함한다.
+      const realPurchases = parsed.data.purchases.filter(
+        (purchase) => purchase.kind !== "carryover",
+      );
+
       const existingPurchaseItemsById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
       );
       const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
         beforeLedger.ledgerPurchaseItems,
-        parsed.data.purchases,
+        realPurchases,
       );
 
       if (Object.keys(ecountPurchaseEditErrors).length > 0) {
@@ -1069,14 +1081,14 @@ export async function saveLedgerPurchases(
 
       const standardIds = [
         ...new Set(
-          parsed.data.purchases
+          realPurchases
             .map((purchase) => purchase.purchaseStandardId)
             .filter((id): id is string => Boolean(id)),
         ),
       ];
       const productIds = [
         ...new Set(
-          parsed.data.purchases
+          realPurchases
             .map((purchase) => purchase.productId)
             .filter((id): id is string => Boolean(id)),
         ),
@@ -1124,9 +1136,9 @@ export async function saveLedgerPurchases(
         where: { dailyLedgerId: beforeLedger.id },
       });
 
-      if (parsed.data.purchases.length > 0) {
+      if (realPurchases.length > 0) {
         await tx.ledgerPurchaseItem.createMany({
-          data: parsed.data.purchases.map((purchase, index) => {
+          data: realPurchases.map((purchase, index) => {
             const standard = purchase.purchaseStandardId
               ? standardsById.get(purchase.purchaseStandardId)
               : null;
@@ -1322,6 +1334,7 @@ export async function saveLedgerPurchases(
         toStoreManagerLedgerCostStepData(afterLedger),
         afterLedger.storeId,
         afterLedger.closingDate,
+        afterLedger.id,
       );
     });
 

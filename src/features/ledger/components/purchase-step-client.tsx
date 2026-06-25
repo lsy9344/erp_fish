@@ -52,6 +52,10 @@ type PurchaseLine = {
   // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". 빈 문자열은 "계획 없음"이다.
   // 품목이 없는 자유 입력 행은 저장 대상이 아니라 항상 빈 값으로 둔다.
   plannedUnitPrice: string;
+  // "carryover" = 전일 이월돼 오늘 팔린 품목. 매입 행이 아니라 판매 예정가만 받는다.
+  kind: "purchase" | "carryover";
+  // carryover 행에 "전일재고 N"으로 표시할 전일 재고 수량.
+  previousQuantity: number;
 };
 
 type PurchaseStepClientProps = {
@@ -105,6 +109,8 @@ function createLineState(id: string): PurchaseLine {
     quantity: "",
     referenceInfo: "",
     plannedUnitPrice: "",
+    kind: "purchase",
+    previousQuantity: 0,
   };
 }
 
@@ -125,6 +131,8 @@ function toPurchaseLines(
     referenceInfo: item.referenceInfo ?? "",
     plannedUnitPrice:
       item.plannedUnitPrice === null ? "" : String(item.plannedUnitPrice),
+    kind: item.kind,
+    previousQuantity: item.previousQuantity,
   }));
 }
 
@@ -173,6 +181,7 @@ export function PurchaseStepClient({
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [carryoverWarning, setCarryoverWarning] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const saveConflict = useSaveConflictDialog();
@@ -251,7 +260,9 @@ export function PurchaseStepClient({
     setLedger(next);
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
-    const savedCount = next.purchaseItems.length;
+    const savedCount = next.purchaseItems.filter(
+      (item) => item.kind !== "carryover",
+    ).length;
     const nextMessage =
       message ??
       (savedCount > 0
@@ -259,6 +270,16 @@ export function PurchaseStepClient({
         : "저장됐습니다.");
     setResultMessage(nextMessage);
     toast.success(nextMessage);
+
+    // 저장은 됐지만 이월 품목 판매가가 비어 있으면 경고 배너로 알린다(차단은 안 함).
+    const blankCarryover = next.purchaseItems.filter(
+      (item) => item.kind === "carryover" && item.plannedUnitPrice === null,
+    ).length;
+    setCarryoverWarning(
+      blankCarryover > 0
+        ? `전일 이월 품목 ${blankCarryover}개의 오늘 판매가가 비어 있습니다. 입력하지 않으면 7단계 추정 매출이 “데이터 부족”으로 표시됩니다.`
+        : null,
+    );
   }
 
   function clearRowErrors() {
@@ -290,6 +311,7 @@ export function PurchaseStepClient({
 
     setIsSaving(true);
     setResultMessage(null);
+    setCarryoverWarning(null);
     setFormError(null);
     setFieldErrors({});
 
@@ -302,6 +324,7 @@ export function PurchaseStepClient({
         ledgerUpdatedAt: ledger.updatedAt,
         purchases: lines.map((line) => ({
           id: line.id,
+          kind: line.kind,
           sourceType: line.sourceType,
           productId: line.productId,
           purchaseStandardId: line.purchaseStandardId,
@@ -392,6 +415,7 @@ export function PurchaseStepClient({
   function updatePurchaseLine(lineId: string, next: Partial<PurchaseLine>) {
     clearRowErrors();
     setResultMessage(null);
+    setCarryoverWarning(null);
     setPurchaseItems((current) =>
       current.map((line) => (line.id === lineId ? { ...line, ...next } : line)),
     );
@@ -438,6 +462,15 @@ export function PurchaseStepClient({
 
   const isFormSaving = isSaving;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
+  // 전일 이월 품목(carryover) 행은 매입 합계에 잡히지 않고(0/0), 매입 항목 목록과 분리해
+  // 별도 섹션에 노출한다. carryover 행은 서버가 항상 일반 매입 행 뒤에 붙여 보내므로
+  // purchaseItems 내 index가 서버의 purchases.${index} 필드 오류 인덱스와 그대로 맞는다.
+  const hasPurchaseRows = purchaseItems.some(
+    (line) => line.kind !== "carryover",
+  );
+  const carryoverLines = purchaseItems.filter(
+    (line) => line.kind === "carryover",
+  );
   const hqEditReasonError = fieldErrors.reason?.[0];
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
@@ -514,13 +547,17 @@ export function PurchaseStepClient({
           </Button>
         </div>
 
-        {purchaseItems.length === 0 ? (
+        {!hasPurchaseRows ? (
           <p className="text-muted-foreground mb-3 text-sm">
             항목이 없습니다. 새 항목을 추가해 주세요.
           </p>
         ) : (
           <div className="mb-3 space-y-3">
             {purchaseItems.map((line, index) => {
+              // 이월 품목 행은 아래 전용 섹션에서 렌더한다(여기선 인덱스만 보존).
+              if (line.kind === "carryover") {
+                return null;
+              }
               const productError =
                 fieldErrors[`purchases.${index}.productId`]?.[0];
               const productNameError =
@@ -880,6 +917,101 @@ export function PurchaseStepClient({
           </div>
         )}
 
+        {/* 전일 이월돼 오늘 팔린 품목: 매입은 없고 판매 예정가만 받는다.
+            매입 화면에 행이 없던 근본 원인을 메워 7단계 "데이터 부족"을 없앤다. */}
+        {showSalesPricePlan && carryoverLines.length > 0 ? (
+          <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+            <div className="mb-2">
+              <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                전일 이월 품목 — 오늘 판매가만 입력하세요
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                어제 남아 오늘 팔린 품목입니다. 매입은 없으니 팔 가격만
+                넣으세요. 비워두면 7단계 추정 매출이 “데이터 부족”으로
+                표시됩니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {purchaseItems.map((line, index) => {
+                if (line.kind !== "carryover") {
+                  return null;
+                }
+                const plannedUnitPriceError =
+                  fieldErrors[`purchases.${index}.plannedUnitPrice`]?.[0];
+                const isBlank = line.plannedUnitPrice.trim() === "";
+
+                return (
+                  <div
+                    key={line.id}
+                    className="bg-background grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-end"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {line.productName}
+                        {line.productSpec ? (
+                          <span className="text-muted-foreground font-normal">
+                            {" "}
+                            / {line.productSpec}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 text-xs">
+                        전일재고 {line.previousQuantity} · 오늘 매입 없음
+                      </p>
+                    </div>
+                    <Field
+                      data-invalid={Boolean(plannedUnitPriceError)}
+                      className="sm:w-44"
+                    >
+                      <FieldLabel
+                        htmlFor={`carryover-planned-price-${line.id}`}
+                      >
+                        오늘 팔 가격(예상) · 이월
+                      </FieldLabel>
+                      <Input
+                        id={`carryover-planned-price-${line.id}`}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={line.plannedUnitPrice}
+                        disabled={isFormSaving || isOriginalEditBlocked}
+                        onChange={(event) =>
+                          updatePurchaseLine(line.id, {
+                            plannedUnitPrice: event.currentTarget.value,
+                          })
+                        }
+                        className={cn(
+                          "min-h-11 tabular-nums",
+                          isBlank
+                            ? "border-amber-500/60 focus-visible:ring-amber-500/40"
+                            : "",
+                        )}
+                        aria-invalid={Boolean(plannedUnitPriceError)}
+                        aria-describedby={`carryover-planned-price-${line.id}-help`}
+                        placeholder="판매가 입력"
+                      />
+                      <p
+                        id={`carryover-planned-price-${line.id}-help`}
+                        className="text-muted-foreground text-xs"
+                      >
+                        {isBlank
+                          ? "← 팔 가격을 입력하세요"
+                          : "7단계 추정 매출에 반영됩니다."}
+                      </p>
+                      {plannedUnitPriceError ? (
+                        <FieldError
+                          id={`carryover-planned-price-${line.id}-error`}
+                        >
+                          {plannedUnitPriceError}
+                        </FieldError>
+                      ) : null}
+                    </Field>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {productOptions.length === 0 ? (
           <p className="text-muted-foreground mb-3 text-sm">
             선택 가능한 active 품목이 없어도 수동 입력할 수 있습니다.
@@ -927,6 +1059,18 @@ export function PurchaseStepClient({
             >
               <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
               {resultMessage}
+            </p>
+          </div>
+        ) : null}
+
+        {carryoverWarning ? (
+          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+            <p
+              className="text-sm font-medium text-amber-800 dark:text-amber-200"
+              role="status"
+              aria-live="polite"
+            >
+              {carryoverWarning}
             </p>
           </div>
         ) : null}

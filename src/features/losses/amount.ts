@@ -30,3 +30,31 @@ export function calculatePlannedPriceLossAmount({
 
   return Math.min(lossAmount, MAX_KRW_INTEGER);
 }
+
+export function toPlannedPriceLossSnapshot({
+  plannedUnitPrice,
+  quantity,
+  recoveredAmount,
+}: {
+  plannedUnitPrice: number | null;
+  quantity: number;
+  recoveredAmount: number;
+}) {
+  if (plannedUnitPrice === null) {
+    return {
+      unitPrice: 0,
+      amount: 0,
+      usedPlannedPrice: false,
+    };
+  }
+
+  return {
+    unitPrice: plannedUnitPrice,
+    amount: calculatePlannedPriceLossAmount({
+      plannedUnitPrice,
+      quantity,
+      recoveredAmount,
+    }),
+    usedPlannedPrice: true,
+  };
+}

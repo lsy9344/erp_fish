@@ -92,11 +92,13 @@ function toStoreManagerDetail(detail: string | undefined): string | undefined {
 function toStoreManagerReviewStepMetrics(
   metrics: LedgerReviewStepMetric[],
 ): LedgerReviewStepMetric[] {
-  return metrics.filter(isStoreManagerVisibleMetric).map((metric) =>
-    metric.detail === undefined
-      ? metric
-      : { ...metric, detail: toStoreManagerDetail(metric.detail) },
-  );
+  return metrics
+    .filter(isStoreManagerVisibleMetric)
+    .map((metric) =>
+      metric.detail === undefined
+        ? metric
+        : { ...metric, detail: toStoreManagerDetail(metric.detail) },
+    );
 }
 
 export function toStoreManagerLedgerReviewStepData(

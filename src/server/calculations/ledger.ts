@@ -670,8 +670,7 @@ export function calculateLedgerReviewSummary({
   // 일부 품목 판매가 미입력은 정책(OQ) 게이트가 아니라 입력 부족이다. status는
   // policy-unconfirmed("기준 확인 필요") 대신 data-insufficient로 노출하고, 값은
   // 그대로 계산해 "과소 추정"임을 알린다. (3단계 매입 화면에 없던 전일 이월 품목 등)
-  const plannedSalesPartialReason =
-    "일부 품목 판매가 미입력 — 과소 추정";
+  const plannedSalesPartialReason = "일부 품목 판매가 미입력 — 과소 추정";
 
   const plannedSalesNotEnteredMetric = dataInsufficient(
     plannedSalesMissingReason,

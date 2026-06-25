@@ -79,8 +79,10 @@ const actionLabels: Record<string, string> = {
   "threshold.updated": "기준값 변경",
   "report.export.created": "리포트 Export 생성",
   "report.export.denied": "리포트 Export 거부",
-  "ledger.hq.ecount_unit_price.overridden": "본사 이카운트 출고/입고 적용 단가 보정",
-  "ledger.hq.purchases.unit_price.overridden": "본사 이카운트 출고/입고 적용 단가 보정",
+  "ledger.hq.ecount_unit_price.overridden":
+    "본사 이카운트 출고/입고 적용 단가 보정",
+  "ledger.hq.purchases.unit_price.overridden":
+    "본사 이카운트 출고/입고 적용 단가 보정",
   "ecount_supply_import.previewed": "이카운트 출고/입고 미리보기",
   "ecount_supply_import.committed": "이카운트 출고/입고 반영",
   "ecount_supply_import.voided": "이카운트 출고/입고 취소",

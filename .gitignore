@@ -74,6 +74,9 @@ tmp_scan.py
 
 # Large local source media
 audio_concept.m4a
+
+# 로컬 전용 이카운트 입력 엑셀 (저장소에 커밋하지 않음)
+docs/erp_input/
 .agents\.story-automator-active
 .agents/.story-automator-active
 

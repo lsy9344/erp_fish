@@ -186,6 +186,44 @@ test("planned sale price loss amount uses target price minus recovered sales", a
   );
 });
 
+test("planned sale price loss snapshot follows current plan availability", async () => {
+  const amountPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "amount.ts",
+  );
+  const { toPlannedPriceLossSnapshot } = await import(
+    pathToFileURL(amountPath).href
+  );
+
+  assert.deepEqual(
+    toPlannedPriceLossSnapshot({
+      plannedUnitPrice: 35000,
+      quantity: 2,
+      recoveredAmount: 50000,
+    }),
+    {
+      unitPrice: 35000,
+      amount: 20000,
+      usedPlannedPrice: true,
+    },
+  );
+
+  assert.deepEqual(
+    toPlannedPriceLossSnapshot({
+      plannedUnitPrice: null,
+      quantity: 2,
+      recoveredAmount: 50000,
+    }),
+    {
+      unitPrice: 0,
+      amount: 0,
+      usedPlannedPrice: false,
+    },
+  );
+});
+
 test("ledger loss calculations aggregate totals and threshold candidates", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -382,6 +420,15 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(pageSource, /LossStepClient/);
   assert.match(pageSource, /getLossStepData/);
   assert.doesNotMatch(pageSource, /손실 입력 준비/);
+
+  const plannedPriceSyncSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "planned-price-sync.ts",
+  );
+  assert.match(plannedPriceSyncSource, /editableLedgerStatuses/);
+  assert.match(plannedPriceSyncSource, /status:\s*\{\s*in:\s*\[/);
 });
 
 test("ledger loss review fixes keep thresholds, stale guards, safe amount display, and loss-only inventory flow", () => {

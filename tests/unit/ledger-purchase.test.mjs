@@ -392,6 +392,79 @@ test("ledger purchase schema treats plannedUnitPrice as optional and blocks same
   assert.equal(negative.success, false);
 });
 
+test("carryover rows: schema discriminates kind; save skips purchase create; GET appends from inventory", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const { ledgerPurchaseSchema } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const base = {
+    storeId: "store-1",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-25",
+    version: 1,
+  };
+
+  // kind를 안 보내면 일반 매입 행(purchase)으로 본다(본사/기존 클라이언트 호환).
+  const defaulted = ledgerPurchaseSchema.parse({
+    ...base,
+    purchases: [{ productId: "p1", unitPrice: "1000", quantity: "1" }],
+  });
+  assert.equal(defaulted.purchases[0].kind, "purchase");
+
+  // carryover 행은 수량/단가 0이어도 통과하고 kind를 보존한다(판매 예정가만 받는 행).
+  const carry = ledgerPurchaseSchema.parse({
+    ...base,
+    purchases: [
+      {
+        kind: "carryover",
+        productId: "p2",
+        unitPrice: "0",
+        quantity: "0",
+        plannedUnitPrice: "5000",
+      },
+    ],
+  });
+  assert.equal(carry.purchases[0].kind, "carryover");
+  assert.equal(carry.purchases[0].plannedUnitPrice, 5000);
+
+  // 저장 액션: carryover 행은 ledgerPurchaseItem 생성에서 제외(realPurchases)하되
+  // 판매 예정가 저장(saveStoreSalesPricePlansForPurchasesInTx)에는 전체 purchases를 넘긴다.
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
+  assert.match(
+    actionSource,
+    /const realPurchases = parsed\.data\.purchases\.filter\(/,
+  );
+  assert.match(actionSource, /purchase\.kind !== "carryover"/);
+  assert.match(actionSource, /realPurchases\.map\(\(purchase, index\)/);
+  // 계획 저장은 carryover를 포함한 전체 purchases를 받는다(이월 판매가도 저장).
+  assert.match(
+    actionSource,
+    /saveStoreSalesPricePlansForPurchasesInTx\(tx,\s*\{[\s\S]*?purchases:\s*parsed\.data\.purchases/,
+  );
+
+  // GET/저장 응답: 전일재고>0 이고 오늘 매입 안 한 품목을 carryover 행으로 붙인다.
+  const queriesSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+  assert.match(queriesSource, /previousQuantity:\s*\{\s*gt:\s*0\s*\}/);
+  assert.match(queriesSource, /productId:\s*\{\s*notIn:\s*\[\.\.\.purchaseProductIds\]/);
+  assert.match(queriesSource, /kind:\s*"carryover" as const/);
+});
+
 test("store purchase edit policy blocks ECount uploaded rows from store edits", async () => {
   const policyPath = assertProjectFile(
     "src",
@@ -570,6 +643,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /saveStoreSalesPricePlansForPurchasesInTx\(/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
   assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
+  assert.match(actionSource, /syncLedgerLossItemsWithSalesPricePlansInTx/);
   // 저장 응답도 매입 행에 판매 예정가를 채워야 한다(없으면 저장 직후 미저장 변경 경고가 잘못 뜸).
   assert.match(actionSource, /fillPurchasePlannedUnitPricesInTx\(/);
   // 계획 반영은 매입 행 생성 이후, 같은 트랜잭션에서 일어나야 한다(부분 저장 방지).

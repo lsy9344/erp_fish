@@ -8,6 +8,7 @@ import {
   assertStoreManagerClosingDateIsToday,
   getKstBusinessDate,
 } from "~/features/ledger/date";
+import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { revalidateStoreEntryPaths } from "~/server/revalidation";
 import {
   salesPricePlanSchema,
@@ -132,6 +133,10 @@ export async function saveSalesPricePlan(
       }
 
       // 입력에 없는 품목의 기존 계획은 삭제(품목 행 제거 = 계획 취소).
+      const productIdsToSync = new Set([
+        ...before.plans.map((plan) => plan.productId),
+        ...activeProductIds,
+      ]);
       const keepProductIds = [...activeProductIds];
       await tx.storeSalesPricePlan.deleteMany({
         where: {
@@ -170,6 +175,13 @@ export async function saveSalesPricePlan(
           },
         });
       }
+
+      await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
+        storeId: parsed.data.storeId,
+        businessDate: businessDateValue,
+        productIds: [...productIdsToSync],
+        actorId: actor.user.id,
+      });
 
       const after = await getSalesPricePlanStepDataInTx(
         tx,
