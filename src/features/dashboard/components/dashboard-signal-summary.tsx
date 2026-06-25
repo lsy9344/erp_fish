@@ -60,15 +60,14 @@ export function DashboardSignalSummary({
             aria-label={getSignalAccessibilityLabel(signal)}
             className={cn(
               style.className,
-              "h-auto max-w-full whitespace-normal",
-              showDetails &&
-                "items-start justify-start py-1 text-left",
+              // Badge 기본값(overflow-hidden·whitespace-nowrap·h-5)을 덮어써 라벨이
+              // 잘리지 않고 줄바꿈되며 뱃지 높이가 늘어나게 한다.
+              "h-auto max-w-full overflow-visible whitespace-normal",
+              showDetails && "items-start justify-start py-1 text-left",
             )}
           >
             <Icon aria-hidden="true" className={showDetails ? "mt-0.5" : ""} />
-            <span
-              className={cn("min-w-0", showDetails && "flex flex-col gap-0.5")}
-            >
+            <span className={cn(showDetails && "flex flex-col gap-0.5")}>
               <span>{signal.label}</span>
               {showDetails && signal.detail ? (
                 <span className="font-normal break-words opacity-80">
