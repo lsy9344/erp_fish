@@ -259,6 +259,9 @@ export async function saveLedgerInventoryItems(
           previousQuantity: item.previousQuantity,
           purchasedQuantity: item.purchasedQuantity,
           lossQuantity: item.lossQuantity,
+          carryoverSource: item.carryoverSource,
+          carryoverStatus: item.carryoverStatus,
+          carryoverLedgerId: item.carryoverLedgerId,
           currentQuantity:
             inputByProductId.get(item.productId)?.currentQuantity ??
             item.currentQuantity,

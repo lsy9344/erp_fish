@@ -816,6 +816,25 @@ test("inventory normal save requires matching adjustment record for changed actu
     ]),
     {},
   );
+  assert.deepEqual(
+    getInventorySaveAdjustmentErrors(
+      [
+        {
+          productId: "manual-product",
+          previousQuantity: 0,
+          purchasedQuantity: 0,
+          lossQuantity: 0,
+          currentQuantity: 3,
+          carryoverSource: "MANUAL",
+          carryoverStatus: "CARRYOVER_EMPTY",
+          carryoverLedgerId: null,
+        },
+      ],
+      [],
+    ),
+    {},
+    "manual first-entry rows should not require an adjustment reason on later saves",
+  );
 });
 
 test("inventory queries and actions implement carryover, purchase aggregation, and audit contracts", () => {
@@ -882,11 +901,11 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(querySource, /attachCarryoverHistories/);
   assert.match(querySource, /historyLimit/);
   assert.match(querySource, /sourceLossQuantity/);
-  // 월초 스냅샷에 누락된 활성 품목은 여전히 데이터 부족 행으로 펼친다.
-  assert.match(
+  // 월초 스냅샷에 누락된 활성 품목도 기본 표에 자동으로 펼치지 않는다.
+  assert.doesNotMatch(
     querySource,
-    /getActiveProductBases/,
-    "snapshot-missing products should still be shown as data-insufficient rows",
+    /missingSnapshotBases|getActiveProductBases/,
+    "snapshot-missing active products should be manual-add options, not auto-listed rows",
   );
   // 전일/월초 근거가 전혀 없을 때는 근거 없는 활성 품목을 자동 행으로 펼치지 않고
   // "품목 추가" 후보(manualProductOptions)로만 내린다.

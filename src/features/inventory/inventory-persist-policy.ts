@@ -31,3 +31,25 @@ export function shouldPersistInventoryLine(
     quantity !== item.quantity
   );
 }
+
+/**
+ * 전일/월초/매입/손실 근거 없이 사용자가 "품목 추가"로 처음 입력한 재고 행.
+ * 기준 수량과 실제 수량 차이를 재고 조정으로 보지 않는다.
+ */
+export function isManualFirstInventoryEntry(item: {
+  carryoverSource: string;
+  carryoverStatus: string;
+  carryoverLedgerId: string | null;
+  previousQuantity: number;
+  purchasedQuantity: number;
+  lossQuantity: number;
+}) {
+  return (
+    item.carryoverSource === "MANUAL" &&
+    item.carryoverStatus === "CARRYOVER_EMPTY" &&
+    item.carryoverLedgerId === null &&
+    item.previousQuantity === 0 &&
+    item.purchasedQuantity === 0 &&
+    item.lossQuantity === 0
+  );
+}

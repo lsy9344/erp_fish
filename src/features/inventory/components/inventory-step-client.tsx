@@ -53,6 +53,7 @@ import {
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
 import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-save-guard";
+import { isManualFirstInventoryEntry } from "~/features/inventory/inventory-persist-policy";
 import {
   type InventoryAdjustmentView,
   type InventoryManualProductOption,
@@ -244,6 +245,7 @@ export function InventoryStepClient({
   hqEditReasonRequired = false,
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const manualProductSelectRef = useRef<HTMLSelectElement>(null);
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
@@ -399,6 +401,10 @@ export function InventoryStepClient({
         continue;
       }
 
+      if (isManualFirstInventoryEntry(item)) {
+        continue;
+      }
+
       const systemQuantity = getSystemQuantity(item);
       const currentQuantity = parseQuantityInput(
         currentQuantityRefs.current[item.productId]?.value ??
@@ -540,11 +546,17 @@ export function InventoryStepClient({
   );
 
   function handleAddManualProduct() {
+    const selectedProductId =
+      manualProductId !== ""
+        ? manualProductId
+        : (manualProductSelectRef.current?.value ?? "");
     const option = availableManualOptions.find(
-      (candidate) => candidate.productId === manualProductId,
+      (candidate) => candidate.productId === selectedProductId,
     );
 
     if (!option) {
+      setResultMessage(null);
+      setFormError("추가할 품목을 선택해 주세요.");
       return;
     }
 
@@ -594,6 +606,10 @@ export function InventoryStepClient({
     // 직접 추가한 신규 행은 기준 재고(0)와의 차이를 "조정"으로 보지 않는다. 첫 입력이므로
     // 일반 저장으로 기록한다.
     if (addedManualIds.has(item.productId)) {
+      return false;
+    }
+
+    if (isManualFirstInventoryEntry(item)) {
       return false;
     }
 
@@ -934,7 +950,10 @@ export function InventoryStepClient({
 
     // 직접 추가했지만 미저장인 행은 "이월 공백"(0 오해) 대신 "직접 입력·근거 없음"으로
     // 표시한다. 추가 후보는 당일 매입/손실이 없는 품목뿐이라 다른 배지는 붙지 않는다.
-    if (addedManualIds.has(item.productId)) {
+    if (
+      addedManualIds.has(item.productId) ||
+      isManualFirstInventoryEntry(item)
+    ) {
       badges.push({
         label: "직접 입력",
         detail:
@@ -1719,6 +1738,7 @@ export function InventoryStepClient({
                 </label>
                 <select
                   id="inventory-manual-product"
+                  ref={manualProductSelectRef}
                   aria-label="추가할 품목 선택"
                   value={manualProductId}
                   onChange={(event) =>
@@ -1740,9 +1760,7 @@ export function InventoryStepClient({
                 type="button"
                 variant="outline"
                 onClick={handleAddManualProduct}
-                disabled={
-                  !manualProductId || isSaving || isAdjustmentSavePending
-                }
+                disabled={isSaving || isAdjustmentSavePending}
                 className="min-h-11 shrink-0"
               >
                 추가

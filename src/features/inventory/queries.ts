@@ -809,31 +809,12 @@ async function getCarryoverBases(
   });
 
   if (snapshots.length > 0) {
-    const activeProductBases = await getActiveProductBases(tx);
-    const snapshotProductIds = new Set(
-      snapshots.map((snapshot) => snapshot.productId),
-    );
-    const missingSnapshotBases = activeProductBases
-      .filter((base) => !snapshotProductIds.has(base.productId))
-      .map<ProductInventoryBase>((base) => ({
-        ...base,
-        carryoverStatus: InventoryCarryoverStatus.DATA_INSUFFICIENT,
-        previousQuantityDetail: buildCarryoverDetail({
-          source: base.carryoverSource,
-          status: InventoryCarryoverStatus.DATA_INSUFFICIENT,
-          resolvedQuantity: base.previousQuantity,
-        }),
-      }));
-
     return {
       status: "loaded" as const,
       source: InventoryCarryoverSource.OPENING_SNAPSHOT,
       message:
-        missingSnapshotBases.length > 0
-          ? "월초 이월 재고를 불러왔습니다. 스냅샷이 없는 품목은 데이터 부족 상태로 표시됩니다."
-          : "월초 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.",
-      bases: [
-        ...snapshots.map<ProductInventoryBase>((snapshot) => ({
+        "월초 이월 재고를 불러왔습니다. 월초 스냅샷이 있는 품목만 표시합니다. 추가 재고는 품목 추가로 입력해 주세요.",
+      bases: snapshots.map<ProductInventoryBase>((snapshot) => ({
           productId: snapshot.productId,
           productName: snapshot.productName,
           productCategory: snapshot.productCategory,
@@ -845,8 +826,6 @@ async function getCarryoverBases(
           carryoverLedgerId: null,
           previousQuantityDetail: buildSnapshotCarryoverDetail({ snapshot }),
         })),
-        ...missingSnapshotBases,
-      ],
     };
   }
 
@@ -905,51 +884,6 @@ async function getCarryoverBases(
       "전일 장부나 월초 스냅샷이 없습니다. 오늘 매입·손실·저장 품목만 표시합니다. 추가 재고는 품목 추가로 입력해 주세요.",
     bases: [],
   };
-}
-
-async function getActiveProductBases(
-  tx: Prisma.TransactionClient,
-  options: {
-    carryoverStatus?: InventoryCarryoverStatus;
-  } = {},
-) {
-  const products = await tx.product.findMany({
-    where: {
-      isActive: true,
-    },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      spec: true,
-    },
-  });
-
-  return products.map<ProductInventoryBase>((product) => {
-    const carryoverStatus =
-      options.carryoverStatus ?? InventoryCarryoverStatus.DATA_INSUFFICIENT;
-
-    return {
-      productId: product.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      // 가격 정책 전환(2026-06-24): 이월 공백/근거 부족 상태에서 품목 마스터 단가를
-      // 재고 평가 단가로 박지 않는다. 이 경로는 previousQuantity=0이라 금액도 0이며,
-      // 실제 단가는 매입/스냅샷(item.unitPrice/snapshot.unitPrice)에서만 들어온다.
-      unitPrice: 0,
-      previousQuantity: 0,
-      carryoverSource: InventoryCarryoverSource.MANUAL,
-      carryoverStatus,
-      carryoverLedgerId: null,
-      previousQuantityDetail: buildCarryoverDetail({
-        source: InventoryCarryoverSource.MANUAL,
-        status: carryoverStatus,
-        resolvedQuantity: 0,
-      }),
-    };
-  });
 }
 
 // 기본 표에 없는(근거 없는) 활성 품목을 "품목 추가" 후보로 내린다. visibleProductIds는
