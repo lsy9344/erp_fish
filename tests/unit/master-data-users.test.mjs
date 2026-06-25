@@ -186,7 +186,7 @@ test("user management server actions enforce auth, transactions, audit, hashing,
 test("seed preserves an intentionally disabled headquarters account", () => {
   const seed = readProjectFile("prisma", "seed.ts");
   const updateBlock = seed.match(
-    /const headquartersUser = await prisma\.user\.upsert\(\{[\s\S]*?update:\s*{(?<body>[\s\S]*?)\n\s*},\n\s*}\);/,
+    /const headquartersUser = await prisma\.user\.upsert\(\{[\s\S]*?update:\s*{(?<body>[\s\S]*?)\r?\n\s*},\r?\n\s*}\);/,
   );
 
   assert.ok(
