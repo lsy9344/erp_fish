@@ -5,6 +5,7 @@
 | 항목 | 값 |
 | --- | --- |
 | 작성일 | 2026-06-13 |
+| 갱신일 | 2026-06-25 (OQ-7/OQ-17 사용자 결정 반영) |
 | 작성자 | GPT-5 Codex Dev Agent |
 | 검토자 | Noah Lee(PM/개발 리드), 본사 운영자 |
 | 승인자 | Noah Lee(PM/개발 리드) 승인 대기, 본사 운영자 승인 대기 |
@@ -22,11 +23,12 @@
 
 | 영역 | 결정 |
 | --- | --- |
-| CAP-7 FIFO 적용 | 모든 품목 자동 적용이 아니라 승인된 정규 품목 중 lot 근거가 완전한 품목에만 확정 계산을 적용한다. |
-| CAP-7 차단 상태 | `mapping_failed`, `needs_review`, `basis_missing`, `pending_review`, `revalidation_required`, 단가 확인 필요, 음수/부족 lot, 승인자 없음 상태는 FIFO 확정 계산을 차단한다. |
+| CAP-7 FIFO 적용 | FIFO 계산 대상은 모든 재고품목이다. 정책상 예외 품목을 두지 않는다. 근거가 불완전한 행은 적용 제외가 아니라 확정 계산 대신 상태값으로 반환한다. |
+| CAP-7 계산 불가 상태 | `mapping_failed`, `needs_review`, `basis_missing`, `pending_review`, `revalidation_required`, 단가 확인 필요, 음수/부족 lot, 승인자 없음 상태는 FIFO 확정 계산을 막고 `기준 확인 필요`/`데이터 부족`/`검토 필요`/`재검증 필요`/`계산 불가`로 반환한다. |
 | Lot source | 확정 이월 lot, 이카운트 업로드 commit lot, 본사 수동 수정 lot, 지점 수동 lot만 후속 구현 후보로 둔다. Preview-only row는 lot이 아니다. |
 | Lot tie-breaker | 매입일자 -> 업로드 commit lot -> 본사 수동 수정 lot -> 지점 수동 lot -> commit/저장 시각 -> source row number -> audit event 순서로 고정한다. |
-| OQ-17 순서 | 확정 이월 lot -> 매입 lot 생성 -> 반품/void -> 조정 증가 -> 판매 차감 -> 손실/폐기/떨이 차감 -> 조정 감소 -> 마감 snapshot 순서로 처리한다. |
+| OQ-17 순서 | 전일 확정 이월 lot -> 당일 본사 출고/지점 입고 lot -> 승인된 조정 증가 -> 반품/void 입고 취소 -> 판매 수량 FIFO 차감 -> 손실/폐기/떨이 FIFO 차감 -> 승인된 조정 감소 -> 마감 snapshot 순서로 처리한다. 아침 본사 출고는 당일 판매 전 입고로 보고, 판매 수량은 지점 마감 입력값으로 역산한다. |
+| 판매 예정가 vs FIFO 원가 | 판매 예정가는 매출 후보(판매 수량 x 판매 예정가)에만 쓰고 FIFO 원가 계산에는 쓰지 않는다. FIFO 원가는 출고/입고 단가와 이월 lot 단가로만 계산한다. |
 | 마감/정정 | 마감 전 이월 후보는 확정 lot이 아니다. 마감 후 정정은 append-only로 남기고 `정정 반영 재확인`, `이월 재확인 필요` 상태를 표시한다. |
 | CAP-8 통합 재고 | 본사 권한의 전체 지점 또는 배정 지점 scope를 서버에서 적용한다. CAP-7 승인 전 원가/lot 근거는 확정값처럼 표시하지 않는다. |
 | CAP-4 상품 분석 | 본사 전용 지표와 지점장 차단 필드를 분리한다. OQ-10B와 FIFO 정책 승인 전에는 민감 분석 구현 story를 만들지 않는다. |
@@ -36,25 +38,27 @@
 
 | OQ | 현재 상태 | Story 8.3 정책 | 구현 전 종료 기준 |
 | --- | --- | --- | --- |
-| OQ-7 | 승인 대기 | FIFO는 일부 적용이다. 승인된 정규 품목이고 lot 근거가 완전한 경우에만 확정 계산한다. | Noah Lee(PM/개발 리드)와 본사 운영자가 FIFO 일부 적용 기준, 제외 상태, 승인자 기록을 승인한다. |
+| OQ-7 | 승인 대기 | FIFO 계산 대상은 모든 재고품목이다. 근거가 불완전한 행은 적용 제외가 아니라 상태값으로 반환한다. | Noah Lee(PM/개발 리드)와 본사 운영자가 모든 재고품목 적용 기준, 계산 불가 상태값, 승인자 기록을 승인한다. |
 | OQ-10B | 미종결 | 본사가 지표별 민감 노출 허용을 조정하는 UI/API/configurable exposure는 열지 않는다. | 허용 가능 여부, 승인자, 감사 로그, 롤백 기준, 기본 차단값을 별도 산출물로 승인한다. |
-| OQ-17 | 승인 대기 | Story 7.4의 처리 순서를 CAP-7/CAP-8/CAP-4 공통 선행 기준으로 채택한다. | 반품/void, 조정 증가/감소, 판매 차감, 손실/폐기/떨이, 마감 snapshot 순서를 승인하고 예외 상태를 기록한다. |
+| OQ-17 | 승인 대기 | Story 7.4의 아침 출고/마감 역산 처리 순서를 CAP-7/CAP-8/CAP-4 공통 선행 기준으로 채택한다. | 당일 본사 출고/지점 입고, 조정 증가/감소, 판매 수량 역산 차감, 손실/폐기/떨이, 마감 snapshot 순서와 판매 수량 역산식을 승인하고 예외 상태를 기록한다. |
 
 ## CAP-7 FIFO 정책 메모
 
 ### 적용 품목 범위
 
-| 조건 | FIFO 확정 계산 | 상태 표시 | 비고 |
+FIFO 계산 대상은 모든 재고품목이다. 아래 "차단"은 FIFO 대상에서 빼는 것이 아니라, 해당 행을 확정 금액 대신 상태값으로 반환한다는 뜻이다.
+
+| 조건 | FIFO 계산 후보 | 계산 결과 상태 | 비고 |
 | --- | --- | --- | --- |
-| 정규 품목 `name/category/spec` 승인, mapping version 유효, 매입일자/수량/단가/source row가 완전함 | 가능 | 확정 가능 | 후속 CAP-7 구현 story에서 lot replay 테스트 필요 |
-| `mapping_failed` | 차단 | `기준 확인 필요` | 정규 품목 귀속 불가 |
-| `needs_review` | 차단 | `검토 필요` | 본사 검수 전 확정 금지 |
-| `basis_missing` | 차단 | `데이터 부족` | 단가, 수량, 규격, 매입일자, source identity 중 결측 |
-| `pending_review` | 차단 | `검토 필요` | 승인자/승인 시각 기록 전 확정 금지 |
-| `revalidation_required` | 차단 | `재검증 필요` | preview 이후 mapping/parser/source 변경 |
-| 단가 확인 필요 | 차단 | `기준 확인 필요` | 가격 신뢰 상태 승인 필요 |
-| 음수 lot 또는 부족 lot 발생 | 차단 | `계산 불가` | 신규 저장 차단, 과거 replay는 예외 승인과 감사 로그 필요 |
-| 승인자 없음 | 차단 | `검토 필요` | 정책 또는 row-level 승인 근거 필요 |
+| 정규 품목 `name/category/spec` 승인, mapping version 유효, 매입일자/수량/단가/source row가 완전함 | 대상 | 확정 가능 | 후속 CAP-7 구현 story에서 lot replay 테스트 필요 |
+| `mapping_failed` | 대상 | `기준 확인 필요` | 정규 품목 귀속 불가. 확정 금액 대신 상태 반환 |
+| `needs_review` | 대상 | `검토 필요` | 본사 검수 전 확정 금지 |
+| `basis_missing` | 대상 | `데이터 부족` | 단가, 수량, 규격, 매입일자, source identity 중 결측 |
+| `pending_review` | 대상 | `검토 필요` | 승인자/승인 시각 기록 전 확정 금지 |
+| `revalidation_required` | 대상 | `재검증 필요` | preview 이후 mapping/parser/source 변경 |
+| 단가 확인 필요 | 대상 | `기준 확인 필요` | 가격 신뢰 상태 승인 필요 |
+| 음수 lot 또는 부족 lot 발생 | 대상 | `계산 불가` | 신규 저장 차단, 과거 replay는 예외 승인과 감사 로그 필요 |
+| 승인자 없음 | 대상 | `검토 필요` | 정책 또는 row-level 승인 근거 필요 |
 
 FIFO 확정 계산은 기존 MVP `calculateInventoryAmount(quantity, unitPrice)` 또는 `calculateSystemInventoryQuantity(previousQuantity + purchasedQuantity - lossQuantity)`를 재명명해서 만들지 않는다. FIFO 값은 별도 lot/valuation 근거가 있어야 하며, 근거가 없으면 `확인 필요`, `계산 불가`, `데이터 부족`, `재확인 필요`로 반환한다.
 
@@ -81,16 +85,32 @@ FIFO 확정 계산은 기존 MVP `calculateInventoryAmount(quantity, unitPrice)`
 
 ### OQ-17 처리 순서
 
+운영 흐름은 "본사 아침 출고 -> 지점 현장 판매 -> 마감 재고 입력"이다. 아침 본사 이카운트 출고분은 당일 판매 전 지점 입고 lot으로 보고, 판매 수량은 지점 마감 입력값으로 역산한다.
+
 | 순서 | 이벤트 | lot 잔량 영향 | 원가/재고금액 영향 | 차단/상태 |
 | --- | --- | --- | --- | --- |
-| 0 | 확정 이월 lot | 이전 마감 snapshot을 시작 잔량으로 로드 | 시작 재고금액 후보 | 마감 전 후보는 `기준 확인 필요` |
-| 1 | 매입 lot 생성 | 수동/업로드 commit lot을 증가 | 매입 단가 기준 재고금액 증가 | mapping/단가 미확정 row 차단 |
-| 2 | 반품/void | 대상 lot 제거 또는 correction으로 잔량 0 처리 | 원 lot 원가 역분개 후보 | 대상 lot 불명확 시 `기준 확인 필요` |
-| 3 | 조정 증가 | 본사 승인 correction lot append | 승인 단가로 재고금액 증가 | 단가 기준 없으면 `기준 확인 필요` |
-| 4 | 판매 차감 | FIFO 순서로 가장 오래된 잔량 차감 | 차감 lot 원가 합계가 판매원가 후보 | 판매/소비 차감 산식 미확정 시 `기준 확인 필요` |
-| 5 | 손실/폐기/떨이 차감 | FIFO 순서로 lot 잔량 차감 | 손실/폐기/떨이 원가 후보 | 수량 초과 또는 유형 불명확 시 차단 |
-| 6 | 조정 감소 | FIFO 순서 또는 지정 lot 차감 | 조정 전/후 금액과 차이 기록 | 음수 lot이면 저장 차단 |
-| 7 | 마감 snapshot | lot 잔량 snapshot 생성 | 후속 이월 기준점 확정 | 정정 발생 시 재확인 필요 |
+| 0 | 전일 확정 이월 lot 로드 | 전날 마감 후 남은 lot 잔량을 오늘 시작 재고로 로드 | 시작 재고금액 후보 | 마감 전 후보는 `기준 확인 필요` |
+| 1 | 당일 본사 출고/지점 입고 lot 생성 | 아침 이카운트 출고분을 당일 판매 전 입고 lot으로 증가 | 출고/입고 단가 기준 재고금액 증가 | mapping/단가 미확정 row는 상태값 반환 |
+| 2 | 승인된 조정 증가 lot | 본사 승인 correction lot append | 승인 단가로 재고금액 증가 | 단가 기준 없으면 `기준 확인 필요` |
+| 3 | 반품/void 입고 취소 | 당일 입고 취소 시 판매 차감 전에 lot 제거 또는 잔량 0 처리 | 원 lot 원가 역분개 후보 | 대상 lot 불명확 시 `기준 확인 필요` |
+| 4 | 판매 수량 FIFO 차감 | FIFO 순서로 가장 오래된 잔량 차감 | 차감 lot 원가 합계가 판매원가 후보 | 판매 수량 역산 불가 시 `기준 확인 필요` |
+| 5 | 손실/폐기/떨이 FIFO 차감 | 판매 후 남은 오래된 lot부터 차감 | 손실/폐기/떨이 원가 후보 | 수량 초과 또는 유형 불명확 시 차단 |
+| 6 | 승인된 조정 감소 | FIFO 순서 또는 지정 lot 차감 | 조정 전/후 금액과 차이 기록 | 음수 lot이면 저장 차단 |
+| 7 | 마감 snapshot 생성 | 남은 lot 잔량 snapshot 생성 | 후속 이월 기준점 확정 | 정정 발생 시 재확인 필요 |
+
+판매 수량 역산식:
+
+```text
+판매 수량 =
+  전일 이월 수량
+  + 당일 본사 출고/지점 입고 수량
+  + 승인된 조정 증가 수량
+  - 마감 현재 재고 수량
+  - 손실/폐기/떨이 수량
+  - 승인된 조정 감소 수량
+```
+
+판매 예정가는 매출 후보 계산에만 쓰고 FIFO 원가/재고금액 계산에는 쓰지 않는다.
 
 ### 이월, 마감, 정정 영향
 
@@ -210,7 +230,7 @@ OQ-10B가 닫히기 전에는 민감 분석 노출 허용, configurable exposure
 | `src/server/calculations/inventory.ts` | 현재 MVP 기본 재고 계산을 FIFO 확정값으로 부르지 않는 정책과 정렬된다. |
 | `src/server/sensitive-fields.ts` | FIFO 원가, 재고금액, 이익, 마진율, lot, 타 지점 비교 차단 기준과 정렬된다. |
 | `prisma/schema.prisma` | `PurchaseLot`, `InventoryValuation`, `ProductMapping`, `ImportBatch`가 없으므로 이 문서는 후속 구현 후보만 남기고 schema를 변경하지 않는다. |
-| Story 7.4 정책 | FIFO 일부 적용, OQ-17 처리 순서, 마감/정정 append-only 원칙을 유지한다. |
+| Story 7.4 정책 | FIFO 모든 재고품목 적용(근거 부족 행은 상태값 반환), OQ-17 아침 출고/마감 역산 처리 순서, 마감/정정 append-only 원칙을 유지한다. |
 | Story 8.2 정책 | upload preview/commit/reprocess, mapping 상태, 원문 보존, 감사 기준을 FIFO lot 생성 차단 조건으로 재사용한다. |
 | Story 7.6 정책 | 지점장 민감 필드 차단 기준을 CAP-8/CAP-4에도 적용한다. |
 

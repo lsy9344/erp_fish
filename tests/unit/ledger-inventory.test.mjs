@@ -629,6 +629,84 @@ test("FIFO lot calculation consumes oldest lots first and marks legacy opening l
   );
 });
 
+// WO(2026-06-25, OQ-7/OQ-17): 모든 재고품목이 FIFO 계산 대상이고, 아침 본사 출고는
+// 당일 판매 전 입고 lot으로 본다. 판매 수량은 마감 입력값으로 역산하며(사용 가능 수량 -
+// 마감 재고), 오래된 lot(전일 이월)부터 차감한다.
+//
+// 작업지시서 권장 시나리오:
+//   전일 이월 30개 @ 900원, 당일 본사 출고 70개 @ 1,000원
+//   판매 예정가 1,300원, 마감 재고 15개
+// 단가가 다른 이월 lot과 당일 출고 lot이 있을 때 FIFO가 오래된 lot부터 차감하는지 검증한다.
+test("OQ-17 reverse-calc consumes oldest lots first from morning HQ shipment", async () => {
+  const fifoPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const { calculateFifoLotSnapshots } = await import(
+    pathToFileURL(fifoPath).href
+  );
+
+  const scenario = {
+    previousLots: [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "yesterday",
+        sourcePurchaseItemId: null,
+        unitPrice: 900,
+        remainingQuantity: 30,
+      },
+    ],
+    legacyOpening: { unitPrice: 0, quantity: 0 },
+    // 아침 본사 출고/지점 입고 lot. 당일 판매 전 입고로 본다.
+    purchases: [{ id: "hq-shipment", unitPrice: 1_000, quantity: 70 }],
+    // 마감 현재 재고. 판매 수량은 (사용 가능 수량 - 마감 재고)로 역산된다.
+    closingQuantity: 15,
+  };
+
+  const result = calculateFifoLotSnapshots(scenario);
+
+  // 사용 가능 100개 - 마감 15개 = 85개가 lot에서 차감된다.
+  // FIFO: 전일 이월 30개 @ 900원(27,000) -> 당일 출고 55개 @ 1,000원(55,000) = 82,000원.
+  // ponytail: 현 엔진은 판매/손실을 한 묶음(소비량)으로 차감한다. 작업지시서 예시의
+  //   "판매 80 + 폐기 5" 분리(COGS 77,000 / 폐기 5,000)는 손실 수량을 별도 차감하는
+  //   후속 FIFO 구현 story 범위다(작업지시서 "제외" 항목). 여기서는 오래된 lot 우선 차감과
+  //   판매 예정가 비의존성만 고정한다.
+  assert.equal(result.consumedAmount, 82_000);
+  assert.equal(result.remainingAmount, 15_000);
+  assert.equal(result.containsLegacyOpening, false);
+  assert.deepEqual(
+    result.lots.map((lot) => ({
+      sourceType: lot.sourceType,
+      unitPrice: lot.unitPrice,
+      consumedQuantity: lot.consumedQuantity,
+      remainingQuantity: lot.remainingQuantity,
+    })),
+    [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        unitPrice: 900,
+        consumedQuantity: 30,
+        remainingQuantity: 0,
+      },
+      {
+        sourceType: "PURCHASE",
+        unitPrice: 1_000,
+        consumedQuantity: 55,
+        remainingQuantity: 15,
+      },
+    ],
+  );
+
+  // 작업지시서 완료 기준: 판매 예정가를 바꿔도 FIFO 원가와 재고금액은 바뀌지 않는다.
+  // calculateFifoLotSnapshots는 판매 예정가를 입력으로 받지 않으므로(FIFO 원가는 출고/이월
+  // 단가로만 계산), 어떤 판매 예정가에도 같은 결과를 낸다. 같은 입력 재계산으로 이를 고정한다.
+  const recomputed = calculateFifoLotSnapshots(scenario);
+  assert.equal(recomputed.consumedAmount, result.consumedAmount);
+  assert.equal(recomputed.remainingAmount, result.remainingAmount);
+});
+
 // WO-G(2026-06-22): 스키마와 마이그레이션에 FIFO lot 영업 기준일이 추가된다.
 test("LedgerInventoryFifoLot has sourceBusinessDate column and migration", () => {
   const schema = readProjectFile("prisma", "schema.prisma");

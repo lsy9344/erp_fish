@@ -32,11 +32,11 @@ so that CAP-7/CAP-8/CAP-4가 같은 재고 원가 근거를 사용하게 할 수
   - [x] 산출물 제목, 작성일, 작성자, 검토자, 승인자, 승인 상태, 관련 CAP/OQ/FR/story, 적용 범위, 구현 승격 여부를 명시한다.
   - [x] 이 story는 제품 동작 구현이 아니라 discovery/policy story다. `src/`, `prisma/`, `tests/` 코드를 수정하지 않는다.
 - [x] CAP-7 FIFO 정책 메모를 Story 7.4 정책과 Story 8.2 업로드 계약에 맞춰 통합한다. (AC: 1, 4)
-  - [x] Story 7.4의 일부 적용 원칙을 유지한다: FIFO 확정 계산은 모든 품목 자동 적용이 아니라 승인된 정규 품목 중 lot 근거가 완전한 품목에만 적용한다.
-  - [x] 적용 제외/차단 상태를 정의한다: `mapping_failed`, `needs_review`, `basis_missing`, `pending_review`, `revalidation_required`, 단가 확인 필요, 음수/부족 lot, 승인자 없음.
+  - [x] Story 7.4의 모든 재고품목 적용 원칙을 유지한다: FIFO 계산 대상은 모든 재고품목이며, 근거가 불완전한 행은 적용 제외가 아니라 확정 계산 대신 상태값으로 반환한다. (2026-06-25 OQ-7 결정 반영)
+  - [x] 계산 불가 상태를 정의한다: `mapping_failed`, `needs_review`, `basis_missing`, `pending_review`, `revalidation_required`, 단가 확인 필요, 음수/부족 lot, 승인자 없음 행은 적용 제외가 아니라 상태값으로 반환한다.
   - [x] lot 생성 source를 정의한다: 확정 이월, 이카운트 업로드 commit lot, 본사 수동 수정 lot, 지점 수동 lot.
   - [x] 같은 품목/일자 tie-breaker를 고정한다: 매입일자 우선, 업로드 commit lot, 본사 수동 수정 lot, 지점 수동 lot, commit/저장 시각, source row number, audit event 순서.
-  - [x] OQ-17 처리 순서를 문서화한다: 확정 이월 lot -> 매입 lot 생성 -> 반품/void -> 조정 증가 -> 판매 차감 -> 손실/폐기/떨이 차감 -> 조정 감소 -> 마감 snapshot.
+  - [x] OQ-17 처리 순서를 문서화한다: 전일 확정 이월 lot -> 당일 본사 출고/지점 입고 lot -> 승인된 조정 증가 -> 반품/void 입고 취소 -> 판매 수량 FIFO 차감 -> 손실/폐기/떨이 FIFO 차감 -> 승인된 조정 감소 -> 마감 snapshot. 아침 출고는 당일 판매 전 입고로 보고 판매 수량은 마감 입력값으로 역산한다. (2026-06-25 OQ-17 결정 반영)
   - [x] 마감 전 이월 후보, 마감 후 lot 잔량 snapshot, append-only 정정, `정정 반영 재확인`/`이월 재확인 필요` 상태를 정의한다.
 - [x] CAP-8 본사 통합 전체 재고 뷰 범위를 확정한다. (AC: 2, 4)
   - [x] 조회 대상 지점 범위를 정의한다: 본사 권한의 전체 지점 또는 배정 지점 scope를 서버에서 적용한다.
@@ -88,7 +88,7 @@ so that CAP-7/CAP-8/CAP-4가 같은 재고 원가 근거를 사용하게 할 수
 
 - Story 8.2는 CAP-5/CAP-6 계약을 정책-only로 확정했고, CAP-7/FIFO, 통합 재고, 상품 분석은 Story 8.3과 OQ-7/OQ-17 전까지 구현하지 않는다고 명시했다. [Source: `_bmad-output/implementation-artifacts/8-2-품목-정규화와-이카운트-업로드-계약-확정.md`]
 - Story 8.2 정책 산출물은 원문 보존, `approved`/`needs_review`/`mapping_failed`/`deferred`/`revalidation_required`, preview mapping version 고정, commit/void/reprocess 감사, 본사 마감 후 직접 commit/void 금지를 정의했다. Story 8.3은 이 상태값을 FIFO lot 생성과 통합 재고 표시의 차단 기준으로 재사용해야 한다. [Source: `_bmad-output/planning-artifacts/policy-decisions/8-2-품목-정규화와-이카운트-업로드-계약.md`]
-- Story 7.4 정책 산출물은 FIFO를 모든 품목 자동 적용이 아니라 승인된 정규 품목 중 lot 근거가 완전한 품목에만 적용하고, OQ-17 처리 순서를 확정 이월 -> 매입 lot 생성 -> 반품/void -> 조정 증가 -> 판매 차감 -> 손실/폐기/떨이 차감 -> 조정 감소 -> 마감 snapshot으로 제안했다. Story 8.3은 이 초안을 CAP-8/CAP-4의 선행 정책으로 연결해야 한다. [Source: `_bmad-output/planning-artifacts/policy-decisions/7-4-fifo-적용-범위와-재고-원가-처리-순서.md`]
+- Story 7.4 정책 산출물은 FIFO를 모든 재고품목에 적용하고(근거 부족 행은 적용 제외가 아니라 상태값 반환), OQ-17 처리 순서를 전일 확정 이월 -> 당일 본사 출고/지점 입고 -> 승인된 조정 증가 -> 반품/void 입고 취소 -> 판매 수량 FIFO 차감 -> 손실/폐기/떨이 FIFO 차감 -> 승인된 조정 감소 -> 마감 snapshot으로 확정했다(아침 출고=당일 판매 전 입고, 판매 수량=마감 입력값 역산). Story 8.3은 이 기준을 CAP-8/CAP-4의 선행 정책으로 연결해야 한다. [Source: `_bmad-output/planning-artifacts/policy-decisions/7-4-fifo-적용-범위와-재고-원가-처리-순서.md`]
 - Story 7.6은 지점장 민감 필드 노출 차단 매트릭스를 승인했다. Story 8.3은 상품 분석과 통합 재고에서 원가, 이익, 마진율, 재고금액, lot 근거, 타 지점 비교를 지점장 경로에서 차단하는 기준을 유지해야 한다. [Source: `_bmad-output/implementation-artifacts/7-6-지점장-민감-필드-노출-차단-매트릭스-승인.md`]
 - 최근 commits는 `03ad1f1 feat(story-8.2): 품목 정규화와 이카운트 업로드 계약 확정`, `ae325f9 feat(story-8.1): 직원 근무 급여 참고 범위와 개인정보 기준 확정`, `8a87f86 feat(story-7.7): 차이 당일 판매량 의미 변경 범위 확정`, `2258d50 feat(story-7.6): 지점장 민감 필드 노출 차단 매트릭스 승인`, `df8c252 feat(story-7.5): 희망 판매가 기준 손실액 정책 확정`이다. [Source: `git log --oneline -5`]
 - 현재 worktree에는 이 workflow 실행 전부터 `_bmad-output/story-automator/orchestration-1-20260611-080819.md` 수정이 있었다. Dev agent는 unrelated artifact churn을 되돌리지 않는다. [Source: `git status --short`]
