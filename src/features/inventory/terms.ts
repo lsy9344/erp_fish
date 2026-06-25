@@ -18,6 +18,7 @@ export const inventoryTerms = {
   // 재고 수량을 바꾼 이유 관련
   adjustmentReason: "당일재고 바꾼 이유",
   adjustmentReasonPlaceholder: "당일재고 바꾼 이유",
+  adjustmentReasonAriaLabel: "재고 조정 이유",
   adjustmentReasonRequired: "바꾼 이유를 입력해 주세요.",
 
   // 도움말/안내 문구

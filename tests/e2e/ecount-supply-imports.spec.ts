@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { deflateRawSync } from "node:zlib";
+import { writeFile } from "node:fs/promises";
 
 import { expect, test, type Page } from "@playwright/test";
 
@@ -15,7 +16,7 @@ const ECOUNT_UPLOAD = {
   dateInput: "2026-06-21",
   dateNo: "2026/06/21 -1",
   rawStoreName: "E2E강남점",
-  productName: "E2E업로드갈치",
+  productName: "제주갈치",
   productSpec: "31-35미",
   quantity: 2,
   unitPrice: 12000,
@@ -154,14 +155,14 @@ function createWorkbook(rows: WorkbookCell[][]) {
   ]);
 }
 
-function createUploadWorkbook() {
+function createUploadWorkbook(dateNo = ECOUNT_UPLOAD.dateNo) {
   const supplyAmount = ECOUNT_UPLOAD.quantity * ECOUNT_UPLOAD.unitPrice;
 
   return createWorkbook([
     ["판매현황"],
     headerRow,
     [
-      ECOUNT_UPLOAD.dateNo,
+      dateNo,
       ECOUNT_UPLOAD.rawStoreName,
       `${ECOUNT_UPLOAD.productName} [${ECOUNT_UPLOAD.productSpec}]`,
       ECOUNT_UPLOAD.quantity,
@@ -197,20 +198,33 @@ test("본사는 이카운트 업로드 화면에 진입해 파일 업로드와 �
 
 test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트에서 확인한다", async ({
   page,
-}) => {
+}, testInfo) => {
   await login(page, "hq@example.com");
   await page.goto("/app/ecount-imports");
+  const uploadPath = testInfo.outputPath(ECOUNT_UPLOAD.fileName);
+  const uploadDateNo = `${ECOUNT_UPLOAD.dateNo}-${testInfo.workerIndex}-${Date.now()}`;
+  await writeFile(uploadPath, createUploadWorkbook(uploadDateNo));
 
-  await page.locator('input[type="file"]').setInputFiles({
-    name: ECOUNT_UPLOAD.fileName,
-    mimeType:
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: createUploadWorkbook(),
-  });
+  await page.locator('input[type="file"]').setInputFiles(uploadPath);
   await page.getByRole("button", { name: "업로드" }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
   await expect(page.getByText(ECOUNT_UPLOAD.fileName)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "매핑 필요" }),
+  ).toBeVisible();
+
+  const uploadedRawProductName = `${ECOUNT_UPLOAD.productName} [${ECOUNT_UPLOAD.productSpec}]`;
+  const unmappedProductRow = page
+    .getByRole("row")
+    .filter({ hasText: uploadedRawProductName });
+  await unmappedProductRow
+    .getByRole("combobox", { name: `${uploadedRawProductName} 품목 매핑` })
+    .selectOption({
+      label: `${ECOUNT_UPLOAD.productName} · ${ECOUNT_UPLOAD.productSpec}`,
+    });
+  await unmappedProductRow.getByRole("button", { name: "저장" }).click();
+
   await expect(page.getByText("commit 가능")).toBeVisible();
 
   await page.getByRole("button", { name: "본사 장부에 반영" }).click();
