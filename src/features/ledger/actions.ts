@@ -1147,7 +1147,7 @@ export async function saveLedgerPurchases(
               throw ledgerPurchaseValidationError(
                 index,
                 "purchaseStandardId",
-                "매입 기준을 확인해 주세요.",
+                "참고 단가를 확인해 주세요.",
               );
             }
 
@@ -1159,7 +1159,7 @@ export async function saveLedgerPurchases(
               throw ledgerPurchaseValidationError(
                 index,
                 "purchaseStandardId",
-                "매입 기준과 품목이 일치하지 않습니다.",
+                "참고 단가와 품목이 일치하지 않습니다.",
               );
             }
 

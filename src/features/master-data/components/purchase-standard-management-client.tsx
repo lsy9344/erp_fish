@@ -279,7 +279,7 @@ export function PurchaseStandardManagementClient({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button type="button" onClick={openCreateDialog}>
             <PlusIcon data-icon="inline-start" />
-            매입 기준 추가
+            참고 단가 추가
           </Button>
         </div>
       </div>
@@ -289,7 +289,7 @@ export function PurchaseStandardManagementClient({
           <TableHeader>
             <TableRow>
               <TableHead>품목</TableHead>
-              <TableHead>기준 단가</TableHead>
+              <TableHead>참고 단가</TableHead>
               <TableHead>참조 정보</TableHead>
               <TableHead>상태</TableHead>
               <TableHead>마지막 수정 시각</TableHead>
@@ -385,7 +385,7 @@ export function PurchaseStandardManagementClient({
                   colSpan={6}
                   className="text-muted-foreground py-8 text-center"
                 >
-                  조건에 맞는 매입 기준이 없습니다.
+                  조건에 맞는 참고 단가가 없습니다.
                 </TableCell>
               </TableRow>
             ) : null}
@@ -401,11 +401,11 @@ export function PurchaseStandardManagementClient({
           <DialogHeader>
             <DialogTitle>
               {dialogState?.mode === "edit"
-                ? "매입 기준 수정"
-                : "매입 기준 추가"}
+                ? "참고 단가 수정"
+                : "참고 단가 추가"}
             </DialogTitle>
             <DialogDescription>
-              품목별 기준 단가 또는 참고 정보를 관리합니다.
+              품목별 참고 단가 또는 참조 정보를 관리합니다.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -441,7 +441,7 @@ export function PurchaseStandardManagementClient({
             </Field>
             <Field data-invalid={Boolean(priceError)}>
               <FieldLabel htmlFor="purchase-standard-price">
-                기준 단가
+                참고 단가
               </FieldLabel>
               <Input
                 ref={priceInputRef}

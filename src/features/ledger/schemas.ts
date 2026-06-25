@@ -303,7 +303,7 @@ export const ledgerPurchaseSchema = z
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "이카운트 매입은 품목 또는 매입 기준을 선택해 주세요.",
+          message: "이카운트 출고/입고 라인은 앱 품목을 선택해 주세요.",
           path: ["purchases", index, "productId"],
         });
       }

@@ -664,6 +664,6 @@ test("rejects ECount workbooks without item rows to import", async () => {
       }),
     (error) =>
       error instanceof EcountPurchaseImportError &&
-      error.message === "가져올 이카운트 매입 행이 없습니다.",
+      error.message === "가져올 이카운트 출고/입고 행이 없습니다.",
   );
 });

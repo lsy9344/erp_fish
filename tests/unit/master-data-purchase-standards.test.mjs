@@ -82,7 +82,7 @@ test("purchase standard schema normalizes KRW integer input and rejects invalid 
 
     assert.equal(result.success, false);
     assert.deepEqual(result.error.flatten().fieldErrors.standardUnitPrice, [
-      "기준 단가는 0원 이상의 정수여야 합니다.",
+      "참고 단가는 0원 이상의 정수여야 합니다.",
     ]);
   }
 
@@ -98,7 +98,7 @@ test("purchase standard schema normalizes KRW integer input and rejects invalid 
   );
   assert.deepEqual(
     missingRequiredReference.error.flatten().fieldErrors.standardUnitPrice,
-    ["기준 단가 또는 참조 정보를 입력해 주세요."],
+    ["참고 단가 또는 참조 정보를 입력해 주세요."],
   );
 });
 
@@ -236,10 +236,14 @@ test("purchase standard screen keeps headquarters shell, URL filter, and form ac
   assert.match(clientSource, /pushFilters/);
   assert.match(clientSource, /\/app\/master-data\/purchase-standards/);
   assert.match(clientSource, /품목/);
-  assert.match(clientSource, /기준 단가/);
+  assert.match(clientSource, /참고 단가/);
   assert.match(clientSource, /참조 정보/);
   assert.match(clientSource, /마지막 수정 시각/);
   assert.match(clientSource, /상태 적용/);
+  assert.doesNotMatch(clientSource, /매입 기준 추가/);
+  assert.doesNotMatch(clientSource, /매입 기준 수정/);
+  assert.doesNotMatch(clientSource, />기준 단가</);
+  assert.doesNotMatch(clientSource, /조건에 맞는 매입 기준이 없습니다/);
   assert.doesNotMatch(clientSource, /\/app\/dashboard/);
   // WO(2026-06-24): 이카운트 가져오기는 전용 이카운트 출고/입고 업로드 화면으로 이동했으므로
   // 매입 기준 관리 화면은 "엑셀 불러오기" 버튼/가져오기 다이얼로그 배선을 더 이상 갖지 않는다.

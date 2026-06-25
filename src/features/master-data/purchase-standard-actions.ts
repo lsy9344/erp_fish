@@ -96,16 +96,16 @@ function invalidProductError<T>(): ActionResult<T> {
 function inactiveProductActivationError<T>(): ActionResult<T> {
   return actionError(
     "INACTIVE_PRODUCT_STANDARD_ACTIVATION",
-    "비활성 품목의 매입 기준은 활성화할 수 없습니다.",
+    "비활성 품목의 참고 단가는 활성화할 수 없습니다.",
   );
 }
 
 function duplicatePurchaseStandardError<T>(): ActionResult<T> {
   return actionError(
     "DUPLICATE_PURCHASE_STANDARD",
-    "이미 매입 기준이 등록된 품목입니다.",
+    "이미 참고 단가가 등록된 품목입니다.",
     {
-      productId: ["이미 매입 기준이 등록된 품목입니다."],
+      productId: ["이미 참고 단가가 등록된 품목입니다."],
     },
   );
 }
@@ -113,7 +113,7 @@ function duplicatePurchaseStandardError<T>(): ActionResult<T> {
 function missingPurchaseStandardError<T>(): ActionResult<T> {
   return actionError(
     "PURCHASE_STANDARD_NOT_FOUND",
-    "매입 기준을 찾을 수 없습니다.",
+    "참고 단가를 찾을 수 없습니다.",
   );
 }
 

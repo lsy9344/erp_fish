@@ -270,7 +270,7 @@ test("purchase standard schema requires a product and price or reference info", 
     "품목을 선택해 주세요.",
   ]);
   assert.deepEqual(blank.error.flatten().fieldErrors.standardUnitPrice, [
-    "기준 단가 또는 참조 정보를 입력해 주세요.",
+    "참고 단가 또는 참조 정보를 입력해 주세요.",
   ]);
 
   const negative = purchaseStandardFormSchema.safeParse({
@@ -280,7 +280,7 @@ test("purchase standard schema requires a product and price or reference info", 
   });
   assert.equal(negative.success, false);
   assert.deepEqual(negative.error.flatten().fieldErrors.standardUnitPrice, [
-    "기준 단가는 0원 이상의 정수여야 합니다.",
+    "참고 단가는 0원 이상의 정수여야 합니다.",
   ]);
 
   const tooLarge = purchaseStandardFormSchema.safeParse({
@@ -290,7 +290,7 @@ test("purchase standard schema requires a product and price or reference info", 
   });
   assert.equal(tooLarge.success, false);
   assert.deepEqual(tooLarge.error.flatten().fieldErrors.standardUnitPrice, [
-    "기준 단가는 0원 이상의 정수여야 합니다.",
+    "참고 단가는 0원 이상의 정수여야 합니다.",
   ]);
 });
 

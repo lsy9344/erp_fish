@@ -103,7 +103,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(getAuditTargetTypeLabel("Store"), "지점");
   assert.equal(getAuditTargetTypeLabel("User"), "사용자/권한");
   assert.equal(getAuditTargetTypeLabel("Product"), "품목");
-  assert.equal(getAuditTargetTypeLabel("PurchaseStandard"), "매입 기준");
+  assert.equal(getAuditTargetTypeLabel("PurchaseStandard"), "품목 참고 단가");
   assert.equal(getAuditTargetTypeLabel("LedgerInputCode"), "코드");
   assert.equal(getAuditTargetTypeLabel("DailyLedger"), "장부");
   assert.equal(getAuditTargetTypeLabel("CorrectionRecord"), "정정 기록");

@@ -522,7 +522,9 @@ export function parseEcountPurchaseWorkbook(
   }
 
   if (purchases.length === 0) {
-    throw new EcountPurchaseImportError("가져올 이카운트 매입 행이 없습니다.");
+    throw new EcountPurchaseImportError(
+      "가져올 이카운트 출고/입고 행이 없습니다.",
+    );
   }
 
   return {

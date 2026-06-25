@@ -235,7 +235,7 @@ export async function importPurchaseStandardsFromEcount(
             actorId: actor.id,
             before: null,
             after: toProductAuditValue(product),
-            reason: "매입 기준 화면 이카운트 엑셀 업로드",
+            reason: "품목 참고 단가 화면 이카운트 엑셀 업로드",
           });
         }
 
@@ -277,7 +277,7 @@ export async function importPurchaseStandardsFromEcount(
               referenceInfo: created.referenceInfo,
               isActive: created.isActive,
             }),
-            reason: "매입 기준 화면 이카운트 엑셀 업로드",
+            reason: "품목 참고 단가 화면 이카운트 엑셀 업로드",
           });
           continue;
         }
@@ -320,7 +320,7 @@ export async function importPurchaseStandardsFromEcount(
             referenceInfo: updated.referenceInfo,
             isActive: updated.isActive,
           }),
-          reason: "매입 기준 화면 이카운트 엑셀 업로드",
+          reason: "품목 참고 단가 화면 이카운트 엑셀 업로드",
         });
       }
 

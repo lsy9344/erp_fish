@@ -704,7 +704,7 @@ export async function saveHqLedgerPurchases(
               "입력값을 확인해 주세요.",
               {
                 [`purchases.${index}.purchaseStandardId`]: [
-                  "매입 기준을 확인해 주세요.",
+                  "참고 단가를 확인해 주세요.",
                 ],
               },
             );
@@ -720,7 +720,7 @@ export async function saveHqLedgerPurchases(
               "입력값을 확인해 주세요.",
               {
                 [`purchases.${index}.purchaseStandardId`]: [
-                  "매입 기준과 품목이 일치하지 않습니다.",
+                  "참고 단가와 품목이 일치하지 않습니다.",
                 ],
               },
             );

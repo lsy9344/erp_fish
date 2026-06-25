@@ -48,6 +48,8 @@ const reportPage = () =>
   readProjectFile("src", "app", "app", "reports", "ecount-supply", "page.tsx");
 const e2eSpec = () =>
   readProjectFile("tests", "e2e", "ecount-supply-imports.spec.ts");
+const auditFormat = () =>
+  readProjectFile("src", "features", "audit", "audit-format.ts");
 
 // #1 지점장도 이카운트 라인의 적용 단가를 수정할 수 있다(클라이언트 잠금 해제).
 test("#1 unit-price input is no longer locked for store-manager ECOUNT lines", () => {
@@ -141,6 +143,11 @@ test("#4 applied-price override audit is emitted with source and applied prices"
     source,
     /ledger\.hq\.ecount_unit_price\.overridden/,
     "should emit dedicated unit-price override audit action",
+  );
+  assert.match(
+    auditFormat(),
+    /"ledger\.hq\.ecount_unit_price\.overridden":\s*"본사 이카운트 출고\/입고 적용 단가 보정"/,
+    "audit history should label the emitted ECOUNT override action",
   );
   assert.match(
     source,
