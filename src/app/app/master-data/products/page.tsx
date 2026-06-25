@@ -10,6 +10,8 @@ import {
 } from "~/features/master-data/product-queries";
 import { requireSettingsAccess } from "~/server/authz";
 
+export const dynamic = "force-dynamic";
+
 type ProductManagementPageProps = {
   searchParams: Promise<{
     q?: string | string[];
@@ -39,7 +41,7 @@ export default async function ProductManagementPage({
     >
       <PageHeader
         title="품목 마스터"
-        description="품목명, 구분, 규격, 기본 단가와 활성 상태를 관리합니다."
+        description="품목명, 구분, 규격, 참고 단가와 활성 상태를 관리합니다."
       />
       <ProductManagementClient products={products} filters={filters} />
     </HeadquartersShell>
