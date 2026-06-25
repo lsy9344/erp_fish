@@ -48,6 +48,8 @@ import type {
   MonthlyRevenueRankingSummary,
   MonthlyTopRevenueItemSummary,
   ProductCategoryPerformance,
+  ProductProfitabilityReportItem,
+  ProductProfitabilitySummary,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -327,6 +329,8 @@ export function getMonthlyClosingAnomalyReportPath({
 // 매입 단가(unitPrice)로 폴백하되 fallbackItemCount로 집계해 "판매가 미반영분"을 알린다.
 // COGS는 여전히 원가(FIFO 소진금액 또는 매입단가)로 계산한다(매출-원가 정의 일관성).
 type CategoryPerformanceItem = {
+  productId?: string | null;
+  productName?: string | null;
   productCategory: string;
   previousQuantity: number;
   purchasedQuantity: number;
@@ -431,6 +435,117 @@ export function buildProductCategoryPerformance(
       salesPriceFallbackItemCount: fallbackCount,
     };
   });
+}
+
+// WO(2026-06-25): 당일 품목별 추정 이익률 + 전체 판매분 합산 요약.
+// buildProductCategoryPerformance와 동일한 헬퍼(getItemSoldQuantity / getItemSalesUnitPrice /
+// getItemCogs)와 동일한 행 제외 규칙(당일재고 null·판매수량 0 이하 제외)을 쓰므로,
+// 품목 행 합계와 냉동/생물 카테고리 합계는 같은 기준으로 맞는다(테스트로 보장).
+// 기타 카테고리는 카테고리 차트와 동일하게 제외한다.
+export function buildProductProfitability(
+  ledgers: Array<{
+    ledgerInventoryItems: CategoryPerformanceItem[];
+  }>,
+): ProductProfitabilitySummary {
+  const byProduct = new Map<
+    string,
+    {
+      productId: string;
+      productName: string;
+      productCategory: "냉동" | "생물";
+      soldQuantity: number;
+      sales: number;
+      cogs: number;
+      usedCostFallback: boolean;
+    }
+  >();
+
+  for (const ledger of ledgers) {
+    for (const item of ledger.ledgerInventoryItems) {
+      if (item.productCategory !== "냉동" && item.productCategory !== "생물") {
+        continue;
+      }
+
+      const soldQuantity = getItemSoldQuantity(item);
+      if (soldQuantity === null || soldQuantity <= 0) continue;
+
+      // 같은 품목이 여러 지점에 있으면 합산한다. productId가 없으면 품목명으로 묶는다.
+      const key = item.productId ?? `name:${item.productName ?? ""}`;
+      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
+        getItemSalesUnitPrice(item);
+
+      const stats = byProduct.get(key) ?? {
+        productId: item.productId ?? key,
+        productName: item.productName ?? "이름 없음",
+        productCategory: item.productCategory,
+        soldQuantity: 0,
+        sales: 0,
+        cogs: 0,
+        usedCostFallback: false,
+      };
+      stats.soldQuantity += soldQuantity;
+      stats.sales += soldQuantity * salesUnitPrice;
+      stats.cogs += getItemCogs(item, soldQuantity);
+      if (!usedPlannedPrice) stats.usedCostFallback = true;
+      byProduct.set(key, stats);
+    }
+  }
+
+  const items: ProductProfitabilityReportItem[] = Array.from(
+    byProduct.values(),
+  )
+    .map((stats): ProductProfitabilityReportItem => {
+      const grossProfit = stats.sales - stats.cogs;
+      // 추정 매출이 0이면 이익률을 낼 수 없다(0 나눗셈 방지).
+      const grossMarginRate =
+        stats.sales > 0 ? grossProfit / stats.sales : null;
+      const statusLabel: ProductProfitabilityReportItem["statusLabel"] =
+        stats.sales <= 0
+          ? "계산 불가"
+          : stats.usedCostFallback
+            ? "판매가 미반영"
+            : "추정";
+
+      return {
+        productId: stats.productId,
+        productName: stats.productName,
+        productCategory: stats.productCategory,
+        soldQuantity: stats.soldQuantity,
+        estimatedSalesAmount: stats.sales,
+        estimatedCogsAmount: stats.cogs,
+        estimatedGrossProfit: grossProfit,
+        estimatedGrossMarginRate: grossMarginRate,
+        salesBasis: stats.usedCostFallback ? "cost" : "planned",
+        statusLabel,
+      };
+    })
+    // 추정 판매액 내림차순(시인성: 큰 매출 품목이 위로).
+    .sort((a, b) => b.estimatedSalesAmount - a.estimatedSalesAmount);
+
+  const totalSalesAmount = items.reduce(
+    (sum, item) => sum + item.estimatedSalesAmount,
+    0,
+  );
+  const totalCogsAmount = items.reduce(
+    (sum, item) => sum + item.estimatedCogsAmount,
+    0,
+  );
+  const totalGrossProfit = totalSalesAmount - totalCogsAmount;
+
+  return {
+    items,
+    totalSalesAmount,
+    totalCogsAmount,
+    totalGrossProfit,
+    totalGrossMarginRate:
+      totalSalesAmount > 0 ? totalGrossProfit / totalSalesAmount : null,
+    salesPriceFallbackItemCount: items.filter(
+      (item) => item.salesBasis === "cost",
+    ).length,
+    unavailableItemCount: items.filter(
+      (item) => item.estimatedGrossMarginRate === null,
+    ).length,
+  };
 }
 
 export async function getHqDailyMeetingReport({
@@ -592,6 +707,7 @@ export async function getHqDailyMeetingReport({
     categoryPerformance: buildProductCategoryPerformance(
       ledgersWithPlannedPrice,
     ),
+    productProfitability: buildProductProfitability(ledgersWithPlannedPrice),
   };
 }
 

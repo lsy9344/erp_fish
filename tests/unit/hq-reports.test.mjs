@@ -210,6 +210,153 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
   ]);
 });
 
+test("buildProductProfitability returns per-item rows that reconcile with category totals", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildProductProfitability, buildProductCategoryPerformance } =
+    await import(pathToFileURL(queryPath).href);
+
+  // buildProductCategoryPerformance와 같은 입력으로, 품목 합계가 카테고리 합계와
+  // 일치하는지 본다. 같은 품목(productId)이 두 지점에 나뉘어 있어도 합산해야 한다.
+  const ledgers = [
+    {
+      ledgerInventoryItems: [
+        {
+          productId: "p-gal",
+          productName: "갈치",
+          productCategory: "냉동",
+          previousQuantity: 10,
+          purchasedQuantity: 5,
+          currentQuantity: 3,
+          unitPrice: 1_000,
+          plannedUnitPrice: 1_500,
+          fifoLots: [{ consumedAmount: 6_000 }, { consumedAmount: 3_000 }],
+        },
+        {
+          productId: "p-saewoo",
+          productName: "새우",
+          productCategory: "생물",
+          previousQuantity: 8,
+          purchasedQuantity: 0,
+          currentQuantity: 3,
+          unitPrice: 2_000,
+          plannedUnitPrice: null,
+        },
+        {
+          // 당일재고 null → 카테고리/품목 모두에서 제외.
+          productId: "p-x",
+          productName: "제외품",
+          productCategory: "냉동",
+          previousQuantity: 4,
+          purchasedQuantity: 0,
+          currentQuantity: null,
+          unitPrice: 5_000,
+          fifoLots: [{ consumedAmount: 1_000 }],
+        },
+        {
+          // 기타 카테고리 → 제외.
+          productId: "p-etc",
+          productName: "기타품",
+          productCategory: "기타",
+          previousQuantity: 10,
+          purchasedQuantity: 0,
+          currentQuantity: 2,
+          unitPrice: 1_000,
+          plannedUnitPrice: 1_000,
+        },
+      ],
+    },
+    {
+      ledgerInventoryItems: [
+        {
+          // 같은 갈치를 다른 지점에서 4개 더 판매(판매가 계획 1,500 → 6,000원,
+          // FIFO 소진 3,000). 첫 지점과 합산되어야 한다.
+          productId: "p-gal",
+          productName: "갈치",
+          productCategory: "냉동",
+          previousQuantity: 4,
+          purchasedQuantity: 0,
+          currentQuantity: 0,
+          unitPrice: 1_000,
+          plannedUnitPrice: 1_500,
+          fifoLots: [{ consumedAmount: 3_000 }],
+        },
+      ],
+    },
+  ];
+
+  const summary = buildProductProfitability(ledgers);
+  const category = buildProductCategoryPerformance(ledgers);
+
+  // 갈치(합산)와 새우 두 품목. 갈치가 매출이 더 크므로 내림차순 정렬상 먼저.
+  assert.equal(summary.items.length, 2);
+  const gal = summary.items[0];
+  assert.equal(gal.productName, "갈치");
+  assert.equal(gal.soldQuantity, 16); // 12 + 4
+  assert.equal(gal.estimatedSalesAmount, 24_000); // 18,000 + 6,000
+  assert.equal(gal.estimatedCogsAmount, 12_000); // 9,000 + 3,000
+  assert.equal(gal.estimatedGrossProfit, 12_000);
+  assert.equal(gal.estimatedGrossMarginRate, 0.5);
+  assert.equal(gal.salesBasis, "planned");
+  assert.equal(gal.statusLabel, "추정");
+
+  const saewoo = summary.items[1];
+  assert.equal(saewoo.productName, "새우");
+  assert.equal(saewoo.estimatedSalesAmount, 10_000);
+  assert.equal(saewoo.salesBasis, "cost");
+  assert.equal(saewoo.statusLabel, "판매가 미반영");
+
+  // 인수 조건: 품목 합계 = 냉동/생물 카테고리 합계.
+  const categorySales = category.reduce((sum, c) => sum + c.salesAmount, 0);
+  assert.equal(summary.totalSalesAmount, categorySales); // 24,000 + 10,000
+  assert.equal(summary.totalSalesAmount, 34_000);
+  assert.equal(summary.totalGrossProfit, 12_000); // (24,000-12,000) + (10,000-10,000)
+  assert.equal(summary.totalGrossMarginRate, 12_000 / 34_000);
+  assert.equal(summary.salesPriceFallbackItemCount, 1);
+  assert.equal(summary.unavailableItemCount, 0);
+});
+
+test("buildProductProfitability flags zero-sales items as 계산 불가", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildProductProfitability } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  // 판매가 계획·매입단가 모두 0이면 추정 매출 0 → 이익률 계산 불가.
+  const summary = buildProductProfitability([
+    {
+      ledgerInventoryItems: [
+        {
+          productId: "p-zero",
+          productName: "무가격품",
+          productCategory: "냉동",
+          previousQuantity: 5,
+          purchasedQuantity: 0,
+          currentQuantity: 2,
+          unitPrice: 0,
+          plannedUnitPrice: null,
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(summary.items.length, 1);
+  assert.equal(summary.items[0].estimatedSalesAmount, 0);
+  assert.equal(summary.items[0].estimatedGrossMarginRate, null);
+  assert.equal(summary.items[0].statusLabel, "계산 불가");
+  assert.equal(summary.totalGrossMarginRate, null);
+  assert.equal(summary.unavailableItemCount, 1);
+});
+
 test("HQ daily and monthly reports render the category margin chart with 추정 labeling", () => {
   const policyDocSource = readProjectFile(
     "docs",
@@ -248,6 +395,13 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
   assert.match(dailyPageSource, /ProductCategoryMarginChart/);
   assert.match(dailyPageSource, /report\.categoryPerformance/);
   assert.match(dailyPageSource, /재고 흐름 기반 추정값/);
+
+  // WO(2026-06-25): 지점별 토글 차트 + 품목별 이익률 차트가 일별 리포트에 노출된다.
+  assert.match(dailyPageSource, /StoreDailyPerformanceChart/);
+  assert.match(dailyPageSource, /report\.rows/);
+  assert.match(dailyPageSource, /ProductProfitabilityReport/);
+  assert.match(dailyPageSource, /report\.productProfitability/);
+  assert.match(querySource, /buildProductProfitability\(ledgersWithPlannedPrice\)/);
 
   assert.match(monthlyComponentSource, /ProductCategoryMarginChart/);
   assert.match(monthlyComponentSource, /report\.categoryPerformance/);

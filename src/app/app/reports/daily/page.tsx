@@ -10,6 +10,8 @@ import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { DailyMeetingReportTable } from "~/features/reports/components/daily-meeting-report-table";
 import { ProductCategoryMarginChart } from "~/features/reports/components/product-category-margin-chart";
+import { ProductProfitabilityReport } from "~/features/reports/components/product-profitability-report";
+import { StoreDailyPerformanceChart } from "~/features/reports/components/store-daily-performance-chart";
 import {
   getDailyMeetingReportDateQuery,
   getDailyMeetingReportPath,
@@ -188,6 +190,28 @@ export default async function DailyMeetingReportPage({
         </p>
         <div className="mt-3">
           <ProductCategoryMarginChart data={report.categoryPerformance} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">
+          지점별 {dateLabel} 매출·이익률 (추정)
+        </h2>
+        <p className="text-muted-foreground mt-1 text-xs">
+          버튼으로 이익률과 매출액을 전환해 모든 지점을 한눈에 봅니다.
+        </p>
+        <div className="mt-3">
+          <StoreDailyPerformanceChart rows={report.rows} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">품목별 이익률 (추정)</h2>
+        <p className="text-muted-foreground mt-1 text-xs">
+          냉동/생물 카테고리 합계를 품목 단위로 펼친 추정값입니다.
+        </p>
+        <div className="mt-3">
+          <ProductProfitabilityReport data={report.productProfitability} />
         </div>
       </section>
 

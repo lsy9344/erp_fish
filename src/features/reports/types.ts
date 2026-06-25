@@ -69,6 +69,8 @@ export type DailyMeetingReportData = {
   summary: HqDashboardSummary;
   // WO-03(2026-06-22): 냉동/생물 카테고리별 추정 매출 차트 데이터.
   categoryPerformance: ProductCategoryPerformance[];
+  // WO(2026-06-25): 당일 품목별 추정 이익률 + 전체 판매분 합산 요약.
+  productProfitability: ProductProfitabilitySummary;
 };
 
 export type StoreComparisonReportDateRange = {
@@ -348,4 +350,36 @@ export type ProductCategoryPerformance = {
   // 판매가 계획이 없어 매입단가로 폴백한 판매 품목 수. 0보다 크면 "판매가 일부 미반영"
   // 안내를 화면에 띄운다.
   salesPriceFallbackItemCount: number;
+};
+
+// WO(2026-06-25): 당일 품목별 추정 이익률. 카테고리 차트와 같은 계산 기준
+// (판매량=전일+매입−당일, 판매가 계획 우선·없으면 매입단가 폴백, 원가는 FIFO 우선)을
+// 품목 단위로 그대로 펼친 추정값이다. 확정 POS 매출/원가가 아니다.
+export type ProductProfitabilityReportItem = {
+  productId: string;
+  productName: string;
+  productCategory: "냉동" | "생물";
+  soldQuantity: number;
+  estimatedSalesAmount: number;
+  estimatedCogsAmount: number;
+  estimatedGrossProfit: number;
+  estimatedGrossMarginRate: number | null;
+  // 판매가 계획을 썼으면 "planned", 매입단가로 폴백했으면 "cost".
+  salesBasis: "planned" | "cost";
+  // 추정/판매가 미반영(폴백)/계산 불가(매출 0) 상태.
+  statusLabel: "추정" | "판매가 미반영" | "계산 불가";
+};
+
+// WO(2026-06-25): 당일 전체 판매분 합산 요약. 품목 행을 합산해 만들며 냉동/생물
+// 카테고리 합계와 숫자가 일치한다.
+export type ProductProfitabilitySummary = {
+  items: ProductProfitabilityReportItem[];
+  totalSalesAmount: number;
+  totalCogsAmount: number;
+  totalGrossProfit: number;
+  totalGrossMarginRate: number | null;
+  // 판매가 계획이 없어 매입단가로 폴백한 품목 수.
+  salesPriceFallbackItemCount: number;
+  // 추정 매출이 0이라 이익률을 못 내는 품목 수.
+  unavailableItemCount: number;
 };

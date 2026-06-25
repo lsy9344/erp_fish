@@ -448,6 +448,27 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
       .getByText("품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.")
       .first(),
   ).toBeVisible();
+  // WO(2026-06-25): 지점별 토글 차트 + 품목별 이익률 차트가 추정 라벨로 노출된다.
+  await expect(
+    page.getByRole("heading", { name: /지점별 .* 매출·이익률 \(추정\)/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "이익률", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "매출액", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "품목별 이익률 (추정)" }),
+  ).toBeVisible();
+  // 이 시드에는 판매 품목이 없을 수 있다. 데이터가 있으면 당일 요약을, 없으면
+  // 빈 상태를 보이며 둘 중 하나는 반드시 노출된다.
+  await expect(
+    page
+      .getByText("당일 추정 이익률")
+      .or(page.getByText("품목별 판매 데이터 없음"))
+      .first(),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "오늘" })).toBeVisible();
   await expect(page.getByRole("link", { name: "어제" })).toBeVisible();
   await expect(
