@@ -215,3 +215,15 @@ test("release documentation has one local DB path and an operations checklist", 
     assert.match(releaseChecklist, new RegExp(phrase, "i"));
   }
 });
+
+test("vercel preview deploy applies Prisma migrations before building", () => {
+  const vercelConfig = JSON.parse(readProjectFile("vercel.json"));
+
+  assert.match(vercelConfig.buildCommand, /pnpm db:migrate/);
+  assert.match(vercelConfig.buildCommand, /pnpm run build/);
+  assert.ok(
+    vercelConfig.buildCommand.indexOf("pnpm db:migrate") <
+      vercelConfig.buildCommand.indexOf("pnpm run build"),
+    "Prisma migrations must run before Next.js build",
+  );
+});
