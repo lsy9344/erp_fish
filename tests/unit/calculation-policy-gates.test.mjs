@@ -91,7 +91,7 @@ test("OQ-gated calculation registry returns policy-unconfirmed metric contracts"
   );
 });
 
-test("ledger summary marks FIFO amounts as policy-unconfirmed before policy approval", async () => {
+test("ledger summary gates FIFO cost metrics but exposes FIFO inventory amount (OQ-7/OQ-17 approved)", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -130,8 +130,9 @@ test("ledger summary marks FIFO amounts as policy-unconfirmed before policy appr
   assert.equal(summary.costOfGoodsSold.status, "policy-unconfirmed");
   assert.equal(summary.grossMarginRate.value, 0.98);
   assert.equal(summary.grossMarginRate.status, "policy-unconfirmed");
+  // OQ-7/OQ-17 결정(2026-06-22): FIFO 재고금액은 노출 확정. 더 이상 게이트하지 않고 ok.
   assert.equal(summary.inventoryAmount.value, 1_000);
-  assert.equal(summary.inventoryAmount.status, "policy-unconfirmed");
+  assert.equal(summary.inventoryAmount.status, "ok");
 
   const legacySummary = calculateLedgerReviewSummary({
     totalSalesAmount: 100_000,
@@ -157,10 +158,11 @@ test("ledger summary marks FIFO amounts as policy-unconfirmed before policy appr
     lossItems: [],
   });
 
+  // legacy opening lot가 있어도 COGS는 계속 게이트(원가 민감), 재고금액은 노출 확정.
   assert.equal(legacySummary.costOfGoodsSold.value, 7_000);
   assert.equal(legacySummary.costOfGoodsSold.status, "policy-unconfirmed");
   assert.equal(legacySummary.inventoryAmount.value, 8_000);
-  assert.equal(legacySummary.inventoryAmount.status, "policy-unconfirmed");
+  assert.equal(legacySummary.inventoryAmount.status, "ok");
 });
 
 test("ledger summary falls back when FIFO lot rows are empty", async () => {

@@ -618,12 +618,8 @@ export function calculateLedgerReviewSummary({
     hasLegacyOpeningFifoLot(item),
   );
   const usesUnapprovedFifoCostBasis = canUseFifoConsumedAmounts(inventoryItems);
-  const usesUnapprovedFifoInventoryBasis =
-    canUseFifoRemainingAmounts(inventoryItems);
   const hasUnapprovedFifoCostBasis =
     usesUnapprovedFifoCostBasis || hasLegacyFifoOpening;
-  const hasUnapprovedFifoInventoryBasis =
-    usesUnapprovedFifoInventoryBasis || hasLegacyFifoOpening;
   const fifoPolicyReason =
     "FIFO 금액은 OQ-7/OQ-17 승인 전이라 계산 기준 확인이 필요합니다.";
   const salesDifferenceResult =
@@ -789,18 +785,15 @@ export function calculateLedgerReviewSummary({
       productivity === null
         ? dataInsufficient("근무인원이 입력되지 않았거나 1명 미만입니다.")
         : asKrwMetric("productivity", productivity),
+    // OQ-7/OQ-17 결정(2026-06-22): FIFO 재고금액은 본사+지점장 전체에 노출하기로 확정.
+    // 재고금액(inventoryAmount)은 더 이상 정책 게이트로 막지 않는다. COGS/이익 등
+    // 매출원가 기반 민감 지표(hasUnapprovedFifoCostBasis)는 계속 차단 유지.
     inventoryAmount:
       inventoryAmountResult.kind === "error"
         ? inventoryAmountResult.metric
         : inventoryAmount === null
           ? dataInsufficient(inventoryUnavailableReason)
-          : hasUnapprovedFifoInventoryBasis
-            ? asPolicyUnconfirmedKrwMetric(
-                "inventoryAmount",
-                inventoryAmount,
-                fifoPolicyReason,
-              )
-            : asKrwMetric("inventoryAmount", inventoryAmount),
+          : asKrwMetric("inventoryAmount", inventoryAmount),
     paymentDifference,
     salesDifference: !hasSalesDifferenceContext
       ? createPolicyUnconfirmedMetric("salesDifferenceMeaningChange")
