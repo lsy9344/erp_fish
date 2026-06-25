@@ -60,8 +60,9 @@ export function DashboardSignalSummary({
             aria-label={getSignalAccessibilityLabel(signal)}
             className={cn(
               style.className,
+              "h-auto max-w-full whitespace-normal",
               showDetails &&
-                "h-auto max-w-full items-start justify-start py-1 text-left whitespace-normal",
+                "items-start justify-start py-1 text-left",
             )}
           >
             <Icon aria-hidden="true" className={showDetails ? "mt-0.5" : ""} />

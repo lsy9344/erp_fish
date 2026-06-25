@@ -92,9 +92,9 @@ const dashboardColumnWidthConfig = [
   {
     id: "signals",
     label: "신호",
-    defaultWidth: 160,
-    minWidth: 140,
-    maxWidth: 320,
+    defaultWidth: 220,
+    minWidth: 160,
+    maxWidth: 360,
   },
   {
     id: "latestReflected",
@@ -621,8 +621,13 @@ function getColumnStyle(
 function getColumnCellClassName(columnId: DashboardColumnId) {
   const column = dashboardColumnConfigById[columnId];
 
+  // 신호 칼럼은 뱃지가 여러 줄로 줄바꿈되어야 하므로 클리핑하지 않고 높이가 늘어나게 둔다.
+  // 나머지 칼럼은 한 줄 말줄임(truncate) 유지.
+  const isSignals = columnId === "signals";
+
   return cn(
-    "min-w-0 overflow-hidden text-ellipsis",
+    "min-w-0 align-top",
+    isSignals ? "whitespace-normal" : "overflow-hidden text-ellipsis",
     columnId === "store" && "font-medium",
     getColumnConfigClassName(column),
   );
