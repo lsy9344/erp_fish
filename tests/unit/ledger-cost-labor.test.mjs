@@ -375,6 +375,67 @@ test("ledger labor model, query payload, and save actions follow expected contra
   assert.match(componentSource, /employeeId:\s*line\.employeeId/);
 });
 
+test("work step exposes labor reference headcount and non-blocking mismatch hint (WO 2026-06-25)", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "workstep-client.tsx",
+  );
+
+  // Task 2: 첫 카드에 "근무 요약" 제목과 설명, stepLabel은 근무/인건비.
+  assert.match(componentSource, /근무 요약/);
+  assert.match(
+    componentSource,
+    /급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\./,
+  );
+  assert.match(componentSource, /stepLabel="6단계 근무\/인건비"/);
+
+  // Task 3: employeeId 우선 중복 제거 helper와 참고 인원 표시.
+  assert.match(componentSource, /function getDraftLaborHeadcount/);
+  assert.match(componentSource, /keys\.add\(`employee:\$\{employeeId\}`\)/);
+  assert.match(componentSource, /keys\.add\(`name:\$\{workerName\}`\)/);
+  assert.match(componentSource, /급여 행 기준 참고 인원/);
+  assert.match(componentSource, /\{draftLaborHeadcount\}명/);
+
+  // Task 4: 비차단 불일치 안내(파싱된 근무인원 기준).
+  assert.match(componentSource, /const showLaborHeadcountHint =/);
+  assert.match(
+    componentSource,
+    /근무인원과 급여 행 기준 참고 인원이 다릅니다\./,
+  );
+  // 안내는 오류 색상(text-destructive)을 쓰지 않는다(안내 <p>만 검사).
+  const hintBlock = componentSource.slice(
+    componentSource.indexOf("showLaborHeadcountHint ? ("),
+    componentSource.indexOf(
+      "있으면 그대로 저장할 수 있습니다.",
+    ),
+  );
+  assert.ok(hintBlock.length > 0);
+  assert.doesNotMatch(hintBlock, /text-destructive/);
+
+  // Task 2/3 경계: 근무정보 저장 payload에는 laborItems/payrollTotal을 넣지 않는다.
+  const workSavePayload = componentSource.slice(
+    componentSource.indexOf("async function saveCurrentDraft"),
+    componentSource.indexOf("async function saveCurrentLaborDraft"),
+  );
+  assert.ok(workSavePayload.length > 0);
+  assert.doesNotMatch(workSavePayload, /laborItems/);
+  assert.doesNotMatch(workSavePayload, /payrollTotal/);
+  assert.match(workSavePayload, /workerCount:/);
+  assert.match(workSavePayload, /workMemo:/);
+
+  // 급여 저장 payload에는 workerCount를 넣지 않는다.
+  const laborSavePayload = componentSource.slice(
+    componentSource.indexOf("async function saveCurrentLaborDraft"),
+    componentSource.indexOf("async function handleSubmit"),
+  );
+  assert.ok(laborSavePayload.length > 0);
+  assert.doesNotMatch(laborSavePayload, /workerCount/);
+  assert.match(laborSavePayload, /labor:\s*laborItems\.map/);
+});
+
 test("ledger labor migration exists and creates the LedgerLaborItem table", () => {
   const migrationName = migrationDirNames().find((name) =>
     name.includes("add_ledger_labor_payroll"),

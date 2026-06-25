@@ -137,6 +137,28 @@ function getDraftPayrollTotal(lines: LaborLine[]) {
   return lines.reduce((sum, line) => sum + parseKrwInputValue(line.amount), 0);
 }
 
+// 급여 행 기준 참고 인원: 직원이 연결된 행은 employeeId, 그 외에는 trim한 이름으로
+// 중복 제거한다. 권위 있는 값이 아니라 사용자 확인을 돕는 표시값이다.
+function getDraftLaborHeadcount(lines: LaborLine[]) {
+  const keys = new Set<string>();
+
+  for (const line of lines) {
+    const employeeId = line.employeeId.trim();
+    const workerName = line.workerName.trim();
+
+    if (employeeId.length > 0) {
+      keys.add(`employee:${employeeId}`);
+      continue;
+    }
+
+    if (workerName.length > 0) {
+      keys.add(`name:${workerName}`);
+    }
+  }
+
+  return keys.size;
+}
+
 export function WorkStepClient({
   storeName,
   initialLedger,
@@ -423,6 +445,15 @@ export function WorkStepClient({
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);
+  const draftLaborHeadcount = getDraftLaborHeadcount(laborItems);
+  const parsedWorkerCount = /^\d+$/.test(workerCount.trim())
+    ? Number(workerCount.trim())
+    : null;
+  const showLaborHeadcountHint =
+    parsedWorkerCount !== null &&
+    parsedWorkerCount > 0 &&
+    draftLaborHeadcount > 0 &&
+    parsedWorkerCount !== draftLaborHeadcount;
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const guard = useUnsavedStepGuard({
     isDirty: isDirty || isLaborDirty,
@@ -473,7 +504,7 @@ export function WorkStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="6단계 근무인원/특이사항"
+        stepLabel="6단계 근무/인건비"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isSaving}
@@ -491,6 +522,13 @@ export function WorkStepClient({
           className="flex flex-col gap-3"
           noValidate
         >
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">근무 요약</p>
+            <p className="text-muted-foreground text-sm">
+              급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다.
+            </p>
+          </div>
+
           <Field data-invalid={Boolean(workerCountError)}>
             <FieldLabel htmlFor="worker-count">근무인원</FieldLabel>
             <Input
@@ -887,6 +925,18 @@ export function WorkStepClient({
                 {formatKrw(ledger.payrollTotal)}
               </span>
             </div>
+            <div className="mt-2 flex justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">급여 행 기준 참고 인원</span>
+              <span className="font-semibold tabular-nums">
+                {draftLaborHeadcount}명
+              </span>
+            </div>
+            {showLaborHeadcountHint ? (
+              <p className="text-muted-foreground mt-2 text-sm">
+                근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록 근무자가
+                있으면 그대로 저장할 수 있습니다.
+              </p>
+            ) : null}
           </div>
 
           {hqEditReasonRequired ? (

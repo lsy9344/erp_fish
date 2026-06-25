@@ -407,7 +407,7 @@ export function buildLedgerReviewStepSummaries({
     },
     {
       id: "work",
-      label: "근무",
+      label: "근무/인건비",
       status: stepStatus("work", missingById, summary.workerCount),
       detail: stepDetail({
         stepId: "work",
