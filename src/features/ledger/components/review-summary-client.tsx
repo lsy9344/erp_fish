@@ -268,6 +268,7 @@ export function ReviewSummaryClient({
           storeId={currentReviewData.storeId}
           closingDate={currentReviewData.closingDate}
           currentStep="review"
+          stepCompletion={currentReviewData.stepCompletion}
         />
 
         <LedgerSaveStatus

@@ -644,6 +644,14 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     missingItems: [],
     warnings: [],
     signals: [],
+    stepCompletion: {
+      sales: true,
+      cost: true,
+      purchase: true,
+      inventory: true,
+      losses: false,
+      work: true,
+    },
     stepSummaries: [
       {
         id: "work",
@@ -706,6 +714,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.kind, "krw");
   assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.id, "inventoryAmount");
   assert.equal(safeReview.stepSummaries[0]?.metrics.length, 2);
+  // 7단계 검토 화면도 1~6단계 "저장됨" 뱃지 상태를 그대로 받아야 한다.
+  assert.deepEqual(safeReview.stepCompletion, {
+    sales: true,
+    cost: true,
+    purchase: true,
+    inventory: true,
+    losses: false,
+    work: true,
+  });
 });
 
 test("store manager review exposes estimated top sold items derived from inventory flow (WO-04)", () => {

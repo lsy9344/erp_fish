@@ -3,6 +3,7 @@ import type {
   LedgerReviewMetric,
   LedgerReviewSummary,
 } from "~/server/calculations/ledger";
+import type { StoreEntryStepCompletion } from "~/features/ledger/step-completion";
 
 export type LedgerReviewMissingItem = {
   id: string;
@@ -90,6 +91,9 @@ export type LedgerReviewStepData = {
   warnings: LedgerReviewWarning[];
   signals: LedgerReviewSignal[];
   stepSummaries: LedgerReviewStepSummary[];
+  // 7단계 검토 화면의 단계 네비게이션 "저장됨" 뱃지용. 다른 1~6단계 화면과 동일하게
+  // getStoreEntryStepCompletion 결과를 그대로 전달한다(불리언만, 민감 회계지표 없음).
+  stepCompletion: StoreEntryStepCompletion;
   topSoldItems: StoreManagerTopSoldItem[];
 };
 

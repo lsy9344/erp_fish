@@ -15,6 +15,7 @@ import {
   getLedgerReviewMissingItems,
   getLedgerReviewStepHref,
 } from "./review-validation";
+import { getStoreEntryStepCompletion } from "./step-completion";
 import type {
   LedgerReviewMissingItem,
   LedgerReviewSignal,
@@ -605,6 +606,14 @@ export async function getLedgerReviewStepData(
       signals: getSignals({
         inventoryItems: inventory.items,
         lossSignalCandidates: losses.signalCandidates,
+      }),
+      stepCompletion: getStoreEntryStepCompletion({
+        totalSalesAmount: ledger.totalSalesAmount,
+        workerCount: ledger.workerCount,
+        ledgerExpenses: ledger.ledgerExpenses,
+        ledgerPurchaseItems: ledger.ledgerPurchaseItems,
+        inventoryItemCount: savedInventoryItems.length,
+        lossItemCount: losses.lossItems.length,
       }),
       stepSummaries: buildLedgerReviewStepSummaries({
         storeId,
