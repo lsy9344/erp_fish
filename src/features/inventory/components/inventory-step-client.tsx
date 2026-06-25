@@ -1243,7 +1243,7 @@ export function InventoryStepClient({
               size="sm"
               aria-label={`${item.productName} 전일재고 이력 보기`}
               onClick={() => setSelectedCarryoverItem(item)}
-              className="h-11 min-w-11 px-1 text-right tabular-nums"
+              className="ml-auto flex h-11 min-w-11 justify-end px-1 text-right tabular-nums"
             >
               {item.previousQuantity}
             </Button>
