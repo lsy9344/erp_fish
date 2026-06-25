@@ -671,8 +671,11 @@ export function calculateLedgerReviewSummary({
     : null;
   const plannedSalesMissingReason =
     "판매가 계획이 입력되지 않아 계획 대비 비교를 계산할 수 없습니다.";
+  // 일부 품목 판매가 미입력은 정책(OQ) 게이트가 아니라 입력 부족이다. status는
+  // policy-unconfirmed("기준 확인 필요") 대신 data-insufficient로 노출하고, 값은
+  // 그대로 계산해 "과소 추정"임을 알린다. (3단계 매입 화면에 없던 전일 이월 품목 등)
   const plannedSalesPartialReason =
-    "일부 판매 품목에 판매가 계획이 없어 계획 매출/마진이 과소 추정됩니다.";
+    "일부 품목 판매가 미입력 — 과소 추정";
 
   const plannedSalesNotEnteredMetric = dataInsufficient(
     plannedSalesMissingReason,
@@ -699,11 +702,7 @@ export function calculateLedgerReviewSummary({
     }
 
     if (plannedSalesResult.missingPlanCount > 0) {
-      return asPolicyUnconfirmedKrwMetric(
-        metricId,
-        value,
-        plannedSalesPartialReason,
-      );
+      return dataInsufficient(plannedSalesPartialReason);
     }
 
     return asKrwMetric(metricId, value);
@@ -834,11 +833,7 @@ export function calculateLedgerReviewSummary({
                 "매출원가 또는 계획 매출이 부족해 계획 매출이익을 계산할 수 없습니다.",
               )
             : plannedSalesResult.missingPlanCount > 0
-              ? asPolicyUnconfirmedKrwMetric(
-                  "plannedGrossProfit",
-                  plannedGrossProfitValue,
-                  plannedSalesPartialReason,
-                )
+              ? dataInsufficient(plannedSalesPartialReason)
               : hasUnapprovedFifoCostBasis
                 ? asPolicyUnconfirmedKrwMetric(
                     "plannedGrossProfit",
@@ -858,11 +853,7 @@ export function calculateLedgerReviewSummary({
                 "계획 매출 또는 매출이익이 부족해 계획 마진율을 계산할 수 없습니다.",
               )
             : plannedSalesResult.missingPlanCount > 0
-              ? asPolicyUnconfirmedRatioMetric(
-                  "plannedGrossMarginRate",
-                  plannedGrossMarginRateValue,
-                  plannedSalesPartialReason,
-                )
+              ? dataInsufficient(plannedSalesPartialReason)
               : hasUnapprovedFifoCostBasis
                 ? asPolicyUnconfirmedRatioMetric(
                     "plannedGrossMarginRate",
@@ -883,11 +874,7 @@ export function calculateLedgerReviewSummary({
                 "판매 수량을 계산할 수 있는 품목이 없어 계획 대비 차이를 산출할 수 없습니다.",
               )
             : plannedSalesResult.missingPlanCount > 0
-              ? asPolicyUnconfirmedKrwMetric(
-                  "plannedVsActualSalesDifference",
-                  plannedVsActualSalesDifferenceValue,
-                  plannedSalesPartialReason,
-                )
+              ? dataInsufficient(plannedSalesPartialReason)
               : asKrwMetric(
                   "plannedVsActualSalesDifference",
                   plannedVsActualSalesDifferenceValue,

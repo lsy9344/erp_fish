@@ -168,7 +168,8 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
   assert.ok(Math.abs(fullPlan.plannedGrossMarginRate.value - 1 / 3) < 1e-9);
   assert.deepEqual(fullPlan.plannedVsActualSalesDifference, ok(86_500));
 
-  // 2) 일부 품목만 판매가 계획이 있으면 과소 추정이므로 policy-unconfirmed로 내린다.
+  // 2) 일부 품목만 판매가 계획이 있으면 과소 추정이다. 이는 정책(OQ) 게이트가 아니라
+  //    입력 부족이므로 data-insufficient로 내리고 값은 숨긴다(과소 추정 값 노출 방지).
   const partialPlan = calculateLedgerReviewSummary({
     ...baseInput,
     plannedSalesItems: [
@@ -189,10 +190,12 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
     ],
   });
 
-  // 계획가 있는 품목(7×1,500=10,500)만 합산하되, status는 기준 확인 필요로 노출.
-  assert.equal(partialPlan.plannedSalesTotal.status, "policy-unconfirmed");
-  assert.equal(partialPlan.plannedSalesTotal.value, 10_500);
-  assert.equal(partialPlan.plannedGrossMarginRate.status, "policy-unconfirmed");
+  // 일부 품목 판매가 미입력은 "데이터 부족"으로 노출하고, OQ 정책 게이트 문구는 쓰지 않는다.
+  assert.equal(partialPlan.plannedSalesTotal.status, "data-insufficient");
+  assert.equal(partialPlan.plannedSalesTotal.value, null);
+  assert.equal(partialPlan.plannedSalesTotal.reason, "일부 품목 판매가 미입력 — 과소 추정");
+  assert.equal(partialPlan.plannedGrossMarginRate.status, "data-insufficient");
+  assert.equal(partialPlan.plannedVsActualSalesDifference.status, "data-insufficient");
 
   // 3) 판매가 계획 입력 자체가 없으면(plannedSalesItems 미제공) 데이터 부족으로 노출.
   const noPlan = calculateLedgerReviewSummary(baseInput);

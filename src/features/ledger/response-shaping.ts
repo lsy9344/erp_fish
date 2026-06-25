@@ -75,10 +75,28 @@ function isStoreManagerVisibleMetric(metric: LedgerReviewStepMetric): boolean {
   return true;
 }
 
+// FIFO 미승인(OQ-7/OQ-17) 게이트는 의도적으로 유지되지만, 지점장 화면에 내부 정책
+// 코드(OQ-7/OQ-17)를 그대로 노출하지 않는다(작업지시서 Task 5). 본사 화면(getLedgerReviewStepData)은
+// 추적용으로 원문을 유지하고, 지점장 응답에서만 쉬운 문구로 바꾼다.
+const STORE_MANAGER_FIFO_PENDING_DETAIL =
+  "재고 수량은 저장됐습니다. 재고 금액은 본사 기준 확인 후 확정됩니다.";
+
+function toStoreManagerDetail(detail: string | undefined): string | undefined {
+  if (detail?.includes("OQ-")) {
+    return STORE_MANAGER_FIFO_PENDING_DETAIL;
+  }
+
+  return detail;
+}
+
 function toStoreManagerReviewStepMetrics(
   metrics: LedgerReviewStepMetric[],
 ): LedgerReviewStepMetric[] {
-  return metrics.filter(isStoreManagerVisibleMetric);
+  return metrics.filter(isStoreManagerVisibleMetric).map((metric) =>
+    metric.detail === undefined
+      ? metric
+      : { ...metric, detail: toStoreManagerDetail(metric.detail) },
+  );
 }
 
 export function toStoreManagerLedgerReviewStepData(
@@ -98,6 +116,7 @@ export function toStoreManagerLedgerReviewStepData(
   });
   const stepSummaries = data.stepSummaries.map((stepSummary) => ({
     ...stepSummary,
+    detail: toStoreManagerDetail(stepSummary.detail) ?? stepSummary.detail,
     metrics: toStoreManagerReviewStepMetrics(stepSummary.metrics),
   }));
 
