@@ -563,7 +563,7 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   expect(emptyLedgerCountAfter).toBe(0);
 });
 
-test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아웃이 바뀌고 URL에 유지된다", async ({
+test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아웃 상태가 URL에 유지된다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
@@ -578,7 +578,7 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
   const defaultGridClass = await summary.getAttribute("class");
   const defaultTableClass = await tableContainer.getAttribute("class");
 
-  // 넓게 선택 → 레이아웃 클래스가 바뀌고 URL에 density=wide가 유지된다.
+  // 넓게 선택 → 요약 카드 레이아웃이 바뀌고 URL에 density=wide가 유지된다.
   await navigateByLinkHref(
     page,
     page
@@ -589,11 +589,9 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
   await expect(summary).toHaveAttribute("data-density", "wide");
   await expect(tableContainer).toHaveAttribute("data-density", "wide");
   expect(await summary.getAttribute("class")).not.toBe(defaultGridClass);
-  expect(await tableContainer.getAttribute("class")).not.toBe(
-    defaultTableClass,
-  );
+  expect(await tableContainer.getAttribute("class")).toBe(defaultTableClass);
 
-  // 압축 선택 → density=compact로 유지된다.
+  // 압축 선택 → 표 폭 클래스가 바뀌고 density=compact로 유지된다.
   await navigateByLinkHref(
     page,
     page
@@ -602,6 +600,10 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
     /density=compact/,
   );
   await expect(summary).toHaveAttribute("data-density", "compact");
+  await expect(tableContainer).toHaveAttribute("data-density", "compact");
+  expect(await tableContainer.getAttribute("class")).not.toBe(
+    defaultTableClass,
+  );
 
   // 밀도를 바꿔도 컬럼 헤더(리사이즈 대상)는 그대로 노출된다.
   await expect(

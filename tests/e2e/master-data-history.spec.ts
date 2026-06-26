@@ -264,9 +264,11 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
   );
   await expect(historyRow(page, seeded.userName)).toContainText("사용자/권한");
   await expect(historyRow(page, seeded.userName)).toContainText("역할 변경");
-  await expect(
-    historyRow(page, seeded.productName).filter({ hasText: "품목" }),
-  ).toBeVisible();
+  const productRows = historyRow(page, seeded.productName).filter({
+    hasText: "품목",
+  });
+  await expect(productRows).toHaveCount(2);
+  await expect(productRows.first()).toBeVisible();
   await expect(historyRow(page, seeded.codeName)).toContainText(
     "표시 순서 변경",
   );
