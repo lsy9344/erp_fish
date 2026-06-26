@@ -45,6 +45,7 @@ const lossLedgerSelect = {
   status: true,
   totalSalesAmount: true,
   workerCount: true,
+  lossReviewedAt: true,
   ledgerExpenses: {
     select: {
       id: true,

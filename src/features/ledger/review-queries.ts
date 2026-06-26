@@ -375,6 +375,21 @@ export function buildLedgerReviewStepSummaries({
       metrics: [textMetric("purchaseCount", "매입 저장", `${purchaseCount}건`)],
     },
     {
+      id: "losses",
+      label: "손실",
+      status: stepStatus("losses", missingById),
+      detail: stepDetail({
+        stepId: "losses",
+        missingItems: missingById,
+        savedDetail:
+          lossCount === 0
+            ? "손실 항목 없음으로 검토할 수 있습니다."
+            : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
+      metrics: [textMetric("lossCount", "손실 저장", `${lossCount}건`)],
+    },
+    {
       id: "inventory",
       label: "재고",
       status: stepStatus("inventory", missingById, summary.inventoryAmount),
@@ -390,21 +405,6 @@ export function buildLedgerReviewStepSummaries({
         moneyMetric("inventoryAmount", "재고금액", summary.inventoryAmount),
         statusMetric("reviewStatus", "계산 상태", summary.inventoryAmount),
       ],
-    },
-    {
-      id: "losses",
-      label: "손실",
-      status: stepStatus("losses", missingById),
-      detail: stepDetail({
-        stepId: "losses",
-        missingItems: missingById,
-        savedDetail:
-          lossCount === 0
-            ? "손실 항목 없음으로 검토할 수 있습니다."
-            : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
-      }),
-      href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
-      metrics: [textMetric("lossCount", "손실 저장", `${lossCount}건`)],
     },
     {
       id: "work",
@@ -614,6 +614,7 @@ export async function getLedgerReviewStepData(
         ledgerPurchaseItems: ledger.ledgerPurchaseItems,
         inventoryItemCount: savedInventoryItems.length,
         lossItemCount: losses.lossItems.length,
+        lossReviewedAt: ledger.lossReviewedAt,
       }),
       stepSummaries: buildLedgerReviewStepSummaries({
         storeId,

@@ -16,6 +16,7 @@ type StoreEntryStepCompletionInput = {
   ledgerPurchaseItems: readonly unknown[];
   inventoryItemCount?: number;
   lossItemCount?: number;
+  lossReviewedAt?: Date | string | null;
 };
 
 export function getStoreEntryStepCompletion({
@@ -25,13 +26,14 @@ export function getStoreEntryStepCompletion({
   ledgerPurchaseItems,
   inventoryItemCount = 0,
   lossItemCount = 0,
+  lossReviewedAt = null,
 }: StoreEntryStepCompletionInput): StoreEntryStepCompletion {
   return {
     sales: totalSalesAmount > 0,
     cost: ledgerExpenses.length > 0,
     purchase: ledgerPurchaseItems.length > 0,
     inventory: inventoryItemCount > 0,
-    losses: lossItemCount > 0,
+    losses: lossItemCount > 0 || lossReviewedAt !== null,
     work: workerCount !== null,
   };
 }

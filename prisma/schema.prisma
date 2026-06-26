@@ -414,8 +414,8 @@ model DailyLedger {
   submittedAt                DateTime?
   closedById                 String?
   closedAt                   DateTime?
-  // ponytail: 폐기 확인 게이트(2026-06-26) 잔재. 손실→재고 단계 순서 변경으로 게이트
-  // 자체가 제거돼 더 이상 기록하지 않는다. 이미 배포된 migration이라 컬럼은 보존만 한다.
+  // 손실→재고 순서 보장용: 손실 항목이 0건이어도 점주가 4단계 손실/폐기를 저장해
+  // 검토 완료했음을 기록한다. 재고 저장은 이 값이 있어야 진행한다.
   lossReviewedById           String?
   lossReviewedAt             DateTime?
   ledgerExpenses             LedgerExpense[]

@@ -81,6 +81,17 @@ export function getLedgerReviewMissingItems({
     });
   }
 
+  items.push({
+    id: "losses",
+    label: "손실/폐기",
+    href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
+    status: "review",
+    detail:
+      lossCount === 0
+        ? "손실 항목 없음으로 검토할 수 있습니다."
+        : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
+  });
+
   if (inventoryCount === 0 || hasInventoryUnavailable) {
     items.push({
       id: "inventory",
@@ -93,17 +104,6 @@ export function getLedgerReviewMissingItems({
           : "재고 수량 또는 금액 중 계산할 수 없는 항목이 있습니다.",
     });
   }
-
-  items.push({
-    id: "losses",
-    label: "손실/폐기",
-    href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
-    status: "review",
-    detail:
-      lossCount === 0
-        ? "손실 항목 없음으로 검토할 수 있습니다."
-        : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
-  });
 
   if (workerCount === null || workerCount <= 0) {
     items.push({

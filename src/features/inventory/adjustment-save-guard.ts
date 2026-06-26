@@ -7,8 +7,27 @@ import {
 export const missingAdjustmentReasonMessage =
   "재고 차이를 고친 이유를 먼저 저장해 주세요.";
 
+/**
+ * 조정 사유를 왜 묻는지 숫자로 설명한다. 손실은 이미 별도로 잡혀 있으므로,
+ * 기준재고(전일+매입−손실)와 당일재고의 차이는 "손실 외 추가 차이"다 — 판매로 나간
+ * 건지 실사 재고 오차인지는 사람만 알기에 사유를 남겨야 한다.
+ */
+export function describeAdjustmentReason(
+  systemQuantity: number,
+  currentQuantity: number,
+  lossQuantity: number,
+) {
+  const difference = systemQuantity - currentQuantity;
+  const lossNote = lossQuantity > 0 ? `손실 ${lossQuantity}개 외에 ` : "";
+
+  return `기준재고 ${systemQuantity}개인데 당일재고가 ${currentQuantity}개입니다(${lossNote}${difference}개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.`;
+}
+
 export const missingRequiredCurrentQuantityMessage =
   "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.";
+
+export const missingLossReviewMessage =
+  "4단계 손실/폐기 단계를 먼저 저장해 주세요.";
 
 export type InventoryRequiredEntryGuardItem = {
   id: string;

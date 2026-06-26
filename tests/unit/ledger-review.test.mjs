@@ -479,8 +479,8 @@ test("ledger review missing item helper preserves KST links and separates review
       ["sales", "missing"],
       ["expenses", "missing"],
       ["purchases", "missing"],
-      ["inventory", "missing"],
       ["losses", "review"],
+      ["inventory", "missing"],
       ["work", "missing"],
     ],
   );
@@ -791,6 +791,39 @@ test("store manager review exposes estimated top sold items derived from invento
   // 카드에는 여전히 단가/FIFO 같은 민감값을 직접 노출하지 않는다.
   assert.doesNotMatch(clientSource, /item\.unitPrice/);
   assert.doesNotMatch(clientSource, /item\.fifoLots/);
+});
+
+test("store manager review orders losses before inventory to match entry steps", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-queries.ts",
+  );
+  const validationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-validation.ts",
+  );
+
+  const summariesStart = querySource.indexOf(
+    "export function buildLedgerReviewStepSummaries",
+  );
+  const summariesEnd = querySource.indexOf("\n}\n\n// WO-04", summariesStart);
+  const summariesSource = querySource.slice(summariesStart, summariesEnd);
+  assert.ok(summariesStart >= 0 && summariesEnd > summariesStart);
+  assert.ok(
+    summariesSource.indexOf('id: "losses"') <
+      summariesSource.indexOf('id: "inventory"'),
+    "review step summaries should show 4단계 손실 before 5단계 재고",
+  );
+
+  assert.ok(
+    validationSource.indexOf('id: "losses"') <
+      validationSource.indexOf('id: "inventory"'),
+    "review missing/review items should show 손실 before 재고",
+  );
 });
 
 test("headquarters ledger detail keeps review summary read access separate from action permissions", () => {

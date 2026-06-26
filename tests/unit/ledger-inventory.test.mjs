@@ -856,6 +856,30 @@ test("inventory normal save requires matching adjustment record for changed actu
   );
 });
 
+test("describeAdjustmentReason explains the gap with numbers, noting loss separately", async () => {
+  const guardPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-save-guard.ts",
+  );
+  const { describeAdjustmentReason } = await import(
+    pathToFileURL(guardPath).href
+  );
+
+  // 사용자 케이스: 기준재고 3, 당일재고 1, 손실 1 → "손실 1개 외에 2개 차이"가 보여야 한다.
+  assert.equal(
+    describeAdjustmentReason(3, 1, 1),
+    "기준재고 3개인데 당일재고가 1개입니다(손실 1개 외에 2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+  );
+
+  // 손실이 없으면 "손실 N개 외에" 문구를 붙이지 않는다.
+  assert.equal(
+    describeAdjustmentReason(5, 3, 0),
+    "기준재고 5개인데 당일재고가 3개입니다(2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+  );
+});
+
 test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no loss, purchased)", async () => {
   const policyPath = assertProjectFile(
     "src",

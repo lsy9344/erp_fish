@@ -591,10 +591,27 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     "ledger",
     "actions.ts",
   );
+  const purchaseActionStart = actionSource.indexOf(
+    "export async function saveLedgerPurchases",
+  );
+  const purchaseActionEnd = actionSource.indexOf(
+    "\nexport async function",
+    purchaseActionStart + 1,
+  );
+  const purchaseActionSource = actionSource.slice(
+    purchaseActionStart,
+    purchaseActionEnd,
+  );
+  assert.ok(purchaseActionStart >= 0 && purchaseActionEnd > purchaseActionStart);
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerPurchases/);
   assert.match(actionSource, /ledgerPurchaseSchema\.safeParse/);
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
+  assert.match(
+    purchaseActionSource,
+    /lossReviewedById:\s*null[\s\S]*lossReviewedAt:\s*null/,
+    "saving purchases should clear the loss-step review marker so losses are reviewed again before inventory",
+  );
   assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
   assert.match(actionSource, /isExistingSnapshotPurchase/);
@@ -652,8 +669,11 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
       actionSource.indexOf("await saveStoreSalesPricePlansForPurchasesInTx("),
     "sales price plan upsert should run after purchase rows are created",
   );
-  // 판매 예정가가 함께 저장되므로 계획 판매가를 읽는 손실 페이지도 갱신한다.
-  assert.match(actionSource, /revalidateStoreEntryPaths\(\["losses"\]\)/);
+  // 판매 예정가와 손실 검토 상태가 함께 바뀌므로 후속 손실/재고 페이지를 갱신한다.
+  assert.match(
+    actionSource,
+    /revalidateStoreEntryPaths\(\["losses",\s*"inventory"\]\)/,
+  );
 
   const hqActionSource = readProjectFile(
     "src",

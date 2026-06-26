@@ -31,6 +31,7 @@ import {
   buildRequiredEntryGuardItems,
   getInventorySaveAdjustmentErrors,
   getRequiredCurrentQuantityErrors,
+  missingLossReviewMessage,
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
@@ -267,6 +268,18 @@ export async function saveLedgerInventoryItems(
           "VALIDATION_ERROR",
           missingRequiredCurrentQuantityMessage,
           requiredEntryErrors,
+        );
+      }
+
+      const lossReview = await tx.dailyLedger.findUnique({
+        where: { id: before.id },
+        select: { lossReviewedAt: true },
+      });
+
+      if (!lossReview?.lossReviewedAt) {
+        return actionError<StoreManagerInventoryStepData>(
+          "VALIDATION_ERROR",
+          missingLossReviewMessage,
         );
       }
 

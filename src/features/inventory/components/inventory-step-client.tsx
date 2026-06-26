@@ -52,7 +52,10 @@ import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
-import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-save-guard";
+import {
+  describeAdjustmentReason,
+  missingAdjustmentReasonMessage,
+} from "~/features/inventory/adjustment-save-guard";
 import {
   isManualFirstInventoryEntry,
   isPurchaseDrivenSale,
@@ -284,7 +287,6 @@ export function InventoryStepClient({
   });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
-  const [manualProductId, setManualProductId] = useState("");
   // 직접 추가했지만 아직 저장하지 않은 행. 상태 배지를 "이월 공백" 대신 "직접 입력"으로
   // 보여줘 0개 재고로 오해하지 않게 한다. 저장 후에는 실제 저장 행이 되므로 비운다.
   const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
@@ -494,7 +496,12 @@ export function InventoryStepClient({
         continue;
       }
 
-      nextErrors[item.productId] = missingAdjustmentReasonMessage;
+      // 왜 사유를 묻는지 숫자로 보여준다(손실 외 추가 차이 = 판매인지 재고 오차인지 사람만 앎).
+      nextErrors[item.productId] = describeAdjustmentReason(
+        systemQuantity,
+        currentQuantity,
+        item.lossQuantity,
+      );
       firstInvalidItem ??= item;
     }
 
@@ -502,13 +509,27 @@ export function InventoryStepClient({
       return true;
     }
 
+    const firstSystemQuantity = getSystemQuantity(firstInvalidItem);
+    const firstCurrentQuantity = parseQuantityInput(
+      currentQuantityRefs.current[firstInvalidItem.productId]?.value ??
+        firstInvalidItem.currentQuantityInput,
+    );
+    const firstMessage =
+      firstSystemQuantity !== null && firstCurrentQuantity !== null
+        ? describeAdjustmentReason(
+            firstSystemQuantity,
+            firstCurrentQuantity,
+            firstInvalidItem.lossQuantity,
+          )
+        : missingAdjustmentReasonMessage;
+
     setAdjustmentErrors(nextErrors);
-    setFormError(missingAdjustmentReasonMessage);
+    setFormError(firstMessage);
     setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
     window.setTimeout(() => {
       reasonRefs.current[firstInvalidItem.productId]?.focus();
     }, 0);
-    toast.error(missingAdjustmentReasonMessage);
+    toast.error(firstMessage);
 
     return false;
   }
@@ -624,10 +645,7 @@ export function InventoryStepClient({
   );
 
   function handleAddManualProduct() {
-    const selectedProductId =
-      manualProductId !== ""
-        ? manualProductId
-        : (manualProductSelectRef.current?.value ?? "");
+    const selectedProductId = manualProductSelectRef.current?.value ?? "";
     const option = availableManualOptions.find(
       (candidate) => candidate.productId === selectedProductId,
     );
@@ -642,7 +660,9 @@ export function InventoryStepClient({
 
     setItems((current) => [...current, line]);
     setAddedManualIds((current) => new Set(current).add(option.productId));
-    setManualProductId("");
+    if (manualProductSelectRef.current) {
+      manualProductSelectRef.current.value = "";
+    }
     setActiveCategory(normalizeCategory(option.productCategory));
     setResultMessage(null);
     window.setTimeout(() => {
@@ -1419,10 +1439,15 @@ export function InventoryStepClient({
                       수정됨
                     </Badge>
                   ) : null}
-                  {adjustmentNeeded
+                  {adjustmentNeeded && systemQuantity !== null
                     ? renderBadgeWithTooltip({
                         label: "고칠 내용 있음",
-                        detail: `기준재고 ${formatQuantity(systemQuantity)}와 당일재고 ${formatQuantity(parseQuantityInput(item.currentQuantityInput))}가 다릅니다. 바꾼 이유를 남겨 주세요.`,
+                        detail: describeAdjustmentReason(
+                          systemQuantity,
+                          parseQuantityInput(item.currentQuantityInput) ??
+                            systemQuantity,
+                          item.lossQuantity,
+                        ),
                         className:
                           "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
                       })
@@ -1827,10 +1852,7 @@ export function InventoryStepClient({
                   id="inventory-manual-product"
                   ref={manualProductSelectRef}
                   aria-label="추가할 품목 선택"
-                  value={manualProductId}
-                  onChange={(event) =>
-                    setManualProductId(event.currentTarget.value)
-                  }
+                  defaultValue=""
                   disabled={isSaving || isAdjustmentSavePending}
                   className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
                 >

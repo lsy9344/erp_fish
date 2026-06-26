@@ -1058,6 +1058,8 @@ export async function saveLedgerPurchases(
         parsed.data.version,
         {
           updatedById: actor.user.id,
+          lossReviewedById: null,
+          lossReviewedAt: null,
         },
       );
 
@@ -1339,8 +1341,8 @@ export async function saveLedgerPurchases(
     });
 
     revalidateLedgerSalesPaths();
-    // 매입 저장이 판매 예정가도 함께 반영하므로, 계획 판매가를 읽는 손실 페이지도 갱신한다.
-    revalidateStoreEntryPaths(["losses"]);
+    // 매입 저장은 손실 검토 표시를 지우고 재고 기준도 바꾸므로 후속 단계들을 갱신한다.
+    revalidateStoreEntryPaths(["losses", "inventory"]);
 
     return actionOk(result);
   } catch (error: unknown) {

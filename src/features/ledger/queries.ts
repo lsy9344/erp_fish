@@ -84,6 +84,7 @@ export const ledgerSelect = {
   submittedAt: true,
   closedById: true,
   closedAt: true,
+  lossReviewedAt: true,
   ledgerExpenses: {
     select: ledgerExpenseSelect,
     orderBy: {

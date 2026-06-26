@@ -407,7 +407,12 @@ export async function saveLedgerLosses(
           status: { in: [...editableLedgerStatuses] },
           version: parsed.data.version,
         },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
+        data: {
+          updatedById: actor.user.id,
+          version: { increment: 1 },
+          lossReviewedById: actor.user.id,
+          lossReviewedAt: new Date(),
+        },
       });
 
       if (editableLedger.count !== 1) {
