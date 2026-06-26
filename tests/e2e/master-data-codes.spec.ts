@@ -93,6 +93,37 @@ function codeRow(page: Page, name: string): Locator {
   return page.locator("tbody tr").filter({ hasText: name });
 }
 
+async function clickAndExpectVisible(trigger: Locator, target: Locator) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toBeEnabled();
+    await trigger.click();
+
+    try {
+      await expect(target).toBeVisible({ timeout: 5000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function openCodeCreateDialog(page: Page) {
+  await clickAndExpectVisible(
+    page.getByRole("button", { name: "코드 추가" }),
+    page.getByLabel("코드 그룹", { exact: true }),
+  );
+}
+
+async function openCodeEditDialog(page: Page, name: string) {
+  await clickAndExpectVisible(
+    codeRow(page, name).getByRole("button", { name: "수정" }),
+    page.getByLabel("코드명"),
+  );
+}
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("이메일").fill(email);
@@ -212,7 +243,7 @@ test("본사는 코드를 생성, 수정, 비활성 처리하고 감사 로그�
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/codes");
 
-  await page.getByRole("button", { name: "코드 추가" }).click();
+  await openCodeCreateDialog(page);
   await page
     .getByLabel("코드 그룹", { exact: true })
     .selectOption("PAYMENT_METHOD");
@@ -231,7 +262,7 @@ test("본사는 코드를 생성, 수정, 비활성 처리하고 감사 로그�
   expect(createdCodes).toHaveLength(1);
   expect(createdCodes[0]!.isActive).toBe(true);
 
-  await codeRow(page, codeName).getByRole("button", { name: "수정" }).click();
+  await openCodeEditDialog(page, codeName);
   await page.getByLabel("코드명").fill(editedName);
   await page.getByLabel("표시 순서").fill("3");
   await page.getByRole("button", { name: "저장" }).click();
@@ -299,7 +330,7 @@ test("코드 관리는 같은 그룹 중복을 거부하고 다른 그룹의 같
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/codes");
 
-  await page.getByRole("button", { name: "코드 추가" }).click();
+  await openCodeCreateDialog(page);
   await page
     .getByLabel("코드 그룹", { exact: true })
     .selectOption("EXPENSE_ITEM");
@@ -343,7 +374,7 @@ test("코드 관리 폼은 한국어 검증 오류와 첫 오류 포커스를 �
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/codes");
 
-  await page.getByRole("button", { name: "코드 추가" }).click();
+  await openCodeCreateDialog(page);
   await page.getByLabel("코드명").fill(" ");
   await page.getByLabel("표시 순서").fill("-1");
   await page.getByRole("button", { name: "저장" }).click();
