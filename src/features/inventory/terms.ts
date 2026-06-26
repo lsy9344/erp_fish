@@ -11,7 +11,7 @@ export const inventoryTerms = {
   loss: "손실",
   baselineStock: "기준재고",
   currentStock: "당일재고",
-  dailySalesQuantity: "처리재고",
+  dailySalesQuantity: "당일 판매량",
   inventoryAmount: "재고금액",
   statusAndAdjustment: "확인/고치기",
 
@@ -22,7 +22,7 @@ export const inventoryTerms = {
 
   // 도움말/안내 문구
   dailySalesQuantityHelp:
-    "기준재고에서 입력한 당일재고를 뺀 재고 흐름상 처리 수량입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
+    "기준재고에서 입력한 당일재고를 뺀 재고 흐름상 당일 판매량입니다. 실제 POS 판매 수량과 다를 수 있습니다.",
   carryoverHistoryTitle: "전일재고 이력",
 
   // FIFO 재고금액 / 판매 lot 이력

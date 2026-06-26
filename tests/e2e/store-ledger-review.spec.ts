@@ -634,7 +634,7 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     "href",
     new RegExp(`storeId=${STORY_STORE_ID}.*step=sales`),
   );
-  await expect(page.getByRole("link", { name: "4단계: 재고" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "5단계: 재고" })).toHaveAttribute(
     "href",
     new RegExp(`/app/store-entry/inventory\\?storeId=${STORY_STORE_ID}.*date=`),
   );

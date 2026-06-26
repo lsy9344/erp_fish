@@ -66,7 +66,7 @@ export function isPurchaseDrivenSale(item: {
 - [ ] `src/features/inventory/components/inventory-step-client.tsx`:
   - `validateInventorySaveAdjustments` 루프에 `isPurchaseDrivenSale(item)`이면 `continue`.
   - `isAdjustmentNeeded`가 `isPurchaseDrivenSale`이면 false 반환(“고칠 내용 있음” 배지/조정 프롬프트 숨김).
-  - "처리재고"(systemQuantity − currentQuantity) 표시는 그대로 두되, 정상 판매면 빨간 강조(차이=조정 뉘앙스)가 아니라 중립 표시로 둔다.
+  - "당일 판매량"(systemQuantity − currentQuantity) 표시는 그대로 두되, 정상 판매면 빨간 강조(차이=조정 뉘앙스)가 아니라 중립 표시로 둔다.
 
 ### 기존 "미입력 차단"과의 관계 (이미 구현됨, 유지)
 

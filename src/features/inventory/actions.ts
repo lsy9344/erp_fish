@@ -305,14 +305,7 @@ export async function saveLedgerInventoryItems(
           version: parsed.data.version,
           status: { in: [...editableLedgerStatuses] },
         },
-        data: {
-          updatedById: actor.user.id,
-          version: { increment: 1 },
-          // 점주가 "폐기·떨이 없음"을 명시 확인했으면 actor/시각을 남긴다(감사용).
-          ...(parsed.data.lossReviewed
-            ? { lossReviewedById: actor.user.id, lossReviewedAt: new Date() }
-            : {}),
-        },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
       });
 
       if (editableLedger.count !== 1) {

@@ -473,7 +473,7 @@ export function PurchaseStepClient({
   );
   const hqEditReasonError = fieldErrors.reason?.[0];
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
-  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
+  const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: ledger.storeId,
     date: getKstLedgerDateParam(ledger.closingDate),
   }).toString()}`;

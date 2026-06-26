@@ -341,10 +341,9 @@ export function LossStepClient({
   const isOriginalEditBlocked = isLedgerReadOnly(data.status);
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
-  const nextStepHref = `/app/store-entry?${new URLSearchParams({
+  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
-    step: "work",
   }).toString()}`;
   const showsSensitiveLossAmounts = "totalAmount" in data.summary;
   const hqEditReasonError = fieldErrors.reason?.[0];
@@ -392,7 +391,7 @@ export function LossStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="5단계 손실/폐기/떨이"
+        stepLabel="4단계 손실/폐기/떨이"
         authorDisplayName={data.authorDisplayName}
         updatedAt={data.updatedAt}
         isSaving={isSaving}

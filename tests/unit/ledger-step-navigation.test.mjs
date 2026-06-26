@@ -126,12 +126,12 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     );
     assert.doesNotMatch(
       source,
-      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*4단계: 재고\s*<\/li>/s,
+      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*5단계: 재고\s*<\/li>/s,
       `${component} should not hard-code an unsaved inventory step`,
     );
     assert.doesNotMatch(
       source,
-      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*5단계: 손실\/폐기\s*<\/li>/s,
+      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*4단계: 손실\/폐기\s*<\/li>/s,
       `${component} should not hard-code an unsaved losses step`,
     );
   }

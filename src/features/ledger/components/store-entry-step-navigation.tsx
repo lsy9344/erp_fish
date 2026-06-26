@@ -19,8 +19,8 @@ const steps: { id: StoreEntryStep; label: string }[] = [
   { id: "sales", label: "1단계: 매출/결제" },
   { id: "cost", label: "2단계: 비용" },
   { id: "purchase", label: "3단계: 매입" },
-  { id: "inventory", label: "4단계: 재고" },
-  { id: "losses", label: "5단계: 손실/폐기" },
+  { id: "losses", label: "4단계: 손실/폐기" },
+  { id: "inventory", label: "5단계: 재고" },
   { id: "work", label: "6단계: 근무/인건비" },
   { id: "review", label: "7단계: 검토/제출" },
 ];

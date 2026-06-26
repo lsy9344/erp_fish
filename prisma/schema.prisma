@@ -414,6 +414,8 @@ model DailyLedger {
   submittedAt                DateTime?
   closedById                 String?
   closedAt                   DateTime?
+  // ponytail: 폐기 확인 게이트(2026-06-26) 잔재. 손실→재고 단계 순서 변경으로 게이트
+  // 자체가 제거돼 더 이상 기록하지 않는다. 이미 배포된 migration이라 컬럼은 보존만 한다.
   lossReviewedById           String?
   lossReviewedAt             DateTime?
   ledgerExpenses             LedgerExpense[]

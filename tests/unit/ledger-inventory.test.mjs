@@ -916,66 +916,6 @@ test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no l
   );
 });
 
-test("needsLossOmissionConfirmation flags purchase-driven sold-out items so skipped waste is not silently sold", async () => {
-  const policyPath = assertProjectFile(
-    "src",
-    "features",
-    "inventory",
-    "inventory-persist-policy.ts",
-  );
-  const { needsLossOmissionConfirmation } = await import(
-    pathToFileURL(policyPath).href
-  );
-
-  // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 손실 누락이 판매로 둔갑할 수 있어 확인 필요.
-  assert.equal(
-    needsLossOmissionConfirmation({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 0,
-      currentQuantity: 2,
-    }),
-    true,
-    "purchase-driven normal sale needs a one-time loss-omission confirmation",
-  );
-
-  // 손실 이미 기록됨 → 빼먹음 위험 없음(확인 불필요, 기존 조정 경로가 처리).
-  assert.equal(
-    needsLossOmissionConfirmation({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 1,
-      currentQuantity: 2,
-    }),
-    false,
-    "recorded loss means no omission risk to confirm",
-  );
-
-  // 매입 없는 이월 차이 → 정상 판매 면제 대상이 아니므로 확인 불필요.
-  assert.equal(
-    needsLossOmissionConfirmation({
-      previousQuantity: 5,
-      purchasedQuantity: 0,
-      lossQuantity: 0,
-      currentQuantity: 2,
-    }),
-    false,
-    "carryover difference without purchase is not a loss-omission case",
-  );
-
-  // 미입력(null) → 필수입력 가드가 먼저 막으므로 여기서 확인하지 않는다.
-  assert.equal(
-    needsLossOmissionConfirmation({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 0,
-      currentQuantity: null,
-    }),
-    false,
-    "blank actual quantity is handled by the required-entry guard, not this gate",
-  );
-});
-
 test("getRequiredCurrentQuantityErrors blocks blank actual quantity for purchase/loss seed rows", async () => {
   const guardPath = assertProjectFile(
     "src",
@@ -1577,16 +1517,17 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /바꾼 이유/);
   assert.match(componentSource, /고치기 전/);
   assert.match(componentSource, /고친 후/);
-  assert.match(inventoryUiSource, /처리재고/);
+  assert.match(inventoryUiSource, /당일 판매량/);
+  assert.doesNotMatch(inventoryUiSource, /처리재고/);
   assert.match(
     componentSource,
     /return systemQuantity - actualQuantity;/,
-    "처리재고는 기준재고에서 당일재고를 뺀 흐름으로 표시해야 한다",
+    "당일 판매량은 기준재고에서 당일재고를 뺀 흐름으로 표시해야 한다",
   );
   assert.match(
     componentSource,
     /바뀐 수량/,
-    "강제 실사 보정의 signed 차이는 처리재고와 별도 라벨로 보여야 한다",
+    "강제 실사 보정의 signed 차이는 당일 판매량과 별도 라벨로 보여야 한다",
   );
   assert.doesNotMatch(
     componentSource,

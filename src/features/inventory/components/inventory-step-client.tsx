@@ -56,7 +56,6 @@ import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-
 import {
   isManualFirstInventoryEntry,
   isPurchaseDrivenSale,
-  needsLossOmissionConfirmation,
 } from "~/features/inventory/inventory-persist-policy";
 import {
   type InventoryAdjustmentView,
@@ -301,11 +300,6 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
-  // 손실 누락 확인 게이트: 매입분이 손실 없이 정상 소진된 품목 이름들. 저장 직전
-  // 한 번만 "폐기/떨이를 확인했다"고 명시하게 하고, 확인하면 바로 저장을 잇는다.
-  const [lossOmissionPrompt, setLossOmissionPrompt] = useState<string[] | null>(
-    null,
-  );
   const saveConflict = useSaveConflictDialog();
   const hqEditReasonError = fieldErrors.reason?.[0];
 
@@ -324,9 +318,10 @@ export function InventoryStepClient({
     data.status,
     "inventory-adjustment",
   ).message;
-  const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
+  const nextStepHref = `/app/store-entry?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
+    step: "work",
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
@@ -518,28 +513,7 @@ export function InventoryStepClient({
     return false;
   }
 
-  function getLossOmissionProductNames() {
-    const names: string[] = [];
-
-    for (const item of items) {
-      if (addedManualIds.has(item.productId)) {
-        continue;
-      }
-
-      const currentQuantity = parseQuantityInput(
-        currentQuantityRefs.current[item.productId]?.value ??
-          item.currentQuantityInput,
-      );
-
-      if (needsLossOmissionConfirmation({ ...item, currentQuantity })) {
-        names.push(item.productName);
-      }
-    }
-
-    return names;
-  }
-
-  async function saveCurrentDraft(lossConfirmed = false) {
+  async function saveCurrentDraft() {
     if (isClosed) {
       setResultMessage(null);
       setFormError(originalEditBlockedMessage);
@@ -564,17 +538,6 @@ export function InventoryStepClient({
       return false;
     }
 
-    // 판매수량은 재고 역산이라, 매입분이 손실 없이 소진된 품목은 폐기/떨이 누락이
-    // 그대로 "판매"로 잡힌다. 저장 전 한 번 폐기 확인을 받아 빼먹음과 진짜 0을 가른다.
-    if (!lossConfirmed) {
-      const lossOmissionNames = getLossOmissionProductNames();
-
-      if (lossOmissionNames.length > 0) {
-        setLossOmissionPrompt(lossOmissionNames);
-        return false;
-      }
-    }
-
     setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
@@ -597,7 +560,6 @@ export function InventoryStepClient({
             currentQuantityRefs.current[item.productId]?.value ??
             item.currentQuantityInput,
         })),
-        ...(lossConfirmed ? { lossReviewed: true } : {}),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -1776,47 +1738,6 @@ export function InventoryStepClient({
           onReload={saveConflict.reloadLatest}
           onKeepEditing={saveConflict.keepEditing}
         />
-        <Dialog
-          open={lossOmissionPrompt !== null}
-          onOpenChange={(open) => {
-            if (!open) setLossOmissionPrompt(null);
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>폐기·떨이가 정말 없었나요?</DialogTitle>
-              <DialogDescription>
-                아래 품목은 매입분이 손실 기록 없이 모두 판매로 잡힙니다. 폐기나
-                떨이가 있었다면 손실 단계에서 먼저 기록해 주세요. 손실이 빠지면
-                그 수량이 판매로 집계됩니다.
-              </DialogDescription>
-            </DialogHeader>
-            <ul className="text-muted-foreground list-disc pl-5 text-sm">
-              {(lossOmissionPrompt ?? []).map((name) => (
-                <li key={name}>{name}</li>
-              ))}
-            </ul>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setLossOmissionPrompt(null)}
-              >
-                손실 먼저 기록
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  setLossOmissionPrompt(null);
-                  void saveCurrentDraft(true);
-                }}
-              >
-                폐기·떨이 없음, 저장
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
         <LedgerContextHeader
           ledgerLabel={ledgerLabel}
           title="재고 입력"
@@ -1838,7 +1759,7 @@ export function InventoryStepClient({
         ) : null}
 
         <LedgerSaveStatus
-          stepLabel="4단계 재고"
+          stepLabel="5단계 재고"
           authorDisplayName={data.authorDisplayName}
           updatedAt={data.updatedAt}
           isSaving={isSaving || isAdjustmentSavePending}
