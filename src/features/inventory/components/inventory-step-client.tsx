@@ -68,6 +68,7 @@ import {
   type StoreManagerInventoryStepData,
 } from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import { cn } from "~/lib/utils";
 
 type InventoryStepClientProps = {
   storeName: string;
@@ -302,6 +303,9 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
+  // 지금 편집 중인 행. 카드가 모두 비슷해 포커스가 어디로 갔는지 헷갈리던
+  // 문제를 해결하려고 활성 행에 강한 강조(ring/배경)를 준다.
+  const [focusedProductId, setFocusedProductId] = useState<string | null>(null);
   const saveConflict = useSaveConflictDialog();
   const hqEditReasonError = fieldErrors.reason?.[0];
 
@@ -1385,7 +1389,11 @@ export function InventoryStepClient({
       );
     }
 
-    return pagedItems.map((item) => {
+    const pageOffset =
+      visibleItems.length > ROW_PAGING_THRESHOLD ? (page - 1) * ROW_PAGE_SIZE : 0;
+
+    return pagedItems.map((item, pagedIndex) => {
+      const rowNumber = pageOffset + pagedIndex + 1;
       const globalIndex = items.findIndex(
         (candidate) => candidate.productId === item.productId,
       );
@@ -1412,16 +1420,26 @@ export function InventoryStepClient({
         <TableRow
           key={item.productId}
           aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 고침 완료" : ""}`}
-          className={
-            modified || adjusted
-              ? "border-primary bg-primary/5 border-l-4"
-              : undefined
-          }
+          data-focused={focusedProductId === item.productId || undefined}
+          className={cn(
+            "transition-colors",
+            (modified || adjusted) && "border-primary bg-primary/5 border-l-4",
+            // 편집 중인 행: 강한 ring + 배경으로 "지금 이 행"임을 분명히 한다.
+            // 모든 카드가 비슷해 포커스 이동 시 어디로 갔는지 헷갈리던 문제 해결.
+            focusedProductId === item.productId &&
+              "ring-primary bg-primary/10 relative z-10 rounded-sm shadow-sm ring-2 ring-inset",
+          )}
         >
           <TableCell className="p-3 align-top whitespace-normal">
             <div className="flex flex-col gap-2.5">
-              {/* 1줄: 품목명 + 규격 + 상태 뱃지 */}
+              {/* 1줄: 행 번호 + 품목명 + 규격 + 상태 뱃지 */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  aria-hidden
+                  className="text-muted-foreground bg-muted inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded px-1 text-xs font-medium tabular-nums"
+                >
+                  {rowNumber}
+                </span>
                 <span className="font-medium break-keep">
                   {item.productName}
                 </span>
@@ -1534,11 +1552,20 @@ export function InventoryStepClient({
                         : undefined
                     }
                     value={item.currentQuantityInput}
-                    onFocus={(event) =>
+                    onFocus={(event) => {
+                      setFocusedProductId(item.productId);
+                      // block: "nearest"는 입력칸이 화면 밖일 때만 스크롤한다.
+                      // "center"는 이미 보이는 행도 화면 중앙으로 끌어와 "왜
+                      // 움직였지?" 하는 혼란을 줬다.
                       event.currentTarget.scrollIntoView({
-                        block: "center",
+                        block: "nearest",
                         inline: "nearest",
-                      })
+                      });
+                    }}
+                    onBlur={() =>
+                      setFocusedProductId((current) =>
+                        current === item.productId ? null : current,
+                      )
                     }
                     onChange={(event) =>
                       updateCurrentQuantity(
