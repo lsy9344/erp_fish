@@ -539,7 +539,7 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
       },
       {
         productId: "overstock",
-        productName: "고등어",
+        productName: "문어",
         previousQuantity: 2,
         purchasedQuantity: 1,
         lossQuantity: 0,
@@ -547,6 +547,18 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
         adjustment: {
           differenceQuantity: 2,
           differenceAmount: 20_000,
+        },
+      },
+      {
+        productId: "loss-sale-estimate",
+        productName: "고등어",
+        previousQuantity: 0,
+        purchasedQuantity: 4,
+        lossQuantity: 1,
+        currentQuantity: 1,
+        adjustment: {
+          differenceQuantity: -2,
+          differenceAmount: -20_000,
         },
       },
     ],
@@ -577,8 +589,15 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
       {
         id: "inventory-overstock",
         label: "재고 확인 필요",
-        detail: "고등어 기준보다 2개 많습니다.",
+        detail: "문어 기준보다 2개 많습니다.",
         quantity: 2,
+      },
+      {
+        id: "inventory-loss-sale-estimate",
+        label: "재고 확인 필요",
+        detail:
+          "고등어 2개 판매로 계산됩니다. 손실 1개를 뺀 뒤, 남은 재고 기준으로 2개가 판매 추정됩니다.",
+        quantity: -2,
       },
       {
         id: "loss-loss-1",

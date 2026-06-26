@@ -47,6 +47,7 @@ export function buildLedgerReviewSignals({
         detail: buildInventorySignalDetail(
           item.productName,
           differenceQuantity,
+          item.lossQuantity,
         ),
         amount: differenceAmount,
       };
@@ -73,9 +74,16 @@ export function buildLedgerReviewSignals({
 function buildInventorySignalDetail(
   productName: string,
   differenceQuantity: number,
+  lossQuantity: number,
 ) {
   if (differenceQuantity < 0) {
-    return `${productName} 기준보다 ${Math.abs(differenceQuantity)}개 부족합니다.`;
+    const estimatedSalesQuantity = Math.abs(differenceQuantity);
+
+    if (lossQuantity > 0) {
+      return `${productName} ${estimatedSalesQuantity}개 판매로 계산됩니다. 손실 ${lossQuantity}개를 뺀 뒤, 남은 재고 기준으로 ${estimatedSalesQuantity}개가 판매 추정됩니다.`;
+    }
+
+    return `${productName} 기준보다 ${estimatedSalesQuantity}개 부족합니다.`;
   }
 
   if (differenceQuantity > 0) {
