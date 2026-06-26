@@ -472,7 +472,11 @@ export function ReviewSummaryClient({
                   <p className="break-words">{signal.detail}</p>
                   <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-medium tabular-nums">
                     {signal.quantity !== undefined ? (
-                      <span>수량 {formatSignedQuantity(signal.quantity)}</span>
+                      <span>
+                        {signal.quantityLabel ?? "수량"}{" "}
+                        {signal.quantityText ??
+                          formatSignedQuantity(signal.quantity)}
+                      </span>
                     ) : null}
                   </p>
                 </AlertDescription>

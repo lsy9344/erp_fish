@@ -1390,7 +1390,9 @@ export function InventoryStepClient({
     }
 
     const pageOffset =
-      visibleItems.length > ROW_PAGING_THRESHOLD ? (page - 1) * ROW_PAGE_SIZE : 0;
+      visibleItems.length > ROW_PAGING_THRESHOLD
+        ? (page - 1) * ROW_PAGE_SIZE
+        : 0;
 
     return pagedItems.map((item, pagedIndex) => {
       const rowNumber = pageOffset + pagedIndex + 1;

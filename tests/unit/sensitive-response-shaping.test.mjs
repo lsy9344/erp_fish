@@ -135,9 +135,12 @@ test("store manager response shaping recursively removes sensitive ledger metric
     signals: [
       {
         id: "inventory-product-1",
-        label: "재고 확인 필요",
-        detail: "광어 기준보다 2개 부족합니다.",
+        label: "판매 추정 확인",
+        detail:
+          "광어는 손실 1개를 제외한 뒤, 남은 재고를 기준으로 2개 판매로 계산됩니다.",
         quantity: -2,
+        quantityLabel: "판매 추정",
+        quantityText: "2개",
         amount: -2_000,
       },
     ],
@@ -223,12 +226,18 @@ test("store manager response shaping recursively removes sensitive ledger metric
     "totalSales",
     "workerCount",
   ]);
+  // 판매 추정 표시 필드(quantityLabel/quantityText)는 민감 금액이 아니므로 지점장
+  // 응답에서도 유지되고, amount만 제거된다(2026-06-26 WO).
   assert.deepEqual(safeReview.signals[0], {
     id: "inventory-product-1",
-    label: "재고 확인 필요",
-    detail: "광어 기준보다 2개 부족합니다.",
+    label: "판매 추정 확인",
+    detail:
+      "광어는 손실 1개를 제외한 뒤, 남은 재고를 기준으로 2개 판매로 계산됩니다.",
     quantity: -2,
+    quantityLabel: "판매 추정",
+    quantityText: "2개",
   });
+  assert.equal(Object.hasOwn(safeReview.signals[0], "amount"), false);
   // 역산 부정행위 방지(point_summary.md:37): 합계 불일치 경고도 차액 금액(amount)을
   // 지점장 화면에 노출하지 않는다. 경고 사실(label/detail)만 남고 amount는 제거된다.
   assert.deepEqual(safeReview.warnings[0], {

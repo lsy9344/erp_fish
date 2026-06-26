@@ -196,9 +196,15 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
   // 일부 품목 판매가 미입력은 "데이터 부족"으로 노출하고, OQ 정책 게이트 문구는 쓰지 않는다.
   assert.equal(partialPlan.plannedSalesTotal.status, "data-insufficient");
   assert.equal(partialPlan.plannedSalesTotal.value, null);
-  assert.equal(partialPlan.plannedSalesTotal.reason, "일부 품목 판매가 미입력 — 과소 추정");
+  assert.equal(
+    partialPlan.plannedSalesTotal.reason,
+    "일부 품목 판매가 미입력 — 과소 추정",
+  );
   assert.equal(partialPlan.plannedGrossMarginRate.status, "data-insufficient");
-  assert.equal(partialPlan.plannedVsActualSalesDifference.status, "data-insufficient");
+  assert.equal(
+    partialPlan.plannedVsActualSalesDifference.status,
+    "data-insufficient",
+  );
 
   // 3) 판매가 계획 입력 자체가 없으면(plannedSalesItems 미제공) 데이터 부족으로 노출.
   const noPlan = calculateLedgerReviewSummary(baseInput);
@@ -539,7 +545,7 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
       },
       {
         productId: "overstock",
-        productName: "고등어",
+        productName: "문어",
         previousQuantity: 2,
         purchasedQuantity: 1,
         lossQuantity: 0,
@@ -547,6 +553,18 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
         adjustment: {
           differenceQuantity: 2,
           differenceAmount: 20_000,
+        },
+      },
+      {
+        productId: "loss-sale-estimate",
+        productName: "고등어",
+        previousQuantity: 0,
+        purchasedQuantity: 4,
+        lossQuantity: 1,
+        currentQuantity: 1,
+        adjustment: {
+          differenceQuantity: -2,
+          differenceAmount: -20_000,
         },
       },
     ],
@@ -566,6 +584,8 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
       label: signal.label,
       detail: signal.detail,
       quantity: signal.quantity,
+      quantityLabel: signal.quantityLabel,
+      quantityText: signal.quantityText,
     })),
     [
       {
@@ -573,18 +593,33 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
         label: "재고 확인 필요",
         detail: "바지락 기준보다 5개 부족합니다.",
         quantity: -5,
+        quantityLabel: undefined,
+        quantityText: undefined,
       },
       {
         id: "inventory-overstock",
         label: "재고 확인 필요",
-        detail: "고등어 기준보다 2개 많습니다.",
+        detail: "문어 기준보다 2개 많습니다.",
         quantity: 2,
+        quantityLabel: undefined,
+        quantityText: undefined,
+      },
+      {
+        id: "inventory-loss-sale-estimate",
+        label: "판매 추정 확인",
+        detail:
+          "고등어는 손실 1개를 제외한 뒤, 남은 재고를 기준으로 2개 판매로 계산됩니다.",
+        quantity: -2,
+        quantityLabel: "판매 추정",
+        quantityText: "2개",
       },
       {
         id: "loss-loss-1",
         label: "손실 기록 있음",
         detail: "낙지 손실 항목이 기록되어 제출 전 확인해 주세요.",
         quantity: 1,
+        quantityLabel: undefined,
+        quantityText: undefined,
       },
     ],
   );

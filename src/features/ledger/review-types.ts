@@ -26,6 +26,8 @@ export type LedgerReviewSignal = {
   detail: string;
   amount?: number;
   quantity?: number;
+  quantityLabel?: string;
+  quantityText?: string;
 };
 
 export type LedgerReviewStepId =
