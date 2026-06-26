@@ -20,6 +20,7 @@ import { LedgerContextHeader } from "~/features/ledger/components/ledger-context
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { StoreTopSoldItemsChart } from "~/features/ledger/components/store-top-sold-items-chart";
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type {
@@ -390,28 +391,7 @@ export function ReviewSummaryClient({
                 </a>
               </Button>
             ) : null}
-            <ul className="mt-3 flex flex-col gap-2">
-              {currentReviewData.topSoldItems.map((item) => (
-                <li
-                  key={item.productId}
-                  className="bg-muted/40 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-3 py-2"
-                >
-                  <span className="min-w-0 text-sm font-medium break-words">
-                    {item.productName}
-                  </span>
-                  <span className="text-muted-foreground text-sm tabular-nums">
-                    {item.soldQuantity}개 · 추정 매출{" "}
-                    {formatKrw(item.estimatedSalesAmount)}
-                    {item.salesBasis === "cost" ? (
-                      <span className="text-amber-600 dark:text-amber-500">
-                        {" "}
-                        · 판매가 미반영
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <StoreTopSoldItemsChart items={currentReviewData.topSoldItems} />
           </section>
         ) : null}
 
