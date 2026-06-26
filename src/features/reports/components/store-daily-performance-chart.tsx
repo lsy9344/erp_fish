@@ -61,6 +61,8 @@ export function StoreDailyPerformanceChart({
   }>;
 
   const omittedCount = rows.length - chartData.length;
+  // 막대 수에 맞춰 높이를 키운다(고정 높이면 지점이 적을 때 막대가 과하게 두꺼워 보임).
+  const chartHeight = Math.max(140, chartData.length * 48 + 48);
   const format = (value: number) =>
     metric === "salesAmount"
       ? krwFormatter.format(value)
@@ -92,11 +94,16 @@ export function StoreDailyPerformanceChart({
           표시할 지점 데이터 없음
         </div>
       ) : (
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
+        <ChartContainer
+          config={chartConfig}
+          className="w-full max-w-xl"
+          style={{ height: chartHeight }}
+        >
           <BarChart
             accessibilityLayer
             data={chartData}
             layout="vertical"
+            maxBarSize={36}
             margin={{ top: 4, right: 56, left: 8, bottom: 4 }}
           >
             <CartesianGrid horizontal={false} />
