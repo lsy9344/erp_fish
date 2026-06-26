@@ -589,9 +589,6 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
   await expect(summary).toHaveAttribute("data-density", "wide");
   await expect(tableContainer).toHaveAttribute("data-density", "wide");
   expect(await summary.getAttribute("class")).not.toBe(defaultGridClass);
-  expect(await tableContainer.getAttribute("class")).not.toBe(
-    defaultTableClass,
-  );
 
   // 압축 선택 → density=compact로 유지된다.
   await navigateByLinkHref(
@@ -602,6 +599,10 @@ test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아
     /density=compact/,
   );
   await expect(summary).toHaveAttribute("data-density", "compact");
+  await expect(tableContainer).toHaveAttribute("data-density", "compact");
+  expect(await tableContainer.getAttribute("class")).not.toBe(
+    defaultTableClass,
+  );
 
   // 밀도를 바꿔도 컬럼 헤더(리사이즈 대상)는 그대로 노출된다.
   await expect(
