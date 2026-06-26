@@ -133,7 +133,7 @@ export function EcountSupplyDetailClient({
     rawProductName: string,
     productSpec: string,
   ) {
-    const mapKey = `${rawProductName} ${productSpec}`;
+    const mapKey = `${rawProductName}\u001f${productSpec}`;
     const productId = productSelections[mapKey] ?? "";
 
     if (!productId) {
@@ -381,7 +381,7 @@ export function EcountSupplyDetailClient({
                 </TableHeader>
                 <TableBody>
                   {detail.unmappedProducts.map((product) => {
-                    const mapKey = `${product.rawProductName} ${product.productSpec}`;
+                    const mapKey = `${product.rawProductName}\u001f${product.productSpec}`;
                     const key = `product:${mapKey}`;
 
                     return (

@@ -76,6 +76,12 @@ export function EcountSupplyUploadClient({
 
     try {
       const formData = new FormData(event.currentTarget);
+      const selectedFileName = fileInputRef.current?.files?.[0]?.name;
+
+      if (selectedFileName) {
+        formData.set("fileName", selectedFileName);
+      }
+
       const result = await previewEcountSupplyUpload(formData);
 
       if (!result.ok) {

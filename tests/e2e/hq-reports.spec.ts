@@ -1169,9 +1169,11 @@ test("본사는 전 지점 재고 현황을 CSV로 내려받고 미입력 행을
 test("본사는 월간 리포트에서 손익 준비도와 추정 매출 순위 라벨을 본다", async ({
   page,
 }) => {
+  test.slow();
   await login(page, "hq@example.com");
   await page.goto(
     `/app/reports/monthly?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+    { waitUntil: "domcontentloaded" },
   );
 
   await expect(

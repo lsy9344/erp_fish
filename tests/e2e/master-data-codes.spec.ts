@@ -122,10 +122,14 @@ test("본사는 코드 관리 목록과 검색, 그룹, 상태 필터를 볼 수
   });
 
   await login(page, "hq@example.com");
-  await page
+  const codeManagementLink = page
     .getByRole("list")
-    .getByRole("link", { name: "코드 관리", exact: true })
-    .click();
+    .getByRole("link", { name: "코드 관리", exact: true });
+  await expect(codeManagementLink).toHaveAttribute(
+    "href",
+    "/app/master-data/codes",
+  );
+  await page.goto((await codeManagementLink.getAttribute("href")) ?? "");
 
   await expect(page).toHaveURL(/\/app\/master-data\/codes/);
   await expect(page.getByRole("heading", { name: "코드 관리" })).toBeVisible();

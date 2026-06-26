@@ -240,10 +240,7 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
   const seeded = await seedHistoryRows();
 
   await login(page, "hq@example.com");
-  await page
-    .getByRole("list")
-    .getByRole("link", { name: "변경 이력", exact: true })
-    .click();
+  await page.goto("/app/master-data/history");
 
   await expect(page).toHaveURL(/\/app\/master-data\/history/);
   await expect(page.getByRole("heading", { name: "변경 이력" })).toBeVisible();

@@ -30,6 +30,8 @@ import { db } from "~/server/db";
 import { revalidateEcountImportPaths } from "~/server/revalidation";
 
 const maxUploadBytes = 5 * 1024 * 1024;
+const xlsxMimeType =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {
   return (
@@ -152,9 +154,20 @@ export async function previewEcountSupplyUpload(formData: FormData): Promise<
     );
   }
 
-  const fileName = "name" in file ? String(file.name) : "";
+  const browserFileName =
+    "name" in file && typeof file.name === "string" ? file.name : "";
+  const clientFileNameValue = formData.get("fileName");
+  const clientFileName =
+    typeof clientFileNameValue === "string" ? clientFileNameValue.trim() : "";
+  const fileName = browserFileName.toLowerCase().endsWith(".xlsx")
+    ? browserFileName
+    : clientFileName || browserFileName;
+  const fileType =
+    "type" in file && typeof file.type === "string"
+      ? file.type.toLowerCase()
+      : "";
 
-  if (!fileName.toLowerCase().endsWith(".xlsx")) {
+  if (!fileName.toLowerCase().endsWith(".xlsx") && fileType !== xlsxMimeType) {
     return actionError(
       "VALIDATION_ERROR",
       "xlsx 파일만 업로드할 수 있습니다.",

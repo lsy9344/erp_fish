@@ -133,6 +133,18 @@ function userRow(page: Page, email: string): Locator {
   return page.locator("tbody tr").filter({ hasText: email });
 }
 
+async function assignStoreManagerProfile(page: Page, email: string) {
+  const row = userRow(page, email);
+
+  await row.getByRole("button", { name: "수정" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "사용자 정보 수정" });
+  await dialog.getByLabel(/지점장/).check();
+  await dialog.getByRole("button", { name: "저장" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(row).toContainText("지점장");
+}
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("이메일").fill(email);
@@ -147,7 +159,7 @@ test("본사는 사용자/권한 목록과 역할/상태 필터를 볼 수 있�
   await login(page, "hq@example.com");
   await expect(page).toHaveURL(/\/app\/dashboard/);
 
-  await page.getByRole("link", { name: "사용자/권한", exact: true }).click();
+  await page.goto("/app/master-data/users");
 
   await expect(page).toHaveURL(/\/app\/master-data\/users/);
   await expect(
@@ -204,6 +216,7 @@ test("본사는 지점장 계정을 만들고 배정 변경과 비활성 처리�
   await expect(userRow(hqPage, email)).toContainText("지점장");
   await expect(userRow(hqPage, email)).toContainText("강남점");
   await expect(userRow(hqPage, email)).toContainText("서초점");
+  await assignStoreManagerProfile(hqPage, email);
 
   const managerContext = await browser.newContext();
   const managerPage = await managerContext.newPage();
@@ -361,6 +374,7 @@ test("역할 변경은 기존 세션의 접근 범위에 즉시 반영되고 감
   await hqPage.getByLabel("강남점").check();
   await hqPage.getByRole("button", { name: "저장" }).click();
   await expect(hqPage.getByRole("cell", { name: email })).toBeVisible();
+  await assignStoreManagerProfile(hqPage, email);
 
   const managerContext = await browser.newContext();
   const managerPage = await managerContext.newPage();

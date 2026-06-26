@@ -1626,7 +1626,7 @@ export function InventoryStepClient({
                       ref={(node) => {
                         reasonRefs.current[item.productId] = node;
                       }}
-                      aria-label={`${item.productName} ${inventoryTerms.adjustmentReason}`}
+                      aria-label={`${item.productName} ${inventoryTerms.adjustmentReasonAriaLabel}`}
                       aria-invalid={Boolean(reasonError)}
                       aria-describedby={
                         reasonError

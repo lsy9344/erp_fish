@@ -321,7 +321,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   });
   await currentQuantityInput.fill("9");
   await page
-    .getByLabel(`${product.name} 당일재고 바꾼 이유`)
+    .getByLabel(`${product.name} 재고 조정 이유`)
     .fill("실사 재고 차이");
   await page
     .getByRole("button", { name: `${product.name} 고친 이유 저장` })

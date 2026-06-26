@@ -9,6 +9,8 @@ import {
 } from "~/features/master-data/purchase-standard-queries";
 import { requireSettingsAccess } from "~/server/authz";
 
+export const dynamic = "force-dynamic";
+
 type PurchaseStandardManagementPageProps = {
   searchParams: Promise<{
     status?: string | string[];

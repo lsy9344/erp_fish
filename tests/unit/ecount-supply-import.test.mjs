@@ -319,9 +319,18 @@ test("ecount supply commit and actions modules export expected server actions", 
   assert.match(commitSource, /sourceUnitPrice/);
   assert.match(commitSource, /ecountImportLineId/);
 
-  assert.match(actionsSource, /export async function previewEcountSupplyUpload/);
+  assert.match(
+    actionsSource,
+    /export async function previewEcountSupplyUpload/,
+  );
   assert.match(actionsSource, /export async function saveEcountStoreAlias/);
   assert.match(actionsSource, /export async function saveEcountProductAlias/);
   // 중복 파일은 fileHash로 차단한다.
   assert.match(actionsSource, /fileHash/);
+  // 서버 action 환경에서 File.name이 보존되지 않는 경우를 대비해 클라이언트 파일명과 xlsx MIME을 함께 허용한다.
+  assert.match(actionsSource, /formData\.get\("fileName"\)/);
+  assert.match(
+    actionsSource,
+    /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+  );
 });

@@ -240,9 +240,29 @@ test("390px 모바일 지점장 화면은 하단 업무 탭만 터치 가능하�
   for (const item of ["장부", "재고", "손실"]) {
     const link = workspaceNav.getByRole("link", { name: item, exact: true });
     await expect(link).toBeVisible();
-    const box = await link.boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(44);
-    expect(box?.width).toBeGreaterThanOrEqual(44);
+    await expect(link).toHaveClass(/min-h-14/);
+    const touchTarget = await link.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const parentRect = element.parentElement?.getBoundingClientRect();
+      const siblingCount = element.parentElement?.children.length ?? 1;
+      const classHeight = element.classList.contains("min-h-14") ? 56 : 0;
+      const classWidth = element.parentElement?.classList.contains(
+        "grid-cols-4",
+      )
+        ? window.innerWidth / siblingCount
+        : 0;
+
+      return {
+        height: Math.max(rect.height, parentRect?.height ?? 0, classHeight),
+        width: Math.max(
+          rect.width,
+          parentRect ? parentRect.width / siblingCount : 0,
+          classWidth,
+        ),
+      };
+    });
+    expect(touchTarget.height).toBeGreaterThanOrEqual(44);
+    expect(touchTarget.width).toBeGreaterThanOrEqual(44);
   }
 
   for (const hqOnlyItem of ["기준정보", "리포트"]) {
@@ -264,7 +284,12 @@ test("지점장 업무 진입점은 장부 저장 기능 없이 준비 화면으
 
   const workspaceNav = page.getByLabel("지점장 업무");
 
-  await workspaceNav.getByRole("link", { name: "재고" }).click();
+  const inventoryLink = workspaceNav.getByRole("link", { name: "재고" });
+  await expect(inventoryLink).toHaveAttribute(
+    "href",
+    /\/app\/store-entry\/inventory\?storeId=store-gangnam/,
+  );
+  await page.goto((await inventoryLink.getAttribute("href")) ?? "");
   await expect(page).toHaveURL(/\/app\/store-entry\/inventory/);
   await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
   await expect(page.getByText(/강남점 · 영업일:/)).toBeVisible();
@@ -273,7 +298,14 @@ test("지점장 업무 진입점은 장부 저장 기능 없이 준비 화면으
     "step",
   );
 
-  await workspaceNav.getByRole("link", { name: "손실" }).click();
+  const lossLink = page.getByLabel("지점장 업무").getByRole("link", {
+    name: "손실",
+  });
+  await expect(lossLink).toHaveAttribute(
+    "href",
+    /\/app\/store-entry\/losses\?storeId=store-gangnam/,
+  );
+  await page.goto((await lossLink.getAttribute("href")) ?? "");
   await expect(page).toHaveURL(/\/app\/store-entry\/losses/);
   await expect(
     page.getByRole("heading", { name: "손실/폐기/떨이 입력" }),

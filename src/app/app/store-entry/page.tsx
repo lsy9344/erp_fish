@@ -26,6 +26,8 @@ import { WorkStepClient } from "~/features/ledger/components/workstep-client";
 import { getActiveEmployeeOptions } from "~/features/labor/employees-queries";
 import { ReviewSummaryClient } from "~/features/ledger/components/review-summary-client";
 
+export const dynamic = "force-dynamic";
+
 type StoreEntryPageProps = {
   searchParams: Promise<{
     storeId?: string | string[];
