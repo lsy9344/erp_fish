@@ -217,6 +217,44 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+async function setEcountUploadFile(
+  page: Page,
+  uploadFile: {
+    name: string;
+    mimeType: string;
+    buffer: Buffer;
+  },
+) {
+  const fileInput = page.locator('input[type="file"]');
+  await expect(fileInput).toBeAttached();
+  await page.waitForLoadState("networkidle");
+
+  let selectedFile: { name: string; size: number; type: string } | null = null;
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await fileInput.setInputFiles(uploadFile);
+    selectedFile = await fileInput.evaluate((input) => {
+      const file = (input as HTMLInputElement).files?.[0];
+
+      return file
+        ? { name: file.name, size: file.size, type: file.type }
+        : null;
+    });
+
+    if (selectedFile?.name === uploadFile.name && selectedFile.size > 0) {
+      break;
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  expect(selectedFile).toMatchObject({
+    name: uploadFile.name,
+    type: uploadFile.mimeType,
+  });
+  expect(selectedFile?.size).toBeGreaterThan(0);
+}
+
 test("본사는 이카운트 업로드 화면에 진입해 파일 업로드와 최근 업로드 목록을 본다", async ({
   page,
 }) => {
@@ -241,42 +279,13 @@ test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트�
   const workbook = createUploadWorkbook(uploadDateNo);
   await writeFile(uploadPath, workbook);
 
-  const fileInput = page.locator('input[type="file"]');
-  await expect(fileInput).toBeAttached();
-  await page.waitForLoadState("networkidle");
   const uploadFile = {
     name: ECOUNT_UPLOAD.fileName,
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: workbook,
   };
-  let selectedFile: { name: string; size: number; type: string } | null = null;
-
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await fileInput.setInputFiles(uploadFile);
-    selectedFile = await fileInput.evaluate((input) => {
-      const file = (input as HTMLInputElement).files?.[0];
-
-      return file
-        ? { name: file.name, size: file.size, type: file.type }
-        : null;
-    });
-
-    if (
-      selectedFile?.name === ECOUNT_UPLOAD.fileName &&
-      selectedFile.size > 0
-    ) {
-      break;
-    }
-
-    await page.waitForTimeout(250);
-  }
-
-  expect(selectedFile).toMatchObject({
-    name: ECOUNT_UPLOAD.fileName,
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  expect(selectedFile?.size).toBeGreaterThan(0);
+  await setEcountUploadFile(page, uploadFile);
   await page.getByRole("button", { name: "업로드" }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
@@ -334,7 +343,7 @@ test("본사는 두 번째 미매핑 거래처 지점 드롭다운을 선택하�
   await login(page, "hq@example.com");
   await page.goto("/app/ecount-imports");
 
-  await page.locator('input[type="file"]').setInputFiles({
+  await setEcountUploadFile(page, {
     name: ECOUNT_STORE_MAPPING_UPLOAD.fileName,
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
