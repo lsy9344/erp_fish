@@ -320,6 +320,44 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
   assert.equal(summary.unavailableItemCount, 0);
 });
 
+test("estimated sales subtract loss quantity (loss is not counted as sold)", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildProductProfitability, buildProductCategoryPerformance } =
+    await import(pathToFileURL(queryPath).href);
+
+  // 전일 0 + 매입 4 - 손실 1 - 당일재고 1 = 판매 2 (손실 1을 빼지 않으면 3으로 부풀려진다).
+  const ledgers = [
+    {
+      ledgerInventoryItems: [
+        {
+          productId: "p-godeungeo",
+          productName: "고등어",
+          productCategory: "냉동",
+          previousQuantity: 0,
+          purchasedQuantity: 4,
+          lossQuantity: 1,
+          currentQuantity: 1,
+          unitPrice: 10_000,
+          plannedUnitPrice: 40_000,
+        },
+      ],
+    },
+  ];
+
+  const summary = buildProductProfitability(ledgers);
+  assert.equal(summary.items[0].soldQuantity, 2);
+  assert.equal(summary.items[0].estimatedSalesAmount, 80_000); // 2 × 40,000
+
+  const category = buildProductCategoryPerformance(ledgers);
+  const frozen = category.find((c) => c.category === "냉동");
+  assert.equal(frozen.salesAmount, 80_000); // 2 × 40,000, not 3 × 40,000
+});
+
 test("buildProductProfitability flags zero-sales items as 계산 불가", async () => {
   const queryPath = assertProjectFile(
     "src",

@@ -452,6 +452,7 @@ function buildStoreManagerTopSoldItems(
     productName: string;
     previousQuantity: number;
     purchasedQuantity: number;
+    lossQuantity: number;
     currentQuantity: number | null;
     unitPrice: number;
     plannedUnitPrice: number | null;
@@ -463,8 +464,13 @@ function buildStoreManagerTopSoldItems(
   for (const item of items) {
     if (item.currentQuantity === null) continue;
 
+    // 판매량 = 기준재고(전일+매입-손실) - 당일재고. 손실을 빼지 않으면
+    // 폐기/손실 수량이 판매로 잘못 잡혀 추정 매출이 부풀려진다.
     const soldQuantity =
-      item.previousQuantity + item.purchasedQuantity - item.currentQuantity;
+      item.previousQuantity +
+      item.purchasedQuantity -
+      item.lossQuantity -
+      item.currentQuantity;
 
     if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) continue;
 
@@ -536,6 +542,16 @@ export async function getLedgerReviewStepData(
     );
     const getPlannedUnitPrice = (productId: string): number | null =>
       plannedUnitPriceByProductId.get(productId) ?? null;
+    // 손실 수량을 품목별로 합산한다. "오늘 많이 팔린 품목" 판매량 추정에서
+    // 기준재고(전일+매입-손실)를 쓰기 위해 필요하다.
+    const lossQuantityByProductId = new Map<string, number>();
+    for (const lossItem of losses.lossItems) {
+      lossQuantityByProductId.set(
+        lossItem.productId,
+        (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
+          lossItem.quantity,
+      );
+    }
     const expenseTotal = calculateExpenseTotal(
       ledger.ledgerExpenses.map((expense) => expense.amount),
     );
@@ -566,6 +582,7 @@ export async function getLedgerReviewStepData(
         productId: item.productId,
         previousQuantity: item.previousQuantity,
         purchasedQuantity: item.purchasedQuantity,
+        lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
         currentQuantity: item.currentQuantity,
         quantity: item.quantity,
         plannedUnitPrice: getPlannedUnitPrice(item.productId),
@@ -635,6 +652,7 @@ export async function getLedgerReviewStepData(
           productName: item.productName,
           previousQuantity: item.previousQuantity,
           purchasedQuantity: item.purchasedQuantity,
+          lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
           currentQuantity: item.currentQuantity,
           unitPrice: item.unitPrice,
           plannedUnitPrice: getPlannedUnitPrice(item.productId),

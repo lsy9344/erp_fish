@@ -137,6 +137,9 @@ export type LedgerReviewPlannedSalesInput = {
   productId?: string;
   previousQuantity: number;
   purchasedQuantity: number;
+  // 당일 손실 합계 수량. 판매량은 기준재고(전일+매입-손실)에서 당일재고를 빼야
+  // 하므로 손실을 판매로 잘못 잡지 않도록 차감한다. 없으면 0.
+  lossQuantity?: number;
   currentQuantity: number | null;
   quantity: number | null;
   // 지점장 판매가 계획(StoreSalesPricePlan.plannedUnitPrice). 없으면 null.
@@ -533,7 +536,10 @@ function getPlannedSalesSoldQuantity(item: LedgerReviewPlannedSalesInput) {
   }
 
   const soldQuantity =
-    item.previousQuantity + item.purchasedQuantity - currentQuantity;
+    item.previousQuantity +
+    item.purchasedQuantity -
+    (item.lossQuantity ?? 0) -
+    currentQuantity;
 
   return Number.isFinite(soldQuantity) ? soldQuantity : null;
 }

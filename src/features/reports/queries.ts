@@ -335,17 +335,39 @@ type CategoryPerformanceItem = {
   previousQuantity: number;
   purchasedQuantity: number;
   currentQuantity: number | null;
+  // 당일 손실 합계 수량. 판매량은 기준재고(전일+매입-손실)에서 당일재고를 빼야
+  // 하므로 손실을 판매로 잘못 잡지 않도록 차감한다. 없으면 0.
+  lossQuantity?: number;
   unitPrice: number;
   // 지점장 판매가 계획. 없으면 null(매입단가로 폴백).
   plannedUnitPrice?: number | null;
   fifoLots?: Array<{ consumedAmount: number }>;
 };
 
+// ledgerLossItems(품목별 손실 행)를 productId별 합계 수량으로 집계한다.
+// 판매량 추정에서 기준재고(전일+매입-손실)를 쓰기 위해 각 재고 행에 붙인다.
+function aggregateLossQuantityByProductId(
+  lossItems: Array<{ productId: string | null; quantity: number }> = [],
+): Map<string, number> {
+  const byProductId = new Map<string, number>();
+  for (const lossItem of lossItems) {
+    if (!lossItem.productId) continue;
+    byProductId.set(
+      lossItem.productId,
+      (byProductId.get(lossItem.productId) ?? 0) + lossItem.quantity,
+    );
+  }
+  return byProductId;
+}
+
 function getItemSoldQuantity(item: CategoryPerformanceItem) {
   if (item.currentQuantity === null) return null;
 
   const soldQuantity =
-    item.previousQuantity + item.purchasedQuantity - item.currentQuantity;
+    item.previousQuantity +
+    item.purchasedQuantity -
+    (item.lossQuantity ?? 0) -
+    item.currentQuantity;
 
   return Number.isFinite(soldQuantity) ? soldQuantity : null;
 }
@@ -665,19 +687,27 @@ export async function getHqDailyMeetingReport({
       businessDate: ledger.closingDate,
     })),
   );
-  const ledgersWithPlannedPrice = ledgers.map((ledger) => ({
-    ...ledger,
-    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
-      ...item,
-      plannedUnitPrice: item.productId
-        ? plannedUnitPriceLookup(
-            ledger.storeId,
-            ledger.closingDate,
-            item.productId,
-          )
-        : null,
-    })),
-  }));
+  const ledgersWithPlannedPrice = ledgers.map((ledger) => {
+    const lossQuantityByProductId = aggregateLossQuantityByProductId(
+      ledger.ledgerLossItems,
+    );
+    return {
+      ...ledger,
+      ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+        ...item,
+        lossQuantity: item.productId
+          ? (lossQuantityByProductId.get(item.productId) ?? 0)
+          : 0,
+        plannedUnitPrice: item.productId
+          ? plannedUnitPriceLookup(
+              ledger.storeId,
+              ledger.closingDate,
+              item.productId,
+            )
+          : null,
+      })),
+    };
+  });
   const ledgerByStoreId = new Map<string, ReportLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
@@ -1361,10 +1391,19 @@ export async function getHqMonthlyClosingAnomalyReport({
       lossItems: calculationSummary.lossItems,
       originalInventoryItems: calculationSummary.originalInventoryItems,
       // 랭킹용 추정 매출 단가를 위해 품목별 판매가 계획을 붙인다.
-      inventoryItems: calculationSummary.inventoryItems.map((item) => ({
-        ...item,
-        plannedUnitPrice: getItemPlannedUnitPrice(item.productId),
-      })),
+      // 판매량 추정(전일+매입-손실-당일)을 위해 품목별 손실 합계도 붙인다.
+      inventoryItems: (() => {
+        const lossQuantityByProductId = aggregateLossQuantityByProductId(
+          calculationSummary.lossItems,
+        );
+        return calculationSummary.inventoryItems.map((item) => ({
+          ...item,
+          lossQuantity: item.productId
+            ? (lossQuantityByProductId.get(item.productId) ?? 0)
+            : 0,
+          plannedUnitPrice: getItemPlannedUnitPrice(item.productId),
+        }));
+      })(),
       originalInventoryAdjustments:
         calculationSummary.originalInventoryAdjustments,
       inventoryAdjustments: calculationSummary.inventoryAdjustments,
@@ -1448,6 +1487,8 @@ type MonthlyReportLossItem = {
 type MonthlyReportInventoryItem = LedgerReviewInventoryInput & {
   // point_summary 검토 후속(2026-06-24): 랭킹 추정 매출을 판매가 계획 기준으로 내기 위한 단가.
   plannedUnitPrice?: number | null;
+  // 판매량 추정(전일+매입-손실-당일)을 위한 품목별 손실 합계 수량.
+  lossQuantity?: number;
 };
 
 type MonthlyReportInventoryAdjustment = {
@@ -2116,8 +2157,13 @@ function buildMonthlyRevenueRanking(
         continue;
       }
 
+      // 판매량 = 기준재고(전일+매입-손실) - 당일재고. 손실을 빼지 않으면
+      // 폐기 수량이 판매로 잘못 잡혀 추정 매출이 부풀려진다.
       const soldQuantity =
-        item.previousQuantity + item.purchasedQuantity - currentQuantity;
+        item.previousQuantity +
+        item.purchasedQuantity -
+        (item.lossQuantity ?? 0) -
+        currentQuantity;
 
       if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) {
         continue;

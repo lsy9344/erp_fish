@@ -756,11 +756,11 @@ test("store manager review exposes estimated top sold items derived from invento
   );
   assert.match(typeSource, /topSoldItems:\s*StoreManagerTopSoldItem\[\]/);
 
-  // 판매수량은 재고 흐름(전일+매입-당일)으로만 추정한다.
+  // 판매수량은 재고 흐름(기준재고=전일+매입-손실 빼고 당일재고)으로만 추정한다.
   assert.match(querySource, /buildStoreManagerTopSoldItems/);
   assert.match(
     querySource,
-    /item\.previousQuantity\s*\+\s*item\.purchasedQuantity\s*-\s*item\.currentQuantity/,
+    /item\.previousQuantity\s*\+\s*item\.purchasedQuantity\s*-\s*item\.lossQuantity\s*-\s*item\.currentQuantity/,
   );
   // point_summary 검토 후속(2026-06-24): 추정 매출은 판매가 계획(plannedUnitPrice) 기준이고,
   // 계획이 없으면 매입단가(unitPrice)로 폴백해 salesBasis="cost"로 표시한다.
