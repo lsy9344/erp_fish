@@ -71,8 +71,14 @@ test("P1 ledger review summary wires planned-vs-actual comparison from sales pla
   assert.match(querySource, /plannedUnitPrice:\s*getPlannedUnitPrice/);
 });
 
-// P1: 계획 매출이익(절대 이익)은 지점장 요약에서 차단, 계획 매출/차이/마진율은 노출.
-test("P1 planned profit stays blocked while planned sales/diff/margin are exposed to store managers", () => {
+// P1: 계획 판매가 비교 지표는 본사 원본 summary에만 두고 지점장 요약에서는 차단한다.
+test("P1 planned sales comparison stays headquarters-only while store-manager graph remains", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-queries.ts",
+  );
   const shapeSource = readProjectFile(
     "src",
     "features",
@@ -80,21 +86,24 @@ test("P1 planned profit stays blocked while planned sales/diff/margin are expose
     "response-shaping.ts",
   );
 
-  assert.match(
+  // 본사 원본 step summary에는 계획 비교 지표가 남아 있다.
+  assert.match(querySource, /"plannedSalesTotal"/);
+  assert.match(querySource, /"plannedVsActualSalesDifference"/);
+  assert.match(querySource, /"plannedGrossMarginRate"/);
+
+  // 지점장 shaping은 계획 판매가 비교 지표를 summary로 내려보내지 않는다.
+  assert.doesNotMatch(shapeSource, /plannedSalesTotal:\s*data\.summary/);
+  assert.doesNotMatch(
     shapeSource,
-    /plannedSalesTotal:\s*data\.summary\.plannedSalesTotal/,
+    /plannedVsActualSalesDifference:\s*\n?\s*data\.summary/,
   );
-  assert.match(
-    shapeSource,
-    /plannedVsActualSalesDifference:\s*\n?\s*data\.summary\.plannedVsActualSalesDifference/,
-  );
-  // 계획 마진율은 ok일 때만 노출(원가 역산 방지).
-  assert.match(shapeSource, /plannedGrossMarginRate:\s*hideNonOkMetric/);
-  // 계획 매출이익은 지점장 요약 화이트리스트에 없다.
+  assert.doesNotMatch(shapeSource, /plannedGrossMarginRate:\s*data\.summary/);
   assert.doesNotMatch(
     shapeSource,
     /plannedGrossProfit:\s*data\.summary\.plannedGrossProfit/,
   );
+  // 그래프 데이터는 response spread로 계속 보존된다.
+  assert.match(shapeSource, /\.\.\.data/);
 });
 
 // P1: 월간 랭킹/카테고리 매출도 판매가 계획 기준 + 폴백 카운트.

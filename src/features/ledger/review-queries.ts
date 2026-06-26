@@ -11,6 +11,7 @@ import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
 import { getStoreLedgerInTx, getKstBusinessDateParam } from "./queries";
 import { toStoreManagerLedgerReviewStepData } from "./response-shaping";
+import { buildLedgerReviewSignals } from "./review-signals";
 import {
   getLedgerReviewMissingItems,
   getLedgerReviewStepHref,
@@ -18,7 +19,6 @@ import {
 import { getStoreEntryStepCompletion } from "./step-completion";
 import type {
   LedgerReviewMissingItem,
-  LedgerReviewSignal,
   LedgerReviewStepId,
   LedgerReviewStepMetric,
   LedgerReviewStepStatus,
@@ -88,41 +88,6 @@ function getWarnings(
       amount: paymentDifference.value,
     },
   ];
-}
-
-function getSignals({
-  inventoryItems,
-  lossSignalCandidates,
-}: {
-  inventoryItems: Awaited<ReturnType<typeof getInventoryStepDataInTx>>["items"];
-  lossSignalCandidates: Awaited<
-    ReturnType<typeof getLossStepDataInTx>
-  >["signalCandidates"];
-}): LedgerReviewSignal[] {
-  const inventorySignals = inventoryItems
-    .filter((item) => {
-      const differenceQuantity = item.adjustment?.differenceQuantity ?? 0;
-      const differenceAmount = item.adjustment?.differenceAmount ?? 0;
-
-      return differenceQuantity !== 0 || differenceAmount !== 0;
-    })
-    .map<LedgerReviewSignal>((item) => ({
-      id: `inventory-${item.productId}`,
-      label: "재고 차이",
-      detail: `${item.productName} 실제 재고 차이`,
-      quantity: item.adjustment?.differenceQuantity ?? 0,
-      amount: item.adjustment?.differenceAmount ?? 0,
-    }));
-
-  const lossSignals = lossSignalCandidates.map<LedgerReviewSignal>((item) => ({
-    id: `loss-${item.productId}`,
-    label: "손실 확인 후보",
-    detail: `${item.productName} 손실 항목이 기록되어 확인이 필요합니다.`,
-    quantity: item.quantity,
-    amount: item.amount,
-  }));
-
-  return [...inventorySignals, ...lossSignals];
 }
 
 function metricStatusText(metric: LedgerReviewMetric) {
@@ -620,7 +585,7 @@ export async function getLedgerReviewStepData(
       summary,
       missingItems,
       warnings: getWarnings(summary.paymentDifference),
-      signals: getSignals({
+      signals: buildLedgerReviewSignals({
         inventoryItems: inventory.items,
         lossSignalCandidates: losses.signalCandidates,
       }),

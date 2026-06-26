@@ -97,21 +97,12 @@ export type LedgerReviewStepData = {
   topSoldItems: StoreManagerTopSoldItem[];
 };
 
-// point_summary 검토 후속(2026-06-24): 지점장에게도 "아침 판매가 계획 vs 저녁 실제"
-// 비교를 노출한다. 단 계획 매출(plannedSalesTotal)과 계획 대비 실제 차이
-// (plannedVsActualSalesDifference)는 지점장 본인 판매가 계획과 이미 보이는 총매출만으로
-// 산출되므로 안전하게 노출하고, 계획 마진율(plannedGrossMarginRate)은 마진율(%) 노출 정책과
-// 동일하게 status가 ok일 때만 노출한다. 계획 매출이익(plannedGrossProfit)은 절대 이익(원가
-// 역산 가능)이라 매출이익 차단 정책에 따라 지점장 요약에서 제외한다.
+// WO(2026-06-26): 계획 판매가 비교 지표는 원가/마진 역산 여지가 있어 본사 전용으로 둔다.
+// 지점장 요약은 총매출·마진율·근무인원·재고금액만 유지하고, 7단계 그래프용 topSoldItems는
+// 별도 안전 타입(StoreManagerTopSoldItem)으로 계속 노출한다.
 export type StoreManagerLedgerReviewSummary = Pick<
   LedgerReviewSummary,
-  | "totalSales"
-  | "grossMarginRate"
-  | "workerCount"
-  | "inventoryAmount"
-  | "plannedSalesTotal"
-  | "plannedGrossMarginRate"
-  | "plannedVsActualSalesDifference"
+  "totalSales" | "grossMarginRate" | "workerCount" | "inventoryAmount"
 >;
 
 export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;

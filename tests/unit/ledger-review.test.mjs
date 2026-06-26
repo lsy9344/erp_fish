@@ -500,6 +500,96 @@ test("ledger review missing item helper preserves KST links and separates review
   );
 });
 
+test("ledger review inventory signals ignore purchase-driven normal sales and label unresolved differences", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-signals.ts",
+  );
+  const { buildLedgerReviewSignals } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const signals = buildLedgerReviewSignals({
+    inventoryItems: [
+      {
+        productId: "normal-sale",
+        productName: "꽃게",
+        previousQuantity: 0,
+        purchasedQuantity: 10,
+        lossQuantity: 0,
+        currentQuantity: 0,
+        adjustment: {
+          differenceQuantity: -10,
+          differenceAmount: -100_000,
+        },
+      },
+      {
+        productId: "unexplained-shortage",
+        productName: "바지락",
+        previousQuantity: 5,
+        purchasedQuantity: 0,
+        lossQuantity: 0,
+        currentQuantity: 0,
+        adjustment: {
+          differenceQuantity: -5,
+          differenceAmount: -25_000,
+        },
+      },
+      {
+        productId: "overstock",
+        productName: "고등어",
+        previousQuantity: 2,
+        purchasedQuantity: 1,
+        lossQuantity: 0,
+        currentQuantity: 5,
+        adjustment: {
+          differenceQuantity: 2,
+          differenceAmount: 20_000,
+        },
+      },
+    ],
+    lossSignalCandidates: [
+      {
+        productId: "loss-1",
+        productName: "낙지",
+        quantity: 1,
+        amount: 12_000,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    signals.map((signal) => ({
+      id: signal.id,
+      label: signal.label,
+      detail: signal.detail,
+      quantity: signal.quantity,
+    })),
+    [
+      {
+        id: "inventory-unexplained-shortage",
+        label: "재고 확인 필요",
+        detail: "바지락 기준보다 5개 부족합니다.",
+        quantity: -5,
+      },
+      {
+        id: "inventory-overstock",
+        label: "재고 확인 필요",
+        detail: "고등어 기준보다 2개 많습니다.",
+        quantity: 2,
+      },
+      {
+        id: "loss-loss-1",
+        label: "손실 기록 있음",
+        detail: "낙지 손실 항목이 기록되어 제출 전 확인해 주세요.",
+        quantity: 1,
+      },
+    ],
+  );
+});
+
 test("ledger review step summary contract preserves shape, KST links, signed difference, and calculation states", () => {
   const typeSource = readProjectFile(
     "src",
@@ -647,6 +737,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     missingItems: [],
     warnings: [],
     signals: [],
+    topSoldItems: [],
     stepCompletion: {
       sales: true,
       cost: true,
@@ -689,13 +780,10 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
-  // point_summary 검토 후속(2026-06-24): 계획 매출/계획 대비 차이/계획 마진율을 추가 노출한다.
+  // WO(2026-06-26): 계획 판매가 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
     "grossMarginRate",
     "inventoryAmount",
-    "plannedGrossMarginRate",
-    "plannedSalesTotal",
-    "plannedVsActualSalesDifference",
     "totalSales",
     "workerCount",
   ]);
@@ -709,6 +797,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.equal(Object.hasOwn(safeReview.summary, "grossProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "operatingProfit"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "productivity"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "plannedSalesTotal"), false);
+  assert.equal(
+    Object.hasOwn(safeReview.summary, "plannedVsActualSalesDifference"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(safeReview.summary, "plannedGrossMarginRate"),
+    false,
+  );
   // 계획 매출이익(절대 이익)은 계속 차단한다.
   assert.equal(Object.hasOwn(safeReview.summary, "plannedGrossProfit"), false);
   // workerCount와 inventoryAmount가 보이고, paymentDifference는 제거됨
@@ -726,6 +823,8 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     losses: false,
     work: true,
   });
+  // 지점장 7단계 그래프 데이터는 계속 유지한다.
+  assert.deepEqual(safeReview.topSoldItems, []);
 });
 
 test("store manager review exposes estimated top sold items derived from inventory flow (WO-04)", () => {

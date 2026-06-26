@@ -1,4 +1,3 @@
-import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 import type {
   LedgerReviewStepMetric,
   LedgerReviewStepData,
@@ -46,11 +45,6 @@ const storeManagerReviewMetricIds = new Set([
   "workerCount",
   "laborCount",
   "payrollTotal",
-  // point_summary 검토 후속(2026-06-24): 계획 판매가 비교. 계획 매출/계획 대비 차이는
-  // 지점장 본인 판매가 계획·총매출만으로 산출되어 안전, 계획 마진율은 조건부 노출.
-  "plannedSalesTotal",
-  "plannedVsActualSalesDifference",
-  "plannedGrossMarginRate",
 ]);
 
 // 마진률·재고금액은 정상 계산값일 때만 노출한다. 원천 lot 근거 부족 등으로
@@ -59,8 +53,6 @@ const storeManagerReviewMetricIds = new Set([
 const conditionalStoreManagerMetricIds = new Set([
   "grossMarginRate",
   "inventoryAmount",
-  // 계획 마진율도 원천 lot 근거 부족 시 원가 역산을 막기 위해 ok일 때만 노출한다.
-  "plannedGrossMarginRate",
 ]);
 
 function isStoreManagerVisibleMetric(metric: LedgerReviewStepMetric): boolean {
@@ -131,25 +123,6 @@ export function toStoreManagerLedgerReviewStepData(
       grossMarginRate: data.summary.grossMarginRate,
       workerCount: data.summary.workerCount,
       inventoryAmount: data.summary.inventoryAmount,
-      // 계획 매출/계획 대비 차이는 지점장 본인 판매가 계획·총매출만으로 산출되므로 그대로 노출.
-      plannedSalesTotal: data.summary.plannedSalesTotal,
-      plannedVsActualSalesDifference:
-        data.summary.plannedVsActualSalesDifference,
-      // 계획 마진율(%)은 마진율 노출 정책과 동일하게 status가 ok일 때만 값으로 노출하고,
-      // 원천 lot 근거 부족 등 ok가 아니면 원가 역산을 막기 위해 값을 숨긴다.
-      plannedGrossMarginRate: hideNonOkMetric(
-        data.summary.plannedGrossMarginRate,
-      ),
     },
   };
-}
-
-// 마진율(%) 노출 정책: status가 ok가 아니면(policy-unconfirmed/data-insufficient 등)
-// 값(원가 역산 근거)을 숨기고 "기준 확인 필요"로만 노출한다.
-function hideNonOkMetric(metric: LedgerReviewMetric): LedgerReviewMetric {
-  if (metric.status === "ok") {
-    return metric;
-  }
-
-  return { ...metric, value: null };
 }
