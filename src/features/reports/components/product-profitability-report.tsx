@@ -107,10 +107,7 @@ export function ProductProfitabilityReport({
         </div>
       </dl>
 
-      <ChartContainer
-        config={chartConfig}
-        className="h-[360px] w-full"
-      >
+      <ChartContainer config={chartConfig} className="h-[360px] w-full">
         <BarChart
           accessibilityLayer
           data={data.items}
@@ -169,7 +166,9 @@ export function ProductProfitabilityReport({
         <span style={{ color: "var(--color-rate-mid)" }}>10–30%</span>
         <span style={{ color: "var(--color-rate-low)" }}>0–10%</span>
         <span style={{ color: "var(--color-rate-negative)" }}>음수</span>
-        <span style={{ color: "var(--color-rate-unavailable)" }}>계산 불가</span>
+        <span style={{ color: "var(--color-rate-unavailable)" }}>
+          계산 불가
+        </span>
       </div>
 
       <p className="text-muted-foreground text-xs">
@@ -186,7 +185,8 @@ export function ProductProfitabilityReport({
       ) : null}
       {data.unavailableItemCount > 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-500">
-          추정 판매액이 0이라 이익률을 낼 수 없는 품목 {data.unavailableItemCount}
+          추정 판매액이 0이라 이익률을 낼 수 없는 품목{" "}
+          {data.unavailableItemCount}
           개는 계산 불가로 표시했습니다.
         </p>
       ) : null}

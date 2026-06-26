@@ -491,9 +491,7 @@ export function buildProductProfitability(
     }
   }
 
-  const items: ProductProfitabilityReportItem[] = Array.from(
-    byProduct.values(),
-  )
+  const items: ProductProfitabilityReportItem[] = Array.from(byProduct.values())
     .map((stats): ProductProfitabilityReportItem => {
       const grossProfit = stats.sales - stats.cogs;
       // 추정 매출이 0이면 이익률을 낼 수 없다(0 나눗셈 방지).

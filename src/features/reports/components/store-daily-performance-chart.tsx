@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  LabelList,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -61,11 +68,7 @@ export function StoreDailyPerformanceChart({
 
   return (
     <div className="flex flex-col gap-2">
-      <div
-        className="flex flex-wrap gap-2"
-        role="group"
-        aria-label="지표 전환"
-      >
+      <div className="flex flex-wrap gap-2" role="group" aria-label="지표 전환">
         <Button
           size="sm"
           variant={metric === "grossMarginRate" ? "default" : "outline"}
@@ -89,10 +92,7 @@ export function StoreDailyPerformanceChart({
           표시할 지점 데이터 없음
         </div>
       ) : (
-        <ChartContainer
-          config={chartConfig}
-          className="h-[280px] w-full"
-        >
+        <ChartContainer config={chartConfig} className="h-[280px] w-full">
           <BarChart
             accessibilityLayer
             data={chartData}

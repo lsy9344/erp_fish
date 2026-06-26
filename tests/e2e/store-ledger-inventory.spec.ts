@@ -582,7 +582,9 @@ test("매입 품목은 당일재고를 빈칸으로 시작하고 미입력이면
   });
   await expect(lossDialog).toBeVisible();
   await expect(lossDialog).toContainText(product.name);
-  await lossDialog.getByRole("button", { name: "폐기·떨이 없음, 저장" }).click();
+  await lossDialog
+    .getByRole("button", { name: "폐기·떨이 없음, 저장" })
+    .click();
   await expectInventorySaveSucceeded(page);
 
   // 정상 판매라 재고 조정 레코드는 생기지 않는다(실사 차이가 아님).

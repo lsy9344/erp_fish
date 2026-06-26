@@ -1542,7 +1542,9 @@ export function InventoryStepClient({
                     inputMode="numeric"
                     autoComplete="off"
                     placeholder={
-                      requiresCurrentQuantityEntry(item) ? "입력 필요" : undefined
+                      requiresCurrentQuantityEntry(item)
+                        ? "입력 필요"
+                        : undefined
                     }
                     value={item.currentQuantityInput}
                     onFocus={(event) =>
@@ -1785,8 +1787,8 @@ export function InventoryStepClient({
               <DialogTitle>폐기·떨이가 정말 없었나요?</DialogTitle>
               <DialogDescription>
                 아래 품목은 매입분이 손실 기록 없이 모두 판매로 잡힙니다. 폐기나
-                떨이가 있었다면 손실 단계에서 먼저 기록해 주세요. 손실이 빠지면 그
-                수량이 판매로 집계됩니다.
+                떨이가 있었다면 손실 단계에서 먼저 기록해 주세요. 손실이 빠지면
+                그 수량이 판매로 집계됩니다.
               </DialogDescription>
             </DialogHeader>
             <ul className="text-muted-foreground list-disc pl-5 text-sm">

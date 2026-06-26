@@ -815,17 +815,17 @@ async function getCarryoverBases(
       message:
         "월초 이월 재고를 불러왔습니다. 월초 스냅샷이 있는 품목만 표시합니다. 추가 재고는 품목 추가로 입력해 주세요.",
       bases: snapshots.map<ProductInventoryBase>((snapshot) => ({
-          productId: snapshot.productId,
-          productName: snapshot.productName,
-          productCategory: snapshot.productCategory,
-          productSpec: snapshot.productSpec,
-          unitPrice: snapshot.unitPrice,
-          previousQuantity: snapshot.quantity,
-          carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
-          carryoverStatus: InventoryCarryoverStatus.OPENING_CARRYOVER,
-          carryoverLedgerId: null,
-          previousQuantityDetail: buildSnapshotCarryoverDetail({ snapshot }),
-        })),
+        productId: snapshot.productId,
+        productName: snapshot.productName,
+        productCategory: snapshot.productCategory,
+        productSpec: snapshot.productSpec,
+        unitPrice: snapshot.unitPrice,
+        previousQuantity: snapshot.quantity,
+        carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
+        carryoverStatus: InventoryCarryoverStatus.OPENING_CARRYOVER,
+        carryoverLedgerId: null,
+        previousQuantityDetail: buildSnapshotCarryoverDetail({ snapshot }),
+      })),
     };
   }
 
