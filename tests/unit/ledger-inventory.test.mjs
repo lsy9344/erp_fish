@@ -835,6 +835,361 @@ test("inventory normal save requires matching adjustment record for changed actu
     {},
     "manual first-entry rows should not require an adjustment reason on later saves",
   );
+
+  // 매입 정상 판매 소진(매입 6, 손실 0, 당일재고 2 ≤ 기준 8)은 실사 차이가 아니라
+  // 판매로 보므로 조정 사유 없이 통과해야 한다.
+  assert.deepEqual(
+    getInventorySaveAdjustmentErrors(
+      [
+        {
+          productId: "purchase-sale",
+          previousQuantity: 2,
+          purchasedQuantity: 6,
+          lossQuantity: 0,
+          currentQuantity: 2,
+        },
+      ],
+      [],
+    ),
+    {},
+    "purchase-driven normal sale should be exempt from the adjustment reason",
+  );
+});
+
+test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no loss, purchased)", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-persist-policy.ts",
+  );
+  const { isPurchaseDrivenSale } = await import(
+    pathToFileURL(policyPath).href
+  );
+
+  // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 정상 판매(면제).
+  assert.equal(
+    isPurchaseDrivenSale({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    }),
+    true,
+    "under-stock with purchase and no loss is a normal sale",
+  );
+
+  // 초과: 당일재고 9 > 기준 8 → 이상 입력(조정 요구).
+  assert.equal(
+    isPurchaseDrivenSale({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: 9,
+    }),
+    false,
+    "over-stock beyond system quantity still requires an adjustment",
+  );
+
+  // 손실 혼재: 손실 1 → 정상 판매와 차이 구분 불가(조정 요구).
+  assert.equal(
+    isPurchaseDrivenSale({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 1,
+      currentQuantity: 2,
+    }),
+    false,
+    "mixed loss still requires an adjustment",
+  );
+
+  // 매입 없음: 이월 품목 차이는 진짜 실사 차이(조정 요구).
+  assert.equal(
+    isPurchaseDrivenSale({
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    }),
+    false,
+    "carryover difference without purchase still requires an adjustment",
+  );
+});
+
+test("needsLossOmissionConfirmation flags purchase-driven sold-out items so skipped waste is not silently sold", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-persist-policy.ts",
+  );
+  const { needsLossOmissionConfirmation } = await import(
+    pathToFileURL(policyPath).href
+  );
+
+  // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 손실 누락이 판매로 둔갑할 수 있어 확인 필요.
+  assert.equal(
+    needsLossOmissionConfirmation({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    }),
+    true,
+    "purchase-driven normal sale needs a one-time loss-omission confirmation",
+  );
+
+  // 손실 이미 기록됨 → 빼먹음 위험 없음(확인 불필요, 기존 조정 경로가 처리).
+  assert.equal(
+    needsLossOmissionConfirmation({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 1,
+      currentQuantity: 2,
+    }),
+    false,
+    "recorded loss means no omission risk to confirm",
+  );
+
+  // 매입 없는 이월 차이 → 정상 판매 면제 대상이 아니므로 확인 불필요.
+  assert.equal(
+    needsLossOmissionConfirmation({
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    }),
+    false,
+    "carryover difference without purchase is not a loss-omission case",
+  );
+
+  // 미입력(null) → 필수입력 가드가 먼저 막으므로 여기서 확인하지 않는다.
+  assert.equal(
+    needsLossOmissionConfirmation({
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: null,
+    }),
+    false,
+    "blank actual quantity is handled by the required-entry guard, not this gate",
+  );
+});
+
+test("getRequiredCurrentQuantityErrors blocks blank actual quantity for purchase/loss seed rows", async () => {
+  const guardPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-save-guard.ts",
+  );
+  const { getRequiredCurrentQuantityErrors } = await import(
+    pathToFileURL(guardPath).href
+  );
+
+  // 매입 seed 행(id===productId)인데 당일재고 미입력(null) → 차단.
+  assert.deepEqual(
+    getRequiredCurrentQuantityErrors([
+      {
+        id: "p1",
+        productId: "p1",
+        purchasedQuantity: 6,
+        lossQuantity: 0,
+        currentQuantity: null,
+      },
+    ]),
+    {
+      "items.0.currentQuantity": [
+        "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
+      ],
+    },
+    "blank current quantity on a purchase seed row is blocked",
+  );
+
+  // 값을 입력하면 통과. 손실 seed 행도 동일.
+  assert.deepEqual(
+    getRequiredCurrentQuantityErrors([
+      {
+        id: "p1",
+        productId: "p1",
+        purchasedQuantity: 6,
+        lossQuantity: 0,
+        currentQuantity: 2,
+      },
+      {
+        id: "p2",
+        productId: "p2",
+        purchasedQuantity: 0,
+        lossQuantity: 1,
+        currentQuantity: null,
+      },
+    ]),
+    {
+      "items.1.currentQuantity": [
+        "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
+      ],
+    },
+    "entered quantity passes; blank loss seed row is blocked",
+  );
+
+  // 이미 저장된 행(id!==productId)이나 매입·손실 없는 행은 빈칸이어도 강제하지 않는다.
+  assert.deepEqual(
+    getRequiredCurrentQuantityErrors([
+      {
+        id: "row-cuid",
+        productId: "p1",
+        purchasedQuantity: 6,
+        lossQuantity: 0,
+        currentQuantity: null,
+      },
+      {
+        id: "p2",
+        productId: "p2",
+        purchasedQuantity: 0,
+        lossQuantity: 0,
+        currentQuantity: null,
+      },
+    ]),
+    {},
+    "saved rows and non-purchase/loss rows are not forced to re-enter",
+  );
+});
+
+test("buildRequiredEntryGuardItems passes blank/missing input as null (no seed fallback bypass)", async () => {
+  const guardPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-save-guard.ts",
+  );
+  const { buildRequiredEntryGuardItems, getRequiredCurrentQuantityErrors } =
+    await import(pathToFileURL(guardPath).href);
+
+  // seed 행은 매입 6, 기존 저장값 currentQuantity=0(또는 임의 값). 클라이언트/직접 호출이
+  // 그 행을 currentQuantity:null로 보내면, ?? 폴백이 있으면 0으로 되살아나 미입력을 못 잡는다.
+  const beforeItems = [
+    { id: "p1", productId: "p1", purchasedQuantity: 6, lossQuantity: 0 },
+    { id: "p2", productId: "p2", purchasedQuantity: 0, lossQuantity: 1 },
+    { id: "row-cuid", productId: "p3", purchasedQuantity: 6, lossQuantity: 0 },
+  ];
+
+  // p1: 입력에 있으나 currentQuantity=null(blank) → 미입력으로 잡혀야 함.
+  // p2: 입력에 아예 없음(미제출 required seed) → null로 보고 잡혀야 함.
+  // p3: 저장된 행(id!==productId)이라 필수입력 대상 아님.
+  const inputByProductId = new Map([["p1", { currentQuantity: null }]]);
+
+  const guardItems = buildRequiredEntryGuardItems(
+    beforeItems,
+    inputByProductId,
+  );
+
+  assert.equal(
+    guardItems[0].currentQuantity,
+    null,
+    "blank input must stay null, not revive seed value",
+  );
+  assert.equal(
+    guardItems[1].currentQuantity,
+    null,
+    "missing input row must be treated as null",
+  );
+
+  assert.deepEqual(getRequiredCurrentQuantityErrors(guardItems), {
+    "items.0.currentQuantity": [
+      "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
+    ],
+    "items.1.currentQuantity": [
+      "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
+    ],
+  });
+
+  // 입력에 실제 값이 있으면 통과한다.
+  assert.deepEqual(
+    getRequiredCurrentQuantityErrors(
+      buildRequiredEntryGuardItems(
+        beforeItems,
+        new Map([
+          ["p1", { currentQuantity: 2 }],
+          ["p2", { currentQuantity: 0 }],
+        ]),
+      ),
+    ),
+    {},
+    "entered current quantities pass the required-entry guard",
+  );
+});
+
+test("inventory save actions feed the required-entry guard via the no-fallback builder", () => {
+  // 두 저장 경로 모두 buildRequiredEntryGuardItems로 가드 입력을 만들어야 한다.
+  // (인라인 ?? seed 폴백을 다시 쓰면 위 behavioral 테스트가 잡는 미입력 우회가 생긴다.)
+  for (const file of ["actions.ts", "hq-edit-actions.ts"]) {
+    const source = readProjectFile("src", "features", "inventory", file);
+
+    assert.match(
+      source,
+      /getRequiredCurrentQuantityErrors\(\s*buildRequiredEntryGuardItems\(/,
+      `${file} should feed the required-entry guard via buildRequiredEntryGuardItems`,
+    );
+  }
+});
+
+test("HQ inventory save enforces the same required-entry and adjustment guards as the store path", () => {
+  const hqSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+
+  assert.match(
+    hqSource,
+    /getRequiredCurrentQuantityErrors\(/,
+    "HQ inventory save should enforce required current-quantity entry server-side",
+  );
+  assert.match(
+    hqSource,
+    /getInventorySaveAdjustmentErrors\(/,
+    "HQ inventory save should enforce the adjustment-reason guard server-side",
+  );
+
+  // 가드는 버전 증가(markEditableLedgerInTx) 전에 위치해 빈 저장으로 버전만 올라가지
+  // 않게 한다. 정의가 아니라 호출부(const updated = await markEditableLedgerInTx) 기준.
+  const adjustmentGuardIndex = hqSource.indexOf(
+    "getInventorySaveAdjustmentErrors(",
+  );
+  const markEditableCallIndex = hqSource.indexOf(
+    "const updated = await markEditableLedgerInTx(",
+  );
+  assert.ok(adjustmentGuardIndex > 0, "HQ adjustment guard should be present");
+  assert.ok(markEditableCallIndex > 0, "HQ should mark the ledger editable");
+  assert.ok(
+    adjustmentGuardIndex < markEditableCallIndex,
+    "HQ guards should run before the ledger version is incremented",
+  );
+});
+
+test("inventory adjustment reconciliation drops records that became purchase-driven sales", () => {
+  const reconcileSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-reconciliation.ts",
+  );
+
+  assert.match(
+    reconcileSource,
+    /isPurchaseDrivenSale\(/,
+    "reconciliation should detect purchase-driven sales",
+  );
+  // 정상 판매로 바뀐 기존 조정 레코드는 삭제해 salesDifference 합산에서 빠지게 한다.
+  const purchaseSaleIndex = reconcileSource.indexOf("isPurchaseDrivenSale(");
+  const deleteAfter = reconcileSource
+    .slice(purchaseSaleIndex)
+    .indexOf("ledgerInventoryAdjustment.delete(");
+  assert.ok(
+    deleteAfter > 0 && deleteAfter < 400,
+    "a purchase-driven sale should delete the stale adjustment record",
+  );
 });
 
 test("inventory queries and actions implement carryover, purchase aggregation, and audit contracts", () => {

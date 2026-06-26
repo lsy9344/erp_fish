@@ -617,11 +617,9 @@ export function calculateLedgerReviewSummary({
   const hasLegacyFifoOpening = inventoryItems.some((item) =>
     hasLegacyOpeningFifoLot(item),
   );
-  const usesUnapprovedFifoCostBasis = canUseFifoConsumedAmounts(inventoryItems);
-  const hasUnapprovedFifoCostBasis =
-    usesUnapprovedFifoCostBasis || hasLegacyFifoOpening;
-  const fifoPolicyReason =
-    "FIFO 금액은 OQ-7/OQ-17 승인 전이라 계산 기준 확인이 필요합니다.";
+  const hasIncompleteFifoCostBasis = hasLegacyFifoOpening;
+  const fifoSourceIncompleteReason =
+    "FIFO 원천 lot 근거가 부족해 계산 기준 확인이 필요합니다.";
   const salesDifferenceResult =
     costOfGoodsSoldResult.kind === "error" && hasSalesDifferenceContext
       ? ({
@@ -729,11 +727,11 @@ export function calculateLedgerReviewSummary({
         ? costOfGoodsSoldResult.metric
         : costOfGoodsSold === null
           ? dataInsufficient(inventoryUnavailableReason)
-          : hasUnapprovedFifoCostBasis
+          : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedKrwMetric(
                 "costOfGoodsSold",
                 costOfGoodsSold,
-                fifoPolicyReason,
+                fifoSourceIncompleteReason,
               )
             : asKrwMetric("costOfGoodsSold", costOfGoodsSold),
     grossProfit:
@@ -743,11 +741,11 @@ export function calculateLedgerReviewSummary({
           )
         : grossProfit === null
           ? dataInsufficient("매출원가 계산에 필요한 재고 입력이 부족합니다.")
-          : hasUnapprovedFifoCostBasis
+          : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedKrwMetric(
                 "grossProfit",
                 grossProfit,
-                fifoPolicyReason,
+                fifoSourceIncompleteReason,
               )
             : asKrwMetric("grossProfit", grossProfit),
     grossMarginRate:
@@ -759,11 +757,11 @@ export function calculateLedgerReviewSummary({
           ? dataInsufficient(
               "총매출 또는 매출이익이 부족해 마진율을 계산할 수 없습니다.",
             )
-          : hasUnapprovedFifoCostBasis
+          : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedRatioMetric(
                 "grossMarginRate",
                 grossMarginRate,
-                fifoPolicyReason,
+                fifoSourceIncompleteReason,
               )
             : asRatioMetric("grossMarginRate", grossMarginRate),
     operatingProfit:
@@ -773,20 +771,19 @@ export function calculateLedgerReviewSummary({
           )
         : operatingProfit === null
           ? dataInsufficient("매출이익이 부족해 영업이익을 계산할 수 없습니다.")
-          : hasUnapprovedFifoCostBasis
+          : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedKrwMetric(
                 "operatingProfit",
                 operatingProfit,
-                fifoPolicyReason,
+                fifoSourceIncompleteReason,
               )
             : asKrwMetric("operatingProfit", operatingProfit),
     productivity:
       productivity === null
         ? dataInsufficient("근무인원이 입력되지 않았거나 1명 미만입니다.")
         : asKrwMetric("productivity", productivity),
-    // OQ-7/OQ-17 결정(2026-06-22): FIFO 재고금액은 본사+지점장 전체에 노출하기로 확정.
-    // 재고금액(inventoryAmount)은 더 이상 정책 게이트로 막지 않는다. COGS/이익 등
-    // 매출원가 기반 민감 지표(hasUnapprovedFifoCostBasis)는 계속 차단 유지.
+    // OQ-7/OQ-17 결정 반영: FIFO 재고금액은 더 이상 정책 gate로 막지 않는다.
+    // 매출원가 기반 지표는 원천 lot 근거가 부족한 경우에만 기준 확인 상태로 남긴다.
     inventoryAmount:
       inventoryAmountResult.kind === "error"
         ? inventoryAmountResult.metric
@@ -800,11 +797,11 @@ export function calculateLedgerReviewSummary({
         ? salesDifferenceResult.metric
         : salesDifference === null
           ? dataInsufficient("매출차액 계산에 필요한 재고 입력이 부족합니다.")
-          : hasUnapprovedFifoCostBasis
+          : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedKrwMetric(
                 "salesDifference",
                 salesDifference,
-                fifoPolicyReason,
+                fifoSourceIncompleteReason,
               )
             : asKrwMetric("salesDifference", salesDifference),
     plannedSalesTotal: buildPlannedKrwMetric(
@@ -812,7 +809,7 @@ export function calculateLedgerReviewSummary({
       plannedSalesTotalValue,
     ),
     // 계획 매출과 매출원가(COGS)를 모두 알아야 계획 마진을 낼 수 있다.
-    // COGS가 FIFO 미승인 기준이면 그 표시를 우선 따른다.
+    // FIFO 원천 lot 근거가 부족하면 그 표시를 우선 따른다.
     plannedGrossProfit:
       plannedSalesResult === null
         ? plannedSalesNotEnteredMetric
@@ -826,11 +823,11 @@ export function calculateLedgerReviewSummary({
               )
             : plannedSalesResult.missingPlanCount > 0
               ? dataInsufficient(plannedSalesPartialReason)
-              : hasUnapprovedFifoCostBasis
+              : hasIncompleteFifoCostBasis
                 ? asPolicyUnconfirmedKrwMetric(
                     "plannedGrossProfit",
                     plannedGrossProfitValue,
-                    fifoPolicyReason,
+                    fifoSourceIncompleteReason,
                   )
                 : asKrwMetric("plannedGrossProfit", plannedGrossProfitValue),
     plannedGrossMarginRate:
@@ -846,11 +843,11 @@ export function calculateLedgerReviewSummary({
               )
             : plannedSalesResult.missingPlanCount > 0
               ? dataInsufficient(plannedSalesPartialReason)
-              : hasUnapprovedFifoCostBasis
+              : hasIncompleteFifoCostBasis
                 ? asPolicyUnconfirmedRatioMetric(
                     "plannedGrossMarginRate",
                     plannedGrossMarginRateValue,
-                    fifoPolicyReason,
+                    fifoSourceIncompleteReason,
                   )
                 : asRatioMetric(
                     "plannedGrossMarginRate",

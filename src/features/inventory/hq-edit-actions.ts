@@ -29,6 +29,13 @@ import {
   getLedgerEditBlockReason,
   isLedgerEditable,
 } from "~/features/ledger/status-policy";
+import {
+  buildRequiredEntryGuardItems,
+  getInventorySaveAdjustmentErrors,
+  getRequiredCurrentQuantityErrors,
+  missingAdjustmentReasonMessage,
+  missingRequiredCurrentQuantityMessage,
+} from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { buildManualInventoryRows } from "./manual-inventory-rows";
@@ -256,6 +263,56 @@ export async function saveHqLedgerInventoryItems(
         }
 
         const before = beforeResult.data;
+        const inputByProductId = new Map(
+          parsed.data.items.map((item) => [item.productId, item]),
+        );
+
+        // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(버전 증가 전 검증).
+        const requiredEntryErrors = getRequiredCurrentQuantityErrors(
+          buildRequiredEntryGuardItems(before.items, inputByProductId),
+        );
+
+        if (Object.keys(requiredEntryErrors).length > 0) {
+          return actionError<InventoryStepData>(
+            "VALIDATION_ERROR",
+            missingRequiredCurrentQuantityMessage,
+            requiredEntryErrors,
+          );
+        }
+
+        // 지점장 저장과 동일하게 서버에서도 조정 사유를 강제한다. 면제(매입 정상 판매,
+        // 직접 추가 첫 입력) 밖의 기준재고 차이는 매칭 조정 레코드 없이 저장되면 막는다.
+        // 버전 증가(markEditableLedgerInTx) 전에 검증해, 차단 시 빈 저장으로 버전만
+        // 올라가지 않게 한다.
+        const adjustmentErrors = getInventorySaveAdjustmentErrors(
+          before.items.map((item) => ({
+            productId: item.productId,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            lossQuantity: item.lossQuantity,
+            carryoverSource: item.carryoverSource,
+            carryoverStatus: item.carryoverStatus,
+            carryoverLedgerId: item.carryoverLedgerId,
+            currentQuantity:
+              inputByProductId.get(item.productId)?.currentQuantity ??
+              item.currentQuantity,
+          })),
+          before.items
+            .filter((item) => item.adjustment !== null)
+            .map((item) => ({
+              productId: item.productId,
+              afterQuantity: item.adjustment!.afterQuantity,
+            })),
+        );
+
+        if (Object.keys(adjustmentErrors).length > 0) {
+          return actionError<InventoryStepData>(
+            "VALIDATION_ERROR",
+            missingAdjustmentReasonMessage,
+            adjustmentErrors,
+          );
+        }
+
         const updated = await markEditableLedgerInTx(
           tx,
           ledgerId,
@@ -266,10 +323,6 @@ export async function saveHqLedgerInventoryItems(
         if (!updated) {
           return await hqInventoryConflictError(tx, "inventory", parsed.data);
         }
-
-        const inputByProductId = new Map(
-          parsed.data.items.map((item) => [item.productId, item]),
-        );
 
         await tx.ledgerInventoryItem.deleteMany({
           where: { dailyLedgerId: before.id },

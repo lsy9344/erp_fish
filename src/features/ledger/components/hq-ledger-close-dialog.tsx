@@ -185,7 +185,7 @@ export function HqLedgerCloseDialog({
             본사 마감
           </Button>
         </DialogTrigger>
-        <DialogContent>
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>장부를 마감합니다</DialogTitle>
             <DialogDescription>
@@ -344,19 +344,19 @@ function ClosePreflightTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <Table>
+      <Table className="w-full table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>조건명</TableHead>
-            <TableHead>상태</TableHead>
-            <TableHead>설명</TableHead>
-            <TableHead>필요한 조치</TableHead>
+            <TableHead className="w-[22%]">조건명</TableHead>
+            <TableHead className="w-[14%]">상태</TableHead>
+            <TableHead className="w-[40%]">설명</TableHead>
+            <TableHead className="w-[24%]">필요한 조치</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((item) => (
             <TableRow key={item.id}>
-              <TableCell className="min-w-32 font-medium whitespace-normal">
+              <TableCell className="font-medium break-words whitespace-normal">
                 {item.label}
               </TableCell>
               <TableCell className="whitespace-normal">
@@ -364,10 +364,10 @@ function ClosePreflightTable({
                   {getSeverityText(item.severity)}
                 </Badge>
               </TableCell>
-              <TableCell className="text-muted-foreground min-w-60 whitespace-normal">
+              <TableCell className="text-muted-foreground break-words whitespace-normal">
                 {item.detail}
               </TableCell>
-              <TableCell className="min-w-40 whitespace-normal">
+              <TableCell className="break-words whitespace-normal">
                 {item.href ? (
                   <Button asChild variant="link" className="h-auto p-0">
                     <a href={item.href}>{item.actionLabel}</a>

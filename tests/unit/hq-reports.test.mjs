@@ -2965,6 +2965,21 @@ test("monthly report lists P&L inputs as actual, estimated, or unavailable", asy
   assert.equal(byKey.get("sales")?.availabilityLabel, "실측");
   assert.equal(byKey.get("productSales")?.availabilityLabel, "추정");
   assert.equal(byKey.get("labor")?.availabilityLabel, "실측");
+  assert.equal(
+    byKey.get("purchaseCost")?.source,
+    "재고 흐름/FIFO 원가",
+  );
+  assert.equal(
+    byKey.get("purchaseCost")?.note,
+    "재고 흐름과 FIFO 원가 기준으로 추정 산출합니다. 품목별 실판매 기록은 아직 직접 기록되지 않습니다.",
+  );
+  assert.equal(
+    byKey.get("inventoryValue")?.note,
+    "장부에 저장된 FIFO 재고금액을 실측 집계합니다.",
+  );
+  for (const input of readiness.inputs) {
+    assert.doesNotMatch(input.note, /정책 확정|확정 전|OQ-7|OQ-17/);
+  }
 
   const actualCount = readiness.inputs.filter(
     (input) => input.availability === "actual",

@@ -53,7 +53,11 @@ import {
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
 import { missingAdjustmentReasonMessage } from "~/features/inventory/adjustment-save-guard";
-import { isManualFirstInventoryEntry } from "~/features/inventory/inventory-persist-policy";
+import {
+  isManualFirstInventoryEntry,
+  isPurchaseDrivenSale,
+  needsLossOmissionConfirmation,
+} from "~/features/inventory/inventory-persist-policy";
 import {
   type InventoryAdjustmentView,
   type InventoryManualProductOption,
@@ -135,11 +139,26 @@ function hasSensitiveAdjustmentAmounts(
   );
 }
 
+// 당일 매입/손실이 있는 품목은 판매량(전일+매입-당일재고)이 잡히므로, 당일재고를
+// 사용자가 직접 확인/입력해야 한다. 아직 저장된 적 없는 seed 행(id===productId)은
+// 전일재고가 디폴트로 들어오는데, 매입 품목은 그 값이 0이라 화면에 "0"으로 보여
+// "전량 판매"로 오해되기 쉽다. 이런 행은 입력란을 빈칸으로 시작해 직접 입력을 요구한다.
+function requiresCurrentQuantityEntry(
+  item: InventoryDisplayData["items"][number],
+) {
+  return (
+    item.id === item.productId &&
+    (item.purchasedQuantity > 0 || item.lossQuantity > 0)
+  );
+}
+
 function toLineState(data: InventoryDisplayData): InventoryLineState[] {
   return data.items.map((item) => ({
     ...item,
     currentQuantityInput:
-      item.currentQuantity === null ? "" : String(item.currentQuantity),
+      item.currentQuantity === null || requiresCurrentQuantityEntry(item)
+        ? ""
+        : String(item.currentQuantity),
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
 }
@@ -282,6 +301,11 @@ export function InventoryStepClient({
   const [savingAdjustmentProductId, setSavingAdjustmentProductId] = useState<
     string | null
   >(null);
+  // 손실 누락 확인 게이트: 매입분이 손실 없이 정상 소진된 품목 이름들. 저장 직전
+  // 한 번만 "폐기/떨이를 확인했다"고 명시하게 하고, 확인하면 바로 저장을 잇는다.
+  const [lossOmissionPrompt, setLossOmissionPrompt] = useState<string[] | null>(
+    null,
+  );
   const saveConflict = useSaveConflictDialog();
   const hqEditReasonError = fieldErrors.reason?.[0];
 
@@ -306,7 +330,17 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
-  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
+  // 매입·손실 품목 당일재고가 빈칸이면 저장값과 같아 dirty가 아닐 수 있으나, 그대로
+  // 다음 단계로 넘어가면 "전량 판매" 오해가 그대로 굳는다. 미입력 필수 행이 있으면
+  // dirty로 보아 미저장 가드가 이동을 가로채고 saveCurrentDraft로 입력을 강제한다.
+  const hasUnenteredRequiredQuantity = items.some(
+    (item) =>
+      requiresCurrentQuantityEntry(item) &&
+      item.currentQuantityInput.trim() === "",
+  );
+  const isDirty =
+    !areInventoryLinesEqual(items, toLineState(data)) ||
+    hasUnenteredRequiredQuantity;
   const previousInitialDataRef = useRef(initialData);
 
   useEffect(() => {
@@ -389,6 +423,46 @@ export function InventoryStepClient({
     }, 0);
   }
 
+  // 매입/손실이 있어 판매량이 잡히는 품목은 당일재고를 직접 입력해야 한다. 빈칸으로 두면
+  // (디폴트값 그대로 넘어가면) 판매량이 전일+매입으로 잡혀 "전량 판매"로 오해되므로,
+  // 저장/다음단계로 넘어가기 전에 막는다.
+  function validateRequiredCurrentQuantities() {
+    const nextErrors: FieldErrors = {};
+    let firstInvalidItem: InventoryLineState | null = null;
+
+    items.forEach((item, index) => {
+      if (!requiresCurrentQuantityEntry(item)) {
+        return;
+      }
+
+      const raw =
+        currentQuantityRefs.current[item.productId]?.value ??
+        item.currentQuantityInput;
+
+      if (raw.trim() !== "") {
+        return;
+      }
+
+      nextErrors[`items.${index}.currentQuantity`] = [
+        "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
+      ];
+      firstInvalidItem ??= item;
+    });
+
+    if (!firstInvalidItem) {
+      return true;
+    }
+
+    const message =
+      "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.";
+    setFieldErrors(nextErrors);
+    setFormError(message);
+    focusFirstError(nextErrors);
+    toast.error(message);
+
+    return false;
+  }
+
   function validateInventorySaveAdjustments() {
     const nextErrors: Record<string, string> = {};
     let firstInvalidItem: InventoryLineState | null = null;
@@ -410,6 +484,11 @@ export function InventoryStepClient({
         currentQuantityRefs.current[item.productId]?.value ??
           item.currentQuantityInput,
       );
+
+      // 매입 정상 판매 소진(부족 방향·손실 없음)은 실사 차이가 아니라 판매로 본다.
+      if (isPurchaseDrivenSale({ ...item, currentQuantity })) {
+        continue;
+      }
 
       if (
         systemQuantity === null ||
@@ -439,7 +518,28 @@ export function InventoryStepClient({
     return false;
   }
 
-  async function saveCurrentDraft() {
+  function getLossOmissionProductNames() {
+    const names: string[] = [];
+
+    for (const item of items) {
+      if (addedManualIds.has(item.productId)) {
+        continue;
+      }
+
+      const currentQuantity = parseQuantityInput(
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
+      );
+
+      if (needsLossOmissionConfirmation({ ...item, currentQuantity })) {
+        names.push(item.productName);
+      }
+    }
+
+    return names;
+  }
+
+  async function saveCurrentDraft(lossConfirmed = false) {
     if (isClosed) {
       setResultMessage(null);
       setFormError(originalEditBlockedMessage);
@@ -456,8 +556,23 @@ export function InventoryStepClient({
       return false;
     }
 
+    if (!validateRequiredCurrentQuantities()) {
+      return false;
+    }
+
     if (!validateInventorySaveAdjustments()) {
       return false;
+    }
+
+    // 판매수량은 재고 역산이라, 매입분이 손실 없이 소진된 품목은 폐기/떨이 누락이
+    // 그대로 "판매"로 잡힌다. 저장 전 한 번 폐기 확인을 받아 빼먹음과 진짜 0을 가른다.
+    if (!lossConfirmed) {
+      const lossOmissionNames = getLossOmissionProductNames();
+
+      if (lossOmissionNames.length > 0) {
+        setLossOmissionPrompt(lossOmissionNames);
+        return false;
+      }
     }
 
     setIsSaving(true);
@@ -482,6 +597,7 @@ export function InventoryStepClient({
             currentQuantityRefs.current[item.productId]?.value ??
             item.currentQuantityInput,
         })),
+        ...(lossConfirmed ? { lossReviewed: true } : {}),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -615,6 +731,11 @@ export function InventoryStepClient({
 
     const systemQuantity = getSystemQuantity(item);
     const actualQuantity = parseQuantityInput(item.currentQuantityInput);
+
+    // 매입 정상 판매 소진은 조정 대상이 아니다(배지/조정 프롬프트 숨김).
+    if (isPurchaseDrivenSale({ ...item, currentQuantity: actualQuantity })) {
+      return false;
+    }
 
     return (
       systemQuantity !== null &&
@@ -1420,6 +1541,9 @@ export function InventoryStepClient({
                     }
                     inputMode="numeric"
                     autoComplete="off"
+                    placeholder={
+                      requiresCurrentQuantityEntry(item) ? "입력 필요" : undefined
+                    }
                     value={item.currentQuantityInput}
                     onFocus={(event) =>
                       event.currentTarget.scrollIntoView({
@@ -1457,9 +1581,9 @@ export function InventoryStepClient({
                   </Tooltip>
                   <span
                     className={
-                      quantityDifference === null || quantityDifference === 0
-                        ? "tabular-nums"
-                        : "text-destructive font-medium tabular-nums"
+                      adjustmentNeeded
+                        ? "text-destructive font-medium tabular-nums"
+                        : "tabular-nums"
                     }
                   >
                     {formatDifference(quantityDifference)}
@@ -1650,6 +1774,46 @@ export function InventoryStepClient({
           onReload={saveConflict.reloadLatest}
           onKeepEditing={saveConflict.keepEditing}
         />
+        <Dialog
+          open={lossOmissionPrompt !== null}
+          onOpenChange={(open) => {
+            if (!open) setLossOmissionPrompt(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>폐기·떨이가 정말 없었나요?</DialogTitle>
+              <DialogDescription>
+                아래 품목은 매입분이 손실 기록 없이 모두 판매로 잡힙니다. 폐기나
+                떨이가 있었다면 손실 단계에서 먼저 기록해 주세요. 손실이 빠지면 그
+                수량이 판매로 집계됩니다.
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="text-muted-foreground list-disc pl-5 text-sm">
+              {(lossOmissionPrompt ?? []).map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLossOmissionPrompt(null)}
+              >
+                손실 먼저 기록
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setLossOmissionPrompt(null);
+                  void saveCurrentDraft(true);
+                }}
+              >
+                폐기·떨이 없음, 저장
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <LedgerContextHeader
           ledgerLabel={ledgerLabel}

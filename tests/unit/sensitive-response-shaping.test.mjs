@@ -292,7 +292,95 @@ test("store manager response shaping recursively removes sensitive ledger metric
   }
 });
 
-test("common sensitive field helper removes derived and OQ-gated metric keys", async () => {
+test("store manager response shaping replaces internal OQ details with generic copy", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const { toStoreManagerLedgerReviewStepData } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const shaped = toStoreManagerLedgerReviewStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: "2026-06-10T00:00:00.000Z",
+    status: "IN_PROGRESS",
+    submittedById: null,
+    submittedAt: null,
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    version: 1,
+    summary: {
+      totalSales: { value: 100_000, status: "ok" },
+      costOfGoodsSold: { value: 30_000, status: "ok" },
+      grossProfit: { value: 70_000, status: "ok" },
+      grossMarginRate: { value: 0.7, status: "ok" },
+      operatingProfit: { value: 60_000, status: "ok" },
+      productivity: { value: 30_000, status: "ok" },
+      workerCount: { value: 3, status: "ok" },
+      inventoryAmount: { value: 8_000, status: "ok" },
+      salesDifference: { value: null, status: "policy-unconfirmed" },
+      paymentDifference: { value: 0, status: "ok" },
+      paymentTotal: { value: 100_000, status: "ok" },
+      expenseTotal: { value: 10_000, status: "ok" },
+      plannedSalesTotal: { value: 130_000, status: "ok" },
+      plannedGrossProfit: { value: 100_000, status: "ok" },
+      plannedGrossMarginRate: { value: 0.769, status: "ok" },
+      plannedVsActualSalesDifference: {
+        value: null,
+        status: "policy-unconfirmed",
+      },
+    },
+    missingItems: [],
+    warnings: [],
+    signals: [],
+    stepCompletion: {
+      sales: true,
+      cost: true,
+      purchase: true,
+      inventory: true,
+      losses: true,
+      work: true,
+    },
+    stepSummaries: [
+      {
+        id: "sales",
+        label: "매출/결제",
+        status: "saved",
+        detail: "OQ-14 내부 정책 코드",
+        href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=sales",
+        metrics: [
+          {
+            id: "plannedVsActualSalesDifference",
+            label: "계획 대비 실제 매출 차이",
+            value: "기준 확인 필요",
+            kind: "status",
+            status: "policy-unconfirmed",
+            detail: "OQ-14 내부 정책 코드",
+          },
+        ],
+      },
+    ],
+    topSoldItems: [],
+  });
+
+  assert.equal(
+    shaped.stepSummaries[0].detail,
+    "계산 기준 확인이 필요합니다. 본사 기준 확인 후 확정됩니다.",
+  );
+  assert.equal(
+    shaped.stepSummaries[0].metrics[0].detail,
+    "계산 기준 확인이 필요합니다. 본사 기준 확인 후 확정됩니다.",
+  );
+  assert.doesNotMatch(
+    `${shaped.stepSummaries[0].detail} ${shaped.stepSummaries[0].metrics[0].detail}`,
+    /OQ-|재고 금액/,
+  );
+});
+
+test("common sensitive field helper removes derived and sensitive metric keys", async () => {
   const helperPath = assertProjectFile("src", "server", "sensitive-fields.ts");
   const { omitSensitiveFields } = await import(pathToFileURL(helperPath).href);
 

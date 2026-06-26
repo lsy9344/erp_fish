@@ -940,7 +940,7 @@ function normalizeDashboardAnomalySignals(signals: AnomalySignalSummary[]) {
 }
 
 // 이 맵은 "FIFO 원가/재고금액 같은 정책-의존 신호"를 기준 확인 info로 강등할 때만 사용한다.
-// 재고 수량 불일치(inventory-difference-exceeded)는 FIFO 원가 정책(OQ-7/OQ-17)과 무관한
+// 재고 수량 불일치(inventory-difference-exceeded)는 FIFO 원가 계산 상태와 무관한
 // 데이터 품질 사실이다. 원문(point_summary.md:18)은 "재고 오차 허용 제로화 — 단 1개라도
 // 틀어지면 무조건 이상 신호 팝업"을 요구하므로, 수량 불일치는 anomaly.ts가 산출한 원래
 // severity(critical)를 그대로 노출한다. 따라서 이 맵에서 inventory-difference-exceeded를 제외한다.

@@ -332,6 +332,7 @@ model User {
   updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
   submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
   closedDailyLedgers                DailyLedger[]               @relation("LedgerClosedBy")
+  lossReviewedDailyLedgers          DailyLedger[]               @relation("LedgerLossReviewedBy")
   createdLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseCreatedBy")
   updatedLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseUpdatedBy")
   createdLedgerPurchaseItems        LedgerPurchaseItem[]        @relation("LedgerPurchaseItemCreatedBy")
@@ -413,6 +414,8 @@ model DailyLedger {
   submittedAt                DateTime?
   closedById                 String?
   closedAt                   DateTime?
+  lossReviewedById           String?
+  lossReviewedAt             DateTime?
   ledgerExpenses             LedgerExpense[]
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
@@ -429,8 +432,9 @@ model DailyLedger {
   store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
   createdBy   User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
-  submittedBy User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  closedBy    User? @relation("LedgerClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  submittedBy   User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  closedBy      User? @relation("LedgerClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  lossReviewedBy User? @relation("LedgerLossReviewedBy", fields: [lossReviewedById], references: [id], onDelete: SetNull)
 
   @@unique([storeId, closingDate], map: "dailyLedger_storeId_closingDate_key")
   @@index([storeId, closingDate])

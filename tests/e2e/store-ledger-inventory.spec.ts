@@ -157,6 +157,11 @@ async function cleanupStoryTwoFiveData() {
       where: { id: { in: productIds } },
     });
   }
+
+  // 손실 시드용 LOSS_TYPE 입력코드 정리(손실 행 삭제 후라 FK 충돌 없음).
+  await prisma.ledgerInputCode.deleteMany({
+    where: { group: "LOSS_TYPE", name: { startsWith: "스토리2-5" } },
+  });
 }
 
 test.beforeEach(async () => {
@@ -519,6 +524,167 @@ test("당일 매입이 있는 품목은 전일 근거가 없어도 기본 표에
   await expect(row.getByText("오늘 매입").first()).toBeVisible();
   // 근거 없는 품목 자동 표시를 막아도 매입 품목은 품목 추가 후보가 아니라 표에 있어야 한다.
   await expect(row).toContainText("6");
+});
+
+test("매입 품목은 당일재고를 빈칸으로 시작하고 미입력이면 저장을 막는다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-5 미입력 차단 병어", "냉동", 6000);
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 6,
+      amount: 6 * product.defaultUnitPrice,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  // 매입 품목의 당일재고는 0이 아니라 빈칸으로 시작한다(0 디폴트로 전량판매 오해 방지).
+  const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
+    exact: true,
+  });
+  await expect(currentQuantityInput).toHaveValue("");
+
+  // 미입력 상태로 저장하면 차단되고 안내가 뜬다.
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page
+      .getByText(/당일재고를 입력하지 않은 매입·손실 품목이 있습니다/)
+      .first(),
+  ).toBeVisible();
+  await expect(currentQuantityInput).toBeFocused();
+  // 저장이 막혔으므로 재고 행은 DB에 들어가지 않는다.
+  expect(
+    await prisma.ledgerInventoryItem.count({
+      where: { dailyLedgerId: ledger.id, productId: product.id },
+    }),
+  ).toBe(0);
+
+  // 매입 6, 남은 2 = 4개 판매. 정상 판매 소진이라 조정 사유는 면제되지만, 손실 기록
+  // 없이 4개가 판매로 잡히므로 저장 전 "폐기·떨이 없음" 확인을 한 번 받는다.
+  await currentQuantityInput.fill("2");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+
+  const lossDialog = page.getByRole("dialog", {
+    name: "폐기·떨이가 정말 없었나요?",
+  });
+  await expect(lossDialog).toBeVisible();
+  await expect(lossDialog).toContainText(product.name);
+  await lossDialog.getByRole("button", { name: "폐기·떨이 없음, 저장" }).click();
+  await expectInventorySaveSucceeded(page);
+
+  // 정상 판매라 재고 조정 레코드는 생기지 않는다(실사 차이가 아님).
+  expect(
+    await prisma.ledgerInventoryAdjustment.count({
+      where: { dailyLedgerId: ledger.id, productId: product.id },
+    }),
+  ).toBe(0);
+
+  // 점주가 "폐기·떨이 없음"을 확인한 사실을 장부에 actor/시각으로 남긴다(감사용).
+  // 저장 actor는 로그인한 지점장이므로 그 id가 기록돼야 한다(시드 작성자 actorId가 아님).
+  const manager = await prisma.user.findUnique({
+    where: { email: "manager@example.com" },
+    select: { id: true },
+  });
+  const reviewedLedger = await prisma.dailyLedger.findUnique({
+    where: { id: ledger.id },
+    select: { lossReviewedAt: true, lossReviewedById: true },
+  });
+  expect(reviewedLedger?.lossReviewedAt).toBeTruthy();
+  expect(reviewedLedger?.lossReviewedById).toBe(manager?.id);
+
+  await page.reload();
+  await expect(
+    page.getByLabel(`${product.name} 당일재고`, { exact: true }),
+  ).toHaveValue("2");
+});
+
+test("손실이 이미 기록된 매입 품목은 폐기 확인 없이 바로 저장된다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-5 손실기록 병어", "냉동", 6000);
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 6,
+      amount: 6 * product.defaultUnitPrice,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  // 손실 1개가 이미 기록됨 → 손실 누락 위험이 없으므로 폐기 확인 다이얼로그가 뜨면 안 된다.
+  const lossType = await prisma.ledgerInputCode.create({
+    data: {
+      group: "LOSS_TYPE",
+      name: `스토리2-5 폐기 ${randomUUID().slice(0, 8)}`,
+      displayOrder: 500,
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      ledgerInputCodeId: lossType.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      lossTypeName: lossType.name,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 1,
+      amount: product.defaultUnitPrice,
+      recoveredAmount: 0,
+      reason: "폐기",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  // 손실이 있으면 차이(매입6−손실1−재고2=3 판매)는 조정 사유를 요구한다(면제 아님).
+  // 여기서는 폐기 확인 게이트가 안 뜨는 것만 검증하므로 기준재고(5)와 같은 값을 넣는다.
+  const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
+    exact: true,
+  });
+  await currentQuantityInput.fill("5");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+
+  // 폐기 확인 다이얼로그 없이 바로 저장 성공.
+  await expect(
+    page.getByRole("dialog", { name: "폐기·떨이가 정말 없었나요?" }),
+  ).toHaveCount(0);
+  await expectInventorySaveSucceeded(page);
+
+  // 명시 확인을 거치지 않았으므로 lossReviewed 흔적도 남지 않는다.
+  const savedLedger = await prisma.dailyLedger.findUnique({
+    where: { id: ledger.id },
+    select: { lossReviewedAt: true },
+  });
+  expect(savedLedger?.lossReviewedAt).toBeNull();
 });
 
 test("월초 스냅샷에 누락된 활성 품목은 자동 표시하지 않고 품목 추가로만 입력한다", async ({

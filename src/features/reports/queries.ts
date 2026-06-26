@@ -2017,8 +2017,8 @@ function buildMonthlyProfitAndLossReadiness(): MonthlyProfitAndLossReadiness {
       key: "purchaseCost",
       label: "매입 원가 / 매출원가",
       availability: "estimated",
-      source: "재고/FIFO 정책 의존",
-      note: "재고·FIFO 정책 확정 전까지 재고 흐름 기반 추정으로만 산출합니다.",
+      source: "재고 흐름/FIFO 원가",
+      note: "재고 흐름과 FIFO 원가 기준으로 추정 산출합니다. 품목별 실판매 기록은 아직 직접 기록되지 않습니다.",
     },
     {
       key: "branchExpense",
@@ -2046,7 +2046,7 @@ function buildMonthlyProfitAndLossReadiness(): MonthlyProfitAndLossReadiness {
       label: "재고 가치",
       availability: "actual",
       source: "재고 금액",
-      note: "장부 재고 금액으로 실측하나 FIFO 정책 확정에 따라 달라질 수 있습니다.",
+      note: "장부에 저장된 FIFO 재고금액을 실측 집계합니다.",
     },
     {
       key: "productSales",

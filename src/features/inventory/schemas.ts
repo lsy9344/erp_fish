@@ -95,6 +95,9 @@ const ledgerInventoryItemSchema = z.object({
 
 export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
+  // 점주가 "폐기·떨이 없음"을 명시 확인하고 저장한 경우 true. 손실 누락이 판매로
+  // 둔갑하는 역산 빈틈을 점주가 확인했다는 감사 사실로 장부에 기록한다.
+  lossReviewed: z.boolean().optional(),
 });
 
 export const ledgerInventoryAdjustmentSchema =

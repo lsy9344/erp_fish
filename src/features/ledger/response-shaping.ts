@@ -53,13 +53,13 @@ const storeManagerReviewMetricIds = new Set([
   "plannedGrossMarginRate",
 ]);
 
-// 마진률·재고금액은 정상 계산값일 때만 노출한다. FIFO 원가 미확정 등으로
+// 마진률·재고금액은 정상 계산값일 때만 노출한다. 원천 lot 근거 부족 등으로
 // status가 ok가 아니면(policy-unconfirmed/data-insufficient) 지점장 화면에서 숨긴다.
-// 이렇게 해야 FIFO 원가 근거가 "기준 확인 필요" 형태로도 새지 않는다.
+// 이렇게 해야 원가 근거가 "기준 확인 필요" 형태로도 새지 않는다.
 const conditionalStoreManagerMetricIds = new Set([
   "grossMarginRate",
   "inventoryAmount",
-  // 계획 마진율도 FIFO 원가 미확정 시 원가 역산을 막기 위해 ok일 때만 노출한다.
+  // 계획 마진율도 원천 lot 근거 부족 시 원가 역산을 막기 위해 ok일 때만 노출한다.
   "plannedGrossMarginRate",
 ]);
 
@@ -75,15 +75,14 @@ function isStoreManagerVisibleMetric(metric: LedgerReviewStepMetric): boolean {
   return true;
 }
 
-// FIFO 미승인(OQ-7/OQ-17) 게이트는 의도적으로 유지되지만, 지점장 화면에 내부 정책
-// 코드(OQ-7/OQ-17)를 그대로 노출하지 않는다(작업지시서 Task 5). 본사 화면(getLedgerReviewStepData)은
-// 추적용으로 원문을 유지하고, 지점장 응답에서만 쉬운 문구로 바꾼다.
-const STORE_MANAGER_FIFO_PENDING_DETAIL =
-  "재고 수량은 저장됐습니다. 재고 금액은 본사 기준 확인 후 확정됩니다.";
+// 지점장 응답에는 내부 OQ 코드를 그대로 노출하지 않는다. 본사 화면(getLedgerReviewStepData)은
+// full summary를 유지한다.
+const STORE_MANAGER_INTERNAL_POLICY_DETAIL =
+  "계산 기준 확인이 필요합니다. 본사 기준 확인 후 확정됩니다.";
 
 function toStoreManagerDetail(detail: string | undefined): string | undefined {
   if (detail?.includes("OQ-")) {
-    return STORE_MANAGER_FIFO_PENDING_DETAIL;
+    return STORE_MANAGER_INTERNAL_POLICY_DETAIL;
   }
 
   return detail;
@@ -137,7 +136,7 @@ export function toStoreManagerLedgerReviewStepData(
       plannedVsActualSalesDifference:
         data.summary.plannedVsActualSalesDifference,
       // 계획 마진율(%)은 마진율 노출 정책과 동일하게 status가 ok일 때만 값으로 노출하고,
-      // FIFO 원가 미확정 등 ok가 아니면 원가 역산을 막기 위해 값을 숨긴다.
+      // 원천 lot 근거 부족 등 ok가 아니면 원가 역산을 막기 위해 값을 숨긴다.
       plannedGrossMarginRate: hideNonOkMetric(
         data.summary.plannedGrossMarginRate,
       ),

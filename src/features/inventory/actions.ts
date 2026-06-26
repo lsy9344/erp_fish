@@ -28,8 +28,11 @@ import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { buildManualInventoryRows } from "./manual-inventory-rows";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
+  buildRequiredEntryGuardItems,
   getInventorySaveAdjustmentErrors,
+  getRequiredCurrentQuantityErrors,
   missingAdjustmentReasonMessage,
+  missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
 import {
   persistLedgerInventoryCarryoverDetail,
@@ -253,6 +256,20 @@ export async function saveLedgerInventoryItems(
       const inputByProductId = new Map(
         parsed.data.items.map((item) => [item.productId, item]),
       );
+
+      // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
+      const requiredEntryErrors = getRequiredCurrentQuantityErrors(
+        buildRequiredEntryGuardItems(before.items, inputByProductId),
+      );
+
+      if (Object.keys(requiredEntryErrors).length > 0) {
+        return actionError<StoreManagerInventoryStepData>(
+          "VALIDATION_ERROR",
+          missingRequiredCurrentQuantityMessage,
+          requiredEntryErrors,
+        );
+      }
+
       const adjustmentErrors = getInventorySaveAdjustmentErrors(
         before.items.map((item) => ({
           productId: item.productId,
@@ -288,7 +305,14 @@ export async function saveLedgerInventoryItems(
           version: parsed.data.version,
           status: { in: [...editableLedgerStatuses] },
         },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
+        data: {
+          updatedById: actor.user.id,
+          version: { increment: 1 },
+          // 점주가 "폐기·떨이 없음"을 명시 확인했으면 actor/시각을 남긴다(감사용).
+          ...(parsed.data.lossReviewed
+            ? { lossReviewedById: actor.user.id, lossReviewedAt: new Date() }
+            : {}),
+        },
       });
 
       if (editableLedger.count !== 1) {

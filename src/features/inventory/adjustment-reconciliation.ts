@@ -5,6 +5,7 @@ import {
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "~/server/calculations/inventory";
+import { isPurchaseDrivenSale } from "~/features/inventory/inventory-persist-policy";
 
 const adjustmentSelect = {
   id: true,
@@ -142,6 +143,24 @@ export async function reconcileLedgerInventoryAdjustments(
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
+
+    // 정상 판매 소진(매입 있음·손실 없음·기준재고 이하)은 실사 차이가 아니므로,
+    // 매입 반영 후 정상 판매로 바뀐 기존 조정 레코드는 삭제한다. 남겨두면
+    // salesDifference에 계속 합산돼 이번 정책("정상 판매는 조정 아님")이 깨진다.
+    if (
+      isPurchaseDrivenSale({
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity,
+        lossQuantity,
+        currentQuantity: item.currentQuantity,
+      })
+    ) {
+      await tx.ledgerInventoryAdjustment.delete({
+        where: { id: adjustment.id },
+      });
+      continue;
+    }
+
     const beforeQuantity = calculateSystemInventoryQuantity({
       previousQuantity: item.previousQuantity,
       purchasedQuantity,

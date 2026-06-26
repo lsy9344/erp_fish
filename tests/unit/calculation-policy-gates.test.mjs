@@ -38,8 +38,6 @@ test("OQ-gated calculation registry returns policy-unconfirmed metric contracts"
     [
       "salesDifferenceThresholdAnomaly",
       "thirtyPercentUnitPrice",
-      "fifoCostOfGoodsSold",
-      "fifoInventoryAmount",
       "hopedSalePriceLossAmount",
       "storeManagerSensitiveDerivedMetrics",
       "salesDifferenceMeaningChange",
@@ -70,14 +68,6 @@ test("OQ-gated calculation registry returns policy-unconfirmed metric contracts"
   assert.deepEqual(getCalculationPolicyGate("thirtyPercentUnitPrice").oqIds, [
     "OQ-2",
   ]);
-  assert.deepEqual(getCalculationPolicyGate("fifoCostOfGoodsSold").oqIds, [
-    "OQ-7",
-    "OQ-17",
-  ]);
-  assert.deepEqual(getCalculationPolicyGate("fifoInventoryAmount").oqIds, [
-    "OQ-7",
-    "OQ-17",
-  ]);
   assert.deepEqual(getCalculationPolicyGate("hopedSalePriceLossAmount").oqIds, [
     "OQ-9",
   ]);
@@ -91,7 +81,7 @@ test("OQ-gated calculation registry returns policy-unconfirmed metric contracts"
   );
 });
 
-test("ledger summary gates FIFO cost metrics but exposes FIFO inventory amount (OQ-7/OQ-17 approved)", async () => {
+test("ledger summary uses approved FIFO cost metrics without OQ-7/OQ-17 gate", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -127,10 +117,13 @@ test("ledger summary gates FIFO cost metrics but exposes FIFO inventory amount (
   });
 
   assert.equal(summary.costOfGoodsSold.value, 2_000);
-  assert.equal(summary.costOfGoodsSold.status, "policy-unconfirmed");
+  assert.equal(summary.costOfGoodsSold.status, "ok");
   assert.equal(summary.grossMarginRate.value, 0.98);
-  assert.equal(summary.grossMarginRate.status, "policy-unconfirmed");
-  // OQ-7/OQ-17 결정(2026-06-22): FIFO 재고금액은 노출 확정. 더 이상 게이트하지 않고 ok.
+  assert.equal(summary.grossMarginRate.status, "ok");
+  assert.equal(summary.salesDifference.value, 98_000);
+  assert.equal(summary.salesDifference.status, "ok");
+  assert.doesNotMatch(summary.grossMarginRate.reason ?? "", /OQ-7|OQ-17/);
+  assert.doesNotMatch(summary.salesDifference.reason ?? "", /OQ-7|OQ-17/);
   assert.equal(summary.inventoryAmount.value, 1_000);
   assert.equal(summary.inventoryAmount.status, "ok");
 
@@ -158,9 +151,10 @@ test("ledger summary gates FIFO cost metrics but exposes FIFO inventory amount (
     lossItems: [],
   });
 
-  // legacy opening lot가 있어도 COGS는 계속 게이트(원가 민감), 재고금액은 노출 확정.
+  // legacy opening lot는 OQ gate가 아니라 원천 lot 근거 부족으로 분리한다.
   assert.equal(legacySummary.costOfGoodsSold.value, 7_000);
   assert.equal(legacySummary.costOfGoodsSold.status, "policy-unconfirmed");
+  assert.doesNotMatch(legacySummary.costOfGoodsSold.reason ?? "", /OQ-7|OQ-17/);
   assert.equal(legacySummary.inventoryAmount.value, 8_000);
   assert.equal(legacySummary.inventoryAmount.status, "ok");
 });

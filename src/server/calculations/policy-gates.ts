@@ -1,8 +1,6 @@
 export type CalculationPolicyGateMetricId =
   | "salesDifferenceThresholdAnomaly"
   | "thirtyPercentUnitPrice"
-  | "fifoCostOfGoodsSold"
-  | "fifoInventoryAmount"
   | "hopedSalePriceLossAmount"
   | "storeManagerSensitiveDerivedMetrics"
   | "salesDifferenceMeaningChange";
@@ -42,22 +40,6 @@ const policyGates = [
     reason:
       "OQ-2 30%단가 의미와 적용 우선순위가 확정되지 않아 파생 단가 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
     oqIds: ["OQ-2"],
-  },
-  {
-    metricId: "fifoCostOfGoodsSold",
-    label: "FIFO 확정 원가",
-    status: "policy-unconfirmed",
-    reason:
-      "OQ-7/OQ-17 FIFO 적용 범위와 처리 순서가 확정되지 않아 FIFO 확정 원가 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
-    oqIds: ["OQ-7", "OQ-17"],
-  },
-  {
-    metricId: "fifoInventoryAmount",
-    label: "FIFO 재고금액",
-    status: "policy-unconfirmed",
-    reason:
-      "OQ-7/OQ-17 FIFO 적용 범위와 처리 순서가 확정되지 않아 FIFO 재고금액 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
-    oqIds: ["OQ-7", "OQ-17"],
   },
   {
     metricId: "hopedSalePriceLossAmount",
