@@ -15,7 +15,10 @@ function assertProjectFile(...segments) {
 }
 
 function readProjectFile(...segments) {
-  return readFileSync(assertProjectFile(...segments), "utf8");
+  return readFileSync(assertProjectFile(...segments), "utf8").replace(
+    /\r\n?/g,
+    "\n",
+  );
 }
 
 function ok(value) {
