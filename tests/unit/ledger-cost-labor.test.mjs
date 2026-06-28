@@ -341,7 +341,14 @@ test("ledger labor model, query payload, and save actions follow expected contra
   assert.match(actionSource, /tx\.ledgerLaborItem\.createMany/);
   // WO-05(2026-06-22): 저장 시 검증된 employeeId만 연결한다.
   assert.match(actionSource, /resolveValidEmployeeIdsInTx/);
-  assert.match(actionSource, /employeeId:\s*\n?\s*item\.employeeId/);
+  // WO-10(2026-06-28): 지점장 저장은 검증된 employeeId를 const로 계산해 연결하고,
+  // 기존 급여액을 이월(carry-forward)한다. amount는 본사만 입력한다.
+  assert.match(
+    actionSource,
+    /const\s+employeeId\s*=\s*\n?\s*item\.employeeId\s*&&\s*validEmployeeIds\.has/,
+  );
+  assert.match(actionSource, /buildLaborCarryForwardQueues/);
+  assert.match(actionSource, /takeCarriedLaborAmount/);
 
   const hqActionSource = readProjectFile(
     "src",
@@ -615,14 +622,17 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   );
 
   assert.match(typeSource, /StoreManagerLedgerCostStepData/);
+  // WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용. 지점장 DTO에서 payrollTotal과
+  // laborItems(amount 포함)도 제거하고, laborItems는 amount만 뺀 라인으로 재정의한다.
   assert.match(
     typeSource,
-    /Omit<\s*LedgerCostStepData,\s*"grossProfit"\s*\|\s*"productivity"\s*>/s,
+    /Omit<\s*LedgerCostStepData,\s*"grossProfit"\s*\|\s*"productivity"\s*\|\s*"payrollTotal"\s*\|\s*"laborItems"\s*>/s,
   );
+  assert.match(typeSource, /StoreManagerLedgerLaborLine/);
   assert.match(querySource, /shapeStoreManagerLedgerCostStepData/);
   assert.match(
     responseShapeSource,
-    /const\s*\{\s*grossProfit,\s*productivity,\s*\.\.\.safeLedger\s*\}/s,
+    /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*laborItems,\s*\.\.\.safeLedger\s*\}/s,
   );
   assert.match(actionSource, /toStoreManagerLedgerCostStepData\(afterLedger\)/);
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);
@@ -693,9 +703,12 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   assert.equal(Object.hasOwn(safeLedger, "grossProfit"), false);
   assert.equal(Object.hasOwn(safeLedger, "productivity"), false);
   assert.equal(safeLedger.expenseTotal, 30_000);
-  // 급여(인건비)는 지점장이 직접 입력하는 운영 데이터이므로 응답에 유지된다.
-  assert.equal(safeLedger.payrollTotal, 20_000);
+  // WO-10(2026-06-28): 급여액과 인건비 합계는 본사 전용. 지점장 응답에서 제거된다.
+  assert.equal(Object.hasOwn(safeLedger, "payrollTotal"), false);
+  // 근무자 명단/메모는 지점장이 다루므로 남되, 개인별 급여액(amount)은 제거된다.
   assert.equal(safeLedger.laborItems.length, 1);
+  assert.equal(Object.hasOwn(safeLedger.laborItems[0], "amount"), false);
+  assert.equal(safeLedger.laborItems[0].workerName, "홍길동");
 });
 
 test("expense step provides 기타 fallback and disables amount when no HQ expense codes exist", () => {

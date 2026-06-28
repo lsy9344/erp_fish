@@ -27,6 +27,8 @@ const plannedUnitPriceConflictError =
 const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
 const laborWorkerNameError = "직원명을 1~50자로 입력해 주세요.";
 const laborAmountError = "급여 금액은 0원 이상의 정수여야 합니다.";
+const laborAmountForbiddenError =
+  "급여 금액은 본사만 입력할 수 있습니다. 지점장은 근무자만 선택해 주세요.";
 const laborMemoError = "메모는 0~500자 사이여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
@@ -465,6 +467,21 @@ export const ledgerLaborSchema = ledgerMutationContextSchema.extend({
 });
 
 export type LedgerLaborInput = z.infer<typeof ledgerLaborSchema>;
+
+// WO-10(2026-06-28): 급여액은 본사만 등록/수정한다. 지점장 근무 저장은 근무자 명단과
+// 메모만 받고, amount 입력은 무시가 아니라 거부한다(조작된 POST로 급여액이 저장되는 경로 차단).
+// 금액은 본사가 별도로 관리하고, 지점장 저장 시 기존 amount는 이월(carry-forward)한다.
+const storeManagerLaborItemSchema = ledgerLaborItemSchema
+  .omit({ amount: true })
+  .strict(laborAmountForbiddenError);
+
+export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema.extend({
+  labor: z.array(storeManagerLaborItemSchema),
+});
+
+export type StoreManagerLedgerLaborInput = z.infer<
+  typeof storeManagerLedgerLaborSchema
+>;
 
 export const ledgerSubmitSchema = ledgerMutationContextSchema;
 

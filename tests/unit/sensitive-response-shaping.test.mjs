@@ -578,3 +578,100 @@ test("authz semantic gates keep report view and export create separate", () => {
     /hasActionPermission[\s\S]*permissionProfiles:\s*{\s*some:[\s\S]*actions:\s*{\s*some:\s*{\s*action/s,
   );
 });
+
+// WO-10(2026-06-28): 급여액과 인건비 합계는 본사 전용이다. 지점장 cost-step 응답에서
+// payrollTotal과 개인별 amount가 제거되는지, 지점장 근무 저장 스키마가 amount를 거부하는지 확인한다.
+test("WO-10: store manager cost step omits payroll total and labor amounts", async () => {
+  const shapingPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "response-shaping.ts",
+  );
+  const { toStoreManagerLedgerCostStepData } = await import(
+    pathToFileURL(shapingPath).href
+  );
+
+  const safe = toStoreManagerLedgerCostStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: new Date("2026-06-10T00:00:00.000Z"),
+    updatedAt: new Date("2026-06-10T01:00:00.000Z"),
+    status: "IN_PROGRESS",
+    submittedById: null,
+    submittedAt: null,
+    closedById: null,
+    closedAt: null,
+    totalSalesAmount: 100_000,
+    cashAmount: 100_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    paymentDifferenceAmount: 0,
+    workerCount: 1,
+    workMemo: null,
+    expenseItems: [],
+    expenseTotal: 0,
+    purchaseItems: [],
+    purchaseTotal: 0,
+    laborItems: [
+      {
+        id: "labor-1",
+        employeeId: null,
+        workerName: "홍길동",
+        amount: 20_000,
+        lateMemo: null,
+        earlyLeaveMemo: null,
+        specialMemo: null,
+      },
+    ],
+    payrollTotal: 20_000,
+    grossProfit: 0,
+    productivity: null,
+    stepCompletion: {
+      sales: true,
+      cost: false,
+      purchase: false,
+      inventory: false,
+      losses: false,
+      work: true,
+    },
+  });
+
+  assert.equal(Object.hasOwn(safe, "payrollTotal"), false);
+  assert.equal(safe.laborItems.length, 1);
+  assert.equal(Object.hasOwn(safe.laborItems[0], "amount"), false);
+  assert.equal(safe.laborItems[0].workerName, "홍길동");
+});
+
+test("WO-10: store manager labor schema rejects amount input", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "schemas.ts",
+  );
+  const { storeManagerLedgerLaborSchema } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const base = {
+    storeId: "store-1",
+    ledgerId: "ledger-1",
+    closingDate: "2026-06-10",
+    version: 1,
+  };
+
+  // 금액 없는 근무자 명단은 통과한다.
+  const ok = storeManagerLedgerLaborSchema.safeParse({
+    ...base,
+    labor: [{ employeeId: "", workerName: "홍길동" }],
+  });
+  assert.equal(ok.success, true);
+
+  // 조작된 amount가 들어오면 무시가 아니라 거부한다.
+  const rejected = storeManagerLedgerLaborSchema.safeParse({
+    ...base,
+    labor: [{ employeeId: "", workerName: "홍길동", amount: 999_999 }],
+  });
+  assert.equal(rejected.success, false);
+});

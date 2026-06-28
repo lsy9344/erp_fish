@@ -46,7 +46,7 @@ import {
 import {
   ledgerSalesPaymentSchema,
   ledgerExpenseSchema,
-  ledgerLaborSchema,
+  storeManagerLedgerLaborSchema,
   ledgerPurchaseSchema,
   ledgerStoreAccessSchema,
   ledgerSubmitSchema,
@@ -55,7 +55,7 @@ import {
   type LedgerStoreAccessInput,
   type LedgerSalesPaymentInput,
   type LedgerExpensesInput,
-  type LedgerLaborInput,
+  type StoreManagerLedgerLaborInput,
   type LedgerPurchasesInput,
   type LedgerSubmitInput,
   type LedgerWorkInfoInput,
@@ -176,8 +176,49 @@ function parseLedgerWorkInfoInput(
   return actionOk(parsed.data);
 }
 
-function parseLedgerLaborInput(input: unknown): ActionResult<LedgerLaborInput> {
-  const parsed = ledgerLaborSchema.safeParse(input);
+// WO-10(2026-06-28): 지점장 근무 저장 시 본사가 입력한 급여액을 보존하기 위한 이월 큐.
+// 근무자 키(employeeId 우선, 없으면 `name:${workerName}`)별로 기존 amount를 입력 순서대로
+// 쌓아두고, 같은 키의 새 행에 순서대로 다시 배정한다. 매칭이 끝나면 0원(본사 미입력)으로 둔다.
+function laborCarryForwardKey(
+  employeeId: string | null,
+  workerName: string,
+): string {
+  return employeeId ? `id:${employeeId}` : `name:${workerName}`;
+}
+
+function buildLaborCarryForwardQueues(
+  items: { employeeId: string | null; workerName: string; amount: number }[],
+): Map<string, number[]> {
+  const queues = new Map<string, number[]>();
+
+  for (const item of items) {
+    const key = laborCarryForwardKey(item.employeeId, item.workerName);
+    const queue = queues.get(key);
+
+    if (queue) {
+      queue.push(item.amount);
+    } else {
+      queues.set(key, [item.amount]);
+    }
+  }
+
+  return queues;
+}
+
+function takeCarriedLaborAmount(
+  queues: Map<string, number[]>,
+  employeeId: string | null,
+  workerName: string,
+): number {
+  const queue = queues.get(laborCarryForwardKey(employeeId, workerName));
+
+  return queue && queue.length > 0 ? (queue.shift() ?? 0) : 0;
+}
+
+function parseLedgerLaborInput(
+  input: unknown,
+): ActionResult<StoreManagerLedgerLaborInput> {
+  const parsed = storeManagerLedgerLaborSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -237,7 +278,7 @@ type StoreLedgerConflictInput =
   | LedgerExpensesInput
   | LedgerPurchasesInput
   | LedgerWorkInfoInput
-  | LedgerLaborInput
+  | StoreManagerLedgerLaborInput
   | LedgerSubmitInput;
 
 function toStoreLedgerConflictValues(
@@ -274,10 +315,11 @@ function toStoreLedgerConflictValues(
         특이사항: data.workMemo,
       };
     case "labor":
+      // WO-10(2026-06-28): 급여액은 본사 전용이라 지점장 충돌 비교에서 금액을 노출하지 않는다.
       return Object.fromEntries(
         data.laborItems.map((item, index) => [
-          `급여 ${index + 1}`,
-          `${item.workerName} ${item.amount}원`,
+          `근무자 ${index + 1}`,
+          item.workerName,
         ]),
       );
     case "review":
@@ -328,10 +370,11 @@ function toStoreLedgerClientValues(
       };
     }
     case "labor":
+      // WO-10(2026-06-28): 지점장 근무 입력에는 급여액이 없다. 근무자명만 비교 후보로 둔다.
       return Object.fromEntries(
-        (input as LedgerLaborInput).labor.map((item, index) => [
-          `급여 ${index + 1}`,
-          `${item.workerName} ${item.amount}원`,
+        (input as StoreManagerLedgerLaborInput).labor.map((item, index) => [
+          `근무자 ${index + 1}`,
+          item.workerName,
         ]),
       );
     case "review":
@@ -1505,6 +1548,14 @@ export async function saveLedgerLaborInfo(
         },
       );
 
+      // WO-10(2026-06-28): 급여액은 본사 전용이다. 지점장 저장은 amount를 받지 않고,
+      // 기존 행의 급여액을 이월(carry-forward)해 본사가 입력한 금액이 지워지지 않게 한다.
+      // 같은 근무자 키(employeeId 우선, 없으면 workerName)의 기존 금액을 순서대로 소비하고,
+      // 매칭되지 않는 새 행은 0원으로 둔다(본사가 이후 금액을 입력).
+      const existingLaborAmounts = buildLaborCarryForwardQueues(
+        beforeLedger.ledgerLaborItems,
+      );
+
       await tx.ledgerLaborItem.deleteMany({
         where: { dailyLedgerId: beforeLedger.id },
       });
@@ -1517,20 +1568,28 @@ export async function saveLedgerLaborInfo(
         );
 
         await tx.ledgerLaborItem.createMany({
-          data: parsed.data.labor.map((item) => ({
-            dailyLedgerId: beforeLedger.id,
-            employeeId:
+          data: parsed.data.labor.map((item) => {
+            const employeeId =
               item.employeeId && validEmployeeIds.has(item.employeeId)
                 ? item.employeeId
-                : null,
-            workerName: item.workerName,
-            amount: item.amount,
-            lateMemo: item.lateMemo,
-            earlyLeaveMemo: item.earlyLeaveMemo,
-            specialMemo: item.specialMemo,
-            createdById: actor.user.id,
-            updatedById: actor.user.id,
-          })),
+                : null;
+
+            return {
+              dailyLedgerId: beforeLedger.id,
+              employeeId,
+              workerName: item.workerName,
+              amount: takeCarriedLaborAmount(
+                existingLaborAmounts,
+                employeeId,
+                item.workerName,
+              ),
+              lateMemo: item.lateMemo,
+              earlyLeaveMemo: item.earlyLeaveMemo,
+              specialMemo: item.specialMemo,
+              createdById: actor.user.id,
+              updatedById: actor.user.id,
+            };
+          }),
         });
       }
 

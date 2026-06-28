@@ -11,12 +11,24 @@ import type {
 export function toStoreManagerLedgerCostStepData(
   data: LedgerCostStepData,
 ): StoreManagerLedgerCostStepData {
-  const { grossProfit, productivity, ...safeLedger } = data;
+  // WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용. grossProfit/productivity에
+  // 더해 payrollTotal과 개인별 amount도 지점장 응답에서 제거한다. 근무자 명단/메모는
+  // 지점장이 다루므로 amount만 뺀 라인으로 내려준다.
+  const { grossProfit, productivity, payrollTotal, laborItems, ...safeLedger } =
+    data;
 
   void grossProfit;
   void productivity;
+  void payrollTotal;
 
-  return safeLedger;
+  return {
+    ...safeLedger,
+    laborItems: laborItems.map(({ amount, ...safeLine }) => {
+      void amount;
+
+      return safeLine;
+    }),
+  };
 }
 
 // 미팅 결정(2026-06-21): 지점장 계산값(검토/원가 요약)에 마진률(%)과 총 재고금액은 노출한다.
@@ -28,9 +40,10 @@ export function toStoreManagerLedgerCostStepData(
 // 검토 후속(2026-06-22): 원문(point_summary.md:41)은 지점장 상단 요약을 "총매출·마진율·재고금액"으로
 // 좁힐 것을 요구한다. 상단 summary(아래 toStoreManagerLedgerReviewStepData의 summary 블록)는
 // 이를 그대로 따른다(totalSales/grossMarginRate/workerCount/inventoryAmount, 단 workerCount는 WO-01 확정).
-// 단계(step) 요약의 paymentTotal·laborCount·payrollTotal·각종 count는 원문 3개 항목을 넘어서지만,
-// 이는 WO-01에서 "민감 회계지표(원가·이익·생산성·FIFO·매출차액)가 아닌 운영 보조 카운트/합계는
-// 단계 요약에 남길 수 있다"고 확정한 의도된 확장이다(이해관계자 합의, 현행 유지로 결정).
+// 단계(step) 요약의 paymentTotal·각종 count는 운영 보조 카운트/합계로 남긴다.
+// WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용으로 확정됐다. 2026-06-22에 의도적으로
+// 노출했던 payrollTotal(급여 합계 금액)은 지점장 단계 요약에서 제거한다. laborCount(급여 항목
+// "건수")는 금액이 아니므로 운영 보조 카운트로 유지한다.
 // 새 지표를 단계 요약에 추가할 때는 반드시 위 민감 차단 목록과 충돌하지 않는지 먼저 확인한다.
 const storeManagerReviewMetricIds = new Set([
   "totalSales",
@@ -44,7 +57,6 @@ const storeManagerReviewMetricIds = new Set([
   "lossCount",
   "workerCount",
   "laborCount",
-  "payrollTotal",
 ]);
 
 // 마진률·재고금액은 정상 계산값일 때만 노출한다. 원천 lot 근거 부족 등으로

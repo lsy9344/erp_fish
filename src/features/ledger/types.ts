@@ -83,10 +83,17 @@ export type LedgerCostStepData = LedgerSalesStepData & {
   stepCompletion: StoreEntryStepCompletion;
 };
 
+// WO-10(2026-06-28): 급여액과 인건비 합계는 본사 전용이다. 지점장 응답에서
+// 개인별 급여액(laborItems[].amount)과 합계(payrollTotal)를 제거한다. 근무자
+// 명단/메모는 지점장이 선택·입력하므로 amount만 빠진 라인으로 내려준다.
+export type StoreManagerLedgerLaborLine = Omit<LedgerLaborLine, "amount">;
+
 export type StoreManagerLedgerCostStepData = Omit<
   LedgerCostStepData,
-  "grossProfit" | "productivity"
->;
+  "grossProfit" | "productivity" | "payrollTotal" | "laborItems"
+> & {
+  laborItems: StoreManagerLedgerLaborLine[];
+};
 
 export type LedgerPurchaseStepData = LedgerCostStepData;
 

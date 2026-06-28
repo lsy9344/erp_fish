@@ -118,11 +118,13 @@ function createLaborLine(): LaborLine {
 }
 
 function toLaborLines(items: WorkLedgerData["laborItems"]): LaborLine[] {
+  // WO-10(2026-06-28): 급여액은 본사 전용이라 지점장 응답 라인에는 amount가 없다.
+  // 본사(LedgerCostStepData)일 때만 amount를 채우고, 지점장은 빈 문자열로 둔다.
   return items.map<LaborLine>((item) => ({
     id: item.id,
     employeeId: item.employeeId ?? "",
     workerName: item.workerName,
-    amount: formatKrwInput(String(item.amount)),
+    amount: "amount" in item ? formatKrwInput(String(item.amount)) : "",
     lateMemo: item.lateMemo ?? "",
     earlyLeaveMemo: item.earlyLeaveMemo ?? "",
     specialMemo: item.specialMemo ?? "",
@@ -361,10 +363,14 @@ export function WorkStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
+        // WO-10(2026-06-28): 급여액은 본사만 입력한다. 지점장 저장 payload에는 amount를
+        // 넣지 않는다(서버 스키마가 amount 키를 거부하고 기존 금액을 이월한다).
         labor: laborItems.map((line) => ({
           employeeId: line.employeeId || null,
           workerName: line.workerName,
-          amount: toRawKrwInputValue(line.amount),
+          ...(showSensitiveAccountingMetrics
+            ? { amount: toRawKrwInputValue(line.amount) }
+            : {}),
           lateMemo: line.lateMemo,
           earlyLeaveMemo: line.earlyLeaveMemo,
           specialMemo: line.specialMemo,
@@ -790,41 +796,44 @@ export function WorkStepClient({
                       ) : null}
                     </Field>
 
-                    <Field data-invalid={Boolean(amountError)}>
-                      <FieldLabel htmlFor={`labor-amount-${line.id}`}>
-                        급여 금액
-                      </FieldLabel>
-                      <Input
-                        id={`labor-amount-${line.id}`}
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={line.amount}
-                        disabled={
-                          !isHydrated || isLaborSaving || isOriginalEditBlocked
-                        }
-                        onChange={(event) =>
-                          updateLaborLine(line.id, {
-                            amount: formatKrwInput(event.currentTarget.value),
-                          })
-                        }
-                        className="min-h-11 tabular-nums"
-                        aria-invalid={Boolean(amountError)}
-                        aria-describedby={
-                          amountError ? amountErrorId : undefined
-                        }
-                      />
-                      <p
-                        id={`labor-amount-${line.id}-preview`}
-                        className="text-muted-foreground mt-1 text-xs tabular-nums"
-                      >
-                        표시: {formatKrw(parseKrwInputValue(line.amount))}
-                      </p>
-                      {amountError ? (
-                        <FieldError id={amountErrorId}>
-                          {amountError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
+                    {/* WO-10(2026-06-28): 급여 금액 입력/표시는 본사 전용이다. */}
+                    {showSensitiveAccountingMetrics ? (
+                      <Field data-invalid={Boolean(amountError)}>
+                        <FieldLabel htmlFor={`labor-amount-${line.id}`}>
+                          급여 금액
+                        </FieldLabel>
+                        <Input
+                          id={`labor-amount-${line.id}`}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={line.amount}
+                          disabled={
+                            !isHydrated || isLaborSaving || isOriginalEditBlocked
+                          }
+                          onChange={(event) =>
+                            updateLaborLine(line.id, {
+                              amount: formatKrwInput(event.currentTarget.value),
+                            })
+                          }
+                          className="min-h-11 tabular-nums"
+                          aria-invalid={Boolean(amountError)}
+                          aria-describedby={
+                            amountError ? amountErrorId : undefined
+                          }
+                        />
+                        <p
+                          id={`labor-amount-${line.id}-preview`}
+                          className="text-muted-foreground mt-1 text-xs tabular-nums"
+                        >
+                          표시: {formatKrw(parseKrwInputValue(line.amount))}
+                        </p>
+                        {amountError ? (
+                          <FieldError id={amountErrorId}>
+                            {amountError}
+                          </FieldError>
+                        ) : null}
+                      </Field>
+                    ) : null}
 
                     <Field data-invalid={Boolean(lateError)}>
                       <FieldLabel htmlFor={`labor-late-${line.id}`}>
@@ -911,21 +920,30 @@ export function WorkStepClient({
           )}
 
           <div className="bg-muted/40 rounded-md p-3">
-            <div className="flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">입력 중 급여 합계</span>
-              <span className="font-semibold tabular-nums">
-                {formatKrw(draftPayrollTotal)}
-              </span>
-            </div>
-            <div className="mt-2 flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">
-                마지막 서버 저장 합계
-              </span>
-              <span className="font-semibold tabular-nums">
-                {formatKrw(ledger.payrollTotal)}
-              </span>
-            </div>
-            <div className="mt-2 flex justify-between gap-2 text-sm">
+            {/* WO-10(2026-06-28): 급여 합계 금액은 본사 전용. 지점장에게는 참고 인원만 보인다. */}
+            {showSensitiveAccountingMetrics ? (
+              <>
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">
+                    입력 중 급여 합계
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatKrw(draftPayrollTotal)}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">
+                    마지막 서버 저장 합계
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatKrw(
+                      "payrollTotal" in ledger ? ledger.payrollTotal : 0,
+                    )}
+                  </span>
+                </div>
+              </>
+            ) : null}
+            <div className="flex justify-between gap-2 text-sm [&:not(:first-child)]:mt-2">
               <span className="text-muted-foreground">
                 급여 행 기준 참고 인원
               </span>
