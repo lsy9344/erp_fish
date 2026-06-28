@@ -260,3 +260,51 @@ test("#8 e2e uploads an ECOUNT workbook and commits it through the UI", () => {
     "E2E should no longer document upload→commit as unit-only coverage",
   );
 });
+
+// WO-08(2026-06-28): 지점/품목 자동 등록 검증. alias를 한 번 저장하면 같은 batch의
+// 같은 raw key 라인이 모두 재계산되고(recomputeBatchMappingInTx), 감사 로그가 남는다.
+// 별도 "품목묭도"·"모두 적용" UI는 만들지 않는다(업로드 자동 등록/자동 매핑으로 정리).
+test("WO-08: alias save recomputes whole batch with consistent raw keys and audits", () => {
+  const source = supplyActions();
+
+  // 두 저장 액션 모두 batch 전체 재계산 + 감사 로그를 호출한다.
+  assert.match(source, /export async function saveEcountStoreAlias/);
+  assert.match(source, /export async function saveEcountProductAlias/);
+  assert.match(source, /async function recomputeBatchMappingInTx/);
+  assert.match(source, /store_external_alias\.(created|updated)/);
+  assert.match(source, /product_external_alias\.(created|updated)/);
+
+  // recompute는 batch의 "모든" 라인을 돌며 같은 정규화 키(storeAliasKey/productAliasKey)로
+  // 매핑을 다시 적용한다 → 같은 raw key 라인이 한 번에 갱신된다.
+  const recompute =
+    source.match(
+      /async function recomputeBatchMappingInTx[\s\S]*?\n}/,
+    )?.[0] ?? "";
+  assert.match(recompute, /for \(const line of batch\.lines\)/);
+  assert.match(recompute, /storeAliasKey\(line\.rawStoreName\)/);
+  assert.match(
+    recompute,
+    /productAliasKey\(line\.rawProductName,\s*line\.productSpec\)/,
+  );
+  assert.match(recompute, /resolveBatchStatus\(lineStatuses\)/);
+
+  // COMMITTED/VOIDED batch는 재계산하지 않는다(원본 보존).
+  assert.match(
+    recompute,
+    /status === "COMMITTED"\s*\|\|\s*batch\.status === "VOIDED"/,
+  );
+
+  // loadAliasMaps도 같은 정규화 키를 써서 저장과 조회가 어긋나지 않게 한다.
+  assert.match(source, /storeByRaw\.set\(storeAliasKey\(alias\.rawName\)/);
+  assert.match(
+    source,
+    /productByRaw\.set\(\s*productAliasKey\(alias\.rawName,\s*alias\.rawSpec\)/,
+  );
+});
+
+test("WO-08: no '품목묭도'/'모두 적용' UI remains", () => {
+  const detail = detailClient();
+  const supply = supplyActions();
+  assert.doesNotMatch(detail, /품목묭도|모두 적용/);
+  assert.doesNotMatch(supply, /품목묭도|모두 적용/);
+});
