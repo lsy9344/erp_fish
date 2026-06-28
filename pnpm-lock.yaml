@@ -23,6 +23,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      exceljs:
+        specifier: ^4.4.0
+        version: 4.4.0
       lucide-react:
         specifier: ^1.17.0
         version: 1.17.0(react@19.2.6)

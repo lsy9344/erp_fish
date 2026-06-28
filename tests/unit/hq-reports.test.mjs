@@ -2527,7 +2527,15 @@ test("HQ report export route follows story 6.4 server-side guardrails", () => {
   assert.match(exportSource, /unavailableReason/);
   assert.match(exportSource, /정정 반영/);
   assert.match(exportSource, /기준 확인 필요/);
-  assert.doesNotMatch(exportSource, /xlsx|exceljs|sheetjs/i);
+  // WO-15(2026-06-28): xlsx 다운로드를 제공한다(exceljs). CSV는 보조로 유지.
+  assert.match(exportSource, /buildReportXlsx/);
+  assert.match(exportSource, /import\("exceljs"\)/);
+  // 라우트는 xlsx 포맷을 허용하고 포맷별 Content-Type을 내려준다.
+  assert.match(routeSource, /isReportExportFormat\(/);
+  assert.match(
+    routeSource,
+    /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+  );
 
   for (const pageSource of [
     dailyPageSource,
@@ -2550,7 +2558,9 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
   );
   const {
     buildReportCsv,
+    buildReportXlsx,
     getReportExportFilename,
+    isReportExportFormat,
     buildDailyMeetingReportExport,
   } = await import(pathToFileURL(exportPath).href);
   const metric = ({
@@ -2622,6 +2632,23 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
     }),
     "erp-fish-report-daily-2026-06-12-store-1.csv",
   );
+  // WO-15(2026-06-28): xlsx 포맷 허용 + 포맷별 파일 확장자.
+  assert.equal(isReportExportFormat("xlsx"), true);
+  assert.equal(isReportExportFormat("csv"), true);
+  assert.equal(isReportExportFormat("pdf"), false);
+  assert.equal(
+    getReportExportFilename({
+      report: "daily",
+      period: "2026-06-12/store-1/강남",
+      format: "xlsx",
+    }),
+    "erp-fish-report-daily-2026-06-12-store-1.xlsx",
+  );
+  // buildReportXlsx는 ZIP 컨테이너(PK 매직)로 시작하는 워크북을 만든다.
+  const xlsx = new Uint8Array(await buildReportXlsx(exportData));
+  assert.ok(xlsx.length > 0);
+  assert.equal(xlsx[0], 0x50); // 'P'
+  assert.equal(xlsx[1], 0x4b); // 'K'
   assert.equal(csv.charCodeAt(0), 0xfeff);
   assert.match(csv, /"'=강남 ""본점"""/);
   assert.match(csv, /정정 반영/);

@@ -77,6 +77,12 @@ export default async function DailyMeetingReportPage({
     date: report.dateInput,
     format: "csv",
   }).toString()}`;
+  // WO-15(2026-06-28): xlsx 다운로드. CSV는 보조로 유지.
+  const exportXlsxHref = `/api/reports/export?${new URLSearchParams({
+    report: "daily",
+    date: report.dateInput,
+    format: "xlsx",
+  }).toString()}`;
 
   return (
     <HeadquartersShell
@@ -165,12 +171,20 @@ export default async function DailyMeetingReportPage({
               조회
             </Button>
             {canExportReports ? (
-              <Button asChild variant="outline" size="sm">
-                <a href={exportHref}>
-                  <DownloadIcon data-icon="inline-start" />
-                  CSV
-                </a>
-              </Button>
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <a href={exportXlsxHref}>
+                    <DownloadIcon data-icon="inline-start" />
+                    Excel
+                  </a>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <a href={exportHref}>
+                    <DownloadIcon data-icon="inline-start" />
+                    CSV
+                  </a>
+                </Button>
+              </>
             ) : null}
           </form>
         </div>

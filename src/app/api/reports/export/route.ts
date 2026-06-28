@@ -8,9 +8,12 @@ import {
   buildMonthlyClosingAnomalyReportExport,
   buildReportCsv,
   buildReportExportAuditSnapshot,
+  buildReportXlsx,
   buildStoreComparisonReportExport,
   getReportExportFilename,
+  isReportExportFormat,
   type ReportExportData,
+  type ReportExportFormat,
   type ReportExportType,
 } from "~/features/reports/export";
 import {
@@ -62,15 +65,16 @@ export async function GET(request: Request) {
     return forbiddenResponse(request);
   }
 
-  const csv = buildReportCsv(exportData);
+  const format = parsed.format;
   const filename = getReportExportFilename({
     report: exportData.report,
     period: exportData.period,
+    format,
   });
   const auditAfter = withAuditActorContext(
     buildReportExportAuditSnapshot({
       exportData,
-      format: "csv",
+      format,
     }),
     {
       actorRole: user.role,
@@ -78,6 +82,7 @@ export async function GET(request: Request) {
     },
   );
 
+  // 감사 로그는 두 포맷 모두 동일하게 남긴다(format 필드로 구분).
   await db.$transaction((tx) =>
     writeAuditLog(tx, {
       action: "report.export.created",
@@ -87,6 +92,21 @@ export async function GET(request: Request) {
       after: auditAfter,
     }),
   );
+
+  if (format === "xlsx") {
+    const xlsx = await buildReportXlsx(exportData);
+
+    return new Response(xlsx, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const csv = buildReportCsv(exportData);
 
   return new Response(csv, {
     headers: {
@@ -123,11 +143,14 @@ type ParsedExportRequest =
 
 function parseExportRequest(
   params: URLSearchParams,
-): { ok: true; value: ParsedExportRequest } | { ok: false; message: string } {
+):
+  | { ok: true; value: ParsedExportRequest; format: ReportExportFormat }
+  | { ok: false; message: string } {
   const report = params.get("report");
-  const format = params.get("format");
+  // WO-15(2026-06-28): csv와 xlsx를 모두 허용한다. 기본은 csv.
+  const format = params.get("format") ?? "csv";
 
-  if (format !== "csv") {
+  if (!isReportExportFormat(format)) {
     return { ok: false, message: "지원하지 않는 export 형식입니다." };
   }
 
@@ -142,7 +165,7 @@ function parseExportRequest(
       return { ok: false, message: "조회 날짜를 확인해 주세요." };
     }
 
-    return { ok: true, value: { report, date } };
+    return { ok: true, value: { report, date }, format };
   }
 
   if (report === "comparison") {
@@ -167,6 +190,7 @@ function parseExportRequest(
         endDate,
         storeId: normalizeOptionalParam(params.get("storeId")),
       },
+      format,
     };
   }
 
@@ -186,6 +210,7 @@ function parseExportRequest(
         category: normalizeOptionalParam(params.get("category")),
         product: normalizeOptionalParam(params.get("product")),
       },
+      format,
     };
   }
 
@@ -202,6 +227,7 @@ function parseExportRequest(
       month,
       storeId: normalizeOptionalParam(params.get("storeId")),
     },
+    format,
   };
 }
 

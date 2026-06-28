@@ -114,8 +114,9 @@ test.describe("Report export API", () => {
       message: string;
     }> = [
       {
+        // WO-15(2026-06-28): xlsx는 이제 허용된다. 지원하지 않는 포맷은 pdf 등.
         name: "unsupported format",
-        params: { report: "daily", date: getTodayKstInput(), format: "xlsx" },
+        params: { report: "daily", date: getTodayKstInput(), format: "pdf" },
         message: "지원하지 않는 export 형식입니다.",
       },
       {
@@ -372,6 +373,42 @@ test.describe("Report export API", () => {
     expect(auditLogs).toHaveLength(1);
     expect(auditLogs[0]?.action).toBe("report.export.created");
     expect(auditLogs[0]?.targetId).toMatch(/^daily:/);
+  });
+
+  // WO-15(2026-06-28): xlsx 다운로드. 포맷별 Content-Type/파일명/감사 로그 format을 검증한다.
+  test("[P1] exports xlsx with the spreadsheet content type, filename, and audit format", async ({
+    request,
+  }) => {
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({ report: "daily", date: getTodayKstInput(), format: "xlsx" }),
+    );
+
+    expect(response.status()).toBe(200);
+    const headers = response.headers();
+    expect(headers["content-type"]).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(headers["cache-control"]).toBe("no-store");
+    expect(headers["content-disposition"]).toContain("attachment");
+    const filename =
+      headers["content-disposition"]?.match(/filename="([^"]+)"/)?.[1];
+    expect(filename).toMatch(/^erp-fish-report-daily-\d{4}-\d{2}-\d{2}\.xlsx$/);
+
+    // xlsx는 ZIP 컨테이너라 "PK" 매직 바이트로 시작한다.
+    const body = await response.body();
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]).toBe(0x50); // 'P'
+    expect(body[1]).toBe(0x4b); // 'K'
+
+    const auditLogs = await prisma.auditLog.findMany({
+      where: { targetType: "ReportExport" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditLogs).toHaveLength(1);
+    const after = auditLogs[0]?.after as { format?: string } | null;
+    expect(after?.format).toBe("xlsx");
   });
 });
 

@@ -8,7 +8,21 @@ import type {
 import type { InventoryPositionReportData } from "./inventory-position-types";
 
 export type ReportExportType = "daily" | "comparison" | "monthly" | "inventory";
-export type ReportExportFormat = "csv";
+// WO-15(2026-06-28): xlsx 다운로드 추가. CSV는 보조로 유지한다.
+export type ReportExportFormat = "csv" | "xlsx";
+
+export function isReportExportFormat(
+  value: string | null,
+): value is ReportExportFormat {
+  return value === "csv" || value === "xlsx";
+}
+
+const REPORT_SHEET_LABELS: Record<ReportExportType, string> = {
+  daily: "일별",
+  comparison: "기간조회_RAW",
+  monthly: "월별손익",
+  inventory: "재고현황",
+};
 
 type ReportExportColumn = {
   key: string;
@@ -299,16 +313,53 @@ export function buildReportCsv(exportData: ReportExportData) {
   return `\uFEFF${lines.join("\r\n")}\r\n`;
 }
 
+// WO-15(2026-06-28): xlsx 워크북 생성. 현재는 리포트별 컬럼을 시트 하나로 내보낸다.
+// 월별 손익/5시트 확장은 같은 ReportExportData 구조 위에서 시트를 추가하는 방식으로 올린다.
+export async function buildReportXlsx(
+  exportData: ReportExportData,
+): Promise<ArrayBuffer> {
+  // exceljs는 무겁고 export 경로에서만 쓰므로 동적 import로 초기 번들에서 뺀다.
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "도원에스디";
+
+  const sheet = workbook.addWorksheet(REPORT_SHEET_LABELS[exportData.report]);
+  sheet.columns = exportData.columns.map((column) => ({
+    header: column.label,
+    key: column.key,
+    width: Math.min(40, Math.max(12, column.label.length + 4)),
+  }));
+  sheet.getRow(1).font = { bold: true };
+
+  for (const row of exportData.rows) {
+    sheet.addRow(
+      Object.fromEntries(
+        exportData.columns.map((column) => [column.key, row[column.key] ?? ""]),
+      ),
+    );
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  // 새 ArrayBuffer로 복사해 SharedArrayBuffer 가능성을 제거하고 BodyInit 타입을 고정한다.
+  const source = new Uint8Array(buffer);
+  const copy = new ArrayBuffer(source.byteLength);
+  new Uint8Array(copy).set(source);
+
+  return copy;
+}
+
 export function getReportExportFilename({
   report,
   period,
+  format = "csv",
 }: {
   report: ReportExportType;
   period: string;
+  format?: ReportExportFormat;
 }) {
   const safePeriod = sanitizeFilenamePart(period);
 
-  return `erp-fish-report-${report}-${safePeriod}.csv`;
+  return `erp-fish-report-${report}-${safePeriod}.${format}`;
 }
 
 export function buildReportExportAuditSnapshot({
