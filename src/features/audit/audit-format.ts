@@ -116,7 +116,16 @@ const auditSummaryFieldLabels: Record<string, string> = {
   storeName: "지점명",
   targetName: "대상 이름",
   threshold: "기준값",
-  unitPrice: "단가",
+  unitPrice: "장부 적용 단가",
+  // WO-05(2026-06-28): 장부 관련 대표 필드를 한글로 매핑해 raw key 의존을 줄인다.
+  totalSalesAmount: "총매출",
+  cashAmount: "현금",
+  cardAmount: "카드",
+  otherPaymentAmount: "기타 결제수단",
+  workerCount: "근무인원",
+  sourceUnitPrice: "원본 이카운트 단가",
+  currentQuantity: "당일재고",
+  reason: "사유",
 };
 
 function isJsonObject(

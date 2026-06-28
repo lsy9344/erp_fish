@@ -51,6 +51,8 @@ export type AuditHistoryItem = {
   changeSummaryText: string;
   beforeText: string;
   afterText: string;
+  // WO-05(2026-06-28): 장부/정정 이력은 장부 상세 링크. 그 외 대상은 null.
+  ledgerDetailHref: string | null;
 };
 
 export type AuditHistoryActorOption = {
@@ -349,6 +351,7 @@ async function resolveTargetNames(
         id: true,
         fieldKey: true,
         targetType: true,
+        dailyLedgerId: true,
         dailyLedger: {
           select: {
             closingDate: true,
@@ -366,6 +369,8 @@ async function resolveTargetNames(
   ]);
 
   const names = new Map<string, string>();
+  // WO-05(2026-06-28): 장부와 연결된 이력은 장부 상세 링크를 제공한다.
+  const ledgerHrefs = new Map<string, string>();
 
   for (const store of stores) {
     names.set(targetKey("Store", store.id), store.name);
@@ -395,12 +400,20 @@ async function resolveTargetNames(
       targetKey("DailyLedger", ledger.id),
       formatDailyLedgerTargetName(ledger),
     );
+    ledgerHrefs.set(
+      targetKey("DailyLedger", ledger.id),
+      `/app/ledgers/${ledger.id}`,
+    );
   }
 
   for (const correction of correctionRecords) {
     names.set(
       targetKey("CorrectionRecord", correction.id),
       `${formatDailyLedgerTargetName(correction.dailyLedger)} ${correction.fieldKey}`,
+    );
+    ledgerHrefs.set(
+      targetKey("CorrectionRecord", correction.id),
+      `/app/ledgers/${correction.dailyLedgerId}`,
     );
   }
 
@@ -411,11 +424,16 @@ async function resolveTargetNames(
     );
   }
 
-  return names;
+  return { names, ledgerHrefs };
 }
 
-function toActorLabel(actor: { name: string | null; email: string | null }) {
-  return actor.name ?? actor.email ?? "시스템";
+// WO-06(2026-06-28): 변경자 표시는 name → email → id 순으로 떨어진다. actorId가 있는데
+// "시스템"으로 보이지 않게 한다(실제 actor 정보 손실과 무명 시스템 작업을 구분).
+function toActorLabel(
+  actor: { name: string | null; email: string | null } | null | undefined,
+  actorId?: string,
+) {
+  return actor?.name ?? actor?.email ?? actorId ?? "시스템";
 }
 
 async function getAuditActorOptions(
@@ -444,7 +462,7 @@ async function getAuditActorOptions(
   return rows
     .map<AuditHistoryActorOption>((row) => ({
       id: row.actorId,
-      label: toActorLabel(row.actor),
+      label: toActorLabel(row.actor, row.actorId),
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "ko-KR"));
 }
@@ -544,7 +562,10 @@ export async function getAuditHistoryForHeadquarters(
     }),
     getAuditActorOptions(scopedTargets, allowedTargetTypes),
   ]);
-  const targetNames = await resolveTargetNames(logs, scopedTargets.storeIds);
+  const { names: targetNames, ledgerHrefs } = await resolveTargetNames(
+    logs,
+    scopedTargets.storeIds,
+  );
   const items = logs
     .filter(
       (
@@ -566,7 +587,7 @@ export async function getAuditHistoryForHeadquarters(
         id: log.id,
         createdAt: log.createdAt.toISOString(),
         actorId: log.actorId,
-        actorName: toActorLabel(log.actor),
+        actorName: toActorLabel(log.actor, log.actorId),
         targetType: log.targetType,
         targetTypeLabel: getAuditTargetTypeLabel(log.targetType),
         targetName:
@@ -580,6 +601,8 @@ export async function getAuditHistoryForHeadquarters(
         changeSummaryText: formatAuditChangeSummary(safeBefore, safeAfter),
         beforeText: formatAuditJsonValue(safeBefore),
         afterText: formatAuditJsonValue(safeAfter),
+        ledgerDetailHref:
+          ledgerHrefs.get(targetKey(log.targetType, log.targetId)) ?? null,
       };
     });
 

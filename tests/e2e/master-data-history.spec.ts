@@ -277,10 +277,13 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
     .getByRole("button", { name: "상세 보기" })
     .click();
   await expect(page.getByRole("dialog", { name: "변경 상세" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "변경 전" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "변경 후" })).toBeVisible();
+  // WO-05(2026-06-28): 사유는 기본 노출, 원문 JSON 전/후는 접힘 영역에 둔다.
   await expect(page.getByRole("heading", { name: "사유" })).toBeVisible();
   await expect(page.getByText(seeded.reason)).toBeVisible();
+  // 원문 JSON 전/후는 접힌 영역을 펼쳐야 보인다.
+  await page.getByText("원문 변경 전/후 (JSON)").click();
+  await expect(page.getByRole("heading", { name: "변경 전" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "변경 후" })).toBeVisible();
   await expect(page.getByText(seeded.longMemo).first()).toBeVisible();
 });
 

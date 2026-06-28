@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EyeIcon } from "lucide-react";
 
@@ -274,6 +275,35 @@ export function ChangeHistoryClient({
           </DialogHeader>
           {selectedHistory ? (
             <div className="flex flex-col gap-4">
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-muted-foreground text-xs">변경자</dt>
+                  <dd className="font-medium">{selectedHistory.actorName}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs">대상</dt>
+                  <dd className="font-medium">{selectedHistory.targetName}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs">변경 유형</dt>
+                  <dd className="font-medium">{selectedHistory.actionLabel}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs">변경 시각</dt>
+                  <dd className="font-medium tabular-nums">
+                    {formatChangedAt(selectedHistory.createdAt)}
+                  </dd>
+                </div>
+              </dl>
+              {/* WO-05(2026-06-28): 장부 관련 이력은 장부 상세로 바로 이동한다. */}
+              {selectedHistory.ledgerDetailHref ? (
+                <Link
+                  href={selectedHistory.ledgerDetailHref}
+                  className="text-primary text-sm font-medium underline-offset-2 hover:underline"
+                >
+                  장부 상세 보기 →
+                </Link>
+              ) : null}
               {selectedHistory.changeSummaryText !== "-" ? (
                 <section className="flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-3">
@@ -290,25 +320,32 @@ export function ChangeHistoryClient({
               {selectedHistory.reasonText !== "-" ? (
                 <section className="flex flex-col gap-2">
                   <h3 className="text-sm font-semibold">사유</h3>
-                  <p className="bg-muted max-h-40 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                  {/* 사유가 있는 작업은 강조해서 보여준다. */}
+                  <p className="border-primary bg-primary/5 max-h-40 overflow-auto rounded-md border-l-4 p-3 text-sm font-medium break-words whitespace-pre-wrap">
                     {selectedHistory.reasonText}
                   </p>
                 </section>
               ) : null}
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section className="flex flex-col gap-2">
-                  <h3 className="text-sm font-semibold">변경 전</h3>
-                  <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                    {selectedHistory.beforeText}
-                  </pre>
-                </section>
-                <section className="flex flex-col gap-2">
-                  <h3 className="text-sm font-semibold">변경 후</h3>
-                  <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                    {selectedHistory.afterText}
-                  </pre>
-                </section>
-              </div>
+              {/* WO-05(2026-06-28): 원문 JSON 전/후 비교는 기본 접힘. 요약/사유를 먼저 본다. */}
+              <details className="rounded-md border">
+                <summary className="cursor-pointer p-3 text-sm font-semibold">
+                  원문 변경 전/후 (JSON)
+                </summary>
+                <div className="grid gap-4 p-3 pt-0 lg:grid-cols-2">
+                  <section className="flex flex-col gap-2">
+                    <h3 className="text-sm font-semibold">변경 전</h3>
+                    <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                      {selectedHistory.beforeText}
+                    </pre>
+                  </section>
+                  <section className="flex flex-col gap-2">
+                    <h3 className="text-sm font-semibold">변경 후</h3>
+                    <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
+                      {selectedHistory.afterText}
+                    </pre>
+                  </section>
+                </div>
+              </details>
             </div>
           ) : null}
         </DialogContent>

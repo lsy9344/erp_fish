@@ -148,6 +148,14 @@ test("audit format helpers map target/action labels and safely format JSON detai
     ),
     /활성 상태: false → true[\s\S]*수량: 5 → 6/,
   );
+  // WO-05(2026-06-28): 장부 대표 필드도 한글 라벨로 매핑된다(raw key 의존 감소).
+  assert.match(
+    formatAuditChangeSummary(
+      { totalSalesAmount: 100000, unitPrice: 5000, sourceUnitPrice: 4800 },
+      { totalSalesAmount: 120000, unitPrice: 5200, sourceUnitPrice: 4800 },
+    ),
+    /총매출: 100000 → 120000[\s\S]*장부 적용 단가: 5000 → 5200/,
+  );
   assert.match(
     formatAuditJsonValue({
       targetName: "이상 신호 기준값",
@@ -215,6 +223,14 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   );
   assert.match(query, /beforeText:\s*formatAuditJsonValue\(safeBefore\)/);
   assert.match(query, /afterText:\s*formatAuditJsonValue\(safeAfter\)/);
+  // WO-05(2026-06-28): 장부/정정 이력은 장부 상세 링크를 내려준다.
+  assert.match(query, /ledgerDetailHref/);
+  assert.match(query, /\/app\/ledgers\//);
+  // WO-06(2026-06-28): 변경자 표시는 name → email → actorId 순으로 떨어진다.
+  assert.match(
+    query,
+    /actor\?\.name\s*\?\?\s*actor\?\.email\s*\?\?\s*actorId\s*\?\?\s*"시스템"/,
+  );
   assert.match(query, /from/);
   assert.match(query, /to/);
   assert.match(query, /createdAt:\s*"desc"/);
@@ -308,6 +324,11 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(client, /변경 요약/);
   assert.match(client, /기존 값 → 변경된 값/);
   assert.match(client, /사유/);
+  // WO-05(2026-06-28): 원문 JSON은 접을 수 있는 영역, 장부 이력은 상세 링크를 제공한다.
+  assert.match(client, /<details/);
+  assert.match(client, /원문 변경 전\/후 \(JSON\)/);
+  assert.match(client, /selectedHistory\.ledgerDetailHref/);
+  assert.match(client, /장부 상세 보기/);
   assert.match(client, /조건에 맞는 변경 이력이 없습니다\./);
   assert.match(client, /Dialog/);
   assert.match(client, /whitespace-pre-wrap/);
