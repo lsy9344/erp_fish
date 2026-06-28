@@ -288,6 +288,8 @@ export function InventoryStepClient({
   });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
     useState<InventoryLineState | null>(null);
+  // WO-11(2026-06-28): 상단 "전날 재고 보기" 전체 목록 모달.
+  const [isPreviousStockOpen, setIsPreviousStockOpen] = useState(false);
   // 직접 추가했지만 아직 저장하지 않은 행. 상태 배지를 "이월 공백" 대신 "직접 입력"으로
   // 보여줘 0개 재고로 오해하지 않게 한다. 저장 후에는 실제 저장 행이 되므로 비운다.
   const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
@@ -1190,6 +1192,64 @@ export function InventoryStepClient({
 
   const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
 
+  // WO-11(2026-06-28): 전날 재고 전체 보기. 품목명/규격/수량/FIFO 기준일/전일 장부
+  // 상태만 보여준다. 금액·단가·원가·마진·FIFO 금액은 노출하지 않는다(지점장 민감값 차단).
+  function renderPreviousStockDialog() {
+    return (
+      <Dialog open={isPreviousStockOpen} onOpenChange={setIsPreviousStockOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>전날 재고 보기</DialogTitle>
+            <DialogDescription>
+              전날 기준 재고 수량입니다. 금액·단가는 표시하지 않으며, 전날 장부는
+              여기서 수정할 수 없습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {items.length === 0 ? (
+            <p className="text-muted-foreground py-8 text-center text-sm">
+              전날 재고 항목이 없습니다.
+            </p>
+          ) : (
+            <div className="max-h-[28rem] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>품목</TableHead>
+                    <TableHead>규격</TableHead>
+                    <TableHead className="text-right">수량</TableHead>
+                    <TableHead>FIFO 기준일</TableHead>
+                    <TableHead>전일 장부</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.productId}>
+                      <TableCell className="font-medium">
+                        {item.productName}
+                      </TableCell>
+                      <TableCell>{item.productSpec || "-"}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatQuantity(item.previousQuantity)}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatCarryoverBasisDate(item.previousQuantityDetail)}
+                      </TableCell>
+                      <TableCell>
+                        {formatLedgerStatus(
+                          item.previousQuantityDetail.sourceLedgerStatus,
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function renderCarryoverDetailDialog() {
     if (!selectedCarryoverItem) {
       return null;
@@ -1772,6 +1832,7 @@ export function InventoryStepClient({
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderCarryoverDetailDialog()}
+        {renderPreviousStockDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}
@@ -1818,6 +1879,18 @@ export function InventoryStepClient({
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
         />
+
+        {/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => setIsPreviousStockOpen(true)}
+          >
+            전날 재고 보기
+          </Button>
+        </div>
 
         <Alert
           variant={
