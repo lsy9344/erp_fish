@@ -331,17 +331,12 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
-  // 매입·손실 품목 당일재고가 빈칸이면 저장값과 같아 dirty가 아닐 수 있으나, 그대로
-  // 다음 단계로 넘어가면 "전량 판매" 오해가 그대로 굳는다. 미입력 필수 행이 있으면
-  // dirty로 보아 미저장 가드가 이동을 가로채고 saveCurrentDraft로 입력을 강제한다.
-  const hasUnenteredRequiredQuantity = items.some(
-    (item) =>
-      requiresCurrentQuantityEntry(item) &&
-      item.currentQuantityInput.trim() === "",
-  );
-  const isDirty =
-    !areInventoryLinesEqual(items, toLineState(data)) ||
-    hasUnenteredRequiredQuantity;
+  // WO-03(2026-06-28): 미입력 필수 수량은 "사용자가 값을 바꾼 상태(dirty)"가 아니라
+  // "저장 전에 막아야 하는 validation 상태"다. 둘을 분리한다. 예전엔 이걸 dirty에 섞어
+  // 진입 직후(아무것도 안 바꾼 화면)에도 미저장 경고가 떴다(false positive).
+  // 필수 수량 미입력은 saveCurrentDraft의 validateRequiredCurrentQuantities로 막고,
+  // "다음 단계로" 버튼은 저장 성공 후에만 보이므로 그 경로에서도 이미 검증을 통과한다.
+  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
   const previousInitialDataRef = useRef(initialData);
 
   useEffect(() => {
