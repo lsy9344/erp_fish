@@ -43,6 +43,11 @@ const masterDataPaths = {
     "/app/master-data/anomaly-thresholds",
     ...dashboardAndReportPaths,
   ],
+  // WO-13(2026-06-28): 장기재고 기준일 관리 화면.
+  "long-stock-thresholds": [
+    "/app/master-data/long-stock-thresholds",
+    ...dashboardAndReportPaths,
+  ],
 } as const;
 
 export type StoreEntryRevalidationPath = keyof typeof storeEntryPaths;

@@ -32,7 +32,8 @@ test("morning summary message keeps all four required sections", () => {
   assert.match(source, /export function formatMorningSummaryMessage/);
   assert.match(source, /당일 적자 발생 지점/);
   assert.match(source, /전날 결산 미입력 지점/);
-  assert.match(source, /한 달 이상 장기 체화 재고/);
+  // WO-13(2026-06-28): 기준일이 품목군별이라 "한 달" 고정 문구 대신 일반 문구를 쓴다.
+  assert.match(source, /장기 체화 재고 \(품목군 기준일 초과/);
   assert.match(source, /목표 마진율 미달 지점/);
 
   // staleDays(체화 일수)와 상점/품목명을 메시지에 출력한다.
@@ -69,6 +70,13 @@ test("morning summary payload builder computes stagnant stock and uses active th
   assert.match(source, /ledgerInventoryFifoLot\.findMany/);
   assert.match(source, /remainingQuantity:\s*{\s*gt:\s*0\s*}/);
   assert.match(source, /sourceBusinessDate:\s*{\s*lte:\s*staleBeforeDate\s*}/);
+  // WO-13(2026-06-28): 하드코딩 30일 대신 품목군별 기준일(thresholdDaysByCategory)을 쓴다.
+  assert.match(source, /getActiveLongStockThresholdDaysByCategory/);
+  assert.match(source, /thresholdDaysByCategory/);
+  assert.match(source, /product:\s*{\s*select:\s*{\s*name:\s*true,\s*category:\s*true\s*}/);
+  // 기준일이 없는 품목군은 알림에서 제외하고(continue), staleDays가 기준 미만이면 제외한다.
+  assert.match(source, /if \(thresholdDays === undefined\)/);
+  assert.match(source, /if \(staleDays < thresholdDays\)/);
   // 더 이상 데이터 입력 시각(createdAt) 기준으로 체화 재고를 판정하지 않는다.
   assert.doesNotMatch(
     source,

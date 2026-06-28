@@ -328,6 +328,7 @@ model User {
   updatedPurchaseStandards          PurchaseStandard[]          @relation("PurchaseStandardUpdatedBy")
   updatedLedgerInputCodes           LedgerInputCode[]           @relation("LedgerInputCodeUpdatedBy")
   updatedAnomalyThresholdSettings   AnomalyThresholdSetting[]   @relation("AnomalyThresholdSettingUpdatedBy")
+  updatedLongStockThresholdSettings LongStockThresholdSetting[] @relation("LongStockThresholdSettingUpdatedBy")
   createdDailyLedgers               DailyLedger[]               @relation("LedgerCreatedBy")
   updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
   submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
@@ -392,6 +393,24 @@ model AnomalyThresholdSetting {
   updatedAt                   DateTime @updatedAt
 
   updatedBy User? @relation("AnomalyThresholdSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+  @@index([updatedById])
+}
+
+// WO-13(2026-06-28): 품목군(category)별 장기재고 기준일. 본사가 "이 분류는 며칠 이상
+// 남으면 장기재고"인지 관리한다. 기준이 없는 분류는 "기준 확인 필요"로 두고 장기재고
+// 알림 대상에서 제외한다(생물 3~4일 같은 현장 기준을 하드코딩 30일 대신 설정으로 관리).
+model LongStockThresholdSetting {
+  id           String   @id @default(cuid())
+  category     String   @unique
+  thresholdDays Int
+  isActive     Boolean  @default(true)
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  updatedBy User? @relation("LongStockThresholdSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([isActive])
   @@index([updatedById])

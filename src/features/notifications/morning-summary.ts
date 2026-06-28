@@ -1,5 +1,6 @@
 import { db } from "~/server/db";
 import { getStoreProfitSummariesForRange } from "~/features/reports/queries";
+import { getActiveLongStockThresholdDaysByCategory } from "~/features/dashboard/long-stock-threshold-queries";
 
 export type MorningSummaryPayload = {
   reportDate: string;
@@ -44,7 +45,8 @@ export function formatMorningSummaryMessage(
 
   lines.push("");
   lines.push(
-    `📦 한 달 이상 장기 체화 재고 (${payload.longTermStagnantProducts.length}건)`,
+    // WO-13(2026-06-28): 기준일이 품목군별로 다르므로 "한 달" 고정 문구를 쓰지 않는다.
+    `📦 장기 체화 재고 (품목군 기준일 초과, ${payload.longTermStagnantProducts.length}건)`,
   );
 
   if (payload.longTermStagnantProducts.length === 0) {
@@ -175,11 +177,14 @@ export async function buildMorningSummaryPayload(
     }
   }
 
+  // WO-13(2026-06-28): 장기재고 기준일은 하드코딩 30일 대신 품목군별 설정을 쓴다.
+  const thresholdDaysByCategory =
+    await getActiveLongStockThresholdDaysByCategory();
   const longTermStagnantProducts = await buildLongTermStagnantProducts({
     activeStoreIds: [...activeStoreIds],
     storeNameById,
     targetDate,
-    staleBeforeDate: thirtyDaysAgo,
+    thresholdDaysByCategory,
   });
 
   return {
@@ -191,24 +196,32 @@ export async function buildMorningSummaryPayload(
   };
 }
 
-// WO-G(2026-06-22): 한 달 이상 장기 체화 재고.
+// WO-G(2026-06-22) / WO-13(2026-06-28): 장기 체화 재고.
 // 각 활성 매장의 reportDate 이전 최신 장부에서 잔량이 남은 FIFO lot 중,
-// lot의 실제 영업 기준일(sourceBusinessDate)이 30일 이상 지난 품목을 후보로 본다.
-// 매입 행이 없는 이월/기초/legacy lot도 sourceBusinessDate를 보존하므로 함께 포함된다.
+// lot의 실제 영업 기준일(sourceBusinessDate)이 "품목군별 기준일" 이상 지난 품목을 후보로 본다.
+// 기준일이 설정되지 않은 품목군(thresholdDaysByCategory에 없음)은 "기준 확인 필요"로 보고
+// 알림 대상에서 제외한다(생물 3~4일 같은 현장 기준을 설정으로 관리).
 async function buildLongTermStagnantProducts({
   activeStoreIds,
   storeNameById,
   targetDate,
-  staleBeforeDate,
+  thresholdDaysByCategory,
 }: {
   activeStoreIds: string[];
   storeNameById: Map<string, string>;
   targetDate: Date;
-  staleBeforeDate: Date;
+  thresholdDaysByCategory: Map<string, number>;
 }): Promise<MorningSummaryPayload["longTermStagnantProducts"]> {
-  if (activeStoreIds.length === 0) {
+  if (activeStoreIds.length === 0 || thresholdDaysByCategory.size === 0) {
     return [];
   }
+
+  // 활성 기준 중 가장 짧은 일수로 1차 cutoff를 잡아 조회 행을 줄이고,
+  // 품목군별 정확한 기준은 아래 루프에서 staleDays로 다시 비교한다.
+  const minThresholdDays = Math.min(...thresholdDaysByCategory.values());
+  const staleBeforeDate = new Date(
+    targetDate.getTime() - minThresholdDays * 24 * 60 * 60 * 1000,
+  );
 
   // 매장별 reportDate 이전 최신 장부 1건을 찾는다.
   const latestLedgers = await db.dailyLedger.findMany({
@@ -252,7 +265,7 @@ async function buildLongTermStagnantProducts({
       dailyLedgerId: true,
       sourceBusinessDate: true,
       sourcePurchaseItem: { select: { productName: true } },
-      product: { select: { name: true } },
+      product: { select: { name: true, category: true } },
     },
   });
 
@@ -269,14 +282,29 @@ async function buildLongTermStagnantProducts({
       continue;
     }
 
-    const storeId = ledgerStoreById.get(lot.dailyLedgerId);
-    const storeName = storeId ? (storeNameById.get(storeId) ?? storeId) : "";
-    const productName =
-      lot.product?.name ?? lot.sourcePurchaseItem?.productName ?? "품목";
+    // WO-13(2026-06-28): 품목군 기준일이 없으면(=기준 확인 필요) 알림 대상에서 제외한다.
+    const category = lot.product?.category;
+    const thresholdDays = category
+      ? thresholdDaysByCategory.get(category)
+      : undefined;
+
+    if (thresholdDays === undefined) {
+      continue;
+    }
+
     const staleDays = Math.floor(
       (targetDate.getTime() - lot.sourceBusinessDate.getTime()) /
         (1000 * 60 * 60 * 24),
     );
+
+    if (staleDays < thresholdDays) {
+      continue;
+    }
+
+    const storeId = ledgerStoreById.get(lot.dailyLedgerId);
+    const storeName = storeId ? (storeNameById.get(storeId) ?? storeId) : "";
+    const productName =
+      lot.product?.name ?? lot.sourcePurchaseItem?.productName ?? "품목";
 
     stagnant.push({ storeName, productName, staleDays });
   }

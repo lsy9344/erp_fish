@@ -93,6 +93,8 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "DailyLedger",
       "CorrectionRecord",
       "AnomalyThresholdSetting",
+      // WO-13(2026-06-28): 장기재고 기준일 관리 감사 대상 타입
+      "LongStockThresholdSetting",
       "ReportExport",
       // WO(2026-06-24): 이카운트 출고/입고 원장 도입으로 추가된 감사 대상 타입
       "EcountImportBatch",
@@ -110,6 +112,15 @@ test("audit format helpers map target/action labels and safely format JSON detai
   assert.equal(
     getAuditTargetTypeLabel("AnomalyThresholdSetting"),
     "이상 신호 기준값",
+  );
+  // WO-13(2026-06-28)
+  assert.equal(
+    getAuditTargetTypeLabel("LongStockThresholdSetting"),
+    "장기재고 기준일",
+  );
+  assert.equal(
+    getAuditActionLabel("long_stock_threshold.created"),
+    "장기재고 기준일 등록",
   );
   assert.equal(getAuditTargetTypeLabel("ReportExport"), "리포트 Export");
   assert.equal(

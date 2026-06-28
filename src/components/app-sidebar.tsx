@@ -68,6 +68,13 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
+    // WO-13(2026-06-28): 품목군별 장기재고 기준일 관리.
+    label: "장기재고 기준일",
+    href: "/app/master-data/long-stock-thresholds",
+    icon: "master-data",
+    requiredAction: PermissionAction.SETTINGS_MANAGE,
+  },
+  {
     label: "코드 관리",
     href: "/app/master-data/codes",
     icon: "master-data",

@@ -480,6 +480,7 @@ async function getAllowedAuditHistoryTargetTypes(currentUserId: string) {
     "DailyLedger",
     "CorrectionRecord",
     "AnomalyThresholdSetting",
+    "LongStockThresholdSetting",
     "EcountImportBatch",
     "StoreExternalAlias",
     "ProductExternalAlias",

@@ -9,6 +9,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "DailyLedger",
   "CorrectionRecord",
   "AnomalyThresholdSetting",
+  "LongStockThresholdSetting",
   "ReportExport",
   "EcountImportBatch",
   "StoreExternalAlias",
@@ -29,6 +30,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "DailyLedger", label: "장부" },
   { value: "CorrectionRecord", label: "정정 기록" },
   { value: "AnomalyThresholdSetting", label: "이상 신호 기준값" },
+  { value: "LongStockThresholdSetting", label: "장기재고 기준일" },
   { value: "ReportExport", label: "리포트 Export" },
   { value: "EcountImportBatch", label: "이카운트 출고/입고" },
   { value: "StoreExternalAlias", label: "지점 매핑" },
@@ -77,6 +79,8 @@ const actionLabels: Record<string, string> = {
   "ledger.hq.losses.saved": "본사 손실 수정",
   "ledger.hq.work_info.saved": "본사 근무 정보 수정",
   "threshold.updated": "기준값 변경",
+  "long_stock_threshold.created": "장기재고 기준일 등록",
+  "long_stock_threshold.updated": "장기재고 기준일 변경",
   "report.export.created": "리포트 Export 생성",
   "report.export.denied": "리포트 Export 거부",
   "ledger.hq.ecount_unit_price.overridden":
@@ -116,6 +120,7 @@ const auditSummaryFieldLabels: Record<string, string> = {
   storeName: "지점명",
   targetName: "대상 이름",
   threshold: "기준값",
+  thresholdDays: "기준일(일)",
   unitPrice: "장부 적용 단가",
   // WO-05(2026-06-28): 장부 관련 대표 필드를 한글로 매핑해 raw key 의존을 줄인다.
   totalSalesAmount: "총매출",
