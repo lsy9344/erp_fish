@@ -7,7 +7,8 @@ import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { LedgerDetailTabs } from "~/features/ledger/components/ledger-detail-tabs";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
 import { createCorrectionRecord } from "~/features/corrections/actions";
@@ -386,7 +387,11 @@ export default async function LedgerDetailPage({
       ) : null}
 
       {canEditLedger ? (
-        <Tabs defaultValue={selectedTab} className="w-full">
+        <LedgerDetailTabs
+          value={selectedTab}
+          tabs={ledgerDetailTabs}
+          className="w-full"
+        >
           <TabsList
             variant="line"
             className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
@@ -489,7 +494,7 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-        </Tabs>
+        </LedgerDetailTabs>
       ) : null}
     </HeadquartersShell>
   );

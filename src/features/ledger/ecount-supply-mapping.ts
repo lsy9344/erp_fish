@@ -27,14 +27,26 @@ export const ECOUNT_LINE_STATUS = {
 export type EcountLineStatus =
   (typeof ECOUNT_LINE_STATUS)[keyof typeof ECOUNT_LINE_STATUS];
 
-export const ECOUNT_BATCH_STATUS_LABELS: Record<EcountBatchStatus, string> = {
+// WO-01(2026-06-28): 현장 친화 한글 라벨로 통일한다. READY는 "반영 가능",
+// COMMITTED는 "반영됨". 배치와 라인이 같은 source에서 라벨을 가져온다.
+export const ECOUNT_STATUS_LABELS = {
   PREVIEW: "미리보기",
   MAPPING_REQUIRED: "매핑 필요",
-  READY: "commit 가능",
-  COMMITTED: "완료",
-  FAILED: "실패",
-  VOIDED: "취소",
-};
+  READY: "반영 가능",
+  COMMITTED: "반영됨",
+  FAILED: "오류",
+  VOIDED: "취소됨",
+} as const;
+
+export const ECOUNT_BATCH_STATUS_LABELS: Record<EcountBatchStatus, string> =
+  ECOUNT_STATUS_LABELS;
+
+export const ECOUNT_LINE_STATUS_LABELS: Record<EcountLineStatus, string> =
+  ECOUNT_STATUS_LABELS;
+
+export function getEcountLineStatusLabel(status: EcountLineStatus): string {
+  return ECOUNT_LINE_STATUS_LABELS[status];
+}
 
 /**
  * 이카운트 "일자-No." 원문에서 날짜만 뽑아 YYYY-MM-DD로 정규화한다.

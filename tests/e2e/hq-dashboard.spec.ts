@@ -545,6 +545,10 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
 
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
   await expect(reviewRow).toContainText("손실 있음");
+  // WO-02(2026-06-28): 손실이 있는 행의 손실 값은 장부 상세 손실 탭으로 가는 링크다.
+  await expect(
+    reviewRow.getByRole("link", { name: /손실 탭 보기/ }),
+  ).toHaveAttribute("href", new RegExp(`/app/ledgers/.+[?&]tab=losses\\b`));
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩200,000");
   await expect(reviewRow).toContainText(

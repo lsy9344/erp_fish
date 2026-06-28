@@ -539,7 +539,7 @@ export function EcountSupplyDetailClient({
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusBadgeVariant(line.status)}>
-                          {line.status}
+                          {line.statusLabel}
                         </Badge>
                       </TableCell>
                     </TableRow>

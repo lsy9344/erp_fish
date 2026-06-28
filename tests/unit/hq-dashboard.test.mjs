@@ -997,7 +997,11 @@ test("HQ dashboard preserves sort and filter state through detail links", () => 
 
   assert.match(pageSource, /sort\?: string \| string\[\]/);
   assert.match(pageSource, /filter\?: string \| string\[\]/);
-  assert.match(tableSource, /date=.*sort=.*filter=/s);
+  // WO-02(2026-06-28): 상세 링크는 date/sort/filter를 URLSearchParams로 보존하고
+  // 손실 행은 tab=losses를 덧붙인다.
+  assert.match(tableSource, /date:\s*dashboard\.datePreset/s);
+  assert.match(tableSource, /sort:\s*dashboard\.sortMode/s);
+  assert.match(tableSource, /filter:\s*dashboard\.filterMode/s);
   assert.match(detailPageSource, /searchParams/);
   assert.match(detailPageSource, /getDashboardPath/);
 });
@@ -1082,10 +1086,23 @@ test("HQ ledger detail supports direct navigation to the purchases tab", () => {
   assert.match(detailPageSource, /query\.tab/);
   assert.match(detailPageSource, /selectedTab/);
   assert.match(detailPageSource, /ledgerDetailTabs\.includes/);
+  // WO-02(2026-06-28): 탭은 URL ?tab=와 연결된 LedgerDetailTabs(controlled value)로 렌더한다.
   assert.match(
     detailPageSource,
-    /<Tabs defaultValue=\{selectedTab\} className="w-full">/,
+    /<LedgerDetailTabs\s+value=\{selectedTab\}\s+tabs=\{ledgerDetailTabs\}/s,
   );
+
+  // 탭 동기화 클라이언트는 router push로 인한 remount 대신 History API로 URL만 바꾼다.
+  const tabsSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-detail-tabs.tsx",
+  );
+  assert.match(tabsSource, /window\.history\.pushState/);
+  assert.match(tabsSource, /popstate/);
+  assert.match(tabsSource, /params\.set\("tab"/);
 });
 
 test("store manager closed ledger view exposes read-only correction values and history", () => {

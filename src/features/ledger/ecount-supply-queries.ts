@@ -2,7 +2,9 @@
 
 import {
   ECOUNT_BATCH_STATUS_LABELS,
+  getEcountLineStatusLabel,
   type EcountBatchStatus,
+  type EcountLineStatus,
 } from "~/features/ledger/ecount-supply-mapping";
 import { db } from "~/server/db";
 
@@ -36,7 +38,9 @@ export type EcountImportLineDetail = {
   unitPrice: number;
   supplyAmount: number;
   totalAmount: number;
-  status: EcountBatchStatus;
+  // WO-01(2026-06-28): 라인 상태는 배치 상태 타입을 재사용하지 않고 라인 상태 타입을 쓴다.
+  status: EcountLineStatus;
+  statusLabel: string;
   errorMessage: string | null;
   ledgerPurchaseItemId: string | null;
 };
@@ -164,7 +168,8 @@ export async function getEcountSupplyImportDetail(
     unitPrice: line.unitPrice,
     supplyAmount: line.supplyAmount,
     totalAmount: line.totalAmount,
-    status: line.status as EcountBatchStatus,
+    status: line.status as EcountLineStatus,
+    statusLabel: getEcountLineStatusLabel(line.status as EcountLineStatus),
     errorMessage: line.errorMessage,
     ledgerPurchaseItemId: line.ledgerPurchaseItemId,
   }));

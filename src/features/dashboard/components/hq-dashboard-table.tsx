@@ -454,7 +454,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                       <MarginCell row={row} />
                     </TableCell>
                     <TableCell className={getColumnCellClassName("loss")}>
-                      {formatLoss(row)}
+                      <LossCell row={row} dashboard={dashboard} />
                     </TableCell>
                     <TableCell className={getColumnCellClassName("signals")}>
                       <DashboardSignalSummary signals={row.signals} />
@@ -525,7 +525,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                   </div>
                   <div>
                     <dt className="text-muted-foreground">손실</dt>
-                    <dd className="font-medium">{formatLoss(row)}</dd>
+                    <dd className="font-medium">
+                      <LossCell row={row} dashboard={dashboard} />
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">마진율</dt>
@@ -720,6 +722,32 @@ function DetailLink({
   );
 }
 
+// WO-02(2026-06-28): 손실이 있는 행의 손실 값은 장부 상세 손실 탭으로 바로 이동하는 링크다.
+// 손실이 없거나 입력 전이면 일반 텍스트로 둔다(행 전체 클릭은 기본 탭으로 이동).
+function LossCell({
+  row,
+  dashboard,
+}: {
+  row: HqDashboardRow;
+  dashboard: HqDashboardData;
+}) {
+  const label = formatLoss(row);
+
+  if (!row.ledgerId || !row.hasLoss) {
+    return <>{label}</>;
+  }
+
+  return (
+    <Link
+      href={getLedgerDetailHref(row, dashboard, "losses")}
+      className="text-primary underline-offset-2 hover:underline focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
+      aria-label={`${row.storeName} 손실 탭 보기`}
+    >
+      {label}
+    </Link>
+  );
+}
+
 function MarginCell({ row }: { row: HqDashboardRow }) {
   const { currentLabel, targetLabel, shortfallAmountLabel } = row.marginDisplay;
 
@@ -758,12 +786,27 @@ function PriorityBadge({
   );
 }
 
-function getLedgerDetailHref(row: HqDashboardRow, dashboard: HqDashboardData) {
+function getLedgerDetailHref(
+  row: HqDashboardRow,
+  dashboard: HqDashboardData,
+  // WO-02(2026-06-28): 손실 행/카드 링크는 ?tab=losses로 손실 탭을 바로 연다.
+  tab?: string,
+) {
   if (!row.ledgerId) {
     return "/app/dashboard";
   }
 
-  return `/app/ledgers/${row.ledgerId}?date=${dashboard.datePreset}&sort=${dashboard.sortMode}&filter=${dashboard.filterMode}`;
+  const params = new URLSearchParams({
+    date: dashboard.datePreset,
+    sort: dashboard.sortMode,
+    filter: dashboard.filterMode,
+  });
+
+  if (tab) {
+    params.set("tab", tab);
+  }
+
+  return `/app/ledgers/${row.ledgerId}?${params.toString()}`;
 }
 
 function getRowClassName(row: HqDashboardRow) {

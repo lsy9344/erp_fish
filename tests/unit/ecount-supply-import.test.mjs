@@ -255,6 +255,26 @@ test("resolveEcountLine reports mapping-required and ready states", async () => 
   assert.equal(failed.status, ECOUNT_LINE_STATUS.FAILED);
 });
 
+test("WO-01: ecount status labels use field-friendly Korean and batch/line share one source", async () => {
+  const {
+    ECOUNT_BATCH_STATUS_LABELS,
+    ECOUNT_LINE_STATUS_LABELS,
+    getEcountLineStatusLabel,
+  } = await importMapping();
+
+  // 현장 친화 한글 라벨. READY→반영 가능, COMMITTED→반영됨. raw 영어가 보이지 않는다.
+  assert.equal(ECOUNT_BATCH_STATUS_LABELS.READY, "반영 가능");
+  assert.equal(ECOUNT_BATCH_STATUS_LABELS.COMMITTED, "반영됨");
+  assert.equal(ECOUNT_BATCH_STATUS_LABELS.MAPPING_REQUIRED, "매핑 필요");
+  assert.equal(ECOUNT_BATCH_STATUS_LABELS.FAILED, "오류");
+  assert.equal(ECOUNT_BATCH_STATUS_LABELS.VOIDED, "취소됨");
+
+  // 배치와 라인이 같은 라벨 source를 쓴다(목록/상세 문구가 어긋나지 않게).
+  assert.deepEqual(ECOUNT_LINE_STATUS_LABELS, ECOUNT_BATCH_STATUS_LABELS);
+  assert.equal(getEcountLineStatusLabel("READY"), "반영 가능");
+  assert.equal(getEcountLineStatusLabel("COMMITTED"), "반영됨");
+});
+
 test("resolveBatchStatus aggregates line statuses with FAILED/MAPPING_REQUIRED precedence", async () => {
   const { resolveBatchStatus, ECOUNT_BATCH_STATUS } = await importMapping();
 

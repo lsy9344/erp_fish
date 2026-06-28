@@ -42,7 +42,7 @@ export async function commitEcountSupplyImport(
 
       if (batch.status !== "READY") {
         throw new EcountCommitError(
-          "매핑이 끝난 commit 가능 상태(READY)에서만 반영할 수 있습니다.",
+          "매핑이 끝난 반영 가능 상태에서만 반영할 수 있습니다.",
         );
       }
 

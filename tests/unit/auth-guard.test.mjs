@@ -385,7 +385,8 @@ test("ledger detail action UI is hidden unless the user has matching action perm
     ledgerPage,
     /ledger\.status === "HEADQUARTERS_CLOSED" && canCreateCorrection/,
   );
-  assert.match(ledgerPage, /canEditLedger \? \(\s*<Tabs/);
+  // WO-02(2026-06-28): 탭 영역은 LedgerDetailTabs(URL ?tab= 동기화)로 감쌌고 canEditLedger로 게이트한다.
+  assert.match(ledgerPage, /canEditLedger \? \(\s*<LedgerDetailTabs/);
 });
 
 test("store entry routes reject repeated storeId query values before authorization", () => {
