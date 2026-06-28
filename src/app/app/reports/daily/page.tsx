@@ -108,6 +108,13 @@ export default async function DailyMeetingReportPage({
             <Button asChild variant="outline" size="sm">
               <Link href="/app/reports/monthly">월간</Link>
             </Button>
+            {/* WO-16(2026-06-28): 품목/매출 검토 차트 페이지. */}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/product-review">품목 검토</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/reports/sales-review">매출 검토</Link>
+            </Button>
           </div>
           <div
             className="flex flex-wrap items-center gap-2"

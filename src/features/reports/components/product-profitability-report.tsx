@@ -31,6 +31,8 @@ import type {
 
 type ProductProfitabilityReportProps = {
   data: ProductProfitabilitySummary;
+  // WO-16(2026-06-28): "both"(기본·일별 리포트)면 차트+표를 함께, "chart"/"table"이면 한쪽만.
+  mode?: "both" | "chart" | "table";
 };
 
 const chartConfig = {
@@ -73,7 +75,11 @@ function marginLabel(rate: number | null): string {
 
 export function ProductProfitabilityReport({
   data,
+  mode = "both",
 }: ProductProfitabilityReportProps) {
+  const showChart = mode !== "table";
+  const showTable = mode !== "chart";
+
   if (data.items.length === 0) {
     return (
       <div className="text-muted-foreground flex h-32 items-center justify-center text-sm">
@@ -124,6 +130,7 @@ export function ProductProfitabilityReport({
         </div>
       </dl>
 
+      {showChart ? (
       <ChartContainer config={chartConfig} className="h-[360px] w-full">
         <BarChart
           accessibilityLayer
@@ -176,8 +183,10 @@ export function ProductProfitabilityReport({
           </Bar>
         </BarChart>
       </ChartContainer>
+      ) : null}
 
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
+      {showTable ? (
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -222,27 +231,32 @@ export function ProductProfitabilityReport({
           </TableBody>
         </Table>
       </div>
+      ) : null}
       <p className="text-muted-foreground text-xs">
         추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매
         데이터가 아닌 재고 흐름 기반 추정값입니다.
       </p>
 
-      <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <span>이익률 색상:</span>
-        <span style={{ color: "var(--color-rate-high)" }}>≥30%</span>
-        <span style={{ color: "var(--color-rate-mid)" }}>10–30%</span>
-        <span style={{ color: "var(--color-rate-low)" }}>0–10%</span>
-        <span style={{ color: "var(--color-rate-negative)" }}>음수</span>
-        <span style={{ color: "var(--color-rate-unavailable)" }}>
-          계산 불가
-        </span>
-      </div>
+      {showChart ? (
+        <>
+          <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <span>이익률 색상:</span>
+            <span style={{ color: "var(--color-rate-high)" }}>≥30%</span>
+            <span style={{ color: "var(--color-rate-mid)" }}>10–30%</span>
+            <span style={{ color: "var(--color-rate-low)" }}>0–10%</span>
+            <span style={{ color: "var(--color-rate-negative)" }}>음수</span>
+            <span style={{ color: "var(--color-rate-unavailable)" }}>
+              계산 불가
+            </span>
+          </div>
 
-      <p className="text-muted-foreground text-xs">
-        막대 길이는 추정 판매액(판매량 × 판매가 계획, 없으면 매입단가 폴백),
-        색·라벨은 추정 이익률(추정 판매액과 FIFO 소진금액 기반 추정 원가)입니다.
-        확정 POS 매출·원가가 아닙니다.
-      </p>
+          <p className="text-muted-foreground text-xs">
+            막대 길이는 추정 판매액(판매량 × 판매가 계획, 없으면 매입단가 폴백),
+            색·라벨은 추정 이익률(추정 판매액과 FIFO 소진금액 기반 추정 원가)입니다.
+            확정 POS 매출·원가가 아닙니다.
+          </p>
+        </>
+      ) : null}
       {data.salesPriceFallbackItemCount > 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-500">
           판매가 계획이 없어 매입단가로 대체한(판매가 미반영) 품목{" "}

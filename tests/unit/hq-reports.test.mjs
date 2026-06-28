@@ -3054,3 +3054,43 @@ test("monthly report keeps product revenue ranking labeled estimated", async () 
   assert.match(componentSource, /ProfitAndLossReadinessSummary/);
   assert.match(componentSource, /손익\(P&amp;L\) 리포트 준비도/);
 });
+
+// WO-16(2026-06-28): 본사 전용 품목 검토 / 매출 검토 차트 페이지.
+test("WO-16: product/sales review pages are HQ-only and reuse report data with chart/table toggle", () => {
+  const productPage = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "product-review",
+    "page.tsx",
+  );
+  const salesPage = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "sales-review",
+    "page.tsx",
+  );
+  const toggle = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "review-view-toggle.tsx",
+  );
+
+  for (const page of [productPage, salesPage]) {
+    // 본사 전용(requireReportAccess) + 일별 리포트 데이터 재사용 + 차트/표 전환.
+    assert.match(page, /requireReportAccess/);
+    assert.match(page, /getHqDailyMeetingReport/);
+    assert.match(page, /ReviewViewToggle/);
+    assert.match(page, /mode="chart"/);
+    assert.match(page, /mode="table"/);
+  }
+
+  assert.match(toggle, /"use client"/);
+  assert.match(toggle, /차트 보기/);
+  assert.match(toggle, /표 보기/);
+});
