@@ -442,6 +442,18 @@ test("HQ dashboard margin display shows 현재 / 기준 and visible shortfall mo
   assert.equal(unavailable.currentLabel, "데이터 부족");
   assert.equal(unavailable.targetLabel, null);
   assert.equal(unavailable.shortfallAmountLabel, null);
+
+  // WO-14(2026-06-28): 본사 홈은 invertMarginDisplay=true로 마진율을 100% - 표시값으로
+  // 반전한다. currentLabel만 반전되고 target/shortfall은 원래 값(0.18) 기준을 유지한다.
+  const homeInverted = buildMarginDisplay(
+    { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
+    { value: 1000000, status: "ok" },
+    { value: 0.18, status: "ok" },
+    true,
+  );
+  assert.equal(homeInverted.currentLabel, "82.0%"); // 100% - 18% = 82%
+  assert.equal(homeInverted.targetLabel, "20.0%"); // 목표는 반전하지 않는다
+  assert.equal(homeInverted.shortfallAmountLabel, "미달 금액 20,000원"); // 원래 값으로 계산
 });
 
 test("HQ dashboard e2e setup clears story 3.2 threshold state before asserting pending signals", () => {
