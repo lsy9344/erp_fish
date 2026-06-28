@@ -57,6 +57,11 @@ export type LedgerPurchaseLine = {
   kind: "purchase" | "carryover";
   // carryover 행 표시용 전일 재고 수량(매입 화면에 "전일재고 N"으로 노출). purchase 행은 0.
   previousQuantity: number;
+  // WO-12(2026-06-28): 본사 매입 수정 화면에서 원본 이카운트 단가와 장부 적용 단가를
+  // 나란히 보여주기 위한 본사 전용 필드. 지점장 응답에서는 response-shaping이 제거한다.
+  sourceUnitPrice?: number | null;
+  unitPriceOverridden?: boolean;
+  unitPriceOverrideReason?: string | null;
 };
 
 export type LedgerLaborLine = {

@@ -56,6 +56,9 @@ type PurchaseLine = {
   kind: "purchase" | "carryover";
   // carryover 행에 "전일재고 N"으로 표시할 전일 재고 수량.
   previousQuantity: number;
+  // WO-12(2026-06-28): 본사 화면에서 원본 이카운트 단가를 적용 단가와 나란히 표시(읽기 전용).
+  sourceUnitPrice: number | null;
+  unitPriceOverridden: boolean;
 };
 
 type PurchaseStepClientProps = {
@@ -111,6 +114,8 @@ function createLineState(id: string): PurchaseLine {
     plannedUnitPrice: "",
     kind: "purchase",
     previousQuantity: 0,
+    sourceUnitPrice: null,
+    unitPriceOverridden: false,
   };
 }
 
@@ -133,6 +138,8 @@ function toPurchaseLines(
       item.plannedUnitPrice === null ? "" : String(item.plannedUnitPrice),
     kind: item.kind,
     previousQuantity: item.previousQuantity,
+    sourceUnitPrice: item.sourceUnitPrice ?? null,
+    unitPriceOverridden: item.unitPriceOverridden ?? false,
   }));
 }
 
@@ -816,6 +823,18 @@ export function PurchaseStepClient({
                         <p className="text-muted-foreground text-xs">
                           이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
                           장부 적용 단가만 수정할 수 있습니다.
+                        </p>
+                      ) : null}
+                      {/* WO-12(2026-06-28): 본사 화면에서 원본 이카운트 단가를 적용 단가와
+                          나란히 보여준다. 지점장 응답에는 sourceUnitPrice가 없어 표시되지 않는다. */}
+                      {line.sourceUnitPrice !== null ? (
+                        <p className="text-muted-foreground text-xs tabular-nums">
+                          원본 이카운트 단가 {formatKrw(line.sourceUnitPrice)}
+                          {line.unitPriceOverridden ? (
+                            <span className="text-warning ml-1 font-medium">
+                              · 적용 단가 보정됨
+                            </span>
+                          ) : null}
                         </p>
                       ) : null}
                     </Field>

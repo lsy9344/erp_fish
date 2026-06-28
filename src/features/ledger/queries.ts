@@ -237,6 +237,14 @@ function getLedgerPurchaseItems(ledger: {
     plannedUnitPrice: null,
     kind: "purchase" as const,
     previousQuantity: 0,
+    // WO-12(2026-06-28): 원본 이카운트 단가와 적용 단가 보정 메타(본사 전용).
+    // 지점장 응답에서는 toStoreManagerLedgerCostStepData가 제거한다.
+    sourceUnitPrice: item.sourceUnitPrice ?? null,
+    unitPriceOverridden:
+      item.sourceUnitPrice !== null &&
+      item.sourceUnitPrice !== undefined &&
+      item.sourceUnitPrice !== item.unitPrice,
+    unitPriceOverrideReason: item.unitPriceOverrideReason ?? null,
   }));
 }
 

@@ -14,8 +14,14 @@ export function toStoreManagerLedgerCostStepData(
   // WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용. grossProfit/productivity에
   // 더해 payrollTotal과 개인별 amount도 지점장 응답에서 제거한다. 근무자 명단/메모는
   // 지점장이 다루므로 amount만 뺀 라인으로 내려준다.
-  const { grossProfit, productivity, payrollTotal, laborItems, ...safeLedger } =
-    data;
+  const {
+    grossProfit,
+    productivity,
+    payrollTotal,
+    laborItems,
+    purchaseItems,
+    ...safeLedger
+  } = data;
 
   void grossProfit;
   void productivity;
@@ -28,6 +34,22 @@ export function toStoreManagerLedgerCostStepData(
 
       return safeLine;
     }),
+    // WO-12(2026-06-28): 원본 이카운트 단가/보정 메타는 본사 전용. 지점장 응답에서 제거한다.
+    // 적용 단가(unitPrice)는 지점장이 보는 정상 값이라 유지한다.
+    purchaseItems: purchaseItems.map(
+      ({
+        sourceUnitPrice,
+        unitPriceOverridden,
+        unitPriceOverrideReason,
+        ...safeLine
+      }) => {
+        void sourceUnitPrice;
+        void unitPriceOverridden;
+        void unitPriceOverrideReason;
+
+        return safeLine;
+      },
+    ),
   };
 }
 

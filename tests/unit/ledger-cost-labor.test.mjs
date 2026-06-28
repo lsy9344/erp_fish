@@ -630,9 +630,10 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   );
   assert.match(typeSource, /StoreManagerLedgerLaborLine/);
   assert.match(querySource, /shapeStoreManagerLedgerCostStepData/);
+  // WO-12(2026-06-28): purchaseItems도 분해해 원본 이카운트 단가/보정 메타를 제거한다.
   assert.match(
     responseShapeSource,
-    /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*laborItems,\s*\.\.\.safeLedger\s*\}/s,
+    /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*laborItems,\s*purchaseItems,\s*\.\.\.safeLedger\s*\}/s,
   );
   assert.match(actionSource, /toStoreManagerLedgerCostStepData\(afterLedger\)/);
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);
@@ -675,8 +676,28 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
       },
     ],
     expenseTotal: 30_000,
-    purchaseItems: [],
-    purchaseTotal: 0,
+    purchaseItems: [
+      {
+        id: "purchase-1",
+        productId: "product-1",
+        purchaseStandardId: null,
+        sourceType: "ECOUNT",
+        productName: "광어",
+        productCategory: "냉동",
+        productSpec: "1kg",
+        unitPrice: 5_000,
+        quantity: 2,
+        amount: 10_000,
+        referenceInfo: null,
+        plannedUnitPrice: null,
+        kind: "purchase",
+        previousQuantity: 0,
+        sourceUnitPrice: 4_800,
+        unitPriceOverridden: true,
+        unitPriceOverrideReason: "본사 보정",
+      },
+    ],
+    purchaseTotal: 10_000,
     laborItems: [
       {
         id: "labor-1",
@@ -703,6 +724,19 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   assert.equal(Object.hasOwn(safeLedger, "grossProfit"), false);
   assert.equal(Object.hasOwn(safeLedger, "productivity"), false);
   assert.equal(safeLedger.expenseTotal, 30_000);
+  // WO-12(2026-06-28): 매입 행의 적용 단가(unitPrice)는 지점장이 보는 정상 값이라 유지하되,
+  // 원본 이카운트 단가/보정 메타는 본사 전용이라 제거된다.
+  assert.equal(safeLedger.purchaseItems.length, 1);
+  assert.equal(safeLedger.purchaseItems[0].unitPrice, 5_000);
+  assert.equal(Object.hasOwn(safeLedger.purchaseItems[0], "sourceUnitPrice"), false);
+  assert.equal(
+    Object.hasOwn(safeLedger.purchaseItems[0], "unitPriceOverridden"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(safeLedger.purchaseItems[0], "unitPriceOverrideReason"),
+    false,
+  );
   // WO-10(2026-06-28): 급여액과 인건비 합계는 본사 전용. 지점장 응답에서 제거된다.
   assert.equal(Object.hasOwn(safeLedger, "payrollTotal"), false);
   // 근무자 명단/메모는 지점장이 다루므로 남되, 개인별 급여액(amount)은 제거된다.
