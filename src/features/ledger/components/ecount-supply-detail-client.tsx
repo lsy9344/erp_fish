@@ -92,6 +92,10 @@ export function EcountSupplyDetailClient({
   const [productSelections, setProductSelections] = useState<
     Record<string, string>
   >({});
+  // WO-09(2026-06-28): 신규 품목 생성 시 본사가 직접 고르는 분류(냉동/생물/기준 미정).
+  const [categorySelections, setCategorySelections] = useState<
+    Record<string, string>
+  >({});
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isVoiding, setIsVoiding] = useState(false);
@@ -169,7 +173,15 @@ export function EcountSupplyDetailClient({
   async function handleCreateProduct(
     rawProductName: string,
     productSpec: string,
+    selectionKey: string,
   ) {
+    const category = categorySelections[selectionKey] ?? "";
+
+    if (!category) {
+      toast.error("새 품목 분류(냉동/생물/기준 미정)를 먼저 선택해 주세요.");
+      return;
+    }
+
     const mapKey = `${rawProductName} ${productSpec}`;
     const key = `create:${mapKey}`;
     setPendingKey(key);
@@ -179,6 +191,7 @@ export function EcountSupplyDetailClient({
         batchId: detail.id,
         rawName: rawProductName,
         rawSpec: productSpec,
+        category,
       });
 
       if (!result.ok) {
@@ -431,6 +444,25 @@ export function EcountSupplyDetailClient({
                             >
                               저장
                             </Button>
+                            {/* WO-09(2026-06-28): 신규 품목 분류는 본사가 직접 고른다. */}
+                            <select
+                              aria-label={`${product.rawProductName} 새 품목 분류`}
+                              className={selectClassName}
+                              value={categorySelections[mapKey] ?? ""}
+                              onChange={(event) => {
+                                const category = event.currentTarget.value;
+
+                                setCategorySelections((current) => ({
+                                  ...current,
+                                  [mapKey]: category,
+                                }));
+                              }}
+                            >
+                              <option value="">분류 선택</option>
+                              <option value="냉동">냉동</option>
+                              <option value="생물">생물</option>
+                              <option value="기준 미정">기준 미정</option>
+                            </select>
                             <Button
                               type="button"
                               variant="secondary"
@@ -439,6 +471,7 @@ export function EcountSupplyDetailClient({
                                 void handleCreateProduct(
                                   product.rawProductName,
                                   product.productSpec,
+                                  mapKey,
                                 )
                               }
                             >

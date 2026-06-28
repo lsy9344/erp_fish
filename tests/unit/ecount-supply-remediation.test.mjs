@@ -220,6 +220,28 @@ test("#6 new-product creation path exists in action and UI", () => {
   );
 });
 
+// WO-09(2026-06-28): 신규 품목 생성 시 분류는 본사가 직접 고른다(파서 추측 미사용).
+test("WO-09: new-product creation requires a manually chosen category, not the parsed guess", () => {
+  const action = supplyActions();
+  const client = detailClient();
+
+  // 액션은 category 입력을 받고 검증한다.
+  assert.match(action, /category:\s*string/);
+  assert.match(action, /NEW_PRODUCT_CATEGORIES\s*=\s*\[\s*"냉동",\s*"생물",\s*"기준 미정"/);
+  assert.match(action, /isNewProductCategory\(selectedCategory\)/);
+  // 생성에 쓰는 분류는 파서가 채운 productCategory가 아니라 선택값이다.
+  assert.match(action, /const category = selectedCategory;/);
+  assert.doesNotMatch(
+    action,
+    /const category = sampleLine\.productCategory/,
+  );
+
+  // UI는 분류 선택 드롭다운(냉동/생물/기준 미정)을 제공하고 생성 시 함께 보낸다.
+  assert.match(client, /새 품목 분류/);
+  assert.match(client, /기준 미정/);
+  assert.match(client, /categorySelections/);
+});
+
 // #7 출고/입고 리포트에 품목 필터 UI가 있다.
 test("#7 report exposes a product filter", () => {
   assert.match(

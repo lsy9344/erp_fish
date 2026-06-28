@@ -395,10 +395,20 @@ export async function saveEcountStoreAlias(input: {
  * 새 앱 품목을 만들어 연결한다. batch line의 원문 품목명/구분/규격/단가로 Product를 만들고
  * (이미 같은 name/category/spec이 있으면 재사용) ProductExternalAlias를 저장한 뒤 매핑을 재계산한다.
  */
+// WO-09(2026-06-28): 냉동/활어 기준표가 오기 전에는 신규 품목 분류를 파서의
+// 문자열 추측으로 확정하지 않는다. 본사가 직접 고르고, 미정이면 "기준 미정"으로 둔다.
+const NEW_PRODUCT_CATEGORIES = ["냉동", "생물", "기준 미정"] as const;
+type NewProductCategory = (typeof NEW_PRODUCT_CATEGORIES)[number];
+
+function isNewProductCategory(value: string): value is NewProductCategory {
+  return (NEW_PRODUCT_CATEGORIES as readonly string[]).includes(value);
+}
+
 export async function createEcountProductFromLine(input: {
   batchId: string;
   rawName: string;
   rawSpec: string;
+  category: string;
 }): Promise<ActionResult<{ detail: EcountImportBatchDetail }>> {
   const actor = await requireSettingsAccess();
   const batchId = String(input.batchId ?? "");
@@ -408,9 +418,17 @@ export async function createEcountProductFromLine(input: {
   const rawSpec = String(input.rawSpec ?? "")
     .trim()
     .replace(/\s+/g, " ");
+  const selectedCategory = String(input.category ?? "").trim();
 
   if (!batchId || !rawName) {
     return actionError("VALIDATION_ERROR", "품목 정보를 확인해 주세요.");
+  }
+
+  if (!isNewProductCategory(selectedCategory)) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "품목 분류(냉동/생물/기준 미정)를 선택해 주세요.",
+    );
   }
 
   try {
@@ -433,7 +451,8 @@ export async function createEcountProductFromLine(input: {
       }
 
       const name = sampleLine.productName.trim() || rawName;
-      const category = sampleLine.productCategory.trim();
+      // WO-09(2026-06-28): 파서가 추측한 productCategory를 쓰지 않고, 본사가 고른 분류를 쓴다.
+      const category = selectedCategory;
       const spec = sampleLine.productSpec.trim();
 
       // 동일 name/category/spec 품목이 이미 있으면 재사용한다(중복 생성 방지).
