@@ -20,7 +20,8 @@ export function isReportExportFormat(
 const REPORT_SHEET_LABELS: Record<ReportExportType, string> = {
   daily: "일별",
   comparison: "기간조회_RAW",
-  monthly: "월별손익",
+  // monthly 리포트의 기본 시트는 월간 KPI/이상 항목이다. "월별손익" 시트는 별도 추가된다.
+  monthly: "월간요약",
   inventory: "재고현황",
 };
 
@@ -313,30 +314,51 @@ export function buildReportCsv(exportData: ReportExportData) {
   return `\uFEFF${lines.join("\r\n")}\r\n`;
 }
 
-// WO-15(2026-06-28): xlsx 워크북 생성. 현재는 리포트별 컬럼을 시트 하나로 내보낸다.
-// 월별 손익/5시트 확장은 같은 ReportExportData 구조 위에서 시트를 추가하는 방식으로 올린다.
+export type ReportExportSheet = {
+  name: string;
+  columns: ReportExportColumn[];
+  rows: ReportExportRow[];
+};
+
+// WO-15(2026-06-28): xlsx 워크북 생성. 리포트별 컬럼을 시트 하나로 내보내고,
+// 추가 시트(extraSheets)가 있으면 같은 구조로 덧붙인다(예: 월별손익).
 export async function buildReportXlsx(
   exportData: ReportExportData,
+  extraSheets: ReportExportSheet[] = [],
 ): Promise<ArrayBuffer> {
   // exceljs는 무겁고 export 경로에서만 쓰므로 동적 import로 초기 번들에서 뺀다.
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "도원에스디";
 
-  const sheet = workbook.addWorksheet(REPORT_SHEET_LABELS[exportData.report]);
-  sheet.columns = exportData.columns.map((column) => ({
-    header: column.label,
-    key: column.key,
-    width: Math.min(40, Math.max(12, column.label.length + 4)),
-  }));
-  sheet.getRow(1).font = { bold: true };
+  const sheets: ReportExportSheet[] = [
+    {
+      name: REPORT_SHEET_LABELS[exportData.report],
+      columns: exportData.columns,
+      rows: exportData.rows,
+    },
+    ...extraSheets,
+  ];
 
-  for (const row of exportData.rows) {
-    sheet.addRow(
-      Object.fromEntries(
-        exportData.columns.map((column) => [column.key, row[column.key] ?? ""]),
-      ),
-    );
+  for (const sheetSpec of sheets) {
+    const sheet = workbook.addWorksheet(sheetSpec.name);
+    sheet.columns = sheetSpec.columns.map((column) => ({
+      header: column.label,
+      key: column.key,
+      width: Math.min(40, Math.max(12, column.label.length + 4)),
+    }));
+    sheet.getRow(1).font = { bold: true };
+
+    for (const row of sheetSpec.rows) {
+      sheet.addRow(
+        Object.fromEntries(
+          sheetSpec.columns.map((column) => [
+            column.key,
+            row[column.key] ?? "",
+          ]),
+        ),
+      );
+    }
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -346,6 +368,75 @@ export async function buildReportXlsx(
   new Uint8Array(copy).set(source);
 
   return copy;
+}
+
+// WO-15(2026-06-28) part2: 월별 손익계산서를 xlsx "월별손익" 시트로 만든다.
+// 조정 항목(월세/관리비/...)은 본사 지출 category로 들어온 값을 컬럼으로 펼친다.
+export function buildMonthlyProfitLossSheet(data: {
+  rows: Array<{
+    monthInput: string;
+    storeName: string;
+    salesAmount: number;
+    cogsAmount: number;
+    grossProfit: number | null;
+    grossMarginRate: number | null;
+    laborAmount: number;
+    fixedCosts: Record<string, number>;
+    otherExpenseAmount: number;
+    hqAdjustmentAmount: number;
+    netAmount: number;
+    adjustmentReason: string | null;
+    memo: string | null;
+  }>;
+}): ReportExportSheet {
+  const columns: ReportExportColumn[] = [
+    { key: "monthInput", label: "기준월" },
+    { key: "storeName", label: "지점" },
+    { key: "salesAmount", label: "매출" },
+    { key: "cogsAmount", label: "매입원가" },
+    { key: "grossProfit", label: "매출이익" },
+    { key: "grossMarginRate", label: "이익률" },
+    { key: "laborAmount", label: "인건비" },
+    { key: "월세", label: "월세" },
+    { key: "관리비", label: "관리비" },
+    { key: "공과금", label: "공과금" },
+    { key: "세금/수수료", label: "세금/수수료" },
+    { key: "포장/소모품", label: "포장/소모품" },
+    { key: "배송/운반", label: "배송/운반" },
+    { key: "수선/유지보수", label: "수선/유지보수" },
+    { key: "otherExpenseAmount", label: "기타비용" },
+    { key: "hqAdjustmentAmount", label: "본사조정" },
+    { key: "netAmount", label: "남은금액" },
+    { key: "adjustmentReason", label: "조정사유" },
+    { key: "memo", label: "메모" },
+  ];
+
+  const rows: ReportExportRow[] = data.rows.map((row) => ({
+    monthInput: row.monthInput,
+    storeName: row.storeName,
+    salesAmount: row.salesAmount,
+    cogsAmount: row.cogsAmount,
+    grossProfit: row.grossProfit ?? "계산 불가",
+    grossMarginRate:
+      row.grossMarginRate === null
+        ? "계산 불가"
+        : `${(row.grossMarginRate * 100).toFixed(1)}%`,
+    laborAmount: row.laborAmount,
+    월세: row.fixedCosts["월세"] ?? 0,
+    관리비: row.fixedCosts["관리비"] ?? 0,
+    공과금: row.fixedCosts["공과금"] ?? 0,
+    "세금/수수료": row.fixedCosts["세금/수수료"] ?? 0,
+    "포장/소모품": row.fixedCosts["포장/소모품"] ?? 0,
+    "배송/운반": row.fixedCosts["배송/운반"] ?? 0,
+    "수선/유지보수": row.fixedCosts["수선/유지보수"] ?? 0,
+    otherExpenseAmount: row.otherExpenseAmount,
+    hqAdjustmentAmount: row.hqAdjustmentAmount,
+    netAmount: row.netAmount,
+    adjustmentReason: row.adjustmentReason,
+    memo: row.memo,
+  }));
+
+  return { name: "월별손익", columns, rows };
 }
 
 export function getReportExportFilename({

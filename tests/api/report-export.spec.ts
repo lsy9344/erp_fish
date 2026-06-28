@@ -410,6 +410,41 @@ test.describe("Report export API", () => {
     const after = auditLogs[0]?.after as { format?: string } | null;
     expect(after?.format).toBe("xlsx");
   });
+
+  // WO-15(2026-06-28) part2: 월별 리포트 xlsx에는 "월별손익" 시트가 함께 들어간다.
+  test("[P1] monthly xlsx includes the 월별손익 sheet with P&L columns", async ({
+    request,
+  }) => {
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "monthly",
+        month: getCurrentMonthInput(),
+        format: "xlsx",
+      }),
+    );
+    expect(response.status()).toBe(200);
+
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const bytes = new Uint8Array(await response.body());
+    const arrayBuffer = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    );
+    await workbook.xlsx.load(arrayBuffer);
+
+    const sheetNames = workbook.worksheets.map((sheet) => sheet.name);
+    expect(sheetNames).toContain("월별손익");
+
+    const pnl = workbook.getWorksheet("월별손익");
+    const header = pnl?.getRow(1).values as unknown[];
+    const headerLabels = header.filter((v) => typeof v === "string");
+    for (const label of ["매출", "매입원가", "인건비", "본사조정", "남은금액"]) {
+      expect(headerLabels).toContain(label);
+    }
+  });
 });
 
 async function signInForApi(request: APIRequestContext, email: string) {

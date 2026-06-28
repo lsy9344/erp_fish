@@ -65,6 +65,10 @@ export default async function MonthlyClosingAnomalyReportPage({
   }
 
   const exportHref = `/api/reports/export?${exportParams.toString()}`;
+  // WO-15(2026-06-28): 월별 xlsx에는 월별손익 시트가 함께 들어간다.
+  const exportXlsxParams = new URLSearchParams(exportParams);
+  exportXlsxParams.set("format", "xlsx");
+  const exportXlsxHref = `/api/reports/export?${exportXlsxParams.toString()}`;
 
   return (
     <HeadquartersShell
@@ -145,12 +149,20 @@ export default async function MonthlyClosingAnomalyReportPage({
               조회
             </Button>
             {canExportReports ? (
-              <Button asChild variant="outline" size="sm">
-                <a href={exportHref}>
-                  <DownloadIcon data-icon="inline-start" />
-                  CSV
-                </a>
-              </Button>
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <a href={exportXlsxHref}>
+                    <DownloadIcon data-icon="inline-start" />
+                    Excel
+                  </a>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <a href={exportHref}>
+                    <DownloadIcon data-icon="inline-start" />
+                    CSV
+                  </a>
+                </Button>
+              </>
             ) : null}
           </form>
         </div>

@@ -6,6 +6,7 @@ import {
   buildForbiddenReportExportResponsePayload,
   buildInventoryPositionReportExport,
   buildMonthlyClosingAnomalyReportExport,
+  buildMonthlyProfitLossSheet,
   buildReportCsv,
   buildReportExportAuditSnapshot,
   buildReportXlsx,
@@ -16,6 +17,7 @@ import {
   type ReportExportFormat,
   type ReportExportType,
 } from "~/features/reports/export";
+import { buildMonthlyProfitAndLoss } from "~/features/reports/monthly-profit-loss";
 import {
   getHqDailyMeetingReport,
   getHqMonthlyClosingAnomalyReport,
@@ -94,7 +96,18 @@ export async function GET(request: Request) {
   );
 
   if (format === "xlsx") {
-    const xlsx = await buildReportXlsx(exportData);
+    // WO-15(2026-06-28) part2: 월별 리포트 xlsx에는 "월별손익" 시트를 함께 넣는다.
+    const extraSheets = [];
+
+    if (parsed.value.report === "monthly") {
+      const pnl = await buildMonthlyProfitAndLoss({
+        month: parsed.value.month,
+        storeId: parsed.value.storeId,
+      });
+      extraSheets.push(buildMonthlyProfitLossSheet(pnl));
+    }
+
+    const xlsx = await buildReportXlsx(exportData, extraSheets);
 
     return new Response(xlsx, {
       headers: {
