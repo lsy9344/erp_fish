@@ -458,14 +458,15 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(
     page.getByRole("button", { name: "매출액", exact: true }),
   ).toBeVisible();
+  // WO-04(2026-06-28): 제목은 "품목별 판매 현황 (추정)"으로 통일한다.
   await expect(
-    page.getByRole("heading", { name: "품목별 이익률 (추정)" }),
+    page.getByRole("heading", { name: "품목별 판매 현황 (추정)" }),
   ).toBeVisible();
-  // 이 시드에는 판매 품목이 없을 수 있다. 데이터가 있으면 당일 요약을, 없으면
-  // 빈 상태를 보이며 둘 중 하나는 반드시 노출된다.
+  // 이 시드에는 판매 품목이 없을 수 있다. 데이터가 있으면 표 헤더(추정 판매 수량)를,
+  // 없으면 빈 상태를 보이며 둘 중 하나는 반드시 노출된다.
   await expect(
     page
-      .getByText("당일 추정 이익률")
+      .getByRole("columnheader", { name: "추정 판매 수량" })
       .or(page.getByText("품목별 판매 데이터 없음"))
       .first(),
   ).toBeVisible();

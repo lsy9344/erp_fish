@@ -206,7 +206,8 @@ export default async function DailyMeetingReportPage({
       </section>
 
       <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">품목별 이익률 (추정)</h2>
+        {/* WO-04(2026-06-28): 제목을 "품목별 판매 현황 (추정)"으로 통일하고 표를 추가한다. */}
+        <h2 className="text-base font-semibold">품목별 판매 현황 (추정)</h2>
         <p className="text-muted-foreground mt-1 text-xs">
           냉동/생물 카테고리 합계를 품목 단위로 펼친 추정값입니다.
         </p>

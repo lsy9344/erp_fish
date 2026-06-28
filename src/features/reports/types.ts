@@ -358,6 +358,8 @@ export type ProductCategoryPerformance = {
 export type ProductProfitabilityReportItem = {
   productId: string;
   productName: string;
+  // WO-04(2026-06-28): 표에 규격 컬럼을 노출하기 위해 규격을 함께 내려준다.
+  productSpec: string;
   productCategory: "냉동" | "생물";
   soldQuantity: number;
   estimatedSalesAmount: number;

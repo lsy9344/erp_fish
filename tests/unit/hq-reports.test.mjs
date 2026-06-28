@@ -228,6 +228,7 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
         {
           productId: "p-gal",
           productName: "갈치",
+          productSpec: "1kg",
           productCategory: "냉동",
           previousQuantity: 10,
           purchasedQuantity: 5,
@@ -296,6 +297,8 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
   assert.equal(summary.items.length, 2);
   const gal = summary.items[0];
   assert.equal(gal.productName, "갈치");
+  // WO-04(2026-06-28): 표 규격 컬럼을 위해 규격이 함께 내려온다.
+  assert.equal(gal.productSpec, "1kg");
   assert.equal(gal.soldQuantity, 16); // 12 + 4
   assert.equal(gal.estimatedSalesAmount, 24_000); // 18,000 + 6,000
   assert.equal(gal.estimatedCogsAmount, 12_000); // 9,000 + 3,000

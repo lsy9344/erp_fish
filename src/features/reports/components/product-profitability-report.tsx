@@ -16,6 +16,14 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "~/components/ui/chart";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
 import type {
   ProductProfitabilityReportItem,
   ProductProfitabilitySummary,
@@ -35,6 +43,15 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
   notation: "compact",
 });
+
+// 표는 정확한 금액을 보여주므로 compact 표기를 쓰지 않는다.
+const krwTableFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+});
+
+const quantityFormatter = new Intl.NumberFormat("ko-KR");
 
 const percentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",
@@ -159,6 +176,56 @@ export function ProductProfitabilityReport({
           </Bar>
         </BarChart>
       </ChartContainer>
+
+      {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>품목</TableHead>
+              <TableHead>규격</TableHead>
+              <TableHead>분류</TableHead>
+              <TableHead className="text-right">추정 판매 수량</TableHead>
+              <TableHead className="text-right">추정 판매액</TableHead>
+              <TableHead className="text-right">추정 원가</TableHead>
+              <TableHead className="text-right">추정 마진</TableHead>
+              <TableHead className="text-right">추정 이익률</TableHead>
+              <TableHead>상태</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((item) => (
+              <TableRow key={item.productId}>
+                <TableCell className="font-medium">
+                  {item.productName}
+                </TableCell>
+                <TableCell>{item.productSpec || "-"}</TableCell>
+                <TableCell>{item.productCategory}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {quantityFormatter.format(item.soldQuantity)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {krwTableFormatter.format(item.estimatedSalesAmount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {krwTableFormatter.format(item.estimatedCogsAmount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {krwTableFormatter.format(item.estimatedGrossProfit)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {marginLabel(item.estimatedGrossMarginRate)}
+                </TableCell>
+                <TableCell>{item.statusLabel}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매
+        데이터가 아닌 재고 흐름 기반 추정값입니다.
+      </p>
 
       <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <span>이익률 색상:</span>

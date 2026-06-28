@@ -331,6 +331,7 @@ export function getMonthlyClosingAnomalyReportPath({
 type CategoryPerformanceItem = {
   productId?: string | null;
   productName?: string | null;
+  productSpec?: string | null;
   productCategory: string;
   previousQuantity: number;
   purchasedQuantity: number;
@@ -474,6 +475,7 @@ export function buildProductProfitability(
     {
       productId: string;
       productName: string;
+      productSpec: string;
       productCategory: "냉동" | "생물";
       soldQuantity: number;
       sales: number;
@@ -499,6 +501,7 @@ export function buildProductProfitability(
       const stats = byProduct.get(key) ?? {
         productId: item.productId ?? key,
         productName: item.productName ?? "이름 없음",
+        productSpec: item.productSpec ?? "",
         productCategory: item.productCategory,
         soldQuantity: 0,
         sales: 0,
@@ -529,6 +532,7 @@ export function buildProductProfitability(
       return {
         productId: stats.productId,
         productName: stats.productName,
+        productSpec: stats.productSpec,
         productCategory: stats.productCategory,
         soldQuantity: stats.soldQuantity,
         estimatedSalesAmount: stats.sales,
@@ -625,6 +629,7 @@ export async function getHqDailyMeetingReport({
                 id: true,
                 productId: true,
                 productName: true,
+                productSpec: true,
                 productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
@@ -804,6 +809,7 @@ export async function getHqStoreComparisonReport({
                 id: true,
                 productId: true,
                 productName: true,
+                productSpec: true,
                 productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
