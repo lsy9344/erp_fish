@@ -1,5 +1,6 @@
 import { LogoutButton } from "~/components/logout-button";
 import { StoreManagerNavigation } from "~/components/store-manager-navigation";
+import { APP_DISPLAY_NAME } from "~/lib/brand";
 
 type StoreManagerShellProps = {
   userName: string;
@@ -20,7 +21,7 @@ export function StoreManagerShell({
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-4 px-4">
           <div className="min-w-0">
             <p className="text-primary truncate text-sm font-semibold">
-              ERP Fish
+              {APP_DISPLAY_NAME}
             </p>
             <p className="text-muted-foreground truncate text-xs">
               {storeName ? `${storeName} · ${userName}` : userName}

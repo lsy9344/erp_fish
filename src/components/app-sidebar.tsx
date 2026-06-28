@@ -11,6 +11,7 @@ import {
 } from "~/components/app-sidebar-nav";
 import { PermissionAction } from "../../generated/prisma";
 import { hasActionPermission } from "~/server/authz";
+import { APP_DISPLAY_NAME } from "~/lib/brand";
 
 type PermissionAwareNavigationItem = AppSidebarNavigationItem & {
   requiredAction: PermissionAction;
@@ -129,7 +130,7 @@ export function AppSidebar({
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <span className="text-primary block truncate text-base font-semibold">
-              ERP Fish
+              {APP_DISPLAY_NAME}
             </span>
             <span className="text-muted-foreground block truncate text-xs">
               본사 업무

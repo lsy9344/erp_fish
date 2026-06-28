@@ -10,6 +10,7 @@ import {
 import { LoginForm } from "~/features/auth/login-form";
 import { auth } from "~/server/auth";
 import { getAppHomePath } from "~/server/authz";
+import { APP_DISPLAY_NAME } from "~/lib/brand";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -47,9 +48,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>
-            <h1 className="text-xl font-semibold">ERP Fish 로그인</h1>
+            <h1 className="text-xl font-semibold">
+              {APP_DISPLAY_NAME} 로그인
+            </h1>
           </CardTitle>
-          <CardDescription>ERP Fish 업무 공간에 접속합니다.</CardDescription>
+          <CardDescription>
+            {APP_DISPLAY_NAME} 업무 공간에 접속합니다.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <LoginForm callbackUrl={callbackUrl} />

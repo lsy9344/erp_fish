@@ -153,7 +153,7 @@ test("DB에서 사용자가 비활성화되면 같은 세션 다음 요청에서
 
     await expect(page).toHaveURL(/\/login\?callbackUrl=%2Fapp/);
     await expect(
-      page.getByRole("heading", { name: "ERP Fish 로그인" }),
+      page.getByRole("heading", { name: "도원에스디 로그인" }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "관제판" })).toHaveCount(0);
     await expect(page.getByText("서초점")).toHaveCount(0);

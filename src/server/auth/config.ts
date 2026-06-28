@@ -6,6 +6,7 @@ import { type UserRole } from "../../../generated/prisma";
 import { loginSchema } from "~/features/auth/schema";
 import { db } from "~/server/db";
 import { verifyPassword } from "~/server/password";
+import { AUTH_PROVIDER_NAME } from "~/lib/brand";
 
 const DUMMY_PASSWORD_HASH =
   "scrypt$00000000000000000000000000000000$02e0ac5cfabe3a015df96e866e04b4d6848755aeb5c39a79ed6214d6717fd36ed30cf3ee69cc590d6e55e962b304e13ee229c5fd2a5e24d454a01c41dc6d84a0";
@@ -37,7 +38,7 @@ declare module "next-auth" {
 export const authConfig = {
   providers: [
     CredentialsProvider({
-      name: "ERP Fish 내부 계정",
+      name: AUTH_PROVIDER_NAME,
       credentials: {
         email: { label: "이메일", type: "email" },
         password: { label: "비밀번호", type: "password" },

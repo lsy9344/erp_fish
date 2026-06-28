@@ -4,10 +4,11 @@ import { type Metadata } from "next";
 
 import { Toaster } from "~/components/ui/sonner";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { APP_DISPLAY_NAME } from "~/lib/brand";
 
 export const metadata: Metadata = {
-  title: "ERP Fish",
-  description: "ERP Fish 본사 업무 시스템",
+  title: APP_DISPLAY_NAME,
+  description: `${APP_DISPLAY_NAME} 본사 업무 시스템`,
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
