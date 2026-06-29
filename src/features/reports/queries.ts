@@ -756,8 +756,9 @@ export async function getHqDailyMeetingReport({
       })),
     };
   });
-  const plannedSalesItemsByLedgerId =
-    buildDailyMeetingPlannedSalesItems(ledgersWithPlannedPrice);
+  const plannedSalesItemsByLedgerId = buildDailyMeetingPlannedSalesItems(
+    ledgersWithPlannedPrice,
+  );
   const ledgerByStoreId = new Map<string, ReportLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
@@ -771,9 +772,7 @@ export async function getHqDailyMeetingReport({
       thresholdSettings,
       evaluateRevenueAnomalySignals,
       evaluateInventoryLossAnomalySignals,
-      corrections: correctionValuesByLedgerId.get(
-        ledger?.id ?? "",
-      ),
+      corrections: correctionValuesByLedgerId.get(ledger?.id ?? ""),
       plannedSalesItems: ledger
         ? plannedSalesItemsByLedgerId.get(ledger.id)
         : undefined,
