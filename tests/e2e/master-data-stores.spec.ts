@@ -13,6 +13,48 @@ function storeRow(page: Page, name: string): Locator {
   return page.locator("tbody tr").filter({ hasText: name });
 }
 
+async function openCreateStoreDialog(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "지점 추가" });
+
+  await expect(async () => {
+    await page.getByRole("button", { name: "지점 추가" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return dialog;
+}
+
+async function openEditStoreDialog(page: Page, name: string) {
+  const row = storeRow(page, name);
+  const dialog = page.getByRole("dialog", { name: "지점 정보 수정" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await row.getByRole("button", { name: "수정" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return dialog;
+}
+
+async function applyStoreStatus(
+  page: Page,
+  name: string,
+  status: "active" | "inactive",
+) {
+  const row = storeRow(page, name);
+  const statusSelect = row.getByLabel("활성 상태");
+  const applyButton = row.getByRole("button", { name: "상태 적용" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await statusSelect.selectOption(status);
+    await expect(statusSelect).toHaveValue(status, { timeout: 1_000 });
+    await expect(applyButton).toBeEnabled({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+  await applyButton.click();
+}
+
 function formatStoreDateTime(value: Date): string {
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "short",
@@ -129,9 +171,9 @@ test("본사는 지점을 생성하고 이름과 활성 상태를 수정할 수 
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/stores");
 
-  await page.getByRole("button", { name: "지점 추가" }).click();
-  await page.getByLabel("지점명").fill(storeName);
-  await page.getByRole("button", { name: "저장" }).click();
+  const createDialog = await openCreateStoreDialog(page);
+  await createDialog.getByLabel("지점명").fill(storeName);
+  await createDialog.getByRole("button", { name: "저장" }).click();
 
   await expect(page.getByRole("cell", { name: storeName })).toBeVisible();
   await expect(storeRow(page, storeName).locator("td").nth(1)).toContainText(
@@ -149,9 +191,9 @@ test("본사는 지점을 생성하고 이름과 활성 상태를 수정할 수 
     formatStoreDateTimePattern(createdStore!.createdAt),
   );
 
-  await storeRow(page, storeName).getByRole("button", { name: "수정" }).click();
-  await page.getByLabel("지점명").fill(editedName);
-  await page.getByRole("button", { name: "저장" }).click();
+  const editDialog = await openEditStoreDialog(page, storeName);
+  await editDialog.getByLabel("지점명").fill(editedName);
+  await editDialog.getByRole("button", { name: "저장" }).click();
 
   await expect(page.getByRole("cell", { name: editedName })).toBeVisible();
   await expect(page.getByRole("cell", { name: storeName })).toHaveCount(0);
@@ -171,11 +213,7 @@ test("본사는 지점을 생성하고 이름과 활성 상태를 수정할 수 
   await expect(
     editedRow.getByRole("button", { name: "상태 적용" }),
   ).toBeDisabled();
-  await editedRow.getByLabel("활성 상태").selectOption("inactive");
-  await expect(
-    editedRow.getByRole("button", { name: "상태 적용" }),
-  ).toBeEnabled();
-  await editedRow.getByRole("button", { name: "상태 적용" }).click();
+  await applyStoreStatus(page, editedName, "inactive");
 
   await expect(storeRow(page, editedName).locator("td").nth(1)).toContainText(
     "비활성",
@@ -264,8 +302,7 @@ test("본사는 10개 이상 지점을 검색하고 활성 상태를 운영할 �
     ).toHaveCount(0);
 
     const targetRow = storeRow(page, seventhStore.name);
-    await targetRow.getByLabel("활성 상태").selectOption("inactive");
-    await targetRow.getByRole("button", { name: "상태 적용" }).click();
+    await applyStoreStatus(page, seventhStore.name, "inactive");
 
     await expect(targetRow.locator("td").nth(1)).toContainText("비활성");
 
@@ -289,29 +326,29 @@ test("지점 관리 폼은 한국어 검증 오류와 첫 오류 포커스를 �
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/stores");
 
-  await page.getByRole("button", { name: "지점 추가" }).click();
-  await page.getByLabel("지점명").fill("   ");
-  await page.getByRole("button", { name: "저장" }).click();
+  const dialog = await openCreateStoreDialog(page);
+  await dialog.getByLabel("지점명").fill("   ");
+  await dialog.getByRole("button", { name: "저장" }).click();
 
-  await expect(page.getByText("지점명을 입력해 주세요.")).toBeVisible();
-  await expect(page.getByLabel("지점명")).toBeFocused();
-  await expect(page.getByLabel("지점명")).toHaveAttribute(
+  await expect(dialog.getByText("지점명을 입력해 주세요.")).toBeVisible();
+  await expect(dialog.getByLabel("지점명")).toBeFocused();
+  await expect(dialog.getByLabel("지점명")).toHaveAttribute(
     "aria-invalid",
     "true",
   );
-  await expect(page.getByLabel("지점명")).toHaveAttribute(
+  await expect(dialog.getByLabel("지점명")).toHaveAttribute(
     "aria-describedby",
     /store-name-error/,
   );
 
-  await page.getByLabel("지점명").fill("강남점");
-  await page.getByRole("button", { name: "저장" }).click();
+  await dialog.getByLabel("지점명").fill("강남점");
+  await dialog.getByRole("button", { name: "저장" }).click();
 
   await expect(
-    page.getByText("이미 같은 이름의 지점이 있습니다."),
+    dialog.getByText("이미 같은 이름의 지점이 있습니다."),
   ).toBeVisible();
-  await expect(page.getByLabel("지점명")).toBeFocused();
-  await expect(page.getByLabel("지점명")).toHaveAttribute(
+  await expect(dialog.getByLabel("지점명")).toBeFocused();
+  await expect(dialog.getByLabel("지점명")).toHaveAttribute(
     "aria-invalid",
     "true",
   );

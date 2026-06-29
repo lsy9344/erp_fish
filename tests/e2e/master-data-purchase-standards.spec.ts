@@ -196,6 +196,48 @@ function standardRow(page: Page, productName: string): Locator {
   return page.locator("tbody tr").filter({ hasText: productName });
 }
 
+async function openCreateStandardDialog(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "참고 단가 추가" });
+
+  await expect(async () => {
+    await page.getByRole("button", { name: "참고 단가 추가" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return dialog;
+}
+
+async function openEditStandardDialog(page: Page, productName: string) {
+  const row = standardRow(page, productName);
+  const dialog = page.getByRole("dialog", { name: "참고 단가 수정" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await row.getByRole("button", { name: "수정" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return dialog;
+}
+
+async function applyStandardStatus(
+  page: Page,
+  productName: string,
+  status: "active" | "inactive",
+) {
+  const row = standardRow(page, productName);
+  const statusSelect = row.getByLabel("활성 상태");
+  const applyButton = row.getByRole("button", { name: "상태 적용" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await statusSelect.selectOption(status);
+    await expect(statusSelect).toHaveValue(status, { timeout: 1_000 });
+    await expect(applyButton).toBeEnabled({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+  await applyButton.click();
+}
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("이메일").fill(email);
@@ -246,24 +288,23 @@ test("본사는 품목 참고 단가 목록, 필터, 생성, 수정, 비활성�
   ).toBeVisible();
   await expect(standardRow(page, inactiveProduct)).toContainText("비활성");
 
-  await standardRow(page, inactiveProduct)
-    .getByLabel("활성 상태")
-    .selectOption("active");
-  await standardRow(page, inactiveProduct)
-    .getByRole("button", { name: "상태 적용" })
-    .click();
+  await applyStandardStatus(page, inactiveProduct, "active");
   await expect(
     page.getByText("비활성 품목의 참고 단가는 활성화할 수 없습니다."),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "참고 단가 추가" }).click();
+  const createDialog = await openCreateStandardDialog(page);
   await expect(
-    page.getByLabel("품목").locator("option", { hasText: inactiveProduct }),
+    createDialog
+      .getByLabel("품목")
+      .locator("option", { hasText: inactiveProduct }),
   ).toHaveCount(0);
-  await page.getByLabel("품목").selectOption({ label: activeProduct });
-  await page.getByRole("textbox", { name: "참고 단가" }).fill("9500");
-  await page.getByLabel("참조 정보").fill(`story53 reference ${suffix}`);
-  await page.getByRole("button", { name: "저장" }).click();
+  await createDialog.getByLabel("품목").selectOption({ label: activeProduct });
+  await createDialog.getByRole("textbox", { name: "참고 단가" }).fill("9500");
+  await createDialog
+    .getByLabel("참조 정보")
+    .fill(`story53 reference ${suffix}`);
+  await createDialog.getByRole("button", { name: "저장" }).click();
 
   await expect(standardRow(page, activeProduct)).toContainText("9,500원");
   await expect(standardRow(page, activeProduct)).toContainText("활성");
@@ -274,24 +315,17 @@ test("본사는 품목 참고 단가 목록, 필터, 생성, 수정, 비활성�
   );
   expect(createdStandards).toHaveLength(1);
 
-  await standardRow(page, activeProduct)
-    .getByRole("button", { name: "수정" })
-    .click();
-  await page.getByRole("textbox", { name: "참고 단가" }).fill("9900");
-  await page.getByLabel("참조 정보").fill(`story53 edited ${suffix}`);
-  await page.getByRole("button", { name: "저장" }).click();
+  const editDialog = await openEditStandardDialog(page, activeProduct);
+  await editDialog.getByRole("textbox", { name: "참고 단가" }).fill("9900");
+  await editDialog.getByLabel("참조 정보").fill(`story53 edited ${suffix}`);
+  await editDialog.getByRole("button", { name: "저장" }).click();
 
   await expect(standardRow(page, activeProduct)).toContainText("9,900원");
   await expect(standardRow(page, activeProduct)).toContainText(
     `story53 edited ${suffix}`,
   );
 
-  await standardRow(page, activeProduct)
-    .getByLabel("활성 상태")
-    .selectOption("inactive");
-  await standardRow(page, activeProduct)
-    .getByRole("button", { name: "상태 적용" })
-    .click();
+  await applyStandardStatus(page, activeProduct, "inactive");
   await expect(standardRow(page, activeProduct)).toContainText("비활성");
   await expect
     .poll(async () => {
@@ -359,21 +393,23 @@ test("품목 참고 단가 폼은 서버 검증 오류와 첫 오류 포커스�
 
   await login(page, "hq@example.com");
   await page.goto("/app/master-data/purchase-standards");
-  await page.getByRole("button", { name: "참고 단가 추가" }).click();
-  await page.getByLabel("품목").selectOption({ label: productName });
-  await page.getByRole("textbox", { name: "참고 단가" }).fill("1,000");
-  await page.getByLabel("참조 정보").fill(" ");
-  await page.getByRole("button", { name: "저장" }).click();
+  const dialog = await openCreateStandardDialog(page);
+  await dialog.getByLabel("품목").selectOption({ label: productName });
+  await dialog.getByRole("textbox", { name: "참고 단가" }).fill("1,000");
+  await dialog.getByLabel("참조 정보").fill(" ");
+  await dialog.getByRole("button", { name: "저장" }).click();
 
   await expect(
-    page.getByText("참고 단가는 0원 이상의 정수여야 합니다."),
+    dialog.getByText("참고 단가는 0원 이상의 정수여야 합니다."),
   ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "참고 단가" })).toBeFocused();
   await expect(
-    page.getByRole("textbox", { name: "참고 단가" }),
+    dialog.getByRole("textbox", { name: "참고 단가" }),
+  ).toBeFocused();
+  await expect(
+    dialog.getByRole("textbox", { name: "참고 단가" }),
   ).toHaveAttribute("aria-invalid", "true");
   await expect(
-    page.getByRole("textbox", { name: "참고 단가" }),
+    dialog.getByRole("textbox", { name: "참고 단가" }),
   ).toHaveAttribute("aria-describedby", /purchase-standard-price-error/);
 });
 
