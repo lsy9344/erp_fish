@@ -76,6 +76,9 @@ export type HqDashboardRow = {
   businessStatus: DashboardBusinessStatus;
   ledgerStatus: DashboardLedgerStatus;
   salesAmount: LedgerReviewMetric;
+  // WO-14 part2(2026-06-29): 분석 매출(판매가 계획 기준 추정 매출, 장부 AE4). 관제판 매출 셀의
+  // 장부 매출 바로 아래에 함께 보여준다. 계획 미입력 등으로 계산 불가면 status로 구분한다.
+  analysisSalesAmount: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
   marginDisplay: DashboardMarginDisplay;
   salesDifference: LedgerReviewMetric;

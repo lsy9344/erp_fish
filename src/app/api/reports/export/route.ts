@@ -17,7 +17,7 @@ import {
   type ReportExportFormat,
   type ReportExportType,
 } from "~/features/reports/export";
-import { buildMonthlyProfitAndLoss } from "~/features/reports/monthly-profit-loss";
+import { buildAllMonthsProfitAndLoss } from "~/features/reports/monthly-profit-loss";
 import {
   getHqDailyMeetingReport,
   getHqMonthlyClosingAnomalyReport,
@@ -100,8 +100,8 @@ export async function GET(request: Request) {
     const extraSheets = [];
 
     if (parsed.value.report === "monthly") {
-      const pnl = await buildMonthlyProfitAndLoss({
-        month: parsed.value.month,
+      // WO-15(수정 2026-06-29): 월별손익 시트는 선택한 달만이 아니라 모든 달을 출력한다.
+      const pnl = await buildAllMonthsProfitAndLoss({
         storeId: parsed.value.storeId,
       });
       extraSheets.push(buildMonthlyProfitLossSheet(pnl));

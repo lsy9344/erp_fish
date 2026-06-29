@@ -1227,3 +1227,36 @@ function makeDashboardRow(overrides = {}) {
     ...overrides,
   };
 }
+
+// WO-14 part2(2026-06-29): 본사 관제판 매출 셀에 분석 매출(판매가 계획 기준)을 함께 보여준다.
+test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTotal", () => {
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const types = readProjectFile("src", "features", "dashboard", "types.ts");
+  const table = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  // 타입에 분석 매출 필드가 있다.
+  assert.match(types, /analysisSalesAmount:\s*LedgerReviewMetric/);
+  // 쿼리는 판매가 계획을 일괄 조회해 plannedSalesItems로 plannedSalesTotal을 계산하고
+  // 그 값을 analysisSalesAmount로 노출한다.
+  assert.match(queries, /buildDashboardPlannedSalesItems/);
+  assert.match(queries, /getPlannedUnitPriceLookup/);
+  assert.match(queries, /plannedSalesItems,/);
+  assert.match(
+    queries,
+    /analysisSalesAmount:\s*(reviewSummary|correctedReviewSummary)\.plannedSalesTotal/,
+  );
+  // 표는 매출 셀에서 장부 매출과 분석 매출을 함께 보여준다.
+  assert.match(table, /function SalesCell/);
+  assert.match(table, /분석/);
+});

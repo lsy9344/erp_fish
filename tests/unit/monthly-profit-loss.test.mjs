@@ -103,7 +103,7 @@ test("monthly P&L computes net = grossProfit - labor - expenses, no new DB", () 
   assert.match(source, /본사조정/);
 });
 
-test("monthly report xlsx attaches the 월별손익 sheet", () => {
+test("monthly report xlsx attaches the 월별손익 sheet for all months", () => {
   const route = readProjectFile(
     "src",
     "app",
@@ -112,7 +112,24 @@ test("monthly report xlsx attaches the 월별손익 sheet", () => {
     "export",
     "route.ts",
   );
-  assert.match(route, /buildMonthlyProfitAndLoss/);
+  // WO-15(수정): 월별손익 시트는 모든 달을 출력한다(buildAllMonthsProfitAndLoss).
+  assert.match(route, /buildAllMonthsProfitAndLoss/);
   assert.match(route, /buildMonthlyProfitLossSheet/);
   assert.match(route, /report === "monthly"/);
+});
+
+test("buildAllMonthsProfitAndLoss collects every month with ledger or expense data", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  assert.match(source, /export async function buildAllMonthsProfitAndLoss/);
+  // 장부 마감일 + 본사 지출일에서 모든 달을 모은다.
+  assert.match(source, /dailyLedger\.findMany/);
+  assert.match(source, /headquartersExpense\.findMany/);
+  assert.match(source, /monthInputs\.add/);
+  // 월별로 공유 계산 헬퍼를 호출한다.
+  assert.match(source, /computeMonthProfitAndLossRows/);
 });

@@ -87,6 +87,101 @@ export async function buildMonthlyProfitAndLoss({
     return { monthInput, rows: [] };
   }
 
+  const rows = await computeMonthProfitAndLossRows({
+    monthInput,
+    startDate,
+    endDate,
+    targetStoreIds,
+  });
+
+  return { monthInput, rows };
+}
+
+function monthRangeFromInput(monthInput: string) {
+  const year = Number(monthInput.slice(0, 4));
+  const monthNumber = Number(monthInput.slice(5, 7));
+  const startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const endDate = new Date(Date.UTC(year, monthNumber, 0, 23, 59, 59, 999));
+
+  return { startDate, endDate };
+}
+
+function toMonthInput(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// WO-15(2026-06-28, 수정): xlsx 월별손익은 한 달이 아니라 데이터가 있는 모든 달을 출력한다.
+// 장부와 본사 지출에 등장하는 모든 (year-month)를 모아 월별로 P&L을 계산한다.
+export async function buildAllMonthsProfitAndLoss({
+  storeId,
+}: {
+  storeId?: string | null;
+} = {}): Promise<MonthlyProfitAndLossData> {
+  await requireReportAccess();
+
+  const scope = await getHeadquartersStoreScope();
+  const scopedStoreIds = scope.storeIds;
+  const targetStoreIds =
+    storeId && scopedStoreIds.includes(storeId) ? [storeId] : scopedStoreIds;
+
+  if (targetStoreIds.length === 0) {
+    return { monthInput: "all", rows: [] };
+  }
+
+  // 데이터가 있는 모든 달을 찾는다(장부 마감일 + 본사 지출일).
+  const [ledgerDates, expenseDates] = await Promise.all([
+    db.dailyLedger.findMany({
+      where: {
+        storeId: { in: targetStoreIds },
+        status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+      },
+      select: { closingDate: true },
+    }),
+    db.headquartersExpense.findMany({
+      where: { OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }] },
+      select: { expenseDate: true },
+    }),
+  ]);
+
+  const monthInputs = new Set<string>();
+  for (const { closingDate } of ledgerDates) {
+    monthInputs.add(toMonthInput(closingDate));
+  }
+  for (const { expenseDate } of expenseDates) {
+    monthInputs.add(toMonthInput(expenseDate));
+  }
+
+  const sortedMonths = [...monthInputs].sort();
+  const allRows: MonthlyProfitAndLossRow[] = [];
+
+  // 달이 많지 않으므로(보통 수~수십 개) 월별로 순차 계산한다.
+  // ponytail: 월 수가 수백 개로 커지면 단일 범위 쿼리 + in-memory 월별 그룹핑으로 바꾼다.
+  for (const monthInput of sortedMonths) {
+    const { startDate, endDate } = monthRangeFromInput(monthInput);
+    const rows = await computeMonthProfitAndLossRows({
+      monthInput,
+      startDate,
+      endDate,
+      targetStoreIds,
+    });
+    allRows.push(...rows);
+  }
+
+  return { monthInput: "all", rows: allRows };
+}
+
+// 한 달치 P&L 행을 계산한다(단일 월/전체 월 양쪽에서 공유).
+async function computeMonthProfitAndLossRows({
+  monthInput,
+  startDate,
+  endDate,
+  targetStoreIds,
+}: {
+  monthInput: string;
+  startDate: Date;
+  endDate: Date;
+  targetStoreIds: string[];
+}): Promise<MonthlyProfitAndLossRow[]> {
   const [profitSummaries, stores, laborItems, expenses] = await Promise.all([
     getStoreProfitSummariesForRange({
       storeIds: targetStoreIds,
@@ -233,5 +328,5 @@ export async function buildMonthlyProfitAndLoss({
     });
   }
 
-  return { monthInput, rows };
+  return rows;
 }

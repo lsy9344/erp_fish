@@ -3223,6 +3223,9 @@ function toEmptyReportRow({
     businessStatus: mapDashboardBusinessStatus(null),
     ledgerStatus: mapDashboardLedgerStatus(null),
     salesAmount: metrics.totalSales,
+    analysisSalesAmount: dataInsufficient(
+      "장부 입력 전이라 분석 매출 데이터가 없습니다.",
+    ),
     grossMarginRate: metrics.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       thresholdSettings,
@@ -3373,6 +3376,7 @@ function toLedgerReportRow({
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
+    analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,

@@ -446,7 +446,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                     <TableCell
                       className={getColumnCellClassName("salesAmount")}
                     >
-                      {formatKrw(row.salesAmount.value)}
+                      <SalesCell row={row} />
                     </TableCell>
                     <TableCell
                       className={getColumnCellClassName("grossMarginRate")}
@@ -520,7 +520,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                   <div>
                     <dt className="text-muted-foreground">매출</dt>
                     <dd className="font-medium tabular-nums">
-                      {formatKrw(row.salesAmount.value)}
+                      <SalesCell row={row} />
                     </dd>
                   </div>
                   <div>
@@ -745,6 +745,25 @@ function LossCell({
     >
       {label}
     </Link>
+  );
+}
+
+// WO-14 part2(2026-06-29): 매출 셀은 장부 매출(위)과 분석 매출(아래, 판매가 계획 기준 추정)을
+// 함께 보여준다. 분석 매출이 계산 불가(판매가 미입력 등)면 사유 라벨로 구분한다.
+function SalesCell({ row }: { row: HqDashboardRow }) {
+  const analysis = row.analysisSalesAmount;
+  const analysisLabel =
+    analysis.value === null
+      ? (analysis.label ?? analysis.unavailableReason ?? "분석 매출 기준 확인")
+      : formatKrw(analysis.value);
+
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
+      <span>{formatKrw(row.salesAmount.value)}</span>
+      <span className="text-muted-foreground text-xs font-normal">
+        분석 {analysisLabel}
+      </span>
+    </div>
   );
 }
 

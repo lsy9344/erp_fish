@@ -46,6 +46,86 @@ import type { CorrectionAppliedValue } from "../corrections/types.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
+
+// WO-14 part2(2026-06-29): 분석 매출 계산용 planned-sales 입력. calculateLedgerReviewSummary가
+// 이 입력으로 plannedSalesTotal(판매가 계획 기준 추정 매출 = 장부 AE4)을 산출한다.
+type DashboardPlannedSalesItem = {
+  productId?: string;
+  previousQuantity: number;
+  purchasedQuantity: number;
+  lossQuantity: number;
+  currentQuantity: number | null;
+  quantity: number | null;
+  plannedUnitPrice: number | null;
+};
+
+async function buildDashboardPlannedSalesItems(
+  ledgers: Array<{
+    id: string;
+    storeId: string;
+    closingDate: Date;
+    ledgerInventoryItems: Array<{
+      productId: string | null;
+      previousQuantity: number;
+      purchasedQuantity: number;
+      currentQuantity: number | null;
+      quantity: number | null;
+    }>;
+    ledgerLossItems: Array<{ productId: string | null; quantity: number }>;
+  }>,
+): Promise<Map<string, DashboardPlannedSalesItem[]>> {
+  const result = new Map<string, DashboardPlannedSalesItem[]>();
+
+  if (ledgers.length === 0) {
+    return result;
+  }
+
+  const { getPlannedUnitPriceLookup } = await import(
+    "../sales-plan/queries.ts"
+  );
+  const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
+    ledgers.map((ledger) => ({
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+    })),
+  );
+
+  for (const ledger of ledgers) {
+    // 손실 수량을 productId별로 합산해 판매량(전일+매입-손실-당일재고)에서 차감한다.
+    const lossByProductId = new Map<string, number>();
+    for (const loss of ledger.ledgerLossItems) {
+      if (loss.productId) {
+        lossByProductId.set(
+          loss.productId,
+          (lossByProductId.get(loss.productId) ?? 0) + loss.quantity,
+        );
+      }
+    }
+
+    result.set(
+      ledger.id,
+      ledger.ledgerInventoryItems.map((item) => ({
+        productId: item.productId ?? undefined,
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity: item.purchasedQuantity,
+        lossQuantity: item.productId
+          ? (lossByProductId.get(item.productId) ?? 0)
+          : 0,
+        currentQuantity: item.currentQuantity,
+        quantity: item.quantity,
+        plannedUnitPrice: item.productId
+          ? plannedUnitPriceLookup(
+              ledger.storeId,
+              ledger.closingDate,
+              item.productId,
+            )
+          : null,
+      })),
+    );
+  }
+
+  return result;
+}
 type EvaluateRevenueAnomalySignals =
   typeof evaluateRevenueAnomalySignalsFunction;
 type EvaluateInventoryLossAnomalySignals =
@@ -314,17 +394,24 @@ export async function getHqDashboardRows({
   const ledgerByStoreId = new Map<string, DashboardLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
-  const baseRows = stores.map((store) =>
-    toDashboardRow(
+  // WO-14 part2(2026-06-29): 분석 매출(판매가 계획 기준 추정 매출)을 매출 셀에 함께 보여주기 위해
+  // 각 마감의 판매가 계획을 일괄 조회해 ledger별 planned-sales 입력을 만든다.
+  const plannedSalesItemsByLedgerId =
+    await buildDashboardPlannedSalesItems(ledgers);
+  const baseRows = stores.map((store) => {
+    const ledger = ledgerByStoreId.get(store.id) ?? null;
+
+    return toDashboardRow(
       store,
-      ledgerByStoreId.get(store.id) ?? null,
+      ledger,
       closingDate,
       thresholdSettings,
       evaluateRevenueAnomalySignals,
       evaluateInventoryLossAnomalySignals,
-      correctionValuesByLedgerId.get(ledgerByStoreId.get(store.id)?.id ?? ""),
-    ),
-  );
+      correctionValuesByLedgerId.get(ledger?.id ?? ""),
+      ledger ? plannedSalesItemsByLedgerId.get(ledger.id) : undefined,
+    );
+  });
   const allRows = applyDashboardPresentation(baseRows, {
     sortMode: "store-name",
     filterMode: "all",
@@ -453,6 +540,8 @@ function toDashboardRow(
   evaluateRevenueAnomalySignals: EvaluateRevenueAnomalySignals,
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals,
   corrections?: Map<string, CorrectionAppliedValue>,
+  // WO-14 part2(2026-06-29): 분석 매출(plannedSalesTotal) 계산용 입력.
+  plannedSalesItems?: DashboardPlannedSalesItem[],
 ): HqDashboardRowWithoutPriority {
   if (ledger === null) {
     const metrics = {
@@ -475,6 +564,9 @@ function toDashboardRow(
       businessStatus: mapDashboardBusinessStatus(null),
       ledgerStatus: mapDashboardLedgerStatus(null),
       salesAmount: metrics.totalSales,
+      analysisSalesAmount: dataInsufficient(
+        "장부 입력 전이라 분석 매출 데이터가 없습니다.",
+      ),
       grossMarginRate: metrics.grossMarginRate,
       marginDisplay: buildMarginDisplay(
         thresholdSettings,
@@ -520,6 +612,7 @@ function toDashboardRow(
     ...correctionOverlay.reviewInput,
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
+    plannedSalesItems,
   });
   const missingItems = getLedgerReviewMissingItems({
     storeId: store.id,
@@ -570,6 +663,7 @@ function toDashboardRow(
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
+    analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -775,6 +869,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: correctedReviewSummary.totalSales,
+    analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
