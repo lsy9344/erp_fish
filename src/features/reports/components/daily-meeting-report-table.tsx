@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import {
   Table,
@@ -93,10 +94,7 @@ export function DailyMeetingReportTable({
                   {getDailyMeetingStatusMessage(row)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  <MetricValueWithEvidence
-                    value={formatKrw(row.salesAmount.value)}
-                    evidence={row.metricEvidence.salesAmount}
-                  />
+                  <DailyReportSalesCell row={row} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <MetricValueWithEvidence
@@ -167,11 +165,7 @@ export function DailyMeetingReportTable({
               <div>
                 <dt className="text-muted-foreground">매출</dt>
                 <dd className="font-medium tabular-nums">
-                  <MetricValueWithEvidence
-                    value={formatKrw(row.salesAmount.value)}
-                    evidence={row.metricEvidence.salesAmount}
-                    align="left"
-                  />
+                  <DailyReportSalesCell row={row} align="left" />
                 </dd>
               </div>
               <div>
@@ -247,14 +241,38 @@ function DetailLink({
   );
 }
 
+function DailyReportSalesCell({
+  row,
+  align = "right",
+}: {
+  row: DailyMeetingReportRow;
+  align?: "left" | "right";
+}) {
+  const analysisLabel = formatAnalysisSalesMetric(row.analysisSalesAmount);
+
+  return (
+    <MetricValueWithEvidence
+      value={formatKrw(row.salesAmount.value)}
+      evidence={row.metricEvidence.salesAmount}
+      align={align}
+    >
+      <span className="text-muted-foreground text-xs font-normal break-words">
+        분석 {analysisLabel}
+      </span>
+    </MetricValueWithEvidence>
+  );
+}
+
 function MetricValueWithEvidence({
   value,
   evidence,
   align = "right",
+  children,
 }: {
   value: string;
   evidence: DailyMeetingReportMetricEvidence;
   align?: "left" | "right";
+  children?: ReactNode;
 }) {
   return (
     <div
@@ -268,6 +286,7 @@ function MetricValueWithEvidence({
           </span>
         ) : null}
       </div>
+      {children ? <div className="mt-0.5">{children}</div> : null}
       <details className="mt-1 text-xs">
         <summary className="text-primary inline-flex cursor-pointer list-none break-words underline-offset-2 hover:underline">
           근거 보기
@@ -324,6 +343,14 @@ function formatKrw(value: number | null) {
 }
 
 function formatKrwMetric(metric: DailyMeetingReportRow["salesDifference"]) {
+  return metric.value === null
+    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
+    : krwFormatter.format(metric.value);
+}
+
+function formatAnalysisSalesMetric(
+  metric: DailyMeetingReportRow["analysisSalesAmount"],
+) {
   return metric.value === null
     ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
     : krwFormatter.format(metric.value);

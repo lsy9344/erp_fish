@@ -6,6 +6,7 @@ import {
   type LedgerReviewCorrectionOverlayResult,
   type LedgerReviewInventoryInput,
   type LedgerReviewMetric,
+  type LedgerReviewPlannedSalesInput,
 } from "../../server/calculations/ledger.ts";
 // OQ-gated calculation policy is centralized in ../../server/calculations/policy-gates.
 import {
@@ -127,6 +128,40 @@ type ReportLedgerRecord = {
 };
 
 type ReportRowWithoutPriority = Omit<DailyMeetingReportRow, "priority">;
+
+function buildDailyMeetingPlannedSalesItems(
+  ledgers: Array<{
+    id: string;
+    ledgerInventoryItems: Array<{
+      productId?: string | null;
+      previousQuantity: number;
+      purchasedQuantity: number;
+      lossQuantity?: number;
+      currentQuantity: number | null;
+      quantity: number | null;
+      plannedUnitPrice?: number | null;
+    }>;
+  }>,
+): Map<string, LedgerReviewPlannedSalesInput[]> {
+  const result = new Map<string, LedgerReviewPlannedSalesInput[]>();
+
+  for (const ledger of ledgers) {
+    result.set(
+      ledger.id,
+      ledger.ledgerInventoryItems.map((item) => ({
+        productId: item.productId ?? undefined,
+        previousQuantity: item.previousQuantity,
+        purchasedQuantity: item.purchasedQuantity,
+        lossQuantity: item.lossQuantity ?? 0,
+        currentQuantity: item.currentQuantity,
+        quantity: item.quantity,
+        plannedUnitPrice: item.plannedUnitPrice ?? null,
+      })),
+    );
+  }
+
+  return result;
+}
 
 export function getDailyMeetingReportDatePreset(
   value: unknown,
@@ -721,22 +756,29 @@ export async function getHqDailyMeetingReport({
       })),
     };
   });
+  const plannedSalesItemsByLedgerId =
+    buildDailyMeetingPlannedSalesItems(ledgersWithPlannedPrice);
   const ledgerByStoreId = new Map<string, ReportLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
-  const rows = stores.map((store) =>
-    toDailyMeetingReportRow({
+  const rows = stores.map((store) => {
+    const ledger = ledgerByStoreId.get(store.id) ?? null;
+
+    return toDailyMeetingReportRow({
       store,
-      ledger: ledgerByStoreId.get(store.id) ?? null,
+      ledger,
       closingDate,
       thresholdSettings,
       evaluateRevenueAnomalySignals,
       evaluateInventoryLossAnomalySignals,
       corrections: correctionValuesByLedgerId.get(
-        ledgerByStoreId.get(store.id)?.id ?? "",
+        ledger?.id ?? "",
       ),
-    }),
-  );
+      plannedSalesItems: ledger
+        ? plannedSalesItemsByLedgerId.get(ledger.id)
+        : undefined,
+    });
+  });
 
   return {
     datePreset: preset,
@@ -3163,6 +3205,7 @@ function toDailyMeetingReportRow({
   evaluateRevenueAnomalySignals,
   evaluateInventoryLossAnomalySignals,
   corrections,
+  plannedSalesItems,
 }: {
   store: ReportStoreRecord;
   ledger: ReportLedgerRecord | null;
@@ -3171,6 +3214,7 @@ function toDailyMeetingReportRow({
   evaluateRevenueAnomalySignals: EvaluateRevenueAnomalySignals;
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
   corrections?: Map<string, CorrectionAppliedValue>;
+  plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 }): DailyMeetingReportRow {
   const baseRow =
     ledger === null
@@ -3188,6 +3232,7 @@ function toDailyMeetingReportRow({
           evaluateRevenueAnomalySignals,
           evaluateInventoryLossAnomalySignals,
           corrections,
+          plannedSalesItems,
         });
 
   return {
@@ -3297,6 +3342,7 @@ function toLedgerReportRow({
   evaluateRevenueAnomalySignals,
   evaluateInventoryLossAnomalySignals,
   corrections,
+  plannedSalesItems,
 }: {
   store: ReportStoreRecord;
   ledger: ReportLedgerRecord;
@@ -3304,6 +3350,7 @@ function toLedgerReportRow({
   evaluateRevenueAnomalySignals: EvaluateRevenueAnomalySignals;
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
   corrections?: Map<string, CorrectionAppliedValue>;
+  plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 }): ReportRowWithoutPriority {
   const originalReviewInput = {
     totalSalesAmount: ledger.totalSalesAmount,
@@ -3336,6 +3383,7 @@ function toLedgerReportRow({
     ...correctionOverlay.reviewInput,
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
+    plannedSalesItems,
   });
   const correctionState = correctionOverlay.correctionState;
   const signals =

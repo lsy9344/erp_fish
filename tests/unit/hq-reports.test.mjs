@@ -82,6 +82,12 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /getLatestReflectedAt/);
   assert.match(querySource, /applyCorrectionValuesToLedgerReviewInput/);
   assert.match(querySource, /calculateLedgerReviewSummary/);
+  assert.match(querySource, /function\s+buildDailyMeetingPlannedSalesItems/);
+  assert.match(querySource, /plannedSalesItemsByLedgerId/);
+  assert.match(
+    querySource,
+    /plannedSalesItems:\s*ledger\s*\?\s*plannedSalesItemsByLedgerId\.get\(ledger\.id\)\s*:\s*undefined/s,
+  );
   assert.match(
     querySource,
     /const\s+purchaseCorrectionMatchers\s*=\s*\[[\s\S]*fieldKey:\s*"unitPrice"[\s\S]*fieldKey:\s*"quantity"[\s\S]*fieldKey:\s*"amount"[\s\S]*fieldKey:\s*"productName"[\s\S]*fieldKey:\s*"referenceInfo"[\s\S]*\]/,
@@ -125,6 +131,9 @@ test("HQ daily meeting report UI reuses status and signal components without UI 
   assert.match(tableSource, /계산 불가 사유/);
   assert.match(tableSource, /correctionTimelineHref/);
   assert.match(tableSource, /row\.metricEvidence\.loss/);
+  assert.match(tableSource, /DailyReportSalesCell/);
+  assert.match(tableSource, /row\.analysisSalesAmount/);
+  assert.match(tableSource, /분석/);
   assert.match(tableSource, /입력 전/);
   assert.match(tableSource, /tabular-nums/);
   assert.match(tableSource, /break-words/);
