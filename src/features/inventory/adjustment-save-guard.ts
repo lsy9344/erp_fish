@@ -114,6 +114,9 @@ export type InventorySaveAdjustmentGuardRecord = {
 export function getInventorySaveAdjustmentErrors(
   items: InventorySaveAdjustmentGuardItem[],
   adjustments: InventorySaveAdjustmentGuardRecord[],
+  // 이번 저장에 함께 들어온 행별 "고친 이유"(productId→reason). 빈/없음이면 미제공.
+  // 차이가 있는 행이라도 사유가 들어오면 통과시키고, 서버가 그 사유로 조정을 생성한다.
+  incomingReasonByProductId = new Map<string, string | null>(),
 ) {
   const adjustmentByProductId = new Map(
     adjustments.map((adjustment) => [adjustment.productId, adjustment]),
@@ -158,6 +161,11 @@ export function getInventorySaveAdjustmentErrors(
     const adjustment = adjustmentByProductId.get(item.productId);
 
     if (adjustment?.afterQuantity === item.currentQuantity) {
+      continue;
+    }
+
+    // 이번 저장에 사유가 함께 들어왔으면 통과(서버가 그 사유로 조정을 만든다).
+    if (incomingReasonByProductId.get(item.productId)) {
       continue;
     }
 

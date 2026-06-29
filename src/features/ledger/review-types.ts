@@ -99,12 +99,12 @@ export type LedgerReviewStepData = {
   topSoldItems: StoreManagerTopSoldItem[];
 };
 
-// WO(2026-06-26): 계획 판매가 비교 지표는 원가/마진 역산 여지가 있어 본사 전용으로 둔다.
-// 지점장 요약은 총매출·마진율·근무인원·재고금액만 유지하고, 7단계 그래프용 topSoldItems는
-// 별도 안전 타입(StoreManagerTopSoldItem)으로 계속 노출한다.
+// 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)은 본사 전용으로
+// 확정. 지점장 요약은 총매출·근무인원만 유지하고, 7단계 그래프용 topSoldItems는 별도 안전
+// 타입(StoreManagerTopSoldItem)으로 계속 노출한다. 계획 판매가 비교 지표도 본사 전용이다.
 export type StoreManagerLedgerReviewSummary = Pick<
   LedgerReviewSummary,
-  "totalSales" | "grossMarginRate" | "workerCount" | "inventoryAmount"
+  "totalSales" | "workerCount"
 >;
 
 export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;

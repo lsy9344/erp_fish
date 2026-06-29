@@ -48,9 +48,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>
-            <h1 className="text-xl font-semibold">
-              {APP_DISPLAY_NAME} 로그인
-            </h1>
+            <h1 className="text-xl font-semibold">{APP_DISPLAY_NAME} 로그인</h1>
           </CardTitle>
           <CardDescription>
             {APP_DISPLAY_NAME} 업무 공간에 접속합니다.

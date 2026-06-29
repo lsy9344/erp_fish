@@ -169,7 +169,10 @@ test("HQ dashboard density control keeps column resizing and stores density in U
     "components",
     "hq-dashboard-table.tsx",
   );
-  assert.match(tableSource, /resize|Resize|columnWidth|onPointerDown|onMouseDown/);
+  assert.match(
+    tableSource,
+    /resize|Resize|columnWidth|onPointerDown|onMouseDown/,
+  );
 });
 
 test("HQ ledger detail shows anomaly signal details as visible text", () => {
@@ -421,7 +424,10 @@ test("HQ dashboard margin display shows 현재 / 기준 and visible shortfall mo
     { value: null, status: "data-insufficient", label: "데이터 부족" },
     { value: 0.18, status: "ok" },
   );
-  assert.equal(noSales.shortfallAmountLabel, "총매출 미확정으로 금액 계산 불가");
+  assert.equal(
+    noSales.shortfallAmountLabel,
+    "총매출 미확정으로 금액 계산 불가",
+  );
 
   // 기준값이 없으면 현재 마진율만 깔끔하게 보여준다.
   const noThreshold = buildMarginDisplay(
@@ -1168,11 +1174,15 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     ledgerReviewTypesSource,
     /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
   );
-  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장 요약에 노출한다.
-  // 보완(2026-06-22 WO-01): 결제차액 제거, 근무인원 수 추가.
+  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 요약에서 제거된다.
+  // 지점장 요약은 총매출·근무인원만 남는다.
   assert.match(
     ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"grossMarginRate"\s*\|\s*"workerCount"\s*\|\s*"inventoryAmount"/s,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"workerCount"/s,
+  );
+  assert.doesNotMatch(
+    ledgerReviewTypesSource,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"grossMarginRate"|StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"inventoryAmount"/s,
   );
   assert.match(
     ledgerReviewResponseSource,
@@ -1191,15 +1201,16 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     inventoryTypesSource,
     /StoreManagerInventoryAdjustmentView\s*=\s*Omit<[\s\S]*"beforeAmount"\s*\|\s*"afterAmount"\s*\|\s*"differenceAmount"/s,
   );
-  // 보완(2026-06-22): FIFO 재고금액(inventoryAmount)과 판매 lot 이력(fifoLots)은
-  // 지점장에게도 노출한다. 단가/매입액/손실액·조정 금액은 계속 차단한다.
+  // 정책 반전(2026-06-28, §4): FIFO 재고금액(inventoryAmount)·lot 금액/단가는 본사 전용이다.
+  // 지점장 라인은 inventoryAmount·fifoLots(원본)를 omit하고, fifoLots는 금액 없는 안전 뷰로 교체한다.
   assert.match(
     inventoryTypesSource,
-    /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"adjustment"/s,
+    /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"inventoryAmount"[\s\S]*"fifoLots"[\s\S]*"adjustment"/s,
   );
-  assert.doesNotMatch(
+  // 안전 lot 뷰는 단가·금액 필드를 떼어낸다.
+  assert.match(
     inventoryTypesSource,
-    /StoreManagerInventoryStepLine\s*=\s*Omit<[^>]*"inventoryAmount"/s,
+    /StoreManagerInventoryFifoLotView\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"originalAmount"[\s\S]*"consumedAmount"[\s\S]*"remainingAmount"/s,
   );
 });
 
@@ -1212,9 +1223,15 @@ function makeDashboardRow(overrides = {}) {
     businessStatus: { key: "OPEN", label: "영업일" },
     ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
     salesAmount: { value: 1000 },
+    analysisSalesAmount: { value: 1300 },
     grossMarginRate: { value: 0.3 },
     marginDisplay: {
       currentLabel: "30.0%",
+      targetLabel: null,
+      shortfallAmountLabel: null,
+    },
+    analysisMarginDisplay: {
+      currentLabel: "23.0%",
       targetLabel: null,
       shortfallAmountLabel: null,
     },
@@ -1230,12 +1247,7 @@ function makeDashboardRow(overrides = {}) {
 
 // WO-14 part2(2026-06-29): 본사 관제판 매출 셀에 분석 매출(판매가 계획 기준)을 함께 보여준다.
 test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTotal", () => {
-  const queries = readProjectFile(
-    "src",
-    "features",
-    "dashboard",
-    "queries.ts",
-  );
+  const queries = readProjectFile("src", "features", "dashboard", "queries.ts");
   const types = readProjectFile("src", "features", "dashboard", "types.ts");
   const table = readProjectFile(
     "src",
@@ -1259,4 +1271,28 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
   // 표는 매출 셀에서 장부 매출과 분석 매출을 함께 보여준다.
   assert.match(table, /function SalesCell/);
   assert.match(table, /분석/);
+});
+
+// WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매가 계획 기준)을 함께 보여준다.
+test("WO-14 part3: dashboard row carries analysisMarginDisplay from plannedGrossMarginRate", () => {
+  const queries = readProjectFile("src", "features", "dashboard", "queries.ts");
+  const types = readProjectFile("src", "features", "dashboard", "types.ts");
+  const table = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  // 타입에 분석 이익률 표시 필드가 있다.
+  assert.match(types, /analysisMarginDisplay:\s*DashboardMarginDisplay/);
+  // 쿼리는 plannedGrossMarginRate로 분석 이익률 표시를 만든다(장부 이익률과 같은 반전 적용).
+  assert.match(
+    queries,
+    /analysisMarginDisplay:\s*buildMarginDisplay\([\s\S]*?\.plannedGrossMarginRate/,
+  );
+  // 표는 마진 셀에서 장부 이익률과 분석 이익률을 함께 보여준다.
+  assert.match(table, /function MarginCell/);
+  assert.match(table, /analysisMarginDisplay\.currentLabel/);
 });

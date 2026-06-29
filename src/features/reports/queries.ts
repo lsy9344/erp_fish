@@ -575,9 +575,12 @@ export function buildProductProfitability(
 export async function getHqDailyMeetingReport({
   datePreset = "today",
   dateQuery,
+  storeId,
 }: {
   datePreset?: string;
   dateQuery?: string;
+  // 특정 지점만 집계할 때 사용한다(예: 지점 범위 xlsx 품목매출 시트). scope 밖이면 무시한다.
+  storeId?: string | null;
 } = {}): Promise<DailyMeetingReportData> {
   const { getHeadquartersStoreScope, requireReportAccess } =
     await import("../../server/authz.ts");
@@ -594,10 +597,15 @@ export async function getHqDailyMeetingReport({
     await import("../corrections/queries.ts");
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
-  const [stores, thresholdSettings] = await Promise.all([
+  const [scopeStores, thresholdSettings] = await Promise.all([
     Promise.resolve(storeScope.stores),
     getAnomalyThresholdSettingsForSignals(),
   ]);
+  // 요청 지점이 scope 안이면 그 지점만, 아니면 scope 전체를 본다.
+  const stores =
+    storeId && scopeStores.some((store) => store.id === storeId)
+      ? scopeStores.filter((store) => store.id === storeId)
+      : scopeStores;
   const storeIds = stores.map((store) => store.id);
   const ledgers =
     storeIds.length === 0
@@ -3232,6 +3240,11 @@ function toEmptyReportRow({
       metrics.totalSales,
       metrics.grossMarginRate,
     ),
+    analysisMarginDisplay: buildMarginDisplay(
+      null,
+      metrics.totalSales,
+      dataInsufficient("장부 입력 전이라 분석 이익률 데이터가 없습니다."),
+    ),
     salesDifference: metrics.salesDifference,
     hasLoss: null,
     latestReflectedAt: null,
@@ -3382,6 +3395,11 @@ function toLedgerReportRow({
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.totalSales,
       reviewSummary.grossMarginRate,
+    ),
+    analysisMarginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      reviewSummary.plannedSalesTotal,
+      reviewSummary.plannedGrossMarginRate,
     ),
     salesDifference: reviewSummary.salesDifference,
     hasLoss: appliedHasLoss,

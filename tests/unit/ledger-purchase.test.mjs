@@ -399,9 +399,7 @@ test("carryover rows: schema discriminates kind; save skips purchase create; GET
     "ledger",
     "schemas.ts",
   );
-  const { ledgerPurchaseSchema } = await import(
-    pathToFileURL(schemaPath).href
-  );
+  const { ledgerPurchaseSchema } = await import(pathToFileURL(schemaPath).href);
 
   const base = {
     storeId: "store-1",
@@ -461,7 +459,10 @@ test("carryover rows: schema discriminates kind; save skips purchase create; GET
     "queries.ts",
   );
   assert.match(queriesSource, /previousQuantity:\s*\{\s*gt:\s*0\s*\}/);
-  assert.match(queriesSource, /productId:\s*\{\s*notIn:\s*\[\.\.\.purchaseProductIds\]/);
+  assert.match(
+    queriesSource,
+    /productId:\s*\{\s*notIn:\s*\[\.\.\.purchaseProductIds\]/,
+  );
   assert.match(queriesSource, /kind:\s*"carryover" as const/);
 });
 
@@ -491,23 +492,59 @@ test("store purchase edit policy blocks ECount uploaded rows from store edits", 
     },
   ];
 
-  // WO(2026-06-24): 지점장은 ECOUNT_UPLOAD 라인의 장부 적용 단가(unitPrice)만 수정할 수 있다.
-  // 원본 필드(수량 등) 변경은 새 원본-정보 차단 메시지로 막힌다.
+  // 정책 반전(2026-06-28): 지점장은 ECOUNT_UPLOAD 라인의 원본 필드도, 장부 적용 단가도
+  // 수정할 수 없다(본사 전용). 원본 필드 변경은 원본-정보 차단 메시지로 막힌다.
   assert.deepEqual(
     getStoreEcountPurchaseEditErrors(existingRows, [
       { ...existingRows[0], quantity: 5 },
     ]),
     {
       "purchases.0": [
-        "이카운트 출고/입고 라인의 원본 정보(품목·수량·원본 행)는 수정할 수 없습니다. 장부 적용 단가만 수정할 수 있습니다.",
+        "이카운트 출고/입고 라인의 원본 정보(품목·수량·원본 행·적용 단가)는 본사에서만 수정할 수 있습니다.",
       ],
     },
   );
-  // 단가만 변경하면 허용된다.
+  // 정책 반전(2026-06-28): 적용 단가 변경도 본사 전용이라 지점장 경로에서 막힌다.
   assert.deepEqual(
     getStoreEcountPurchaseEditErrors(existingRows, [
       { ...existingRows[0], unitPrice: 40000 },
     ]),
+    {
+      "purchases.0": [
+        "이카운트 출고/입고 라인의 원본 정보(품목·수량·원본 행·적용 단가)는 본사에서만 수정할 수 있습니다.",
+      ],
+    },
+  );
+  // 정책 반전(2026-06-28): 수동(MANUAL) 기존 행의 적용 단가 변경도 막힌다.
+  const existingManualRow = {
+    id: "purchase-manual-1",
+    productId: "product-1",
+    purchaseStandardId: null,
+    sourceType: "MANUAL",
+    productName: "광어",
+    productCategory: "활어",
+    productSpec: "1kg",
+    unitPrice: 12000,
+    quantity: 3,
+    referenceInfo: null,
+  };
+  assert.deepEqual(
+    getStoreEcountPurchaseEditErrors(
+      [existingManualRow],
+      [{ ...existingManualRow, unitPrice: 15000 }],
+    ),
+    {
+      "purchases.0.unitPrice": [
+        "장부 적용 단가는 본사에서만 수정할 수 있습니다.",
+      ],
+    },
+  );
+  // 신규 수동 행(기존 id 없음)의 최초 단가 입력은 수정이 아니므로 허용한다.
+  assert.deepEqual(
+    getStoreEcountPurchaseEditErrors(
+      [],
+      [{ ...existingManualRow, id: "draft-manual", unitPrice: 15000 }],
+    ),
     {},
   );
   assert.deepEqual(getStoreEcountPurchaseEditErrors(existingRows, []), {
@@ -602,7 +639,9 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     purchaseActionStart,
     purchaseActionEnd,
   );
-  assert.ok(purchaseActionStart >= 0 && purchaseActionEnd > purchaseActionStart);
+  assert.ok(
+    purchaseActionStart >= 0 && purchaseActionEnd > purchaseActionStart,
+  );
   assert.match(actionSource, /export\s+async\s+function\s+saveLedgerPurchases/);
   assert.match(actionSource, /ledgerPurchaseSchema\.safeParse/);
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);

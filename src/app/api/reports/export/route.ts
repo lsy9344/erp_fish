@@ -2,17 +2,20 @@ import { NextResponse } from "next/server";
 
 import { PermissionAction } from "../../../../../generated/prisma";
 import {
+  buildBundledReportXlsx,
   buildDailyMeetingReportExport,
   buildForbiddenReportExportResponsePayload,
   buildInventoryPositionReportExport,
   buildMonthlyClosingAnomalyReportExport,
   buildMonthlyProfitLossSheet,
+  buildProductSalesSheet,
   buildReportCsv,
   buildReportExportAuditSnapshot,
   buildReportXlsx,
   buildStoreComparisonReportExport,
   getReportExportFilename,
   isReportExportFormat,
+  reportExportToSheet,
   type ReportExportData,
   type ReportExportFormat,
   type ReportExportType,
@@ -73,10 +76,36 @@ export async function GET(request: Request) {
     period: exportData.period,
     format,
   });
+
+  // 먼저 출력물을 만든다. workbook 생성이 실패하면 감사 로그를 남기지 않는다(유령 export 방지).
+  // 번들 xlsx는 실제 포함 시트를 audit snapshot에도 기록한다.
+  let body: BodyInit;
+  let contentType: string;
+  let auditSheets:
+    | Awaited<ReturnType<typeof buildMonthlyBundleSheets>>
+    | undefined;
+
+  if (format === "xlsx") {
+    contentType =
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    // WO-15(2026-06-29): 월별 xlsx는 5개 고정 시트(요약/기간조회_RAW/월별손익/재고현황/품목매출)로
+    // 번들한다. 다른 리포트는 종전대로 단일 시트로 내보낸다.
+    if (parsed.value.report === "monthly") {
+      auditSheets = await buildMonthlyBundleSheets(parsed.value, exportData);
+      body = await buildBundledReportXlsx(auditSheets);
+    } else {
+      body = await buildReportXlsx(exportData);
+    }
+  } else {
+    contentType = "text/csv; charset=utf-8";
+    body = buildReportCsv(exportData);
+  }
+
   const auditAfter = withAuditActorContext(
     buildReportExportAuditSnapshot({
       exportData,
       format,
+      sheets: auditSheets,
     }),
     {
       actorRole: user.role,
@@ -84,7 +113,7 @@ export async function GET(request: Request) {
     },
   );
 
-  // 감사 로그는 두 포맷 모두 동일하게 남긴다(format 필드로 구분).
+  // 출력물이 만들어진 뒤에만 감사 로그를 남긴다(두 포맷 모두 format 필드로 구분).
   await db.$transaction((tx) =>
     writeAuditLog(tx, {
       action: "report.export.created",
@@ -95,35 +124,9 @@ export async function GET(request: Request) {
     }),
   );
 
-  if (format === "xlsx") {
-    // WO-15(2026-06-28) part2: 월별 리포트 xlsx에는 "월별손익" 시트를 함께 넣는다.
-    const extraSheets = [];
-
-    if (parsed.value.report === "monthly") {
-      // WO-15(수정 2026-06-29): 월별손익 시트는 선택한 달만이 아니라 모든 달을 출력한다.
-      const pnl = await buildAllMonthsProfitAndLoss({
-        storeId: parsed.value.storeId,
-      });
-      extraSheets.push(buildMonthlyProfitLossSheet(pnl));
-    }
-
-    const xlsx = await buildReportXlsx(exportData, extraSheets);
-
-    return new Response(xlsx, {
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-      },
-    });
-  }
-
-  const csv = buildReportCsv(exportData);
-
-  return new Response(csv, {
+  return new Response(body, {
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Type": contentType,
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
@@ -277,6 +280,58 @@ async function loadReportExportData(
         }),
       );
   }
+}
+
+// 월(YYYY-MM)을 시작일/종료일(YYYY-MM-DD)로 바꾼다. 종료일은 그 달의 마지막 날.
+function monthDateRange(month: string): { startDate: string; endDate: string } {
+  const year = Number(month.slice(0, 4));
+  const monthNumber = Number(month.slice(5, 7));
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return {
+    startDate: `${month}-01`,
+    endDate: `${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+// WO-15(2026-06-29): 월별 xlsx 5시트 번들. summary는 호출부에서 만든 월별 KPI(요약)를 쓰고,
+// 나머지 시트는 같은 월/지점 기준으로 각 리포트를 한 번씩 로드해 만든다.
+// 품목매출(품목별 판매현황 추정)은 월간 집계가 없으므로 그 달 마지막 날의 일별 회의 리포트
+// productProfitability를 대표값으로 사용한다(모두 "추정" 라벨 유지).
+async function buildMonthlyBundleSheets(
+  request: Extract<ParsedExportRequest, { report: "monthly" }>,
+  summaryExport: ReportExportData,
+) {
+  const { startDate, endDate } = monthDateRange(request.month);
+
+  const [comparison, inventory, dailyMeeting, pnl] = await Promise.all([
+    getHqStoreComparisonReport({
+      startDate,
+      endDate,
+      storeId: request.storeId,
+    }),
+    getHqInventoryPositionReport({
+      date: endDate,
+      storeId: request.storeId,
+      category: null,
+      product: null,
+    }),
+    getHqDailyMeetingReport({ dateQuery: endDate, storeId: request.storeId }),
+    buildAllMonthsProfitAndLoss({ storeId: request.storeId }),
+  ]);
+
+  return [
+    reportExportToSheet(summaryExport, "요약"),
+    reportExportToSheet(
+      buildStoreComparisonReportExport(comparison),
+      "기간조회_RAW",
+    ),
+    buildMonthlyProfitLossSheet(pnl),
+    reportExportToSheet(
+      buildInventoryPositionReportExport(inventory),
+      "재고현황",
+    ),
+    buildProductSalesSheet(dailyMeeting.productProfitability),
+  ];
 }
 
 function forbiddenResponse(request: Request) {

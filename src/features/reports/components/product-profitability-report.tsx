@@ -131,110 +131,110 @@ export function ProductProfitabilityReport({
       </dl>
 
       {showChart ? (
-      <ChartContainer config={chartConfig} className="h-[360px] w-full">
-        <BarChart
-          accessibilityLayer
-          data={data.items}
-          layout="vertical"
-          margin={{ top: 4, right: 64, left: 8, bottom: 4 }}
-        >
-          <CartesianGrid horizontal={false} />
-          <XAxis
-            type="number"
-            tickFormatter={(value: number) => krwFormatter.format(value)}
-            tickLine={false}
-            axisLine={false}
-          />
-          <YAxis
-            type="category"
-            dataKey="productName"
-            tickLine={false}
-            axisLine={false}
-            width={110}
-          />
-          <ChartTooltip
-            content={
-              <ChartTooltipContent
-                formatter={(value, _name, item) => {
-                  const row = item.payload as ProductProfitabilityReportItem;
-                  return [
-                    `${row.productCategory} · ${krwFormatter.format(Number(value))}`,
-                    `이익률 ${marginLabel(row.estimatedGrossMarginRate)} (${row.statusLabel})`,
-                  ].join("  ");
-                }}
-              />
-            }
-          />
-          <Bar dataKey="estimatedSalesAmount" radius={4}>
-            {data.items.map((item) => (
-              <Cell
-                key={item.productId}
-                fill={marginColor(item.estimatedGrossMarginRate)}
-              />
-            ))}
-            <LabelList
-              dataKey="estimatedGrossMarginRate"
-              position="right"
-              className="fill-foreground text-xs"
-              formatter={(value) =>
-                marginLabel(typeof value === "number" ? value : null)
+        <ChartContainer config={chartConfig} className="h-[360px] w-full">
+          <BarChart
+            accessibilityLayer
+            data={data.items}
+            layout="vertical"
+            margin={{ top: 4, right: 64, left: 8, bottom: 4 }}
+          >
+            <CartesianGrid horizontal={false} />
+            <XAxis
+              type="number"
+              tickFormatter={(value: number) => krwFormatter.format(value)}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="productName"
+              tickLine={false}
+              axisLine={false}
+              width={110}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value, _name, item) => {
+                    const row = item.payload as ProductProfitabilityReportItem;
+                    return [
+                      `${row.productCategory} · ${krwFormatter.format(Number(value))}`,
+                      `이익률 ${marginLabel(row.estimatedGrossMarginRate)} (${row.statusLabel})`,
+                    ].join("  ");
+                  }}
+                />
               }
             />
-          </Bar>
-        </BarChart>
-      </ChartContainer>
+            <Bar dataKey="estimatedSalesAmount" radius={4}>
+              {data.items.map((item) => (
+                <Cell
+                  key={item.productId}
+                  fill={marginColor(item.estimatedGrossMarginRate)}
+                />
+              ))}
+              <LabelList
+                dataKey="estimatedGrossMarginRate"
+                position="right"
+                className="fill-foreground text-xs"
+                formatter={(value) =>
+                  marginLabel(typeof value === "number" ? value : null)
+                }
+              />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
       ) : null}
 
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
       {showTable ? (
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>품목</TableHead>
-              <TableHead>규격</TableHead>
-              <TableHead>분류</TableHead>
-              <TableHead className="text-right">추정 판매 수량</TableHead>
-              <TableHead className="text-right">추정 판매액</TableHead>
-              <TableHead className="text-right">추정 원가</TableHead>
-              <TableHead className="text-right">추정 마진</TableHead>
-              <TableHead className="text-right">추정 이익률</TableHead>
-              <TableHead>상태</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.items.map((item) => (
-              <TableRow key={item.productId}>
-                <TableCell className="font-medium">
-                  {item.productName}
-                </TableCell>
-                <TableCell>{item.productSpec || "-"}</TableCell>
-                <TableCell>{item.productCategory}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {quantityFormatter.format(item.soldQuantity)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {krwTableFormatter.format(item.estimatedSalesAmount)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {krwTableFormatter.format(item.estimatedCogsAmount)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {krwTableFormatter.format(item.estimatedGrossProfit)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {marginLabel(item.estimatedGrossMarginRate)}
-                </TableCell>
-                <TableCell>{item.statusLabel}</TableCell>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>품목</TableHead>
+                <TableHead>규격</TableHead>
+                <TableHead>분류</TableHead>
+                <TableHead className="text-right">추정 판매 수량</TableHead>
+                <TableHead className="text-right">추정 판매액</TableHead>
+                <TableHead className="text-right">추정 원가</TableHead>
+                <TableHead className="text-right">추정 마진</TableHead>
+                <TableHead className="text-right">추정 이익률</TableHead>
+                <TableHead>상태</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((item) => (
+                <TableRow key={item.productId}>
+                  <TableCell className="font-medium">
+                    {item.productName}
+                  </TableCell>
+                  <TableCell>{item.productSpec || "-"}</TableCell>
+                  <TableCell>{item.productCategory}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {quantityFormatter.format(item.soldQuantity)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {krwTableFormatter.format(item.estimatedSalesAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {krwTableFormatter.format(item.estimatedCogsAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {krwTableFormatter.format(item.estimatedGrossProfit)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {marginLabel(item.estimatedGrossMarginRate)}
+                  </TableCell>
+                  <TableCell>{item.statusLabel}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       ) : null}
       <p className="text-muted-foreground text-xs">
-        추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매
-        데이터가 아닌 재고 흐름 기반 추정값입니다.
+        추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제
+        판매 데이터가 아닌 재고 흐름 기반 추정값입니다.
       </p>
 
       {showChart ? (
@@ -252,8 +252,8 @@ export function ProductProfitabilityReport({
 
           <p className="text-muted-foreground text-xs">
             막대 길이는 추정 판매액(판매량 × 판매가 계획, 없으면 매입단가 폴백),
-            색·라벨은 추정 이익률(추정 판매액과 FIFO 소진금액 기반 추정 원가)입니다.
-            확정 POS 매출·원가가 아닙니다.
+            색·라벨은 추정 이익률(추정 판매액과 FIFO 소진금액 기반 추정
+            원가)입니다. 확정 POS 매출·원가가 아닙니다.
           </p>
         </>
       ) : null}

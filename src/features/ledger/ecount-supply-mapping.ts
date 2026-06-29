@@ -3,6 +3,16 @@
 
 export const ECOUNT_PROVIDER = "ECOUNT" as const;
 
+// 냉동/생물 분류 기준(2026-06-29 의뢰자 기준자료 docs/meeting_0627/냉동_생물_자료.xlsx):
+// 기준표의 냉동 품목은 모두 품목명이 "냉)"(또는 "냉동")으로 시작한다. 그 외는 모두 "생물"로 본다.
+// 따라서 "냉)"/"냉동" 접두만 냉동으로 분류하고 나머지는 생물로 둔다(동태/프로즌 등 부분 일치는
+// 비냉동 품목을 잘못 냉동으로 잡을 수 있어 쓰지 않는다 — 기준표는 "냉)동태"처럼 접두를 가진다).
+export function classifyProductCategory(
+  rawProductName: string,
+): "냉동" | "생물" {
+  return /^\s*냉(\)|동)/.test(rawProductName) ? "냉동" : "생물";
+}
+
 export const ECOUNT_BATCH_STATUS = {
   PREVIEW: "PREVIEW",
   MAPPING_REQUIRED: "MAPPING_REQUIRED",
@@ -78,11 +88,17 @@ export function storeAliasKey(rawName: string): string {
   return rawName.trim().replace(/\s+/g, " ");
 }
 
-/** 품목 매핑 키. 이름+규격 조합. */
+/**
+ * 품목 매핑 키. 이름+규격 조합.
+ * 공백으로 잇지 않고 JSON 배열로 직렬화한다. 공백으로 이으면 ("A B","C")와 ("A","B C")가
+ * 같은 키("A B C")로 충돌해 잘못된 상품 매핑이 생길 수 있다. JSON.stringify는 두 토큰을
+ * 분리해 직렬화하므로 충돌이 불가능하고, 소스가 텍스트로 유지돼 diff가 깨지지 않는다.
+ * (이 키는 in-memory Map 용도로만 쓰이고 DB에는 rawName/rawSpec을 따로 저장한다.)
+ */
 export function productAliasKey(rawName: string, rawSpec: string): string {
-  return `${rawName.trim().replace(/\s+/g, " ")} ${rawSpec
-    .trim()
-    .replace(/\s+/g, " ")}`;
+  const name = rawName.trim().replace(/\s+/g, " ");
+  const spec = rawSpec.trim().replace(/\s+/g, " ");
+  return JSON.stringify([name, spec]);
 }
 
 export type EcountMappingLineInput = {

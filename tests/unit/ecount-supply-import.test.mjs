@@ -163,6 +163,27 @@ async function importMapping() {
   return import(pathToFileURL(modulePath).href);
 }
 
+test("classifyProductCategory: 냉) 접두만 냉동, 나머지는 모두 생물 (2026-06-29 기준자료)", async () => {
+  const { classifyProductCategory } = await importMapping();
+
+  // 기준자료의 냉동 품목은 모두 "냉)"(또는 "냉동") 접두를 가진다.
+  for (const name of [
+    "냉)부세",
+    "냉)동태",
+    "냉)고등어",
+    "냉)포크오징어",
+    "냉)흰다리새우",
+    "냉동삼치",
+  ]) {
+    assert.equal(classifyProductCategory(name), "냉동", name);
+  }
+
+  // 기준자료에 없는(=냉) 접두가 없는) 품목은 모두 생물. 동태/프로즌 부분 일치로 오분류하지 않는다.
+  for (const name of ["광어", "고등어", "생물동태", "활우럭", "참돔"]) {
+    assert.equal(classifyProductCategory(name), "생물", name);
+  }
+});
+
 test("parseEcountSupplyWorkbook preserves multi-store rows and groups by 거래처명", async () => {
   const { parseEcountSupplyWorkbook } = await importSupplyParser();
 
@@ -253,6 +274,22 @@ test("resolveEcountLine reports mapping-required and ready states", async () => 
     error: "수량 x 단가와 공급가액이 일치하지 않습니다.",
   });
   assert.equal(failed.status, ECOUNT_LINE_STATUS.FAILED);
+});
+
+test("productAliasKey uses a non-whitespace separator so name/spec splits don't collide", async () => {
+  const { productAliasKey } = await importMapping();
+
+  // 공백으로 이으면 ("고등어 특", "대")와 ("고등어", "특 대")가 같은 키로 충돌한다.
+  // JSON 배열로 직렬화하면 두 조합이 서로 다른 키가 되어 잘못된 매핑을 막는다.
+  assert.notEqual(
+    productAliasKey("고등어 특", "대"),
+    productAliasKey("고등어", "특 대"),
+  );
+  // 같은 이름/규격(공백만 다른)은 정규화되어 같은 키여야 한다.
+  assert.equal(
+    productAliasKey("고등어  특", " 대 "),
+    productAliasKey("고등어 특", "대"),
+  );
 });
 
 test("WO-01: ecount status labels use field-friendly Korean and batch/line share one source", async () => {

@@ -80,9 +80,8 @@ async function buildDashboardPlannedSalesItems(
     return result;
   }
 
-  const { getPlannedUnitPriceLookup } = await import(
-    "../sales-plan/queries.ts"
-  );
+  const { getPlannedUnitPriceLookup } =
+    await import("../sales-plan/queries.ts");
   const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
     ledgers.map((ledger) => ({
       storeId: ledger.storeId,
@@ -574,6 +573,13 @@ function toDashboardRow(
         metrics.grossMarginRate,
         true,
       ),
+      // 장부 입력 전이라 분석 이익률도 계산 불가다.
+      analysisMarginDisplay: buildMarginDisplay(
+        null,
+        metrics.totalSales,
+        dataInsufficient("장부 입력 전이라 분석 이익률 데이터가 없습니다."),
+        true,
+      ),
       salesDifference: metrics.salesDifference,
       hasLoss: null,
       latestReflectedAt: null,
@@ -669,6 +675,12 @@ function toDashboardRow(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.totalSales,
       reviewSummary.grossMarginRate,
+      true,
+    ),
+    analysisMarginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      reviewSummary.plannedSalesTotal,
+      reviewSummary.plannedGrossMarginRate,
       true,
     ),
     salesDifference: reviewSummary.salesDifference,
@@ -875,6 +887,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       correctedReviewSummary.totalSales,
       correctedReviewSummary.grossMarginRate,
+      true,
+    ),
+    analysisMarginDisplay: buildMarginDisplay(
+      ledger.status === "HOLIDAY" ? null : thresholdSettings,
+      correctedReviewSummary.plannedSalesTotal,
+      correctedReviewSummary.plannedGrossMarginRate,
       true,
     ),
     salesDifference: correctedReviewSummary.salesDifference,

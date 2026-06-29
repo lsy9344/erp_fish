@@ -887,9 +887,7 @@ test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no l
     "inventory",
     "inventory-persist-policy.ts",
   );
-  const { isPurchaseDrivenSale } = await import(
-    pathToFileURL(policyPath).href
-  );
+  const { isPurchaseDrivenSale } = await import(pathToFileURL(policyPath).href);
 
   // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 정상 판매(면제).
   assert.equal(
@@ -1132,6 +1130,49 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
   );
 });
 
+test("store-manager bulk inventory save persists per-row adjustment reasons", () => {
+  // P1 회귀 수정(2026-06-29): 단독 조정 버튼이 본사 전용이 된 뒤에도, 지점장은 일반 저장과
+  // 함께 행별 사유를 보내 차이 행 조정을 저장할 수 있어야 한다(저장 경로가 닫히면 안 됨).
+  const schema = readProjectFile("src", "features", "inventory", "schemas.ts");
+  const guard = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-save-guard.ts",
+  );
+  const reconcile = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-reconciliation.ts",
+  );
+  const action = readProjectFile("src", "features", "inventory", "actions.ts");
+  const client = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  // 1) 스키마: 일반 재고 저장 item에 adjustmentReason이 있다.
+  assert.match(schema, /adjustmentReason:/);
+  // 2) 가드: 이번 저장에 사유가 들어온 행은 통과시킨다.
+  assert.match(guard, /incomingReasonByProductId/);
+  assert.match(guard, /incomingReasonByProductId\.get\(item\.productId\)/);
+  // 3) 액션: 가드에 사유 맵을 넘기고, 저장 후 사유로 조정을 만든다.
+  assert.match(action, /applyInventoryAdjustmentReasonsInTx\(/);
+  assert.match(action, /adjustmentReason/);
+  // 4) reconcile 모듈: 사유 기반 조정 생성 헬퍼가 있다(create + update 둘 다).
+  assert.match(
+    reconcile,
+    /export async function applyInventoryAdjustmentReasonsInTx/,
+  );
+  assert.match(reconcile, /ledgerInventoryAdjustment\.create\(/);
+  // 5) 클라이언트: 일반 저장 payload에 행별 사유를 포함하고, 사유가 있으면 검증을 통과시킨다.
+  assert.match(client, /adjustmentReason:\s*\n?\s*reasonRefs\.current/);
+});
+
 test("inventory adjustment reconciliation drops records that became purchase-driven sales", () => {
   const reconcileSource = readProjectFile(
     "src",
@@ -1145,9 +1186,16 @@ test("inventory adjustment reconciliation drops records that became purchase-dri
     /isPurchaseDrivenSale\(/,
     "reconciliation should detect purchase-driven sales",
   );
+  // reconcile 함수 본문 안에서만 확인한다(같은 파일의 applyInventoryAdjustmentReasonsInTx도
+  // isPurchaseDrivenSale을 쓰지만 그 경우는 조정을 만들지 않고 skip한다).
+  const reconcileBody = reconcileSource.slice(
+    reconcileSource.indexOf(
+      "export async function reconcileLedgerInventoryAdjustments",
+    ),
+  );
   // 정상 판매로 바뀐 기존 조정 레코드는 삭제해 salesDifference 합산에서 빠지게 한다.
-  const purchaseSaleIndex = reconcileSource.indexOf("isPurchaseDrivenSale(");
-  const deleteAfter = reconcileSource
+  const purchaseSaleIndex = reconcileBody.indexOf("isPurchaseDrivenSale(");
+  const deleteAfter = reconcileBody
     .slice(purchaseSaleIndex)
     .indexOf("ledgerInventoryAdjustment.delete(");
   assert.ok(
@@ -1384,51 +1432,65 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     "inventory",
     "actions.ts",
   );
+  // 정책 반전(2026-06-28): 시스템 재고 수량을 직접 덮어쓰는 단독 재고조정은 본사 전용이다.
+  // 지점장 경로(saveLedgerInventoryAdjustment)는 권한 확인 후 FORBIDDEN으로 거부만 한다.
   assert.match(
     actionSource,
     /export\s+async\s+function\s+saveLedgerInventoryAdjustment/,
   );
-  assert.match(actionSource, /ledgerInventoryAdjustmentSchema\.safeParse/);
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
-  assert.match(actionSource, /db\.\$transaction/);
-  assert.match(actionSource, /editableLedgerStatuses/);
-  assert.match(actionSource, /isLedgerEditable/);
-  assert.match(actionSource, /getLedgerEditBlockReason/);
-  assert.match(actionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
-  assert.match(actionSource, /tx\.ledgerInventoryItem\.upsert/);
-  assert.match(actionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
-  assert.match(actionSource, /재고 기준을 계산할 수 없습니다/);
   assert.match(
     actionSource,
-    /differenceQuantity\s*===\s*0/,
-    "zero-difference adjustments should be blocked",
-  );
-  assert.match(
-    actionSource,
-    /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]\s*}/,
-    "adjustment save should lock or conditionally guard editable ledger status",
-  );
-  assert.match(
-    actionSource,
-    /editableLedger\.count !== 1\)\s*{[\s\S]*ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>\([\s\S]*section:\s*"inventory-adjustment"[\s\S]*clientValues:[\s\S]*serverValues:[\s\S]*reloadRequired:\s*true/s,
-    "adjustment save should report stale version races as structured ledger conflicts",
+    /actionError\(\s*"FORBIDDEN"[\s\S]*재고 수량 조정은 본사에서만/,
+    "store manager adjustment action must reject with FORBIDDEN",
   );
   assert.doesNotMatch(
     actionSource,
+    /tx\.ledgerInventoryAdjustment\.upsert/,
+    "store manager action must not write inventory adjustments anymore",
+  );
+
+  // 단독 재고조정 내부 계약(upsert/감사/POLICY_UNCONFIRMED/0차이 차단/충돌)은 본사 액션으로 이관됐다.
+  const hqActionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  assert.match(
+    hqActionSource,
+    /export\s+async\s+function\s+saveHqLedgerInventoryAdjustment/,
+  );
+  assert.match(hqActionSource, /db\.\$transaction/);
+  assert.match(hqActionSource, /editableLedgerStatuses/);
+  assert.match(hqActionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
+  assert.match(hqActionSource, /tx\.ledgerInventoryItem\.upsert/);
+  assert.match(hqActionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
+  assert.match(hqActionSource, /재고 기준을 계산할 수 없습니다/);
+  assert.match(
+    hqActionSource,
+    /differenceQuantity\s*===\s*0/,
+    "zero-difference adjustments should be blocked",
+  );
+  assert.doesNotMatch(
+    hqActionSource,
     /quantity:\s*adjustment\.afterQuantity/,
     "adjustment save should not overwrite the separate quantity field",
   );
-  assert.match(actionSource, /action:\s*"ledger\.inventory_adjustment\.saved"/);
-  assert.match(actionSource, /reason:\s*parsed\.data\.reason/);
-  assert.match(actionSource, /revalidateInventoryPaths\(\)/);
-  assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
+  assert.match(
+    hqActionSource,
+    /action:\s*"ledger\.hq\.inventory_adjustment\.saved"/,
+  );
+  assert.match(hqActionSource, /reason:\s*parsed\.data\.reason/);
 
   const auditSource = readProjectFile("src", "server", "audit.ts");
   assert.match(auditSource, /reason\?:\s*string\s*\|\s*null/);
   assert.match(auditSource, /reason:\s*input\.reason\s*\?\?\s*undefined/);
 });
 
-test("inventory adjustment validation does not mutate ledger version on rejected requests", () => {
+test("store manager adjustment action rejects before touching the ledger", () => {
+  // 정책 반전(2026-06-28): 지점장 단독 재고조정은 본사 전용으로 거부된다. 권한 확인 후
+  // 어떤 ledger/트랜잭션 변경도 없이 FORBIDDEN을 반환해야 한다.
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -1437,24 +1499,21 @@ test("inventory adjustment validation does not mutate ledger version on rejected
   );
   const storeAdjustmentSource = actionSource.slice(
     actionSource.indexOf("export async function saveLedgerInventoryAdjustment"),
-    actionSource.indexOf(
-      "const inventoryItem = await tx.ledgerInventoryItem.upsert",
-    ),
   );
-  const zeroDifferenceGuardIndex = storeAdjustmentSource.indexOf(
-    "adjustment.differenceQuantity === 0",
-  );
-  const ledgerMutationIndex = storeAdjustmentSource.indexOf(
-    "const editableLedger = await tx.dailyLedger.updateMany",
+  const body = storeAdjustmentSource.slice(
+    0,
+    storeAdjustmentSource.indexOf("\n}"),
   );
 
-  assert.ok(
-    zeroDifferenceGuardIndex >= 0,
-    "store adjustment save should reject zero-difference adjustments",
+  assert.match(
+    body,
+    /actionError\(\s*"FORBIDDEN"/,
+    "store adjustment save should reject with FORBIDDEN",
   );
-  assert.ok(
-    ledgerMutationIndex > zeroDifferenceGuardIndex,
-    "store adjustment save should only increment the ledger version after validation succeeds",
+  assert.doesNotMatch(
+    body,
+    /tx\.dailyLedger\.updateMany|tx\.ledgerInventoryItem\.upsert|db\.\$transaction/,
+    "store adjustment save must not mutate the ledger on rejected requests",
   );
 });
 
@@ -1598,7 +1657,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /disabled={savingAdjustmentProductId !== null \|\| isClosed}/,
+    /disabled={\s*savingAdjustmentProductId !== null \|\| isClosed\s*}/s,
   );
   assert.match(
     componentSource,

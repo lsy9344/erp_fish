@@ -194,10 +194,12 @@ test("store manager response shaping recursively removes sensitive ledger metric
     ],
   });
 
-  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장에게 노출한다.
+  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 응답에서 제거한다.
   // 보완(2026-06-22 WO-01): 결제차액은 제거, 근무인원 수 추가.
   // 매출원가·매출이익·영업이익·인당생산성·매출차이·FIFO·lot 근거는 계속 차단한다.
   // WO(2026-06-26): 계획 판매가 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
+  // 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)도 본사 전용으로
+  // 확정되어 지점장 요약/단계 응답에서 제거된다.
   const stillBlockedSummaryKeys = [
     "costOfGoodsSold",
     "grossProfit",
@@ -206,6 +208,8 @@ test("store manager response shaping recursively removes sensitive ledger metric
     "salesDifference",
     "hopedSalePriceLossAmount",
     "paymentDifference",
+    "grossMarginRate",
+    "inventoryAmount",
     "plannedSalesTotal",
     "plannedGrossProfit",
     "plannedGrossMarginRate",
@@ -220,9 +224,8 @@ test("store manager response shaping recursively removes sensitive ledger metric
     );
   }
 
+  // 정책 반전(2026-06-28): 지점장 요약은 총매출·근무인원만 남는다(마진율·재고금액 제거).
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
-    "grossMarginRate",
-    "inventoryAmount",
     "totalSales",
     "workerCount",
   ]);
@@ -246,10 +249,11 @@ test("store manager response shaping recursively removes sensitive ledger metric
     detail: "결제수단 합계가 총매출과 일치하지 않습니다.",
   });
   assert.equal(Object.hasOwn(safeReview.warnings[0], "amount"), false);
-  // 화이트리스트(WO-01 수정): inventoryAmount는 통과, paymentDifference는 제거됨.
+  // 화이트리스트(2026-06-28 반전): inventoryAmount·paymentDifference 모두 단계 요약에서 제거됨.
+  // 1단계 매출/결제 요약에는 지점장 노출 지표가 남지 않는다.
   assert.deepEqual(
     safeReview.stepSummaries[0].metrics.map((metric) => metric.id).sort(),
-    ["inventoryAmount"],
+    [],
   );
   // 매출원가와 희망 판매가 손실액은 단계 요약에서 차단된다.
   assert.equal(

@@ -475,9 +475,11 @@ const storeManagerLaborItemSchema = ledgerLaborItemSchema
   .omit({ amount: true })
   .strict(laborAmountForbiddenError);
 
-export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema.extend({
-  labor: z.array(storeManagerLaborItemSchema),
-});
+export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema.extend(
+  {
+    labor: z.array(storeManagerLaborItemSchema),
+  },
+);
 
 export type StoreManagerLedgerLaborInput = z.infer<
   typeof storeManagerLedgerLaborSchema

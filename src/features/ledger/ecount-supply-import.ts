@@ -6,6 +6,8 @@
 import { Buffer } from "node:buffer";
 import { inflateRawSync } from "node:zlib";
 
+import { classifyProductCategory } from "./ecount-supply-mapping.ts";
+
 const requiredHeaders = [
   "일자-No.",
   "거래처명",
@@ -300,10 +302,6 @@ function splitProductNameAndSpec(value: string) {
   };
 }
 
-function getProductCategory(rawProductName: string): "냉동" | "생물" {
-  return /냉\)|냉동|동태|프로즌/i.test(rawProductName) ? "냉동" : "생물";
-}
-
 function getSheetName(workbookXml: string | undefined) {
   if (!workbookXml) {
     return "판매현황";
@@ -439,7 +437,7 @@ export function parseEcountSupplyWorkbook(
       rawStoreName: normalizeStoreName(rawStoreNameValue),
       rawProductName,
       productName,
-      productCategory: getProductCategory(productName),
+      productCategory: classifyProductCategory(productName),
       productSpec,
       quantity,
       unitPrice,

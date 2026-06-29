@@ -697,17 +697,17 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
   assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
-  // 미팅 결정(2026-06-21): 마진률과 총 재고금액은 지점장 요약에 노출한다.
-  // 보완(2026-06-22 WO-01): 근무인원 수도 노출, 결제차액은 제거.
-  assert.match(
-    responseShapeSource,
-    /grossMarginRate:\s*data\.summary\.grossMarginRate/,
-  );
+  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 요약에서 제거한다.
+  // 지점장 요약은 총매출·근무인원만 남는다.
   assert.match(
     responseShapeSource,
     /workerCount:\s*data\.summary\.workerCount/,
   );
-  assert.match(
+  assert.doesNotMatch(
+    responseShapeSource,
+    /grossMarginRate:\s*data\.summary\.grossMarginRate/,
+  );
+  assert.doesNotMatch(
     responseShapeSource,
     /inventoryAmount:\s*data\.summary\.inventoryAmount/,
   );
@@ -815,17 +815,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
-  // WO(2026-06-26): 계획 판매가 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
+  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용. 지점장 요약은 총매출·근무인원만 남는다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
-    "grossMarginRate",
-    "inventoryAmount",
     "totalSales",
     "workerCount",
   ]);
   assert.equal(Object.hasOwn(safeReview.summary, "totalSales"), true);
-  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), true);
   assert.equal(Object.hasOwn(safeReview.summary, "workerCount"), true);
-  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "paymentDifference"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "costOfGoodsSold"), false);
@@ -843,12 +841,10 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   );
   // 계획 매출이익(절대 이익)은 계속 차단한다.
   assert.equal(Object.hasOwn(safeReview.summary, "plannedGrossProfit"), false);
-  // workerCount와 inventoryAmount가 보이고, paymentDifference는 제거됨
+  // 정책 반전(2026-06-28): 재고금액·결제차액은 제거되고 workerCount만 남는다.
   assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.kind, "text");
   assert.equal(safeReview.stepSummaries[0]?.metrics[0]?.id, "workerCount");
-  assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.kind, "krw");
-  assert.equal(safeReview.stepSummaries[0]?.metrics[1]?.id, "inventoryAmount");
-  assert.equal(safeReview.stepSummaries[0]?.metrics.length, 2);
+  assert.equal(safeReview.stepSummaries[0]?.metrics.length, 1);
   // 7단계 검토 화면도 1~6단계 "저장됨" 뱃지 상태를 그대로 받아야 한다.
   assert.deepEqual(safeReview.stepCompletion, {
     sales: true,

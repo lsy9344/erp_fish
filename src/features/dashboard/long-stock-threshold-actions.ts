@@ -29,9 +29,7 @@ type LongStockThresholdRecord = Prisma.LongStockThresholdSettingGetPayload<{
   select: typeof longStockThresholdSelect;
 }>;
 
-function parseInput(
-  input: unknown,
-): ActionResult<LongStockThresholdFormInput> {
+function parseInput(input: unknown): ActionResult<LongStockThresholdFormInput> {
   const parsed = longStockThresholdFormSchema.safeParse(input);
 
   if (!parsed.success) {

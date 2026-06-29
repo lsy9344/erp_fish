@@ -320,25 +320,41 @@ export type ReportExportSheet = {
   rows: ReportExportRow[];
 };
 
+// ReportExportData(리포트별 컬럼/행)를 명명된 xlsx 시트 스펙으로 바꾼다.
+export function reportExportToSheet(
+  exportData: Pick<ReportExportData, "columns" | "rows">,
+  name: string,
+): ReportExportSheet {
+  return { name, columns: exportData.columns, rows: exportData.rows };
+}
+
 // WO-15(2026-06-28): xlsx 워크북 생성. 리포트별 컬럼을 시트 하나로 내보내고,
 // 추가 시트(extraSheets)가 있으면 같은 구조로 덧붙인다(예: 월별손익).
 export async function buildReportXlsx(
   exportData: ReportExportData,
   extraSheets: ReportExportSheet[] = [],
 ): Promise<ArrayBuffer> {
+  return buildXlsxWorkbook([
+    reportExportToSheet(exportData, REPORT_SHEET_LABELS[exportData.report]),
+    ...extraSheets,
+  ]);
+}
+
+// WO-15(2026-06-29): 월별 xlsx는 5개 고정 시트(요약/기간조회_RAW/월별손익/재고현황/품목매출)로
+// 번들한다. 시트 목록을 그대로 받아 워크북을 만든다.
+export async function buildBundledReportXlsx(
+  sheets: ReportExportSheet[],
+): Promise<ArrayBuffer> {
+  return buildXlsxWorkbook(sheets);
+}
+
+async function buildXlsxWorkbook(
+  sheets: ReportExportSheet[],
+): Promise<ArrayBuffer> {
   // exceljs는 무겁고 export 경로에서만 쓰므로 동적 import로 초기 번들에서 뺀다.
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "도원에스디";
-
-  const sheets: ReportExportSheet[] = [
-    {
-      name: REPORT_SHEET_LABELS[exportData.report],
-      columns: exportData.columns,
-      rows: exportData.rows,
-    },
-    ...extraSheets,
-  ];
 
   for (const sheetSpec of sheets) {
     const sheet = workbook.addWorksheet(sheetSpec.name);
@@ -439,6 +455,50 @@ export function buildMonthlyProfitLossSheet(data: {
   return { name: "월별손익", columns, rows };
 }
 
+// WO-15(2026-06-29): 품목별 판매현황(추정) xlsx "품목매출" 시트. 일별 회의 리포트의
+// productProfitability(품목별 추정 매출/이익률)를 그대로 시트로 옮긴다. POS 확정 매출이
+// 아니므로 statusLabel에 "추정"/"판매가 미반영"이 그대로 들어간다.
+export function buildProductSalesSheet(items: {
+  items: Array<{
+    productName: string;
+    productSpec: string;
+    productCategory: "냉동" | "생물";
+    soldQuantity: number;
+    estimatedSalesAmount: number;
+    estimatedGrossMarginRate: number | null;
+    salesBasis: "planned" | "cost";
+    statusLabel: "추정" | "판매가 미반영" | "계산 불가";
+  }>;
+}): ReportExportSheet {
+  const columns: ReportExportColumn[] = [
+    { key: "productName", label: "품목" },
+    { key: "productSpec", label: "규격" },
+    { key: "productCategory", label: "구분" },
+    { key: "soldQuantity", label: "추정 판매수량" },
+    { key: "estimatedSalesAmount", label: "추정 매출" },
+    { key: "estimatedGrossMarginRate", label: "추정 이익률" },
+    { key: "salesBasis", label: "기준" },
+    { key: "statusLabel", label: "상태" },
+  ];
+
+  const rows: ReportExportRow[] = items.items.map((item) => ({
+    productName: item.productName,
+    productSpec: item.productSpec,
+    productCategory: item.productCategory,
+    soldQuantity: item.soldQuantity,
+    estimatedSalesAmount: item.estimatedSalesAmount,
+    estimatedGrossMarginRate:
+      item.estimatedGrossMarginRate === null
+        ? "계산 불가"
+        : `${(item.estimatedGrossMarginRate * 100).toFixed(1)}%`,
+    salesBasis:
+      item.salesBasis === "planned" ? "판매가 계획" : "매입단가(폴백)",
+    statusLabel: item.statusLabel,
+  }));
+
+  return { name: "품목매출", columns, rows };
+}
+
 export function getReportExportFilename({
   report,
   period,
@@ -456,9 +516,12 @@ export function getReportExportFilename({
 export function buildReportExportAuditSnapshot({
   exportData,
   format,
+  sheets,
 }: {
   exportData: ReportExportData;
   format: ReportExportFormat;
+  // 번들 xlsx일 때 실제로 포함된 시트(이름→row 수). 기본 단일 리포트는 생략한다.
+  sheets?: ReportExportSheet[];
 }) {
   return {
     report: exportData.report,
@@ -468,6 +531,14 @@ export function buildReportExportAuditSnapshot({
     columnKeys: exportData.columns.map((column) => column.key),
     rowCount: exportData.rows.length,
     format,
+    ...(sheets
+      ? {
+          sheets: sheets.map((sheet) => ({
+            name: sheet.name,
+            rowCount: sheet.rows.length,
+          })),
+        }
+      : {}),
   };
 }
 

@@ -395,8 +395,10 @@ export async function saveEcountStoreAlias(input: {
  * 새 앱 품목을 만들어 연결한다. batch line의 원문 품목명/구분/규격/단가로 Product를 만들고
  * (이미 같은 name/category/spec이 있으면 재사용) ProductExternalAlias를 저장한 뒤 매핑을 재계산한다.
  */
-// WO-09(2026-06-28): 냉동/활어 기준표가 오기 전에는 신규 품목 분류를 파서의
-// 문자열 추측으로 확정하지 않는다. 본사가 직접 고르고, 미정이면 "기준 미정"으로 둔다.
+// WO-09(2026-06-28): 신규 품목 분류는 본사가 확정한다. 2026-06-29 기준자료
+// (docs/meeting_0627/냉동_생물_자료.xlsx) 도착 후, UI는 기준 규칙(classifyProductCategory:
+// "냉)" 접두만 냉동, 나머지 생물) 자동 분류값을 드롭다운 기본값으로 채워 두되, 본사가
+// 그대로 확정하거나 바꿀 수 있게 한다. 서버는 여전히 본사가 보낸 선택값만 신뢰한다.
 const NEW_PRODUCT_CATEGORIES = ["냉동", "생물", "기준 미정"] as const;
 type NewProductCategory = (typeof NEW_PRODUCT_CATEGORIES)[number];
 

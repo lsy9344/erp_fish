@@ -808,7 +808,9 @@ export function WorkStepClient({
                           autoComplete="off"
                           value={line.amount}
                           disabled={
-                            !isHydrated || isLaborSaving || isOriginalEditBlocked
+                            !isHydrated ||
+                            isLaborSaving ||
+                            isOriginalEditBlocked
                           }
                           onChange={(event) =>
                             updateLaborLine(line.id, {

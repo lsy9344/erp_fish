@@ -441,7 +441,13 @@ test.describe("Report export API", () => {
     const pnl = workbook.getWorksheet("월별손익");
     const header = pnl?.getRow(1).values as unknown[];
     const headerLabels = header.filter((v) => typeof v === "string");
-    for (const label of ["매출", "매입원가", "인건비", "본사조정", "남은금액"]) {
+    for (const label of [
+      "매출",
+      "매입원가",
+      "인건비",
+      "본사조정",
+      "남은금액",
+    ]) {
       expect(headerLabels).toContain(label);
     }
   });

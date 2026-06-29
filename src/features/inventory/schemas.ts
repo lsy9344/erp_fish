@@ -91,6 +91,14 @@ const ledgerInventoryItemSchema = z.object({
     .transform((value, context) =>
       parseOptionalInventoryInteger(value, context),
     ),
+  // 당일재고가 기준재고와 다른 행의 "고친 이유". 지점장이 일반 저장과 함께 보내면 서버가
+  // 조정 레코드를 생성한다(단독 본사 전용 조정 액션과 별개로, 지점 실사 차이 사유 입력 경로).
+  // 빈 값은 null(사유 없음)로 해석한다.
+  adjustmentReason: z
+    .unknown()
+    .transform((value) =>
+      typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
 });
 
 export const ledgerInventorySchema = ledgerMutationContextSchema.extend({

@@ -82,11 +82,13 @@ test("store-manager ledger actions guard the closing date", () => {
 test("store-manager inventory actions guard the closing date", () => {
   const source = readProjectFile("src", "features", "inventory", "actions.ts");
 
+  // 정책 반전(2026-06-28): 단독 재고조정은 본사 전용으로 이관됐고 지점장 경로는 거부만 한다.
+  // 남은 지점장 쓰기 경로(saveLedgerInventoryItems)는 여전히 마감일을 가드한다.
   const guardCalls =
     source.match(/assertStoreManagerClosingDateIsToday\(/g) ?? [];
   assert.ok(
-    guardCalls.length >= 2,
-    `expected >=2 guard calls, found ${guardCalls.length}`,
+    guardCalls.length >= 1,
+    `expected >=1 guard call, found ${guardCalls.length}`,
   );
 });
 

@@ -488,11 +488,19 @@ export function InventoryStepClient({
         continue;
       }
 
+      // 행별 "고친 이유"가 입력돼 있으면 통과(일반 저장이 이 사유로 조정을 만든다).
+      const reasonInput = (
+        reasonRefs.current[item.productId]?.value ??
+        item.adjustmentReasonInput ??
+        ""
+      ).trim();
+
       if (
         systemQuantity === null ||
         currentQuantity === null ||
         currentQuantity === systemQuantity ||
-        item.adjustment?.afterQuantity === currentQuantity
+        item.adjustment?.afterQuantity === currentQuantity ||
+        reasonInput
       ) {
         continue;
       }
@@ -581,6 +589,10 @@ export function InventoryStepClient({
           quantity:
             currentQuantityRefs.current[item.productId]?.value ??
             item.currentQuantityInput,
+          // 행별 "고친 이유"도 함께 보낸다. 차이가 있는 행이면 서버가 이 사유로 조정을 만든다.
+          adjustmentReason:
+            reasonRefs.current[item.productId]?.value ??
+            item.adjustmentReasonInput,
         })),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
@@ -1116,7 +1128,7 @@ export function InventoryStepClient({
         badges.push({
           label: "기준 확인 필요",
           detail:
-            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 재고금액은 선입선출(FIFO) 기준으로 계산해 표시합니다.",
+            "30%단가 같은 정책 미정 항목은 이 화면에서 계산하지 않습니다. 재고 근거는 선입선출(FIFO) 기준으로 추적합니다.",
           className:
             "border-purple-600 text-purple-700 dark:border-purple-400 dark:text-purple-300",
         });
@@ -1201,8 +1213,8 @@ export function InventoryStepClient({
           <DialogHeader>
             <DialogTitle>전날 재고 보기</DialogTitle>
             <DialogDescription>
-              전날 기준 재고 수량입니다. 금액·단가는 표시하지 않으며, 전날 장부는
-              여기서 수정할 수 없습니다.
+              전날 기준 재고 수량입니다. 금액·단가는 표시하지 않으며, 전날
+              장부는 여기서 수정할 수 없습니다.
             </DialogDescription>
           </DialogHeader>
           {items.length === 0 ? (
@@ -1702,19 +1714,26 @@ export function InventoryStepClient({
                       className="h-11 min-w-0 flex-1"
                       placeholder={inventoryTerms.adjustmentReasonPlaceholder}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-label={adjustmentButtonLabel}
-                      onClick={() => handleAdjustmentSave(item)}
-                      disabled={savingAdjustmentProductId !== null || isClosed}
-                      className="h-11 shrink-0 px-3 text-xs"
-                    >
-                      {isSavingThisAdjustment
-                        ? "저장 중"
-                        : adjustmentActionLabel}
-                    </Button>
+                    {/* 정책 반전(2026-06-28): 단독 재고조정 저장 버튼은 본사 전용이다. 지점장은
+                        사유만 입력하고 일반 저장을 누르면, 차이 행에 대해 서버가 그 사유로 조정을
+                        만든다(applyInventoryAdjustmentReasonsInTx). 단독 조정 액션은 본사만. */}
+                    {hqEditReasonRequired ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={adjustmentButtonLabel}
+                        onClick={() => handleAdjustmentSave(item)}
+                        disabled={
+                          savingAdjustmentProductId !== null || isClosed
+                        }
+                        className="h-11 shrink-0 px-3 text-xs"
+                      >
+                        {isSavingThisAdjustment
+                          ? "저장 중"
+                          : adjustmentActionLabel}
+                      </Button>
+                    ) : null}
                   </div>
                   {reasonError ? (
                     <p

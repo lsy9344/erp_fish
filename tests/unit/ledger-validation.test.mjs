@@ -188,11 +188,8 @@ test("store save actions authorize store access before detailed field validation
       "saveLedgerInventoryItems",
       "parseLedgerInventoryInput",
     ],
-    [
-      inventoryActionSource,
-      "saveLedgerInventoryAdjustment",
-      "parseLedgerInventoryAdjustmentInput",
-    ],
+    // 정책 반전(2026-06-28): saveLedgerInventoryAdjustment는 본사 전용으로 이관됐고 권한 확인
+    // 후 FORBIDDEN으로 거부만 한다. 상세 검증 단계가 없어 이 목록에서 제외한다(아래 별도 검증).
     [lossesActionSource, "saveLedgerLosses", "parseLedgerLossesInput"],
   ];
 
@@ -219,6 +216,26 @@ test("store save actions authorize store access before detailed field validation
       `${functionName} should run detailed validation after authorization`,
     );
   }
+
+  // saveLedgerInventoryAdjustment: storeId 파싱 → 권한 확인 → FORBIDDEN 거부 순서.
+  const adjustmentSource = getExportedAsyncFunctionSource(
+    inventoryActionSource,
+    "saveLedgerInventoryAdjustment",
+  );
+  const adjAccessIndex = adjustmentSource.indexOf("StoreAccessInput(input)");
+  const adjAuthIndex = adjustmentSource.indexOf(
+    "requireStoreManagerLedgerEditAccess(access.data.storeId)",
+  );
+  const adjForbiddenIndex = adjustmentSource.indexOf('"FORBIDDEN"');
+  assert.ok(adjAccessIndex >= 0, "adjustment should parse storeId first");
+  assert.ok(
+    adjAuthIndex > adjAccessIndex,
+    "adjustment should authorize after storeId parse",
+  );
+  assert.ok(
+    adjForbiddenIndex > adjAuthIndex,
+    "adjustment should reject with FORBIDDEN after authorization",
+  );
 });
 
 test("step clients keep field errors connected to accessible descriptions and focus", () => {

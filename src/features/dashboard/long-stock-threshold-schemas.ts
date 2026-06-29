@@ -2,7 +2,8 @@ import { z } from "zod";
 
 // WO-13(2026-06-28): 품목군(category)별 장기재고 기준일 입력 검증.
 const categoryError = "품목군을 입력해 주세요.";
-const thresholdDaysError = "기준일은 1일 이상 3650일 이하의 정수로 입력해 주세요.";
+const thresholdDaysError =
+  "기준일은 1일 이상 3650일 이하의 정수로 입력해 주세요.";
 const activeStatusError = "활성 상태는 활성 또는 비활성 중 하나여야 합니다.";
 const reasonError = "변경 사유를 입력해 주세요.";
 

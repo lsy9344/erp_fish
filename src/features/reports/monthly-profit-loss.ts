@@ -35,7 +35,10 @@ export type MonthlyProfitAndLossRow = {
   grossMarginRate: number | null;
   laborAmount: number;
   // 고정비 항목별 합계(없으면 0).
-  fixedCosts: Record<(typeof MONTHLY_PNL_FIXED_COST_CATEGORIES)[number], number>;
+  fixedCosts: Record<
+    (typeof MONTHLY_PNL_FIXED_COST_CATEGORIES)[number],
+    number
+  >;
   otherExpenseAmount: number;
   hqAdjustmentAmount: number;
   // 매출이익 - 인건비 - 모든 비용(고정비+기타+본사조정).
@@ -92,6 +95,8 @@ export async function buildMonthlyProfitAndLoss({
     startDate,
     endDate,
     targetStoreIds,
+    // 특정 지점이 지정되면 전사 공통 비용 행은 제외한다.
+    includeCompanyWide: !storeId,
   });
 
   return { monthInput, rows };
@@ -138,7 +143,10 @@ export async function buildAllMonthsProfitAndLoss({
       select: { closingDate: true },
     }),
     db.headquartersExpense.findMany({
-      where: { OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }] },
+      // 특정 지점 범위면 전사 공통(storeId=null) 지출은 월 탐색에서도 제외한다.
+      where: storeId
+        ? { storeId: { in: targetStoreIds } }
+        : { OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }] },
       select: { expenseDate: true },
     }),
   ]);
@@ -163,6 +171,8 @@ export async function buildAllMonthsProfitAndLoss({
       startDate,
       endDate,
       targetStoreIds,
+      // 특정 지점이 지정되면 전사 공통 비용 행은 제외한다.
+      includeCompanyWide: !storeId,
     });
     allRows.push(...rows);
   }
@@ -176,11 +186,14 @@ async function computeMonthProfitAndLossRows({
   startDate,
   endDate,
   targetStoreIds,
+  includeCompanyWide,
 }: {
   monthInput: string;
   startDate: Date;
   endDate: Date;
   targetStoreIds: string[];
+  // 특정 지점 범위 export에서는 전사 공통 비용(storeId=null)을 섞지 않는다(지점 손익에 무관).
+  includeCompanyWide: boolean;
 }): Promise<MonthlyProfitAndLossRow[]> {
   const [profitSummaries, stores, laborItems, expenses] = await Promise.all([
     getStoreProfitSummariesForRange({
@@ -204,10 +217,13 @@ async function computeMonthProfitAndLossRows({
     }),
     // 고정비/기타/본사조정: 본사 지출. storeId가 null인 항목은 지점에 귀속하지 않으므로
     // 월별 손익의 "본사조정/기타"로 전 지점에 나누지 않고 별도 store="(전사)" 행으로 둔다.
+    // 단, 특정 지점 범위 export에서는 전사 공통 비용을 아예 조회하지 않는다(지점 손익에 무관).
     db.headquartersExpense.findMany({
       where: {
         expenseDate: { gte: startDate, lte: endDate },
-        OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }],
+        ...(includeCompanyWide
+          ? { OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }] }
+          : { storeId: { in: targetStoreIds } }),
       },
       select: { storeId: true, category: true, amount: true, memo: true },
     }),
@@ -273,9 +289,7 @@ async function computeMonthProfitAndLossRows({
       0,
     );
 
-    return (
-      fixedTotal + bucket.otherExpenseAmount + bucket.hqAdjustmentAmount
-    );
+    return fixedTotal + bucket.otherExpenseAmount + bucket.hqAdjustmentAmount;
   }
 
   const rows: MonthlyProfitAndLossRow[] = targetStoreIds.map((id) => {
@@ -307,7 +321,10 @@ async function computeMonthProfitAndLossRows({
   });
 
   // 전사(본사 지출 storeId=null) 비용은 별도 "(전사)" 행으로 노출한다.
-  const companyWide = costByStore.get(COMPANY_WIDE);
+  // 특정 지점 범위 export에서는 애초에 조회하지 않지만, 방어적으로 한 번 더 가드한다.
+  const companyWide = includeCompanyWide
+    ? costByStore.get(COMPANY_WIDE)
+    : undefined;
   if (companyWide) {
     const expenseTotal = sumBucketCosts(companyWide);
     rows.push({

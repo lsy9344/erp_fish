@@ -190,6 +190,29 @@ test("sales price plan model, queries, and actions follow expected contracts", (
   assert.match(actionSource, /"활성 품목만 저장할 수 있습니다\."/);
 });
 
+test("planned-price sync invalidates loss review and bumps version on real changes only", () => {
+  // P2(2026-06-29 검토): 판매가 계획 저장이 손실 장부를 바꾸면 본사 손실 검토를 무효화하고
+  // 장부 version을 올려야 한다. 또한 값이 그대로면 아무 변경도 하지 않아야 한다(무음 변경 방지).
+  const syncSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "planned-price-sync.ts",
+  );
+  // 기존 손실 스냅샷 값을 읽어 변경 여부를 비교한다.
+  assert.match(syncSource, /unitPrice:\s*true/);
+  assert.match(syncSource, /amount:\s*true/);
+  assert.match(syncSource, /usedPlannedPrice:\s*true/);
+  assert.match(syncSource, /const unchanged =/);
+  // 변경된 손실의 장부만 모은다.
+  assert.match(syncSource, /affectedLedgerIds/);
+  // 손실 검토 무효화 + 버전 증가를 한 번에 처리한다.
+  assert.match(
+    syncSource,
+    /dailyLedger\.updateMany\([\s\S]*lossReviewedById:\s*null[\s\S]*lossReviewedAt:\s*null[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/s,
+  );
+});
+
 test("sales plan loss context renders loss calculation basis; nav drops the plan menu and the old route redirects to the purchase step", () => {
   const lossContextSource = readProjectFile(
     "src",

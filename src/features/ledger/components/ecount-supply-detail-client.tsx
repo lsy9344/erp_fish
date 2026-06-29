@@ -174,8 +174,10 @@ export function EcountSupplyDetailClient({
     rawProductName: string,
     productSpec: string,
     selectionKey: string,
+    // 기준자료(2026-06-29) 기반 자동 분류값. 본사가 드롭다운을 안 건드리면 이 값을 그대로 쓴다.
+    defaultCategory: string,
   ) {
-    const category = categorySelections[selectionKey] ?? "";
+    const category = categorySelections[selectionKey] ?? defaultCategory ?? "";
 
     if (!category) {
       toast.error("새 품목 분류(냉동/생물/기준 미정)를 먼저 선택해 주세요.");
@@ -448,7 +450,11 @@ export function EcountSupplyDetailClient({
                             <select
                               aria-label={`${product.rawProductName} 새 품목 분류`}
                               className={selectClassName}
-                              value={categorySelections[mapKey] ?? ""}
+                              value={
+                                categorySelections[mapKey] ??
+                                product.productCategory ??
+                                ""
+                              }
                               onChange={(event) => {
                                 const category = event.currentTarget.value;
 
@@ -472,6 +478,7 @@ export function EcountSupplyDetailClient({
                                   product.rawProductName,
                                   product.productSpec,
                                   mapKey,
+                                  product.productCategory,
                                 )
                               }
                             >

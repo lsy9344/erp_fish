@@ -185,6 +185,11 @@ export function PurchaseStepClient({
   const [purchaseItems, setPurchaseItems] = useState(() =>
     toPurchaseLines(initialLedger.purchaseItems),
   );
+  // 2026-06-28: 적용 단가 수정은 본사 전용. 지점장(=hqEditReasonRequired false)은 기존 행의
+  // 단가를 못 바꾼다. 신규 수동 행(여기 없는 id)의 최초 단가 입력은 허용한다.
+  const existingPurchaseLineIds = useRef(
+    new Set(initialLedger.purchaseItems.map((item) => item.id)),
+  );
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -591,12 +596,17 @@ export function PurchaseStepClient({
                 isFormSaving ||
                 isOriginalEditBlocked ||
                 isUploadedLineLocked(line);
-              // WO(2026-06-24) Task 14: 이카운트 업로드 행이라도 "장부 적용 단가(unitPrice)"는
-              // 본사와 지점장 모두 수정할 수 있다. 원본 정보(품목/구분/규격/수량/삭제)는 업로드 행
-              // 식별을 보존하기 위해 양쪽 모두 계속 잠근다. 서버 정책(getStoreEcountPurchaseEditErrors,
-              // HQ 보정)도 unitPrice만 허용하므로 UI 잠금과 서버 정책을 일치시킨다.
+              // 정책 반전(2026-06-28): 적용 단가(unitPrice) 수정 권한은 본사 전용이다. 지점장은
+              // 기존 매입 행(이카운트/수동 무관)의 단가를 수정할 수 없고, 신규 수동 행의 최초 단가만
+              // 입력한다. 본사(hqEditReasonRequired)는 종전대로 적용 단가를 수정할 수 있다. 서버
+              // 정책(getStoreEcountPurchaseEditErrors)도 동일하게 막으므로 UI/서버를 일치시킨다.
+              const isStoreManagerExistingLine =
+                !hqEditReasonRequired &&
+                existingPurchaseLineIds.current.has(line.id);
               const isUnitPriceEditBlocked =
-                isFormSaving || isOriginalEditBlocked;
+                isFormSaving ||
+                isOriginalEditBlocked ||
+                isStoreManagerExistingLine;
 
               return (
                 <div key={line.id} className="grid gap-2 rounded-md border p-3">
@@ -819,7 +829,12 @@ export function PurchaseStepClient({
                           {unitPriceError}
                         </FieldError>
                       ) : null}
-                      {isUploadedLineLocked(line) && !isUnitPriceEditBlocked ? (
+                      {isStoreManagerExistingLine ? (
+                        <p className="text-muted-foreground text-xs">
+                          장부 적용 단가는 본사에서만 수정할 수 있습니다.
+                        </p>
+                      ) : isUploadedLineLocked(line) &&
+                        !isUnitPriceEditBlocked ? (
                         <p className="text-muted-foreground text-xs">
                           이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
                           장부 적용 단가만 수정할 수 있습니다.

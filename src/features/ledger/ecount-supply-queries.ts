@@ -3,6 +3,7 @@
 import {
   ECOUNT_BATCH_STATUS_LABELS,
   getEcountLineStatusLabel,
+  productAliasKey,
   type EcountBatchStatus,
   type EcountLineStatus,
 } from "~/features/ledger/ecount-supply-mapping";
@@ -223,7 +224,8 @@ export async function getEcountSupplyImportDetail(
     }
 
     if (!line.productId) {
-      const key = `${line.rawProductName}${line.productSpec}`;
+      // 미매핑 품목 그룹 키도 productAliasKey와 같은 충돌 안전 키를 쓴다.
+      const key = productAliasKey(line.rawProductName, line.productSpec);
       const existing = unmappedProductMap.get(key);
       if (existing) {
         existing.lineCount += 1;

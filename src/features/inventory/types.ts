@@ -111,12 +111,26 @@ export type StoreManagerInventoryAdjustmentView = Omit<
   "beforeAmount" | "afterAmount" | "differenceAmount"
 >;
 
-// 2026-06-22 결정: FIFO 재고금액(inventoryAmount)과 판매 lot 이력(fifoLots)은
-// 지점장에게도 노출한다. 단가/매입액/손실액과 조정 금액은 계속 차단한다.
+// 정책 반전(2026-06-28, client-review-checklist-2026-06-28.md §4): 지점장 전날재고/재고
+// 화면에는 품목·수량·FIFO 기준일/lot 식별만 노출하고 금액·단가·원가·마진은 제외한다.
+// 따라서 lot 뷰에서 단가/금액 필드(unitPrice·*Amount)를 떼고 수량·입고일·lot 식별만 남긴다.
+export type StoreManagerInventoryFifoLotView = Omit<
+  InventoryFifoLotView,
+  "unitPrice" | "originalAmount" | "consumedAmount" | "remainingAmount"
+>;
+
+// 2026-06-28 결정: FIFO 재고금액(inventoryAmount)과 lot 금액/단가는 본사 전용으로 차단한다.
+// 지점장에게는 fifoLots를 금액 없는 안전 뷰로만 노출한다. 단가/매입액/손실액/조정 금액도 차단.
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
-  "unitPrice" | "purchaseAmount" | "lossAmount" | "adjustment"
+  | "unitPrice"
+  | "purchaseAmount"
+  | "lossAmount"
+  | "inventoryAmount"
+  | "fifoLots"
+  | "adjustment"
 > & {
+  fifoLots: StoreManagerInventoryFifoLotView[];
   adjustment: StoreManagerInventoryAdjustmentView | null;
 };
 

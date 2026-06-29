@@ -4,18 +4,13 @@ import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { assertStoreManagerClosingDateIsToday } from "~/features/ledger/date";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
-import {
-  calculateInventoryAdjustment,
-  calculateInventoryAmount,
-  calculateSystemInventoryQuantity,
-} from "~/server/calculations/inventory";
+import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
 } from "~/server/revalidation";
 import {
-  ledgerInventoryAdjustmentSchema,
   ledgerInventoryStoreAccessSchema,
   ledgerInventorySchema,
   toFieldErrors,
@@ -23,7 +18,10 @@ import {
   type LedgerInventoryInput,
   type LedgerInventoryStoreAccessInput,
 } from "./schemas";
-import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import {
+  applyInventoryAdjustmentReasonsInTx,
+  reconcileLedgerInventoryAdjustments,
+} from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { buildManualInventoryRows } from "./manual-inventory-rows";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
@@ -35,10 +33,7 @@ import {
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
-import {
-  persistLedgerInventoryCarryoverDetail,
-  persistLedgerInventoryCarryoverDetails,
-} from "./carryover-detail-persistence";
+import { persistLedgerInventoryCarryoverDetails } from "./carryover-detail-persistence";
 import {
   getInventoryStepDataByLedgerIdInTx,
   getInventoryStepDataInTx,
@@ -75,22 +70,6 @@ function parseLedgerInventoryStoreAccessInput(
   input: unknown,
 ): ActionResult<LedgerInventoryStoreAccessInput> {
   const parsed = ledgerInventoryStoreAccessSchema.safeParse(input);
-
-  if (!parsed.success) {
-    return actionError(
-      "VALIDATION_ERROR",
-      "입력값을 확인해 주세요.",
-      toFieldErrors(parsed.error),
-    );
-  }
-
-  return actionOk(parsed.data);
-}
-
-function parseLedgerInventoryAdjustmentInput(
-  input: unknown,
-): ActionResult<LedgerInventoryAdjustmentInput> {
-  const parsed = ledgerInventoryAdjustmentSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -184,24 +163,6 @@ async function mapLedgerConflictError(
     serverValues: snapshot.data ? toInventoryConflictValues(snapshot.data) : {},
     reloadRequired: true,
   });
-}
-
-function originalAdjustmentBlockedError(status: string): ActionResult<never> {
-  const reason = getLedgerEditBlockReason(status, "inventory-adjustment");
-
-  return actionError(reason.code, reason.message);
-}
-
-function inventoryBasisUnavailableError<T>(): ActionResult<T> {
-  return actionError(
-    "VALIDATION_ERROR",
-    "재고 기준을 계산할 수 없습니다. 기준 확인 필요 상태입니다.",
-    {
-      actualQuantity: [
-        "시스템 기준 수량을 계산할 수 없어 조정을 저장할 수 없습니다.",
-      ],
-    },
-  );
 }
 
 function revalidateInventoryPaths() {
@@ -302,6 +263,12 @@ export async function saveLedgerInventoryItems(
             productId: item.productId,
             afterQuantity: item.adjustment!.afterQuantity,
           })),
+        new Map(
+          parsed.data.items.map((item) => [
+            item.productId,
+            item.adjustmentReason,
+          ]),
+        ),
       );
 
       if (Object.keys(adjustmentErrors).length > 0) {
@@ -398,6 +365,19 @@ export async function saveLedgerInventoryItems(
         );
       }
 
+      // 지점장이 일반 저장과 함께 보낸 "고친 이유"로 조정 레코드를 만든다(차이 행 한정).
+      await applyInventoryAdjustmentReasonsInTx(
+        tx,
+        before.id,
+        new Map(
+          parsed.data.items.map((item) => [
+            item.productId,
+            item.adjustmentReason,
+          ]),
+        ),
+        actor.user.id,
+      );
+
       await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
       // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
@@ -451,254 +431,13 @@ export async function saveLedgerInventoryAdjustment(
     return access;
   }
 
-  const actor = await requireStoreManagerLedgerEditAccess(access.data.storeId);
-
-  const parsed = parseLedgerInventoryAdjustmentInput(input);
-
-  if (!parsed.ok) {
-    return parsed;
-  }
-
-  const dateGuard = assertStoreManagerClosingDateIsToday(
-    parsed.data.closingDate,
+  // 정책 반전(2026-06-28, client-review-checklist-2026-06-28.md §1): 시스템 재고 수량을
+  // 직접 덮어쓰는 단독 재고조정(actualQuantity 오버라이드)은 본사 전용이다. 지점장 수정 요청은
+  // 서버에서 거부한다. 본사는 saveHqLedgerInventoryAdjustment를 쓴다. 지점장 5단계 재고
+  // 수량 입력(saveLedgerInventoryItems)과, 그 차이로 자동 생성되는 조정은 종전대로 허용된다.
+  await requireStoreManagerLedgerEditAccess(access.data.storeId);
+  return actionError(
+    "FORBIDDEN",
+    "재고 수량 조정은 본사에서만 할 수 있습니다.",
   );
-
-  if (!dateGuard.ok) {
-    return actionError(dateGuard.code, dateGuard.message);
-  }
-
-  try {
-    const result = await db.$transaction(async (tx) => {
-      const before = await getInventoryStepDataInTx(
-        tx,
-        parsed.data.storeId,
-        parsed.data.closingDate,
-        actor.user.id,
-      );
-
-      if (
-        before.id !== parsed.data.ledgerId ||
-        before.version !== parsed.data.version
-      ) {
-        const meta = await getLedgerConflictMetaInTx(tx, before.id);
-        return ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>({
-          meta,
-          ledgerId: parsed.data.ledgerId,
-          section: "inventory-adjustment",
-          clientToken: parsed.data.version,
-          clientValues: toInventoryAdjustmentClientValues(parsed.data),
-          serverValues: toInventoryConflictValues(
-            toStoreManagerInventoryStepData(before),
-          ),
-          reloadRequired: true,
-        });
-      }
-
-      if (!isLedgerEditable(before.status)) {
-        return originalAdjustmentBlockedError(before.status);
-      }
-
-      const line = before.items.find(
-        (item) => item.productId === parsed.data.productId,
-      );
-
-      if (!line) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          "품목을 확인해 주세요.",
-          { productId: ["품목을 확인해 주세요."] },
-        );
-      }
-
-      const beforeQuantity = calculateSystemInventoryQuantity({
-        previousQuantity: line.previousQuantity,
-        purchasedQuantity: line.purchasedQuantity,
-        lossQuantity: line.lossQuantity,
-      });
-      const beforeAmount =
-        beforeQuantity === null
-          ? null
-          : calculateInventoryAmount(beforeQuantity, line.unitPrice);
-
-      if (beforeQuantity === null || beforeAmount === null) {
-        return inventoryBasisUnavailableError<StoreManagerInventoryStepData>();
-      }
-
-      const adjustment = calculateInventoryAdjustment({
-        beforeQuantity,
-        beforeAmount,
-        afterQuantity: parsed.data.actualQuantity,
-        unitPrice: line.unitPrice,
-      });
-
-      if (!adjustment) {
-        return inventoryBasisUnavailableError<StoreManagerInventoryStepData>();
-      }
-
-      if (adjustment.differenceQuantity === 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          "실제 재고 차이가 있을 때만 조정을 저장할 수 있습니다.",
-          {
-            actualQuantity: [
-              "실제 재고 차이가 있을 때만 조정을 저장할 수 있습니다.",
-            ],
-          },
-        );
-      }
-
-      const editableLedger = await tx.dailyLedger.updateMany({
-        where: {
-          id: before.id,
-          version: parsed.data.version,
-          status: { in: [...editableLedgerStatuses] },
-        },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
-      });
-
-      if (editableLedger.count !== 1) {
-        const meta = await getLedgerConflictMetaInTx(tx, before.id);
-        return ledgerConflictErrorFromMeta<StoreManagerInventoryStepData>({
-          meta,
-          ledgerId: parsed.data.ledgerId,
-          section: "inventory-adjustment",
-          clientToken: parsed.data.version,
-          clientValues: toInventoryAdjustmentClientValues(parsed.data),
-          serverValues: toInventoryConflictValues(
-            toStoreManagerInventoryStepData(before),
-          ),
-          reloadRequired: true,
-        });
-      }
-
-      const inventoryItem = await tx.ledgerInventoryItem.upsert({
-        where: {
-          dailyLedgerId_productId: {
-            dailyLedgerId: before.id,
-            productId: line.productId,
-          },
-        },
-        create: {
-          dailyLedgerId: before.id,
-          productId: line.productId,
-          productName: line.productName,
-          productCategory: line.productCategory,
-          productSpec: line.productSpec,
-          unitPrice: line.unitPrice,
-          previousQuantity: line.previousQuantity,
-          purchasedQuantity: line.purchasedQuantity,
-          currentQuantity: adjustment.afterQuantity,
-          quantity: line.quantity,
-          inventoryAmount: adjustment.afterAmount,
-          isModified: true,
-          carryoverSource: line.carryoverSource,
-          carryoverStatus: line.carryoverStatus,
-          carryoverLedgerId: line.carryoverLedgerId,
-          createdById: actor.user.id,
-          updatedById: actor.user.id,
-        },
-        update: {
-          productName: line.productName,
-          productCategory: line.productCategory,
-          productSpec: line.productSpec,
-          unitPrice: line.unitPrice,
-          previousQuantity: line.previousQuantity,
-          purchasedQuantity: line.purchasedQuantity,
-          currentQuantity: adjustment.afterQuantity,
-          quantity: line.quantity,
-          inventoryAmount: adjustment.afterAmount,
-          isModified: true,
-          carryoverSource: line.carryoverSource,
-          carryoverStatus: line.carryoverStatus,
-          carryoverLedgerId: line.carryoverLedgerId,
-          updatedById: actor.user.id,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      await persistLedgerInventoryCarryoverDetail(
-        tx,
-        inventoryItem.id,
-        line.previousQuantityDetail,
-      );
-
-      await tx.ledgerInventoryAdjustment.upsert({
-        where: {
-          dailyLedgerId_productId: {
-            dailyLedgerId: before.id,
-            productId: line.productId,
-          },
-        },
-        create: {
-          dailyLedgerId: before.id,
-          productId: line.productId,
-          ledgerInventoryItemId: inventoryItem.id,
-          productName: line.productName,
-          productCategory: line.productCategory,
-          productSpec: line.productSpec,
-          unitPrice: line.unitPrice,
-          beforeQuantity: adjustment.beforeQuantity,
-          beforeAmount: adjustment.beforeAmount,
-          afterQuantity: adjustment.afterQuantity,
-          afterAmount: adjustment.afterAmount,
-          differenceQuantity: adjustment.differenceQuantity,
-          differenceAmount: adjustment.differenceAmount,
-          amountStatus: "POLICY_UNCONFIRMED",
-          reason: parsed.data.reason,
-          createdById: actor.user.id,
-          updatedById: actor.user.id,
-        },
-        update: {
-          ledgerInventoryItemId: inventoryItem.id,
-          productName: line.productName,
-          productCategory: line.productCategory,
-          productSpec: line.productSpec,
-          unitPrice: line.unitPrice,
-          beforeQuantity: adjustment.beforeQuantity,
-          beforeAmount: adjustment.beforeAmount,
-          afterQuantity: adjustment.afterQuantity,
-          afterAmount: adjustment.afterAmount,
-          differenceQuantity: adjustment.differenceQuantity,
-          differenceAmount: adjustment.differenceAmount,
-          amountStatus: "POLICY_UNCONFIRMED",
-          reason: parsed.data.reason,
-          updatedById: actor.user.id,
-        },
-      });
-
-      // WO-02(2026-06-22): 재고 조정 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
-      await refreshLedgerInventoryFifoLots(tx, before.id);
-
-      const after = await getInventoryStepDataInTx(
-        tx,
-        parsed.data.storeId,
-        parsed.data.closingDate,
-        actor.user.id,
-      );
-
-      await writeAuditLog(tx, {
-        action: "ledger.inventory_adjustment.saved",
-        targetType: "DailyLedger",
-        targetId: before.id,
-        actorId: actor.user.id,
-        before: line,
-        after: after.items.find((item) => item.productId === line.productId),
-        reason: parsed.data.reason,
-      });
-
-      return actionOk(toStoreManagerInventoryStepData(after));
-    });
-
-    if (!result.ok) {
-      return result;
-    }
-
-    revalidateInventoryPaths();
-
-    return result;
-  } catch {
-    return mapStoreActionError();
-  }
 }

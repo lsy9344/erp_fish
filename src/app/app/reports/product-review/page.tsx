@@ -49,7 +49,10 @@ export default async function ProductReviewPage({
         <Button asChild variant="outline" size="sm">
           <Link href="/app/reports/sales-review">매출 검토</Link>
         </Button>
-        <form action="/app/reports/product-review" className="flex items-end gap-2">
+        <form
+          action="/app/reports/product-review"
+          className="flex items-end gap-2"
+        >
           <div className="grid gap-1">
             <label className="text-muted-foreground text-xs" htmlFor="date">
               조회 날짜

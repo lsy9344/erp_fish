@@ -740,7 +740,7 @@ function LossCell({
   return (
     <Link
       href={getLedgerDetailHref(row, dashboard, "losses")}
-      className="text-primary underline-offset-2 hover:underline focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
+      className="text-primary focus-visible:ring-ring underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"
       aria-label={`${row.storeName} 손실 탭 보기`}
     >
       {label}
@@ -769,6 +769,8 @@ function SalesCell({ row }: { row: HqDashboardRow }) {
 
 function MarginCell({ row }: { row: HqDashboardRow }) {
   const { currentLabel, targetLabel, shortfallAmountLabel } = row.marginDisplay;
+  // WO-14 part3(2026-06-29): 장부 이익률 아래에 분석 이익률(AE5)을 함께 보여준다.
+  const analysisLabel = row.analysisMarginDisplay.currentLabel;
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
@@ -777,6 +779,9 @@ function MarginCell({ row }: { row: HqDashboardRow }) {
         {targetLabel ? (
           <span className="text-muted-foreground"> / {targetLabel}</span>
         ) : null}
+      </span>
+      <span className="text-muted-foreground text-xs font-normal">
+        분석 {analysisLabel}
       </span>
       {shortfallAmountLabel ? (
         <span className="text-warning text-xs font-normal whitespace-nowrap">

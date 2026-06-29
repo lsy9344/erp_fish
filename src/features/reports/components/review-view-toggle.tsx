@@ -16,11 +16,7 @@ export function ReviewViewToggle({ chart, table }: ReviewViewToggleProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div
-        className="flex gap-2"
-        role="group"
-        aria-label="보기 방식 전환"
-      >
+      <div className="flex gap-2" role="group" aria-label="보기 방식 전환">
         <Button
           type="button"
           size="sm"

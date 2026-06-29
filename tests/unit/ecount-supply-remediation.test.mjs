@@ -43,7 +43,12 @@ const detailClient = () =>
     "ecount-supply-detail-client.tsx",
   );
 const reportQueries = () =>
-  readProjectFile("src", "features", "reports", "ecount-supply-report-queries.ts");
+  readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "ecount-supply-report-queries.ts",
+  );
 const reportPage = () =>
   readProjectFile("src", "app", "app", "reports", "ecount-supply", "page.tsx");
 const e2eSpec = () =>
@@ -52,24 +57,40 @@ const auditFormat = () =>
   readProjectFile("src", "features", "audit", "audit-format.ts");
 
 // #1 지점장도 이카운트 라인의 적용 단가를 수정할 수 있다(클라이언트 잠금 해제).
-test("#1 unit-price input is no longer locked for store-manager ECOUNT lines", () => {
+test("#1 applied unit-price is HQ-only: store-manager existing lines are locked", () => {
+  // 정책 반전(2026-06-28): 적용 단가 수정은 본사 전용이다. 지점장(=hqEditReasonRequired
+  // false)은 기존 매입 행의 단가를 못 바꾼다. 신규 수동 행의 최초 단가만 입력한다.
   const source = purchaseStepClient();
 
-  // 단가 잠금은 hqEditReasonRequired에 의존하지 않는다(폼 저장/원본 차단만 본다).
-  const match = source.match(
+  // 기존 행 판별: 지점장 + 초기 매입 행 id 집합에 있는 행이면 단가 잠금.
+  assert.match(
+    source,
+    /existingPurchaseLineIds/,
+    "store-manager existing-line detection should exist",
+  );
+  const blockMatch = source.match(
     /const isUnitPriceEditBlocked =\s*([\s\S]*?);/,
   );
-
-  assert.ok(match, "isUnitPriceEditBlocked should be defined");
-  assert.doesNotMatch(
-    match[1],
-    /hqEditReasonRequired/,
-    "unit-price lock must not depend on hqEditReasonRequired",
+  assert.ok(blockMatch, "isUnitPriceEditBlocked should be defined");
+  assert.match(
+    blockMatch[1],
+    /isStoreManagerExistingLine/,
+    "unit-price lock must cover store-manager existing lines",
   );
-  assert.doesNotMatch(
-    match[1],
-    /isUploadedLineLocked/,
-    "unit-price lock must not block ECOUNT uploaded lines",
+
+  const flagMatch = source.match(
+    /const isStoreManagerExistingLine =\s*([\s\S]*?);/,
+  );
+  assert.ok(flagMatch, "isStoreManagerExistingLine should be defined");
+  assert.match(
+    flagMatch[1],
+    /!hqEditReasonRequired/,
+    "store-manager lock should apply when not HQ (hqEditReasonRequired false)",
+  );
+  assert.match(
+    flagMatch[1],
+    /existingPurchaseLineIds\.current\.has\(line\.id\)/,
+    "store-manager lock should only apply to existing (not new) purchase lines",
   );
 });
 
@@ -159,7 +180,11 @@ test("#4 applied-price override audit is emitted with source and applied prices"
     /targetId:\s*override\.ledgerPurchaseItemId/,
     "override audit must not target the deleted pre-recreate purchase row",
   );
-  assert.match(source, /sourceUnitPrice/, "override audit includes source price");
+  assert.match(
+    source,
+    /sourceUnitPrice/,
+    "override audit includes source price",
+  );
   assert.match(
     source,
     /appliedUnitPrice: override\.previousUnitPrice/,
@@ -227,14 +252,14 @@ test("WO-09: new-product creation requires a manually chosen category, not the p
 
   // 액션은 category 입력을 받고 검증한다.
   assert.match(action, /category:\s*string/);
-  assert.match(action, /NEW_PRODUCT_CATEGORIES\s*=\s*\[\s*"냉동",\s*"생물",\s*"기준 미정"/);
+  assert.match(
+    action,
+    /NEW_PRODUCT_CATEGORIES\s*=\s*\[\s*"냉동",\s*"생물",\s*"기준 미정"/,
+  );
   assert.match(action, /isNewProductCategory\(selectedCategory\)/);
   // 생성에 쓰는 분류는 파서가 채운 productCategory가 아니라 선택값이다.
   assert.match(action, /const category = selectedCategory;/);
-  assert.doesNotMatch(
-    action,
-    /const category = sampleLine\.productCategory/,
-  );
+  assert.doesNotMatch(action, /const category = sampleLine\.productCategory/);
 
   // UI는 분류 선택 드롭다운(냉동/생물/기준 미정)을 제공하고 생성 시 함께 보낸다.
   assert.match(client, /새 품목 분류/);
@@ -299,9 +324,8 @@ test("WO-08: alias save recomputes whole batch with consistent raw keys and audi
   // recompute는 batch의 "모든" 라인을 돌며 같은 정규화 키(storeAliasKey/productAliasKey)로
   // 매핑을 다시 적용한다 → 같은 raw key 라인이 한 번에 갱신된다.
   const recompute =
-    source.match(
-      /async function recomputeBatchMappingInTx[\s\S]*?\n}/,
-    )?.[0] ?? "";
+    source.match(/async function recomputeBatchMappingInTx[\s\S]*?\n}/)?.[0] ??
+    "";
   assert.match(recompute, /for \(const line of batch\.lines\)/);
   assert.match(recompute, /storeAliasKey\(line\.rawStoreName\)/);
   assert.match(

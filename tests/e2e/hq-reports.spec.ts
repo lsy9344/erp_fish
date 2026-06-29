@@ -1242,7 +1242,9 @@ test("지점장은 월간 리포트에 접근할 수 없다", async ({ page }) =
 });
 
 // WO-16(2026-06-28): 본사 전용 품목 검토 / 매출 검토 차트 페이지. 차트↔표 전환을 제공한다.
-test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다", async ({ page }) => {
+test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다", async ({
+  page,
+}) => {
   await login(page, "hq@example.com");
   await page.goto("/app/reports/product-review?date=today");
 
@@ -1257,9 +1259,7 @@ test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다"
   const profitabilitySection = page
     .locator("section")
     .filter({ hasText: "품목별 판매 현황 (추정)" });
-  await profitabilitySection
-    .getByRole("button", { name: "표 보기" })
-    .click();
+  await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
   await expect(
     profitabilitySection
       .getByRole("columnheader", { name: "추정 판매 수량" })
@@ -1280,8 +1280,12 @@ test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 
   await expect(
     page.getByRole("heading", { name: "지점별 매출·이익률 (추정)" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "차트 보기" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "표 보기" }).first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "차트 보기" }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "표 보기" }).first(),
+  ).toBeVisible();
 });
 
 test("지점장은 품목 검토와 매출 검토 페이지에 접근할 수 없다", async ({

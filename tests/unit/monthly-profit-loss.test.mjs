@@ -94,10 +94,7 @@ test("monthly P&L computes net = grossProfit - labor - expenses, no new DB", () 
   // 고정비/조정: 본사 지출 category.
   assert.match(source, /headquartersExpense\.findMany/);
   // 남은금액 = 매출이익 - 인건비 - 비용합계.
-  assert.match(
-    source,
-    /grossProfit \?\? 0\) - laborAmount - expenseTotal/,
-  );
+  assert.match(source, /grossProfit \?\? 0\) - laborAmount - expenseTotal/);
   // 조정 항목은 본사 지출 category로 매핑(새 모델 없음).
   assert.match(source, /MONTHLY_PNL_FIXED_COST_CATEGORIES/);
   assert.match(source, /본사조정/);
@@ -118,6 +115,83 @@ test("monthly report xlsx attaches the 월별손익 sheet for all months", () =>
   assert.match(route, /report === "monthly"/);
 });
 
+test("monthly xlsx bundles the 5 confirmed sheets (요약/기간조회_RAW/월별손익/재고현황/품목매출)", () => {
+  // WO-15(2026-06-29): 월별 xlsx는 5개 고정 시트로 번들한다.
+  const route = readProjectFile(
+    "src",
+    "app",
+    "api",
+    "reports",
+    "export",
+    "route.ts",
+  );
+  assert.match(route, /buildBundledReportXlsx/);
+  // route가 직접 이름 붙이는 시트(요약/기간조회_RAW/재고현황).
+  for (const name of ["요약", "기간조회_RAW", "재고현황"]) {
+    assert.match(route, new RegExp(`"${name}"`), `bundle should add ${name}`);
+  }
+  // 월별손익/품목매출 시트는 전용 빌더가 이름을 붙인다.
+  assert.match(route, /buildMonthlyProfitLossSheet\(pnl\)/);
+  // 각 시트는 같은 월/지점 기준으로 로드된다. 모든 sub-report가 request.storeId를 따른다.
+  assert.match(route, /getHqStoreComparisonReport/);
+  assert.match(route, /getHqInventoryPositionReport/);
+  assert.match(route, /getHqDailyMeetingReport/);
+  assert.match(route, /buildProductSalesSheet/);
+  // P1(2026-06-29): 품목매출 시트도 storeId 필터를 따라야 한다(전 지점 누출 방지).
+  assert.match(
+    route,
+    /getHqDailyMeetingReport\(\{\s*dateQuery:\s*endDate,\s*storeId:\s*request\.storeId/,
+  );
+
+  const exportSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  assert.match(exportSource, /export async function buildBundledReportXlsx/);
+  assert.match(exportSource, /export function buildProductSalesSheet/);
+  assert.match(exportSource, /name:\s*"품목매출"/);
+});
+
+test("export audit is written after output is built, and records bundle sheets", () => {
+  // P2(2026-06-29): workbook 생성 실패 시 유령 export 로그가 남지 않도록, 출력물을 먼저 만들고
+  // 그 다음에 감사 로그를 남긴다. 번들 xlsx는 실제 포함 시트를 snapshot에 기록한다.
+  const route = readProjectFile(
+    "src",
+    "app",
+    "api",
+    "reports",
+    "export",
+    "route.ts",
+  );
+  // 출력물 생성(buildBundledReportXlsx/buildReportXlsx/buildReportCsv)이 writeAuditLog보다 앞선다.
+  const buildIndex = Math.min(
+    ...["buildBundledReportXlsx(", "buildReportXlsx(", "buildReportCsv("]
+      .map((token) => route.indexOf(token))
+      .filter((index) => index >= 0),
+  );
+  const auditIndex = route.indexOf("report.export.created");
+  assert.ok(buildIndex >= 0 && auditIndex >= 0);
+  assert.ok(
+    buildIndex < auditIndex,
+    "output must be built before the export audit is written",
+  );
+  // audit snapshot에 실제 시트 목록을 넘긴다.
+  assert.match(route, /buildMonthlyBundleSheets/);
+  assert.match(route, /sheets:\s*auditSheets/);
+
+  const exportSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "export.ts",
+  );
+  // snapshot은 sheets가 주어지면 시트별 name/rowCount를 기록한다.
+  assert.match(exportSource, /sheets\?:\s*ReportExportSheet\[\]/);
+  assert.match(exportSource, /name:\s*sheet\.name,\s*\n?\s*rowCount:/);
+});
+
 test("buildAllMonthsProfitAndLoss collects every month with ledger or expense data", () => {
   const source = readProjectFile(
     "src",
@@ -132,4 +206,28 @@ test("buildAllMonthsProfitAndLoss collects every month with ledger or expense da
   assert.match(source, /monthInputs\.add/);
   // 월별로 공유 계산 헬퍼를 호출한다.
   assert.match(source, /computeMonthProfitAndLossRows/);
+});
+
+test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
+  // 정책(2026-06-29 검토): 특정 지점 범위 export에 전사 공통 비용이 섞이면 안 된다.
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  // includeCompanyWide 플래그로 전사 공통 비용 포함 여부를 제어한다.
+  assert.match(source, /includeCompanyWide/);
+  // 지점이 지정되면(!storeId === false) 전사 공통을 끈다.
+  assert.match(source, /includeCompanyWide:\s*!storeId/);
+  // 비용 쿼리는 플래그가 false면 storeId=null OR 절을 붙이지 않는다.
+  assert.match(
+    source,
+    /includeCompanyWide\s*\n?\s*\?\s*{\s*OR:\s*\[\{\s*storeId:\s*{\s*in:\s*targetStoreIds\s*}\s*}\s*,\s*\{\s*storeId:\s*null\s*}\s*\]\s*}\s*\n?\s*:\s*{\s*storeId:\s*{\s*in:\s*targetStoreIds\s*}\s*}/s,
+  );
+  // "(전사 공통)" 행도 플래그로 가드한다.
+  assert.match(
+    source,
+    /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(COMPANY_WIDE\)\s*\n?\s*:\s*undefined/s,
+  );
 });

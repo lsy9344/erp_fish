@@ -53,52 +53,27 @@ export function toStoreManagerLedgerCostStepData(
   };
 }
 
-// 미팅 결정(2026-06-21): 지점장 계산값(검토/원가 요약)에 마진률(%)과 총 재고금액은 노출한다.
-// 단, 매출원가·매출이익·영업이익·인당생산성·FIFO 원가는 이 요약 화면에서 계속 차단한다.
-// 보완(2026-06-22): 재고 입력 화면 한정으로 FIFO 재고금액과 판매 lot 이력은 지점장에게도
-// 노출한다(inventory/queries.ts toStoreManagerInventoryStepData). 이 요약 화면의 차단과 별개다.
-// 보완(2026-06-22 WO-01): 결제차액은 본사 역할이므로 지점장 요약에서 제거, 근무인원 수 추가.
-//
-// 검토 후속(2026-06-22): 원문(point_summary.md:41)은 지점장 상단 요약을 "총매출·마진율·재고금액"으로
-// 좁힐 것을 요구한다. 상단 summary(아래 toStoreManagerLedgerReviewStepData의 summary 블록)는
-// 이를 그대로 따른다(totalSales/grossMarginRate/workerCount/inventoryAmount, 단 workerCount는 WO-01 확정).
-// 단계(step) 요약의 paymentTotal·각종 count는 운영 보조 카운트/합계로 남긴다.
-// WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용으로 확정됐다. 2026-06-22에 의도적으로
-// 노출했던 payrollTotal(급여 합계 금액)은 지점장 단계 요약에서 제거한다. laborCount(급여 항목
-// "건수")는 금액이 아니므로 운영 보조 카운트로 유지한다.
-// 새 지표를 단계 요약에 추가할 때는 반드시 위 민감 차단 목록과 충돌하지 않는지 먼저 확인한다.
+// 정책 반전(2026-06-28, client-review-checklist-2026-06-28.md §1 / gap-review §3.1):
+// 지점장 네트워크 응답에서 급여액·원가·마진·매출 차이 금액·재고금액을 모두 제거한다.
+// (UI 숨김만으로 끝내지 않고 서버 응답에서 뺀다.) 2026-06-21에 의도적으로 노출했던
+// grossMarginRate(마진율)와 inventoryAmount(총 재고금액)는 이 결정으로 차단 대상이 됐다.
+// 재고 입력 화면의 FIFO 금액/원가도 별도로 제거한다(inventory/queries.ts). 결제차액(WO-01),
+// 급여 합계(WO-10)는 이미 제거됨. 지점장 요약은 총매출·근무인원·운영 보조 카운트만 남긴다.
+// 새 지표를 단계 요약에 추가할 때는 반드시 위 민감 차단 정책과 충돌하지 않는지 먼저 확인한다.
 const storeManagerReviewMetricIds = new Set([
   "totalSales",
   "paymentTotal",
-  "grossMarginRate",
   "expenseCount",
   "purchaseCount",
   "inventoryCount",
-  "inventoryAmount",
   "reviewStatus",
   "lossCount",
   "workerCount",
   "laborCount",
 ]);
 
-// 마진률·재고금액은 정상 계산값일 때만 노출한다. 원천 lot 근거 부족 등으로
-// status가 ok가 아니면(policy-unconfirmed/data-insufficient) 지점장 화면에서 숨긴다.
-// 이렇게 해야 원가 근거가 "기준 확인 필요" 형태로도 새지 않는다.
-const conditionalStoreManagerMetricIds = new Set([
-  "grossMarginRate",
-  "inventoryAmount",
-]);
-
 function isStoreManagerVisibleMetric(metric: LedgerReviewStepMetric): boolean {
-  if (!storeManagerReviewMetricIds.has(metric.id)) {
-    return false;
-  }
-
-  if (conditionalStoreManagerMetricIds.has(metric.id)) {
-    return metric.status === "ok";
-  }
-
-  return true;
+  return storeManagerReviewMetricIds.has(metric.id);
 }
 
 // 지점장 응답에는 내부 OQ 코드를 그대로 노출하지 않는다. 본사 화면(getLedgerReviewStepData)은
@@ -152,11 +127,10 @@ export function toStoreManagerLedgerReviewStepData(
     signals,
     warnings,
     stepSummaries,
+    // 2026-06-28: 마진율·재고금액은 본사 전용. 지점장 상단 요약은 총매출·근무인원만 남긴다.
     summary: {
       totalSales: data.summary.totalSales,
-      grossMarginRate: data.summary.grossMarginRate,
       workerCount: data.summary.workerCount,
-      inventoryAmount: data.summary.inventoryAmount,
     },
   };
 }
