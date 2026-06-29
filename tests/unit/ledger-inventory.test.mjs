@@ -1092,6 +1092,11 @@ test("inventory save actions feed the required-entry guard via the no-fallback b
       /getRequiredCurrentQuantityErrors\(\s*buildRequiredEntryGuardItems\(/,
       `${file} should feed the required-entry guard via buildRequiredEntryGuardItems`,
     );
+    assert.match(
+      source,
+      /hasExplicitCurrentQuantityInput:/,
+      `${file} should preserve explicit 0/1 entries on required seed rows`,
+    );
   }
 });
 
@@ -1387,6 +1392,54 @@ test("manual product add lets ungrounded products be entered without auto-listin
   // 추가 행 배지는 "이월 공백"이 아니라 "직접 입력"으로 0 오해를 막는다.
   assert.match(componentSource, /직접 입력/);
   assert.match(componentSource, /addedManualIds/);
+});
+
+test("purchase/loss seed rows persist explicit zero or one current quantity", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-persist-policy.ts",
+  );
+  const { shouldPersistInventoryLine } = await import(
+    pathToFileURL(policyPath).href
+  );
+
+  assert.equal(
+    shouldPersistInventoryLine(
+      {
+        id: "product-1",
+        productId: "product-1",
+        currentQuantity: 0,
+        quantity: 0,
+        purchasedQuantity: 4,
+        lossQuantity: 0,
+      },
+      0,
+      0,
+      { hasExplicitCurrentQuantityInput: true },
+    ),
+    true,
+    "an explicit 0 on a purchase seed row must be saved even when it equals the default seed value",
+  );
+
+  assert.equal(
+    shouldPersistInventoryLine(
+      {
+        id: "product-2",
+        productId: "product-2",
+        currentQuantity: 1,
+        quantity: 1,
+        purchasedQuantity: 0,
+        lossQuantity: 1,
+      },
+      1,
+      1,
+      { hasExplicitCurrentQuantityInput: true },
+    ),
+    true,
+    "an explicit 1 on a loss seed row must be saved even when it equals the default seed value",
+  );
 });
 
 test("inventory adjustment query action and audit contracts are wired", () => {

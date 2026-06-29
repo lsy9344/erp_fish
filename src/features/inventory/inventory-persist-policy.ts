@@ -9,6 +9,8 @@
  *
  * - item.id !== item.productId: 이미 DB에 존재하는 실제 행(cuid id). 사용자가
  *   값을 바꾸지 않아도 기존 값을 보존하기 위해 그대로 다시 기록한다.
+ * - 매입/손실 seed 행에 사용자가 당일재고를 명시 입력한 경우: 값이 내부 seed
+ *   기본값(예: 0)과 같아도 "입력 완료" 기록이므로 기록한다.
  * - currentQuantity/quantity가 기존 저장값과 다르면: 변경된 행이므로 기록한다.
  * - 그 외(아직 저장된 적 없는 seed 행을 빈 채로 둔 경우): 기록하지 않는다.
  *
@@ -21,12 +23,21 @@ export function shouldPersistInventoryLine(
     productId: string;
     currentQuantity: number | null;
     quantity: number | null;
+    purchasedQuantity?: number;
+    lossQuantity?: number;
   },
   currentQuantity: number | null,
   quantity: number | null,
+  options: { hasExplicitCurrentQuantityInput?: boolean } = {},
 ) {
+  const requiredSeedEntryWasEntered =
+    options.hasExplicitCurrentQuantityInput === true &&
+    item.id === item.productId &&
+    ((item.purchasedQuantity ?? 0) > 0 || (item.lossQuantity ?? 0) > 0);
+
   return (
     item.id !== item.productId ||
+    requiredSeedEntryWasEntered ||
     currentQuantity !== item.currentQuantity ||
     quantity !== item.quantity
   );

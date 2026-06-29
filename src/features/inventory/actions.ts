@@ -300,13 +300,18 @@ export async function saveLedgerInventoryItems(
       // 재기록하면 기존 저장값을 null로 덮어써 다음 날 전일재고 이월이 0이 된다.
       // 본사 경로와 동일하게 shouldPersistInventoryLine 가드로 변경/기존 행만 기록한다.
       const rowsToPersist = before.items.flatMap((item) => {
+        const inputItem = inputByProductId.get(item.productId);
         const currentQuantity =
-          inputByProductId.get(item.productId)?.currentQuantity ??
-          item.currentQuantity;
-        const quantity =
-          inputByProductId.get(item.productId)?.quantity ?? item.quantity;
+          inputItem?.currentQuantity ?? item.currentQuantity;
+        const quantity = inputItem?.quantity ?? item.quantity;
 
-        if (!shouldPersistInventoryLine(item, currentQuantity, quantity)) {
+        if (
+          !shouldPersistInventoryLine(item, currentQuantity, quantity, {
+            hasExplicitCurrentQuantityInput:
+              inputItem?.currentQuantity !== null &&
+              inputItem?.currentQuantity !== undefined,
+          })
+        ) {
           return [];
         }
 

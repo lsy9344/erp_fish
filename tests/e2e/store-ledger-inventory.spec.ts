@@ -278,6 +278,9 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   page,
 }) => {
   await login(page);
+  const actorId = await getHeadquartersUserId();
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  await markLossStepReviewed(ledger.id, actorId);
   const product = await seedProduct("스토리2-5 월초 광어", "냉동", 12000);
 
   await prisma.inventoryOpeningSnapshot.create({
@@ -323,12 +326,8 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   await page
     .getByLabel(`${product.name} 재고 조정 이유`)
     .fill("실사 재고 차이");
-  await page
-    .getByRole("button", { name: `${product.name} 고친 이유 저장` })
-    .click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "고친 내용이 저장됐습니다." }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expectInventorySaveSucceeded(page);
 
   await page.reload();
 
@@ -559,8 +558,7 @@ test("전일 근거가 없으면 근거 없는 활성 품목을 자동 표시하
   });
   await expect(currentQuantityInput).toHaveValue("");
 
-  // 입력 후 저장하면 재조회 시 저장 행으로 보인다. exact로 행별 "고친 이유 저장"
-  // 버튼과의 충돌을 피한다.
+  // 입력 후 저장하면 재조회 시 저장 행으로 보인다.
   await currentQuantityInput.fill("3");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expectInventorySaveSucceeded(page);

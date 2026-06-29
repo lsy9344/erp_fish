@@ -329,13 +329,18 @@ export async function saveHqLedgerInventoryItems(
         });
 
         const rowsToPersist = before.items.flatMap((item) => {
+          const inputItem = inputByProductId.get(item.productId);
           const currentQuantity =
-            inputByProductId.get(item.productId)?.currentQuantity ??
-            item.currentQuantity;
-          const quantity =
-            inputByProductId.get(item.productId)?.quantity ?? item.quantity;
+            inputItem?.currentQuantity ?? item.currentQuantity;
+          const quantity = inputItem?.quantity ?? item.quantity;
 
-          if (!shouldPersistInventoryLine(item, currentQuantity, quantity)) {
+          if (
+            !shouldPersistInventoryLine(item, currentQuantity, quantity, {
+              hasExplicitCurrentQuantityInput:
+                inputItem?.currentQuantity !== null &&
+                inputItem?.currentQuantity !== undefined,
+            })
+          ) {
             return [];
           }
 
