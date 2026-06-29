@@ -151,6 +151,12 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.match(actions, /export\s+async\s+function\s+updateUserStatus/);
   assert.match(actions, /requireUserPermissionAccess\(\)/);
   assert.match(actions, /db\.\$transaction/);
+  assert.match(actions, /userManagementTransactionOptions/);
+  assert.match(actions, /timeout:\s*15_000/);
+  assert.match(
+    actions,
+    /db\.\$transaction\(\s*async\s*\(tx\)\s*=>[\s\S]*?,\s*userManagementTransactionOptions\s*\)/,
+  );
   assert.match(actions, /writeAuditLog/);
   assert.match(actions, /hashPassword/);
   assert.match(actions, /function\s+toAuditUserSnapshot/);

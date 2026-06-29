@@ -55,6 +55,7 @@ const userSelect = {
   role: true,
   isActive: true,
 } as const;
+const userManagementTransactionOptions = { timeout: 15_000 } as const;
 
 function revalidateUserPaths() {
   revalidateMasterDataPaths("users");
@@ -500,7 +501,7 @@ export async function createUserAccount(
         user: created,
         storeIds: stores.map((store) => store.id),
       };
-    });
+    }, userManagementTransactionOptions);
 
     if (result.status === "duplicate") {
       return duplicateEmailError();
@@ -597,7 +598,7 @@ export async function updateUserAccount(
         user: updated,
         storeIds: stores.map((store) => store.id),
       };
-    });
+    }, userManagementTransactionOptions);
 
     if (result.status === "missing") {
       return actionError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
@@ -685,7 +686,7 @@ export async function updateUserStatus(
       user: updated,
       storeIds: after.storeIds,
     };
-  });
+  }, userManagementTransactionOptions);
 
   if (result.status === "missing") {
     return actionError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
@@ -783,7 +784,7 @@ export async function updateUserPermissionProfiles(
       user: updated,
       storeIds: after.storeIds,
     };
-  });
+  }, userManagementTransactionOptions);
 
   if (result.status === "missing") {
     return actionError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
