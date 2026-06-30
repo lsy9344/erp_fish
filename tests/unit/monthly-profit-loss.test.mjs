@@ -226,6 +226,30 @@ test("monthly xlsx product sales uses a period query, not the last daily meeting
   assert.doesNotMatch(route, /마지막 날의 일별 회의 리포트/);
 });
 
+test("period product-sales query matches monthly population and keeps undetermined items", () => {
+  const source = readProjectFile("src", "features", "reports", "queries.ts");
+  const fnStart = source.indexOf(
+    "export async function getHqProductSalesReportForRange",
+  );
+  assert.ok(fnStart >= 0, "period product-sales query should exist");
+  const fnEnd = source.indexOf(
+    "export async function getHqStoreComparisonReport",
+    fnStart,
+  );
+  const fn = source.slice(fnStart, fnEnd);
+
+  // F3: 월별손익/기간조회와 같은 모집단(검토중/본사마감)만 집계한다.
+  assert.match(
+    fn,
+    /status:\s*\{\s*in:\s*\["IN_REVIEW",\s*"HEADQUARTERS_CLOSED"\]\s*\}/,
+  );
+  // F2: 냉동/생물만 거르고 "기준 미정" 등을 버리던 category 필터를 두지 않는다.
+  assert.doesNotMatch(
+    fn,
+    /productCategory !== "냉동" && item\.productCategory !== "생물"/,
+  );
+});
+
 test("monthly P&L reads adjustmentReason separately from memo", () => {
   const source = readProjectFile(
     "src",

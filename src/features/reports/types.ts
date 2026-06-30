@@ -396,7 +396,9 @@ export type ProductSalesPeriodItem = {
   productId: string;
   productName: string;
   productSpec: string;
-  productCategory: "냉동" | "생물";
+  // 냉동/생물 외에 "기준 미정"(분류 미확정 신규 품목) 등도 그대로 노출한다.
+  // 품목별 매출 시트는 데이터 완결성을 위해 분류 미확정 품목도 누락하지 않는다.
+  productCategory: string;
   soldQuantity: number;
   estimatedSalesAmount: number;
   estimatedCogsAmount: number;

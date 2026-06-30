@@ -845,6 +845,9 @@ export async function getHqProductSalesReportForRange({
     where: {
       storeId: { in: storeIds },
       closingDate: { gte: range.startDate, lte: range.endDate },
+      // 월별손익(getStoreProfitSummariesForRange)·기간조회와 같은 모집단을 쓰도록
+      // 검토중/본사마감 장부만 집계한다. 작성 중(IN_PROGRESS)·휴무 장부는 제외.
+      status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
     },
     orderBy: [{ storeId: "asc" }, { closingDate: "asc" }, { id: "asc" }],
     select: {
@@ -911,10 +914,8 @@ export async function getHqProductSalesReportForRange({
     }
 
     for (const item of ledger.ledgerInventoryItems) {
-      if (item.productCategory !== "냉동" && item.productCategory !== "생물") {
-        continue;
-      }
-
+      // 품목별 매출 시트는 분류 미확정("기준 미정") 품목도 누락하지 않는다.
+      // 냉동/생물만 거르던 category 필터를 두지 않고, 판매수량이 잡히는 모든 행을 합산한다.
       const enrichedItem = {
         ...item,
         lossQuantity: item.productId
