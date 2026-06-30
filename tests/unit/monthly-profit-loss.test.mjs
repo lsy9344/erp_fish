@@ -226,7 +226,7 @@ test("monthly xlsx product sales uses a period query, not the last daily meeting
   assert.doesNotMatch(route, /마지막 날의 일별 회의 리포트/);
 });
 
-test("period product-sales query matches monthly population and keeps undetermined items", () => {
+test("period product-sales query matches monthly P&L status filter and keeps undetermined items", () => {
   const source = readProjectFile("src", "features", "reports", "queries.ts");
   const fnStart = source.indexOf(
     "export async function getHqProductSalesReportForRange",
@@ -238,7 +238,7 @@ test("period product-sales query matches monthly population and keeps undetermin
   );
   const fn = source.slice(fnStart, fnEnd);
 
-  // F3: 월별손익/기간조회와 같은 모집단(검토중/본사마감)만 집계한다.
+  // F3: 월별손익과 같은 status 필터(검토중/본사마감)만 집계한다. (기간조회_RAW는 status 무필터라 다름.)
   assert.match(
     fn,
     /status:\s*\{\s*in:\s*\["IN_REVIEW",\s*"HEADQUARTERS_CLOSED"\]\s*\}/,

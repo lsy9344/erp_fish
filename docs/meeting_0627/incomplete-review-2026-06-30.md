@@ -43,7 +43,7 @@
 
 - `getHqProductSalesReportForRange(startDate, endDate, storeId)`로 조회 기간 전체를 store×product 단위로 합산하는 쿼리를 추가했다.
 - `품목매출` 시트는 확정 컬럼(조회 시작/종료일·지점·원가·이익·손실·재고)으로 바뀌었고, route가 이 기간 쿼리를 쓴다.
-- 월별손익/기간조회와 같은 모집단을 쓰도록 `status IN (IN_REVIEW, HEADQUARTERS_CLOSED)`만 집계한다(작성 중·휴무 장부 제외).
+- 월별손익과 같은 status 필터(`status IN (IN_REVIEW, HEADQUARTERS_CLOSED)`)만 집계한다(작성 중·휴무 장부 제외). 기간조회_RAW는 status 무필터라 모집단이 다르다.
 - 분류 미확정(`기준 미정`) 품목도 누락하지 않고 시트에 포함한다.
 - `tests/api/report-export.spec.ts`가 시트 헤더(확정 컬럼)를, `tests/unit/monthly-profit-loss.test.mjs`가 route/쿼리 계약(기간 쿼리·status·기준 미정 포함)을 검증한다.
 

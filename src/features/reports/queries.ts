@@ -845,8 +845,9 @@ export async function getHqProductSalesReportForRange({
     where: {
       storeId: { in: storeIds },
       closingDate: { gte: range.startDate, lte: range.endDate },
-      // 월별손익(getStoreProfitSummariesForRange)·기간조회와 같은 모집단을 쓰도록
+      // 월별손익(getStoreProfitSummariesForRange)과 같은 status 필터를 써서
       // 검토중/본사마감 장부만 집계한다. 작성 중(IN_PROGRESS)·휴무 장부는 제외.
+      // (기간조회_RAW는 status 무필터라 모집단이 다르다.)
       status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
     },
     orderBy: [{ storeId: "asc" }, { closingDate: "asc" }, { id: "asc" }],
