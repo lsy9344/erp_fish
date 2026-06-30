@@ -571,14 +571,12 @@ function toDashboardRow(
         thresholdSettings,
         metrics.totalSales,
         metrics.grossMarginRate,
-        true,
       ),
       // 장부 입력 전이라 분석 이익률도 계산 불가다.
       analysisMarginDisplay: buildMarginDisplay(
         null,
         metrics.totalSales,
         dataInsufficient("장부 입력 전이라 분석 이익률 데이터가 없습니다."),
-        true,
       ),
       salesDifference: metrics.salesDifference,
       hasLoss: null,
@@ -675,13 +673,11 @@ function toDashboardRow(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.totalSales,
       reviewSummary.grossMarginRate,
-      true,
     ),
     analysisMarginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.plannedSalesTotal,
       reviewSummary.plannedGrossMarginRate,
-      true,
     ),
     salesDifference: reviewSummary.salesDifference,
     hasLoss,
@@ -887,13 +883,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       correctedReviewSummary.totalSales,
       correctedReviewSummary.grossMarginRate,
-      true,
     ),
     analysisMarginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       correctedReviewSummary.plannedSalesTotal,
       correctedReviewSummary.plannedGrossMarginRate,
-      true,
     ),
     salesDifference: correctedReviewSummary.salesDifference,
     hasLoss: hasCorrectedLoss(correctionOverlay.lossItems),
@@ -1250,25 +1244,14 @@ export function buildMarginDisplay(
   thresholdSettings: AnomalyThresholdSignalSettings | null,
   totalSales: LedgerReviewMetric,
   grossMarginRate: LedgerReviewMetric,
-  // WO-14(2026-06-28): 본사 홈(관제판)에서만 마진율 표시를 반전한다(100% - 표시값).
-  // 리포트 등 다른 화면은 false로 두어 원래 값을 그대로 보여준다(반전은 홈 표시 전용).
-  invertMarginDisplay = false,
 ): DashboardMarginDisplay {
-  // 반전은 화면 표시 전용이며, grossMarginRate.value 자체와 목표/미달 계산(targetLabel·shortfall),
-  // 이상 신호, 마감 preflight는 원래 값을 쓴다. 예: 80%로 계산되면 홈에는 20%로 보인다.
-  const displayRate =
-    grossMarginRate.value === null
-      ? null
-      : invertMarginDisplay
-        ? 1 - grossMarginRate.value
-        : grossMarginRate.value;
   const currentLabel =
-    displayRate === null
+    grossMarginRate.value === null
       ? (grossMarginRate.label ??
         grossMarginRate.unavailableReason ??
         grossMarginRate.reason ??
         "-")
-      : `${formatMarginPercent(displayRate)}%`;
+      : `${formatMarginPercent(grossMarginRate.value)}%`;
 
   if (thresholdSettings === null || grossMarginRate.value === null) {
     return {

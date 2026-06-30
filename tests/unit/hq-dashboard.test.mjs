@@ -449,17 +449,16 @@ test("HQ dashboard margin display shows 현재 / 기준 and visible shortfall mo
   assert.equal(unavailable.targetLabel, null);
   assert.equal(unavailable.shortfallAmountLabel, null);
 
-  // WO-14(2026-06-28): 본사 홈은 invertMarginDisplay=true로 마진율을 100% - 표시값으로
-  // 반전한다. currentLabel만 반전되고 target/shortfall은 원래 값(0.18) 기준을 유지한다.
-  const homeInverted = buildMarginDisplay(
+  // 장부 C17/AE5 기준: 본사 홈도 이익률 원값을 보여준다. 100% - 값은 원가율이다.
+  const homeLedgerRate = buildMarginDisplay(
     { marginRateBps: 2000, inventoryDifferenceQuantity: 10 },
     { value: 1000000, status: "ok" },
     { value: 0.18, status: "ok" },
     true,
   );
-  assert.equal(homeInverted.currentLabel, "82.0%"); // 100% - 18% = 82%
-  assert.equal(homeInverted.targetLabel, "20.0%"); // 목표는 반전하지 않는다
-  assert.equal(homeInverted.shortfallAmountLabel, "미달 금액 20,000원"); // 원래 값으로 계산
+  assert.equal(homeLedgerRate.currentLabel, "18.0%");
+  assert.equal(homeLedgerRate.targetLabel, "20.0%");
+  assert.equal(homeLedgerRate.shortfallAmountLabel, "미달 금액 20,000원");
 });
 
 test("HQ dashboard e2e setup clears story 3.2 threshold state before asserting pending signals", () => {
@@ -1287,11 +1286,12 @@ test("WO-14 part3: dashboard row carries analysisMarginDisplay from plannedGross
 
   // 타입에 분석 이익률 표시 필드가 있다.
   assert.match(types, /analysisMarginDisplay:\s*DashboardMarginDisplay/);
-  // 쿼리는 plannedGrossMarginRate로 분석 이익률 표시를 만든다(장부 이익률과 같은 반전 적용).
+  // 쿼리는 plannedGrossMarginRate로 분석 이익률 표시를 만든다.
   assert.match(
     queries,
     /analysisMarginDisplay:\s*buildMarginDisplay\([\s\S]*?\.plannedGrossMarginRate/,
   );
+  assert.doesNotMatch(queries, /buildMarginDisplay\([\s\S]*?,\s*true\s*\)/);
   // 표는 마진 셀에서 장부 이익률과 분석 이익률을 함께 보여준다.
   assert.match(table, /function MarginCell/);
   assert.match(table, /analysisMarginDisplay\.currentLabel/);
