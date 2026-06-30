@@ -51,6 +51,8 @@ import type {
   ProductCategoryPerformance,
   ProductProfitabilityReportItem,
   ProductProfitabilitySummary,
+  ProductSalesPeriodItem,
+  ProductSalesPeriodReportData,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -790,6 +792,243 @@ export async function getHqDailyMeetingReport({
       ledgersWithPlannedPrice,
     ),
     productProfitability: buildProductProfitability(ledgersWithPlannedPrice),
+  };
+}
+
+// (2026-06-30) 월별 xlsx "품목매출" 시트용 기간 합산. getHqDailyMeetingReport와 동일한
+// 판매수량/원가/판매단가 헬퍼를 쓰되, 한 날의 대표값이 아니라 조회 시작일~종료일의 모든
+// 마감 장부를 store×product 단위로 합산한다. 손실수량/손실금액도 같이 모으고, 재고수량은
+// 기간 내 가장 최근 마감의 당일재고를 쓴다.
+export async function getHqProductSalesReportForRange({
+  startDate,
+  endDate,
+  storeId,
+}: {
+  startDate?: unknown;
+  endDate?: unknown;
+  storeId?: unknown;
+} = {}): Promise<ProductSalesPeriodReportData> {
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
+  const range = getStoreComparisonReportDateRange({ startDate, endDate });
+  const stores = storeScope.stores;
+  const normalizedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const matchedStore = normalizedStoreId
+    ? stores.find((store) => store.id === normalizedStoreId)
+    : null;
+  const selectedStores = normalizedStoreId
+    ? matchedStore
+      ? [matchedStore]
+      : []
+    : stores;
+  const storeNameById = new Map(
+    selectedStores.map((store) => [store.id, store.name]),
+  );
+  const storeIds = selectedStores.map((store) => store.id);
+
+  if (storeIds.length === 0) {
+    return {
+      startDateInput: range.startDateInput,
+      endDateInput: range.endDateInput,
+      selectedStoreId: matchedStore?.id ?? null,
+      selectedStoreName: matchedStore?.name ?? null,
+      scopedStoreIds: [],
+      items: [],
+    };
+  }
+
+  const { db } = await import("../../server/db.ts");
+  const ledgers = await db.dailyLedger.findMany({
+    where: {
+      storeId: { in: storeIds },
+      closingDate: { gte: range.startDate, lte: range.endDate },
+    },
+    orderBy: [{ storeId: "asc" }, { closingDate: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      storeId: true,
+      closingDate: true,
+      ledgerInventoryItems: {
+        select: {
+          productId: true,
+          productName: true,
+          productSpec: true,
+          productCategory: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          quantity: true,
+          unitPrice: true,
+          fifoLots: { select: { consumedAmount: true } },
+        },
+      },
+      ledgerLossItems: {
+        select: {
+          productId: true,
+          quantity: true,
+          amount: true,
+        },
+      },
+    },
+  });
+
+  const { getPlannedUnitPriceLookup } = await import("../sales-plan/queries.ts");
+  const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
+    ledgers.map((ledger) => ({
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+    })),
+  );
+
+  type ProductSalesBucket = Omit<
+    ProductSalesPeriodItem,
+    | "startDateInput"
+    | "endDateInput"
+    | "estimatedGrossProfit"
+    | "estimatedGrossMarginRate"
+    | "statusLabel"
+  > & {
+    usedCostFallback: boolean;
+    latestClosingDate: Date | null;
+  };
+
+  const byStoreProduct = new Map<string, ProductSalesBucket>();
+
+  for (const ledger of ledgers) {
+    const lossQuantityByProductId = aggregateLossQuantityByProductId(
+      ledger.ledgerLossItems,
+    );
+    const lossAmountByProductId = new Map<string, number>();
+    for (const lossItem of ledger.ledgerLossItems) {
+      if (!lossItem.productId) continue;
+      lossAmountByProductId.set(
+        lossItem.productId,
+        (lossAmountByProductId.get(lossItem.productId) ?? 0) + lossItem.amount,
+      );
+    }
+
+    for (const item of ledger.ledgerInventoryItems) {
+      if (item.productCategory !== "냉동" && item.productCategory !== "생물") {
+        continue;
+      }
+
+      const enrichedItem = {
+        ...item,
+        lossQuantity: item.productId
+          ? (lossQuantityByProductId.get(item.productId) ?? 0)
+          : 0,
+        plannedUnitPrice: item.productId
+          ? plannedUnitPriceLookup(
+              ledger.storeId,
+              ledger.closingDate,
+              item.productId,
+            )
+          : null,
+      };
+      const soldQuantity = getItemSoldQuantity(enrichedItem);
+      if (soldQuantity === null || soldQuantity <= 0) continue;
+
+      const productKey =
+        item.productId ??
+        `name:${item.productName}:${item.productSpec}:${item.productCategory}`;
+      const key = `${ledger.storeId}|${productKey}`;
+      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
+        getItemSalesUnitPrice(enrichedItem);
+      const existing = byStoreProduct.get(key);
+      const bucket =
+        existing ??
+        ({
+          storeId: ledger.storeId,
+          storeName: storeNameById.get(ledger.storeId) ?? ledger.storeId,
+          productId: item.productId ?? productKey,
+          productName: item.productName ?? "이름 없음",
+          productSpec: item.productSpec ?? "",
+          productCategory: item.productCategory,
+          soldQuantity: 0,
+          estimatedSalesAmount: 0,
+          estimatedCogsAmount: 0,
+          salesBasis: "planned",
+          usedCostFallback: false,
+          lossQuantity: 0,
+          lossAmount: 0,
+          currentQuantity: null,
+          latestClosingDate: null,
+        } satisfies ProductSalesBucket);
+
+      bucket.soldQuantity += soldQuantity;
+      bucket.estimatedSalesAmount += soldQuantity * salesUnitPrice;
+      bucket.estimatedCogsAmount += getItemCogs(enrichedItem, soldQuantity);
+      bucket.lossQuantity += enrichedItem.lossQuantity;
+      bucket.lossAmount += item.productId
+        ? (lossAmountByProductId.get(item.productId) ?? 0)
+        : 0;
+      if (!usedPlannedPrice) {
+        bucket.usedCostFallback = true;
+        bucket.salesBasis = "cost";
+      }
+      if (
+        bucket.latestClosingDate === null ||
+        ledger.closingDate >= bucket.latestClosingDate
+      ) {
+        bucket.latestClosingDate = ledger.closingDate;
+        bucket.currentQuantity = item.currentQuantity;
+      }
+
+      byStoreProduct.set(key, bucket);
+    }
+  }
+
+  const items = [...byStoreProduct.values()]
+    .map((bucket): ProductSalesPeriodItem => {
+      const estimatedGrossProfit =
+        bucket.estimatedSalesAmount - bucket.estimatedCogsAmount;
+      const estimatedGrossMarginRate =
+        bucket.estimatedSalesAmount > 0
+          ? estimatedGrossProfit / bucket.estimatedSalesAmount
+          : null;
+
+      return {
+        startDateInput: range.startDateInput,
+        endDateInput: range.endDateInput,
+        storeId: bucket.storeId,
+        storeName: bucket.storeName,
+        productId: bucket.productId,
+        productName: bucket.productName,
+        productSpec: bucket.productSpec,
+        productCategory: bucket.productCategory,
+        soldQuantity: bucket.soldQuantity,
+        estimatedSalesAmount: bucket.estimatedSalesAmount,
+        estimatedCogsAmount: bucket.estimatedCogsAmount,
+        estimatedGrossProfit,
+        estimatedGrossMarginRate,
+        salesBasis: bucket.salesBasis,
+        statusLabel:
+          bucket.estimatedSalesAmount <= 0
+            ? "계산 불가"
+            : bucket.usedCostFallback
+              ? "판매가 미반영"
+              : "추정",
+        lossQuantity: bucket.lossQuantity,
+        lossAmount: bucket.lossAmount,
+        currentQuantity: bucket.currentQuantity,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.storeName.localeCompare(b.storeName, "ko") ||
+        b.estimatedSalesAmount - a.estimatedSalesAmount,
+    );
+
+  return {
+    startDateInput: range.startDateInput,
+    endDateInput: range.endDateInput,
+    selectedStoreId: matchedStore?.id ?? null,
+    selectedStoreName: matchedStore?.name ?? null,
+    scopedStoreIds: storeIds,
+    items,
   };
 }
 

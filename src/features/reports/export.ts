@@ -3,6 +3,7 @@ import type {
   DailyMeetingReportData,
   DailyMeetingReportMetricEvidence,
   MonthlyClosingAnomalyReportData,
+  ProductSalesPeriodReportData,
   StoreComparisonReportData,
 } from "./types";
 import type { InventoryPositionReportData } from "./inventory-position-types";
@@ -455,42 +456,51 @@ export function buildMonthlyProfitLossSheet(data: {
   return { name: "월별손익", columns, rows };
 }
 
-// WO-15(2026-06-29): 품목별 판매현황(추정) xlsx "품목매출" 시트. 일별 회의 리포트의
-// productProfitability(품목별 추정 매출/이익률)를 그대로 시트로 옮긴다. POS 확정 매출이
-// 아니므로 statusLabel에 "추정"/"판매가 미반영"이 그대로 들어간다.
-export function buildProductSalesSheet(items: {
-  items: Array<{
-    productName: string;
-    productSpec: string;
-    productCategory: "냉동" | "생물";
-    soldQuantity: number;
-    estimatedSalesAmount: number;
-    estimatedGrossMarginRate: number | null;
-    salesBasis: "planned" | "cost";
-    statusLabel: "추정" | "판매가 미반영" | "계산 불가";
-  }>;
-}): ReportExportSheet {
+// (2026-06-30) 품목별 판매현황(추정) xlsx "품목매출" 시트. 한 날의 대표값이 아니라
+// 조회 시작일~종료일 기간 합산(getHqProductSalesReportForRange)을 store×product 단위로 옮긴다.
+// POS 확정 매출이 아니므로 statusLabel에 "추정"/"판매가 미반영"이 그대로 들어간다.
+export function buildProductSalesSheet(
+  report: ProductSalesPeriodReportData,
+): ReportExportSheet {
   const columns: ReportExportColumn[] = [
-    { key: "productName", label: "품목" },
+    { key: "startDateInput", label: "조회 시작일" },
+    { key: "endDateInput", label: "조회 종료일" },
+    { key: "storeName", label: "지점" },
+    { key: "productName", label: "품목명" },
     { key: "productSpec", label: "규격" },
-    { key: "productCategory", label: "구분" },
-    { key: "soldQuantity", label: "추정 판매수량" },
-    { key: "estimatedSalesAmount", label: "추정 매출" },
-    { key: "estimatedGrossMarginRate", label: "추정 이익률" },
+    { key: "productCategory", label: "품목구분" },
+    { key: "productGroup", label: "냉동/생물" },
+    { key: "soldQuantity", label: "추정판매수량" },
+    { key: "estimatedSalesAmount", label: "추정매출" },
+    { key: "estimatedCogsAmount", label: "추정매입원가" },
+    { key: "estimatedGrossProfit", label: "추정매출이익" },
+    { key: "estimatedGrossMarginRate", label: "추정이익률" },
+    { key: "lossQuantity", label: "손실수량" },
+    { key: "lossAmount", label: "손실금액" },
+    { key: "currentQuantity", label: "재고수량" },
     { key: "salesBasis", label: "기준" },
     { key: "statusLabel", label: "상태" },
   ];
 
-  const rows: ReportExportRow[] = items.items.map((item) => ({
+  const rows: ReportExportRow[] = report.items.map((item) => ({
+    startDateInput: item.startDateInput,
+    endDateInput: item.endDateInput,
+    storeName: item.storeName,
     productName: item.productName,
     productSpec: item.productSpec,
     productCategory: item.productCategory,
+    productGroup: item.productCategory,
     soldQuantity: item.soldQuantity,
     estimatedSalesAmount: item.estimatedSalesAmount,
+    estimatedCogsAmount: item.estimatedCogsAmount,
+    estimatedGrossProfit: item.estimatedGrossProfit,
     estimatedGrossMarginRate:
       item.estimatedGrossMarginRate === null
         ? "계산 불가"
         : `${(item.estimatedGrossMarginRate * 100).toFixed(1)}%`,
+    lossQuantity: item.lossQuantity,
+    lossAmount: item.lossAmount,
+    currentQuantity: item.currentQuantity ?? "계산 불가",
     salesBasis:
       item.salesBasis === "planned" ? "판매가 계획" : "매입단가(폴백)",
     statusLabel: item.statusLabel,

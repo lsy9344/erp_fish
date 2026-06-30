@@ -385,3 +385,35 @@ export type ProductProfitabilitySummary = {
   // 추정 매출이 0이라 이익률을 못 내는 품목 수.
   unavailableItemCount: number;
 };
+
+// (2026-06-30) 월별 xlsx "품목매출" 시트용 기간 합산 품목 매출. 일별 회의 리포트의
+// 월 마지막 날 대표값이 아니라 조회 시작일~종료일 전체를 store×product 단위로 합산한다.
+export type ProductSalesPeriodItem = {
+  startDateInput: string;
+  endDateInput: string;
+  storeId: string;
+  storeName: string;
+  productId: string;
+  productName: string;
+  productSpec: string;
+  productCategory: "냉동" | "생물";
+  soldQuantity: number;
+  estimatedSalesAmount: number;
+  estimatedCogsAmount: number;
+  estimatedGrossProfit: number;
+  estimatedGrossMarginRate: number | null;
+  salesBasis: "planned" | "cost";
+  statusLabel: "추정" | "판매가 미반영" | "계산 불가";
+  lossQuantity: number;
+  lossAmount: number;
+  currentQuantity: number | null;
+};
+
+export type ProductSalesPeriodReportData = {
+  startDateInput: string;
+  endDateInput: string;
+  selectedStoreId: string | null;
+  selectedStoreName: string | null;
+  scopedStoreIds: string[];
+  items: ProductSalesPeriodItem[];
+};

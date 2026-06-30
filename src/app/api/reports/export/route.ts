@@ -24,6 +24,7 @@ import { buildAllMonthsProfitAndLoss } from "~/features/reports/monthly-profit-l
 import {
   getHqDailyMeetingReport,
   getHqMonthlyClosingAnomalyReport,
+  getHqProductSalesReportForRange,
   getHqStoreComparisonReport,
 } from "~/features/reports/queries";
 import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
@@ -293,17 +294,15 @@ function monthDateRange(month: string): { startDate: string; endDate: string } {
   };
 }
 
-// WO-15(2026-06-29): 월별 xlsx 5시트 번들. summary는 호출부에서 만든 월별 KPI(요약)를 쓰고,
-// 나머지 시트는 같은 월/지점 기준으로 각 리포트를 한 번씩 로드해 만든다.
-// 품목매출(품목별 판매현황 추정)은 월간 집계가 없으므로 그 달 마지막 날의 일별 회의 리포트
-// productProfitability를 대표값으로 사용한다(모두 "추정" 라벨 유지).
+// WO-15(2026-06-29, fixed 2026-06-30): 월별 xlsx 5시트 번들. summary는 호출부에서 만든
+// 월별 KPI(요약)를 쓰고, 품목매출은 월 마지막 날 대표값이 아니라 월 시작일-종료일 기간 합산을 쓴다.
 async function buildMonthlyBundleSheets(
   request: Extract<ParsedExportRequest, { report: "monthly" }>,
   summaryExport: ReportExportData,
 ) {
   const { startDate, endDate } = monthDateRange(request.month);
 
-  const [comparison, inventory, dailyMeeting, pnl] = await Promise.all([
+  const [comparison, inventory, productSales, pnl] = await Promise.all([
     getHqStoreComparisonReport({
       startDate,
       endDate,
@@ -315,7 +314,11 @@ async function buildMonthlyBundleSheets(
       category: null,
       product: null,
     }),
-    getHqDailyMeetingReport({ dateQuery: endDate, storeId: request.storeId }),
+    getHqProductSalesReportForRange({
+      startDate,
+      endDate,
+      storeId: request.storeId,
+    }),
     buildAllMonthsProfitAndLoss({ storeId: request.storeId }),
   ]);
 
@@ -330,7 +333,7 @@ async function buildMonthlyBundleSheets(
       buildInventoryPositionReportExport(inventory),
       "재고현황",
     ),
-    buildProductSalesSheet(dailyMeeting.productProfitability),
+    buildProductSalesSheet(productSales),
   ];
 }
 

@@ -450,6 +450,34 @@ test.describe("Report export API", () => {
     ]) {
       expect(headerLabels).toContain(label);
     }
+
+    // 품목매출 시트는 월 마지막 날 대표값이 아니라 기간 합산이므로 조회 시작/종료일과
+    // 지점, 확정 컬럼(원가/이익/손실/재고)을 모두 가진다.
+    const productSales = workbook.getWorksheet("품목매출");
+    expect(productSales).toBeTruthy();
+    const productSalesHeader = productSales?.getRow(1).values as unknown[];
+    const productSalesLabels = productSalesHeader.filter(
+      (value) => typeof value === "string",
+    );
+    for (const label of [
+      "조회 시작일",
+      "조회 종료일",
+      "지점",
+      "품목명",
+      "규격",
+      "품목구분",
+      "냉동/생물",
+      "추정판매수량",
+      "추정매출",
+      "추정매입원가",
+      "추정매출이익",
+      "추정이익률",
+      "손실수량",
+      "손실금액",
+      "재고수량",
+    ]) {
+      expect(productSalesLabels).toContain(label);
+    }
   });
 });
 
