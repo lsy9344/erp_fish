@@ -42,6 +42,8 @@ test("회의 0627 본사 화면은 이중 매출, 검토 페이지, Excel export
   await page.goto("/app/dashboard?date=today");
   const dashboardRow = page.getByTestId(`hq-dashboard-row-${STORE_ID}`);
   await expect(dashboardRow).toContainText("미팅0627 검증점");
+  // 장부 셀 매핑(ledger-cell-mapping-review): 장부 매출=C5(C22+C23+C24+C36),
+  // 분석 매출=AE4(AI36+AI63+AI76). 둘을 한 셀에 위/아래로 노출한다.
   await expect(dashboardRow).toContainText("₩80,000");
   await expect(dashboardRow).toContainText("분석");
   await expect(dashboardRow).toContainText("₩96,000");
