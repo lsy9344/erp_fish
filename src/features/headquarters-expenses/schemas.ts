@@ -9,6 +9,7 @@ const expenseDateError = "지출 일자를 확인해 주세요.";
 const categoryError = "지출 분류를 1~80자로 입력해 주세요.";
 const amountError = "지출 금액은 0원 이상의 정수여야 합니다.";
 const memoError = "메모는 0~500자 사이여야 합니다.";
+const adjustmentReasonError = "조정사유는 0~500자 사이여야 합니다.";
 
 function parseCategory(value: unknown, context: z.RefinementCtx) {
   if (typeof value === "string") {
@@ -27,26 +28,30 @@ function parseCategory(value: unknown, context: z.RefinementCtx) {
   return z.NEVER;
 }
 
-function parseOptionalMemo(value: unknown, context: z.RefinementCtx) {
+function parseOptionalText(
+  value: unknown,
+  context: z.RefinementCtx,
+  message: string,
+) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
 
   if (typeof value === "string") {
-    const memo = value.trim();
+    const text = value.trim();
 
-    if (memo === "") {
+    if (text === "") {
       return null;
     }
 
-    if (memo.length <= 500) {
-      return memo;
+    if (text.length <= 500) {
+      return text;
     }
   }
 
   context.addIssue({
     code: z.ZodIssueCode.custom,
-    message: memoError,
+    message,
   });
 
   return z.NEVER;
@@ -85,9 +90,16 @@ const headquartersExpenseFields = {
     .transform((value, context) =>
       parseRequiredNonNegativeInteger(value, context, amountError),
     ),
+  adjustmentReason: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalText(value, context, adjustmentReasonError),
+    ),
   memo: z
     .unknown()
-    .transform((value, context) => parseOptionalMemo(value, context)),
+    .transform((value, context) =>
+      parseOptionalText(value, context, memoError),
+    ),
 };
 
 export const headquartersExpenseCreateSchema = z.object(

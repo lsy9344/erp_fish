@@ -208,6 +208,19 @@ test("buildAllMonthsProfitAndLoss collects every month with ledger or expense da
   assert.match(source, /computeMonthProfitAndLossRows/);
 });
 
+test("monthly P&L reads adjustmentReason separately from memo", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+
+  assert.match(source, /adjustmentReason:\s*true/);
+  assert.match(source, /expense\.adjustmentReason/);
+  assert.doesNotMatch(source, /bucket\.adjustmentReasons\.push\(expense\.memo\)/);
+});
+
 test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
   // 정책(2026-06-29 검토): 특정 지점 범위 export에 전사 공통 비용이 섞이면 안 된다.
   const source = readProjectFile(

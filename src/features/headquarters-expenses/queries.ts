@@ -7,6 +7,7 @@ const headquartersExpenseSelect = {
   storeId: true,
   category: true,
   amount: true,
+  adjustmentReason: true,
   memo: true,
   updatedAt: true,
   store: {
@@ -40,6 +41,7 @@ export type HeadquartersExpenseListItem = {
   storeName: string | null;
   category: string;
   amount: number;
+  adjustmentReason: string | null;
   memo: string | null;
   updatedAt: string;
   updatedByName: string;
@@ -112,6 +114,7 @@ function toHeadquartersExpenseListItem(
     storeName: expense.store?.name ?? null,
     category: expense.category,
     amount: expense.amount,
+    adjustmentReason: expense.adjustmentReason,
     memo: expense.memo,
     updatedAt: expense.updatedAt.toISOString(),
     updatedByName:

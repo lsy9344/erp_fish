@@ -58,6 +58,19 @@ test("headquarters expense create schema validates required fields and ranges", 
   assert.equal(trimmedStore.data.storeId, "store-gangnam");
   assert.equal(trimmedStore.data.category, "광고비");
   assert.equal(trimmedStore.data.memo, null);
+
+  const adjustmentReason = headquartersExpenseCreateSchema.safeParse({
+    expenseDate: "2026-06-22",
+    storeId: "",
+    category: "본사조정",
+    amount: "10000",
+    adjustmentReason: "월말 정산 차이",
+    memo: "대표 확인 완료",
+  });
+
+  assert.equal(adjustmentReason.success, true);
+  assert.equal(adjustmentReason.data.adjustmentReason, "월말 정산 차이");
+  assert.equal(adjustmentReason.data.memo, "대표 확인 완료");
 });
 
 test("headquarters expense create schema rejects invalid date, category, amount, memo", async () => {
@@ -117,6 +130,14 @@ test("headquarters expense create schema rejects invalid date, category, amount,
     headquartersExpenseCreateSchema.safeParse({
       ...base,
       memo: "메".repeat(501),
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    headquartersExpenseCreateSchema.safeParse({
+      ...base,
+      adjustmentReason: "사".repeat(501),
     }).success,
     false,
   );

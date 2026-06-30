@@ -24,6 +24,7 @@ const headquartersExpenseSelect = {
   storeId: true,
   category: true,
   amount: true,
+  adjustmentReason: true,
   memo: true,
 } as const;
 
@@ -46,6 +47,7 @@ function toExpenseAuditValue(expense: HeadquartersExpenseRecord) {
     storeId: expense.storeId,
     category: expense.category,
     amount: expense.amount,
+    adjustmentReason: expense.adjustmentReason,
     memo: expense.memo,
   };
 }
@@ -96,6 +98,9 @@ export async function createHeadquartersExpense(
     return storeScopeError;
   }
 
+  const adjustmentReason =
+    data.category === "본사조정" ? data.adjustmentReason : null;
+
   const created = await db.$transaction(async (tx) => {
     const expense = await tx.headquartersExpense.create({
       data: {
@@ -103,6 +108,7 @@ export async function createHeadquartersExpense(
         storeId: data.storeId,
         category: data.category,
         amount: data.amount,
+        adjustmentReason,
         memo: data.memo,
         createdById: actor.id,
         updatedById: actor.id,
@@ -148,6 +154,9 @@ export async function updateHeadquartersExpense(
     return storeScopeError;
   }
 
+  const adjustmentReason =
+    data.category === "본사조정" ? data.adjustmentReason : null;
+
   const result = await db.$transaction(
     async (tx): Promise<ActionResult<HeadquartersExpenseActionData>> => {
       const existing = await tx.headquartersExpense.findUnique({
@@ -178,6 +187,7 @@ export async function updateHeadquartersExpense(
           storeId: data.storeId,
           category: data.category,
           amount: data.amount,
+          adjustmentReason,
           memo: data.memo,
           updatedById: actor.id,
         },

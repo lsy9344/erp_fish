@@ -116,7 +116,7 @@ model Store {
   updatedById String?
 
   assignments               UserStoreAssignment[]
-  updatedBy                 User?                      @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy                 User?                       @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   dailyLedgers              DailyLedger[]
   inventoryOpeningSnapshots InventoryOpeningSnapshot[]
   ledgerInputCodeAliases    LedgerInputCodeStoreAlias[]
@@ -192,7 +192,7 @@ model LedgerInputCode {
   updatedAt    DateTime             @updatedAt
   updatedById  String?
 
-  updatedBy       User?            @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy       User?                       @relation("LedgerInputCodeUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   ledgerExpenses  LedgerExpense[]
   ledgerLossItems LedgerLossItem[]
   storeAliases    LedgerInputCodeStoreAlias[]
@@ -308,58 +308,58 @@ model Session {
 }
 
 model User {
-  id                                String                      @id @default(cuid())
-  name                              String?
-  email                             String?                     @unique
-  emailVerified                     DateTime?
-  image                             String?
-  role                              UserRole                    @default(STORE_MANAGER)
-  passwordHash                      String?
-  isActive                          Boolean                     @default(true)
-  createdAt                         DateTime                    @default(now())
-  updatedAt                         DateTime                    @default(now()) @updatedAt
-  accounts                          Account[]
-  sessions                          Session[]
-  posts                             Post[]
-  storeAssignments                  UserStoreAssignment[]
-  permissionProfiles                UserPermissionProfile[]
-  updatedStores                     Store[]                     @relation("StoreUpdatedBy")
-  updatedProducts                   Product[]                   @relation("ProductUpdatedBy")
-  updatedPurchaseStandards          PurchaseStandard[]          @relation("PurchaseStandardUpdatedBy")
-  updatedLedgerInputCodes           LedgerInputCode[]           @relation("LedgerInputCodeUpdatedBy")
-  updatedAnomalyThresholdSettings   AnomalyThresholdSetting[]   @relation("AnomalyThresholdSettingUpdatedBy")
-  updatedLongStockThresholdSettings LongStockThresholdSetting[] @relation("LongStockThresholdSettingUpdatedBy")
-  createdDailyLedgers               DailyLedger[]               @relation("LedgerCreatedBy")
-  updatedDailyLedgers               DailyLedger[]               @relation("LedgerUpdatedBy")
-  submittedDailyLedgers             DailyLedger[]               @relation("LedgerSubmittedBy")
-  closedDailyLedgers                DailyLedger[]               @relation("LedgerClosedBy")
-  lossReviewedDailyLedgers          DailyLedger[]               @relation("LedgerLossReviewedBy")
-  createdLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseCreatedBy")
-  updatedLedgerExpenses             LedgerExpense[]             @relation("LedgerExpenseUpdatedBy")
-  createdLedgerPurchaseItems        LedgerPurchaseItem[]        @relation("LedgerPurchaseItemCreatedBy")
-  updatedLedgerPurchaseItems        LedgerPurchaseItem[]        @relation("LedgerPurchaseItemUpdatedBy")
-  createdLedgerInventoryItems       LedgerInventoryItem[]       @relation("LedgerInventoryItemCreatedBy")
-  updatedLedgerInventoryItems       LedgerInventoryItem[]       @relation("LedgerInventoryItemUpdatedBy")
-  createdLedgerInventoryAdjustments LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentCreatedBy")
-  updatedLedgerInventoryAdjustments LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentUpdatedBy")
-  createdLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemCreatedBy")
-  updatedLedgerLossItems            LedgerLossItem[]            @relation("LedgerLossItemUpdatedBy")
-  createdLedgerLaborItems           LedgerLaborItem[]           @relation("LedgerLaborItemCreatedBy")
-  updatedLedgerLaborItems           LedgerLaborItem[]           @relation("LedgerLaborItemUpdatedBy")
-  createdCorrectionRecords          CorrectionRecord[]          @relation("CorrectionRecordCreatedBy")
-  createdLedgerInputCodeAliases     LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasCreatedBy")
-  updatedLedgerInputCodeAliases     LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasUpdatedBy")
-  createdStoreSalesPricePlans       StoreSalesPricePlan[]       @relation("StoreSalesPricePlanCreatedBy")
-  updatedStoreSalesPricePlans       StoreSalesPricePlan[]       @relation("StoreSalesPricePlanUpdatedBy")
-  createdHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseCreatedBy")
-  updatedHeadquartersExpenses       HeadquartersExpense[]       @relation("HeadquartersExpenseUpdatedBy")
-  unitPriceUpdatedLedgerPurchaseItems LedgerPurchaseItem[]      @relation("LedgerPurchaseItemUnitPriceUpdatedBy")
-  uploadedEcountImportBatches       EcountImportBatch[]         @relation("EcountImportBatchUploadedBy")
-  committedEcountImportBatches      EcountImportBatch[]         @relation("EcountImportBatchCommittedBy")
-  voidedEcountImportBatches         EcountImportBatch[]         @relation("EcountImportBatchVoidedBy")
-  updatedStoreExternalAliases       StoreExternalAlias[]        @relation("StoreExternalAliasUpdatedBy")
-  updatedProductExternalAliases     ProductExternalAlias[]      @relation("ProductExternalAliasUpdatedBy")
-  auditLogs                         AuditLog[]                  @relation("AuditActor")
+  id                                  String                      @id @default(cuid())
+  name                                String?
+  email                               String?                     @unique
+  emailVerified                       DateTime?
+  image                               String?
+  role                                UserRole                    @default(STORE_MANAGER)
+  passwordHash                        String?
+  isActive                            Boolean                     @default(true)
+  createdAt                           DateTime                    @default(now())
+  updatedAt                           DateTime                    @default(now()) @updatedAt
+  accounts                            Account[]
+  sessions                            Session[]
+  posts                               Post[]
+  storeAssignments                    UserStoreAssignment[]
+  permissionProfiles                  UserPermissionProfile[]
+  updatedStores                       Store[]                     @relation("StoreUpdatedBy")
+  updatedProducts                     Product[]                   @relation("ProductUpdatedBy")
+  updatedPurchaseStandards            PurchaseStandard[]          @relation("PurchaseStandardUpdatedBy")
+  updatedLedgerInputCodes             LedgerInputCode[]           @relation("LedgerInputCodeUpdatedBy")
+  updatedAnomalyThresholdSettings     AnomalyThresholdSetting[]   @relation("AnomalyThresholdSettingUpdatedBy")
+  updatedLongStockThresholdSettings   LongStockThresholdSetting[] @relation("LongStockThresholdSettingUpdatedBy")
+  createdDailyLedgers                 DailyLedger[]               @relation("LedgerCreatedBy")
+  updatedDailyLedgers                 DailyLedger[]               @relation("LedgerUpdatedBy")
+  submittedDailyLedgers               DailyLedger[]               @relation("LedgerSubmittedBy")
+  closedDailyLedgers                  DailyLedger[]               @relation("LedgerClosedBy")
+  lossReviewedDailyLedgers            DailyLedger[]               @relation("LedgerLossReviewedBy")
+  createdLedgerExpenses               LedgerExpense[]             @relation("LedgerExpenseCreatedBy")
+  updatedLedgerExpenses               LedgerExpense[]             @relation("LedgerExpenseUpdatedBy")
+  createdLedgerPurchaseItems          LedgerPurchaseItem[]        @relation("LedgerPurchaseItemCreatedBy")
+  updatedLedgerPurchaseItems          LedgerPurchaseItem[]        @relation("LedgerPurchaseItemUpdatedBy")
+  createdLedgerInventoryItems         LedgerInventoryItem[]       @relation("LedgerInventoryItemCreatedBy")
+  updatedLedgerInventoryItems         LedgerInventoryItem[]       @relation("LedgerInventoryItemUpdatedBy")
+  createdLedgerInventoryAdjustments   LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentCreatedBy")
+  updatedLedgerInventoryAdjustments   LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentUpdatedBy")
+  createdLedgerLossItems              LedgerLossItem[]            @relation("LedgerLossItemCreatedBy")
+  updatedLedgerLossItems              LedgerLossItem[]            @relation("LedgerLossItemUpdatedBy")
+  createdLedgerLaborItems             LedgerLaborItem[]           @relation("LedgerLaborItemCreatedBy")
+  updatedLedgerLaborItems             LedgerLaborItem[]           @relation("LedgerLaborItemUpdatedBy")
+  createdCorrectionRecords            CorrectionRecord[]          @relation("CorrectionRecordCreatedBy")
+  createdLedgerInputCodeAliases       LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasCreatedBy")
+  updatedLedgerInputCodeAliases       LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasUpdatedBy")
+  createdStoreSalesPricePlans         StoreSalesPricePlan[]       @relation("StoreSalesPricePlanCreatedBy")
+  updatedStoreSalesPricePlans         StoreSalesPricePlan[]       @relation("StoreSalesPricePlanUpdatedBy")
+  createdHeadquartersExpenses         HeadquartersExpense[]       @relation("HeadquartersExpenseCreatedBy")
+  updatedHeadquartersExpenses         HeadquartersExpense[]       @relation("HeadquartersExpenseUpdatedBy")
+  unitPriceUpdatedLedgerPurchaseItems LedgerPurchaseItem[]        @relation("LedgerPurchaseItemUnitPriceUpdatedBy")
+  uploadedEcountImportBatches         EcountImportBatch[]         @relation("EcountImportBatchUploadedBy")
+  committedEcountImportBatches        EcountImportBatch[]         @relation("EcountImportBatchCommittedBy")
+  voidedEcountImportBatches           EcountImportBatch[]         @relation("EcountImportBatchVoidedBy")
+  updatedStoreExternalAliases         StoreExternalAlias[]        @relation("StoreExternalAliasUpdatedBy")
+  updatedProductExternalAliases       ProductExternalAlias[]      @relation("ProductExternalAliasUpdatedBy")
+  auditLogs                           AuditLog[]                  @relation("AuditActor")
 }
 
 model AuditLog {
@@ -402,13 +402,13 @@ model AnomalyThresholdSetting {
 // 남으면 장기재고"인지 관리한다. 기준이 없는 분류는 "기준 확인 필요"로 두고 장기재고
 // 알림 대상에서 제외한다(생물 3~4일 같은 현장 기준을 하드코딩 30일 대신 설정으로 관리).
 model LongStockThresholdSetting {
-  id           String   @id @default(cuid())
-  category     String   @unique
+  id            String   @id @default(cuid())
+  category      String   @unique
   thresholdDays Int
-  isActive     Boolean  @default(true)
-  updatedById  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActive      Boolean  @default(true)
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   updatedBy User? @relation("LongStockThresholdSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
@@ -450,11 +450,11 @@ model DailyLedger {
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt
 
-  store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  createdBy   User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy   User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
-  submittedBy   User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  closedBy      User? @relation("LedgerClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  store          Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  createdBy      User  @relation("LedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy      User  @relation("LedgerUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  submittedBy    User? @relation("LedgerSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  closedBy       User? @relation("LedgerClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   lossReviewedBy User? @relation("LedgerLossReviewedBy", fields: [lossReviewedById], references: [id], onDelete: SetNull)
 
   @@unique([storeId, closingDate], map: "dailyLedger_storeId_closingDate_key")
@@ -507,30 +507,30 @@ model LedgerExpense {
 }
 
 model LedgerPurchaseItem {
-  id                 String               @id @default(cuid())
-  dailyLedgerId      String
-  productId          String?
+  id                      String               @id @default(cuid())
+  dailyLedgerId           String
+  productId               String?
   // DEPRECATED(2026-06-24): PurchaseStandard 단계적 비활성화. 신규 라인은 연결하지 않는다.
-  purchaseStandardId String?
-  sourceType         LedgerPurchaseSource @default(MANUAL)
-  productName        String
-  productCategory    String
-  productSpec        String
+  purchaseStandardId      String?
+  sourceType              LedgerPurchaseSource @default(MANUAL)
+  productName             String
+  productCategory         String
+  productSpec             String
   // unitPrice = 장부 적용 단가(재고/FIFO/마진 계산 기준). amount = unitPrice * quantity.
-  unitPrice          Int
-  quantity           Int
-  amount             Int
-  referenceInfo      String?
+  unitPrice               Int
+  quantity                Int
+  amount                  Int
+  referenceInfo           String?
   // 이카운트 출고/입고 라인 원본 추적. 원본 단가는 sourceUnitPrice / EcountImportLine.unitPrice에 보존한다.
-  ecountImportLineId String?              @unique
-  sourceUnitPrice    Int?
+  ecountImportLineId      String?              @unique
+  sourceUnitPrice         Int?
   unitPriceOverrideReason String?
   unitPriceUpdatedById    String?
   unitPriceUpdatedAt      DateTime?
-  createdById        String
-  updatedById        String
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  createdById             String
+  updatedById             String
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
   dailyLedger             DailyLedger              @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   product                 Product?                 @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -733,10 +733,10 @@ model LedgerLaborItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  dailyLedger DailyLedger  @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
-  employee    Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  createdBy   User         @relation("LedgerLaborItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy   User         @relation("LedgerLaborItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  employee    Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdBy   User        @relation("LedgerLaborItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User        @relation("LedgerLaborItemUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
 
   @@index([dailyLedgerId])
   @@index([employeeId])
@@ -796,16 +796,17 @@ model StoreSalesPricePlan {
 // 별도 엔티티로, 지점장에게는 노출하지 않고 본사 P&L/리포트에만 별도 라인으로 반영한다.
 // storeId는 선택 사항이며, 지정 시 본사 사용자의 지점 권한 범위 내여야 한다(귀속 표시용).
 model HeadquartersExpense {
-  id          String   @id @default(cuid())
-  expenseDate DateTime
-  storeId     String?
-  category    String
-  amount      Int
-  memo        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdById String
-  updatedById String
+  id               String   @id @default(cuid())
+  expenseDate      DateTime
+  storeId          String?
+  category         String
+  amount           Int
+  adjustmentReason String?
+  memo             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String
+  updatedById      String
 
   store     Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
   createdBy User   @relation("HeadquartersExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
@@ -828,12 +829,12 @@ model VerificationToken {
 // WO-11(2026-06-22): 이카운트 매입 미리보기 세션. preview 시 서버에서 파싱한 rows를 저장하고,
 // commit은 importSessionId만 받아 여기서 rows를 읽는다. 클라이언트 rows 조작을 원천 차단한다.
 model EcountImportSession {
-  id          String   @id @default(cuid())
-  ledgerId    String
-  actorId     String
+  id            String   @id @default(cuid())
+  ledgerId      String
+  actorId       String
   purchasesJson Json
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
 
   @@index([ledgerId])
   @@index([actorId])
@@ -843,25 +844,25 @@ model EcountImportSession {
 // WO(2026-06-24): 이카운트 출고/입고 업로드 batch. 원본 파일 단위 보존. 같은 파일은 fileHash로 차단한다.
 // status: PREVIEW, MAPPING_REQUIRED, READY, COMMITTED, FAILED, VOIDED
 model EcountImportBatch {
-  id           String    @id @default(cuid())
-  fileName     String
-  fileHash     String    @unique
-  sheetName    String
-  businessDate DateTime?
-  status       String    @default("PREVIEW")
-  errorMessage String?
-  voidReason   String?
-  uploadedById String
+  id            String    @id @default(cuid())
+  fileName      String
+  fileHash      String    @unique
+  sheetName     String
+  businessDate  DateTime?
+  status        String    @default("PREVIEW")
+  errorMessage  String?
+  voidReason    String?
+  uploadedById  String
   committedById String?
-  voidedById   String?
-  createdAt    DateTime  @default(now())
-  committedAt  DateTime?
-  voidedAt     DateTime?
+  voidedById    String?
+  createdAt     DateTime  @default(now())
+  committedAt   DateTime?
+  voidedAt      DateTime?
 
   lines       EcountImportLine[]
-  uploadedBy  User  @relation("EcountImportBatchUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
-  committedBy User? @relation("EcountImportBatchCommittedBy", fields: [committedById], references: [id], onDelete: SetNull)
-  voidedBy    User? @relation("EcountImportBatchVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  uploadedBy  User               @relation("EcountImportBatchUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  committedBy User?              @relation("EcountImportBatchCommittedBy", fields: [committedById], references: [id], onDelete: SetNull)
+  voidedBy    User?              @relation("EcountImportBatchVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([status])

@@ -225,7 +225,13 @@ async function computeMonthProfitAndLossRows({
           ? { OR: [{ storeId: { in: targetStoreIds } }, { storeId: null }] }
           : { storeId: { in: targetStoreIds } }),
       },
-      select: { storeId: true, category: true, amount: true, memo: true },
+      select: {
+        storeId: true,
+        category: true,
+        amount: true,
+        adjustmentReason: true,
+        memo: true,
+      },
     }),
   ]);
 
@@ -261,8 +267,8 @@ async function computeMonthProfitAndLossRows({
 
     if (expense.category === MONTHLY_PNL_HQ_ADJUSTMENT_CATEGORY) {
       bucket.hqAdjustmentAmount += expense.amount;
-      if (expense.memo) {
-        bucket.adjustmentReasons.push(expense.memo);
+      if (expense.adjustmentReason) {
+        bucket.adjustmentReasons.push(expense.adjustmentReason);
       }
     } else if (fixedCostSet.has(expense.category)) {
       bucket.fixedCosts[

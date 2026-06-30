@@ -50,6 +50,7 @@ type FormValues = {
   storeId: string;
   category: string;
   amount: string;
+  adjustmentReason: string;
   memo: string;
 };
 
@@ -74,6 +75,7 @@ function toEmptyFormValues(): FormValues {
     storeId: "",
     category: "",
     amount: "",
+    adjustmentReason: "",
     memo: "",
   };
 }
@@ -84,6 +86,7 @@ function toEditFormValues(expense: HeadquartersExpenseListItem): FormValues {
     storeId: expense.storeId ?? "",
     category: expense.category,
     amount: String(expense.amount),
+    adjustmentReason: expense.adjustmentReason ?? "",
     memo: expense.memo ?? "",
   };
 }
@@ -150,6 +153,7 @@ export function HeadquartersExpenseClient({
       storeId: formValues.storeId,
       category: formValues.category,
       amount: formValues.amount,
+      adjustmentReason: formValues.adjustmentReason,
       memo: formValues.memo,
     };
 
@@ -191,6 +195,7 @@ export function HeadquartersExpenseClient({
   const amountError = fieldErrors.amount?.[0];
   const expenseDateError = fieldErrors.expenseDate?.[0];
   const storeIdError = fieldErrors.storeId?.[0];
+  const adjustmentReasonError = fieldErrors.adjustmentReason?.[0];
   const memoError = fieldErrors.memo?.[0];
 
   return (
@@ -309,6 +314,30 @@ export function HeadquartersExpenseClient({
 
               <Field
                 className="sm:col-span-2"
+                data-invalid={Boolean(adjustmentReasonError)}
+              >
+                <FieldLabel htmlFor="expense-adjustment-reason">
+                  조정사유(본사조정일 때)
+                </FieldLabel>
+                <textarea
+                  id="expense-adjustment-reason"
+                  value={formValues.adjustmentReason}
+                  onChange={(event) =>
+                    setFieldValue(
+                      "adjustmentReason",
+                      event.currentTarget.value,
+                    )
+                  }
+                  className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                  aria-invalid={Boolean(adjustmentReasonError)}
+                />
+                {adjustmentReasonError ? (
+                  <FieldError>{adjustmentReasonError}</FieldError>
+                ) : null}
+              </Field>
+
+              <Field
+                className="sm:col-span-2"
                 data-invalid={Boolean(memoError)}
               >
                 <FieldLabel htmlFor="expense-memo">메모(선택)</FieldLabel>
@@ -362,6 +391,7 @@ export function HeadquartersExpenseClient({
               <TableHead>귀속 지점</TableHead>
               <TableHead>분류</TableHead>
               <TableHead className="text-right">금액</TableHead>
+              <TableHead>조정사유</TableHead>
               <TableHead>메모</TableHead>
               <TableHead>최종 변경</TableHead>
               <TableHead className="text-right">관리</TableHead>
@@ -371,7 +401,7 @@ export function HeadquartersExpenseClient({
             {view.expenses.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-muted-foreground py-8 text-center text-sm break-words"
                 >
                   선택한 월에 등록된 본사 지출이 없습니다.
@@ -398,6 +428,9 @@ export function HeadquartersExpenseClient({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {krwFormatter.format(expense.amount)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground max-w-60 break-words">
+                    {expense.adjustmentReason ?? "-"}
                   </TableCell>
                   <TableCell className="text-muted-foreground max-w-60 break-words">
                     {expense.memo ?? "-"}
