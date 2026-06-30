@@ -71,7 +71,7 @@ jobs:
         run: pnpm format:check
 
       - name: Check CI YAML and docs formatting
-        run: pnpm exec prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md
+        run: pnpm format:check:ci-docs
 
       - name: Lint
         run: pnpm lint
@@ -276,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [ledger, hq, admin]
+        group: [ledger, hq, admin, imports]
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e

@@ -88,11 +88,13 @@ test("user management schemas normalize input and return Korean field errors", a
     role: "STORE_MANAGER",
     initialPassword: "correct-password",
     storeIds: ["store-gangnam"],
+    profileIds: ["profile-store-manager"],
   });
 
   assert.equal(parsed.name, "스토리14 지점장");
   assert.equal(parsed.email, "story14@example.com");
   assert.equal(parsed.isActive, true);
+  assert.deepEqual(parsed.profileIds, ["profile-store-manager"]);
 
   const blankName = createUserAccountSchema.safeParse({
     name: " ",
@@ -182,6 +184,16 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.doesNotMatch(actions, /export\s+async\s+function\s+deleteUser/);
   assert.doesNotMatch(actions, /user\.delete/);
 
+  const createBlock = actions.match(
+    /export\s+async\s+function\s+createUserAccount[\s\S]*?\n}\r?\n\r?\nexport\s+async\s+function\s+updateUserAccount/,
+  )?.[0];
+
+  assert.ok(createBlock, "createUserAccount source block should exist");
+  assert.match(createBlock, /profileIds/);
+  assert.match(createBlock, /permissionProfile\.findMany/);
+  assert.match(createBlock, /replacePermissionProfiles/);
+  assert.match(createBlock, /INVALID_PERMISSION_PROFILE/);
+
   assert.match(queries, /getUsersForHeadquarters/);
   assert.match(queries, /getUserManagementOptions/);
   assert.match(queries, /requireUserPermissionAccess\(\)/);
@@ -219,6 +231,25 @@ test("user management client recovers from action exceptions and exposes action 
   assert.match(client, /catch\s*(?:\([^)]*\))?\s*{/);
   assert.match(client, /finally\s*{\s*setIsSaving\(false\);/);
   assert.match(client, /finally\s*{\s*setRowSavingId\(null\);/);
+});
+
+test("user creation dialog lets operators assign permission profiles immediately", () => {
+  const client = readProjectFile(
+    "src",
+    "features",
+    "master-data",
+    "components",
+    "user-management-client.tsx",
+  );
+
+  const createSubmitBlock = client.match(
+    /await createUserAccount\(\{[\s\S]*?\}\);/,
+  )?.[0];
+
+  assert.ok(createSubmitBlock, "create user submit block should exist");
+  assert.match(createSubmitBlock, /profileIds/);
+  assert.doesNotMatch(client, /dialogState\?\.mode === "edit" \? \(\s*<Field data-invalid=\{Boolean\(profileIdsError\)\}>/);
+  assert.match(client, /<FieldLabel>권한 프로필<\/FieldLabel>/);
 });
 
 test("inactive users are blocked at login and protected server boundaries", () => {

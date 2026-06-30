@@ -7,7 +7,6 @@ import { PencilIcon, PlusIcon } from "lucide-react";
 import {
   createUserAccount,
   updateUserAccount,
-  updateUserPermissionProfiles,
   updateUserStatus,
 } from "~/features/master-data/user-actions";
 import type {
@@ -239,6 +238,7 @@ export function UserManagementClient({
               role,
               isActive,
               storeIds,
+              profileIds,
             })
           : await createUserAccount({
               name,
@@ -247,6 +247,7 @@ export function UserManagementClient({
               initialPassword,
               isActive: true,
               storeIds,
+              profileIds,
             });
 
       if (!result.ok) {
@@ -255,20 +256,6 @@ export function UserManagementClient({
         setFieldErrors(nextErrors);
         focusFirstError(nextErrors);
         return;
-      }
-
-      if (dialogState?.mode === "edit") {
-        const profileResult = await updateUserPermissionProfiles(
-          dialogState.user.id,
-          { profileIds },
-        );
-
-        if (!profileResult.ok) {
-          const nextErrors = profileResult.error.fieldErrors ?? {};
-          setFormError(profileResult.error.message);
-          setFieldErrors(nextErrors);
-          return;
-        }
       }
 
       closeDialog();
@@ -609,63 +596,58 @@ export function UserManagementClient({
                 ) : null}
               </Field>
             ) : null}
-            {dialogState?.mode === "edit" ? (
-              <Field data-invalid={Boolean(profileIdsError)}>
-                <FieldLabel>권한 프로필</FieldLabel>
-                {profiles.length > 0 ? (
-                  <div
-                    id="user-profile-options"
-                    role="group"
-                    aria-describedby={
-                      profileIdsError ? "user-profile-options-error" : undefined
-                    }
-                    className="grid gap-2 rounded-md border p-3"
-                  >
-                    {profiles.map((profile) => (
-                      <label
-                        key={profile.id}
-                        className="flex min-h-11 items-start gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={profileIds.includes(profile.id)}
-                          aria-invalid={Boolean(profileIdsError)}
-                          aria-describedby={
-                            profileIdsError
-                              ? "user-profile-options-error"
-                              : undefined
-                          }
-                          onChange={(event) =>
-                            toggleProfile(
-                              profile.id,
-                              event.currentTarget.checked,
-                            )
-                          }
-                        />
-                        <span className="flex flex-col">
-                          <span className="font-medium">{profile.name}</span>
-                          {profile.description ? (
-                            <span className="text-muted-foreground">
-                              {profile.description}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    배정 가능한 활성 권한 프로필이 없습니다.
-                  </p>
-                )}
-                {profileIdsError ? (
-                  <FieldError id="user-profile-options-error">
-                    {profileIdsError}
-                  </FieldError>
-                ) : null}
-              </Field>
-            ) : null}
+            <Field data-invalid={Boolean(profileIdsError)}>
+              <FieldLabel>권한 프로필</FieldLabel>
+              {profiles.length > 0 ? (
+                <div
+                  id="user-profile-options"
+                  role="group"
+                  aria-describedby={
+                    profileIdsError ? "user-profile-options-error" : undefined
+                  }
+                  className="grid gap-2 rounded-md border p-3"
+                >
+                  {profiles.map((profile) => (
+                    <label
+                      key={profile.id}
+                      className="flex min-h-11 items-start gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={profileIds.includes(profile.id)}
+                        aria-invalid={Boolean(profileIdsError)}
+                        aria-describedby={
+                          profileIdsError
+                            ? "user-profile-options-error"
+                            : undefined
+                        }
+                        onChange={(event) =>
+                          toggleProfile(profile.id, event.currentTarget.checked)
+                        }
+                      />
+                      <span className="flex flex-col">
+                        <span className="font-medium">{profile.name}</span>
+                        {profile.description ? (
+                          <span className="text-muted-foreground">
+                            {profile.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  배정 가능한 활성 권한 프로필이 없습니다.
+                </p>
+              )}
+              {profileIdsError ? (
+                <FieldError id="user-profile-options-error">
+                  {profileIdsError}
+                </FieldError>
+              ) : null}
+            </Field>
             {dialogState?.mode === "edit" ? (
               <Field>
                 <FieldLabel htmlFor="user-active">활성 상태</FieldLabel>

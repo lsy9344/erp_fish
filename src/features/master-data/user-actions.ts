@@ -464,6 +464,22 @@ export async function createUserAccount(
         return { status: "invalid-stores" as const };
       }
 
+      const profileIds = [...new Set(parsed.data.profileIds)];
+      const profiles =
+        profileIds.length === 0
+          ? []
+          : await tx.permissionProfile.findMany({
+              where: {
+                id: { in: profileIds },
+                isActive: true,
+              },
+              select: { id: true },
+            });
+
+      if (profiles.length !== profileIds.length) {
+        return { status: "invalid-profiles" as const };
+      }
+
       const passwordHash = await hashPassword(parsed.data.initialPassword);
       const created = await tx.user.create({
         data: {
@@ -481,6 +497,8 @@ export async function createUserAccount(
         created.id,
         stores.map((store) => store.id),
       );
+
+      await replacePermissionProfiles(tx, created.id, profileIds);
 
       const after = await getUserSnapshot(tx, created.id);
 
@@ -509,6 +527,16 @@ export async function createUserAccount(
 
     if (result.status === "invalid-stores") {
       return inactiveStoreError();
+    }
+
+    if (result.status === "invalid-profiles") {
+      return actionError(
+        "INVALID_PERMISSION_PROFILE",
+        "활성 권한 프로필만 배정할 수 있습니다.",
+        {
+          profileIds: ["활성 권한 프로필만 배정할 수 있습니다."],
+        },
+      );
     }
 
     revalidateUserPaths();
@@ -562,6 +590,39 @@ export async function updateUserAccount(
         return { status: "invalid-stores" as const };
       }
 
+      const profileIds = [...new Set(parsed.data.profileIds)];
+      const profiles =
+        profileIds.length === 0
+          ? []
+          : await tx.permissionProfile.findMany({
+              where: {
+                id: { in: profileIds },
+                isActive: true,
+              },
+              select: {
+                id: true,
+                actions: {
+                  select: { action: true },
+                },
+              },
+            });
+
+      if (profiles.length !== profileIds.length) {
+        return { status: "invalid-profiles" as const };
+      }
+
+      if (actor.id === userId) {
+        const retainsPermissionManage = profiles.some((profile) =>
+          profile.actions.some(
+            (entry) => entry.action === PermissionAction.USER_PERMISSION_MANAGE,
+          ),
+        );
+
+        if (!retainsPermissionManage) {
+          return { status: "self-lockout" as const };
+        }
+      }
+
       const updated = await tx.user.update({
         where: { id: userId },
         data: {
@@ -578,6 +639,8 @@ export async function updateUserAccount(
         userId,
         stores.map((store) => store.id),
       );
+
+      await replacePermissionProfiles(tx, userId, profileIds);
 
       const after = await getUserSnapshot(tx, userId);
 
@@ -606,6 +669,28 @@ export async function updateUserAccount(
 
     if (result.status === "invalid-stores") {
       return inactiveStoreError();
+    }
+
+    if (result.status === "invalid-profiles") {
+      return actionError(
+        "INVALID_PERMISSION_PROFILE",
+        "활성 권한 프로필만 배정할 수 있습니다.",
+        {
+          profileIds: ["활성 권한 프로필만 배정할 수 있습니다."],
+        },
+      );
+    }
+
+    if (result.status === "self-lockout") {
+      return actionError(
+        "SELF_PERMISSION_CHANGE",
+        "현재 로그인한 본사 계정의 권한 관리 권한은 직접 제거할 수 없습니다.",
+        {
+          profileIds: [
+            "권한 관리(USER_PERMISSION_MANAGE) 권한을 가진 프로필을 최소 하나 유지해야 합니다.",
+          ],
+        },
+      );
     }
 
     revalidateUserPaths();

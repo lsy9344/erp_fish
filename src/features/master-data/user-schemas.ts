@@ -18,6 +18,7 @@ const userEmailSchema = z
   .pipe(z.string().email("이메일 형식이 올바르지 않습니다."));
 
 const storeIdsSchema = z.array(z.string()).default([]);
+const profileIdsSchema = z.array(z.string().min(1)).default([]);
 
 function requireStoreForManager<
   T extends { role: UserRole; storeIds: string[] },
@@ -41,6 +42,7 @@ export const createUserAccountSchema = z
       .min(12, "초기 비밀번호는 12자 이상이어야 합니다.")
       .max(1024, "초기 비밀번호가 너무 깁니다."),
     storeIds: storeIdsSchema,
+    profileIds: profileIdsSchema,
     isActive: z.boolean().default(true),
   })
   .superRefine(requireStoreForManager);
@@ -51,6 +53,7 @@ export const updateUserAccountSchema = z
     email: userEmailSchema,
     role: z.nativeEnum(UserRole),
     storeIds: storeIdsSchema,
+    profileIds: profileIdsSchema,
     isActive: z.boolean().default(true),
   })
   .superRefine(requireStoreForManager);
@@ -60,7 +63,7 @@ export const userStatusSchema = z.object({
 });
 
 export const userPermissionProfilesSchema = z.object({
-  profileIds: z.array(z.string().min(1)).default([]),
+  profileIds: profileIdsSchema,
 });
 
 export type CreateUserAccountInput = z.infer<typeof createUserAccountSchema>;

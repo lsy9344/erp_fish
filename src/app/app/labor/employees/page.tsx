@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
@@ -13,7 +15,15 @@ import { EmployeeManagementClient } from "~/features/labor/components/employee-m
 import { EmployeePayrollRollupClient } from "~/features/labor/components/employee-payroll-rollup-client";
 import { EmployeeProductivityClient } from "~/features/labor/components/employee-productivity-client";
 
+function isHrPreviewEnabled() {
+  return process.env.ENABLE_HR_PREVIEW === "true";
+}
+
 export default async function EmployeesPage() {
+  if (!isHrPreviewEnabled()) {
+    notFound();
+  }
+
   const user = await requireReportAccess();
   const currentMonth = getKstBusinessDateParam().slice(0, 7);
   const [

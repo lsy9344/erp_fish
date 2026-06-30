@@ -323,10 +323,7 @@ export function HeadquartersExpenseClient({
                   id="expense-adjustment-reason"
                   value={formValues.adjustmentReason}
                   onChange={(event) =>
-                    setFieldValue(
-                      "adjustmentReason",
-                      event.currentTarget.value,
-                    )
+                    setFieldValue("adjustmentReason", event.currentTarget.value)
                   }
                   className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
                   aria-invalid={Boolean(adjustmentReasonError)}

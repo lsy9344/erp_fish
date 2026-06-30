@@ -256,7 +256,7 @@ function toCarryoverDetailMessage(status: InventoryCarryoverStatus) {
     case InventoryCarryoverStatus.REVIEW_REQUIRED:
       return "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 확인이 필요합니다.";
     case InventoryCarryoverStatus.CARRYOVER_EMPTY:
-      return "전일 장부나 이월 근거가 부족합니다. 표시된 값은 확인이 필요한 후보입니다.";
+      return "전날 남은 재고 기록이 없어 0으로 표시됩니다. 실제 재고가 있으면 수량을 직접 입력해 주세요.";
     case InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED:
       return "마감 또는 정정으로 이월 기준이 바뀔 수 있습니다. 기존 입력값은 자동으로 덮어쓰지 않습니다.";
     case InventoryCarryoverStatus.OPENING_CARRYOVER:
@@ -265,7 +265,7 @@ function toCarryoverDetailMessage(status: InventoryCarryoverStatus) {
       return "기준 확인 필요 상태입니다.";
     case InventoryCarryoverStatus.DATA_INSUFFICIENT:
     default:
-      return "이월 기준 데이터가 부족합니다.";
+      return "전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
   }
 }
 
@@ -519,9 +519,9 @@ function toCarryoverMessage(status: InventoryCarryoverStatus | undefined) {
     case InventoryCarryoverStatus.REVIEW_REQUIRED:
       return "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요.";
     case InventoryCarryoverStatus.CARRYOVER_EMPTY:
-      return "전일 장부나 이월 근거가 부족해 이월 공백 상태입니다. 0이 아니라 근거 부족으로 확인해 주세요.";
+      return "전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
     case InventoryCarryoverStatus.DATA_INSUFFICIENT:
-      return "일부 품목은 이월 근거가 부족해 데이터 부족 상태입니다.";
+      return "일부 품목은 전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
     case InventoryCarryoverStatus.POLICY_UNCONFIRMED:
       return "일부 품목은 기준 확인 필요 상태입니다.";
     case InventoryCarryoverStatus.OPENING_CARRYOVER:
@@ -766,7 +766,7 @@ async function getCarryoverBases(
         ? isHeadquartersClosed
           ? "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요."
           : "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요."
-        : "전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
+        : "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요.",
       bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
         (item) => ({
           productId: item.productId,
@@ -849,7 +849,7 @@ async function getCarryoverBases(
       status: "manual" as const,
       source,
       message:
-        "월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부의 당일재고 후보만 표시합니다. 누락 기간은 이월 공백 상태로 본사 확인이 필요합니다.",
+        "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요.",
       bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
         (item) => ({
           productId: item.productId,

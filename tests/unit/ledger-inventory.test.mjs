@@ -1260,7 +1260,7 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   );
   assert.match(
     querySource,
-    /월초 스냅샷이나 전일 장부가 없어 가장 최근 저장 장부/,
+    /전날 재고를 자동으로 가져오지 못했습니다/,
     "older saved ledgers should still be shown as carryover-empty candidates when opening data is missing",
   );
   assert.match(querySource, /ledgerPurchaseItems/);
@@ -1608,7 +1608,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
     componentSource,
     /전일 이월 재고를 불러왔습니다\. 변경된 품목만 수정하세요\./,
   );
-  assert.match(componentSource, /이월 공백/);
+  assert.match(componentSource, /전날 재고 확인/);
   assert.match(componentSource, /검토 필요/);
   assert.match(componentSource, /이월 재확인 필요/);
   assert.match(componentSource, /월초 이월/);

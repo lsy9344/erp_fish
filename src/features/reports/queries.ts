@@ -879,7 +879,8 @@ export async function getHqProductSalesReportForRange({
     },
   });
 
-  const { getPlannedUnitPriceLookup } = await import("../sales-plan/queries.ts");
+  const { getPlannedUnitPriceLookup } =
+    await import("../sales-plan/queries.ts");
   const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
     ledgers.map((ledger) => ({
       storeId: ledger.storeId,

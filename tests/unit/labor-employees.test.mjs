@@ -108,7 +108,10 @@ test("employee queries expose active options, list, and monthly payroll rollup",
   );
 
   // 활성 직원 선택 옵션은 id/name만 노출한다.
-  assert.match(querySource, /export\s+async\s+function\s+getActiveEmployeeOptions/);
+  assert.match(
+    querySource,
+    /export\s+async\s+function\s+getActiveEmployeeOptions/,
+  );
   assert.match(querySource, /isActive:\s*true/);
 
   // 직원별 월간 롤업: 근무 매장 수, 근무 일수, 급여 합계, 메모 수.
@@ -197,6 +200,36 @@ test("employees page passes write-permission flag to management client", () => {
 
   assert.match(clientSource, /canManage/);
   assert.match(clientSource, /if\s*\(!canManage\)/);
+});
+
+test("headquarters sidebar keeps employee management out of release navigation until policy approval", () => {
+  const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
+
+  assert.doesNotMatch(sidebarSource, /label:\s*"직원 관리"/);
+  assert.doesNotMatch(sidebarSource, /href:\s*"\/app\/labor\/employees"/);
+
+  const policySource = readProjectFile(
+    "_bmad-output",
+    "planning-artifacts",
+    "policy-decisions",
+    "8-1-직원-근무-급여-참고-범위와-개인정보-기준.md",
+  );
+  assert.match(policySource, /승인 상태 \| 승인 대기/);
+});
+
+test("employees page is hidden behind an explicit HR preview flag", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "labor",
+    "employees",
+    "page.tsx",
+  );
+
+  assert.match(pageSource, /notFound/);
+  assert.match(pageSource, /ENABLE_HR_PREVIEW/);
+  assert.match(pageSource, /EmployeeManagementClient/);
 });
 
 // WO-E(2026-06-22): HR 월간 생산성/인력 배치 분석.

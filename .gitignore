@@ -13,6 +13,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+erp-fish
 *.local
 *.user.toml
 *.pem
@@ -69,6 +70,7 @@ __pycache__/
 venv/
 
 # Local tooling caches and scratch files
+.worktrees/
 .codegraph/
 tmp_scan.py
 

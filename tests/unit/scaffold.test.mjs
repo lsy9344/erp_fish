@@ -89,3 +89,18 @@ test("production auth secret rejects the committed example placeholder", () => {
   );
   assert.match(envSource, /value !== exampleAuthSecret/);
 });
+
+test("repository does not keep local deployment env dumps", () => {
+  const gitignore = readFileSync(path.join(root, ".gitignore"), "utf8");
+
+  assert.equal(
+    existsSync(path.join(root, "erp-fish")),
+    false,
+    "Vercel/Neon env dump file must not be committed at repo root",
+  );
+  assert.match(
+    gitignore,
+    /^erp-fish$/m,
+    "repo root Vercel env dump filename should stay ignored",
+  );
+});

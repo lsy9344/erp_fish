@@ -14,8 +14,8 @@ heavier verification only at integration points (PR, `staging`, `main`).
 - `Playwright Smoke` runs representative E2E smoke tests as three parallel groups:
   `ledger`, `hq`, and `admin`.
 - Pushes to `staging` run `Fast Checks`, `Production Build`, `API Tests`, and the
-  broader core E2E bundle split into three parallel groups: `ledger`, `hq`, and
-  `admin`. Smoke is skipped here because core covers it.
+  broader core E2E bundle split into four parallel groups: `ledger`, `hq`,
+  `admin`, and `imports`. Smoke is skipped here because core covers it.
 - Pushes to `main` or `master` run `Fast Checks`, `Production Build`, `API Tests`,
   and the full Playwright suite in 4 shards. The smoke job is skipped on those
   pushes because the full suite covers it.
@@ -104,7 +104,7 @@ Current Vercel branch setup:
 
 Pushes to `staging` create/update that Vercel Preview URL. Use it for quick
 deployment checks before merging or promoting production changes. GitHub Actions
-also runs the core E2E `ledger`, `hq`, and `admin` groups on `staging` so
+also runs the core E2E `ledger`, `hq`, `admin`, and `imports` groups on `staging` so
 multiple feature branches are tested together before promotion.
 
 ## Database Used In CI
@@ -154,7 +154,7 @@ Artifacts are kept for 14 days.
   matching local command: `pnpm test:e2e:smoke:ledger`,
   `pnpm test:e2e:smoke:hq`, or `pnpm test:e2e:smoke:admin`.
 - If staging core E2E fails, run the matching local group:
-  `pnpm test:e2e:core:ledger`, `pnpm test:e2e:core:hq`, or
-  `pnpm test:e2e:core:admin`.
+  `pnpm test:e2e:core:ledger`, `pnpm test:e2e:core:hq`,
+  `pnpm test:e2e:core:admin`, or `pnpm test:e2e:core:imports`.
 - If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
 - If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.

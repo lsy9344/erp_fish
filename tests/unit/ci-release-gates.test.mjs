@@ -25,9 +25,23 @@ function readWorkflowJob(workflow, jobName) {
   return match[0];
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertScriptRuns(script, command) {
+  const commands = script.split(/\s*&&\s*/);
+
+  assert.ok(
+    commands.includes(command),
+    `script should run "${command}", got: ${script}`,
+  );
+}
+
 test("PR CI keeps release gates while running representative e2e smoke", () => {
   const packageJson = JSON.parse(readProjectFile("package.json"));
   const workflow = readProjectFile(".github", "workflows", "ci.yml");
+  const prePush = readProjectFile(".githooks", "pre-push");
   const fastChecksJob = readWorkflowJob(workflow, "fast-checks");
   const buildJob = readWorkflowJob(workflow, "build");
   const apiTestsJob = readWorkflowJob(workflow, "api-tests");
@@ -43,10 +57,20 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
   assert.match(scripts["release:preflight"], /pnpm test:api/);
   assert.match(scripts["release:preflight"], /pnpm test:e2e:core/);
+  assertScriptRuns(scripts["release:preflight"], "pnpm format:check");
+  assertScriptRuns(scripts["release:preflight"], "pnpm format:check:ci-docs");
+  assert.match(scripts["format:check:ci-docs"], /\.github\/workflows\/ci\.yml/);
+  assert.match(prePush, /^\s*run "format"\s+pnpm format:check$/m);
+  assert.match(
+    prePush,
+    /^\s*run "CI docs format"\s+pnpm format:check:ci-docs$/m,
+  );
 
   // Fast gate runs on every push (incl. feature branches): lint + typecheck + unit,
   // no DB, no build, no browser. This is the cheap common-case feedback loop.
   assert.match(fastChecksJob, /if: github\.event_name != 'schedule'/);
+  assert.match(fastChecksJob, /run:\s*pnpm format:check/);
+  assert.match(fastChecksJob, /run:\s*pnpm format:check:ci-docs/);
   assert.match(fastChecksJob, /run:\s*pnpm lint/);
   assert.match(fastChecksJob, /run:\s*pnpm typecheck/);
   assert.match(fastChecksJob, /run:\s*pnpm test:unit/);
@@ -78,7 +102,11 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   assert.doesNotMatch(smokeJob, /github\.event_name == 'push'/);
   assert.match(coreJob, /github\.event_name == 'push'/);
   assert.match(coreJob, /github\.ref == 'refs\/heads\/staging'/);
-  assert.match(coreJob, /run:\s*pnpm test:e2e:core/);
+  assert.match(coreJob, /group:\s*\[ledger, hq, admin, imports\]/);
+  assert.match(
+    coreJob,
+    /run:\s*pnpm test:e2e:core:\$\{\{\s*matrix\.group\s*\}\}/,
+  );
   assert.match(
     fullJob,
     /github\.event_name == 'schedule' \|\|[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e/,
@@ -121,14 +149,28 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
   assert.doesNotMatch(fullJob, /pnpm test:playwright -- --shard/);
 
-  for (const scriptName of [
-    "test:e2e:smoke:ledger",
-    "test:e2e:smoke:hq",
-    "test:e2e:smoke:admin",
-  ]) {
+  for (const [scriptName, { spec, grep }] of Object.entries({
+    "test:e2e:smoke:ledger": {
+      spec: "tests/e2e/store-ledger-inventory.spec.ts",
+      grep: "FIFO 재고금액",
+    },
+    "test:e2e:smoke:hq": {
+      spec: "tests/e2e/hq-dashboard.spec.ts",
+      grep: "활성 지점 전체와 장부 상태",
+    },
+    "test:e2e:smoke:admin": {
+      spec: "tests/e2e/permission-profiles.spec.ts",
+      grep: "지점장 입력 화면을 직접 열 수 없다",
+    },
+  })) {
+    assert.doesNotMatch(scripts[scriptName], /\.spec\.ts:\d+/);
     assert.match(
       scripts[scriptName],
-      /^node scripts\/run-playwright-clean\.mjs tests\/e2e\/.+\.spec\.ts:\d+$/,
+      new RegExp(
+        `^node scripts/run-playwright-clean\\.mjs ${escapeRegExp(
+          spec,
+        )} --grep "${escapeRegExp(grep)}"$`,
+      ),
     );
   }
 });
@@ -149,18 +191,18 @@ test("core e2e bundle covers store, headquarters, reports, permissions, and mast
     scripts["test:e2e:core:ledger"],
     scripts["test:e2e:core:hq"],
     scripts["test:e2e:core:admin"],
+    scripts["test:e2e:core:imports"],
   ].join(" ");
 
-  assert.match(
-    scripts["test:e2e:core"],
-    /^node scripts\/run-playwright-clean\.mjs tests\/e2e\//,
-  );
-  assert.doesNotMatch(scripts["test:e2e:core"], /pnpm test:e2e:core:/);
+  for (const group of ["ledger", "hq", "admin", "imports"]) {
+    assertScriptRuns(scripts["test:e2e:core"], `pnpm test:e2e:core:${group}`);
+  }
 
   for (const scriptName of [
     "test:e2e:core:ledger",
     "test:e2e:core:hq",
     "test:e2e:core:admin",
+    "test:e2e:core:imports",
   ]) {
     assert.match(
       scripts[scriptName],
@@ -175,6 +217,7 @@ test("core e2e bundle covers store, headquarters, reports, permissions, and mast
     "tests/e2e/hq-ledger-edit.spec.ts",
     "tests/e2e/hq-ledger-corrections.spec.ts",
     "tests/e2e/hq-reports.spec.ts",
+    "tests/e2e/ecount-supply-imports.spec.ts",
     "tests/e2e/permission-profiles.spec.ts",
     "tests/e2e/master-data-stores.spec.ts",
     "tests/e2e/master-data-purchase-standards.spec.ts",
@@ -197,7 +240,7 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.doesNotMatch(startDatabase, /docker\.io\/postgres/);
   assert.match(ciDocs, /Pushes to feature branches/);
   assert.match(ciDocs, /same branch cancel older in-progress runs/);
-  assert.match(ciDocs, /three parallel groups/);
+  assert.match(ciDocs, /four parallel groups/);
   assert.match(ciDocs, /full Playwright shards run only `tests\/e2e`/);
   assert.match(ciDocs, /representative E2E smoke/);
   assert.doesNotMatch(ciDocs, /new_function/);
@@ -205,10 +248,15 @@ test("release documentation has one local DB path and an operations checklist", 
   for (const phrase of [
     "migration dry run",
     "rollback",
+    "restore",
     "AUTH_SECRET",
     "seed password",
+    "ever committed",
     "ALLOW_PRODUCTION_SEED",
+    "ALLOW_REMOTE_DESTRUCTIVE_RESET",
     "permission profile",
+    "pnpm audit --audit-level high",
+    "ENABLE_HR_PREVIEW",
     "CI",
     "E2E",
   ]) {
@@ -225,5 +273,25 @@ test("vercel preview deploy applies Prisma migrations before building", () => {
     vercelConfig.buildCommand.indexOf("pnpm db:migrate") <
       vercelConfig.buildCommand.indexOf("pnpm run build"),
     "Prisma migrations must run before Next.js build",
+  );
+});
+
+test("developer CLIs stay out of runtime dependencies and patched transitive deps are pinned", () => {
+  const packageJson = JSON.parse(readProjectFile("package.json"));
+
+  assert.equal(
+    packageJson.dependencies.shadcn,
+    undefined,
+    "shadcn is a generator CLI and must not be installed as a runtime dependency",
+  );
+  assert.match(
+    packageJson.devDependencies.shadcn,
+    /\^?4\./,
+    "shadcn should remain available as a development tool",
+  );
+  assert.match(
+    packageJson.pnpm?.overrides?.hono ?? "",
+    /^(?:>=)?4\.12\.(?:2[5-9]|[3-9]\d)|\^4\.12\.25$/,
+    "hono must be pinned to a patched range for the shadcn/MCP transitive path",
   );
 });

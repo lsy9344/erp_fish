@@ -98,7 +98,7 @@ const ROW_PAGE_SIZE = 50;
 const carryoverLoadedMessage =
   "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
 const carryoverManualMessage =
-  "전일 장부나 이월 근거가 부족해 이월 공백 상태입니다. 직접 확인해 주세요.";
+  "전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
 
 function formatKrw(value: number | null) {
   if (value === null) {
@@ -1017,7 +1017,7 @@ export function InventoryStepClient({
       case "REVIEW_REQUIRED":
         return "검토 필요";
       case "CARRYOVER_EMPTY":
-        return "이월 공백";
+        return "전날 재고 확인";
       case "CARRYOVER_RECHECK_REQUIRED":
         return "이월 재확인 필요";
       case "OPENING_CARRYOVER":
@@ -1100,9 +1100,9 @@ export function InventoryStepClient({
         break;
       case "CARRYOVER_EMPTY":
         badges.push({
-          label: "이월 공백",
+          label: "전날 재고 확인",
           detail:
-            "전일 장부나 이월 근거가 부족합니다. 표시된 0은 확정 재고가 아니라 확인이 필요한 기본 입력값입니다.",
+            "전날 남은 재고 기록이 없어 0으로 표시됩니다. 실제 재고가 있으면 수량을 직접 입력해 주세요.",
           className:
             "border-rose-600 text-rose-700 dark:border-rose-400 dark:text-rose-300",
         });
