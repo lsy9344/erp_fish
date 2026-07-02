@@ -68,7 +68,7 @@ test("Prisma schema supports user active status and modification timestamps", ()
   );
 });
 
-test("user management schemas normalize input and return Korean field errors", async () => {
+test("user management schemas accept login identifiers and return Korean field errors", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -84,23 +84,23 @@ test("user management schemas normalize input and return Korean field errors", a
 
   const parsed = createUserAccountSchema.parse({
     name: "  스토리14 지점장  ",
-    email: " STORY14@EXAMPLE.COM ",
+    email: " IDTEST ",
     role: "STORE_MANAGER",
-    initialPassword: "correct-password",
+    initialPassword: "1234",
     storeIds: ["store-gangnam"],
     profileIds: ["profile-store-manager"],
   });
 
   assert.equal(parsed.name, "스토리14 지점장");
-  assert.equal(parsed.email, "story14@example.com");
+  assert.equal(parsed.email, "idtest");
   assert.equal(parsed.isActive, true);
   assert.deepEqual(parsed.profileIds, ["profile-store-manager"]);
 
   const blankName = createUserAccountSchema.safeParse({
     name: " ",
-    email: "story14@example.com",
+    email: "idtest",
     role: "HEADQUARTERS",
-    initialPassword: "correct-password",
+    initialPassword: "1234",
     storeIds: [],
   });
   assert.equal(blankName.success, false);
@@ -110,21 +110,21 @@ test("user management schemas normalize input and return Korean field errors", a
 
   const weakPassword = createUserAccountSchema.safeParse({
     name: "스토리14 지점장",
-    email: "story14@example.com",
+    email: "idtest",
     role: "STORE_MANAGER",
-    initialPassword: "short",
+    initialPassword: "123",
     storeIds: ["store-gangnam"],
   });
   assert.equal(weakPassword.success, false);
   assert.deepEqual(weakPassword.error.flatten().fieldErrors.initialPassword, [
-    "초기 비밀번호는 12자 이상이어야 합니다.",
+    "초기 비밀번호는 4자 이상이어야 합니다.",
   ]);
 
   const noStore = createUserAccountSchema.safeParse({
     name: "스토리14 지점장",
-    email: "story14@example.com",
+    email: "idtest",
     role: "STORE_MANAGER",
-    initialPassword: "correct-password",
+    initialPassword: "1234",
     storeIds: [],
   });
   assert.equal(noStore.success, false);

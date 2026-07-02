@@ -329,7 +329,7 @@ export function InventoryStepClient({
   const nextStepHref = `/app/store-entry?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
-    step: "work",
+    step: "cost",
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
@@ -1148,7 +1148,7 @@ export function InventoryStepClient({
     if (item.purchasedQuantity > 0) {
       badges.push({
         label: "오늘 매입",
-        detail: `3단계 매입에 저장된 수량입니다. 매입 ${formatQuantity(item.purchasedQuantity)}.`,
+        detail: `1단계 매입에 저장된 수량입니다. 매입 ${formatQuantity(item.purchasedQuantity)}.`,
         className:
           "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
       });
@@ -1888,7 +1888,7 @@ export function InventoryStepClient({
         ) : null}
 
         <LedgerSaveStatus
-          stepLabel="5단계 재고"
+          stepLabel="3단계 재고"
           authorDisplayName={data.authorDisplayName}
           updatedAt={data.updatedAt}
           isSaving={isSaving || isAdjustmentSavePending}

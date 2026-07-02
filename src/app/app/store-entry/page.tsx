@@ -65,7 +65,8 @@ function normalizeStoreEntryStep(
     return step;
   }
 
-  return "sales";
+  // 지점 장부 기본 진입 화면을 1단계 매입으로 맞춘다(단계 순서 변경 2026-07-02).
+  return "purchase";
 }
 
 function normalizeClosingDateParam(value: string | string[] | undefined) {

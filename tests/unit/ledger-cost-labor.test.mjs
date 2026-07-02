@@ -397,7 +397,7 @@ test("work step exposes labor reference headcount and non-blocking mismatch hint
     componentSource,
     /급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\./,
   );
-  assert.match(componentSource, /stepLabel="6단계 근무\/인건비"/);
+  assert.match(componentSource, /stepLabel="5단계 근무\/인건비"/);
 
   // Task 3: employeeId 우선 중복 제거 helper와 참고 인원 표시.
   assert.match(componentSource, /function getDraftLaborHeadcount/);

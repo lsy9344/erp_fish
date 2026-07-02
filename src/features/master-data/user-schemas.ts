@@ -12,10 +12,15 @@ const userNameSchema = z
       .max(80, "이름은 80자 이하여야 합니다."),
   );
 
-const userEmailSchema = z
+const userLoginIdentifierSchema = z
   .string()
   .transform((value) => value.trim().toLowerCase())
-  .pipe(z.string().email("이메일 형식이 올바르지 않습니다."));
+  .pipe(
+    z
+      .string()
+      .min(1, "로그인 식별자를 입력해 주세요.")
+      .max(80, "로그인 식별자는 80자 이하여야 합니다."),
+  );
 
 const storeIdsSchema = z.array(z.string()).default([]);
 const profileIdsSchema = z.array(z.string().min(1)).default([]);
@@ -35,11 +40,11 @@ function requireStoreForManager<
 export const createUserAccountSchema = z
   .object({
     name: userNameSchema,
-    email: userEmailSchema,
+    email: userLoginIdentifierSchema,
     role: z.nativeEnum(UserRole),
     initialPassword: z
       .string()
-      .min(12, "초기 비밀번호는 12자 이상이어야 합니다.")
+      .min(4, "초기 비밀번호는 4자 이상이어야 합니다.")
       .max(1024, "초기 비밀번호가 너무 깁니다."),
     storeIds: storeIdsSchema,
     profileIds: profileIdsSchema,
@@ -50,7 +55,7 @@ export const createUserAccountSchema = z
 export const updateUserAccountSchema = z
   .object({
     name: userNameSchema,
-    email: userEmailSchema,
+    email: userLoginIdentifierSchema,
     role: z.nativeEnum(UserRole),
     storeIds: storeIdsSchema,
     profileIds: profileIdsSchema,

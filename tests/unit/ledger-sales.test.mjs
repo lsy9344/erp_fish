@@ -197,14 +197,14 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   const normalizedAuthor = ledgerSalesPaymentSchema.parse(basePayload);
   assert.equal(normalizedAuthor.authorDisplayName, "김지점장");
 
+  // 단계 순서 변경(2026-07-02): 작성자 입력은 1단계 매입으로 옮겨져 매출 저장에서는 선택값이다.
+  // 빈 값/공백은 오류가 아니라 null(이번 저장에서 작성자 미변경)로 정규화한다.
   const blankAuthor = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,
     authorDisplayName: "   ",
   });
-  assert.equal(blankAuthor.success, false);
-  assert.deepEqual(blankAuthor.error.flatten().fieldErrors.authorDisplayName, [
-    "작성자 표시명을 입력해 주세요.",
-  ]);
+  assert.equal(blankAuthor.success, true);
+  assert.equal(blankAuthor.data.authorDisplayName, null);
 
   const longAuthor = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,

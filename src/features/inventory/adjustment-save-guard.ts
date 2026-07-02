@@ -27,7 +27,7 @@ export const missingRequiredCurrentQuantityMessage =
   "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.";
 
 export const missingLossReviewMessage =
-  "4단계 손실/폐기 단계를 먼저 저장해 주세요.";
+  "2단계 손실/폐기 단계를 먼저 저장해 주세요.";
 
 export type InventoryRequiredEntryGuardItem = {
   id: string;

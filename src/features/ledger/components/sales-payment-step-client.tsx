@@ -79,7 +79,6 @@ export function SalesPaymentStepClient({
   hqEditReasonRequired = false,
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
-  const authorDisplayNameInputRef = useRef<HTMLInputElement>(null);
   const totalSalesInputRef = useRef<HTMLInputElement>(null);
   const cashAmountInputRef = useRef<HTMLInputElement>(null);
   const cardAmountInputRef = useRef<HTMLInputElement>(null);
@@ -87,9 +86,6 @@ export function SalesPaymentStepClient({
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
-  const [authorDisplayName, setAuthorDisplayName] = useState(
-    initialLedger.authorDisplayName ?? "",
-  );
   const [totalSalesAmount, setTotalSalesAmount] = useState(
     formatKrwInput(String(initialLedger.totalSalesAmount)),
   );
@@ -130,14 +126,8 @@ export function SalesPaymentStepClient({
   );
   const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
-  // WO-B(2026-06-22): 최초 작성자 표시명은 한 번 기록되면 보존한다.
-  // 이미 작성자가 있는 장부는 작성자 입력을 읽기 전용으로 표시한다.
-  const isAuthorLocked = Boolean(
-    ledger.authorDisplayName && ledger.authorDisplayName.trim().length > 0,
-  );
-  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "cost");
+  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
-    authorDisplayName.trim() !== (ledger.authorDisplayName ?? "") ||
     totalSalesAmountValue !== ledger.totalSalesAmount ||
     cashAmountValue !== ledger.cashAmount ||
     cardAmountValue !== ledger.cardAmount ||
@@ -145,7 +135,6 @@ export function SalesPaymentStepClient({
 
   function fillLedger(data: StoreManagerLedgerCostStepData) {
     setLedger(data);
-    setAuthorDisplayName(data.authorDisplayName ?? "");
     setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
     setCashAmount(formatKrwInput(String(data.cashAmount)));
     setCardAmount(formatKrwInput(String(data.cardAmount)));
@@ -154,11 +143,6 @@ export function SalesPaymentStepClient({
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
-      if (errors.authorDisplayName?.length) {
-        authorDisplayNameInputRef.current?.focus();
-        return;
-      }
-
       if (errors.totalSalesAmount?.length) {
         totalSalesInputRef.current?.focus();
         return;
@@ -198,8 +182,6 @@ export function SalesPaymentStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
-        authorDisplayName:
-          authorDisplayNameInputRef.current?.value ?? authorDisplayName,
         totalSalesAmount: toRawKrwInputValue(
           totalSalesInputRef.current?.value ?? totalSalesAmount,
         ),
@@ -270,7 +252,6 @@ export function SalesPaymentStepClient({
   const cashAmountError = fieldErrors.cashAmount?.[0];
   const cardAmountError = fieldErrors.cardAmount?.[0];
   const otherPaymentAmountError = fieldErrors.otherPaymentAmount?.[0];
-  const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
   const hqEditReasonError = fieldErrors.reason?.[0];
 
   return (
@@ -312,19 +293,13 @@ export function SalesPaymentStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="1단계 매출/결제"
+        stepLabel="6단계 매출/결제"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={[
-          "작성자 표시명",
-          "총매출",
-          "현금",
-          "카드",
-          "기타 결제수단",
-        ]}
+        unsavedFields={["총매출", "현금", "카드", "기타 결제수단"]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
       />
@@ -336,44 +311,7 @@ export function SalesPaymentStepClient({
           className="flex flex-col gap-4"
           noValidate
         >
-          <Field data-invalid={Boolean(authorDisplayNameError)}>
-            <FieldLabel htmlFor="author-display-name">작성자 표시명</FieldLabel>
-            <Input
-              ref={authorDisplayNameInputRef}
-              id="author-display-name"
-              name="authorDisplayName"
-              autoComplete="name"
-              maxLength={50}
-              value={authorDisplayName}
-              disabled={!isHydrated || isOriginalEditBlocked || isAuthorLocked}
-              readOnly={isAuthorLocked}
-              onChange={(event) => {
-                setAuthorDisplayName(event.currentTarget.value);
-                setResultMessage(null);
-              }}
-              className="min-h-11"
-              aria-invalid={Boolean(authorDisplayNameError)}
-              aria-describedby={
-                authorDisplayNameError
-                  ? "author-display-name-error"
-                  : "author-display-name-help"
-              }
-            />
-            <p
-              id="author-display-name-help"
-              className="text-muted-foreground mt-1 text-xs"
-            >
-              {isAuthorLocked
-                ? "최초 작성자 표시명은 보존되며 수정할 수 없습니다. 수정 이력은 감사 로그로 추적됩니다."
-                : "감사 실행 계정과 별도로 장부 화면에 표시되는 이름입니다."}
-            </p>
-            {authorDisplayNameError ? (
-              <FieldError id="author-display-name-error">
-                {authorDisplayNameError}
-              </FieldError>
-            ) : null}
-          </Field>
-
+          {/* 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입 화면으로 이동했다. */}
           <Field data-invalid={Boolean(totalSalesError)}>
             <FieldLabel htmlFor="total-sales-amount">총매출</FieldLabel>
             <Input

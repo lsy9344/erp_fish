@@ -51,26 +51,8 @@ export function getLedgerReviewMissingItems({
 }): LedgerReviewMissingItem[] {
   const items: LedgerReviewMissingItem[] = [];
 
-  if (totalSalesAmount === 0 && paymentTotal === 0) {
-    items.push({
-      id: "sales",
-      label: "총매출/결제",
-      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
-      status: "missing",
-      detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
-    });
-  }
-
-  if (expenseCount === 0) {
-    items.push({
-      id: "expenses",
-      label: "비용",
-      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
-      status: "missing",
-      detail: "비용 항목이 아직 입력되지 않았습니다.",
-    });
-  }
-
+  // 단계 순서 변경(2026-07-02): 누락/확인 항목도 지점 입력 순서
+  // (매입>손실>재고>비용>근무>매출)와 동일하게 정렬한다.
   if (purchaseCount === 0) {
     items.push({
       id: "purchases",
@@ -105,6 +87,16 @@ export function getLedgerReviewMissingItems({
     });
   }
 
+  if (expenseCount === 0) {
+    items.push({
+      id: "expenses",
+      label: "비용",
+      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
+      status: "missing",
+      detail: "비용 항목이 아직 입력되지 않았습니다.",
+    });
+  }
+
   if (workerCount === null || workerCount <= 0) {
     items.push({
       id: "work",
@@ -115,6 +107,16 @@ export function getLedgerReviewMissingItems({
         workerCount === null
           ? "근무인원이 아직 입력되지 않았습니다."
           : "근무인원은 1명 이상이어야 제출할 수 있습니다.",
+    });
+  }
+
+  if (totalSalesAmount === 0 && paymentTotal === 0) {
+    items.push({
+      id: "sales",
+      label: "총매출/결제",
+      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
+      status: "missing",
+      detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
     });
   }
 

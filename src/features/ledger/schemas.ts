@@ -33,7 +33,6 @@ const laborMemoError = "메모는 0~500자 사이여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const authorDisplayNameError = "작성자 표시명은 50자 이하여야 합니다.";
-const authorDisplayNameRequiredError = "작성자 표시명을 입력해 주세요.";
 
 function parseRequiredKrwAmount(
   value: unknown,
@@ -152,28 +151,22 @@ export const ledgerMutationContextSchema = ledgerOpenSchema.extend({
 
 export type LedgerStoreAccessInput = z.infer<typeof ledgerStoreAccessSchema>;
 
-export const ledgerAuthorDisplayNameSchema = z
+// 단계 순서 변경(2026-07-02): 작성자 표시명 입력을 1단계 매입 화면으로 옮긴다. 매입 저장은
+// 최초 작성자가 없을 때만 기록하고 이후엔 보존하므로, 매입 스키마에서는 선택값으로 받는다.
+// 빈 값/누락은 "이번 저장에서 작성자 미변경"(null)으로 본다. 본사 매입 저장 경로도 이 스키마를
+// 재사용하는데 authorDisplayName을 보내지 않으므로 선택값이어야 한다.
+export const ledgerOptionalAuthorDisplayNameSchema = z
   .unknown()
   .transform((value, context) => {
     if (value === "" || value === null || value === undefined) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: authorDisplayNameRequiredError,
-      });
-
-      return z.NEVER;
+      return null;
     }
 
     if (typeof value === "string") {
       const displayName = value.trim();
 
       if (displayName === "") {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: authorDisplayNameRequiredError,
-        });
-
-        return z.NEVER;
+        return null;
       }
 
       if (displayName.length <= 50) {
@@ -190,7 +183,9 @@ export const ledgerAuthorDisplayNameSchema = z
   });
 
 export const ledgerSalesPaymentSchema = ledgerMutationContextSchema.extend({
-  authorDisplayName: ledgerAuthorDisplayNameSchema,
+  // 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입으로 옮겨졌다. 매출 저장은
+  // 더 이상 작성자를 UI에서 받지 않으므로 선택값으로 둔다(최초 작성자 보존 정책은 서버에서 유지).
+  authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
   totalSalesAmount: z
     .unknown()
     .transform((value, context) =>
@@ -300,6 +295,8 @@ export const ledgerPurchaseSchema = z
     ledgerId: ledgerIdSchema,
     closingDate: closingDateSchema,
     version: versionSchema,
+    // 1단계 매입 화면에서 받는 최초 작성자 표시명(선택). 최초 저장 때만 기록되고 이후 보존된다.
+    authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
     purchases: z.array(ledgerPurchaseItemSchema),
   })
   .superRefine((value, context) => {

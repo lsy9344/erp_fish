@@ -40,7 +40,7 @@ export const authConfig = {
     CredentialsProvider({
       name: AUTH_PROVIDER_NAME,
       credentials: {
-        email: { label: "이메일", type: "email" },
+        email: { label: "로그인 식별자", type: "text" },
         password: { label: "비밀번호", type: "password" },
       },
       async authorize(credentials) {

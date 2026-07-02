@@ -203,6 +203,18 @@ test("login schema limits password input length", async () => {
   assert.equal(result.success, false);
 });
 
+test("login schema accepts plain login identifiers", async () => {
+  const { loginSchema } = await import(authSchemaModuleUrl.href);
+
+  const result = loginSchema.safeParse({
+    email: " IDTEST ",
+    password: "1234",
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data.email, "idtest");
+});
+
 test("e2e global setup resets seeded store assignments before recreating fixtures", () => {
   const setup = readFileSync(path.join(root, "tests", "e2e", "global-setup.ts"), "utf8");
 

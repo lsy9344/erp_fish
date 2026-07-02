@@ -239,24 +239,29 @@ test("store save actions authorize store access before detailed field validation
 });
 
 test("step clients keep field errors connected to accessible descriptions and focus", () => {
-  const salesSource = readProjectFile(
+  // 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입 화면으로 옮겨졌다.
+  // 매입 화면이 서버 작성자 오류를 첫 매입 행보다 먼저 포커스하는지 검증한다.
+  const purchaseSource = readProjectFile(
     "src",
     "features",
     "ledger",
     "components",
-    "sales-payment-step-client.tsx",
+    "purchase-step-client.tsx",
   );
-  const salesFocusSource = salesSource.slice(
-    salesSource.indexOf("function focusFirstError"),
-    salesSource.indexOf("async function saveCurrentDraft"),
+  const purchaseFocusSource = purchaseSource.slice(
+    purchaseSource.indexOf("function focusFirstError"),
+    purchaseSource.indexOf("async function saveCurrentDraft"),
   );
 
-  assert.match(salesFocusSource, /errors\.authorDisplayName\?\.length/);
-  assert.match(salesFocusSource, /authorDisplayNameInputRef\.current\?\.focus/);
+  assert.match(purchaseFocusSource, /errors\.authorDisplayName\?\.length/);
+  assert.match(
+    purchaseFocusSource,
+    /authorDisplayNameInputRef\.current\?\.focus/,
+  );
   assert.ok(
-    salesFocusSource.indexOf("errors.authorDisplayName?.length") <
-      salesFocusSource.indexOf("errors.totalSalesAmount?.length"),
-    "sales step should focus author display name before later amount fields",
+    purchaseFocusSource.indexOf("errors.authorDisplayName?.length") <
+      purchaseFocusSource.indexOf("purchases.${index}"),
+    "purchase step should focus author display name before purchase rows",
   );
 
   const componentFiles = [

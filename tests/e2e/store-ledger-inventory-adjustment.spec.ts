@@ -28,7 +28,7 @@ async function getHeadquartersUserId() {
 
 async function login(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("이메일").fill("manager@example.com");
+  await page.getByLabel("로그인 식별자").fill("manager@example.com");
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);

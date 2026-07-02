@@ -345,7 +345,7 @@ export function ExpenseStepClient({
   const hqEditReasonError = fieldErrors.reason?.[0];
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
-  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "purchase");
+  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "work");
   const guard = useUnsavedStepGuard({
     isDirty,
     onSave: saveCurrentDraft,
@@ -390,7 +390,7 @@ export function ExpenseStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="2단계 비용"
+        stepLabel="4단계 비용"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isFormSaving}

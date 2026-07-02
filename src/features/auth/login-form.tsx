@@ -37,7 +37,7 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
       });
 
       if (!result || result.error) {
-        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+        setError("로그인 식별자 또는 비밀번호가 올바르지 않습니다.");
         return;
       }
 
@@ -53,12 +53,12 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
     <form onSubmit={handleSubmit} noValidate>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="email">이메일</FieldLabel>
+          <FieldLabel htmlFor="email">로그인 식별자</FieldLabel>
           <Input
             id="email"
             name="email"
-            type="email"
-            autoComplete="email"
+            type="text"
+            autoComplete="username"
             required
             disabled={isPending}
           />

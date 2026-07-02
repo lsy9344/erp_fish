@@ -869,7 +869,8 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /getDraftPurchaseTotal/);
   assert.match(componentSource, /clearRowErrors/);
   assert.match(componentSource, /referenceUnitPrice/);
-  assert.match(componentSource, /품목명/);
+  // 간소화(2026-07-02): "품목명:" 요약 박스는 제거되고 원문명/구분/규격은 접이식 상세로 이동.
+  assert.match(componentSource, /원문명/);
   // WO(2026-06-24): 매입 기준 select 제거 → 헬퍼 문구에서 "매입 기준" 표현이 사라지고
   // 품목 선택은 defaultUnitPrice만 채운다.
   assert.doesNotMatch(componentSource, /applyStandard/);

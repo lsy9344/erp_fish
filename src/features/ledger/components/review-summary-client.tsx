@@ -364,7 +364,7 @@ export function ReviewSummaryClient({
               오늘 많이 팔린 품목
             </h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              추정 매출은 3단계 매입의 오늘 팔 가격(예상)을 우선 사용합니다.
+              추정 매출은 1단계 매입의 오늘 팔 가격(예상)을 우선 사용합니다.
               값이 없는 품목은 매입 단가로 대체해 표시합니다(판매가 미반영).
             </p>
             {/* WO(2026-06-25): 판매가 미반영 품목이 있으면 입력 위치인 3단계 매입으로
@@ -384,10 +384,10 @@ export function ReviewSummaryClient({
                     date: getKstLedgerDateParam(currentReviewData.closingDate),
                     step: "purchase",
                   }).toString()}`}
-                  aria-label="3단계 매입에서 오늘 팔 가격 입력"
+                  aria-label="1단계 매입에서 오늘 팔 가격 입력"
                 >
                   <ArrowRightIcon aria-hidden="true" />
-                  3단계 매입에서 오늘 팔 가격 입력
+                  1단계 매입에서 오늘 팔 가격 입력
                 </a>
               </Button>
             ) : null}

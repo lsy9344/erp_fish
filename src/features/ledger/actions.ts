@@ -874,12 +874,13 @@ export async function saveLedgerSalesPayment(
 
       // WO-B(2026-06-22): authorDisplayName은 최초 작성자 표시명이다.
       // 이미 값이 있으면 store-manager 매출 저장에서 덮어쓰지 않고 보존한다.
-      // 최초 저장(값 없음)에서만 클라이언트 입력값으로 기록한다.
+      // 단계 순서 변경(2026-07-02): 작성자 입력이 1단계 매입으로 옮겨져 매출 저장은
+      // 작성자를 UI에서 받지 않는다(선택값). 값이 없으면 기존 작성자를 그대로 유지한다.
       const existingAuthorDisplayName = beforeLedger.authorDisplayName?.trim();
       const authorDisplayNameToPersist =
         existingAuthorDisplayName && existingAuthorDisplayName.length > 0
           ? existingAuthorDisplayName
-          : parsed.data.authorDisplayName;
+          : (parsed.data.authorDisplayName ?? beforeLedger.authorDisplayName);
 
       await updateEditableDailyLedgerInTx(
         tx,
@@ -1095,11 +1096,21 @@ export async function saveLedgerPurchases(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      // 단계 순서 변경(2026-07-02): 작성자 표시명 입력이 1단계 매입으로 옮겨졌다.
+      // 최초 작성자 보존 정책은 그대로 유지한다 — 이미 값이 있으면 덮어쓰지 않고,
+      // 값이 없을 때만(그리고 이번 저장에 값이 들어왔을 때만) 기록한다.
+      const existingAuthorDisplayName = beforeLedger.authorDisplayName?.trim();
+      const authorDisplayNameToPersist =
+        existingAuthorDisplayName && existingAuthorDisplayName.length > 0
+          ? existingAuthorDisplayName
+          : (parsed.data.authorDisplayName ?? beforeLedger.authorDisplayName);
+
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
         parsed.data.version,
         {
+          authorDisplayName: authorDisplayNameToPersist,
           updatedById: actor.user.id,
           lossReviewedById: null,
           lossReviewedAt: null,

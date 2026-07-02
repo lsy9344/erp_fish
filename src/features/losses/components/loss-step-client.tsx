@@ -391,7 +391,7 @@ export function LossStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="4단계 손실/폐기/떨이"
+        stepLabel="2단계 손실/폐기/떨이"
         authorDisplayName={data.authorDisplayName}
         updatedAt={data.updatedAt}
         isSaving={isSaving}

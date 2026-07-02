@@ -21,7 +21,7 @@ test.afterAll(async () => {
 
 async function loginAsHq(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("이메일").fill("hq@example.com");
+  await page.getByLabel("로그인 식별자").fill("hq@example.com");
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);
@@ -29,7 +29,7 @@ async function loginAsHq(page: Page) {
 
 async function loginAsHqViewer(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("이메일").fill("hq-viewer@example.com");
+  await page.getByLabel("로그인 식별자").fill("hq-viewer@example.com");
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);
@@ -37,7 +37,7 @@ async function loginAsHqViewer(page: Page) {
 
 async function loginAsStoreManager(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("이메일").fill("manager@example.com");
+  await page.getByLabel("로그인 식별자").fill("manager@example.com");
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\/store-entry/);

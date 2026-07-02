@@ -274,59 +274,9 @@ export function buildLedgerReviewStepSummaries({
 }): LedgerReviewStepSummary[] {
   const missingById = new Map(missingItems.map((item) => [item.id, item]));
 
+  // 단계 순서 변경(2026-07-02): 검토 요약 카드도 지점 입력 순서
+  // (매입>손실>재고>비용>근무>매출)와 동일하게 정렬한다.
   return [
-    {
-      id: "sales",
-      label: "매출/결제",
-      status: stepStatus("sales", missingById, summary.paymentDifference),
-      detail: stepDetail({
-        stepId: "sales",
-        missingItems: missingById,
-        savedDetail: "총매출과 결제수단 합계를 확인했습니다.",
-        calculationMetric: summary.paymentDifference,
-      }),
-      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
-      metrics: [
-        moneyMetric("totalSales", "총매출", summary.totalSales),
-        moneyMetric("paymentTotal", "결제수단 합계", summary.paymentTotal),
-        moneyMetric(
-          "paymentDifference",
-          "결제수단 합계와 총매출 차이",
-          summary.paymentDifference,
-          "signed-krw",
-        ),
-        ratioMetric("grossMarginRate", "마진율", summary.grossMarginRate),
-        // point_summary 검토 후속(2026-06-24): 아침 판매가 계획 vs 저녁 실제 비교.
-        moneyMetric(
-          "plannedSalesTotal",
-          "계획 판매가 기준 추정 매출",
-          summary.plannedSalesTotal,
-        ),
-        moneyMetric(
-          "plannedVsActualSalesDifference",
-          "계획 대비 실제 매출 차이",
-          summary.plannedVsActualSalesDifference,
-          "signed-krw",
-        ),
-        ratioMetric(
-          "plannedGrossMarginRate",
-          "계획 판매가 기준 마진율",
-          summary.plannedGrossMarginRate,
-        ),
-      ],
-    },
-    {
-      id: "expenses",
-      label: "비용",
-      status: stepStatus("expenses", missingById),
-      detail: stepDetail({
-        stepId: "expenses",
-        missingItems: missingById,
-        savedDetail: `비용 ${expenseCount}건이 저장되어 있습니다.`,
-      }),
-      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
-      metrics: [textMetric("expenseCount", "비용 저장", `${expenseCount}건`)],
-    },
     {
       id: "purchases",
       label: "매입",
@@ -372,6 +322,18 @@ export function buildLedgerReviewStepSummaries({
       ],
     },
     {
+      id: "expenses",
+      label: "비용",
+      status: stepStatus("expenses", missingById),
+      detail: stepDetail({
+        stepId: "expenses",
+        missingItems: missingById,
+        savedDetail: `비용 ${expenseCount}건이 저장되어 있습니다.`,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
+      metrics: [textMetric("expenseCount", "비용 저장", `${expenseCount}건`)],
+    },
+    {
       id: "work",
       label: "근무/인건비",
       status: stepStatus("work", missingById, summary.workerCount),
@@ -399,6 +361,46 @@ export function buildLedgerReviewStepSummaries({
           kind: "krw",
           status: "ok",
         },
+      ],
+    },
+    {
+      id: "sales",
+      label: "매출/결제",
+      status: stepStatus("sales", missingById, summary.paymentDifference),
+      detail: stepDetail({
+        stepId: "sales",
+        missingItems: missingById,
+        savedDetail: "총매출과 결제수단 합계를 확인했습니다.",
+        calculationMetric: summary.paymentDifference,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
+      metrics: [
+        moneyMetric("totalSales", "총매출", summary.totalSales),
+        moneyMetric("paymentTotal", "결제수단 합계", summary.paymentTotal),
+        moneyMetric(
+          "paymentDifference",
+          "결제수단 합계와 총매출 차이",
+          summary.paymentDifference,
+          "signed-krw",
+        ),
+        ratioMetric("grossMarginRate", "마진율", summary.grossMarginRate),
+        // point_summary 검토 후속(2026-06-24): 아침 판매가 계획 vs 저녁 실제 비교.
+        moneyMetric(
+          "plannedSalesTotal",
+          "계획 판매가 기준 추정 매출",
+          summary.plannedSalesTotal,
+        ),
+        moneyMetric(
+          "plannedVsActualSalesDifference",
+          "계획 대비 실제 매출 차이",
+          summary.plannedVsActualSalesDifference,
+          "signed-krw",
+        ),
+        ratioMetric(
+          "plannedGrossMarginRate",
+          "계획 판매가 기준 마진율",
+          summary.plannedGrossMarginRate,
+        ),
       ],
     },
   ];

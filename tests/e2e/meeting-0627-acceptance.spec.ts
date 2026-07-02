@@ -238,7 +238,7 @@ test("회의 0627 본사 전용 페이지는 지점장에게 막힌다", async (
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
-  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("로그인 식별자").fill(email);
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);

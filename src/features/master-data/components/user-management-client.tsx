@@ -504,7 +504,8 @@ export function UserManagementClient({
               <Input
                 ref={emailInputRef}
                 id="user-email"
-                type="email"
+                type="text"
+                autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.currentTarget.value)}
                 aria-invalid={Boolean(emailError)}

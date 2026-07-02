@@ -92,13 +92,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 });
 
 const hqLedgerLabel = "본사 검토 장부";
+// 단계 순서 변경(2026-07-02): 본사 장부 상세 탭 순서를 지점 입력 순서
+// (매입>손실>재고>비용>근무>매출)와 동일하게 맞춘다.
 const ledgerDetailTabs = [
-  "sales",
-  "expenses",
   "purchases",
-  "inventory",
   "losses",
+  "inventory",
+  "expenses",
   "work",
+  "sales",
 ] as const;
 type LedgerDetailTab = (typeof ledgerDetailTabs)[number];
 
@@ -109,7 +111,7 @@ function getLedgerDetailTab(
 
   return ledgerDetailTabs.includes(tab as LedgerDetailTab)
     ? (tab as LedgerDetailTab)
-    : "sales";
+    : "purchases";
 }
 
 export default async function LedgerDetailPage({
@@ -396,33 +398,58 @@ export default async function LedgerDetailPage({
             variant="line"
             className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
           >
-            <TabsTrigger value="sales" className="min-h-9 px-3">
-              매출/결제
-            </TabsTrigger>
-            <TabsTrigger value="expenses" className="min-h-9 px-3">
-              비용
-            </TabsTrigger>
             <TabsTrigger value="purchases" className="min-h-9 px-3">
               매입
-            </TabsTrigger>
-            <TabsTrigger value="inventory" className="min-h-9 px-3">
-              재고
             </TabsTrigger>
             <TabsTrigger value="losses" className="min-h-9 px-3">
               손실
             </TabsTrigger>
+            <TabsTrigger value="inventory" className="min-h-9 px-3">
+              재고
+            </TabsTrigger>
+            <TabsTrigger value="expenses" className="min-h-9 px-3">
+              비용
+            </TabsTrigger>
             <TabsTrigger value="work" className="min-h-9 px-3">
               근무
             </TabsTrigger>
+            <TabsTrigger value="sales" className="min-h-9 px-3">
+              매출/결제
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="sales" className="mt-3" forceMount>
-            <SalesPaymentStepClient
-              key={`sales-${ledger.id}-${ledger.status}`}
+          <TabsContent value="purchases" className="mt-3" forceMount>
+            <PurchaseStepClient
+              key={`purchases-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={ledger}
-              currentStep="sales"
-              saveAction={saveHqLedgerSalesPayment}
+              productOptions={productOptions}
+              currentStep="purchase"
+              saveAction={saveHqLedgerPurchases}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
+              showSalesPricePlan={false}
+            />
+          </TabsContent>
+          <TabsContent value="losses" className="mt-3" forceMount>
+            <LossStepClient
+              key={`losses-${lossData.id}-${lossData.status}`}
+              storeName={detail.storeName}
+              initialData={lossData}
+              saveAction={saveHqLedgerLosses}
+              showStepNavigation={false}
+              ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
+            />
+          </TabsContent>
+          <TabsContent value="inventory" className="mt-3" forceMount>
+            <InventoryStepClient
+              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
+              storeName={detail.storeName}
+              initialData={inventoryData}
+              saveItemsAction={saveHqLedgerInventoryItems}
+              saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
@@ -442,43 +469,6 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="purchases" className="mt-3" forceMount>
-            <PurchaseStepClient
-              key={`purchases-${ledger.id}-${ledger.status}`}
-              storeName={detail.storeName}
-              initialLedger={ledger}
-              productOptions={productOptions}
-              currentStep="purchase"
-              saveAction={saveHqLedgerPurchases}
-              showStepNavigation={false}
-              ledgerLabel={hqLedgerLabel}
-              hqEditReasonRequired
-              showSalesPricePlan={false}
-            />
-          </TabsContent>
-          <TabsContent value="inventory" className="mt-3" forceMount>
-            <InventoryStepClient
-              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
-              storeName={detail.storeName}
-              initialData={inventoryData}
-              saveItemsAction={saveHqLedgerInventoryItems}
-              saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
-              showStepNavigation={false}
-              ledgerLabel={hqLedgerLabel}
-              hqEditReasonRequired
-            />
-          </TabsContent>
-          <TabsContent value="losses" className="mt-3" forceMount>
-            <LossStepClient
-              key={`losses-${lossData.id}-${lossData.status}`}
-              storeName={detail.storeName}
-              initialData={lossData}
-              saveAction={saveHqLedgerLosses}
-              showStepNavigation={false}
-              ledgerLabel={hqLedgerLabel}
-              hqEditReasonRequired
-            />
-          </TabsContent>
           <TabsContent value="work" className="mt-3" forceMount>
             <WorkStepClient
               key={`work-${ledger.id}-${ledger.status}`}
@@ -490,6 +480,18 @@ export default async function LedgerDetailPage({
               employeeOptions={employeeOptions}
               showStepNavigation={false}
               showSensitiveAccountingMetrics
+              ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
+            />
+          </TabsContent>
+          <TabsContent value="sales" className="mt-3" forceMount>
+            <SalesPaymentStepClient
+              key={`sales-${ledger.id}-${ledger.status}`}
+              storeName={detail.storeName}
+              initialLedger={ledger}
+              currentStep="sales"
+              saveAction={saveHqLedgerSalesPayment}
+              showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
             />

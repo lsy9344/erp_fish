@@ -179,9 +179,17 @@ export function PurchaseStepClient({
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
   const plannedUnitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
+  const authorDisplayNameInputRef = useRef<HTMLInputElement>(null);
   const nextDraftLineNumberRef = useRef(0);
 
   const [ledger, setLedger] = useState(initialLedger);
+  // 단계 순서 변경(2026-07-02): 작성자 표시명 입력을 1단계 매입 화면에서 받는다.
+  // 본사 매입 편집 화면(hqEditReasonRequired)에서는 작성자 입력을 노출하지 않는다.
+  const showAuthorDisplayName = !hqEditReasonRequired;
+  const [authorDisplayName, setAuthorDisplayName] = useState(
+    initialLedger.authorDisplayName ?? "",
+  );
+  const [isHydrated, setIsHydrated] = useState(false);
   const [purchaseItems, setPurchaseItems] = useState(() =>
     toPurchaseLines(initialLedger.purchaseItems),
   );
@@ -197,15 +205,29 @@ export function PurchaseStepClient({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const saveConflict = useSaveConflictDialog();
-  const isDirty = !arePurchaseLinesEqual(
-    purchaseItems,
-    toPurchaseLines(ledger.purchaseItems),
+  // WO-B(2026-06-22): 최초 작성자 표시명은 한 번 기록되면 보존한다.
+  // 이미 작성자가 있는 장부는 작성자 입력을 읽기 전용으로 표시한다.
+  const isAuthorLocked = Boolean(
+    ledger.authorDisplayName && ledger.authorDisplayName.trim().length > 0,
   );
+  const isAuthorDirty =
+    showAuthorDisplayName &&
+    !isAuthorLocked &&
+    authorDisplayName.trim() !== (ledger.authorDisplayName ?? "");
+  const isDirty =
+    !arePurchaseLinesEqual(
+      purchaseItems,
+      toPurchaseLines(ledger.purchaseItems),
+    ) || isAuthorDirty;
   const previousInitialLedgerRef = useRef(initialLedger);
 
   useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
     setLedger((current) => ({ ...current, updatedAt }));
   });
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     const previousInitialLedger = previousInitialLedgerRef.current;
@@ -220,11 +242,20 @@ export function PurchaseStepClient({
         ? nextPurchaseItems
         : current,
     );
+    // 장부 컨텍스트(지점/영업일)가 바뀌면 작성자 입력도 새 장부 값으로 맞춘다.
+    if (previousInitialLedger.id !== initialLedger.id) {
+      setAuthorDisplayName(initialLedger.authorDisplayName ?? "");
+    }
     previousInitialLedgerRef.current = initialLedger;
   }, [initialLedger]);
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
+      if (errors.authorDisplayName?.length) {
+        authorDisplayNameInputRef.current?.focus();
+        return;
+      }
+
       for (let index = 0; index < purchaseItems.length; index += 1) {
         if (errors[`purchases.${index}.productId`]?.length) {
           productRefs.current[index]?.focus();
@@ -270,6 +301,7 @@ export function PurchaseStepClient({
 
   function fillLedger(next: StoreManagerLedgerCostStepData, message?: string) {
     setLedger(next);
+    setAuthorDisplayName(next.authorDisplayName ?? "");
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
     notifyLedgerUpdated(next.id, next.updatedAt);
     const savedCount = next.purchaseItems.filter(
@@ -334,6 +366,13 @@ export function PurchaseStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
+        // 작성자 표시명은 지점장 매입 화면에서만 보낸다(본사 경로는 미노출/미전송).
+        ...(showAuthorDisplayName
+          ? {
+              authorDisplayName:
+                authorDisplayNameInputRef.current?.value ?? authorDisplayName,
+            }
+          : {}),
         purchases: lines.map((line) => ({
           id: line.id,
           kind: line.kind,
@@ -484,6 +523,7 @@ export function PurchaseStepClient({
     (line) => line.kind === "carryover",
   );
   const hqEditReasonError = fieldErrors.reason?.[0];
+  const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: ledger.storeId,
@@ -533,16 +573,62 @@ export function PurchaseStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="3단계 매입"
+        stepLabel="1단계 매입"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isFormSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["매입 품목", "단가", "수량"]}
+        unsavedFields={
+          showAuthorDisplayName
+            ? ["작성자 표시명", "매입 품목", "단가", "수량"]
+            : ["매입 품목", "단가", "수량"]
+        }
         onRetry={handleRetry}
         retryDisabled={isFormSaving || isOriginalEditBlocked}
       />
+
+      {showAuthorDisplayName ? (
+        <section className="bg-card text-card-foreground rounded-lg border p-4">
+          <Field data-invalid={Boolean(authorDisplayNameError)}>
+            <FieldLabel htmlFor="author-display-name">작성자 표시명</FieldLabel>
+            <Input
+              ref={authorDisplayNameInputRef}
+              id="author-display-name"
+              name="authorDisplayName"
+              autoComplete="name"
+              maxLength={50}
+              value={authorDisplayName}
+              disabled={!isHydrated || isOriginalEditBlocked || isAuthorLocked}
+              readOnly={isAuthorLocked}
+              onChange={(event) => {
+                setAuthorDisplayName(event.currentTarget.value);
+                setResultMessage(null);
+              }}
+              className="min-h-11"
+              aria-invalid={Boolean(authorDisplayNameError)}
+              aria-describedby={
+                authorDisplayNameError
+                  ? "author-display-name-error"
+                  : "author-display-name-help"
+              }
+            />
+            <p
+              id="author-display-name-help"
+              className="text-muted-foreground mt-1 text-xs"
+            >
+              {isAuthorLocked
+                ? "최초 작성자 표시명은 보존되며 수정할 수 없습니다. 수정 이력은 감사 로그로 추적됩니다."
+                : "장부를 작성하는 사람 이름입니다. 매입 저장 시 함께 기록됩니다."}
+            </p>
+            {authorDisplayNameError ? (
+              <FieldError id="author-display-name-error">
+                {authorDisplayNameError}
+              </FieldError>
+            ) : null}
+          </Field>
+        </section>
+      ) : null}
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -564,7 +650,7 @@ export function PurchaseStepClient({
             항목이 없습니다. 새 항목을 추가해 주세요.
           </p>
         ) : (
-          <div className="mb-3 space-y-3">
+          <div className="mb-3 space-y-2">
             {purchaseItems.map((line, index) => {
               // 이월 품목 행은 아래 전용 섹션에서 렌더한다(여기선 인덱스만 보존).
               if (line.kind === "carryover") {
@@ -609,17 +695,23 @@ export function PurchaseStepClient({
                 isStoreManagerExistingLine;
 
               return (
-                <div key={line.id} className="grid gap-2 rounded-md border p-3">
+                <div
+                  key={line.id}
+                  className="grid gap-2 rounded-md border p-3 sm:p-2.5"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-muted-foreground text-xs font-medium">
                       항목 {index + 1}
                     </p>
+                    {/* 간소화(2026-07-02): 삭제는 보조 조작이라 아이콘 크기로 줄인다. */}
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => removePurchaseLine(line.id)}
                       disabled={isLineEditBlocked}
-                      className="min-h-11 gap-2"
+                      aria-label={`항목 ${index + 1} 삭제`}
+                      className="text-muted-foreground hover:text-destructive h-8 gap-1 px-2"
                     >
                       <Trash2Icon data-icon="inline-start" />
                       삭제
@@ -669,126 +761,159 @@ export function PurchaseStepClient({
                     ) : null}
                   </Field>
 
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <Field data-invalid={Boolean(productNameError)}>
-                      <FieldLabel htmlFor={`purchase-product-name-${line.id}`}>
-                        원문명
-                      </FieldLabel>
-                      <Input
-                        id={`purchase-product-name-${line.id}`}
-                        ref={(node) => {
-                          productNameRefs.current[index] = node;
-                        }}
-                        autoComplete="off"
-                        value={line.productName}
-                        disabled={isLineEditBlocked}
-                        onChange={(event) =>
-                          updatePurchaseLine(line.id, {
-                            productName: event.currentTarget.value,
-                          })
-                        }
-                        className="min-h-11"
-                        aria-invalid={Boolean(productNameError)}
-                        aria-describedby={
-                          productNameError
-                            ? `purchase-product-name-${line.id}-error`
-                            : undefined
-                        }
-                      />
-                      {productNameError ? (
-                        <FieldError
-                          id={`purchase-product-name-${line.id}-error`}
-                        >
-                          {productNameError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
+                  {/* 간소화(2026-07-02): 원문명/구분/규격/참고 단가는 품목을 고르면 자동으로
+                      채워져 자주 확인하지 않는 보조 정보다. 접을 수 있는 상세로 숨기고, 품목을
+                      고르지 않은 자유 입력 행(직접 입력 필수)에서만 기본으로 펼친다. 오류가 있으면
+                      항상 펼쳐 사용자가 고칠 수 있게 한다.
+                      ponytail: open을 controlled로 두면 품목 선택 행에서 펼친 뒤 다른 칸 입력으로
+                      re-render되면 다시 접힌다. 자동 채움 보조 필드라 실사용 영향이 작아 허용.
+                      자주 수정하는 흐름이 생기면 행별 expanded state로 승격. */}
+                  <details
+                    className="group rounded-md border"
+                    open={
+                      !line.productId ||
+                      Boolean(productNameError) ||
+                      Boolean(productCategoryError) ||
+                      Boolean(productSpecError)
+                    }
+                  >
+                    <summary className="text-muted-foreground flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 px-3 text-xs font-medium">
+                      <span className="truncate">
+                        상세: {line.productName || "원문명 미입력"}
+                        {line.productCategory
+                          ? ` · ${line.productCategory}`
+                          : ""}
+                        {line.productSpec ? ` · ${line.productSpec}` : ""}
+                        {" · 참고 단가 "}
+                        {formatKrw(line.referenceUnitPrice)}
+                      </span>
+                      <span className="shrink-0 group-open:hidden">펼치기</span>
+                      <span className="hidden shrink-0 group-open:inline">
+                        접기
+                      </span>
+                    </summary>
+                    <div className="border-t p-3">
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <Field data-invalid={Boolean(productNameError)}>
+                          <FieldLabel
+                            htmlFor={`purchase-product-name-${line.id}`}
+                          >
+                            원문명
+                          </FieldLabel>
+                          <Input
+                            id={`purchase-product-name-${line.id}`}
+                            ref={(node) => {
+                              productNameRefs.current[index] = node;
+                            }}
+                            autoComplete="off"
+                            value={line.productName}
+                            disabled={isLineEditBlocked}
+                            onChange={(event) =>
+                              updatePurchaseLine(line.id, {
+                                productName: event.currentTarget.value,
+                              })
+                            }
+                            className="min-h-11"
+                            aria-invalid={Boolean(productNameError)}
+                            aria-describedby={
+                              productNameError
+                                ? `purchase-product-name-${line.id}-error`
+                                : undefined
+                            }
+                          />
+                          {productNameError ? (
+                            <FieldError
+                              id={`purchase-product-name-${line.id}-error`}
+                            >
+                              {productNameError}
+                            </FieldError>
+                          ) : null}
+                        </Field>
 
-                    <Field data-invalid={Boolean(productCategoryError)}>
-                      <FieldLabel
-                        htmlFor={`purchase-product-category-${line.id}`}
-                      >
-                        구분
-                      </FieldLabel>
-                      <Input
-                        id={`purchase-product-category-${line.id}`}
-                        ref={(node) => {
-                          productCategoryRefs.current[index] = node;
-                        }}
-                        autoComplete="off"
-                        value={line.productCategory}
-                        disabled={isLineEditBlocked}
-                        onChange={(event) =>
-                          updatePurchaseLine(line.id, {
-                            productCategory: event.currentTarget.value,
-                          })
-                        }
-                        className="min-h-11"
-                        aria-invalid={Boolean(productCategoryError)}
-                        aria-describedby={
-                          productCategoryError
-                            ? `purchase-product-category-${line.id}-error`
-                            : undefined
-                        }
-                      />
-                      {productCategoryError ? (
-                        <FieldError
-                          id={`purchase-product-category-${line.id}-error`}
-                        >
-                          {productCategoryError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
+                        <Field data-invalid={Boolean(productCategoryError)}>
+                          <FieldLabel
+                            htmlFor={`purchase-product-category-${line.id}`}
+                          >
+                            구분
+                          </FieldLabel>
+                          <Input
+                            id={`purchase-product-category-${line.id}`}
+                            ref={(node) => {
+                              productCategoryRefs.current[index] = node;
+                            }}
+                            autoComplete="off"
+                            value={line.productCategory}
+                            disabled={isLineEditBlocked}
+                            onChange={(event) =>
+                              updatePurchaseLine(line.id, {
+                                productCategory: event.currentTarget.value,
+                              })
+                            }
+                            className="min-h-11"
+                            aria-invalid={Boolean(productCategoryError)}
+                            aria-describedby={
+                              productCategoryError
+                                ? `purchase-product-category-${line.id}-error`
+                                : undefined
+                            }
+                          />
+                          {productCategoryError ? (
+                            <FieldError
+                              id={`purchase-product-category-${line.id}-error`}
+                            >
+                              {productCategoryError}
+                            </FieldError>
+                          ) : null}
+                        </Field>
 
-                    <Field data-invalid={Boolean(productSpecError)}>
-                      <FieldLabel htmlFor={`purchase-product-spec-${line.id}`}>
-                        규격
-                      </FieldLabel>
-                      <Input
-                        id={`purchase-product-spec-${line.id}`}
-                        ref={(node) => {
-                          productSpecRefs.current[index] = node;
-                        }}
-                        autoComplete="off"
-                        value={line.productSpec}
-                        disabled={isLineEditBlocked}
-                        onChange={(event) =>
-                          updatePurchaseLine(line.id, {
-                            productSpec: event.currentTarget.value,
-                          })
-                        }
-                        className="min-h-11"
-                        aria-invalid={Boolean(productSpecError)}
-                        aria-describedby={
-                          productSpecError
-                            ? `purchase-product-spec-${line.id}-error`
-                            : undefined
-                        }
-                      />
-                      {productSpecError ? (
-                        <FieldError
-                          id={`purchase-product-spec-${line.id}-error`}
-                        >
-                          {productSpecError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-                  </div>
+                        <Field data-invalid={Boolean(productSpecError)}>
+                          <FieldLabel
+                            htmlFor={`purchase-product-spec-${line.id}`}
+                          >
+                            규격
+                          </FieldLabel>
+                          <Input
+                            id={`purchase-product-spec-${line.id}`}
+                            ref={(node) => {
+                              productSpecRefs.current[index] = node;
+                            }}
+                            autoComplete="off"
+                            value={line.productSpec}
+                            disabled={isLineEditBlocked}
+                            onChange={(event) =>
+                              updatePurchaseLine(line.id, {
+                                productSpec: event.currentTarget.value,
+                              })
+                            }
+                            className="min-h-11"
+                            aria-invalid={Boolean(productSpecError)}
+                            aria-describedby={
+                              productSpecError
+                                ? `purchase-product-spec-${line.id}-error`
+                                : undefined
+                            }
+                          />
+                          {productSpecError ? (
+                            <FieldError
+                              id={`purchase-product-spec-${line.id}-error`}
+                            >
+                              {productSpecError}
+                            </FieldError>
+                          ) : null}
+                        </Field>
+                      </div>
 
-                  <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
-                    <p>
-                      품목명: {helperProduct?.name ?? "선택 전"} · 구분:{" "}
-                      {helperProduct?.category ?? "-"} · 규격:{" "}
-                      {helperProduct?.spec ?? "-"}
-                    </p>
-                    <p className="mt-1">
-                      참고 단가:{" "}
-                      {formatKrw(helperProduct?.defaultUnitPrice ?? null)}
-                      {line.referenceInfo
-                        ? ` · 참조: ${line.referenceInfo}`
-                        : ""}
-                    </p>
-                  </div>
+                      {helperProduct || line.referenceInfo ? (
+                        <p className="bg-muted/40 text-muted-foreground mt-2 rounded-md px-3 py-2 text-xs">
+                          참고 단가:{" "}
+                          {formatKrw(helperProduct?.defaultUnitPrice ?? null)}
+                          {line.referenceInfo
+                            ? ` · 참조: ${line.referenceInfo}`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  </details>
 
                   {/* 매입 단가 / 수량 / 오늘 팔 가격(예상)을 같은 줄에서 본다.
                       모바일(<sm)에서는 세로로 쌓여 겹치거나 가로 overflow가 없다. */}
@@ -937,13 +1062,11 @@ export function PurchaseStepClient({
                     ) : null}
                   </div>
 
-                  <div className="bg-muted/40 rounded-md p-3">
-                    <div className="flex justify-between gap-2 text-sm">
-                      <span className="text-muted-foreground">매입금액</span>
-                      <span className="font-semibold tabular-nums">
-                        {formatKrw(getLineAmount(line))}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between gap-2 px-1 text-sm">
+                    <span className="text-muted-foreground">매입금액</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatKrw(getLineAmount(line))}
+                    </span>
                   </div>
                 </div>
               );

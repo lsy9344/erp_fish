@@ -460,7 +460,7 @@ export function WorkStepClient({
     parsedWorkerCount > 0 &&
     draftLaborHeadcount > 0 &&
     parsedWorkerCount !== draftLaborHeadcount;
-  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
+  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "sales");
   const guard = useUnsavedStepGuard({
     isDirty: isDirty || isLaborDirty,
     onSave: async () => {
@@ -510,7 +510,7 @@ export function WorkStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="6단계 근무/인건비"
+        stepLabel="5단계 근무/인건비"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isSaving}

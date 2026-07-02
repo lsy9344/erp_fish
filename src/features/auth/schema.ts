@@ -4,11 +4,12 @@ export const loginSchema = z.object({
   email: z
     .string()
     .trim()
-    .email("이메일 형식이 올바르지 않습니다.")
+    .min(1, "로그인 식별자를 입력해 주세요.")
+    .max(80, "로그인 식별자가 너무 깁니다.")
     .transform((value) => value.toLowerCase()),
   password: z
     .string()
-    .min(1, "비밀번호를 입력해 주세요.")
+    .min(4, "비밀번호는 4자 이상이어야 합니다.")
     .max(1024, "비밀번호가 너무 깁니다."),
 });
 
