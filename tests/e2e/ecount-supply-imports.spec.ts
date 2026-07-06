@@ -224,7 +224,7 @@ async function setEcountUploadFile(
     buffer: Buffer;
   },
 ) {
-  const fileInput = page.locator('input[type="file"]');
+  const fileInput = page.locator('input[name="file"][type="file"]');
   await expect(fileInput).toBeAttached();
   await page.waitForLoadState("networkidle");
 
@@ -265,7 +265,10 @@ test("본사는 이카운트 업로드 화면에 진입해 파일 업로드와 �
   ).toBeVisible();
 
   // 파일 업로드 컨트롤(.xlsx)이 노출된다.
-  await expect(page.locator('input[type="file"]')).toBeAttached();
+  await expect(page.locator('input[name="file"][type="file"]')).toBeAttached();
+  await expect(
+    page.locator('input[name="inventoryFile"][type="file"]'),
+  ).toBeAttached();
 });
 
 test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트에서 확인한다", async ({
@@ -285,7 +288,7 @@ test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트�
     buffer: workbook,
   };
   await setEcountUploadFile(page, uploadFile);
-  await page.getByRole("button", { name: "업로드" }).click();
+  await page.getByRole("button", { name: "업로드", exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
   await expect(page.getByText(ECOUNT_UPLOAD.fileName)).toBeVisible();
@@ -353,7 +356,7 @@ test("본사는 두 번째 미매핑 거래처 지점 드롭다운을 선택하�
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: createStoreMappingWorkbook(),
   });
-  await page.getByRole("button", { name: "업로드" }).click();
+  await page.getByRole("button", { name: "업로드", exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "매핑 필요" })).toBeVisible();

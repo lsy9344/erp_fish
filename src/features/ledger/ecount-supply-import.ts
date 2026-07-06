@@ -6,6 +6,10 @@
 import { Buffer } from "node:buffer";
 import { inflateRawSync } from "node:zlib";
 
+import {
+  isNonNegativeDecimalInRange,
+  roundToTwoDecimals,
+} from "../../lib/validation.ts";
 import { classifyProductCategory } from "./ecount-supply-mapping.ts";
 
 const requiredHeaders = [
@@ -286,6 +290,29 @@ function cellNumber(
   return parsed;
 }
 
+function cellQuantity(
+  row: CellValue[],
+  index: number,
+  label: string,
+  rowNumber: number,
+) {
+  const value = row[index];
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replaceAll(",", "").trim())
+        : Number.NaN;
+
+  if (!isNonNegativeDecimalInRange(parsed)) {
+    throw new EcountSupplyImportError("엑셀 숫자 값을 확인해 주세요.", {
+      file: [`${rowNumber}행 ${label} 값을 확인해 주세요.`],
+    });
+  }
+
+  return roundToTwoDecimals(parsed);
+}
+
 function splitProductNameAndSpec(value: string) {
   const match = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(value.trim());
 
@@ -395,7 +422,7 @@ export function parseEcountSupplyWorkbook(
       continue;
     }
 
-    const quantity = cellNumber(
+    const quantity = cellQuantity(
       row.cells,
       headerIndex["수량"],
       "수량",
@@ -427,8 +454,8 @@ export function parseEcountSupplyWorkbook(
       splitProductNameAndSpec(rawProductName);
 
     const error =
-      quantity * unitPrice !== supplyAmount
-        ? `수량 x 단가(${quantity * unitPrice})와 공급가액(${supplyAmount})이 일치하지 않습니다.`
+      Math.round(quantity * unitPrice) !== supplyAmount
+        ? `수량 x 단가(${Math.round(quantity * unitPrice)})와 공급가액(${supplyAmount})이 일치하지 않습니다.`
         : null;
 
     lines.push({

@@ -12,8 +12,9 @@ import {
 } from "~/components/ui/table";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
-import { ProductCategoryMarginChart } from "./product-category-margin-chart";
+import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
+import { ProductCategoryMarginChart } from "./product-category-margin-chart";
 import type {
   DailyMeetingReportMetricEvidence,
   DailyMeetingReportMetricValue,
@@ -227,7 +228,7 @@ function LossInventoryFlowSummary({
         id: "monthly-loss-recorded",
         label: "손실 기록 있음",
         severity: "warning" as const,
-        detail: `${loss.totalQuantity.toLocaleString("ko-KR")}개 / ${krwFormatter.format(loss.totalAmount)}`,
+        detail: `${formatQuantityValue(loss.totalQuantity)}개 / ${krwFormatter.format(loss.totalAmount)}`,
       }
     : {
         id: "monthly-loss-none",
@@ -251,7 +252,7 @@ function LossInventoryFlowSummary({
                 손실 유형별 요약
               </h3>
               <p className="text-muted-foreground mt-1 text-sm break-words tabular-nums">
-                {loss.totalQuantity.toLocaleString("ko-KR")}개
+                {formatQuantityValue(loss.totalQuantity)}개
               </p>
               <div className="mt-1 tabular-nums">
                 <MetricValueWithEvidence
@@ -284,7 +285,7 @@ function LossInventoryFlowSummary({
                         {item.lossTypeName}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {item.quantity.toLocaleString("ko-KR")}개
+                        {formatQuantityValue(item.quantity)}개
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {krwFormatter.format(item.amount)}
@@ -462,7 +463,7 @@ function RevenueRankingList({
                 </span>{" "}
                 {item.productName}
                 <span className="text-muted-foreground block text-xs">
-                  판매량 {item.soldQuantity.toLocaleString("ko-KR")}개
+                  판매량 {formatQuantityValue(item.soldQuantity)}개
                 </span>
               </span>
               <span className="shrink-0 text-right text-sm font-medium tabular-nums">
@@ -991,7 +992,7 @@ function formatQuantity(
 
   const prefix = signed && value.value > 0 ? "+" : "";
 
-  return `${prefix}${value.value.toLocaleString("ko-KR")}개`;
+  return `${prefix}${formatQuantityValue(value.value)}개`;
 }
 
 function formatMetricValue(

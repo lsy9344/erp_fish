@@ -48,7 +48,7 @@ test("ledger loss model and migration persist snapshots and relations", () => {
   );
   assert.match(
     schema,
-    /model\s+LedgerLossItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInputCodeId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*lossTypeName\s+String[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[ledgerInputCodeId\]\)/s,
+    /model\s+LedgerLossItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInputCodeId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*lossTypeName\s+String[^}]*quantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*amount\s+Int[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[ledgerInputCodeId\]\)/s,
   );
   assert.match(schema, /recoveredAmount\s+Int/);
 
@@ -122,6 +122,12 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   };
 
   assert.equal(ledgerLossesSchema.safeParse(payload).success, true);
+  const decimalQuantity = ledgerLossesSchema.parse({
+    ...payload,
+    losses: [{ ...payload.losses[0], quantity: "1.5" }],
+  });
+  assert.equal(decimalQuantity.losses[0].quantity, 1.5);
+
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
@@ -132,7 +138,7 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
-      losses: [{ ...payload.losses[0], quantity: "1.5" }],
+      losses: [{ ...payload.losses[0], quantity: "1.555" }],
     }).success,
     false,
   );
@@ -170,11 +176,11 @@ test("planned sale price loss amount uses target price minus recovered sales", a
 
   assert.equal(
     calculatePlannedPriceLossAmount({
-      plannedUnitPrice: 15000,
-      quantity: 2,
-      recoveredAmount: 18000,
+      plannedUnitPrice: 205000,
+      quantity: 2.28,
+      recoveredAmount: 0,
     }),
-    12000,
+    467400,
   );
   assert.equal(
     calculatePlannedPriceLossAmount({
@@ -381,7 +387,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   );
   assert.match(componentSource, /손실\/폐기\/떨이 입력/);
   assert.match(componentSource, /saveLedgerLosses/);
-  assert.match(componentSource, /inputMode="numeric"/);
+  assert.match(componentSource, /inputMode="decimal"/);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /기준 초과/);
   // WO-09: 사용자 화면 라벨/문구는 lossTerms 사전을 통해 렌더링한다.

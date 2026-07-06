@@ -3,6 +3,8 @@ import {
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "../../server/calculations/inventory.ts";
+import { decimalToNumber } from "../../lib/decimal.ts";
+import { roundToTwoDecimals } from "../../lib/validation.ts";
 
 type InventoryLotSourceValue =
   | "OPENING"
@@ -57,7 +59,7 @@ function amount(quantity: number, unitPrice: number) {
 }
 
 function positiveQuantity(value: number) {
-  return Number.isSafeInteger(value) && value > 0;
+  return Number.isFinite(value) && value > 0;
 }
 
 export function calculateFifoLotSnapshots({
@@ -123,9 +125,8 @@ export function calculateFifoLotSnapshots({
     });
   }
 
-  const availableQuantity = sourceLots.reduce(
-    (sum, lot) => sum + lot.quantity,
-    0,
+  const availableQuantity = roundToTwoDecimals(
+    sourceLots.reduce((sum, lot) => sum + lot.quantity, 0),
   );
 
   if (closingQuantity > availableQuantity) {
@@ -135,19 +136,27 @@ export function calculateFifoLotSnapshots({
       sourcePurchaseItemId: null,
       sourceBusinessDate: businessDate,
       unitPrice: legacyOpening.unitPrice,
-      quantity: closingQuantity - availableQuantity,
+      quantity: roundToTwoDecimals(closingQuantity - availableQuantity),
     });
   }
 
-  let quantityToConsume = Math.max(0, availableQuantity - closingQuantity);
+  let quantityToConsume = roundToTwoDecimals(
+    Math.max(0, availableQuantity - closingQuantity),
+  );
   let consumedAmount = 0;
   let remainingAmount = 0;
   const lots: FifoLotSnapshot[] = sourceLots.map((lot, index) => {
-    const consumedQuantity = Math.min(lot.quantity, quantityToConsume);
-    const remainingQuantity = lot.quantity - consumedQuantity;
+    const consumedQuantity = roundToTwoDecimals(
+      Math.min(lot.quantity, quantityToConsume),
+    );
+    const remainingQuantity = roundToTwoDecimals(
+      lot.quantity - consumedQuantity,
+    );
     const lotConsumedAmount = amount(consumedQuantity, lot.unitPrice);
     const lotRemainingAmount = amount(remainingQuantity, lot.unitPrice);
-    quantityToConsume -= consumedQuantity;
+    quantityToConsume = roundToTwoDecimals(
+      quantityToConsume - consumedQuantity,
+    );
     consumedAmount += lotConsumedAmount;
     remainingAmount += lotRemainingAmount;
 
@@ -242,9 +251,9 @@ export async function getLedgerInventoryFifoLotsByProductId(
       purchaseDate: lot.sourcePurchaseItem?.createdAt.toISOString() ?? null,
       sourceBusinessDate: lot.sourceBusinessDate?.toISOString() ?? null,
       unitPrice: lot.unitPrice,
-      originalQuantity: lot.originalQuantity,
-      consumedQuantity: lot.consumedQuantity,
-      remainingQuantity: lot.remainingQuantity,
+      originalQuantity: decimalToNumber(lot.originalQuantity),
+      consumedQuantity: decimalToNumber(lot.consumedQuantity),
+      remainingQuantity: decimalToNumber(lot.remainingQuantity),
       originalAmount: lot.originalAmount,
       consumedAmount: lot.consumedAmount,
       remainingAmount: lot.remainingAmount,
@@ -305,10 +314,17 @@ export async function refreshLedgerInventoryFifoLots(
     return;
   }
 
-  const productIds = items.map((item) => item.productId);
+  const itemInputs = items.map((item) => ({
+    ...item,
+    previousQuantity: decimalToNumber(item.previousQuantity),
+    currentQuantity:
+      item.currentQuantity === null ? null : decimalToNumber(item.currentQuantity),
+    quantity: item.quantity === null ? null : decimalToNumber(item.quantity),
+  }));
+  const productIds = itemInputs.map((item) => item.productId);
   const carryoverLedgerIds = [
     ...new Set(
-      items
+      itemInputs
         .map((item) => item.carryoverLedgerId)
         .filter((id): id is string => Boolean(id)),
     ),
@@ -356,11 +372,22 @@ export async function refreshLedgerInventoryFifoLots(
   const purchasesByProductId = groupByProductId(
     purchases.flatMap((purchase) =>
       purchase.productId
-        ? [{ ...purchase, productId: purchase.productId }]
+        ? [
+            {
+              ...purchase,
+              productId: purchase.productId,
+              quantity: decimalToNumber(purchase.quantity),
+            },
+          ]
         : [],
     ),
   );
-  const lossesByProductId = groupByProductId(losses);
+  const lossesByProductId = groupByProductId(
+    losses.map((loss) => ({
+      ...loss,
+      quantity: decimalToNumber(loss.quantity),
+    })),
+  );
   const previousLotsByProductId = groupByProductId(
     previousLots.map((lot) => ({
       productId: lot.productId,
@@ -369,12 +396,12 @@ export async function refreshLedgerInventoryFifoLots(
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
       sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
-      remainingQuantity: lot.remainingQuantity,
+      remainingQuantity: decimalToNumber(lot.remainingQuantity),
     })),
   );
   const rowsToCreate: Array<Prisma.LedgerInventoryFifoLotCreateManyInput> = [];
 
-  for (const item of items) {
+  for (const item of itemInputs) {
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
     const purchasedQuantity = sumQuantity(productPurchases);
     const lossQuantity = sumQuantity(

@@ -9,6 +9,7 @@ import {
 import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
 import { getLossStepDataInTx } from "~/features/losses/queries";
+import { decimalToNumber, nullableDecimalToNumber } from "~/lib/decimal";
 import { getStoreLedgerInTx, getKstBusinessDateParam } from "./queries";
 import { toStoreManagerLedgerReviewStepData } from "./response-shaping";
 import { buildLedgerReviewSignals } from "./review-signals";
@@ -451,7 +452,7 @@ function buildStoreManagerTopSoldItems(
       productId: item.productId,
       productName: item.productName,
       soldQuantity,
-      estimatedSalesAmount: soldQuantity * salesUnitPrice,
+      estimatedSalesAmount: Math.round(soldQuantity * salesUnitPrice),
       salesBasis: usePlannedPrice ? "planned" : "cost",
     });
   }
@@ -483,10 +484,18 @@ export async function getLedgerReviewStepData(
       actorId,
       thresholds.loss ?? reviewLossSignalThresholds,
     );
-    const savedInventoryItems = await tx.ledgerInventoryItem.findMany({
-      where: { dailyLedgerId: ledger.id },
-      select: reviewInventoryItemSelect,
-    });
+    const savedInventoryItems = (
+      await tx.ledgerInventoryItem.findMany({
+        where: { dailyLedgerId: ledger.id },
+        select: reviewInventoryItemSelect,
+      })
+    ).map((item) => ({
+      ...item,
+      previousQuantity: decimalToNumber(item.previousQuantity),
+      purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+      quantity: nullableDecimalToNumber(item.quantity),
+    }));
     // point_summary 검토 후속(2026-06-24): 추정 매출/계획 대비 비교는 회의 결정대로
     // "지점장 판매가 계획"(StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다.
     // (storeId, businessDate=closingDate, productId)로 당일 판매가 계획을 조회한다.

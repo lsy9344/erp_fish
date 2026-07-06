@@ -40,11 +40,11 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*previousQuantity\s+Int[^}]*purchasedQuantity\s+Int[^}]*currentQuantity\s+Int\?[^}]*inventoryAmount\s+Int\?[^}]*carryoverSource\s+InventoryCarryoverSource[^}]*carryoverStatus\s+InventoryCarryoverStatus[^}]*carryoverLedgerId\s+String\?[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)/s,
+    /model\s+LedgerInventoryItem\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*previousQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*purchasedQuantity\s+Decimal\s+@default\(0\)\s+@db\.Decimal\(12,\s*2\)[^}]*currentQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*inventoryAmount\s+Int\?[^}]*carryoverSource\s+InventoryCarryoverSource[^}]*carryoverStatus\s+InventoryCarryoverStatus[^}]*carryoverLedgerId\s+String\?[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)/s,
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryItem\s*{[^}]*currentQuantity\s+Int\?[^}]*quantity\s+Int\?[^}]*inventoryAmount\s+Int\?/s,
+    /model\s+LedgerInventoryItem\s*{[^}]*currentQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*quantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*inventoryAmount\s+Int\?/s,
     "inventory rows should persist current inventory and quantity separately",
   );
   assert.match(
@@ -54,12 +54,12 @@ test("ledger inventory models and migration preserve inventory snapshots", () =>
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryCarryoverDetail\s*{[^}]*ledgerInventoryItemId\s+String\s+@unique[^}]*source\s+InventoryCarryoverSource[^}]*status\s+InventoryCarryoverStatus[^}]*resolvedQuantity\s+Int[^}]*sourceLedgerId\s+String\?[^}]*sourceLedgerClosingDate\s+DateTime\?[^}]*sourceLedgerStatus\s+DailyLedgerStatus\?[^}]*sourceYearMonth\s+String\?[^}]*sourceSnapshotId\s+String\?[^}]*sourcePreviousQuantity\s+Int\?[^}]*sourcePurchasedQuantity\s+Int\?[^}]*sourceLossQuantity\s+Int\?[^}]*sourceCurrentQuantity\s+Int\?[^}]*sourceQuantity\s+Int\?[^}]*message\s+String/s,
+    /model\s+LedgerInventoryCarryoverDetail\s*{[^}]*ledgerInventoryItemId\s+String\s+@unique[^}]*source\s+InventoryCarryoverSource[^}]*status\s+InventoryCarryoverStatus[^}]*resolvedQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*sourceLedgerId\s+String\?[^}]*sourceLedgerClosingDate\s+DateTime\?[^}]*sourceLedgerStatus\s+DailyLedgerStatus\?[^}]*sourceYearMonth\s+String\?[^}]*sourceSnapshotId\s+String\?[^}]*sourcePreviousQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*sourcePurchasedQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*sourceLossQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*sourceCurrentQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*sourceQuantity\s+Decimal\?\s+@db\.Decimal\(12,\s*2\)[^}]*message\s+String/s,
     "carryover detail should persist the source data needed for the previous-stock popup",
   );
   assert.match(
     schema,
-    /model\s+InventoryOpeningSnapshot\s*{[^}]*storeId\s+String[^}]*yearMonth\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*@@unique\(\[storeId,\s*yearMonth,\s*productId\]/s,
+    /model\s+InventoryOpeningSnapshot\s*{[^}]*storeId\s+String[^}]*yearMonth\s+String[^}]*productId\s+String[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*@@unique\(\[storeId,\s*yearMonth,\s*productId\]/s,
   );
   assert.match(
     schema,
@@ -168,7 +168,7 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryAdjustment\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInventoryItemId\s+String\?[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*beforeQuantity\s+Int[^}]*beforeAmount\s+Int[^}]*afterQuantity\s+Int[^}]*afterAmount\s+Int[^}]*differenceQuantity\s+Int[^}]*differenceAmount\s+Int[^}]*amountStatus\s+InventoryAdjustmentAmountStatus[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@unique\(\[dailyLedgerId,\s*productId\]/s,
+    /model\s+LedgerInventoryAdjustment\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*ledgerInventoryItemId\s+String\?[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*beforeQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*beforeAmount\s+Int[^}]*afterQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*afterAmount\s+Int[^}]*differenceQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*differenceAmount\s+Int[^}]*amountStatus\s+InventoryAdjustmentAmountStatus[^}]*reason\s+String[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@unique\(\[dailyLedgerId,\s*productId\]/s,
     "LedgerInventoryAdjustment should store before/after snapshots, policy status, and one original adjustment per ledger product",
   );
   assert.match(
@@ -198,7 +198,7 @@ test("ledger inventory adjustment model and audit reason are persisted", () => {
   );
   assert.match(
     schema,
-    /model\s+LedgerInventoryFifoLot\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*sourceType\s+InventoryLotSource[^}]*sourceLedgerId\s+String\?[^}]*sourcePurchaseItemId\s+String\?[^}]*unitPrice\s+Int[^}]*originalQuantity\s+Int[^}]*consumedQuantity\s+Int[^}]*remainingQuantity\s+Int[^}]*originalAmount\s+Int[^}]*consumedAmount\s+Int[^}]*remainingAmount\s+Int[^}]*sortOrder\s+Int[^}]*@@index\(\[dailyLedgerId,\s*productId\]\)/s,
+    /model\s+LedgerInventoryFifoLot\s*{[^}]*dailyLedgerId\s+String[^}]*productId\s+String[^}]*sourceType\s+InventoryLotSource[^}]*sourceLedgerId\s+String\?[^}]*sourcePurchaseItemId\s+String\?[^}]*unitPrice\s+Int[^}]*originalQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*consumedQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*remainingQuantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*originalAmount\s+Int[^}]*consumedAmount\s+Int[^}]*remainingAmount\s+Int[^}]*sortOrder\s+Int[^}]*@@index\(\[dailyLedgerId,\s*productId\]\)/s,
     "FIFO lot snapshots should persist quantities, amounts, source links, and stable sort order",
   );
 
@@ -297,6 +297,15 @@ test("inventory schema validates current inventory and quantity separately", asy
   };
 
   assert.equal(ledgerInventorySchema.safeParse(payload).success, true);
+  const parsedDecimal = ledgerInventorySchema.parse({
+    ...payload,
+    items: [
+      { productId: "product-1", currentQuantity: "2.28", quantity: "1.5" },
+    ],
+  });
+  assert.equal(parsedDecimal.items[0].currentQuantity, 2.28);
+  assert.equal(parsedDecimal.items[0].quantity, 1.5);
+
   const parsedBlank = ledgerInventorySchema.parse({
     ...payload,
     items: [{ productId: "product-1", currentQuantity: "", quantity: "" }],
@@ -304,7 +313,7 @@ test("inventory schema validates current inventory and quantity separately", asy
   assert.equal(parsedBlank.items[0].currentQuantity, null);
   assert.equal(parsedBlank.items[0].quantity, null);
 
-  for (const value of [-1, 1.5, "1,000"]) {
+  for (const value of [-1, "2.285", "1,000"]) {
     const parsed = ledgerInventorySchema.safeParse({
       ...payload,
       items: [
@@ -364,7 +373,13 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
     assert.equal(invalid.error.issues[0].message, "바꾼 이유를 입력해 주세요.");
   }
 
-  for (const actualQuantity of [-1, 1.5, "1,000", ""]) {
+  const decimal = ledgerInventoryAdjustmentSchema.parse({
+    ...payload,
+    actualQuantity: "2.28",
+  });
+  assert.equal(decimal.actualQuantity, 2.28);
+
+  for (const actualQuantity of [-1, "2.285", "1,000", ""]) {
     const invalid = ledgerInventoryAdjustmentSchema.safeParse({
       ...payload,
       actualQuantity,
@@ -396,6 +411,7 @@ test("inventory calculations expose amount and calculation unavailable states", 
   );
 
   assert.equal(calculateInventoryAmount(5, 12000), 60000);
+  assert.equal(calculateInventoryAmount(2.28, 205000), 467400);
   assert.equal(calculateInventoryAmount(0, 12000), 0);
   assert.equal(calculateInventoryAmount(null, 12000), null);
   assert.equal(calculateInventoryAmount(5, null), null);
@@ -431,21 +447,29 @@ test("inventory adjustment calculations derive before after and signed differenc
     }),
     10,
   );
+  assert.equal(
+    calculateSystemInventoryQuantity({
+      previousQuantity: 1.25,
+      purchasedQuantity: 2.5,
+      lossQuantity: 0.75,
+    }),
+    3,
+  );
 
   assert.deepEqual(
     calculateInventoryAdjustment({
       beforeQuantity: 10,
       beforeAmount: 120000,
-      afterQuantity: 8,
+      afterQuantity: 8.25,
       unitPrice: 12000,
     }),
     {
       beforeQuantity: 10,
       beforeAmount: 120000,
-      afterQuantity: 8,
-      afterAmount: 96000,
-      differenceQuantity: -2,
-      differenceAmount: -24000,
+      afterQuantity: 8.25,
+      afterAmount: 99000,
+      differenceQuantity: -1.75,
+      differenceAmount: -21000,
     },
   );
   assert.equal(
@@ -566,6 +590,56 @@ test("FIFO lot calculation consumes oldest lots first and marks legacy opening l
   assert.equal(carriedLegacyResult.consumedAmount, 200);
   assert.equal(carriedLegacyResult.remainingAmount, 300);
   assert.equal(carriedLegacyResult.lots[0].sourceType, "LEGACY_OPENING");
+
+  const decimalResult = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        unitPrice: 100,
+        remainingQuantity: 1.25,
+      },
+    ],
+    legacyOpening: {
+      unitPrice: 999,
+      quantity: 0,
+    },
+    purchases: [
+      {
+        id: "purchase-decimal",
+        unitPrice: 200,
+        quantity: 2.5,
+      },
+    ],
+    closingQuantity: 2,
+  });
+
+  assert.deepEqual(
+    decimalResult.lots.map((lot) => ({
+      originalQuantity: lot.originalQuantity,
+      consumedQuantity: lot.consumedQuantity,
+      remainingQuantity: lot.remainingQuantity,
+      consumedAmount: lot.consumedAmount,
+      remainingAmount: lot.remainingAmount,
+    })),
+    [
+      {
+        originalQuantity: 1.25,
+        consumedQuantity: 1.25,
+        remainingQuantity: 0,
+        consumedAmount: 125,
+        remainingAmount: 0,
+      },
+      {
+        originalQuantity: 2.5,
+        consumedQuantity: 0.5,
+        remainingQuantity: 2,
+        consumedAmount: 100,
+        remainingAmount: 400,
+      },
+    ],
+  );
 
   // WO-G(2026-06-22): lot의 영업 기준일(sourceBusinessDate)을 보존/지정한다.
   // - PURCHASE / 기초 lot: 현재 장부의 businessDate를 사용한다.
@@ -1617,7 +1691,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /ROW_PAGE_SIZE = 50/);
   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
   assert.match(componentSource, /scrollIntoView/);
-  assert.match(componentSource, /inputMode="numeric"/);
+  assert.match(componentSource, /inputMode="decimal"/);
   assert.match(componentSource, /className="h-11 w-24 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(inventoryUiSource, /전일재고 이력/);
@@ -1643,7 +1717,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
     componentSource,
     /setActiveCategory\(normalizeCategory\(item\.productCategory\)\)/,
   );
-  assert.match(componentSource, /MAX_INVENTORY_INTEGER/);
+  assert.match(componentSource, /MAX_INVENTORY_QUANTITY/);
   assert.match(componentSource, /수정됨/);
   assert.match(componentSource, /aria-label=.*수정됨/s);
   assert.match(componentSource, /min-h-11/);

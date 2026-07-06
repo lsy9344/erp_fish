@@ -24,6 +24,7 @@ import {
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
+import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
 type ProductOption = {
@@ -98,6 +99,21 @@ function parseAmount(value: string) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function parseQuantity(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed === "") {
+    return 0;
+  }
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+    return 0;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function createLineState(id: string): PurchaseLine {
   return {
     id,
@@ -144,7 +160,7 @@ function toPurchaseLines(
 }
 
 function getLineAmount(line: PurchaseLine) {
-  return parseAmount(line.unitPrice) * parseAmount(line.quantity);
+  return Math.round(parseAmount(line.unitPrice) * parseQuantity(line.quantity));
 }
 
 function getDraftPurchaseTotal(lines: PurchaseLine[]) {
@@ -988,7 +1004,7 @@ export function PurchaseStepClient({
                         ref={(node) => {
                           quantityRefs.current[index] = node;
                         }}
-                        inputMode="numeric"
+                        inputMode="decimal"
                         autoComplete="off"
                         value={line.quantity}
                         disabled={isLineEditBlocked}
@@ -1113,7 +1129,8 @@ export function PurchaseStepClient({
                         ) : null}
                       </p>
                       <p className="text-muted-foreground mt-0.5 text-xs">
-                        전일재고 {line.previousQuantity} · 오늘 매입 없음
+                        전일재고 {formatQuantityValue(line.previousQuantity)} ·
+                        오늘 매입 없음
                       </p>
                     </div>
                     <Field

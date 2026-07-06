@@ -53,7 +53,9 @@ const krwTableFormatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const quantityFormatter = new Intl.NumberFormat("ko-KR");
+const quantityFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
 
 const percentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",

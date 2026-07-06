@@ -6,9 +6,14 @@ import Link from "next/link";
 import { UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  uploadInventoryOpeningSnapshots,
+  type InventoryOpeningUploadResult,
+} from "~/features/inventory/opening-import-actions";
 import { previewEcountSupplyUpload } from "~/features/ledger/ecount-supply-actions";
 import type { EcountImportBatchListItem } from "~/features/ledger/ecount-supply-queries";
 import type { FieldErrors } from "~/lib/action-result";
+import { formatQuantityValue } from "~/lib/format";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
@@ -64,9 +69,19 @@ export function EcountSupplyUploadClient({
 }: EcountSupplyUploadClientProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inventoryFileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isInventoryUploading, setIsInventoryUploading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [inventoryFieldErrors, setInventoryFieldErrors] = useState<FieldErrors>(
+    {},
+  );
   const [formError, setFormError] = useState<string | null>(null);
+  const [inventoryFormError, setInventoryFormError] = useState<string | null>(
+    null,
+  );
+  const [inventoryResult, setInventoryResult] =
+    useState<InventoryOpeningUploadResult | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,7 +121,45 @@ export function EcountSupplyUploadClient({
     }
   }
 
+  async function handleInventorySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsInventoryUploading(true);
+    setInventoryFieldErrors({});
+    setInventoryFormError(null);
+    setInventoryResult(null);
+
+    try {
+      const formData = new FormData(event.currentTarget);
+      const selectedFileName = inventoryFileInputRef.current?.files?.[0]?.name;
+
+      if (selectedFileName) {
+        formData.set("inventoryFileName", selectedFileName);
+      }
+
+      const result = await uploadInventoryOpeningSnapshots(formData);
+
+      if (!result.ok) {
+        setInventoryFormError(result.error.message);
+        setInventoryFieldErrors(result.error.fieldErrors ?? {});
+        return;
+      }
+
+      if (inventoryFileInputRef.current) {
+        inventoryFileInputRef.current.value = "";
+      }
+
+      setInventoryResult(result.data);
+      toast.success(`재고 스냅샷 ${result.data.importedCount}건을 반영했습니다.`);
+      router.refresh();
+    } catch {
+      setInventoryFormError("재고 엑셀 파일을 업로드하는 중 오류가 발생했습니다.");
+    } finally {
+      setIsInventoryUploading(false);
+    }
+  }
+
   const fileError = fieldErrors.file?.[0];
+  const inventoryFileError = inventoryFieldErrors.file?.[0];
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,6 +198,93 @@ export function EcountSupplyUploadClient({
           {formError}
         </p>
       ) : null}
+
+      <section className="flex flex-col gap-3" aria-label="재고 파일 업로드">
+        <h2 className="text-foreground text-lg font-semibold">
+          재고 파일 업로드
+        </h2>
+        <form
+          onSubmit={handleInventorySubmit}
+          className="bg-card flex flex-col gap-4 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-end"
+          noValidate
+        >
+          <Field data-invalid={Boolean(inventoryFileError)} className="flex-1">
+            <FieldLabel htmlFor="inventory-opening-upload-file">
+              재고 엑셀 파일
+            </FieldLabel>
+            <Input
+              ref={inventoryFileInputRef}
+              id="inventory-opening-upload-file"
+              name="inventoryFile"
+              type="file"
+              accept=".xlsx"
+              aria-invalid={Boolean(inventoryFileError)}
+              aria-describedby={
+                inventoryFileError
+                  ? "inventory-opening-upload-file-error"
+                  : undefined
+              }
+            />
+            {inventoryFileError ? (
+              <FieldError id="inventory-opening-upload-file-error">
+                {inventoryFileError}
+              </FieldError>
+            ) : null}
+          </Field>
+          <Button type="submit" disabled={isInventoryUploading}>
+            <UploadIcon data-icon="inline-start" />
+            {isInventoryUploading ? "업로드 중..." : "재고 업로드"}
+          </Button>
+        </form>
+
+        {inventoryFormError ? (
+          <p className="text-destructive text-sm" role="alert">
+            {inventoryFormError}
+          </p>
+        ) : null}
+
+        {inventoryResult ? (
+          <dl className="bg-muted/40 grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">처리 행</dt>
+              <dd className="font-medium tabular-nums">
+                {inventoryResult.importedCount}건
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">생성 / 갱신 / 동일</dt>
+              <dd className="font-medium tabular-nums">
+                {inventoryResult.createdCount} / {inventoryResult.updatedCount} /{" "}
+                {inventoryResult.unchangedCount}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">기준월</dt>
+              <dd className="font-medium break-words tabular-nums">
+                {inventoryResult.yearMonths.join(", ")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">지점</dt>
+              <dd className="font-medium tabular-nums">
+                {inventoryResult.storeCount}곳
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">총 수량</dt>
+              <dd className="font-medium tabular-nums">
+                {formatQuantityValue(inventoryResult.totalQuantity)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">재고 금액</dt>
+              <dd className="font-medium tabular-nums">
+                {formatKrw(inventoryResult.totalInventoryAmount)}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </section>
 
       <div className="flex flex-col gap-2">
         <h2 className="text-foreground text-lg font-semibold">최근 업로드</h2>

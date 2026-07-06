@@ -34,6 +34,7 @@ import {
   type StoreManagerLossStepData,
 } from "~/features/losses/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import { formatQuantityValue } from "~/lib/format";
 
 type LossLineState = {
   clientKey: string;
@@ -116,6 +117,18 @@ function parseNumber(value: string) {
   const parsed = Number(trimmed);
 
   return Number.isSafeInteger(parsed) ? parsed : 0;
+}
+
+function parseQuantity(value: string) {
+  const trimmed = value.trim();
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+    return 0;
+  }
+
+  const parsed = Number(trimmed);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function areLossLinesEqual(left: LossLineState[], right: LossLineState[]) {
@@ -331,7 +344,7 @@ export function LossStepClient({
   }
 
   const draftTotalQuantity = items.reduce(
-    (sum, item) => sum + parseNumber(item.quantity),
+    (sum, item) => sum + parseQuantity(item.quantity),
     0,
   );
   const draftTotalAmount = items.reduce(
@@ -415,7 +428,7 @@ export function LossStepClient({
               {lossTerms.totalLossQuantity}
             </p>
             <p className="text-xl font-semibold tabular-nums">
-              {draftTotalQuantity}
+              {formatQuantityValue(draftTotalQuantity)}
             </p>
           </div>
           {showsSensitiveLossAmounts ? (
@@ -439,7 +452,7 @@ export function LossStepClient({
               >
                 <span>{summary.productName}</span>
                 <span className="tabular-nums">
-                  {summary.quantity}
+                  {formatQuantityValue(summary.quantity)}
                   {"amount" in summary ? ` · ${formatKrw(summary.amount)}` : ""}
                 </span>
               </div>
@@ -451,7 +464,8 @@ export function LossStepClient({
           <div className="mt-3 flex flex-wrap gap-2">
             {data.signalCandidates.map((candidate) => (
               <Badge key={candidate.productId} variant="secondary">
-                기준 초과 {candidate.productName} {candidate.quantity} ·{" "}
+                기준 초과 {candidate.productName}{" "}
+                {formatQuantityValue(candidate.quantity)} ·{" "}
                 {"amount" in candidate ? formatKrw(candidate.amount) : "수량"}
               </Badge>
             ))}
@@ -651,7 +665,7 @@ export function LossStepClient({
                           ref={(node) => {
                             quantityRefs.current[index] = node;
                           }}
-                          inputMode="numeric"
+                          inputMode="decimal"
                           autoComplete="off"
                           value={item.quantity}
                           onChange={(event) =>

@@ -897,7 +897,7 @@ test("store manager review exposes estimated top sold items derived from invento
   // 계획이 없으면 매입단가(unitPrice)로 폴백해 salesBasis="cost"로 표시한다.
   assert.match(
     querySource,
-    /estimatedSalesAmount:\s*soldQuantity\s*\*\s*salesUnitPrice/,
+    /estimatedSalesAmount:\s*Math\.round\(soldQuantity\s*\*\s*salesUnitPrice\)/,
   );
   assert.match(
     querySource,

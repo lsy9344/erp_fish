@@ -12,8 +12,10 @@ import {
   type EcountImportBatchDetail,
 } from "~/features/ledger/ecount-supply-queries";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import { decimalToNumber } from "~/lib/decimal";
 import { writeAuditLog } from "~/server/audit";
 import { requireEcountUploadCommitAccess } from "~/server/authz";
+import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { revalidateEcountImportPaths } from "~/server/revalidation";
 
@@ -74,6 +76,15 @@ export async function commitEcountSupplyImport(
 
         affectedLedgerIds.add(ledger.id);
 
+        const quantity = decimalToNumber(line.quantity);
+        const amount = calculateInventoryAmount(quantity, line.unitPrice);
+
+        if (amount === null) {
+          throw new EcountCommitError(
+            `${line.rowNumber}행: 수량과 단가로 매입금액을 계산할 수 없습니다.`,
+          );
+        }
+
         // unitPrice = 장부 적용 단가(초기값은 원본 이카운트 단가).
         // sourceUnitPrice = 원본 이카운트 단가(보존).
         const purchaseItem = await tx.ledgerPurchaseItem.create({
@@ -86,8 +97,8 @@ export async function commitEcountSupplyImport(
             productCategory: line.productCategory,
             productSpec: line.productSpec,
             unitPrice: line.unitPrice,
-            quantity: line.quantity,
-            amount: line.unitPrice * line.quantity,
+            quantity,
+            amount,
             sourceUnitPrice: line.unitPrice,
             ecountImportLineId: line.id,
             referenceInfo: `이카운트 ${batch.sheetName} ${line.rowNumber}행 · 일자-No. ${line.dateNo} · 거래처 ${line.rawStoreName}`,

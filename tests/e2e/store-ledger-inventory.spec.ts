@@ -958,7 +958,9 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
   await page.getByRole("button", { name: "저장", exact: true }).click();
 
   await expect(
-    page.getByText("재고 수량은 0 이상의 정수여야 합니다."),
+    page.getByText(
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+    ),
   ).toBeVisible();
   await expect(currentQuantityInput).toBeFocused();
   await expect(currentQuantityInput).toHaveAttribute("aria-invalid", "true");
@@ -966,10 +968,10 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
     await currentQuantityInput.getAttribute("aria-describedby");
   expect(describedBy).toBeTruthy();
   await expect(page.locator(`[id="${describedBy}"]`)).toContainText(
-    "재고 수량은 0 이상의 정수여야 합니다.",
+    "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
   );
 
-  await expect(currentQuantityInput).toHaveAttribute("inputmode", "numeric");
+  await expect(currentQuantityInput).toHaveAttribute("inputmode", "decimal");
   const inputBox = await currentQuantityInput.boundingBox();
   const saveBox = await page
     .getByRole("button", { name: "저장", exact: true })

@@ -13,6 +13,7 @@ import { db } from "~/server/db";
 import { getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
+import { decimalToNumber } from "~/lib/decimal";
 
 const lossItemSelect = {
   id: true,
@@ -117,7 +118,11 @@ async function getLossStepDataForLedgerInTx(
     ...option,
     name: lossTypeAliasByCodeId.get(option.id) ?? option.name,
   }));
-  const summary = summarizeLossItems(lossItems);
+  const mappedLossItems = lossItems.map((item) => ({
+    ...item,
+    quantity: decimalToNumber(item.quantity),
+  }));
+  const summary = summarizeLossItems(mappedLossItems);
 
   return {
     id: ledger.id,
@@ -130,11 +135,11 @@ async function getLossStepDataForLedgerInTx(
     stepCompletion: getStoreEntryStepCompletion({
       ...ledger,
       inventoryItemCount,
-      lossItemCount: lossItems.length,
+      lossItemCount: mappedLossItems.length,
     }),
     productOptions,
     lossTypeOptions: lossTypeOptionsWithAlias,
-    lossItems,
+    lossItems: mappedLossItems,
     summary,
     signalCandidates: getLossSignalCandidates(summary.byProduct, thresholds),
   };

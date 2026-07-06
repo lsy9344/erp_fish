@@ -26,7 +26,9 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
   currency: "KRW",
   maximumFractionDigits: 0,
 });
-const quantityFormatter = new Intl.NumberFormat("ko-KR");
+const quantityFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
 
 const statusBadgeVariant: Record<
   InventoryPositionStatusLabel,

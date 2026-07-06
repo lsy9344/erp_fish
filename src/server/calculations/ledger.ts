@@ -454,9 +454,10 @@ function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
       return null;
     }
 
-    total +=
+    total += Math.round(
       (item.previousQuantity + item.purchasedQuantity - currentQuantity) *
-      item.unitPrice;
+        item.unitPrice,
+    );
   }
 
   return total;
@@ -569,7 +570,7 @@ function calculatePlannedSalesTotal(items: LedgerReviewPlannedSalesInput[]) {
       continue;
     }
 
-    total += soldQuantity * item.plannedUnitPrice;
+    total += Math.round(soldQuantity * item.plannedUnitPrice);
   }
 
   return { total, soldItemCount, missingPlanCount };

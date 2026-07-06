@@ -12,6 +12,7 @@ export const AUDIT_HISTORY_TARGET_TYPES = [
   "LongStockThresholdSetting",
   "ReportExport",
   "EcountImportBatch",
+  "InventoryOpeningSnapshot",
   "StoreExternalAlias",
   "ProductExternalAlias",
 ] as const;
@@ -33,6 +34,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   { value: "LongStockThresholdSetting", label: "장기재고 기준일" },
   { value: "ReportExport", label: "리포트 Export" },
   { value: "EcountImportBatch", label: "이카운트 출고/입고" },
+  { value: "InventoryOpeningSnapshot", label: "월초 재고 스냅샷" },
   { value: "StoreExternalAlias", label: "지점 매핑" },
   { value: "ProductExternalAlias", label: "품목 매핑" },
 ] as const satisfies ReadonlyArray<{
@@ -78,6 +80,7 @@ const actionLabels: Record<string, string> = {
   "ledger.hq.inventory_adjustment.saved": "본사 재고 조정",
   "ledger.hq.losses.saved": "본사 손실 수정",
   "ledger.hq.work_info.saved": "본사 근무 정보 수정",
+  "inventory_opening_snapshot.imported": "재고 파일 업로드",
   "threshold.updated": "기준값 변경",
   "long_stock_threshold.created": "장기재고 기준일 등록",
   "long_stock_threshold.updated": "장기재고 기준일 변경",

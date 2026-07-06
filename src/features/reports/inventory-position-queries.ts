@@ -7,6 +7,7 @@ import {
   getDailyMeetingReportDate,
   getDailyMeetingReportDateInput,
 } from "./queries.ts";
+import { decimalToNumber, nullableDecimalToNumber } from "../../lib/decimal.ts";
 import type {
   InventoryPositionCategoryOption,
   InventoryPositionDateRange,
@@ -320,7 +321,7 @@ export async function getHqInventoryPositionReport({
       ? product.trim()
       : null;
   const storeIds = selectedStores.map((store) => store.id);
-  const ledgers: InventoryPositionLedgerRecord[] =
+  const rawLedgers =
     storeIds.length === 0
       ? []
       : await db.dailyLedger.findMany({
@@ -373,6 +374,26 @@ export async function getHqInventoryPositionReport({
             },
           },
         });
+  const ledgers: InventoryPositionLedgerRecord[] = rawLedgers.map((ledger) => ({
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+      ...item,
+      previousQuantity: decimalToNumber(item.previousQuantity),
+      purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+      quantity: nullableDecimalToNumber(item.quantity),
+      fifoLots: item.fifoLots.map((lot) => ({
+        ...lot,
+        originalQuantity: decimalToNumber(lot.originalQuantity),
+        consumedQuantity: decimalToNumber(lot.consumedQuantity),
+        remainingQuantity: decimalToNumber(lot.remainingQuantity),
+      })),
+    })),
+    ledgerLossItems: ledger.ledgerLossItems.map((item) => ({
+      ...item,
+      quantity: decimalToNumber(item.quantity),
+    })),
+  }));
 
   const ledgerByStoreId = new Map<string, InventoryPositionLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),

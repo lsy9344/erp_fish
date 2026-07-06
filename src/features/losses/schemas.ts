@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 import {
+  isNonNegativeDecimalInRange,
   isNonNegativeIntegerInRange,
+  parseRequiredNonNegativeDecimal,
   parseRequiredNonNegativeInteger,
   toFieldErrors,
 } from "../../lib/validation.ts";
@@ -9,7 +11,8 @@ import { recoveredAmountError } from "./amount.ts";
 
 const productError = "품목을 선택해 주세요.";
 const lossTypeError = "손실 유형을 선택해 주세요.";
-const quantityError = "수량은 0 이상의 정수여야 합니다.";
+const quantityError =
+  "수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const reasonError = "사유/특이사항을 입력해 주세요.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
@@ -20,6 +23,14 @@ function parseRequiredInteger(
   errorMessage: string,
 ) {
   return parseRequiredNonNegativeInteger(value, context, errorMessage);
+}
+
+function parseRequiredQuantity(
+  value: unknown,
+  context: z.RefinementCtx,
+  errorMessage: string,
+) {
+  return parseRequiredNonNegativeDecimal(value, context, errorMessage);
 }
 
 const requiredIdSchema = (message: string) =>
@@ -62,7 +73,7 @@ const ledgerLossItemSchema = z.object({
   quantity: z
     .unknown()
     .transform((value, context) =>
-      parseRequiredInteger(value, context, quantityError),
+      parseRequiredQuantity(value, context, quantityError),
     ),
   recoveredAmount: z
     .unknown()
@@ -111,7 +122,7 @@ export const ledgerLossesSchema = ledgerLossesContextSchema
       if (
         typeof loss.quantity !== "number" ||
         typeof loss.recoveredAmount !== "number" ||
-        !isNonNegativeIntegerInRange(loss.quantity) ||
+        !isNonNegativeDecimalInRange(loss.quantity) ||
         !isNonNegativeIntegerInRange(loss.recoveredAmount)
       ) {
         return;

@@ -317,6 +317,10 @@ function formatKrw(value: number) {
   return `${krwFormatter.format(value)}원`;
 }
 
+const quantityFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
+
 function formatQuantity(value: number) {
-  return `${krwFormatter.format(value)}개`;
+  return `${quantityFormatter.format(value)}개`;
 }

@@ -30,6 +30,11 @@ import type {
   HqDashboardRow,
 } from "../dashboard/types.ts";
 import type { CorrectionAppliedValue } from "../corrections/types.ts";
+import {
+  decimalToNumber,
+  nullableDecimalToNumber,
+  type DecimalNumber,
+} from "../../lib/decimal.ts";
 import type {
   DailyMeetingReportData,
   DailyMeetingReportDatePreset,
@@ -130,6 +135,137 @@ type ReportLedgerRecord = {
 };
 
 type ReportRowWithoutPriority = Omit<DailyMeetingReportRow, "priority">;
+
+type InventoryQuantityFields = {
+  previousQuantity: DecimalNumber;
+  purchasedQuantity: DecimalNumber;
+  currentQuantity: DecimalNumber | null;
+  quantity: DecimalNumber | null;
+};
+
+type LossQuantityFields = {
+  quantity: DecimalNumber;
+};
+
+type AdjustmentQuantityFields = {
+  beforeQuantity: DecimalNumber;
+  afterQuantity: DecimalNumber;
+  differenceQuantity: DecimalNumber;
+};
+
+type NormalizedInventoryQuantityFields<T extends InventoryQuantityFields> =
+  Omit<
+    T,
+    "previousQuantity" | "purchasedQuantity" | "currentQuantity" | "quantity"
+  > & {
+    previousQuantity: number;
+    purchasedQuantity: number;
+    currentQuantity: number | null;
+    quantity: number | null;
+  };
+
+type NormalizedLossQuantityFields<T extends LossQuantityFields> = Omit<
+  T,
+  "quantity"
+> & { quantity: number };
+
+type NormalizedAdjustmentQuantityFields<T extends AdjustmentQuantityFields> =
+  Omit<T, "beforeQuantity" | "afterQuantity" | "differenceQuantity"> & {
+    beforeQuantity: number;
+    afterQuantity: number;
+    differenceQuantity: number;
+  };
+
+function normalizeInventoryQuantityFields<T extends InventoryQuantityFields>(
+  item: T,
+): NormalizedInventoryQuantityFields<T> {
+  return {
+    ...item,
+    previousQuantity: decimalToNumber(item.previousQuantity),
+    purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+    currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+    quantity: nullableDecimalToNumber(item.quantity),
+  };
+}
+
+function normalizeLossQuantityFields<T extends LossQuantityFields>(
+  item: T,
+): NormalizedLossQuantityFields<T> {
+  return {
+    ...item,
+    quantity: decimalToNumber(item.quantity),
+  };
+}
+
+function normalizeAdjustmentQuantityFields<T extends AdjustmentQuantityFields>(
+  adjustment: T,
+): NormalizedAdjustmentQuantityFields<T> {
+  return {
+    ...adjustment,
+    beforeQuantity: decimalToNumber(adjustment.beforeQuantity),
+    afterQuantity: decimalToNumber(adjustment.afterQuantity),
+    differenceQuantity: decimalToNumber(adjustment.differenceQuantity),
+  };
+}
+
+function normalizeReportLedgerQuantities<
+  T extends {
+    ledgerInventoryItems: InventoryQuantityFields[];
+    ledgerLossItems: LossQuantityFields[];
+    ledgerInventoryAdjustments?: AdjustmentQuantityFields[];
+  },
+>(
+  ledger: T,
+): Omit<
+  T,
+  "ledgerInventoryItems" | "ledgerLossItems" | "ledgerInventoryAdjustments"
+> & {
+  ledgerInventoryItems: Array<
+    NormalizedInventoryQuantityFields<T["ledgerInventoryItems"][number]>
+  >;
+  ledgerLossItems: Array<
+    NormalizedLossQuantityFields<T["ledgerLossItems"][number]>
+  >;
+  ledgerInventoryAdjustments: T["ledgerInventoryAdjustments"] extends
+    | AdjustmentQuantityFields[]
+    | undefined
+    ? Array<
+        NormalizedAdjustmentQuantityFields<
+          NonNullable<T["ledgerInventoryAdjustments"]>[number]
+        >
+      >
+    : never;
+} {
+  return {
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map(
+      normalizeInventoryQuantityFields,
+    ),
+    ledgerLossItems: ledger.ledgerLossItems.map(normalizeLossQuantityFields),
+    ledgerInventoryAdjustments: ledger.ledgerInventoryAdjustments
+      ? ledger.ledgerInventoryAdjustments.map(normalizeAdjustmentQuantityFields)
+      : [],
+  } as unknown as Omit<
+    T,
+    "ledgerInventoryItems" | "ledgerLossItems" | "ledgerInventoryAdjustments"
+  > & {
+    ledgerInventoryItems: Array<
+      NormalizedInventoryQuantityFields<T["ledgerInventoryItems"][number]>
+    >;
+    ledgerLossItems: Array<
+      NormalizedLossQuantityFields<T["ledgerLossItems"][number]>
+    >;
+    ledgerInventoryAdjustments: T["ledgerInventoryAdjustments"] extends
+      | AdjustmentQuantityFields[]
+      | undefined
+      ? Array<
+          NormalizedAdjustmentQuantityFields<
+            NonNullable<T["ledgerInventoryAdjustments"]>[number]
+          >
+        >
+      : never;
+  };
+}
 
 function buildDailyMeetingPlannedSalesItems(
   ledgers: Array<{
@@ -415,7 +551,7 @@ function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
     return item.fifoLots.reduce((sum, lot) => sum + lot.consumedAmount, 0);
   }
 
-  return soldQuantity * item.unitPrice;
+  return Math.round(soldQuantity * item.unitPrice);
 }
 
 // 추정 매출 단가: 판매가 계획이 있으면 그 값, 없으면 매입단가로 폴백.
@@ -468,7 +604,7 @@ export function buildProductCategoryPerformance(
       };
       const { unitPrice: salesUnitPrice, usedPlannedPrice } =
         getItemSalesUnitPrice(item);
-      stats.sales += soldQuantity * salesUnitPrice;
+      stats.sales += Math.round(soldQuantity * salesUnitPrice);
       stats.cogs += getItemCogs(item, soldQuantity);
       stats.soldItemCount += 1;
       if (!usedPlannedPrice) {
@@ -546,7 +682,7 @@ export function buildProductProfitability(
         usedCostFallback: false,
       };
       stats.soldQuantity += soldQuantity;
-      stats.sales += soldQuantity * salesUnitPrice;
+      stats.sales += Math.round(soldQuantity * salesUnitPrice);
       stats.cogs += getItemCogs(item, soldQuantity);
       if (!usedPlannedPrice) stats.usedCostFallback = true;
       byProduct.set(key, stats);
@@ -644,7 +780,7 @@ export async function getHqDailyMeetingReport({
       ? scopeStores.filter((store) => store.id === storeId)
       : scopeStores;
   const storeIds = stores.map((store) => store.id);
-  const ledgers =
+  const rawLedgers =
     storeIds.length === 0
       ? []
       : await db.dailyLedger.findMany({
@@ -724,6 +860,7 @@ export async function getHqDailyMeetingReport({
             },
           },
         });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
@@ -841,7 +978,7 @@ export async function getHqProductSalesReportForRange({
   }
 
   const { db } = await import("../../server/db.ts");
-  const ledgers = await db.dailyLedger.findMany({
+  const rawLedgers = await db.dailyLedger.findMany({
     where: {
       storeId: { in: storeIds },
       closingDate: { gte: range.startDate, lte: range.endDate },
@@ -878,6 +1015,7 @@ export async function getHqProductSalesReportForRange({
       },
     },
   });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
 
   const { getPlannedUnitPriceLookup } =
     await import("../sales-plan/queries.ts");
@@ -962,7 +1100,9 @@ export async function getHqProductSalesReportForRange({
         } satisfies ProductSalesBucket);
 
       bucket.soldQuantity += soldQuantity;
-      bucket.estimatedSalesAmount += soldQuantity * salesUnitPrice;
+      bucket.estimatedSalesAmount += Math.round(
+        soldQuantity * salesUnitPrice,
+      );
       bucket.estimatedCogsAmount += getItemCogs(enrichedItem, soldQuantity);
       bucket.lossQuantity += enrichedItem.lossQuantity;
       bucket.lossAmount += item.productId
@@ -1069,7 +1209,7 @@ export async function getHqStoreComparisonReport({
       ? "조회 지점을 확인해 주세요. 권한 있는 활성 지점만 기간 비교에 포함됩니다."
       : null;
   const storeIds = selectedStores.map((store) => store.id);
-  const ledgers =
+  const rawLedgers =
     storeIds.length === 0
       ? []
       : await db.dailyLedger.findMany({
@@ -1150,6 +1290,7 @@ export async function getHqStoreComparisonReport({
             },
           },
         });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
@@ -1225,7 +1366,7 @@ export async function getStoreProfitSummariesForRange({
   const { getLatestCorrectionValuesForLedgersScoped } =
     await import("../corrections/queries.ts");
 
-  const ledgers = await db.dailyLedger.findMany({
+  const rawLedgers = await db.dailyLedger.findMany({
     where: {
       storeId: { in: storeIds },
       closingDate: { gte: startDate, lte: endDate },
@@ -1291,6 +1432,7 @@ export async function getStoreProfitSummariesForRange({
       },
     },
   });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
 
   const correctionValuesByLedgerId =
     await getLatestCorrectionValuesForLedgersScoped(
@@ -1396,7 +1538,7 @@ export async function getLedgerProfitSummariesForRange({
   const { getLatestCorrectionValuesForLedgersScoped } =
     await import("../corrections/queries.ts");
 
-  const ledgers = await db.dailyLedger.findMany({
+  const rawLedgers = await db.dailyLedger.findMany({
     where: {
       storeId: { in: storeIds },
       closingDate: { gte: startDate, lte: endDate },
@@ -1462,6 +1604,7 @@ export async function getLedgerProfitSummariesForRange({
       },
     },
   });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
 
   const correctionValuesByLedgerId =
     await getLatestCorrectionValuesForLedgersScoped(
@@ -1543,7 +1686,7 @@ export async function getHqMonthlyClosingAnomalyReport({
     });
   }
 
-  const ledgers = await db.dailyLedger.findMany({
+  const rawLedgers = await db.dailyLedger.findMany({
     where: {
       storeId: selectedStore.id,
       closingDate: {
@@ -1623,6 +1766,7 @@ export async function getHqMonthlyClosingAnomalyReport({
       },
     },
   });
+  const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
@@ -2473,7 +2617,7 @@ function buildMonthlyRevenueRanking(
       const salesUnitPrice = usePlannedPrice
         ? item.plannedUnitPrice!
         : item.unitPrice;
-      const estimatedSalesAmount = soldQuantity * salesUnitPrice;
+      const estimatedSalesAmount = Math.round(soldQuantity * salesUnitPrice);
       const current = aggregates.get(item.productId);
 
       if (current) {
