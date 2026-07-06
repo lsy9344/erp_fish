@@ -1,7 +1,31 @@
-const MAX_INVENTORY_INTEGER = 2_147_483_647;
+import { roundToTwoDecimals } from "../../lib/validation.ts";
 
-function isValidInventoryInteger(value: number | null): value is number {
-  return value !== null && Number.isSafeInteger(value) && value >= 0;
+const MAX_KRW_INTEGER = 2_147_483_647;
+const MAX_INVENTORY_QUANTITY = 9_999_999_999.99;
+
+function hasAtMostTwoDecimals(value: number) {
+  const scaled = value * 100;
+
+  return Math.abs(scaled - Math.round(scaled)) < 1e-9;
+}
+
+function isValidInventoryQuantity(value: number | null): value is number {
+  return (
+    value !== null &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MAX_INVENTORY_QUANTITY &&
+    hasAtMostTwoDecimals(value)
+  );
+}
+
+function isValidKrwInteger(value: number | null): value is number {
+  return (
+    value !== null &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= MAX_KRW_INTEGER
+  );
 }
 
 export function calculateInventoryAmount(
@@ -9,15 +33,15 @@ export function calculateInventoryAmount(
   unitPrice: number | null,
 ) {
   if (
-    !isValidInventoryInteger(quantity) ||
-    !isValidInventoryInteger(unitPrice)
+    !isValidInventoryQuantity(quantity) ||
+    !isValidKrwInteger(unitPrice)
   ) {
     return null;
   }
 
-  const amount = quantity * unitPrice;
+  const amount = Math.round(quantity * unitPrice);
 
-  if (!Number.isSafeInteger(amount) || amount > MAX_INVENTORY_INTEGER) {
+  if (!Number.isSafeInteger(amount) || amount > MAX_KRW_INTEGER) {
     return null;
   }
 
@@ -33,12 +57,22 @@ export function calculateSystemInventoryQuantity({
   purchasedQuantity: number;
   lossQuantity?: number;
 }) {
-  const quantity = previousQuantity + purchasedQuantity - lossQuantity;
+  if (
+    !isValidInventoryQuantity(previousQuantity) ||
+    !isValidInventoryQuantity(purchasedQuantity) ||
+    !isValidInventoryQuantity(lossQuantity)
+  ) {
+    return null;
+  }
+
+  const quantity = roundToTwoDecimals(
+    previousQuantity + purchasedQuantity - lossQuantity,
+  );
 
   if (
-    !Number.isSafeInteger(quantity) ||
+    !hasAtMostTwoDecimals(quantity) ||
     quantity < 0 ||
-    quantity > MAX_INVENTORY_INTEGER
+    quantity > MAX_INVENTORY_QUANTITY
   ) {
     return null;
   }
@@ -125,11 +159,13 @@ export function calculateInventoryAdjustment({
     return null;
   }
 
-  const differenceQuantity = afterQuantity - beforeQuantity;
+  const differenceQuantity = roundToTwoDecimals(
+    afterQuantity - beforeQuantity,
+  );
   const differenceAmount = afterAmount - beforeAmount;
 
   if (
-    !Number.isSafeInteger(differenceQuantity) ||
+    !Number.isFinite(differenceQuantity) ||
     !Number.isSafeInteger(differenceAmount)
   ) {
     return null;

@@ -237,6 +237,42 @@ test("parseEcountSupplyWorkbook flags amount mismatch per-row without throwing",
   );
 });
 
+test("parseEcountSupplyWorkbook preserves decimal quantities up to two places", async () => {
+  const { parseEcountSupplyWorkbook } = await importSupplyParser();
+
+  const workbook = createWorkbook([
+    ["판매현황"],
+    headerRow,
+    [
+      "2026/06/17 -1",
+      "진수산",
+      "고등어 [28미]",
+      2.28,
+      205000,
+      467400,
+      null,
+      467400,
+    ],
+    [
+      "2026/06/17 -1",
+      "진수산",
+      "갈치 [31-35미]",
+      0.5,
+      10000,
+      5000,
+      null,
+      5000,
+    ],
+  ]);
+
+  const result = parseEcountSupplyWorkbook(workbook);
+
+  assert.equal(result.matchedRowCount, 2);
+  assert.equal(result.totalQuantity, 2.78);
+  assert.equal(result.lines[0].quantity, 2.28);
+  assert.equal(result.storeGroups[0].totalQuantity, 2.78);
+});
+
 test("resolveEcountLine reports mapping-required and ready states", async () => {
   const { resolveEcountLine, ECOUNT_LINE_STATUS } = await importMapping();
 

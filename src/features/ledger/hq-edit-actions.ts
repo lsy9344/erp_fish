@@ -15,11 +15,13 @@ import {
   type ActionConflictValue,
   type ActionResult,
 } from "~/lib/action-result";
+import { decimalToNumber } from "~/lib/decimal";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
+import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import {
   revalidateDashboardAndReports,
@@ -362,6 +364,16 @@ function isExistingSnapshotPurchase(
     existing?.productId === purchase.productId &&
     existing.purchaseStandardId === purchase.purchaseStandardId
   );
+}
+
+function getPurchaseAmount(quantity: number, unitPrice: number) {
+  const amount = calculateInventoryAmount(quantity, unitPrice);
+
+  if (amount === null) {
+    throw new Error("PURCHASE_AMOUNT_UNAVAILABLE");
+  }
+
+  return amount;
 }
 
 async function getLedgerByIdInTx(
@@ -825,7 +837,7 @@ export async function saveHqLedgerPurchases(
             : (existing?.sourceUnitPrice ?? null);
           // 이카운트 행은 수량도 원본 식별 정보이므로 기존 행에서 가져온다.
           const quantity = isEcountUpload
-            ? existing.quantity
+            ? decimalToNumber(existing.quantity)
             : purchase.quantity;
           const unitPriceChanged = Boolean(
             existing && existing.unitPrice !== purchase.unitPrice,
@@ -867,7 +879,7 @@ export async function saveHqLedgerPurchases(
             productSpec: snapshot.productSpec,
             unitPrice: purchase.unitPrice,
             quantity,
-            amount: purchase.unitPrice * quantity,
+            amount: getPurchaseAmount(quantity, purchase.unitPrice),
             referenceInfo: snapshot.referenceInfo,
             ecountImportLineId,
             sourceUnitPrice,

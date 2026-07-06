@@ -8,6 +8,7 @@ import {
   type EcountLineStatus,
 } from "~/features/ledger/ecount-supply-mapping";
 import { db } from "~/server/db";
+import { decimalToNumber } from "~/lib/decimal";
 
 export type EcountImportBatchListItem = {
   id: string;
@@ -165,7 +166,7 @@ export async function getEcountSupplyImportDetail(
     productName: line.productName,
     productCategory: line.productCategory,
     productSpec: line.productSpec,
-    quantity: line.quantity,
+    quantity: decimalToNumber(line.quantity),
     unitPrice: line.unitPrice,
     supplyAmount: line.supplyAmount,
     totalAmount: line.totalAmount,

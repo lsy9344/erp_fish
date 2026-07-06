@@ -32,7 +32,7 @@ test("ledger purchase model and migration preserve manual purchase snapshots", (
 
   assert.match(
     schema,
-    /model\s+LedgerPurchaseItem\s*{[^}]*id\s+String\s+@id\s+[^}]*dailyLedgerId\s+String[^}]*productId\s+String\?[^}]*purchaseStandardId\s+String\?[^}]*sourceType\s+LedgerPurchaseSource\s+@default\(MANUAL\)[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Int[^}]*amount\s+Int[^}]*referenceInfo\s+String\?[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[purchaseStandardId\]\)[^}]*@@index\(\[sourceType\]\)/s,
+    /model\s+LedgerPurchaseItem\s*{[^}]*id\s+String\s+@id\s+[^}]*dailyLedgerId\s+String[^}]*productId\s+String\?[^}]*purchaseStandardId\s+String\?[^}]*sourceType\s+LedgerPurchaseSource\s+@default\(MANUAL\)[^}]*productName\s+String[^}]*productCategory\s+String[^}]*productSpec\s+String[^}]*unitPrice\s+Int[^}]*quantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)[^}]*amount\s+Int[^}]*referenceInfo\s+String\?[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*@@index\(\[dailyLedgerId\]\)[^}]*@@index\(\[productId\]\)[^}]*@@index\(\[purchaseStandardId\]\)[^}]*@@index\(\[sourceType\]\)/s,
   );
   assert.match(
     schema,
@@ -89,9 +89,32 @@ test("ledger purchase model and migration preserve manual purchase snapshots", (
     uploadMigration.includes("ECOUNT_UPLOAD"),
     "migration should add ECOUNT_UPLOAD source type",
   );
+
+  const decimalQuantityMigrationName = migrationDirNames().find((name) =>
+    name.includes("decimal_inventory_quantities"),
+  );
+  assert.ok(
+    decimalQuantityMigrationName,
+    "decimal inventory quantity migration should exist",
+  );
+
+  const decimalQuantityMigration = readFileSync(
+    assertProjectFile(
+      "prisma",
+      "migrations",
+      decimalQuantityMigrationName,
+      "migration.sql",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    decimalQuantityMigration.includes('"LedgerPurchaseItem"') &&
+      decimalQuantityMigration.includes('"quantity" TYPE NUMERIC(12,2)'),
+    "migration should convert purchase quantity to NUMERIC(12,2)",
+  );
 });
 
-test("ledger purchase schema allows raw manual input and validates integer amounts", async () => {
+test("ledger purchase schema allows raw manual input and decimal quantities", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -243,14 +266,21 @@ test("ledger purchase schema allows raw manual input and validates integer amoun
     "단가는 0원 이상의 정수여야 합니다.",
   ]);
 
-  const decimalQuantity = ledgerPurchaseSchema.safeParse({
+  const decimalQuantity = ledgerPurchaseSchema.parse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], quantity: 1.5 }],
+    purchases: [{ ...basePayload.purchases[0], quantity: "2.28" }],
   });
-  assert.equal(decimalQuantity.success, false);
-  assert.deepEqual(decimalQuantity.error.flatten().fieldErrors.purchases, [
-    "수량은 0 이상의 정수여야 합니다.",
-  ]);
+  assert.equal(decimalQuantity.purchases[0].quantity, 2.28);
+
+  const tooManyDecimalPlaces = ledgerPurchaseSchema.safeParse({
+    ...basePayload,
+    purchases: [{ ...basePayload.purchases[0], quantity: "2.285" }],
+  });
+  assert.equal(tooManyDecimalPlaces.success, false);
+  assert.deepEqual(
+    tooManyDecimalPlaces.error.flatten().fieldErrors.purchases,
+    ["수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다."],
+  );
 
   const formattedPrice = ledgerPurchaseSchema.safeParse({
     ...basePayload,
@@ -685,10 +715,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
       actionSource.indexOf("await refreshLedgerInventoryFifoLots"),
     "store purchase save should refresh FIFO lots after reconciling adjustments",
   );
-  assert.match(
-    actionSource,
-    /unitPrice\s*\*\s*quantity|quantity\s*\*\s*unitPrice/,
-  );
+  assert.match(actionSource, /calculateInventoryAmount\(/);
   assert.match(actionSource, /action:\s*"ledger\.purchases\.saved"/);
   assert.match(actionSource, /sourceType:\s*purchase\.sourceType/);
   assert.match(actionSource, /writeAuditLog\(/);
@@ -733,11 +760,11 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(hqActionSource, /const snapshot = isEcountUpload/);
   assert.match(
     hqActionSource,
-    /const quantity = isEcountUpload\s*\?\s*existing\.quantity/,
+    /const quantity = isEcountUpload\s*\?\s*decimalToNumber\(existing\.quantity\)/,
   );
   // 적용 단가는 입력값을 그대로 반영한다(본사 단가 보정 허용).
   assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
-  assert.match(hqActionSource, /amount:\s*purchase\.unitPrice\s*\*\s*quantity/);
+  assert.match(hqActionSource, /amount:\s*getPurchaseAmount\(/);
   assert.match(hqActionSource, /action:\s*"ledger\.hq\.purchases\.saved"/);
   // WO(2026-06-24) 검토 #4: 적용 단가 보정 감사 로그가 원본/적용 단가를 구분해 남는다.
   assert.match(
@@ -863,7 +890,7 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.doesNotMatch(componentSource, /ecountUploadEnabled/);
   assert.match(componentSource, /sourceType\s*===\s*"ECOUNT_UPLOAD"/);
   assert.match(componentSource, /sourceType:\s*line\.sourceType/);
-  assert.match(componentSource, /inputMode="numeric"/);
+  assert.match(componentSource, /inputMode="decimal"/);
   assert.match(componentSource, /focusFirstError/);
   assert.doesNotMatch(componentSource, /sanitizeAmount/);
   assert.match(componentSource, /getDraftPurchaseTotal/);

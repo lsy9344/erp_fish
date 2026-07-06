@@ -518,7 +518,7 @@ model LedgerPurchaseItem {
   productSpec             String
   // unitPrice = 장부 적용 단가(재고/FIFO/마진 계산 기준). amount = unitPrice * quantity.
   unitPrice               Int
-  quantity                Int
+  quantity                Decimal              @db.Decimal(12, 2)
   amount                  Int
   referenceInfo           String?
   // 이카운트 출고/입고 라인 원본 추적. 원본 단가는 sourceUnitPrice / EcountImportLine.unitPrice에 보존한다.
@@ -556,10 +556,10 @@ model LedgerInventoryItem {
   productCategory   String
   productSpec       String
   unitPrice         Int
-  previousQuantity  Int
-  purchasedQuantity Int                      @default(0)
-  currentQuantity   Int?
-  quantity          Int?
+  previousQuantity  Decimal                  @db.Decimal(12, 2)
+  purchasedQuantity Decimal                  @default(0) @db.Decimal(12, 2)
+  currentQuantity   Decimal?                 @db.Decimal(12, 2)
+  quantity          Decimal?                 @db.Decimal(12, 2)
   inventoryAmount   Int?
   isModified        Boolean                  @default(false)
   carryoverSource   InventoryCarryoverSource @default(MANUAL)
@@ -589,17 +589,17 @@ model LedgerInventoryCarryoverDetail {
   ledgerInventoryItemId   String                   @unique
   source                  InventoryCarryoverSource
   status                  InventoryCarryoverStatus
-  resolvedQuantity        Int
+  resolvedQuantity        Decimal                  @db.Decimal(12, 2)
   sourceLedgerId          String?
   sourceLedgerClosingDate DateTime?
   sourceLedgerStatus      DailyLedgerStatus?
   sourceYearMonth         String?
   sourceSnapshotId        String?
-  sourcePreviousQuantity  Int?
-  sourcePurchasedQuantity Int?
-  sourceLossQuantity      Int?
-  sourceCurrentQuantity   Int?
-  sourceQuantity          Int?
+  sourcePreviousQuantity  Decimal?                 @db.Decimal(12, 2)
+  sourcePurchasedQuantity Decimal?                 @db.Decimal(12, 2)
+  sourceLossQuantity      Decimal?                 @db.Decimal(12, 2)
+  sourceCurrentQuantity   Decimal?                 @db.Decimal(12, 2)
+  sourceQuantity          Decimal?                 @db.Decimal(12, 2)
   message                 String
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
@@ -620,9 +620,9 @@ model LedgerInventoryFifoLot {
   sourceLedgerId        String?
   sourcePurchaseItemId  String?
   unitPrice             Int
-  originalQuantity      Int
-  consumedQuantity      Int
-  remainingQuantity     Int
+  originalQuantity      Decimal            @db.Decimal(12, 2)
+  consumedQuantity      Decimal            @db.Decimal(12, 2)
+  remainingQuantity     Decimal            @db.Decimal(12, 2)
   originalAmount        Int
   consumedAmount        Int
   remainingAmount       Int
@@ -657,11 +657,11 @@ model LedgerInventoryAdjustment {
   productCategory       String
   productSpec           String
   unitPrice             Int
-  beforeQuantity        Int
+  beforeQuantity        Decimal                         @db.Decimal(12, 2)
   beforeAmount          Int
-  afterQuantity         Int
+  afterQuantity         Decimal                         @db.Decimal(12, 2)
   afterAmount           Int
-  differenceQuantity    Int
+  differenceQuantity    Decimal                         @db.Decimal(12, 2)
   differenceAmount      Int
   amountStatus          InventoryAdjustmentAmountStatus @default(POLICY_UNCONFIRMED)
   reason                String
@@ -693,7 +693,7 @@ model LedgerLossItem {
   productSpec       String
   unitPrice         Int
   lossTypeName      String
-  quantity          Int
+  quantity          Decimal  @db.Decimal(12, 2)
   recoveredAmount   Int      @default(0)
   amount            Int
   usedPlannedPrice  Boolean  @default(false)
@@ -753,7 +753,7 @@ model InventoryOpeningSnapshot {
   productCategory String
   productSpec     String
   unitPrice       Int
-  quantity        Int
+  quantity        Decimal  @db.Decimal(12, 2)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -884,7 +884,7 @@ model EcountImportLine {
   productName          String
   productCategory      String
   productSpec          String
-  quantity             Int
+  quantity             Decimal @db.Decimal(12, 2)
   unitPrice            Int
   supplyAmount         Int
   totalAmount          Int

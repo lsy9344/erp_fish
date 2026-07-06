@@ -16,7 +16,7 @@ export function calculatePlannedPriceLossAmount({
   quantity: number;
   recoveredAmount: number;
 }) {
-  const plannedSalesAmount = plannedUnitPrice * quantity;
+  const plannedSalesAmount = Math.round(plannedUnitPrice * quantity);
 
   if (!Number.isSafeInteger(plannedSalesAmount)) {
     return MAX_KRW_INTEGER;

@@ -23,6 +23,7 @@ import {
   getLatestCorrectionByTargetInTx,
 } from "./queries";
 import type { CorrectionValue, CreateCorrectionRecordResult } from "./types";
+import { nullableDecimalToNumber } from "~/lib/decimal";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 
@@ -370,8 +371,8 @@ async function resolveOriginalCorrectionValue(
     }
 
     const values = {
-      currentQuantity: row.currentQuantity,
-      quantity: row.quantity,
+      currentQuantity: nullableDecimalToNumber(row.currentQuantity),
+      quantity: nullableDecimalToNumber(row.quantity),
     };
 
     return actionOk(
@@ -410,7 +411,7 @@ async function resolveOriginalCorrectionValue(
     }
 
     const values = {
-      quantity: row.quantity,
+      quantity: nullableDecimalToNumber(row.quantity),
       amount: row.amount,
       reason: row.reason,
     };

@@ -115,15 +115,19 @@ test("validation helper preserves dotted field paths for nested step errors", as
     items: [
       {
         productId: "product-1",
-        currentQuantity: 2_147_483_648,
-        quantity: "1.5",
+        currentQuantity: 10_000_000_000,
+        quantity: "1.555",
       },
     ],
   });
   assert.equal(inventoryInvalid.success, false);
   assert.deepEqual(toFieldErrors(inventoryInvalid.error), {
-    "items.0.currentQuantity": ["재고 수량은 0 이상의 정수여야 합니다."],
-    "items.0.quantity": ["재고 수량은 0 이상의 정수여야 합니다."],
+    "items.0.currentQuantity": [
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+    ],
+    "items.0.quantity": [
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+    ],
   });
 
   const adjustmentInvalid = ledgerInventoryAdjustmentSchema.safeParse({
@@ -134,7 +138,9 @@ test("validation helper preserves dotted field paths for nested step errors", as
   });
   assert.equal(adjustmentInvalid.success, false);
   assert.deepEqual(toFieldErrors(adjustmentInvalid.error), {
-    actualQuantity: ["실제 재고 수량은 0 이상의 정수여야 합니다."],
+    actualQuantity: [
+      "실제 재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+    ],
     reason: ["바꾼 이유를 입력해 주세요."],
   });
 

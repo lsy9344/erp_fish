@@ -1,6 +1,7 @@
 import type { Prisma } from "../../../generated/prisma";
 
 import { editableLedgerStatuses } from "~/features/ledger/status-policy";
+import { decimalToNumber } from "~/lib/decimal";
 import { toPlannedPriceLossSnapshot } from "./amount";
 
 export async function syncLedgerLossItemsWithSalesPricePlansInTx(
@@ -68,7 +69,7 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
       const snapshot = toPlannedPriceLossSnapshot({
         plannedUnitPrice:
           plannedUnitPriceByProductId.get(loss.productId) ?? null,
-        quantity: loss.quantity,
+        quantity: decimalToNumber(loss.quantity),
         recoveredAmount: loss.recoveredAmount,
       });
 

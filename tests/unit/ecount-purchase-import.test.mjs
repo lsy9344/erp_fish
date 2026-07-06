@@ -637,6 +637,42 @@ test("rejects ECount rows when amount does not match quantity times unit price",
   );
 });
 
+test("parses ECount purchase rows with decimal quantities up to two places", async () => {
+  const { parseEcountPurchaseWorkbook } = await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "진수산",
+      "고등어 [28미]",
+      2.28,
+      205000,
+      467400,
+      null,
+      467400,
+    ],
+  ]);
+
+  const result = parseEcountPurchaseWorkbook(workbook, {
+    storeName: "진수산",
+    closingDate: "2026-06-17",
+    validateLedgerScope: true,
+  });
+
+  assert.equal(result.matchedRowCount, 1);
+  assert.equal(result.purchases[0].quantity, "2.28");
+});
+
 test("rejects ECount workbooks without item rows to import", async () => {
   const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
     await importParser();

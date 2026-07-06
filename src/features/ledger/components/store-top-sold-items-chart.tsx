@@ -38,7 +38,9 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
   notation: "compact",
 });
 
-const quantityFormatter = new Intl.NumberFormat("ko-KR");
+const quantityFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
 
 export function StoreTopSoldItemsChart({ items }: StoreTopSoldItemsChartProps) {
   const [metric, setMetric] = useState<Metric>("estimatedSalesAmount");

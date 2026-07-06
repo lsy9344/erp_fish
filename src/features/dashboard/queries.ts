@@ -43,6 +43,11 @@ import type {
   HqDashboardSummary,
 } from "./types.ts";
 import type { CorrectionAppliedValue } from "../corrections/types.ts";
+import {
+  decimalToNumber,
+  nullableDecimalToNumber,
+  type DecimalNumber,
+} from "../../lib/decimal.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
@@ -200,6 +205,69 @@ type DashboardLedgerRecord = {
   };
 };
 
+type DashboardLedgerRecordSource = Omit<
+  DashboardLedgerRecord,
+  "ledgerInventoryItems" | "ledgerInventoryAdjustments" | "ledgerLossItems"
+> & {
+  ledgerInventoryItems: Array<
+    Omit<
+      DashboardLedgerRecord["ledgerInventoryItems"][number],
+      "previousQuantity" | "purchasedQuantity" | "currentQuantity" | "quantity"
+    > & {
+      previousQuantity: DecimalNumber;
+      purchasedQuantity: DecimalNumber;
+      currentQuantity: DecimalNumber | null;
+      quantity: DecimalNumber | null;
+    }
+  >;
+  ledgerInventoryAdjustments: Array<
+    Omit<
+      DashboardLedgerRecord["ledgerInventoryAdjustments"][number],
+      "beforeQuantity" | "afterQuantity" | "differenceQuantity"
+    > & {
+      beforeQuantity: DecimalNumber;
+      afterQuantity: DecimalNumber;
+      differenceQuantity: DecimalNumber;
+    }
+  >;
+  ledgerLossItems: Array<
+    Omit<DashboardLedgerRecord["ledgerLossItems"][number], "quantity"> & {
+      quantity: DecimalNumber;
+    }
+  >;
+};
+
+function toDashboardLedgerRecord<T extends DashboardLedgerRecordSource>(
+  ledger: T,
+): Omit<
+  T,
+  "ledgerInventoryItems" | "ledgerInventoryAdjustments" | "ledgerLossItems"
+> &
+  DashboardLedgerRecord {
+  return {
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+      ...item,
+      previousQuantity: decimalToNumber(item.previousQuantity),
+      purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+      quantity: nullableDecimalToNumber(item.quantity),
+    })),
+    ledgerInventoryAdjustments: ledger.ledgerInventoryAdjustments.map(
+      (adjustment) => ({
+        ...adjustment,
+        beforeQuantity: decimalToNumber(adjustment.beforeQuantity),
+        afterQuantity: decimalToNumber(adjustment.afterQuantity),
+        differenceQuantity: decimalToNumber(adjustment.differenceQuantity),
+      }),
+    ),
+    ledgerLossItems: ledger.ledgerLossItems.map((item) => ({
+      ...item,
+      quantity: decimalToNumber(item.quantity),
+    })),
+  };
+}
+
 export function getDashboardDatePreset(value: unknown): DashboardDatePreset {
   return value === "yesterday" ? "yesterday" : "today";
 }
@@ -304,7 +372,7 @@ export async function getHqDashboardRows({
     getAnomalyThresholdSettingsForSignals(),
   ]);
   const storeIds = stores.map((store) => store.id);
-  const ledgers =
+  const rawLedgers =
     storeIds.length === 0
       ? []
       : await db.dailyLedger.findMany({
@@ -387,6 +455,7 @@ export async function getHqDashboardRows({
             },
           },
         });
+  const ledgers = rawLedgers.map(toDashboardLedgerRecord);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
@@ -703,11 +772,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
     await import("../corrections/queries.ts");
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
-  const [ledger, thresholdSettings] = await Promise.all([
+  const [rawLedger, thresholdSettings] = await Promise.all([
     db.dailyLedger.findFirst({
       where: { id: ledgerId, storeId: { in: storeScope.storeIds } },
       select: {
         id: true,
+        storeId: true,
         closingDate: true,
         status: true,
         totalSalesAmount: true,
@@ -796,9 +866,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
     getAnomalyThresholdSettingsForSignals(),
   ]);
 
-  if (!ledger) {
+  if (!rawLedger) {
     return null;
   }
+
+  const ledger = toDashboardLedgerRecord(rawLedger);
 
   const corrections = await getLatestCorrectionValuesForLedger(ledger.id);
   const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({

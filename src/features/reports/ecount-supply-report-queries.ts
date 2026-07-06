@@ -3,6 +3,7 @@
 // 실제 품목별 판매 데이터(POS)가 없으므로 판매/마진 관련 값은 모두 "추정"으로만 노출한다.
 import { getHeadquartersStoreScope } from "~/server/authz";
 import { db } from "~/server/db";
+import { decimalToNumber } from "~/lib/decimal";
 
 const DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -218,7 +219,7 @@ export async function getHeadquartersSupplyReport(
       productName: item.productName,
       productCategory: item.productCategory,
       productSpec: item.productSpec,
-      quantity: item.quantity,
+      quantity: decimalToNumber(item.quantity),
       unitPrice: item.unitPrice,
       sourceUnitPrice: item.sourceUnitPrice,
       unitPriceOverridden:
@@ -264,7 +265,7 @@ export async function getHeadquartersSupplyReport(
   // 판매 예정가가 매핑된 행만 기대 매출/이익에 합산한다(예정가 없는 행은 제외 + 카운트).
   const plannedRows = rows.filter((row) => row.plannedUnitPrice !== null);
   const estimatedSalesAmount = plannedRows.reduce(
-    (sum, row) => sum + row.quantity * (row.plannedUnitPrice ?? 0),
+    (sum, row) => sum + Math.round(row.quantity * (row.plannedUnitPrice ?? 0)),
     0,
   );
   const matchedSupplyAmount = plannedRows.reduce(

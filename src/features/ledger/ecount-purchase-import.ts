@@ -1,6 +1,10 @@
 import { Buffer } from "node:buffer";
 import { inflateRawSync } from "node:zlib";
 
+import {
+  isNonNegativeDecimalInRange,
+  roundToTwoDecimals,
+} from "../../lib/validation.ts";
 import { classifyProductCategory } from "./ecount-supply-mapping.ts";
 
 const requiredHeaders = [
@@ -276,6 +280,29 @@ function cellNumber(
   return parsed;
 }
 
+function cellQuantity(
+  row: CellValue[],
+  index: number,
+  label: string,
+  rowNumber: number,
+) {
+  const value = row[index];
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replaceAll(",", "").trim())
+        : Number.NaN;
+
+  if (!isNonNegativeDecimalInRange(parsed)) {
+    throw new EcountPurchaseImportError("엑셀 숫자 값을 확인해 주세요.", {
+      file: [`${rowNumber}행 ${label} 값을 확인해 주세요.`],
+    });
+  }
+
+  return roundToTwoDecimals(parsed);
+}
+
 function splitProductNameAndSpec(value: string) {
   const match = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(value.trim());
 
@@ -470,7 +497,7 @@ export function parseEcountPurchaseWorkbook(
       }
     }
 
-    const quantity = cellNumber(
+    const quantity = cellQuantity(
       row.cells,
       headerIndex["수량"],
       "수량",
@@ -487,7 +514,7 @@ export function parseEcountPurchaseWorkbook(
       supplyAmountText === "" ? headerIndex["합계"] : headerIndex["공급가액"];
     const amount = cellNumber(row.cells, amountColumn, "합계", row.rowNumber);
 
-    if (quantity * unitPrice !== amount) {
+    if (Math.round(quantity * unitPrice) !== amount) {
       throw new EcountPurchaseImportError("엑셀 매입금액을 확인해 주세요.", {
         file: [
           `${row.rowNumber}행 ${rawProductName}: 수량 x 단가와 합계가 일치하지 않습니다.`,

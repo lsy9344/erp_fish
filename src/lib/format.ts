@@ -1,6 +1,9 @@
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
+const quantityFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
 
 export function formatKrw(value: number) {
   return `${krwFormatter.format(value)}원`;
@@ -12,8 +15,12 @@ export function formatSignedKrw(value: number) {
   return `${prefix}${formatKrw(value)}`;
 }
 
+export function formatQuantityValue(value: number) {
+  return quantityFormatter.format(value);
+}
+
 export function formatQuantity(value: number) {
-  return `${new Intl.NumberFormat("ko-KR").format(value)}개`;
+  return `${formatQuantityValue(value)}개`;
 }
 
 export function formatSignedQuantity(value: number) {

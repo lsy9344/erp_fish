@@ -15,6 +15,7 @@ import {
   type LedgerReviewInventoryInput,
   type LedgerReviewMetric,
 } from "~/server/calculations/ledger";
+import { decimalToNumber, nullableDecimalToNumber } from "~/lib/decimal";
 import {
   evaluateInventoryLossAnomalySignals,
   evaluateRevenueAnomalySignals,
@@ -156,7 +157,37 @@ export const hqLedgerClosePreflightLedgerSelect = {
 type HqLedgerClosePreflightLedger = Prisma.DailyLedgerGetPayload<{
   select: typeof hqLedgerClosePreflightLedgerSelect;
 }>;
+type HqLedgerClosePreflightLedgerView = ReturnType<
+  typeof normalizeHqLedgerClosePreflightLedger
+>;
 type PlannedUnitPriceByProductId = Map<string, number>;
+
+function normalizeHqLedgerClosePreflightLedger(
+  ledger: HqLedgerClosePreflightLedger,
+) {
+  return {
+    ...ledger,
+    ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+      ...item,
+      previousQuantity: decimalToNumber(item.previousQuantity),
+      purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+      quantity: nullableDecimalToNumber(item.quantity),
+    })),
+    ledgerInventoryAdjustments: ledger.ledgerInventoryAdjustments.map(
+      (adjustment) => ({
+        ...adjustment,
+        beforeQuantity: decimalToNumber(adjustment.beforeQuantity),
+        afterQuantity: decimalToNumber(adjustment.afterQuantity),
+        differenceQuantity: decimalToNumber(adjustment.differenceQuantity),
+      }),
+    ),
+    ledgerLossItems: ledger.ledgerLossItems.map((item) => ({
+      ...item,
+      quantity: decimalToNumber(item.quantity),
+    })),
+  };
+}
 
 const severityLabels: Record<HqLedgerClosePreflightSeverity, string> = {
   blocking: "차단",
@@ -200,8 +231,9 @@ export async function buildHqLedgerClosePreflightInTx(
     tx,
     ledger,
   );
+  const normalizedLedger = normalizeHqLedgerClosePreflightLedger(ledger);
   const items = buildHqLedgerClosePreflightItems(
-    ledger,
+    normalizedLedger,
     actor,
     normalizeAnomalyThresholdSignalSettings(thresholdSettings),
     correctionRecords,
@@ -224,7 +256,7 @@ export async function buildHqLedgerClosePreflightInTx(
 }
 
 function buildHqLedgerClosePreflightItems(
-  ledger: HqLedgerClosePreflightLedger,
+  ledger: HqLedgerClosePreflightLedgerView,
   actor: HqLedgerClosePreflightActor,
   thresholdSettings: Parameters<
     typeof getDashboardSignals
@@ -370,7 +402,7 @@ function buildAuthorizationItems(actor: HqLedgerClosePreflightActor) {
   ];
 }
 
-function buildStatusItems(ledger: HqLedgerClosePreflightLedger) {
+function buildStatusItems(ledger: HqLedgerClosePreflightLedgerView) {
   const ledgerStatus: string = ledger.status;
 
   if (ledger.status === "HEADQUARTERS_CLOSED") {
@@ -529,7 +561,7 @@ function buildCorrectionItems(
 }
 
 function buildInventoryAdjustmentPolicyItems(
-  ledger: HqLedgerClosePreflightLedger,
+  ledger: HqLedgerClosePreflightLedgerView,
 ) {
   return ledger.ledgerInventoryAdjustments
     .filter((adjustment) => adjustment.amountStatus === "POLICY_UNCONFIRMED")
@@ -550,7 +582,7 @@ function buildInventoryAdjustmentPolicyItems(
     );
 }
 
-function buildCarryoverItems(ledger: HqLedgerClosePreflightLedger) {
+function buildCarryoverItems(ledger: HqLedgerClosePreflightLedgerView) {
   return ledger.ledgerInventoryItems.flatMap((inventoryItem) => {
     if (
       inventoryItem.carryoverStatus === "DATA_INSUFFICIENT" ||

@@ -964,7 +964,7 @@ test("정정 저장 후 관제판 이상 신호는 정정 반영값 기준으로
     fieldKey: "currentQuantity",
     label: "현재고",
     kind: "quantity",
-    originalValue: inventoryItem.currentQuantity ?? 0,
+    originalValue: inventoryItem.currentQuantity?.toNumber() ?? 0,
     correctedValue: 15,
     reason: "관제판 재고 이상 신호 정정 반영 확인",
   });

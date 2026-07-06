@@ -68,6 +68,7 @@ import {
   type StoreManagerInventoryStepData,
 } from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
 type InventoryStepClientProps = {
@@ -92,7 +93,7 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
 };
 
 const categories = ["전체", "냉동", "생물"] as const;
-const MAX_INVENTORY_INTEGER = 2_147_483_647;
+const MAX_INVENTORY_QUANTITY = 9_999_999_999.99;
 const ROW_PAGING_THRESHOLD = 30;
 const ROW_PAGE_SIZE = 50;
 const carryoverLoadedMessage =
@@ -108,6 +109,23 @@ function formatKrw(value: number | null) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
+function roundQuantity(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function hasAtMostTwoDecimals(value: number) {
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
+}
+
+function isValidQuantity(value: number) {
+  return (
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MAX_INVENTORY_QUANTITY &&
+    hasAtMostTwoDecimals(value)
+  );
+}
+
 function parseQuantityInput(value: string) {
   const trimmed = value.trim();
 
@@ -115,15 +133,13 @@ function parseQuantityInput(value: string) {
     return null;
   }
 
-  if (!/^\d+$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
 
   const parsed = Number(trimmed);
 
-  return Number.isSafeInteger(parsed) && parsed <= MAX_INVENTORY_INTEGER
-    ? parsed
-    : null;
+  return isValidQuantity(parsed) ? roundQuantity(parsed) : null;
 }
 
 function hasSensitiveInventoryAmounts(
@@ -699,18 +715,17 @@ export function InventoryStepClient({
   }
 
   function getSystemQuantity(item: InventoryLineState) {
-    const quantity =
-      item.previousQuantity + item.purchasedQuantity - item.lossQuantity;
+    const quantity = roundQuantity(
+      item.previousQuantity + item.purchasedQuantity - item.lossQuantity,
+    );
 
-    return Number.isSafeInteger(quantity) &&
-      quantity >= 0 &&
-      quantity <= MAX_INVENTORY_INTEGER
-      ? quantity
-      : null;
+    return isValidQuantity(quantity) ? quantity : null;
   }
 
   function formatSignedQuantity(value: number) {
-    return value > 0 ? `+${value}` : String(value);
+    const prefix = value > 0 ? "+" : "";
+
+    return `${prefix}${formatQuantityValue(value)}`;
   }
 
   function isAdjustmentNeeded(item: InventoryLineState) {
@@ -877,7 +892,7 @@ export function InventoryStepClient({
       return "계산 불가";
     }
 
-    return `${new Intl.NumberFormat("ko-KR").format(value)}개`;
+    return `${formatQuantityValue(value)}개`;
   }
 
   function formatOptionalQuantity(value: number | null) {
@@ -1565,19 +1580,19 @@ export function InventoryStepClient({
                     onClick={() => setSelectedCarryoverItem(item)}
                     className="text-foreground h-auto p-0 align-baseline font-medium tabular-nums"
                   >
-                    {item.previousQuantity}
+                    {formatQuantityValue(item.previousQuantity)}
                   </Button>
                 </span>
                 <span>
                   {inventoryTerms.purchase}{" "}
                   <span className="text-foreground font-medium">
-                    {item.purchasedQuantity}
+                    {formatQuantityValue(item.purchasedQuantity)}
                   </span>
                 </span>
                 <span>
                   {inventoryTerms.loss}{" "}
                   <span className="text-foreground font-medium">
-                    {item.lossQuantity}
+                    {formatQuantityValue(item.lossQuantity)}
                   </span>
                   {hasSensitiveInventoryAmounts(item) && item.lossQuantity > 0
                     ? ` (${formatKrw(item.lossAmount)})`
@@ -1613,7 +1628,7 @@ export function InventoryStepClient({
                         ? `inventory-quantity-${item.productId}-error`
                         : undefined
                     }
-                    inputMode="numeric"
+                    inputMode="decimal"
                     autoComplete="off"
                     placeholder={
                       requiresCurrentQuantityEntry(item)

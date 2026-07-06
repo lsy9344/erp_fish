@@ -16,7 +16,9 @@ import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries"
 import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
+import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import { decimalToNumber } from "~/lib/decimal";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
@@ -426,6 +428,18 @@ function ledgerPurchaseValidationError(
   return new LedgerPurchaseValidationError({
     [`purchases.${index}.${field}`]: [message],
   });
+}
+
+function getPurchaseAmount(quantity: number, unitPrice: number) {
+  const amount = calculateInventoryAmount(quantity, unitPrice);
+
+  if (amount === null) {
+    throw new LedgerPurchaseValidationError({
+      purchases: ["매입금액은 저장 가능한 범위 이하여야 합니다."],
+    });
+  }
+
+  return amount;
 }
 
 async function validateActiveExpenseCodesInTx(
@@ -1127,7 +1141,10 @@ export async function saveLedgerPurchases(
         beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
       );
       const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
-        beforeLedger.ledgerPurchaseItems,
+        beforeLedger.ledgerPurchaseItems.map((item) => ({
+          ...item,
+          quantity: decimalToNumber(item.quantity),
+        })),
         realPurchases,
       );
 
@@ -1324,7 +1341,7 @@ export async function saveLedgerPurchases(
               productSpec: snapshot.productSpec,
               unitPrice,
               quantity,
-              amount: unitPrice * quantity,
+              amount: getPurchaseAmount(quantity, unitPrice),
               referenceInfo: snapshot.referenceInfo,
               ecountImportLineId,
               sourceUnitPrice,

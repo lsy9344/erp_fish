@@ -28,6 +28,7 @@ import {
 } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import { parseRequiredNonNegativeDecimal } from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
   revalidateLedgerDetailPath,
@@ -113,7 +114,11 @@ const hqLedgerLossItemSchema = z.object({
   quantity: z
     .unknown()
     .transform((value, context) =>
-      parseRequiredInteger(value, context, "수량은 0 이상의 정수여야 합니다."),
+      parseRequiredNonNegativeDecimal(
+        value,
+        context,
+        "수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+      ),
     ),
   recoveredAmount: z
     .unknown()

@@ -6,6 +6,7 @@ import {
   calculateSystemInventoryQuantity,
 } from "~/server/calculations/inventory";
 import { isPurchaseDrivenSale } from "~/features/inventory/inventory-persist-policy";
+import { decimalToNumber, type DecimalNumber } from "~/lib/decimal";
 
 const adjustmentSelect = {
   id: true,
@@ -26,7 +27,7 @@ const inventoryItemSelect = {
 } as const;
 
 function aggregatePurchasedQuantity(
-  purchases: Array<{ productId: string | null; quantity: number }>,
+  purchases: Array<{ productId: string | null; quantity: DecimalNumber }>,
 ) {
   const quantities = new Map<string, number>();
 
@@ -37,7 +38,8 @@ function aggregatePurchasedQuantity(
 
     quantities.set(
       purchase.productId,
-      (quantities.get(purchase.productId) ?? 0) + purchase.quantity,
+      (quantities.get(purchase.productId) ?? 0) +
+        decimalToNumber(purchase.quantity),
     );
   }
 
@@ -45,14 +47,14 @@ function aggregatePurchasedQuantity(
 }
 
 function aggregateLossQuantity(
-  losses: Array<{ productId: string; quantity: number }>,
+  losses: Array<{ productId: string; quantity: DecimalNumber }>,
 ) {
   const quantities = new Map<string, number>();
 
   for (const loss of losses) {
     quantities.set(
       loss.productId,
-      (quantities.get(loss.productId) ?? 0) + loss.quantity,
+      (quantities.get(loss.productId) ?? 0) + decimalToNumber(loss.quantity),
     );
   }
 
@@ -79,7 +81,7 @@ export async function syncLedgerInventoryPurchasedQuantitiesInTx(
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
 
-    if (item.purchasedQuantity === purchasedQuantity) {
+    if (decimalToNumber(item.purchasedQuantity) === purchasedQuantity) {
       return [];
     }
 
@@ -144,7 +146,11 @@ export async function applyInventoryAdjustmentReasonsInTx(
 
   for (const item of items) {
     const reason = reasonByProductId.get(item.productId);
-    if (!reason || item.currentQuantity === null) {
+    const currentQuantity =
+      item.currentQuantity === null ? null : decimalToNumber(item.currentQuantity);
+    const previousQuantity = decimalToNumber(item.previousQuantity);
+
+    if (!reason || currentQuantity === null) {
       continue;
     }
 
@@ -155,17 +161,17 @@ export async function applyInventoryAdjustmentReasonsInTx(
     // 정상 판매 소진은 실사 차이가 아니므로 사유가 있어도 조정으로 만들지 않는다.
     if (
       isPurchaseDrivenSale({
-        previousQuantity: item.previousQuantity,
+        previousQuantity,
         purchasedQuantity,
         lossQuantity,
-        currentQuantity: item.currentQuantity,
+        currentQuantity,
       })
     ) {
       continue;
     }
 
     const beforeQuantity = calculateSystemInventoryQuantity({
-      previousQuantity: item.previousQuantity,
+      previousQuantity,
       purchasedQuantity,
       lossQuantity,
     });
@@ -180,7 +186,7 @@ export async function applyInventoryAdjustmentReasonsInTx(
     const adjustment = calculateInventoryAdjustment({
       beforeQuantity,
       beforeAmount,
-      afterQuantity: item.currentQuantity,
+      afterQuantity: currentQuantity,
       unitPrice: item.unitPrice,
     });
 
@@ -260,14 +266,20 @@ export async function reconcileLedgerInventoryAdjustments(
 
   for (const adjustment of adjustments) {
     const item = itemByProductId.get(adjustment.productId);
+    const currentQuantity =
+      item?.currentQuantity === null || item === undefined
+        ? null
+        : decimalToNumber(item.currentQuantity);
 
-    if (item?.currentQuantity === null || item === undefined) {
+    if (currentQuantity === null || item === undefined) {
       await tx.ledgerInventoryAdjustment.delete({
         where: { id: adjustment.id },
       });
       continue;
     }
 
+    const previousQuantity = decimalToNumber(item.previousQuantity);
+    const quantity = item.quantity === null ? null : decimalToNumber(item.quantity);
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
@@ -277,10 +289,10 @@ export async function reconcileLedgerInventoryAdjustments(
     // salesDifference에 계속 합산돼 이번 정책("정상 판매는 조정 아님")이 깨진다.
     if (
       isPurchaseDrivenSale({
-        previousQuantity: item.previousQuantity,
+        previousQuantity,
         purchasedQuantity,
         lossQuantity,
-        currentQuantity: item.currentQuantity,
+        currentQuantity,
       })
     ) {
       await tx.ledgerInventoryAdjustment.delete({
@@ -290,7 +302,7 @@ export async function reconcileLedgerInventoryAdjustments(
     }
 
     const beforeQuantity = calculateSystemInventoryQuantity({
-      previousQuantity: item.previousQuantity,
+      previousQuantity,
       purchasedQuantity,
       lossQuantity,
     });
@@ -305,7 +317,7 @@ export async function reconcileLedgerInventoryAdjustments(
     const nextAdjustment = calculateInventoryAdjustment({
       beforeQuantity,
       beforeAmount,
-      afterQuantity: item.currentQuantity,
+      afterQuantity: currentQuantity,
       unitPrice: item.unitPrice,
     });
 
@@ -313,9 +325,8 @@ export async function reconcileLedgerInventoryAdjustments(
       continue;
     }
     const isModified =
-      (item.currentQuantity !== null &&
-        item.currentQuantity !== item.previousQuantity) ||
-      (item.quantity !== null && item.quantity !== item.previousQuantity);
+      (currentQuantity !== null && currentQuantity !== previousQuantity) ||
+      (quantity !== null && quantity !== previousQuantity);
 
     await tx.ledgerInventoryItem.update({
       where: { id: item.id },

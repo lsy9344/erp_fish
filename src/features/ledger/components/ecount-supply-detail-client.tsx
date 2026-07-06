@@ -53,7 +53,9 @@ function formatKrw(value: number | null) {
 }
 
 function formatQuantity(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatBusinessDate(value: string | null) {

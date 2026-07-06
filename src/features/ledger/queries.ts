@@ -22,6 +22,7 @@ import {
   type StoreManagerLedgerCostStepData,
 } from "./types";
 import { getKstBusinessDate } from "./date";
+import { decimalToNumber } from "~/lib/decimal";
 export { getKstBusinessDate, getKstBusinessDateParam } from "./date";
 
 const ledgerExpenseSelect = {
@@ -230,7 +231,7 @@ function getLedgerPurchaseItems(ledger: {
     productCategory: item.productCategory,
     productSpec: item.productSpec,
     unitPrice: item.unitPrice,
-    quantity: item.quantity,
+    quantity: decimalToNumber(item.quantity),
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
     // 기본은 null. 판매 예정가는 지점장 매입 화면 전용 조회 경로(getStoreLedger)에서만 채운다.
@@ -260,7 +261,7 @@ function getLedgerAuditPurchaseItems(ledger: {
     productCategory: item.productCategory,
     productSpec: item.productSpec,
     unitPrice: item.unitPrice,
-    quantity: item.quantity,
+    quantity: decimalToNumber(item.quantity),
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
     plannedUnitPrice: null,
@@ -604,7 +605,7 @@ export async function fillPurchasePlannedUnitPricesInTx(
       referenceInfo: null,
       plannedUnitPrice: plannedByProductId.get(item.productId) ?? null,
       kind: "carryover" as const,
-      previousQuantity: item.previousQuantity,
+      previousQuantity: decimalToNumber(item.previousQuantity),
     }));
 
   return {

@@ -21,6 +21,11 @@ import {
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
 } from "./types";
+import {
+  decimalToNumber,
+  nullableDecimalToNumber,
+  type DecimalNumber,
+} from "~/lib/decimal";
 
 export const inventoryCarryoverDetailSelect = {
   source: true,
@@ -103,7 +108,7 @@ type PurchasePayload = {
   productCategory: string;
   productSpec: string;
   unitPrice: number;
-  quantity: number;
+  quantity: DecimalNumber;
   amount: number;
 };
 
@@ -119,7 +124,7 @@ type LossPayload = {
   productCategory: string;
   productSpec: string;
   unitPrice: number;
-  quantity: number;
+  quantity: DecimalNumber;
   amount: number;
 };
 
@@ -144,10 +149,10 @@ type ProductInventoryBase = {
 
 type ExistingCarryoverBasis = {
   productId: string;
-  previousQuantity: number;
-  purchasedQuantity: number;
-  currentQuantity: number | null;
-  quantity: number | null;
+  previousQuantity: DecimalNumber;
+  purchasedQuantity: DecimalNumber;
+  currentQuantity: DecimalNumber | null;
+  quantity: DecimalNumber | null;
 };
 
 const historyLimit = 30;
@@ -168,16 +173,17 @@ function aggregatePurchases(purchases: PurchasePayload[]) {
       continue;
     }
 
+    const quantity = decimalToNumber(purchase.quantity);
     const current = aggregates.get(purchase.productId);
 
     if (current) {
-      current.quantity += purchase.quantity;
+      current.quantity += quantity;
       current.amount += purchase.amount;
       continue;
     }
 
     aggregates.set(purchase.productId, {
-      quantity: purchase.quantity,
+      quantity,
       amount: purchase.amount,
       base: {
         productId: purchase.productId,
@@ -205,16 +211,17 @@ function aggregateLosses(losses: LossPayload[]) {
   const aggregates = new Map<string, LossAggregate>();
 
   for (const loss of losses) {
+    const quantity = decimalToNumber(loss.quantity);
     const current = aggregates.get(loss.productId);
 
     if (current) {
-      current.quantity += loss.quantity;
+      current.quantity += quantity;
       current.amount += loss.amount;
       continue;
     }
 
     aggregates.set(loss.productId, {
-      quantity: loss.quantity,
+      quantity,
       amount: loss.amount,
       base: {
         productId: loss.productId,
@@ -243,6 +250,18 @@ function toCarryoverDetailView(
 ): InventoryCarryoverDetailView {
   return {
     ...detail,
+    resolvedQuantity: decimalToNumber(detail.resolvedQuantity),
+    sourcePreviousQuantity: nullableDecimalToNumber(
+      detail.sourcePreviousQuantity,
+    ),
+    sourcePurchasedQuantity: nullableDecimalToNumber(
+      detail.sourcePurchasedQuantity,
+    ),
+    sourceLossQuantity: nullableDecimalToNumber(detail.sourceLossQuantity),
+    sourceCurrentQuantity: nullableDecimalToNumber(
+      detail.sourceCurrentQuantity,
+    ),
+    sourceQuantity: nullableDecimalToNumber(detail.sourceQuantity),
     sourceLedgerClosingDate:
       detail.sourceLedgerClosingDate?.toISOString() ?? null,
     history: [],
@@ -346,11 +365,11 @@ function buildLedgerCarryoverDetail({
     sourceLedgerId: ledger.id,
     sourceLedgerClosingDate: ledger.closingDate,
     sourceLedgerStatus: ledger.status,
-    sourcePreviousQuantity: item.previousQuantity,
-    sourcePurchasedQuantity: item.purchasedQuantity,
+    sourcePreviousQuantity: decimalToNumber(item.previousQuantity),
+    sourcePurchasedQuantity: decimalToNumber(item.purchasedQuantity),
     sourceLossQuantity: lossQuantity,
-    sourceCurrentQuantity: item.currentQuantity,
-    sourceQuantity: item.quantity,
+    sourceCurrentQuantity: nullableDecimalToNumber(item.currentQuantity),
+    sourceQuantity: nullableDecimalToNumber(item.quantity),
   });
 }
 
@@ -361,18 +380,18 @@ function buildSnapshotCarryoverDetail({
   snapshot: {
     id: string;
     yearMonth: string;
-    quantity: number;
+    quantity: DecimalNumber;
   };
   status?: InventoryCarryoverStatus;
 }) {
   return buildCarryoverDetail({
     source: InventoryCarryoverSource.OPENING_SNAPSHOT,
     status,
-    resolvedQuantity: snapshot.quantity,
+    resolvedQuantity: decimalToNumber(snapshot.quantity),
     sourceYearMonth: snapshot.yearMonth,
     sourceSnapshotId: snapshot.id,
-    sourcePreviousQuantity: snapshot.quantity,
-    sourceQuantity: snapshot.quantity,
+    sourcePreviousQuantity: decimalToNumber(snapshot.quantity),
+    sourceQuantity: decimalToNumber(snapshot.quantity),
   });
 }
 
@@ -416,11 +435,11 @@ function toAdjustmentView(adjustment: InventoryAdjustmentPayload | undefined) {
 
   return {
     id: adjustment.id,
-    beforeQuantity: adjustment.beforeQuantity,
+    beforeQuantity: decimalToNumber(adjustment.beforeQuantity),
     beforeAmount: adjustment.beforeAmount,
-    afterQuantity: adjustment.afterQuantity,
+    afterQuantity: decimalToNumber(adjustment.afterQuantity),
     afterAmount: adjustment.afterAmount,
-    differenceQuantity: adjustment.differenceQuantity,
+    differenceQuantity: decimalToNumber(adjustment.differenceQuantity),
     differenceAmount: adjustment.differenceAmount,
     amountStatus: adjustment.amountStatus,
     reason: adjustment.reason,
@@ -437,6 +456,8 @@ function toExistingInventoryLine(
   adjustment: InventoryAdjustmentPayload | undefined,
   carryoverStatus: InventoryCarryoverStatus,
 ): InventoryStepLine {
+  const previousQuantity = decimalToNumber(item.previousQuantity);
+
   return {
     id: item.id,
     productId: item.productId,
@@ -444,13 +465,14 @@ function toExistingInventoryLine(
     productCategory: item.productCategory,
     productSpec: item.productSpec,
     unitPrice: item.unitPrice,
-    previousQuantity: item.previousQuantity,
-    purchasedQuantity: purchase?.quantity ?? item.purchasedQuantity,
+    previousQuantity,
+    purchasedQuantity:
+      purchase?.quantity ?? decimalToNumber(item.purchasedQuantity),
     purchaseAmount: purchase?.amount ?? 0,
     lossQuantity: loss?.quantity ?? 0,
     lossAmount: loss?.amount ?? 0,
-    currentQuantity: item.currentQuantity,
-    quantity: item.quantity,
+    currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+    quantity: nullableDecimalToNumber(item.quantity),
     inventoryAmount: item.inventoryAmount,
     fifoLots: [],
     carryoverSource: item.carryoverSource,
@@ -464,7 +486,7 @@ function toExistingInventoryLine(
       : buildCarryoverDetail({
           source: item.carryoverSource,
           status: carryoverStatus,
-          resolvedQuantity: item.previousQuantity,
+          resolvedQuantity: previousQuantity,
           sourceLedgerId: item.carryoverLedgerId,
         }),
     isModified: item.isModified,
@@ -482,7 +504,11 @@ function isPreviousCalendarDate(closingDate: Date, priorDate: Date) {
 }
 
 function toPreviousQuantity(item: ExistingCarryoverBasis) {
-  return item.currentQuantity ?? item.quantity ?? 0;
+  return (
+    nullableDecimalToNumber(item.currentQuantity) ??
+    nullableDecimalToNumber(item.quantity) ??
+    0
+  );
 }
 
 function getCarryoverStatusRank(status: InventoryCarryoverStatus) {
@@ -564,7 +590,10 @@ function resolveExistingCarryoverStatus(
     (candidate) => candidate.productId === item.productId,
   );
 
-  if (basis && toPreviousQuantity(basis) !== item.previousQuantity) {
+  if (
+    basis &&
+    toPreviousQuantity(basis) !== decimalToNumber(item.previousQuantity)
+  ) {
     return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
   }
 
@@ -752,7 +781,7 @@ async function getCarryoverBases(
       lossQuantityByProductId.set(
         lossItem.productId,
         (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
-          lossItem.quantity,
+          decimalToNumber(lossItem.quantity),
       );
     }
 
@@ -820,7 +849,7 @@ async function getCarryoverBases(
         productCategory: snapshot.productCategory,
         productSpec: snapshot.productSpec,
         unitPrice: snapshot.unitPrice,
-        previousQuantity: snapshot.quantity,
+        previousQuantity: decimalToNumber(snapshot.quantity),
         carryoverSource: InventoryCarryoverSource.OPENING_SNAPSHOT,
         carryoverStatus: InventoryCarryoverStatus.OPENING_CARRYOVER,
         carryoverLedgerId: null,
@@ -841,7 +870,7 @@ async function getCarryoverBases(
       lossQuantityByProductId.set(
         lossItem.productId,
         (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
-          lossItem.quantity,
+          decimalToNumber(lossItem.quantity),
       );
     }
 
@@ -914,18 +943,24 @@ async function getManualProductOptions(
 }
 
 function toHistoryLossQuantity(item: {
-  previousQuantity: number;
-  purchasedQuantity: number;
-  currentQuantity: number | null;
-  quantity: number | null;
+  previousQuantity: DecimalNumber;
+  purchasedQuantity: DecimalNumber;
+  currentQuantity: DecimalNumber | null;
+  quantity: DecimalNumber | null;
 }) {
-  const closingQuantity = item.currentQuantity ?? item.quantity;
+  const closingQuantity =
+    nullableDecimalToNumber(item.currentQuantity) ??
+    nullableDecimalToNumber(item.quantity);
 
   if (closingQuantity === null) {
     return null;
   }
 
-  return item.previousQuantity + item.purchasedQuantity - closingQuantity;
+  return (
+    decimalToNumber(item.previousQuantity) +
+    decimalToNumber(item.purchasedQuantity) -
+    closingQuantity
+  );
 }
 
 async function attachCarryoverHistories(
@@ -979,11 +1014,11 @@ async function attachCarryoverHistories(
         ledgerId: ledger.id,
         closingDate: ledger.closingDate.toISOString(),
         ledgerStatus: ledger.status,
-        previousQuantity: item.previousQuantity,
-        purchasedQuantity: item.purchasedQuantity,
+        previousQuantity: decimalToNumber(item.previousQuantity),
+        purchasedQuantity: decimalToNumber(item.purchasedQuantity),
         lossQuantity: toHistoryLossQuantity(item),
-        currentQuantity: item.currentQuantity,
-        quantity: item.quantity,
+        currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+        quantity: nullableDecimalToNumber(item.quantity),
       });
       historyByProductId.set(item.productId, rows);
     }

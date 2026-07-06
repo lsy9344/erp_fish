@@ -1,29 +1,31 @@
 import { z } from "zod";
 
 import {
-  parseOptionalNonNegativeInteger,
-  parseRequiredNonNegativeInteger,
+  parseOptionalNonNegativeDecimal,
+  parseRequiredNonNegativeDecimal,
   toFieldErrors,
 } from "../../lib/validation.ts";
 
 const productError = "품목을 확인해 주세요.";
-const inventoryIntegerError = "재고 수량은 0 이상의 정수여야 합니다.";
-const actualQuantityError = "실제 재고 수량은 0 이상의 정수여야 합니다.";
+const inventoryQuantityError =
+  "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+const actualQuantityError =
+  "실제 재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 
-function parseOptionalInventoryInteger(
+function parseOptionalInventoryQuantity(
   value: unknown,
   context: z.RefinementCtx,
 ) {
-  return parseOptionalNonNegativeInteger(value, context, inventoryIntegerError);
+  return parseOptionalNonNegativeDecimal(value, context, inventoryQuantityError);
 }
 
-function parseRequiredInventoryInteger(
+function parseRequiredInventoryQuantity(
   value: unknown,
   context: z.RefinementCtx,
 ) {
-  return parseRequiredNonNegativeInteger(value, context, actualQuantityError);
+  return parseRequiredNonNegativeDecimal(value, context, actualQuantityError);
 }
 
 const storeSchema = z
@@ -84,12 +86,12 @@ const ledgerInventoryItemSchema = z.object({
   currentQuantity: z
     .unknown()
     .transform((value, context) =>
-      parseOptionalInventoryInteger(value, context),
+      parseOptionalInventoryQuantity(value, context),
     ),
   quantity: z
     .unknown()
     .transform((value, context) =>
-      parseOptionalInventoryInteger(value, context),
+      parseOptionalInventoryQuantity(value, context),
     ),
   // 당일재고가 기준재고와 다른 행의 "고친 이유". 지점장이 일반 저장과 함께 보내면 서버가
   // 조정 레코드를 생성한다(단독 본사 전용 조정 액션과 별개로, 지점 실사 차이 사유 입력 경로).
@@ -111,11 +113,9 @@ export const ledgerInventoryAdjustmentSchema =
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, productError)),
-    actualQuantity: z
-      .unknown()
-      .transform((value, context) =>
-        parseRequiredInventoryInteger(value, context),
-      ),
+    actualQuantity: z.unknown().transform((value, context) =>
+      parseRequiredInventoryQuantity(value, context),
+    ),
     reason: z
       .string()
       .transform((value) => value.trim())
