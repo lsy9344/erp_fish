@@ -98,6 +98,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
       "ReportExport",
       // WO(2026-06-24): 이카운트 출고/입고 원장 도입으로 추가된 감사 대상 타입
       "EcountImportBatch",
+      "InventoryOpeningSnapshot",
       "StoreExternalAlias",
       "ProductExternalAlias",
     ],

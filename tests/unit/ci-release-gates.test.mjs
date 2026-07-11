@@ -68,7 +68,8 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
 
   // Fast gate runs on every push (incl. feature branches): lint + typecheck + unit,
   // no DB, no build, no browser. This is the cheap common-case feedback loop.
-  assert.match(fastChecksJob, /if: github\.event_name != 'schedule'/);
+  assert.doesNotMatch(workflow, /^\s+schedule:/m);
+  assert.doesNotMatch(fastChecksJob, /^\s+if:/m);
   assert.match(fastChecksJob, /run:\s*pnpm format:check/);
   assert.match(fastChecksJob, /run:\s*pnpm format:check:ci-docs/);
   assert.match(fastChecksJob, /run:\s*pnpm lint/);
@@ -109,7 +110,7 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   );
   assert.match(
     fullJob,
-    /github\.event_name == 'schedule' \|\|[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e/,
+    /github\.event_name == 'workflow_dispatch' && inputs\.run_full_e2e/,
   );
   assert.match(fullJob, /github\.event_name == 'push'/);
   assert.match(fullJob, /refs\/heads\/main/);

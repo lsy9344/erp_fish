@@ -106,7 +106,7 @@ test("#2 HQ save forces ECOUNT raw fields from existing row", () => {
   // 이카운트 행의 수량도 입력이 아닌 기존 행에서 가져온다.
   assert.match(
     source,
-    /const quantity = isEcountUpload\s*\?\s*existing\.quantity/,
+    /const quantity = isEcountUpload\s*\?\s*decimalToNumber\(existing\.quantity\)/,
     "HQ save should keep ECOUNT quantity from existing row",
   );
 });

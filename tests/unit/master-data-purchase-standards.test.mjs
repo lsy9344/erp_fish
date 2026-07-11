@@ -132,7 +132,10 @@ test("purchase standard model preserves active flags, audit ownership, and ledge
   assert.match(purchaseItemModel, /productCategory\s+String/);
   assert.match(purchaseItemModel, /productSpec\s+String/);
   assert.match(purchaseItemModel, /unitPrice\s+Int/);
-  assert.match(purchaseItemModel, /quantity\s+Int/);
+  assert.match(
+    purchaseItemModel,
+    /quantity\s+Decimal\s+@db\.Decimal\(12,\s*2\)/,
+  );
   assert.match(purchaseItemModel, /amount\s+Int/);
   assert.match(purchaseItemModel, /referenceInfo\s+String\?/);
 });
