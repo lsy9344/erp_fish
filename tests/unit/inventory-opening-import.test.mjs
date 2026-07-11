@@ -176,6 +176,13 @@ async function importInventoryOpeningImport() {
   return import(pathToFileURL(modulePath).href);
 }
 
+test("getNextInventoryLedgerDate returns the exact next day", async () => {
+  const { getNextInventoryLedgerDate } = await importInventoryOpeningImport();
+
+  assert.equal(getNextInventoryLedgerDate("2026-07-10"), "2026-07-11");
+  assert.equal(getNextInventoryLedgerDate("2026-07-31"), "2026-08-01");
+});
+
 test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and derives opening months", async () => {
   const { parseInventoryOpeningWorkbook } =
     await importInventoryOpeningImport();
@@ -288,6 +295,12 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.match(actionSource, /requireEcountUploadCommitAccess/);
   assert.match(actionSource, /inventoryOpeningSnapshot\.upsert/);
   assert.match(actionSource, /parseInventoryOpeningWorkbook/);
+  assert.match(actionSource, /existingLedgerCount/);
+  assert.match(
+    actionSource,
+    /ledgerInventoryItems:\s*\{\s*some:\s*\{\s*\}\s*\}/s,
+  );
   assert.match(clientSource, /재고 파일 업로드/);
   assert.match(clientSource, /uploadInventoryOpeningSnapshots/);
+  assert.match(clientSource, /작성된 장부는 자동으로 덮어쓰지 않았습니다/);
 });

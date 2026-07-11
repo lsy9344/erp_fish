@@ -410,7 +410,7 @@ function cellDate(row: CellValue[], index: number, rowNumber: number) {
   });
 }
 
-function nextDayYearMonth(isoDate: string) {
+export function getNextInventoryLedgerDate(isoDate: string) {
   const date = new Date(`${isoDate}T00:00:00.000Z`);
 
   if (Number.isNaN(date.getTime())) {
@@ -419,7 +419,11 @@ function nextDayYearMonth(isoDate: string) {
 
   date.setUTCDate(date.getUTCDate() + 1);
 
-  return date.toISOString().slice(0, 7);
+  return date.toISOString().slice(0, 10);
+}
+
+function nextDayYearMonth(isoDate: string) {
+  return getNextInventoryLedgerDate(isoDate).slice(0, 7);
 }
 
 function classifyProductCategory(productName: string) {

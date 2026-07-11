@@ -11,6 +11,7 @@ import { writeAuditLog } from "~/server/audit";
 import { requireEcountUploadCommitAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import {
+  getNextInventoryLedgerDate,
   InventoryOpeningImportError,
   parseInventoryOpeningWorkbook,
   type InventoryOpeningImportRow,
@@ -31,6 +32,8 @@ export type InventoryOpeningUploadResult = {
   storeCount: number;
   totalQuantity: number;
   totalInventoryAmount: number;
+  existingLedgerCount: number;
+  existingLedgerStoreNames: string[];
 };
 
 type MatchedInventoryOpeningRow = InventoryOpeningImportRow & {
@@ -233,6 +236,32 @@ export async function uploadInventoryOpeningSnapshots(
         );
       }
 
+      const ledgerTargets = [
+        ...new Map(
+          matchedRows.map((row) => {
+            const nextDate = getNextInventoryLedgerDate(row.inventoryDate);
+
+            return [
+              `${row.storeId}\u001f${nextDate}`,
+              {
+                storeId: row.storeId,
+                closingDate: new Date(`${nextDate}T00:00:00.000Z`),
+              },
+            ] as const;
+          }),
+        ).values(),
+      ];
+      const existingLedgers = await tx.dailyLedger.findMany({
+        where: {
+          OR: ledgerTargets,
+          ledgerInventoryItems: { some: {} },
+        },
+        select: { store: { select: { name: true } } },
+      });
+      const existingLedgerStoreNames = [
+        ...new Set(existingLedgers.map((ledger) => ledger.store.name)),
+      ];
+
       let createdCount = 0;
       let updatedCount = 0;
       let unchangedCount = 0;
@@ -289,6 +318,8 @@ export async function uploadInventoryOpeningSnapshots(
         storeCount: new Set(matchedRows.map((row) => row.storeId)).size,
         totalQuantity: parsed.totalQuantity,
         totalInventoryAmount: parsed.totalInventoryAmount,
+        existingLedgerCount: existingLedgerStoreNames.length,
+        existingLedgerStoreNames,
       };
 
       await writeAuditLog(tx, {
