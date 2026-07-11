@@ -1516,6 +1516,56 @@ test("purchase/loss seed rows persist explicit zero or one current quantity", as
   );
 });
 
+test("grounded carryover seed rows persist without quantity changes", async () => {
+  const policyPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-persist-policy.ts",
+  );
+  const { shouldPersistInventoryLine } = await import(
+    pathToFileURL(policyPath).href
+  );
+
+  for (const carryoverSource of [
+    "OPENING_SNAPSHOT",
+    "PREVIOUS_CLOSED_LEDGER",
+    "PREVIOUS_SAVED_LEDGER",
+  ]) {
+    assert.equal(
+      shouldPersistInventoryLine(
+        {
+          id: "product-1",
+          productId: "product-1",
+          currentQuantity: 7,
+          quantity: 7,
+          carryoverSource,
+        },
+        7,
+        7,
+      ),
+      true,
+      `${carryoverSource} seed rows must survive an unchanged save`,
+    );
+  }
+
+  assert.equal(
+    shouldPersistInventoryLine(
+      {
+        id: "product-1",
+        productId: "product-1",
+        currentQuantity: 0,
+        quantity: 0,
+        carryoverSource: "MANUAL",
+      },
+      0,
+      0,
+    ),
+    false,
+    "manual seed rows remain non-persistent until the user enters a value",
+  );
+});
+
 test("inventory adjustment query action and audit contracts are wired", () => {
   const typeSource = readProjectFile(
     "src",

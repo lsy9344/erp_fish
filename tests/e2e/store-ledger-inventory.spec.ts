@@ -282,6 +282,11 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
   await markLossStepReviewed(ledger.id, actorId);
   const product = await seedProduct("스토리2-5 월초 광어", "냉동", 12000);
+  const untouchedProduct = await seedProduct(
+    "스토리2-5 월초 연어",
+    "냉동",
+    15000,
+  );
 
   await prisma.inventoryOpeningSnapshot.create({
     data: {
@@ -293,6 +298,18 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
       productSpec: product.spec,
       unitPrice: product.defaultUnitPrice,
       quantity: 7,
+    },
+  });
+  await prisma.inventoryOpeningSnapshot.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      yearMonth: getCurrentKstYearMonth(),
+      productId: untouchedProduct.id,
+      productName: untouchedProduct.name,
+      productCategory: untouchedProduct.category,
+      productSpec: untouchedProduct.spec,
+      unitPrice: untouchedProduct.defaultUnitPrice,
+      quantity: 5,
     },
   });
 
@@ -334,6 +351,21 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   await expect(
     page.getByLabel(`${product.name} 당일재고`, { exact: true }),
   ).toHaveValue("9");
+  await expect(
+    page.getByLabel(`${untouchedProduct.name} 당일재고`, { exact: true }),
+  ).toHaveValue("5");
+
+  const untouchedRow = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: untouchedProduct.id,
+      },
+    },
+  });
+  expect(untouchedRow?.carryoverSource).toBe("OPENING_SNAPSHOT");
+  expect(untouchedRow?.previousQuantity.toString()).toBe("5");
+
   const productRow = page.locator("tr").filter({ hasText: product.name });
   await expect(productRow.getByText("수정됨").first()).toBeVisible();
   await expect(productRow.getByText("고침 완료").first()).toBeVisible();

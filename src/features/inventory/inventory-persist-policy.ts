@@ -9,6 +9,8 @@
  *
  * - item.id !== item.productId: 이미 DB에 존재하는 실제 행(cuid id). 사용자가
  *   값을 바꾸지 않아도 기존 값을 보존하기 위해 그대로 다시 기록한다.
+ * - 월초 스냅샷/직전 장부 seed 행: 수량이 그대로여도 근거가 있는 이월값이므로
+ *   다시 기록한다.
  * - 매입/손실 seed 행에 사용자가 당일재고를 명시 입력한 경우: 값이 내부 seed
  *   기본값(예: 0)과 같아도 "입력 완료" 기록이므로 기록한다.
  * - currentQuantity/quantity가 기존 저장값과 다르면: 변경된 행이므로 기록한다.
@@ -17,6 +19,12 @@
  * 본사(saveHqLedgerInventoryItems)와 지점장(saveLedgerInventoryItems) 저장
  * 경로가 동일한 영속화 정책을 공유하도록 한 곳에 둔다.
  */
+const groundedCarryoverSources = new Set([
+  "OPENING_SNAPSHOT",
+  "PREVIOUS_CLOSED_LEDGER",
+  "PREVIOUS_SAVED_LEDGER",
+]);
+
 export function shouldPersistInventoryLine(
   item: {
     id: string;
@@ -25,6 +33,7 @@ export function shouldPersistInventoryLine(
     quantity: number | null;
     purchasedQuantity?: number;
     lossQuantity?: number;
+    carryoverSource?: string;
   },
   currentQuantity: number | null,
   quantity: number | null,
@@ -34,9 +43,13 @@ export function shouldPersistInventoryLine(
     options.hasExplicitCurrentQuantityInput === true &&
     item.id === item.productId &&
     ((item.purchasedQuantity ?? 0) > 0 || (item.lossQuantity ?? 0) > 0);
+  const hasGroundedCarryover =
+    item.id === item.productId &&
+    groundedCarryoverSources.has(item.carryoverSource ?? "");
 
   return (
     item.id !== item.productId ||
+    hasGroundedCarryover ||
     requiredSeedEntryWasEntered ||
     currentQuantity !== item.currentQuantity ||
     quantity !== item.quantity
