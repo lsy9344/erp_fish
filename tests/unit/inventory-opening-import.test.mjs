@@ -324,6 +324,11 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.match(actionSource, /inventoryOpeningSnapshot\.upsert/);
   assert.match(actionSource, /parseInventoryOpeningWorkbook/);
   assert.match(actionSource, /existingLedgerCount/);
+  assert.match(actionSource, /productCreatedCount/);
+  assert.match(actionSource, /product\.create/);
+  assert.match(actionSource, /action:\s*"product\.created"/);
+  assert.match(actionSource, /재고 스냅샷 업로드 미등록 품목 자동 생성/);
+  assert.match(actionSource, /defaultUnitPrice:\s*null/);
   assert.match(
     actionSource,
     /ledgerInventoryItems:\s*\{\s*some:\s*\{\s*\}\s*\}/s,

@@ -155,7 +155,7 @@ export function EcountSupplyUploadClient({
         );
       } else {
         toast.success(
-          `재고 스냅샷 ${result.data.importedCount}건을 반영했습니다.`,
+          `재고 스냅샷 ${result.data.importedCount}건을 반영했습니다. 자동 추가 품목 ${result.data.productCreatedCount}개`,
         );
       }
       router.refresh();
@@ -266,6 +266,12 @@ export function EcountSupplyUploadClient({
               <dd className="font-medium tabular-nums">
                 {inventoryResult.createdCount} / {inventoryResult.updatedCount}{" "}
                 / {inventoryResult.unchangedCount}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">자동 추가 품목</dt>
+              <dd className="font-medium tabular-nums">
+                {inventoryResult.productCreatedCount}개
               </dd>
             </div>
             <div>

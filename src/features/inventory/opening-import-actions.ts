@@ -28,6 +28,7 @@ export type InventoryOpeningUploadResult = {
   createdCount: number;
   updatedCount: number;
   unchangedCount: number;
+  productCreatedCount: number;
   yearMonths: string[];
   storeCount: number;
   totalQuantity: number;
@@ -98,6 +99,7 @@ function toSnapshotData(row: MatchedInventoryOpeningRow) {
 async function matchRows(
   tx: Prisma.TransactionClient,
   rows: InventoryOpeningImportRow[],
+  actorId: string,
 ) {
   const [stores, products] = await Promise.all([
     tx.store.findMany({
@@ -105,12 +107,12 @@ async function matchRows(
       select: { id: true, name: true },
     }),
     tx.product.findMany({
-      where: { isActive: true },
       select: {
         id: true,
         name: true,
         category: true,
         spec: true,
+        isActive: true,
       },
     }),
   ]);
@@ -124,12 +126,10 @@ async function matchRows(
   const matchedRows: MatchedInventoryOpeningRow[] = [];
   const errors: string[] = [];
   const seenRows = new Map<string, number>();
+  let productCreatedCount = 0;
 
   for (const row of rows) {
     const store = storeByName.get(row.storeName);
-    const product = productByKey.get(
-      productKey(row.productName, row.productCategory, row.productSpec),
-    );
 
     if (!store) {
       errors.push(
@@ -138,11 +138,55 @@ async function matchRows(
       continue;
     }
 
-    if (!product) {
+    const key = productKey(
+      row.productName,
+      row.productCategory,
+      row.productSpec,
+    );
+    let product = productByKey.get(key);
+
+    if (product && !product.isActive) {
       errors.push(
-        `${row.rowNumber}행 품목 "${row.productName}" / "${row.productCategory}" / "${row.productSpec}"을 찾을 수 없습니다.`,
+        `${row.rowNumber}행 품목 "${row.productName}" / "${row.productCategory}" / "${row.productSpec}"은 비활성 상태입니다.`,
       );
       continue;
+    }
+
+    if (!product) {
+      product = await tx.product.create({
+        data: {
+          name: row.productName,
+          category: row.productCategory,
+          spec: row.productSpec,
+          defaultUnitPrice: null,
+          isActive: true,
+          updatedById: actorId,
+        },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          spec: true,
+          isActive: true,
+        },
+      });
+      productByKey.set(key, product);
+      productCreatedCount += 1;
+      await writeAuditLog(tx, {
+        action: "product.created",
+        targetType: "Product",
+        targetId: product.id,
+        actorId,
+        before: null,
+        after: {
+          name: product.name,
+          category: product.category,
+          spec: product.spec,
+          defaultUnitPrice: null,
+          isActive: true,
+        },
+        reason: "재고 스냅샷 업로드 미등록 품목 자동 생성",
+      });
     }
 
     const matchedRow: MatchedInventoryOpeningRow = {
@@ -153,8 +197,8 @@ async function matchRows(
       productSnapshotCategory: product.category,
       productSnapshotSpec: product.spec,
     };
-    const key = uploadKey(matchedRow);
-    const firstRowNumber = seenRows.get(key);
+    const rowKey = uploadKey(matchedRow);
+    const firstRowNumber = seenRows.get(rowKey);
 
     if (firstRowNumber) {
       errors.push(
@@ -163,11 +207,11 @@ async function matchRows(
       continue;
     }
 
-    seenRows.set(key, row.rowNumber);
+    seenRows.set(rowKey, row.rowNumber);
     matchedRows.push(matchedRow);
   }
 
-  return { matchedRows, errors };
+  return { matchedRows, errors, productCreatedCount };
 }
 
 export async function uploadInventoryOpeningSnapshots(
@@ -237,7 +281,11 @@ export async function uploadInventoryOpeningSnapshots(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const { matchedRows, errors } = await matchRows(tx, parsed.rows);
+      const { matchedRows, errors, productCreatedCount } = await matchRows(
+        tx,
+        parsed.rows,
+        actor.id,
+      );
 
       if (errors.length > 0) {
         throw new InventoryOpeningImportError(
@@ -324,6 +372,7 @@ export async function uploadInventoryOpeningSnapshots(
         createdCount,
         updatedCount,
         unchangedCount,
+        productCreatedCount,
         yearMonths: parsed.yearMonths,
         storeCount: new Set(matchedRows.map((row) => row.storeId)).size,
         totalQuantity: parsed.totalQuantity,
