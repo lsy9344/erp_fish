@@ -176,6 +176,30 @@ async function importInventoryOpeningImport() {
   return import(pathToFileURL(modulePath).href);
 }
 
+async function importProductSchemas() {
+  const modulePath = path.join(
+    root,
+    "src",
+    "features",
+    "master-data",
+    "product-schemas.ts",
+  );
+
+  return import(pathToFileURL(modulePath).href);
+}
+
+async function importInventoryOpeningRetry() {
+  const modulePath = path.join(
+    root,
+    "src",
+    "features",
+    "inventory",
+    "opening-import-retry.ts",
+  );
+
+  return import(pathToFileURL(modulePath).href);
+}
+
 test("getNextInventoryLedgerDate returns the exact next day", async () => {
   const { getNextInventoryLedgerDate } = await importInventoryOpeningImport();
 
@@ -291,6 +315,106 @@ test("parseInventoryOpeningWorkbook rejects quantities past two decimals", async
       error instanceof InventoryOpeningImportError &&
       error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
   );
+});
+
+test("inventory product identity accepts blank specs but enforces shared product bounds", async () => {
+  const { productFormSchema, productIdentitySchema } =
+    await importProductSchemas();
+
+  assert.deepEqual(
+    productIdentitySchema.parse({
+      name: "  재고 고등어  ",
+      category: " 냉동 ",
+      spec: "   ",
+    }),
+    { name: "재고 고등어", category: "냉동", spec: "" },
+  );
+  assert.equal(
+    productIdentitySchema.safeParse({
+      name: "가".repeat(81),
+      category: "냉동",
+      spec: "1kg",
+    }).success,
+    false,
+  );
+  assert.equal(
+    productIdentitySchema.safeParse({
+      name: "고등어",
+      category: "기타",
+      spec: "1kg",
+    }).success,
+    false,
+  );
+  assert.equal(
+    productIdentitySchema.safeParse({
+      name: "고등어",
+      category: "냉동",
+      spec: "가".repeat(81),
+    }).success,
+    false,
+  );
+  assert.equal(
+    productFormSchema.safeParse({
+      name: "고등어",
+      category: "냉동",
+      spec: " ",
+    }).success,
+    false,
+    "normal product forms must still require a spec",
+  );
+});
+
+test("inventory product unique retry retries once only for the Product identity constraint", async () => {
+  const {
+    retryInventoryProductIdentityTransaction,
+    isProductIdentityUniqueConstraintError,
+  } = await importInventoryOpeningRetry();
+  const productRace = {
+    code: "P2002",
+    meta: {
+      modelName: "Product",
+      target: ["name", "category", "spec"],
+    },
+  };
+  let attempts = 0;
+
+  const result = await retryInventoryProductIdentityTransaction(async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      throw productRace;
+    }
+    return "winner reused";
+  });
+
+  assert.equal(result, "winner reused");
+  assert.equal(attempts, 2);
+  assert.equal(isProductIdentityUniqueConstraintError(productRace), true);
+
+  for (const unrelatedError of [
+    { code: "P2002", meta: { modelName: "Store", target: ["name"] } },
+    { code: "P2002", meta: { modelName: "Product", target: ["name"] } },
+    { code: "P2025", meta: { modelName: "Product" } },
+  ]) {
+    let unrelatedAttempts = 0;
+    await assert.rejects(
+      retryInventoryProductIdentityTransaction(async () => {
+        unrelatedAttempts += 1;
+        throw unrelatedError;
+      }),
+      (error) => error === unrelatedError,
+    );
+    assert.equal(unrelatedAttempts, 1);
+  }
+
+  let exhaustedAttempts = 0;
+  await assert.rejects(
+    retryInventoryProductIdentityTransaction(async () => {
+      exhaustedAttempts += 1;
+      throw productRace;
+    }),
+    (error) => error === productRace,
+  );
+  assert.equal(exhaustedAttempts, 2, "retry must be bounded to one retry");
 });
 
 test("inventory opening upload action and ecount upload menu are wired", () => {

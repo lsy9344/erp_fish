@@ -9,6 +9,7 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 const prisma = new PrismaClient();
 const AUTO_INVENTORY_PRODUCT_PREFIX = "E2E 자동재고품목";
 const CONFLICT_INVENTORY_PRODUCT_PREFIX = "E2E 기존장부";
+const INACTIVE_INVENTORY_PRODUCT_PREFIX = "E2E 비활성재고품목";
 const CONFLICT_INVENTORY_LEDGER_MARKER = "E2E 재고 업로드 기존장부";
 const inventoryUploadHashes = new Set<string>();
 
@@ -224,6 +225,9 @@ async function cleanupAutoInventoryProducts() {
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
   if (ledgerIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+    });
     await prisma.ledgerInventoryItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -244,6 +248,7 @@ async function cleanupAutoInventoryProducts() {
       OR: [
         { name: { startsWith: AUTO_INVENTORY_PRODUCT_PREFIX } },
         { name: { startsWith: CONFLICT_INVENTORY_PRODUCT_PREFIX } },
+        { name: { startsWith: INACTIVE_INVENTORY_PRODUCT_PREFIX } },
       ],
     },
     select: { id: true },
@@ -445,6 +450,7 @@ test("본사는 이카운트 업로드 화면에 진입해 파일 업로드와 �
 test("재고 업로드는 미등록 품목을 한 번 생성하고 월초 스냅샷에 연결한다", async ({
   page,
 }, testInfo) => {
+  testInfo.setTimeout(60_000);
   const suffix = `${testInfo.workerIndex}-${Date.now()}`;
   const productName = `${AUTO_INVENTORY_PRODUCT_PREFIX} ${suffix}`;
   const inventoryDate = getPreviousKstDateString();
@@ -484,6 +490,172 @@ test("재고 업로드는 미등록 품목을 한 번 생성하고 월초 스냅
       },
     }),
   ).toBe(1);
+
+  await page.locator('input[name="inventoryFile"]').setInputFiles({
+    name: `inventory-reupload-${suffix}.xlsx`,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: workbook,
+  });
+  await page.getByRole("button", { name: "재고 업로드" }).click();
+
+  await expect(page.getByText("0 / 0 / 2")).toBeVisible();
+  await expect(page.getByText("0개", { exact: true })).toBeVisible();
+  expect(
+    await prisma.product.count({
+      where: {
+        name: productName,
+        category: "냉동",
+        spec: "1kg",
+      },
+    }),
+  ).toBe(1);
+  expect(
+    await prisma.inventoryOpeningSnapshot.count({
+      where: { productId: product!.id },
+    }),
+  ).toBe(2);
+
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const today = new Date(
+    `${new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date())}T00:00:00.000Z`,
+  );
+  const ledger = await prisma.dailyLedger.upsert({
+    where: {
+      storeId_closingDate: { storeId: "store-gangnam", closingDate: today },
+    },
+    create: {
+      storeId: "store-gangnam",
+      closingDate: today,
+      workMemo: `${CONFLICT_INVENTORY_LEDGER_MARKER} upload-flow ${suffix}`,
+      lossReviewedAt: new Date(),
+      lossReviewedById: actor.id,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    update: {
+      workMemo: `${CONFLICT_INVENTORY_LEDGER_MARKER} upload-flow ${suffix}`,
+      lossReviewedAt: new Date(),
+      lossReviewedById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+
+  await page.context().clearCookies();
+  await login(page, "manager@example.com");
+  await page.goto("/app/store-entry/inventory?storeId=store-gangnam");
+
+  const currentQuantity = page.getByLabel(`${productName} 당일재고`, {
+    exact: true,
+  });
+  await expect(currentQuantity).toHaveValue("2.5");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
+  ).toBeVisible();
+
+  await page.reload();
+  await expect(currentQuantity).toHaveValue("2.5");
+  const savedInventory = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product!.id,
+      },
+    },
+  });
+  expect(savedInventory?.carryoverSource).toBe("OPENING_SNAPSHOT");
+  expect(savedInventory?.previousQuantity.toString()).toBe("2.5");
+  expect(savedInventory?.currentQuantity?.toString()).toBe("2.5");
+});
+
+test("재고 업로드는 비활성 품목을 다시 활성화하지 않고 파일 전체를 거부한다", async ({
+  page,
+}, testInfo) => {
+  const suffix = `${testInfo.workerIndex}-${Date.now()}`;
+  const productName = `${INACTIVE_INVENTORY_PRODUCT_PREFIX} ${suffix}`;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const product = await prisma.product.create({
+    data: {
+      name: productName,
+      category: "냉동",
+      spec: "1kg",
+      defaultUnitPrice: 12000,
+      isActive: false,
+      updatedById: actor.id,
+    },
+  });
+  const workbook = createInventoryOpeningWorkbook([
+    [
+      getPreviousKstDateString(),
+      "강남점",
+      productName,
+      "1kg",
+      "냉동",
+      2,
+      12000,
+    ],
+  ]);
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/ecount-imports");
+  await page.locator('input[name="inventoryFile"]').setInputFiles({
+    name: `inventory-inactive-${suffix}.xlsx`,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: workbook,
+  });
+  await page.getByRole("button", { name: "재고 업로드" }).click();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "비활성 상태입니다" }),
+  ).toBeVisible();
+  expect(
+    await prisma.product.findUniqueOrThrow({ where: { id: product.id } }),
+  ).toMatchObject({ isActive: false, defaultUnitPrice: 12000 });
+  expect(
+    await prisma.inventoryOpeningSnapshot.count({
+      where: { productId: product.id },
+    }),
+  ).toBe(0);
+});
+
+test("재고 업로드의 새 품목 길이 오류는 엑셀 행 번호로 안내한다", async ({
+  page,
+}, testInfo) => {
+  const suffix = `${testInfo.workerIndex}-${Date.now()}`;
+  const productName = `${AUTO_INVENTORY_PRODUCT_PREFIX}${"가".repeat(81)}`;
+  const workbook = createInventoryOpeningWorkbook([
+    [getPreviousKstDateString(), "강남점", productName, "", "냉동", 2, 12000],
+  ]);
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/ecount-imports");
+  await page.locator('input[name="inventoryFile"]').setInputFiles({
+    name: `inventory-invalid-product-${suffix}.xlsx`,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: workbook,
+  });
+  await page.getByRole("button", { name: "재고 업로드" }).click();
+
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "4행 품목명은 80자 이하여야 합니다" }),
+  ).toBeVisible();
+  expect(await prisma.product.count({ where: { name: productName } })).toBe(0);
 });
 
 test("재고 업로드는 작성된 대상일 장부를 덮어쓰지 않고 파일 전체를 거부한다", async ({

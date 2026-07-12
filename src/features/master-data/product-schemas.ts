@@ -47,6 +47,19 @@ const productSpecSchema = z
       .max(80, "규격은 80자 이하여야 합니다."),
   );
 
+const productIdentitySpecSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().max(80, "규격은 80자 이하여야 합니다."));
+
+export const productIdentitySchema = z.object({
+  name: productNameSchema,
+  category: productCategorySchema,
+  spec: productIdentitySpecSchema,
+});
+
+export type ProductIdentityInput = z.infer<typeof productIdentitySchema>;
+
 // 단가는 선택값이다. 비어 있으면(undefined/null/빈 문자열) null로 저장하고,
 // 값이 있으면 0 이상의 정수만 허용한다. 잘못된 값은 오류로 막는다.
 function parseOptionalKrw(value: unknown, context: z.RefinementCtx) {
@@ -82,9 +95,7 @@ function parseOptionalKrw(value: unknown, context: z.RefinementCtx) {
   return z.NEVER;
 }
 
-export const productFormSchema = z.object({
-  name: productNameSchema,
-  category: productCategorySchema,
+export const productFormSchema = productIdentitySchema.extend({
   spec: productSpecSchema,
   defaultUnitPrice: z.unknown().transform(parseOptionalKrw),
   isActive: z.boolean().default(true),

@@ -10,12 +10,14 @@ import { decimalToNumber } from "~/lib/decimal";
 import { writeAuditLog } from "~/server/audit";
 import { requireEcountUploadCommitAccess } from "~/server/authz";
 import { db } from "~/server/db";
+import { productIdentitySchema } from "~/features/master-data/product-schemas";
 import {
   getNextInventoryLedgerDate,
   InventoryOpeningImportError,
   parseInventoryOpeningWorkbook,
   type InventoryOpeningImportRow,
 } from "./opening-import";
+import { retryInventoryProductIdentityTransaction } from "./opening-import-retry";
 
 const maxUploadBytes = 5 * 1024 * 1024;
 const xlsxMimeType =
@@ -151,11 +153,26 @@ async function matchRows(
     }
 
     if (!product) {
+      const parsedProduct = productIdentitySchema.safeParse({
+        name: row.productName,
+        category: row.productCategory,
+        spec: row.productSpec,
+      });
+
+      if (!parsedProduct.success) {
+        errors.push(
+          ...parsedProduct.error.issues.map(
+            (issue) => `${row.rowNumber}행 ${issue.message}`,
+          ),
+        );
+        continue;
+      }
+
       product = await tx.product.create({
         data: {
-          name: row.productName,
-          category: row.productCategory,
-          spec: row.productSpec,
+          name: parsedProduct.data.name,
+          category: parsedProduct.data.category,
+          spec: parsedProduct.data.spec,
           defaultUnitPrice: null,
           isActive: true,
           updatedById: actorId,
@@ -278,129 +295,131 @@ export async function uploadInventoryOpeningSnapshots(
     .digest("hex");
 
   try {
-    const result = await db.$transaction(async (tx) => {
-      const { matchedRows, errors, productCreatedCount } = await matchRows(
-        tx,
-        parsed.rows,
-        actor.id,
-      );
-
-      if (errors.length > 0) {
-        throw new InventoryOpeningImportError(
-          "재고 파일 내용을 확인해 주세요.",
-          { file: errors },
+    const result = await retryInventoryProductIdentityTransaction(() =>
+      db.$transaction(async (tx) => {
+        const { matchedRows, errors, productCreatedCount } = await matchRows(
+          tx,
+          parsed.rows,
+          actor.id,
         );
-      }
 
-      const ledgerTargets = [
-        ...new Map(
-          matchedRows.map((row) => {
-            const nextDate = getNextInventoryLedgerDate(row.inventoryDate);
-
-            return [
-              `${row.storeId}\u001f${nextDate}`,
-              {
-                storeId: row.storeId,
-                closingDate: new Date(`${nextDate}T00:00:00.000Z`),
-              },
-            ] as const;
-          }),
-        ).values(),
-      ];
-      const existingLedgers = await tx.dailyLedger.findMany({
-        where: {
-          OR: ledgerTargets,
-          ledgerInventoryItems: { some: {} },
-        },
-        select: {
-          closingDate: true,
-          store: { select: { name: true } },
-        },
-        orderBy: [{ store: { name: "asc" } }, { closingDate: "asc" }],
-      });
-
-      if (existingLedgers.length > 0) {
-        throw new InventoryOpeningImportError(
-          "기존 재고 장부를 먼저 확인해 주세요.",
-          {
-            file: existingLedgers.map(
-              (ledger) =>
-                `${ledger.store.name}의 ${ledger.closingDate.toISOString().slice(0, 10)} 대상일 재고 장부가 이미 작성되어 있습니다.`,
-            ),
-          },
-        );
-      }
-
-      let createdCount = 0;
-      let updatedCount = 0;
-      let unchangedCount = 0;
-
-      for (const row of matchedRows) {
-        const where = {
-          storeId_yearMonth_productId: {
-            storeId: row.storeId,
-            yearMonth: row.yearMonth,
-            productId: row.productId,
-          },
-        };
-        const existing = await tx.inventoryOpeningSnapshot.findUnique({
-          where,
-          select: {
-            productName: true,
-            productCategory: true,
-            productSpec: true,
-            unitPrice: true,
-            quantity: true,
-          },
-        });
-        const data = toSnapshotData(row);
-
-        if (!existing) {
-          createdCount += 1;
-        } else if (snapshotChanged(existing, row)) {
-          updatedCount += 1;
-        } else {
-          unchangedCount += 1;
+        if (errors.length > 0) {
+          throw new InventoryOpeningImportError(
+            "재고 파일 내용을 확인해 주세요.",
+            { file: errors },
+          );
         }
 
-        await tx.inventoryOpeningSnapshot.upsert({
-          where,
-          create: data,
-          update: {
-            productName: data.productName,
-            productCategory: data.productCategory,
-            productSpec: data.productSpec,
-            unitPrice: data.unitPrice,
-            quantity: data.quantity,
+        const ledgerTargets = [
+          ...new Map(
+            matchedRows.map((row) => {
+              const nextDate = getNextInventoryLedgerDate(row.inventoryDate);
+
+              return [
+                `${row.storeId}\u001f${nextDate}`,
+                {
+                  storeId: row.storeId,
+                  closingDate: new Date(`${nextDate}T00:00:00.000Z`),
+                },
+              ] as const;
+            }),
+          ).values(),
+        ];
+        const existingLedgers = await tx.dailyLedger.findMany({
+          where: {
+            OR: ledgerTargets,
+            ledgerInventoryItems: { some: {} },
           },
+          select: {
+            closingDate: true,
+            store: { select: { name: true } },
+          },
+          orderBy: [{ store: { name: "asc" } }, { closingDate: "asc" }],
         });
-      }
 
-      const summary: InventoryOpeningUploadResult = {
-        fileName,
-        sheetName: parsed.sheetName,
-        importedCount: matchedRows.length,
-        createdCount,
-        updatedCount,
-        unchangedCount,
-        productCreatedCount,
-        yearMonths: parsed.yearMonths,
-        storeCount: new Set(matchedRows.map((row) => row.storeId)).size,
-        totalQuantity: parsed.totalQuantity,
-        totalInventoryAmount: parsed.totalInventoryAmount,
-      };
+        if (existingLedgers.length > 0) {
+          throw new InventoryOpeningImportError(
+            "기존 재고 장부를 먼저 확인해 주세요.",
+            {
+              file: existingLedgers.map(
+                (ledger) =>
+                  `${ledger.store.name}의 ${ledger.closingDate.toISOString().slice(0, 10)} 대상일 재고 장부가 이미 작성되어 있습니다.`,
+              ),
+            },
+          );
+        }
 
-      await writeAuditLog(tx, {
-        action: "inventory_opening_snapshot.imported",
-        targetType: "InventoryOpeningSnapshot",
-        targetId: fileHash,
-        actorId: actor.id,
-        before: null,
-        after: summary,
-      });
+        let createdCount = 0;
+        let updatedCount = 0;
+        let unchangedCount = 0;
 
-      return summary;
-    });
+        for (const row of matchedRows) {
+          const where = {
+            storeId_yearMonth_productId: {
+              storeId: row.storeId,
+              yearMonth: row.yearMonth,
+              productId: row.productId,
+            },
+          };
+          const existing = await tx.inventoryOpeningSnapshot.findUnique({
+            where,
+            select: {
+              productName: true,
+              productCategory: true,
+              productSpec: true,
+              unitPrice: true,
+              quantity: true,
+            },
+          });
+          const data = toSnapshotData(row);
+
+          if (!existing) {
+            createdCount += 1;
+          } else if (snapshotChanged(existing, row)) {
+            updatedCount += 1;
+          } else {
+            unchangedCount += 1;
+          }
+
+          await tx.inventoryOpeningSnapshot.upsert({
+            where,
+            create: data,
+            update: {
+              productName: data.productName,
+              productCategory: data.productCategory,
+              productSpec: data.productSpec,
+              unitPrice: data.unitPrice,
+              quantity: data.quantity,
+            },
+          });
+        }
+
+        const summary: InventoryOpeningUploadResult = {
+          fileName,
+          sheetName: parsed.sheetName,
+          importedCount: matchedRows.length,
+          createdCount,
+          updatedCount,
+          unchangedCount,
+          productCreatedCount,
+          yearMonths: parsed.yearMonths,
+          storeCount: new Set(matchedRows.map((row) => row.storeId)).size,
+          totalQuantity: parsed.totalQuantity,
+          totalInventoryAmount: parsed.totalInventoryAmount,
+        };
+
+        await writeAuditLog(tx, {
+          action: "inventory_opening_snapshot.imported",
+          targetType: "InventoryOpeningSnapshot",
+          targetId: fileHash,
+          actorId: actor.id,
+          before: null,
+          after: summary,
+        });
+
+        return summary;
+      }),
+    );
 
     revalidatePath("/app/ecount-imports");
     revalidatePath("/app/store-entry/inventory");
