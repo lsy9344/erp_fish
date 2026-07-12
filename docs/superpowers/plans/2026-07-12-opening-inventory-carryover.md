@@ -1,5 +1,7 @@
 # Opening Inventory Carryover Repair Implementation Plan
 
+**Status:** done
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Preserve every grounded opening/prior-ledger carryover row through inventory saves, clearly warn when a re-upload cannot overwrite an existing ledger, and safely repair the affected 2026-07-11 production ledgers.
@@ -565,3 +567,10 @@ vercel deploy --prod --yes
 ```
 
 Repeat local verification and deployment inspection until the final deployment is `Ready` and the branch is clean.
+
+### Review Findings
+
+- [x] [Review][Patch] 복구 대상을 2026-07-11의 예상 3개 지점과 25/25/21개 감사·스냅샷 근거로 제한하고 불완전한 근거는 쓰기 전에 거부한다. [scripts/repair-opening-inventory-carryover.mjs:91]
+- [x] [Review][Patch] 복구 트랜잭션 안에서 장부 상태와 기존·신규 재고의 `currentQuantity`/`quantity`가 보존됐는지 확인하고 다르면 롤백한다. [scripts/repair-opening-inventory-carryover.mjs:286]
+- [x] [Review][Patch] 다음 장부 날짜 계산에서 존재하지 않는 날짜와 지원 범위를 넘는 날짜를 엄격히 거부한다. [src/features/inventory/opening-import.ts:413]
+- [x] [Review][Patch] 감사 배열의 비객체 행과 비어 있는 월초 근거를 `EVIDENCE_MISMATCH`로 거부해 TypeError 또는 빈 성공 계획을 막는다. [src/features/inventory/opening-carryover-repair.ts:244]
