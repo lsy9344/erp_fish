@@ -753,7 +753,7 @@ test("changed repair plans bump only the ledger version before commit", () => {
     "utf8",
   );
   const bumpFunction = source.match(
-    /async function bumpChangedLedgerVersionInTx[\s\S]*?\n}\n/,
+    /async function bumpChangedLedgerVersionInTx[\s\S]*?\r?\n}\r?\n/,
   );
 
   assert.ok(bumpFunction);
@@ -805,7 +805,7 @@ test("dry-run planning uses one coherent read-only RepeatableRead transaction", 
     "utf8",
   );
   const dryRunFunction = source.match(
-    /async function loadDryRunPlans[\s\S]*?\n}\n/,
+    /async function loadDryRunPlans[\s\S]*?\r?\n}\r?\n/,
   );
 
   assert.ok(dryRunFunction);
