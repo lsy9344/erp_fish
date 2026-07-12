@@ -181,6 +181,28 @@ test("getNextInventoryLedgerDate returns the exact next day", async () => {
 
   assert.equal(getNextInventoryLedgerDate("2026-07-10"), "2026-07-11");
   assert.equal(getNextInventoryLedgerDate("2026-07-31"), "2026-08-01");
+  assert.equal(getNextInventoryLedgerDate("2026-12-31"), "2027-01-01");
+  assert.equal(getNextInventoryLedgerDate("9999-12-30"), "9999-12-31");
+});
+
+test("getNextInventoryLedgerDate rejects non-canonical, nonexistent, and overflowing dates", async () => {
+  const { getNextInventoryLedgerDate } = await importInventoryOpeningImport();
+
+  for (const invalidDate of [
+    "2026-02-30",
+    "2026-7-10",
+    "2026-07-1",
+    "2026-07-10T00:00:00Z",
+    " 2026-07-10",
+    "0000-01-01",
+    "9999-12-31",
+  ]) {
+    assert.throws(
+      () => getNextInventoryLedgerDate(invalidDate),
+      /엑셀 날짜 값을 확인해 주세요/,
+      invalidDate,
+    );
+  }
 });
 
 test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and derives opening months", async () => {
@@ -273,7 +295,13 @@ test("parseInventoryOpeningWorkbook rejects quantities past two decimals", async
 
 test("inventory opening upload action and ecount upload menu are wired", () => {
   const actionSource = readFileSync(
-    path.join(root, "src", "features", "inventory", "opening-import-actions.ts"),
+    path.join(
+      root,
+      "src",
+      "features",
+      "inventory",
+      "opening-import-actions.ts",
+    ),
     "utf8",
   );
   const clientSource = readFileSync(

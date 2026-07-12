@@ -46,6 +46,43 @@ type RepairSnapshot = {
   quantity: number;
 };
 
+type RepairProtectedLedger = {
+  id: string;
+  storeId: string;
+  closingDate: string;
+  status: string;
+  version: number;
+  authorDisplayName: string | null;
+  totalSalesAmount: number;
+  cashAmount: number;
+  cardAmount: number;
+  otherPaymentAmount: number;
+  workerCount: number | null;
+  workMemo: string | null;
+  submittedById: string | null;
+  submittedAt: string | null;
+  closedById: string | null;
+  closedAt: string | null;
+  lossReviewedById: string | null;
+  lossReviewedAt: string | null;
+  createdById: string;
+  updatedById: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type RepairProtectedInventoryItem = {
+  id: string;
+  productId: string;
+  currentQuantity: number | null;
+  quantity: number | null;
+};
+
+type RepairProtectedState = {
+  ledger: RepairProtectedLedger;
+  inventoryItems: RepairProtectedInventoryItem[];
+};
+
 const persistedDetailKeys = [
   "source",
   "status",
@@ -62,6 +99,125 @@ const persistedDetailKeys = [
   "sourceQuantity",
   "message",
 ] as const;
+
+const protectedLedgerScalarKeys = [
+  "id",
+  "storeId",
+  "closingDate",
+  "status",
+  "authorDisplayName",
+  "totalSalesAmount",
+  "cashAmount",
+  "cardAmount",
+  "otherPaymentAmount",
+  "workerCount",
+  "workMemo",
+  "submittedById",
+  "submittedAt",
+  "closedById",
+  "closedAt",
+  "lossReviewedById",
+  "lossReviewedAt",
+  "createdById",
+  "updatedById",
+  "createdAt",
+] as const;
+
+export const OPENING_CARRYOVER_REPAIR_INCIDENT_DATE = "2026-07-11";
+export const OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES = [
+  "제일수산",
+  "삼국유통",
+  "강서수산",
+] as const;
+
+const openingCarryoverIncidentStoreItemCounts = {
+  제일수산: 25,
+  삼국유통: 25,
+  강서수산: 21,
+} as const;
+
+function requireOpeningCarryoverIncidentDate(date: string) {
+  if (date !== OPENING_CARRYOVER_REPAIR_INCIDENT_DATE) {
+    evidenceMismatch(
+      `repair date must be ${OPENING_CARRYOVER_REPAIR_INCIDENT_DATE}`,
+    );
+  }
+}
+
+export function assertOpeningCarryoverIncidentTargets({
+  date,
+  targets,
+}: {
+  date: string;
+  targets: Array<{ storeName: string }>;
+}) {
+  requireOpeningCarryoverIncidentDate(date);
+
+  const seenStoreNames = new Set<string>();
+
+  for (const target of targets) {
+    if (
+      seenStoreNames.has(target.storeName) ||
+      !Object.hasOwn(openingCarryoverIncidentStoreItemCounts, target.storeName)
+    ) {
+      evidenceMismatch(`unexpected or duplicate store: ${target.storeName}`);
+    }
+
+    seenStoreNames.add(target.storeName);
+  }
+
+  if (
+    targets.length !== OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES.length ||
+    OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES.some(
+      (storeName) => !seenStoreNames.has(storeName),
+    )
+  ) {
+    evidenceMismatch("incident target stores are incomplete");
+  }
+}
+
+export function assertOpeningCarryoverIncidentPlans({
+  date,
+  plans,
+}: {
+  date: string;
+  plans: Array<{
+    storeName: string;
+    createCount: number;
+    updateCount: number;
+    skipCount: number;
+  }>;
+}) {
+  assertOpeningCarryoverIncidentTargets({ date, targets: plans });
+
+  let totalItemCount = 0;
+
+  for (const plan of plans) {
+    const counts = [plan.createCount, plan.updateCount, plan.skipCount];
+
+    if (counts.some((count) => !Number.isInteger(count) || count < 0)) {
+      evidenceMismatch(`${plan.storeName}: repair plan counts are invalid`);
+    }
+
+    const itemCount = counts.reduce((sum, count) => sum + count, 0);
+    const expectedItemCount =
+      openingCarryoverIncidentStoreItemCounts[
+        plan.storeName as keyof typeof openingCarryoverIncidentStoreItemCounts
+      ];
+
+    if (itemCount !== expectedItemCount) {
+      evidenceMismatch(
+        `${plan.storeName}: expected ${expectedItemCount} opening items, found ${itemCount}`,
+      );
+    }
+
+    totalItemCount += itemCount;
+  }
+
+  if (totalItemCount !== 71) {
+    evidenceMismatch(`expected 71 opening items, found ${totalItemCount}`);
+  }
+}
 
 function isValidDateString(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -127,6 +283,12 @@ export function parseOpeningCarryoverRepairOptions(
     throw new Error("Missing or invalid --date=YYYY-MM-DD.");
   }
 
+  if (date !== OPENING_CARRYOVER_REPAIR_INCIDENT_DATE) {
+    throw new Error(
+      `This repair only supports ${OPENING_CARRYOVER_REPAIR_INCIDENT_DATE}.`,
+    );
+  }
+
   const isDryRun = dryRunCount === 1;
   const isConfirmed = confirmedCount === 1;
 
@@ -179,6 +341,115 @@ function evidenceMismatch(message?: string): never {
   );
 }
 
+export function assertOpeningCarryoverRepairProtectedState({
+  before,
+  after,
+  plan,
+}: {
+  before: RepairProtectedState;
+  after: RepairProtectedState;
+  plan: {
+    creates: Array<{
+      productId: string;
+      currentQuantity: number | null;
+      quantity: number | null;
+    }>;
+    updates: unknown[];
+  };
+}) {
+  for (const key of protectedLedgerScalarKeys) {
+    if (before.ledger[key] !== after.ledger[key]) {
+      evidenceMismatch(`protected ledger field changed: ${key}`);
+    }
+  }
+
+  const changed = plan.creates.length > 0 || plan.updates.length > 0;
+  const expectedVersion = before.ledger.version + (changed ? 1 : 0);
+
+  if (after.ledger.version !== expectedVersion) {
+    evidenceMismatch("ledger version transition differs");
+  }
+
+  if (changed) {
+    const beforeUpdatedAt = Date.parse(before.ledger.updatedAt);
+    const afterUpdatedAt = Date.parse(after.ledger.updatedAt);
+
+    if (
+      !Number.isFinite(beforeUpdatedAt) ||
+      !Number.isFinite(afterUpdatedAt) ||
+      afterUpdatedAt <= beforeUpdatedAt
+    ) {
+      evidenceMismatch("ledger updatedAt did not advance");
+    }
+  } else if (after.ledger.updatedAt !== before.ledger.updatedAt) {
+    evidenceMismatch("unchanged ledger updatedAt differs");
+  }
+
+  const beforeById = new Map<string, RepairProtectedInventoryItem>();
+  const afterById = new Map<string, RepairProtectedInventoryItem>();
+
+  for (const item of before.inventoryItems) {
+    if (beforeById.has(item.id)) {
+      evidenceMismatch(`duplicate existing inventory row: ${item.id}`);
+    }
+
+    beforeById.set(item.id, item);
+  }
+
+  for (const item of after.inventoryItems) {
+    if (afterById.has(item.id)) {
+      evidenceMismatch(`duplicate resulting inventory row: ${item.id}`);
+    }
+
+    afterById.set(item.id, item);
+  }
+
+  for (const item of before.inventoryItems) {
+    const current = afterById.get(item.id);
+
+    if (
+      current?.productId !== item.productId ||
+      current?.currentQuantity !== item.currentQuantity ||
+      current?.quantity !== item.quantity
+    ) {
+      evidenceMismatch(`existing inventory row changed: ${item.id}`);
+    }
+  }
+
+  const createdItems = after.inventoryItems.filter(
+    (item) => !beforeById.has(item.id),
+  );
+
+  if (createdItems.length !== plan.creates.length) {
+    evidenceMismatch("created inventory row count differs");
+  }
+
+  const plannedCreatesByProductId = new Map(
+    plan.creates.map((create) => [create.productId, create]),
+  );
+
+  if (plannedCreatesByProductId.size !== plan.creates.length) {
+    evidenceMismatch("duplicate planned inventory product");
+  }
+
+  const createdProductIds = new Set<string>();
+
+  for (const item of createdItems) {
+    const planned = plannedCreatesByProductId.get(item.productId);
+
+    if (
+      !planned ||
+      createdProductIds.has(item.productId) ||
+      item.currentQuantity !== planned.currentQuantity ||
+      item.quantity !== planned.quantity
+    ) {
+      evidenceMismatch(`created inventory row differs: ${item.productId}`);
+    }
+
+    createdProductIds.add(item.productId);
+  }
+}
+
 export function requireOpeningCarryoverAuditEvidence({
   audit,
   ledger,
@@ -213,6 +484,13 @@ export function requireOpeningCarryoverAuditEvidence({
   }
 
   const auditItems: unknown[] = before.items;
+
+  if (auditItems.some((item) => !isJsonObject(item))) {
+    evidenceMismatch(
+      `${ledger.storeName}: inventory-save audit item is invalid`,
+    );
+  }
+
   const openingItems = auditItems.filter(
     (item): item is Record<string, unknown> =>
       isJsonObject(item) && item.carryoverSource === "OPENING_SNAPSHOT",
@@ -243,7 +521,7 @@ export function requireOpeningCarryoverAuditEvidence({
 
   return {
     actorId: audit.actorId,
-    auditItems: auditItems as RepairAuditItem[],
+    auditItems: openingItems as RepairAuditItem[],
   };
 }
 
@@ -334,9 +612,19 @@ export function planOpeningCarryoverRepair({
   const openingItems = auditItems.filter(
     (item) => item.carryoverSource === "OPENING_SNAPSHOT",
   );
+
+  if (openingItems.length === 0) {
+    evidenceMismatch();
+  }
+
   const openingByProductId = uniqueByProductId(openingItems);
   const currentByProductId = uniqueByProductId(currentItems);
   const snapshotByProductId = uniqueByProductId(snapshots);
+
+  if (openingByProductId.size !== snapshotByProductId.size) {
+    evidenceMismatch();
+  }
+
   const creates: ReturnType<typeof toCreate>[] = [];
   const updates: Array<{
     id: string;

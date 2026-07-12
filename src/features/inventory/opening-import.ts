@@ -413,11 +413,20 @@ function cellDate(row: CellValue[], index: number, rowNumber: number) {
 export function getNextInventoryLedgerDate(isoDate: string) {
   const date = new Date(`${isoDate}T00:00:00.000Z`);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(isoDate) ||
+    Number(isoDate.slice(0, 4)) < 1 ||
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== isoDate
+  ) {
     throw new InventoryOpeningImportError("엑셀 날짜 값을 확인해 주세요.");
   }
 
   date.setUTCDate(date.getUTCDate() + 1);
+
+  if (date.getUTCFullYear() > 9999) {
+    throw new InventoryOpeningImportError("엑셀 날짜 값을 확인해 주세요.");
+  }
 
   return date.toISOString().slice(0, 10);
 }
@@ -460,11 +469,7 @@ function isBlankDataRow(row: CellValue[], headerIndex: Record<string, number>) {
   );
 }
 
-function requireText(
-  value: string,
-  label: string,
-  rowNumber: number,
-): string {
+function requireText(value: string, label: string, rowNumber: number): string {
   if (value) {
     return value;
   }
@@ -590,9 +595,12 @@ export function parseInventoryOpeningWorkbook(
     };
   }
 
-  throw new InventoryOpeningImportError("재고입력 시트 헤더를 찾을 수 없습니다.", {
-    file: [
-      "재고입력 시트의 헤더가 날짜, 지점명, 품목명, 규격, 구분, 남은 수량, 재고 단가 형식인지 확인해 주세요.",
-    ],
-  });
+  throw new InventoryOpeningImportError(
+    "재고입력 시트 헤더를 찾을 수 없습니다.",
+    {
+      file: [
+        "재고입력 시트의 헤더가 날짜, 지점명, 품목명, 규격, 구분, 남은 수량, 재고 단가 형식인지 확인해 주세요.",
+      ],
+    },
+  );
 }

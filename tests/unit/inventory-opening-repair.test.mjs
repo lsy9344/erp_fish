@@ -4,6 +4,9 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  assertOpeningCarryoverIncidentPlans,
+  assertOpeningCarryoverIncidentTargets,
+  assertOpeningCarryoverRepairProtectedState,
   parseOpeningCarryoverRepairOptions,
   planOpeningCarryoverRepair,
   requireOpeningCarryoverAuditEvidence,
@@ -51,6 +54,69 @@ const snapshot = {
   productId: "product-1",
   yearMonth: "2026-07",
   quantity: 8,
+};
+
+const protectedLedger = {
+  id: "ledger-1",
+  storeId: "store-1",
+  closingDate: "2026-07-11T00:00:00.000Z",
+  status: "IN_PROGRESS",
+  version: 4,
+  authorDisplayName: "제일수산 점장",
+  totalSalesAmount: 100000,
+  cashAmount: 20000,
+  cardAmount: 70000,
+  otherPaymentAmount: 10000,
+  workerCount: 3,
+  workMemo: "사용자 입력",
+  submittedById: null,
+  submittedAt: null,
+  closedById: null,
+  closedAt: null,
+  lossReviewedById: "actor-1",
+  lossReviewedAt: "2026-07-11T09:00:00.000Z",
+  createdById: "actor-1",
+  updatedById: "actor-2",
+  createdAt: "2026-07-11T08:00:00.000Z",
+  updatedAt: "2026-07-11T10:00:00.000Z",
+};
+
+const protectedInventoryItem = {
+  id: "existing-item",
+  productId: "existing-product",
+  currentQuantity: 3,
+  quantity: 4,
+};
+
+const protectedCreate = {
+  productId: "created-product",
+  currentQuantity: 8,
+  quantity: 8,
+};
+
+function changedProtectedState(overrides = {}) {
+  return {
+    ledger: {
+      ...protectedLedger,
+      version: protectedLedger.version + 1,
+      updatedAt: "2026-07-11T10:00:01.000Z",
+      ...overrides,
+    },
+    inventoryItems: [
+      protectedInventoryItem,
+      { id: "created-item", ...protectedCreate },
+    ],
+  };
+}
+
+const protectedBefore = {
+  ledger: protectedLedger,
+  inventoryItems: [protectedInventoryItem],
+};
+
+const changedProtectedPlan = {
+  creates: [protectedCreate],
+  updates: [],
 };
 
 const root = process.cwd();
@@ -104,6 +170,36 @@ test("first-save audit requires a nonempty actor and boolean isModified", () => 
       /EVIDENCE_MISMATCH/,
     );
   }
+});
+
+test("first-save audit rejects primitive rows and returns only validated opening items", () => {
+  assert.throws(
+    () =>
+      requireAudit({
+        before: {
+          id: "ledger-1",
+          storeId: "store-1",
+          closingDate: "2026-07-11T00:00:00.000Z",
+          items: [auditItem, null],
+        },
+      }),
+    /EVIDENCE_MISMATCH/,
+  );
+
+  const result = requireAudit({
+    before: {
+      id: "ledger-1",
+      storeId: "store-1",
+      closingDate: "2026-07-11T00:00:00.000Z",
+      items: [{ carryoverSource: "MANUAL" }, auditItem],
+    },
+  });
+
+  assert.deepEqual(result.auditItems, [auditItem]);
+});
+
+test("repair planning rejects empty opening evidence", () => {
+  assert.throws(() => plan({ auditItems: [] }), /EVIDENCE_MISMATCH/);
 });
 
 test("missing current opening row is planned as a create", () => {
@@ -171,6 +267,20 @@ test("missing or quantity-mismatched snapshot evidence is rejected", () => {
   );
   assert.throws(
     () => plan({ snapshots: [{ ...snapshot, quantity: 9 }] }),
+    /EVIDENCE_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      plan({
+        snapshots: [
+          snapshot,
+          {
+            ...snapshot,
+            id: "snapshot-2",
+            productId: "product-2",
+          },
+        ],
+      }),
     /EVIDENCE_MISMATCH/,
   );
 });
@@ -281,6 +391,152 @@ test("running the planner against already repaired rows is idempotent", () => {
   assert.equal(second.skips.length, 1);
 });
 
+test("protected-state assertion accepts only the planned version and inventory additions", () => {
+  assert.doesNotThrow(() =>
+    assertOpeningCarryoverRepairProtectedState({
+      before: protectedBefore,
+      after: changedProtectedState(),
+      plan: changedProtectedPlan,
+    }),
+  );
+  assert.doesNotThrow(() =>
+    assertOpeningCarryoverRepairProtectedState({
+      before: protectedBefore,
+      after: protectedBefore,
+      plan: { creates: [], updates: [] },
+    }),
+  );
+  assert.doesNotThrow(() =>
+    assertOpeningCarryoverRepairProtectedState({
+      before: protectedBefore,
+      after: {
+        ledger: changedProtectedState().ledger,
+        inventoryItems: [protectedInventoryItem],
+      },
+      plan: { creates: [], updates: [{ id: "existing-item" }] },
+    }),
+  );
+});
+
+test("protected-state assertion rejects every changed ledger business scalar", () => {
+  for (const key of Object.keys(protectedLedger).filter(
+    (field) => field !== "version" && field !== "updatedAt",
+  )) {
+    const value = protectedLedger[key];
+    const changedValue =
+      typeof value === "number"
+        ? value + 1
+        : value === null
+          ? "changed"
+          : `${value}-changed`;
+
+    assert.throws(
+      () =>
+        assertOpeningCarryoverRepairProtectedState({
+          before: protectedBefore,
+          after: changedProtectedState({ [key]: changedValue }),
+          plan: changedProtectedPlan,
+        }),
+      /EVIDENCE_MISMATCH/,
+      key,
+    );
+  }
+});
+
+test("protected-state assertion requires the exact version and updatedAt transition", () => {
+  for (const ledgerPatch of [
+    { version: protectedLedger.version },
+    { version: protectedLedger.version + 2 },
+    { updatedAt: protectedLedger.updatedAt },
+    { updatedAt: "2026-07-11T09:59:59.000Z" },
+  ]) {
+    assert.throws(
+      () =>
+        assertOpeningCarryoverRepairProtectedState({
+          before: protectedBefore,
+          after: changedProtectedState(ledgerPatch),
+          plan: changedProtectedPlan,
+        }),
+      /EVIDENCE_MISMATCH/,
+    );
+  }
+
+  assert.throws(
+    () =>
+      assertOpeningCarryoverRepairProtectedState({
+        before: protectedBefore,
+        after: {
+          ...protectedBefore,
+          ledger: { ...protectedLedger, version: protectedLedger.version + 1 },
+        },
+        plan: { creates: [], updates: [] },
+      }),
+    /EVIDENCE_MISMATCH/,
+  );
+});
+
+test("protected-state assertion rejects removed or quantity-changed existing rows", () => {
+  for (const inventoryItems of [
+    [{ id: "created-item", ...protectedCreate }],
+    [
+      { ...protectedInventoryItem, currentQuantity: 2 },
+      { id: "created-item", ...protectedCreate },
+    ],
+    [
+      { ...protectedInventoryItem, quantity: 2 },
+      { id: "created-item", ...protectedCreate },
+    ],
+    [
+      { ...protectedInventoryItem, productId: "changed-product" },
+      { id: "created-item", ...protectedCreate },
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        assertOpeningCarryoverRepairProtectedState({
+          before: protectedBefore,
+          after: { ...changedProtectedState(), inventoryItems },
+          plan: changedProtectedPlan,
+        }),
+      /EVIDENCE_MISMATCH/,
+    );
+  }
+});
+
+test("protected-state assertion rejects missing, unexpected, or quantity-changed created rows", () => {
+  for (const inventoryItems of [
+    [protectedInventoryItem],
+    [
+      protectedInventoryItem,
+      { id: "created-item", ...protectedCreate, currentQuantity: 7 },
+    ],
+    [
+      protectedInventoryItem,
+      { id: "created-item", ...protectedCreate, quantity: 7 },
+    ],
+    [
+      protectedInventoryItem,
+      { id: "created-item", ...protectedCreate },
+      {
+        id: "unexpected-item",
+        productId: "unexpected-product",
+        currentQuantity: 1,
+        quantity: 1,
+      },
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        assertOpeningCarryoverRepairProtectedState({
+          before: protectedBefore,
+          after: { ...changedProtectedState(), inventoryItems },
+          plan: changedProtectedPlan,
+        }),
+      /EVIDENCE_MISMATCH/,
+    );
+  }
+});
+
 test("repair options require an exact date and one explicit mode", () => {
   const env = {
     DATABASE_URL: "postgresql://postgres:pw@localhost:5432/erp_fish",
@@ -297,6 +553,14 @@ test("repair options require an exact date and one explicit mode", () => {
         env,
       ),
     /--date=YYYY-MM-DD/,
+  );
+  assert.throws(
+    () =>
+      parseOpeningCarryoverRepairOptions(
+        ["--date=2026-07-12", "--dry-run"],
+        env,
+      ),
+    /2026-07-11/,
   );
   assert.throws(
     () => parseOpeningCarryoverRepairOptions(["--date=2026-07-11"], env),
@@ -348,6 +612,68 @@ test("repair options reject unknown and duplicate arguments", () => {
   }
 });
 
+test("incident target manifest requires the exact three stores", () => {
+  const targets = [
+    { storeName: "제일수산" },
+    { storeName: "삼국유통" },
+    { storeName: "강서수산" },
+  ];
+
+  assert.doesNotThrow(() =>
+    assertOpeningCarryoverIncidentTargets({
+      date: "2026-07-11",
+      targets,
+    }),
+  );
+
+  for (const invalidTargets of [
+    targets.slice(0, 2),
+    [...targets.slice(0, 2), { storeName: "미등록지점" }],
+    [targets[0], targets[0], targets[2]],
+    [...targets, { storeName: "미등록지점" }],
+  ]) {
+    assert.throws(
+      () =>
+        assertOpeningCarryoverIncidentTargets({
+          date: "2026-07-11",
+          targets: invalidTargets,
+        }),
+      /EVIDENCE_MISMATCH/,
+    );
+  }
+});
+
+test("incident plan manifest requires 25, 25, and 21 opening items", () => {
+  const plans = [
+    { storeName: "제일수산", createCount: 5, updateCount: 0, skipCount: 20 },
+    { storeName: "삼국유통", createCount: 15, updateCount: 0, skipCount: 10 },
+    { storeName: "강서수산", createCount: 4, updateCount: 0, skipCount: 17 },
+  ];
+
+  assert.doesNotThrow(() =>
+    assertOpeningCarryoverIncidentPlans({
+      date: "2026-07-11",
+      plans,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertOpeningCarryoverIncidentPlans({
+        date: "2026-07-11",
+        plans: [{ ...plans[0], skipCount: 19 }, plans[1], plans[2]],
+      }),
+    /EVIDENCE_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      assertOpeningCarryoverIncidentPlans({
+        date: "2026-07-12",
+        plans,
+      }),
+    /EVIDENCE_MISMATCH/,
+  );
+});
+
 test("remote repair writes require both --yes and the remote allow flag", () => {
   const remoteEnv = {
     DATABASE_URL:
@@ -392,6 +718,8 @@ test("repair command wires audited evidence, one transaction, and derived refres
   assert.match(source, /action:\s*"ledger\.inventory\.saved"/);
   assert.match(source, /orderBy:\s*\[?\{\s*createdAt:\s*"asc"/);
   assert.match(source, /requireOpeningCarryoverAuditEvidence/);
+  assert.match(source, /assertOpeningCarryoverIncidentTargets/);
+  assert.match(source, /assertOpeningCarryoverIncidentPlans/);
   assert.match(source, /yearMonth:\s*options\.yearMonth/);
   assert.match(source, /if \(options\.isDryRun\)/);
   assert.equal(source.match(/\.\$transaction\(/g)?.length, 2);
@@ -436,6 +764,39 @@ test("changed repair plans bump only the ledger version before commit", () => {
     source,
     /if \(await applyRepairPlan\(tx, entry\)\) \{\s*await bumpChangedLedgerVersionInTx\(tx, entry\);\s*changedEntries\.push\(entry\)/,
   );
+});
+
+test("repair command verifies protected state before idempotency and audit writes", () => {
+  const source = readFileSync(
+    path.join(root, "scripts", "repair-opening-inventory-carryover.mjs"),
+    "utf8",
+  );
+
+  assert.match(source, /assertOpeningCarryoverRepairProtectedState/);
+  assert.match(source, /protectedBefore/);
+  assert.match(source, /async function assertProtectedStateInTx/);
+  assert.match(source, /authorDisplayName:\s*true/);
+  assert.match(source, /totalSalesAmount:\s*true/);
+  assert.match(source, /lossReviewedAt:\s*true/);
+  assert.match(source, /currentQuantity:\s*true/);
+  assert.match(source, /quantity:\s*true/);
+
+  const transactionBody = source.slice(
+    source.indexOf("const entries = await db.$transaction"),
+  );
+  const protectedStateIndex = transactionBody.indexOf(
+    "await assertProtectedStateInTx(tx, entry)",
+  );
+  const idempotencyIndex = transactionBody.indexOf(
+    "await assertIdempotent(tx, entry, options)",
+  );
+  const auditIndex = transactionBody.indexOf(
+    "await writeRepairAudit(tx, entry, options)",
+  );
+
+  assert.ok(protectedStateIndex >= 0);
+  assert.ok(protectedStateIndex < idempotencyIndex);
+  assert.ok(idempotencyIndex < auditIndex);
 });
 
 test("dry-run planning uses one coherent read-only RepeatableRead transaction", () => {

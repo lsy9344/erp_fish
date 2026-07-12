@@ -2,6 +2,10 @@ import "./_loadenv.mjs";
 
 import { PrismaClient } from "../generated/prisma/index.js";
 import {
+  assertOpeningCarryoverIncidentPlans,
+  assertOpeningCarryoverIncidentTargets,
+  assertOpeningCarryoverRepairProtectedState,
+  OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES,
   parseOpeningCarryoverRepairOptions,
   planOpeningCarryoverRepair,
   requireOpeningCarryoverAuditEvidence,
@@ -18,6 +22,38 @@ import {
 } from "../src/lib/decimal.ts";
 
 const REPAIR_REASON = "과거재고 이월 누락 복구";
+
+const protectedLedgerScalarSelect = {
+  id: true,
+  storeId: true,
+  closingDate: true,
+  status: true,
+  version: true,
+  authorDisplayName: true,
+  totalSalesAmount: true,
+  cashAmount: true,
+  cardAmount: true,
+  otherPaymentAmount: true,
+  workerCount: true,
+  workMemo: true,
+  submittedById: true,
+  submittedAt: true,
+  closedById: true,
+  closedAt: true,
+  lossReviewedById: true,
+  lossReviewedAt: true,
+  createdById: true,
+  updatedById: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const protectedInventoryItemSelect = {
+  id: true,
+  productId: true,
+  currentQuantity: true,
+  quantity: true,
+};
 
 function evidenceMismatch(message) {
   throw new Error(`EVIDENCE_MISMATCH: ${message}`);
@@ -75,22 +111,68 @@ function normalizeCurrentItem(item) {
   };
 }
 
+function normalizeProtectedLedger(ledger) {
+  return {
+    id: ledger.id,
+    storeId: ledger.storeId,
+    closingDate: ledger.closingDate.toISOString(),
+    status: ledger.status,
+    version: ledger.version,
+    authorDisplayName: ledger.authorDisplayName,
+    totalSalesAmount: ledger.totalSalesAmount,
+    cashAmount: ledger.cashAmount,
+    cardAmount: ledger.cardAmount,
+    otherPaymentAmount: ledger.otherPaymentAmount,
+    workerCount: ledger.workerCount,
+    workMemo: ledger.workMemo,
+    submittedById: ledger.submittedById,
+    submittedAt: ledger.submittedAt?.toISOString() ?? null,
+    closedById: ledger.closedById,
+    closedAt: ledger.closedAt?.toISOString() ?? null,
+    lossReviewedById: ledger.lossReviewedById,
+    lossReviewedAt: ledger.lossReviewedAt?.toISOString() ?? null,
+    createdById: ledger.createdById,
+    updatedById: ledger.updatedById,
+    createdAt: ledger.createdAt.toISOString(),
+    updatedAt: ledger.updatedAt.toISOString(),
+  };
+}
+
+function normalizeProtectedInventoryItem(item) {
+  return {
+    id: item.id,
+    productId: item.productId,
+    currentQuantity: nullableDecimalToNumber(item.currentQuantity),
+    quantity: nullableDecimalToNumber(item.quantity),
+  };
+}
+
+function normalizeProtectedState(ledger, inventoryItems) {
+  return {
+    ledger: normalizeProtectedLedger(ledger),
+    inventoryItems: inventoryItems.map(normalizeProtectedInventoryItem),
+  };
+}
+
 async function loadTargetLedgers(client, options) {
   const ledgers = await client.dailyLedger.findMany({
-    where: { closingDate: options.closingDate },
+    where: {
+      closingDate: options.closingDate,
+      store: {
+        name: { in: [...OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES] },
+      },
+    },
     select: {
-      id: true,
-      storeId: true,
-      status: true,
-      version: true,
+      ...protectedLedgerScalarSelect,
       store: { select: { name: true } },
     },
     orderBy: [{ storeId: "asc" }, { id: "asc" }],
   });
 
-  if (ledgers.length === 0) {
-    evidenceMismatch(`no ledgers found for ${options.date}`);
-  }
+  assertOpeningCarryoverIncidentTargets({
+    date: options.date,
+    targets: ledgers.map((ledger) => ({ storeName: ledger.store.name })),
+  });
 
   for (const ledger of ledgers) {
     if (
@@ -120,16 +202,13 @@ async function loadLedgerRepairPlan(client, ledger, options) {
     client.ledgerInventoryItem.findMany({
       where: { dailyLedgerId: ledger.id },
       select: {
-        id: true,
-        productId: true,
+        ...protectedInventoryItemSelect,
         productName: true,
         productCategory: true,
         productSpec: true,
         unitPrice: true,
         previousQuantity: true,
         purchasedQuantity: true,
-        currentQuantity: true,
-        quantity: true,
         inventoryAmount: true,
         isModified: true,
         carryoverSource: true,
@@ -170,6 +249,7 @@ async function loadLedgerRepairPlan(client, ledger, options) {
     ledger,
     actorId: evidence.actorId,
     plan,
+    protectedBefore: normalizeProtectedState(ledger, rows),
   };
 }
 
@@ -179,6 +259,16 @@ async function loadRepairPlansForLedgers(client, ledgers, options) {
   for (const ledger of ledgers) {
     entries.push(await loadLedgerRepairPlan(client, ledger, options));
   }
+
+  assertOpeningCarryoverIncidentPlans({
+    date: options.date,
+    plans: entries.map((entry) => ({
+      storeName: entry.ledger.store.name,
+      createCount: entry.plan.creates.length,
+      updateCount: entry.plan.updates.length,
+      skipCount: entry.plan.skips.length,
+    })),
+  });
 
   return entries;
 }
@@ -194,6 +284,15 @@ async function lockAndLoadTargetLedgersInTx(tx, options) {
     SELECT "id"
     FROM "DailyLedger"
     WHERE "closingDate" = ${options.closingDate}
+      AND "storeId" IN (
+        SELECT "id"
+        FROM "Store"
+        WHERE "name" IN (
+          ${OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES[0]},
+          ${OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES[1]},
+          ${OPENING_CARRYOVER_REPAIR_INCIDENT_STORE_NAMES[2]}
+        )
+      )
     ORDER BY "storeId", "id"
     FOR UPDATE
   `;
@@ -297,6 +396,30 @@ async function bumpChangedLedgerVersionInTx(tx, entry) {
   });
 }
 
+async function assertProtectedStateInTx(tx, entry) {
+  const [ledger, inventoryItems] = await Promise.all([
+    tx.dailyLedger.findUnique({
+      where: { id: entry.ledger.id },
+      select: protectedLedgerScalarSelect,
+    }),
+    tx.ledgerInventoryItem.findMany({
+      where: { dailyLedgerId: entry.ledger.id },
+      select: protectedInventoryItemSelect,
+      orderBy: [{ productId: "asc" }, { id: "asc" }],
+    }),
+  ]);
+
+  if (!ledger) {
+    evidenceMismatch(`${entry.ledger.store.name}: ledger no longer exists`);
+  }
+
+  assertOpeningCarryoverRepairProtectedState({
+    before: entry.protectedBefore,
+    after: normalizeProtectedState(ledger, inventoryItems),
+    plan: entry.plan,
+  });
+}
+
 async function assertIdempotent(tx, entry, options) {
   const second = await loadLedgerRepairPlan(tx, entry.ledger, options);
 
@@ -369,6 +492,10 @@ async function main() {
             await bumpChangedLedgerVersionInTx(tx, entry);
             changedEntries.push(entry);
           }
+        }
+
+        for (const entry of transactionEntries) {
+          await assertProtectedStateInTx(tx, entry);
         }
 
         for (const entry of transactionEntries) {
