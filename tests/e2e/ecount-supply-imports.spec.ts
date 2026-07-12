@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { writeFile } from "node:fs/promises";
 
@@ -7,6 +8,9 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const AUTO_INVENTORY_PRODUCT_PREFIX = "E2E 자동재고품목";
+const CONFLICT_INVENTORY_PRODUCT_PREFIX = "E2E 기존장부";
+const CONFLICT_INVENTORY_LEDGER_MARKER = "E2E 재고 업로드 기존장부";
+const inventoryUploadHashes = new Set<string>();
 
 // WO(2026-06-24) Task 18: 본사 이카운트 출고/입고 업로드 진입 + commit 결과의 장부/리포트 반영 검증.
 // 작은 workbook을 실제 업로드/commit하고, global-setup이 심은 commit 완료 fixture도 함께 확인한다.
@@ -166,7 +170,7 @@ function createWorkbook(rows: WorkbookCell[][]) {
 }
 
 function createInventoryOpeningWorkbook(rows: WorkbookCell[][]) {
-  return createZip([
+  const workbook = createZip([
     [
       "xl/workbook.xml",
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="선택목록" sheetId="1" r:id="rId1"/><sheet name="작성방법" sheetId="2" r:id="rId2"/><sheet name="재고입력" sheetId="3" r:id="rId3"/></sheets></workbook>`,
@@ -195,6 +199,12 @@ function createInventoryOpeningWorkbook(rows: WorkbookCell[][]) {
       ]),
     ],
   ]);
+
+  inventoryUploadHashes.add(
+    createHash("sha256").update(workbook).digest("hex"),
+  );
+
+  return workbook;
 }
 
 function getPreviousKstDateString() {
@@ -207,8 +217,35 @@ function getPreviousKstDateString() {
 }
 
 async function cleanupAutoInventoryProducts() {
+  const ledgers = await prisma.dailyLedger.findMany({
+    where: { workMemo: { startsWith: CONFLICT_INVENTORY_LEDGER_MARKER } },
+    select: { id: true },
+  });
+  const ledgerIds = ledgers.map((ledger) => ledger.id);
+
+  if (ledgerIds.length > 0) {
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.dailyLedger.deleteMany({ where: { id: { in: ledgerIds } } });
+  }
+
+  if (inventoryUploadHashes.size > 0) {
+    await prisma.auditLog.deleteMany({
+      where: {
+        targetType: "InventoryOpeningSnapshot",
+        targetId: { in: [...inventoryUploadHashes] },
+      },
+    });
+  }
+
   const products = await prisma.product.findMany({
-    where: { name: { startsWith: AUTO_INVENTORY_PRODUCT_PREFIX } },
+    where: {
+      OR: [
+        { name: { startsWith: AUTO_INVENTORY_PRODUCT_PREFIX } },
+        { name: { startsWith: CONFLICT_INVENTORY_PRODUCT_PREFIX } },
+      ],
+    },
     select: { id: true },
   });
   const productIds = products.map((product) => product.id);
@@ -224,6 +261,66 @@ async function cleanupAutoInventoryProducts() {
     where: { targetType: "Product", targetId: { in: productIds } },
   });
   await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+}
+
+async function seedInventoryProduct(name: string) {
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+
+  return prisma.product.create({
+    data: {
+      name,
+      category: "생물",
+      spec: "1kg",
+      defaultUnitPrice: 12000,
+      updatedById: actor.id,
+    },
+  });
+}
+
+async function seedTargetInventoryLedger(input: {
+  storeId: string;
+  product: Awaited<ReturnType<typeof seedInventoryProduct>>;
+  quantity: number;
+}) {
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const inventoryDate = getPreviousKstDateString();
+  const closingDate = new Date(`${inventoryDate}T00:00:00.000Z`);
+  closingDate.setUTCDate(closingDate.getUTCDate() + 1);
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: input.storeId,
+      closingDate,
+      workMemo: `${CONFLICT_INVENTORY_LEDGER_MARKER} ${input.product.id}`,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: input.product.id,
+      productName: input.product.name,
+      productCategory: input.product.category,
+      productSpec: input.product.spec,
+      unitPrice: input.product.defaultUnitPrice ?? 12000,
+      previousQuantity: input.quantity,
+      currentQuantity: input.quantity,
+      quantity: input.quantity,
+      inventoryAmount:
+        input.quantity * (input.product.defaultUnitPrice ?? 12000),
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+
+  return ledger;
 }
 
 test.afterEach(async () => {
@@ -387,6 +484,96 @@ test("재고 업로드는 미등록 품목을 한 번 생성하고 월초 스냅
       },
     }),
   ).toBe(1);
+});
+
+test("재고 업로드는 작성된 대상일 장부를 덮어쓰지 않고 파일 전체를 거부한다", async ({
+  page,
+}, testInfo) => {
+  const suffix = `${testInfo.workerIndex}-${Date.now()}`;
+  const product = await seedInventoryProduct(
+    `${CONFLICT_INVENTORY_PRODUCT_PREFIX} ${suffix}`,
+  );
+  const rolledBackProductName = `${AUTO_INVENTORY_PRODUCT_PREFIX} 충돌 ${suffix}`;
+  const productAuditCountBefore = await prisma.auditLog.count({
+    where: {
+      action: "product.created",
+      reason: "재고 스냅샷 업로드 미등록 품목 자동 생성",
+    },
+  });
+  const ledger = await seedTargetInventoryLedger({
+    storeId: "store-gangnam",
+    product,
+    quantity: 7,
+  });
+  const workbook = createInventoryOpeningWorkbook([
+    [
+      getPreviousKstDateString(),
+      "강남점",
+      product.name,
+      product.spec,
+      product.category,
+      2,
+      12000,
+    ],
+    [
+      getPreviousKstDateString(),
+      "홍대점",
+      rolledBackProductName,
+      "1kg",
+      "냉동",
+      1,
+      12000,
+    ],
+  ]);
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/ecount-imports");
+  await page.locator('input[name="inventoryFile"]').setInputFiles({
+    name: `inventory-conflict-${suffix}.xlsx`,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: workbook,
+  });
+  await page.getByRole("button", { name: "재고 업로드" }).click();
+
+  await expect(
+    page.getByRole("alert").filter({
+      hasText: `강남점의 ${ledger.closingDate.toISOString().slice(0, 10)} 대상일 재고 장부가 이미 작성되어 있습니다`,
+    }),
+  ).toBeVisible();
+  const savedItem = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+  });
+  expect(Number(savedItem?.quantity)).toBe(7);
+  expect(
+    await prisma.inventoryOpeningSnapshot.count({
+      where: { storeId: "store-gangnam", productId: product.id },
+    }),
+  ).toBe(0);
+  expect(
+    await prisma.product.findUnique({
+      where: {
+        name_category_spec: {
+          name: rolledBackProductName,
+          category: "냉동",
+          spec: "1kg",
+        },
+      },
+    }),
+  ).toBeNull();
+  expect(
+    await prisma.auditLog.count({
+      where: {
+        action: "product.created",
+        reason: "재고 스냅샷 업로드 미등록 품목 자동 생성",
+      },
+    }),
+  ).toBe(productAuditCountBefore);
 });
 
 test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트에서 확인한다", async ({

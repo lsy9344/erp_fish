@@ -323,7 +323,6 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.match(actionSource, /requireEcountUploadCommitAccess/);
   assert.match(actionSource, /inventoryOpeningSnapshot\.upsert/);
   assert.match(actionSource, /parseInventoryOpeningWorkbook/);
-  assert.match(actionSource, /existingLedgerCount/);
   assert.match(actionSource, /productCreatedCount/);
   assert.match(actionSource, /product\.create/);
   assert.match(actionSource, /action:\s*"product\.created"/);
@@ -333,7 +332,8 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
     actionSource,
     /ledgerInventoryItems:\s*\{\s*some:\s*\{\s*\}\s*\}/s,
   );
+  assert.match(actionSource, /기존 재고 장부를 먼저 확인해 주세요/);
   assert.match(clientSource, /재고 파일 업로드/);
   assert.match(clientSource, /uploadInventoryOpeningSnapshots/);
-  assert.match(clientSource, /작성된 장부는 자동으로 덮어쓰지 않았습니다/);
+  assert.doesNotMatch(clientSource, /스냅샷만 갱신했습니다/);
 });

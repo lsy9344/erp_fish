@@ -149,15 +149,9 @@ export function EcountSupplyUploadClient({
       }
 
       setInventoryResult(result.data);
-      if (result.data.existingLedgerCount > 0) {
-        toast.info(
-          `재고 스냅샷 ${result.data.importedCount}건을 반영했습니다. 작성된 장부는 자동으로 덮어쓰지 않았습니다.`,
-        );
-      } else {
-        toast.success(
-          `재고 스냅샷 ${result.data.importedCount}건을 반영했습니다. 자동 추가 품목 ${result.data.productCreatedCount}개`,
-        );
-      }
+      toast.success(
+        `재고 스냅샷 ${result.data.importedCount}건을 반영했습니다. 자동 추가 품목 ${result.data.productCreatedCount}개`,
+      );
       router.refresh();
     } catch {
       setInventoryFormError(
@@ -299,14 +293,6 @@ export function EcountSupplyUploadClient({
               </dd>
             </div>
           </dl>
-        ) : null}
-
-        {inventoryResult && inventoryResult.existingLedgerCount > 0 ? (
-          <p className="text-amber-700" role="status">
-            {inventoryResult.existingLedgerStoreNames.join(", ")}의 기존 재고
-            장부가 이미 작성되어 스냅샷만 갱신했습니다. 작성된 장부는 자동으로
-            덮어쓰지 않았습니다.
-          </p>
         ) : null}
       </section>
 

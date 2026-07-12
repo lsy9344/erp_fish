@@ -33,8 +33,6 @@ export type InventoryOpeningUploadResult = {
   storeCount: number;
   totalQuantity: number;
   totalInventoryAmount: number;
-  existingLedgerCount: number;
-  existingLedgerStoreNames: string[];
 };
 
 type MatchedInventoryOpeningRow = InventoryOpeningImportRow & {
@@ -314,11 +312,24 @@ export async function uploadInventoryOpeningSnapshots(
           OR: ledgerTargets,
           ledgerInventoryItems: { some: {} },
         },
-        select: { store: { select: { name: true } } },
+        select: {
+          closingDate: true,
+          store: { select: { name: true } },
+        },
+        orderBy: [{ store: { name: "asc" } }, { closingDate: "asc" }],
       });
-      const existingLedgerStoreNames = [
-        ...new Set(existingLedgers.map((ledger) => ledger.store.name)),
-      ];
+
+      if (existingLedgers.length > 0) {
+        throw new InventoryOpeningImportError(
+          "기존 재고 장부를 먼저 확인해 주세요.",
+          {
+            file: existingLedgers.map(
+              (ledger) =>
+                `${ledger.store.name}의 ${ledger.closingDate.toISOString().slice(0, 10)} 대상일 재고 장부가 이미 작성되어 있습니다.`,
+            ),
+          },
+        );
+      }
 
       let createdCount = 0;
       let updatedCount = 0;
@@ -377,8 +388,6 @@ export async function uploadInventoryOpeningSnapshots(
         storeCount: new Set(matchedRows.map((row) => row.storeId)).size,
         totalQuantity: parsed.totalQuantity,
         totalInventoryAmount: parsed.totalInventoryAmount,
-        existingLedgerCount: existingLedgerStoreNames.length,
-        existingLedgerStoreNames,
       };
 
       await writeAuditLog(tx, {
