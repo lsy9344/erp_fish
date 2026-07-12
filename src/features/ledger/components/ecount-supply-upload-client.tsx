@@ -160,7 +160,9 @@ export function EcountSupplyUploadClient({
       }
       router.refresh();
     } catch {
-      setInventoryFormError("재고 엑셀 파일을 업로드하는 중 오류가 발생했습니다.");
+      setInventoryFormError(
+        "재고 엑셀 파일을 업로드하는 중 오류가 발생했습니다.",
+      );
     } finally {
       setIsInventoryUploading(false);
     }
@@ -262,8 +264,8 @@ export function EcountSupplyUploadClient({
             <div>
               <dt className="text-muted-foreground">생성 / 갱신 / 동일</dt>
               <dd className="font-medium tabular-nums">
-                {inventoryResult.createdCount} / {inventoryResult.updatedCount} /{" "}
-                {inventoryResult.unchangedCount}
+                {inventoryResult.createdCount} / {inventoryResult.updatedCount}{" "}
+                / {inventoryResult.unchangedCount}
               </dd>
             </div>
             <div>

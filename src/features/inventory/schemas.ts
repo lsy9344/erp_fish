@@ -18,7 +18,11 @@ function parseOptionalInventoryQuantity(
   value: unknown,
   context: z.RefinementCtx,
 ) {
-  return parseOptionalNonNegativeDecimal(value, context, inventoryQuantityError);
+  return parseOptionalNonNegativeDecimal(
+    value,
+    context,
+    inventoryQuantityError,
+  );
 }
 
 function parseRequiredInventoryQuantity(
@@ -113,9 +117,11 @@ export const ledgerInventoryAdjustmentSchema =
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, productError)),
-    actualQuantity: z.unknown().transform((value, context) =>
-      parseRequiredInventoryQuantity(value, context),
-    ),
+    actualQuantity: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredInventoryQuantity(value, context),
+      ),
     reason: z
       .string()
       .transform((value) => value.trim())

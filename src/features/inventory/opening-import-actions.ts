@@ -132,7 +132,9 @@ async function matchRows(
     );
 
     if (!store) {
-      errors.push(`${row.rowNumber}행 지점명 "${row.storeName}"을 찾을 수 없습니다.`);
+      errors.push(
+        `${row.rowNumber}행 지점명 "${row.storeName}"을 찾을 수 없습니다.`,
+      );
       continue;
     }
 
@@ -194,9 +196,13 @@ export async function uploadInventoryOpeningSnapshots(
       : "";
 
   if (!fileName.toLowerCase().endsWith(".xlsx") && fileType !== xlsxMimeType) {
-    return actionError("VALIDATION_ERROR", "xlsx 파일만 업로드할 수 있습니다.", {
-      file: ["xlsx 파일만 업로드할 수 있습니다."],
-    });
+    return actionError(
+      "VALIDATION_ERROR",
+      "xlsx 파일만 업로드할 수 있습니다.",
+      {
+        file: ["xlsx 파일만 업로드할 수 있습니다."],
+      },
+    );
   }
 
   const bytes = await file.arrayBuffer();
@@ -216,9 +222,13 @@ export async function uploadInventoryOpeningSnapshots(
       return actionError("VALIDATION_ERROR", error.message, error.fieldErrors);
     }
 
-    return actionError("VALIDATION_ERROR", "재고 엑셀 파일을 읽을 수 없습니다.", {
-      file: ["재고 엑셀 파일을 읽을 수 없습니다."],
-    });
+    return actionError(
+      "VALIDATION_ERROR",
+      "재고 엑셀 파일을 읽을 수 없습니다.",
+      {
+        file: ["재고 엑셀 파일을 읽을 수 없습니다."],
+      },
+    );
   }
 
   const fileHash = createHash("sha256")

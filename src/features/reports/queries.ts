@@ -1100,9 +1100,7 @@ export async function getHqProductSalesReportForRange({
         } satisfies ProductSalesBucket);
 
       bucket.soldQuantity += soldQuantity;
-      bucket.estimatedSalesAmount += Math.round(
-        soldQuantity * salesUnitPrice,
-      );
+      bucket.estimatedSalesAmount += Math.round(soldQuantity * salesUnitPrice);
       bucket.estimatedCogsAmount += getItemCogs(enrichedItem, soldQuantity);
       bucket.lossQuantity += enrichedItem.lossQuantity;
       bucket.lossAmount += item.productId

@@ -32,10 +32,7 @@ export function calculateInventoryAmount(
   quantity: number | null,
   unitPrice: number | null,
 ) {
-  if (
-    !isValidInventoryQuantity(quantity) ||
-    !isValidKrwInteger(unitPrice)
-  ) {
+  if (!isValidInventoryQuantity(quantity) || !isValidKrwInteger(unitPrice)) {
     return null;
   }
 
@@ -159,9 +156,7 @@ export function calculateInventoryAdjustment({
     return null;
   }
 
-  const differenceQuantity = roundToTwoDecimals(
-    afterQuantity - beforeQuantity,
-  );
+  const differenceQuantity = roundToTwoDecimals(afterQuantity - beforeQuantity);
   const differenceAmount = afterAmount - beforeAmount;
 
   if (

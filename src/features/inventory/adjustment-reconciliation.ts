@@ -147,7 +147,9 @@ export async function applyInventoryAdjustmentReasonsInTx(
   for (const item of items) {
     const reason = reasonByProductId.get(item.productId);
     const currentQuantity =
-      item.currentQuantity === null ? null : decimalToNumber(item.currentQuantity);
+      item.currentQuantity === null
+        ? null
+        : decimalToNumber(item.currentQuantity);
     const previousQuantity = decimalToNumber(item.previousQuantity);
 
     if (!reason || currentQuantity === null) {
@@ -279,7 +281,8 @@ export async function reconcileLedgerInventoryAdjustments(
     }
 
     const previousQuantity = decimalToNumber(item.previousQuantity);
-    const quantity = item.quantity === null ? null : decimalToNumber(item.quantity);
+    const quantity =
+      item.quantity === null ? null : decimalToNumber(item.quantity);
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;

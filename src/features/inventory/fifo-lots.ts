@@ -318,7 +318,9 @@ export async function refreshLedgerInventoryFifoLots(
     ...item,
     previousQuantity: decimalToNumber(item.previousQuantity),
     currentQuantity:
-      item.currentQuantity === null ? null : decimalToNumber(item.currentQuantity),
+      item.currentQuantity === null
+        ? null
+        : decimalToNumber(item.currentQuantity),
     quantity: item.quantity === null ? null : decimalToNumber(item.quantity),
   }));
   const productIds = itemInputs.map((item) => item.productId);
