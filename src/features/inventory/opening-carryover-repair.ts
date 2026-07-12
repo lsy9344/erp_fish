@@ -95,7 +95,31 @@ export function parseOpeningCarryoverRepairOptions(
   args: string[],
   env: Record<string, string | undefined>,
 ) {
+  const unknownArgument = args.find(
+    (arg) =>
+      arg !== "--dry-run" && arg !== "--yes" && !arg.startsWith("--date="),
+  );
+
+  if (unknownArgument) {
+    throw new Error(`Unknown argument: ${unknownArgument}.`);
+  }
+
   const dateArgs = args.filter((arg) => arg.startsWith("--date="));
+  const dryRunCount = args.filter((arg) => arg === "--dry-run").length;
+  const confirmedCount = args.filter((arg) => arg === "--yes").length;
+
+  if (dateArgs.length > 1) {
+    throw new Error("Duplicate argument: --date.");
+  }
+
+  if (dryRunCount > 1) {
+    throw new Error("Duplicate argument: --dry-run.");
+  }
+
+  if (confirmedCount > 1) {
+    throw new Error("Duplicate argument: --yes.");
+  }
+
   const date =
     dateArgs.length === 1 ? (dateArgs[0]?.slice("--date=".length) ?? "") : "";
 
@@ -103,8 +127,8 @@ export function parseOpeningCarryoverRepairOptions(
     throw new Error("Missing or invalid --date=YYYY-MM-DD.");
   }
 
-  const isDryRun = args.includes("--dry-run");
-  const isConfirmed = args.includes("--yes");
+  const isDryRun = dryRunCount === 1;
+  const isConfirmed = confirmedCount === 1;
 
   if (isDryRun === isConfirmed) {
     throw new Error("Pass exactly one repair mode: --dry-run or --yes.");
@@ -145,8 +169,82 @@ export function parseOpeningCarryoverRepairOptions(
   };
 }
 
-function evidenceMismatch(): never {
-  throw new Error("EVIDENCE_MISMATCH");
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function evidenceMismatch(message?: string): never {
+  throw new Error(
+    message ? `EVIDENCE_MISMATCH: ${message}` : "EVIDENCE_MISMATCH",
+  );
+}
+
+export function requireOpeningCarryoverAuditEvidence({
+  audit,
+  ledger,
+  closingDate,
+}: {
+  audit: unknown;
+  ledger: { id: string; storeId: string; storeName: string };
+  closingDate: Date;
+}) {
+  if (
+    !isJsonObject(audit) ||
+    typeof audit.actorId !== "string" ||
+    audit.actorId.trim().length === 0 ||
+    !isJsonObject(audit.before)
+  ) {
+    evidenceMismatch(
+      `${ledger.storeName}: first inventory-save audit is invalid`,
+    );
+  }
+
+  const before = audit.before;
+
+  if (
+    before.id !== ledger.id ||
+    before.storeId !== ledger.storeId ||
+    before.closingDate !== closingDate.toISOString() ||
+    !Array.isArray(before.items)
+  ) {
+    evidenceMismatch(
+      `${ledger.storeName}: inventory-save audit target differs`,
+    );
+  }
+
+  const auditItems: unknown[] = before.items;
+  const openingItems = auditItems.filter(
+    (item): item is Record<string, unknown> =>
+      isJsonObject(item) && item.carryoverSource === "OPENING_SNAPSHOT",
+  );
+
+  if (openingItems.length === 0) {
+    evidenceMismatch(`${ledger.storeName}: opening audit evidence is missing`);
+  }
+
+  for (const item of openingItems) {
+    if (
+      typeof item.id !== "string" ||
+      typeof item.productId !== "string" ||
+      typeof item.productName !== "string" ||
+      typeof item.productCategory !== "string" ||
+      typeof item.productSpec !== "string" ||
+      typeof item.unitPrice !== "number" ||
+      typeof item.previousQuantity !== "number" ||
+      (item.currentQuantity !== null &&
+        typeof item.currentQuantity !== "number") ||
+      (item.quantity !== null && typeof item.quantity !== "number") ||
+      typeof item.isModified !== "boolean" ||
+      !isJsonObject(item.previousQuantityDetail)
+    ) {
+      evidenceMismatch(`${ledger.storeName}: opening audit item is malformed`);
+    }
+  }
+
+  return {
+    actorId: audit.actorId,
+    auditItems: auditItems as RepairAuditItem[],
+  };
 }
 
 function uniqueByProductId<T extends { productId: string }>(rows: T[]) {

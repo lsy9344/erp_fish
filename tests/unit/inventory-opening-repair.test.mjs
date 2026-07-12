@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   parseOpeningCarryoverRepairOptions,
   planOpeningCarryoverRepair,
+  requireOpeningCarryoverAuditEvidence,
 } from "../../src/features/inventory/opening-carryover-repair.ts";
 
 const openingDetail = {
@@ -62,6 +63,48 @@ function plan(overrides = {}) {
     ...overrides,
   });
 }
+
+function requireAudit(overrides = {}) {
+  return requireOpeningCarryoverAuditEvidence({
+    audit: {
+      actorId: "actor-1",
+      before: {
+        id: "ledger-1",
+        storeId: "store-1",
+        closingDate: "2026-07-11T00:00:00.000Z",
+        items: [auditItem],
+      },
+      ...overrides,
+    },
+    ledger: {
+      id: "ledger-1",
+      storeId: "store-1",
+      storeName: "제일수산",
+    },
+    closingDate: new Date("2026-07-11T00:00:00.000Z"),
+  });
+}
+
+test("first-save audit requires a nonempty actor and boolean isModified", () => {
+  assert.equal(requireAudit().actorId, "actor-1");
+  assert.throws(() => requireAudit({ actorId: " " }), /EVIDENCE_MISMATCH/);
+  assert.throws(() => requireAudit({ actorId: 7 }), /EVIDENCE_MISMATCH/);
+
+  for (const isModified of [undefined, "false", null]) {
+    assert.throws(
+      () =>
+        requireAudit({
+          before: {
+            id: "ledger-1",
+            storeId: "store-1",
+            closingDate: "2026-07-11T00:00:00.000Z",
+            items: [{ ...auditItem, isModified }],
+          },
+        }),
+      /EVIDENCE_MISMATCH/,
+    );
+  }
+});
 
 test("missing current opening row is planned as a create", () => {
   const result = plan();
@@ -279,6 +322,32 @@ test("repair options require an exact date and one explicit mode", () => {
   assert.equal(options.isDryRun, true);
 });
 
+test("repair options reject unknown and duplicate arguments", () => {
+  const env = {
+    DATABASE_URL: "postgresql://postgres:pw@localhost:5432/erp_fish",
+  };
+
+  assert.throws(
+    () =>
+      parseOpeningCarryoverRepairOptions(
+        ["--date=2026-07-11", "--dry-run", "--store=store-1"],
+        env,
+      ),
+    /Unknown argument/,
+  );
+
+  for (const args of [
+    ["--date=2026-07-11", "--date=2026-07-11", "--dry-run"],
+    ["--date=2026-07-11", "--dry-run", "--dry-run"],
+    ["--date=2026-07-11", "--yes", "--yes"],
+  ]) {
+    assert.throws(
+      () => parseOpeningCarryoverRepairOptions(args, env),
+      /Duplicate argument/,
+    );
+  }
+});
+
 test("remote repair writes require both --yes and the remote allow flag", () => {
   const remoteEnv = {
     DATABASE_URL:
@@ -322,10 +391,10 @@ test("repair command wires audited evidence, one transaction, and derived refres
   assert.match(source, /HOLIDAY/);
   assert.match(source, /action:\s*"ledger\.inventory\.saved"/);
   assert.match(source, /orderBy:\s*\[?\{\s*createdAt:\s*"asc"/);
-  assert.match(source, /audit\.before\.items/);
+  assert.match(source, /requireOpeningCarryoverAuditEvidence/);
   assert.match(source, /yearMonth:\s*options\.yearMonth/);
   assert.match(source, /if \(options\.isDryRun\)/);
-  assert.equal(source.match(/\.\$transaction\(/g)?.length, 1);
+  assert.equal(source.match(/\.\$transaction\(/g)?.length, 2);
   assert.match(source, /isolationLevel:\s*"Serializable"/);
   assert.match(source, /SELECT\s+"id"\s+FROM\s+"DailyLedger"[\s\S]*FOR UPDATE/);
   assert.match(
@@ -347,7 +416,46 @@ test("repair command wires audited evidence, one transaction, and derived refres
     source,
     /where:\s*\{\s*id:\s*update\.id,\s*dailyLedgerId:\s*ledger\.id\s*\}/,
   );
-  assert.doesNotMatch(source, /dailyLedger\.(?:create|update|upsert)/);
+  assert.doesNotMatch(source, /dailyLedger\.(?:create|upsert)/);
+});
+
+test("changed repair plans bump only the ledger version before commit", () => {
+  const source = readFileSync(
+    path.join(root, "scripts", "repair-opening-inventory-carryover.mjs"),
+    "utf8",
+  );
+  const bumpFunction = source.match(
+    /async function bumpChangedLedgerVersionInTx[\s\S]*?\n}\n/,
+  );
+
+  assert.ok(bumpFunction);
+  assert.match(bumpFunction[0], /dailyLedger\.update/);
+  assert.match(bumpFunction[0], /version:\s*\{\s*increment:\s*1\s*\}/);
+  assert.doesNotMatch(bumpFunction[0], /status\s*:/);
+  assert.match(
+    source,
+    /if \(await applyRepairPlan\(tx, entry\)\) \{\s*await bumpChangedLedgerVersionInTx\(tx, entry\);\s*changedEntries\.push\(entry\)/,
+  );
+});
+
+test("dry-run planning uses one coherent read-only RepeatableRead transaction", () => {
+  const source = readFileSync(
+    path.join(root, "scripts", "repair-opening-inventory-carryover.mjs"),
+    "utf8",
+  );
+  const dryRunFunction = source.match(
+    /async function loadDryRunPlans[\s\S]*?\n}\n/,
+  );
+
+  assert.ok(dryRunFunction);
+  assert.match(dryRunFunction[0], /SET TRANSACTION READ ONLY/);
+  assert.match(dryRunFunction[0], /isolationLevel:\s*"RepeatableRead"/);
+  assert.match(dryRunFunction[0], /loadAllRepairPlans\(tx, options\)/);
+  assert.doesNotMatch(dryRunFunction[0], /FOR UPDATE|applyRepairPlan/);
+  assert.match(
+    source,
+    /if \(options\.isDryRun\) \{\s*const entries = await loadDryRunPlans\(db, options\)/,
+  );
 });
 
 test("repair command is exposed and Node-loadable inventory imports stay relative", () => {

@@ -4,6 +4,7 @@ import { PrismaClient } from "../generated/prisma/index.js";
 import {
   parseOpeningCarryoverRepairOptions,
   planOpeningCarryoverRepair,
+  requireOpeningCarryoverAuditEvidence,
 } from "../src/features/inventory/opening-carryover-repair.ts";
 import { persistLedgerInventoryCarryoverDetail } from "../src/features/inventory/carryover-detail-persistence.ts";
 import {
@@ -20,57 +21,6 @@ const REPAIR_REASON = "과거재고 이월 누락 복구";
 
 function evidenceMismatch(message) {
   throw new Error(`EVIDENCE_MISMATCH: ${message}`);
-}
-
-function isJsonObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function requireAuditItems(audit, ledger, options) {
-  if (!audit || !isJsonObject(audit.before)) {
-    evidenceMismatch(
-      `${ledger.store.name}: first inventory-save audit is missing`,
-    );
-  }
-
-  if (
-    audit.before.id !== ledger.id ||
-    audit.before.storeId !== ledger.storeId ||
-    audit.before.closingDate !== options.closingDate.toISOString() ||
-    !Array.isArray(audit.before.items)
-  ) {
-    evidenceMismatch(
-      `${ledger.store.name}: inventory-save audit target differs`,
-    );
-  }
-
-  const openingItems = audit.before.items.filter(
-    (item) => isJsonObject(item) && item.carryoverSource === "OPENING_SNAPSHOT",
-  );
-
-  if (openingItems.length === 0) {
-    evidenceMismatch(`${ledger.store.name}: opening audit evidence is missing`);
-  }
-
-  for (const item of openingItems) {
-    if (
-      typeof item.id !== "string" ||
-      typeof item.productId !== "string" ||
-      typeof item.productName !== "string" ||
-      typeof item.productCategory !== "string" ||
-      typeof item.productSpec !== "string" ||
-      typeof item.unitPrice !== "number" ||
-      typeof item.previousQuantity !== "number" ||
-      (item.currentQuantity !== null &&
-        typeof item.currentQuantity !== "number") ||
-      (item.quantity !== null && typeof item.quantity !== "number") ||
-      !isJsonObject(item.previousQuantityDetail)
-    ) {
-      evidenceMismatch(`${ledger.store.name}: opening audit item is malformed`);
-    }
-  }
-
-  return audit.before.items;
 }
 
 function normalizeCarryoverDetail(detail) {
@@ -132,6 +82,7 @@ async function loadTargetLedgers(client, options) {
       id: true,
       storeId: true,
       status: true,
+      version: true,
       store: { select: { name: true } },
     },
     orderBy: [{ storeId: "asc" }, { id: "asc" }],
@@ -197,9 +148,17 @@ async function loadLedgerRepairPlan(client, ledger, options) {
       orderBy: [{ productId: "asc" }, { id: "asc" }],
     }),
   ]);
-  const auditItems = requireAuditItems(audit, ledger, options);
+  const evidence = requireOpeningCarryoverAuditEvidence({
+    audit,
+    ledger: {
+      id: ledger.id,
+      storeId: ledger.storeId,
+      storeName: ledger.store.name,
+    },
+    closingDate: options.closingDate,
+  });
   const plan = planOpeningCarryoverRepair({
-    auditItems,
+    auditItems: evidence.auditItems,
     currentItems: rows.map(normalizeCurrentItem),
     snapshots: snapshots.map((snapshot) => ({
       ...snapshot,
@@ -209,7 +168,7 @@ async function loadLedgerRepairPlan(client, ledger, options) {
 
   return {
     ledger,
-    actorId: audit.actorId,
+    actorId: evidence.actorId,
     plan,
   };
 }
@@ -240,6 +199,20 @@ async function lockAndLoadTargetLedgersInTx(tx, options) {
   `;
 
   return loadTargetLedgers(tx, options);
+}
+
+async function loadDryRunPlans(db, options) {
+  return db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      return loadAllRepairPlans(tx, options);
+    },
+    {
+      isolationLevel: "RepeatableRead",
+      timeout: 120000,
+      maxWait: 30000,
+    },
+  );
 }
 
 function printPlans(entries, mode) {
@@ -313,6 +286,17 @@ async function applyRepairPlan(tx, entry) {
   return true;
 }
 
+async function bumpChangedLedgerVersionInTx(tx, entry) {
+  await tx.dailyLedger.update({
+    where: {
+      id: entry.ledger.id,
+      version: entry.ledger.version,
+    },
+    data: { version: { increment: 1 } },
+    select: { id: true },
+  });
+}
+
 async function assertIdempotent(tx, entry, options) {
   const second = await loadLedgerRepairPlan(tx, entry.ledger, options);
 
@@ -364,7 +348,7 @@ async function main() {
 
   try {
     if (options.isDryRun) {
-      const entries = await loadAllRepairPlans(db, options);
+      const entries = await loadDryRunPlans(db, options);
       printPlans(entries, "DRY-RUN");
       console.log("실제 변경 없이 종료합니다.");
       return;
@@ -382,6 +366,7 @@ async function main() {
 
         for (const entry of transactionEntries) {
           if (await applyRepairPlan(tx, entry)) {
+            await bumpChangedLedgerVersionInTx(tx, entry);
             changedEntries.push(entry);
           }
         }
