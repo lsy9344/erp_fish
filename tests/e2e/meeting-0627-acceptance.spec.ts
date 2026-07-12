@@ -119,7 +119,7 @@ test("회의 0627 이카운트 신규 냉동 품목은 기준자료 규칙대로
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: workbook,
   });
-  await page.getByRole("button", { name: "업로드" }).click();
+  await page.getByRole("button", { name: "업로드", exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "매핑 필요" })).toBeVisible();
@@ -252,7 +252,7 @@ async function setEcountUploadFile(
     buffer: Buffer;
   },
 ) {
-  const fileInput = page.locator('input[type="file"]');
+  const fileInput = page.getByLabel("이카운트 엑셀 파일");
   await expect(fileInput).toBeAttached();
   await page.waitForLoadState("networkidle");
 
