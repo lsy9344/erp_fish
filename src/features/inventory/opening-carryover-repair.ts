@@ -42,6 +42,7 @@ type RepairCurrentItem = Omit<RepairAuditItem, "previousQuantityDetail"> & {
 type RepairSnapshot = {
   id: string;
   productId: string;
+  yearMonth: string;
   quantity: number;
 };
 
@@ -172,6 +173,37 @@ function hasSamePersistedDetail(
   );
 }
 
+function hasGroundedOpeningDetail(
+  item: RepairAuditItem,
+  snapshot: RepairSnapshot,
+) {
+  const detail = item.previousQuantityDetail;
+
+  return (
+    detail.source === "OPENING_SNAPSHOT" &&
+    detail.status === "OPENING_CARRYOVER" &&
+    detail.sourceLedgerId === null &&
+    detail.sourceLedgerClosingDate === null &&
+    detail.sourceLedgerStatus === null &&
+    typeof detail.sourceYearMonth === "string" &&
+    detail.sourceYearMonth === snapshot.yearMonth &&
+    typeof detail.sourceSnapshotId === "string" &&
+    detail.sourceSnapshotId === snapshot.id &&
+    typeof detail.resolvedQuantity === "number" &&
+    detail.resolvedQuantity === item.previousQuantity &&
+    typeof detail.sourcePreviousQuantity === "number" &&
+    detail.sourcePreviousQuantity === item.previousQuantity &&
+    detail.sourcePurchasedQuantity === null &&
+    detail.sourceLossQuantity === null &&
+    detail.sourceCurrentQuantity === null &&
+    typeof detail.sourceQuantity === "number" &&
+    detail.sourceQuantity === item.previousQuantity &&
+    typeof detail.message === "string" &&
+    detail.message.trim().length > 0 &&
+    (detail.history === undefined || Array.isArray(detail.history))
+  );
+}
+
 function toCreate(item: RepairAuditItem) {
   return {
     productId: item.productId,
@@ -220,19 +252,13 @@ export function planOpeningCarryoverRepair({
 
   for (const item of openingByProductId.values()) {
     const snapshot = snapshotByProductId.get(item.productId);
-    const detail = item.previousQuantityDetail;
 
     if (
       !snapshot ||
-      detail.source !== "OPENING_SNAPSHOT" ||
-      detail.status !== "OPENING_CARRYOVER" ||
+      !hasGroundedOpeningDetail(item, snapshot) ||
       item.carryoverStatus !== "OPENING_CARRYOVER" ||
       item.carryoverLedgerId !== null ||
-      detail.sourceSnapshotId !== snapshot.id ||
-      snapshot.quantity !== item.previousQuantity ||
-      detail.resolvedQuantity !== item.previousQuantity ||
-      detail.sourcePreviousQuantity !== item.previousQuantity ||
-      detail.sourceQuantity !== item.previousQuantity
+      snapshot.quantity !== item.previousQuantity
     ) {
       evidenceMismatch();
     }

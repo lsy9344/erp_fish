@@ -48,6 +48,7 @@ const auditItem = {
 const snapshot = {
   id: "snapshot-1",
   productId: "product-1",
+  yearMonth: "2026-07",
   quantity: 8,
 };
 
@@ -129,6 +130,48 @@ test("missing or quantity-mismatched snapshot evidence is rejected", () => {
     () => plan({ snapshots: [{ ...snapshot, quantity: 9 }] }),
     /EVIDENCE_MISMATCH/,
   );
+});
+
+test("contradictory opening detail evidence is rejected before planning writes", () => {
+  const invalidDetails = [
+    ["detail source", { source: "MANUAL" }],
+    ["detail status", { status: "DATA_INSUFFICIENT" }],
+    ["source ledger id", { sourceLedgerId: "ledger-1" }],
+    [
+      "source ledger date",
+      { sourceLedgerClosingDate: "2026-07-10T00:00:00.000Z" },
+    ],
+    ["source ledger status", { sourceLedgerStatus: "IN_PROGRESS" }],
+    ["source month", { sourceYearMonth: "2026-06" }],
+    ["source snapshot id", { sourceSnapshotId: null }],
+    ["resolved quantity", { resolvedQuantity: 7 }],
+    ["source previous quantity", { sourcePreviousQuantity: 7 }],
+    ["purchased quantity", { sourcePurchasedQuantity: 0 }],
+    ["loss quantity", { sourceLossQuantity: 0 }],
+    ["current quantity", { sourceCurrentQuantity: 8 }],
+    ["source quantity", { sourceQuantity: 7 }],
+    ["empty message", { message: " " }],
+    ["non-array history", { history: {} }],
+  ];
+
+  for (const [label, detailPatch] of invalidDetails) {
+    assert.throws(
+      () =>
+        plan({
+          auditItems: [
+            {
+              ...auditItem,
+              previousQuantityDetail: {
+                ...auditItem.previousQuantityDetail,
+                ...detailPatch,
+              },
+            },
+          ],
+        }),
+      /EVIDENCE_MISMATCH/,
+      label,
+    );
+  }
 });
 
 test("duplicate evidence and unrelated current carryover sources are rejected", () => {
@@ -283,6 +326,12 @@ test("repair command wires audited evidence, one transaction, and derived refres
   assert.match(source, /yearMonth:\s*options\.yearMonth/);
   assert.match(source, /if \(options\.isDryRun\)/);
   assert.equal(source.match(/\.\$transaction\(/g)?.length, 1);
+  assert.match(source, /isolationLevel:\s*"Serializable"/);
+  assert.match(source, /SELECT\s+"id"\s+FROM\s+"DailyLedger"[\s\S]*FOR UPDATE/);
+  assert.match(
+    source,
+    /lockAndLoadTargetLedgersInTx\(tx, options\)[\s\S]*loadRepairPlansForLedgers/,
+  );
   assert.match(source, /persistLedgerInventoryCarryoverDetail/);
   assert.match(source, /syncLedgerInventoryPurchasedQuantitiesInTx/);
   assert.match(source, /reconcileLedgerInventoryAdjustments/);
@@ -293,6 +342,11 @@ test("repair command wires audited evidence, one transaction, and derived refres
   );
   assert.match(source, /과거재고 이월 누락 복구/);
   assert.match(source, /assertIdempotent/);
+  assert.match(source, /isModified:\s*create\.isModified/);
+  assert.match(
+    source,
+    /where:\s*\{\s*id:\s*update\.id,\s*dailyLedgerId:\s*ledger\.id\s*\}/,
+  );
   assert.doesNotMatch(source, /dailyLedger\.(?:create|update|upsert)/);
 });
 

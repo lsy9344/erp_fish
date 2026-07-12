@@ -193,7 +193,7 @@ async function loadLedgerRepairPlan(client, ledger, options) {
         storeId: ledger.storeId,
         yearMonth: options.yearMonth,
       },
-      select: { id: true, productId: true, quantity: true },
+      select: { id: true, productId: true, yearMonth: true, quantity: true },
       orderBy: [{ productId: "asc" }, { id: "asc" }],
     }),
   ]);
@@ -214,8 +214,7 @@ async function loadLedgerRepairPlan(client, ledger, options) {
   };
 }
 
-async function loadAllRepairPlans(client, options) {
-  const ledgers = await loadTargetLedgers(client, options);
+async function loadRepairPlansForLedgers(client, ledgers, options) {
   const entries = [];
 
   for (const ledger of ledgers) {
@@ -223,6 +222,24 @@ async function loadAllRepairPlans(client, options) {
   }
 
   return entries;
+}
+
+async function loadAllRepairPlans(client, options) {
+  const ledgers = await loadTargetLedgers(client, options);
+
+  return loadRepairPlansForLedgers(client, ledgers, options);
+}
+
+async function lockAndLoadTargetLedgersInTx(tx, options) {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "DailyLedger"
+    WHERE "closingDate" = ${options.closingDate}
+    ORDER BY "storeId", "id"
+    FOR UPDATE
+  `;
+
+  return loadTargetLedgers(tx, options);
 }
 
 function printPlans(entries, mode) {
@@ -250,6 +267,7 @@ async function applyRepairPlan(tx, entry) {
         previousQuantity: create.previousQuantity,
         currentQuantity: create.currentQuantity,
         quantity: create.quantity,
+        isModified: create.isModified,
         carryoverSource: create.carryoverSource,
         carryoverStatus: create.carryoverStatus,
         carryoverLedgerId: create.carryoverLedgerId,
@@ -268,7 +286,7 @@ async function applyRepairPlan(tx, entry) {
 
   for (const update of plan.updates) {
     await tx.ledgerInventoryItem.update({
-      where: { id: update.id },
+      where: { id: update.id, dailyLedgerId: ledger.id },
       data: {
         previousQuantity: update.previousQuantity,
         carryoverSource: update.carryoverSource,
@@ -354,7 +372,12 @@ async function main() {
 
     const entries = await db.$transaction(
       async (tx) => {
-        const transactionEntries = await loadAllRepairPlans(tx, options);
+        const lockedLedgers = await lockAndLoadTargetLedgersInTx(tx, options);
+        const transactionEntries = await loadRepairPlansForLedgers(
+          tx,
+          lockedLedgers,
+          options,
+        );
         const changedEntries = [];
 
         for (const entry of transactionEntries) {
@@ -373,7 +396,11 @@ async function main() {
 
         return transactionEntries;
       },
-      { timeout: 120000, maxWait: 30000 },
+      {
+        isolationLevel: "Serializable",
+        timeout: 120000,
+        maxWait: 30000,
+      },
     );
 
     printPlans(entries, "COMMITTED");
