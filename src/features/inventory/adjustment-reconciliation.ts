@@ -4,9 +4,9 @@ import {
   calculateInventoryAdjustment,
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
-} from "~/server/calculations/inventory";
-import { isPurchaseDrivenSale } from "~/features/inventory/inventory-persist-policy";
-import { decimalToNumber, type DecimalNumber } from "~/lib/decimal";
+} from "../../server/calculations/inventory.ts";
+import { isPurchaseDrivenSale } from "./inventory-persist-policy.ts";
+import { decimalToNumber, type DecimalNumber } from "../../lib/decimal.ts";
 
 const adjustmentSelect = {
   id: true,

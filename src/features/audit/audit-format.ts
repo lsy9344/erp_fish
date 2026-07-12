@@ -81,6 +81,7 @@ const actionLabels: Record<string, string> = {
   "ledger.hq.losses.saved": "본사 손실 수정",
   "ledger.hq.work_info.saved": "본사 근무 정보 수정",
   "inventory_opening_snapshot.imported": "재고 파일 업로드",
+  "inventory_opening_snapshot.carryover_repaired": "과거재고 이월 누락 복구",
   "threshold.updated": "기준값 변경",
   "long_stock_threshold.created": "장기재고 기준일 등록",
   "long_stock_threshold.updated": "장기재고 기준일 변경",

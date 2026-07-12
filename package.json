@@ -14,6 +14,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset:neon": "node --experimental-strip-types scripts/reset-neon-data.mjs",
+    "db:repair:opening-inventory": "node --experimental-strip-types scripts/repair-opening-inventory-carryover.mjs",
     "dev": "next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:check:ci-docs": "prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md",
