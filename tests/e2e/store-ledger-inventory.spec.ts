@@ -339,7 +339,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
     exact: true,
   });
-  await currentQuantityInput.fill("9");
+  await currentQuantityInput.fill("9.5");
   await page
     .getByLabel(`${product.name} 재고 조정 이유`)
     .fill("실사 재고 차이");
@@ -350,7 +350,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
 
   await expect(
     page.getByLabel(`${product.name} 당일재고`, { exact: true }),
-  ).toHaveValue("9");
+  ).toHaveValue("9.5");
   await expect(
     page.getByLabel(`${untouchedProduct.name} 당일재고`, { exact: true }),
   ).toHaveValue("5");
@@ -365,6 +365,17 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   });
   expect(untouchedRow?.carryoverSource).toBe("OPENING_SNAPSHOT");
   expect(untouchedRow?.previousQuantity.toString()).toBe("5");
+
+  const savedProductRow = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+  });
+  expect(savedProductRow?.currentQuantity?.toString()).toBe("9.5");
+  expect(savedProductRow?.quantity?.toString()).toBe("9.5");
 
   const productRow = page.locator("tr").filter({ hasText: product.name });
   await expect(productRow.getByText("수정됨").first()).toBeVisible();
@@ -985,13 +996,12 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
     exact: true,
   });
-  await currentQuantityInput.fill("1");
-  await currentQuantityInput.pressSequentially("a");
+  await currentQuantityInput.fill("1.25");
   await page.getByRole("button", { name: "저장", exact: true }).click();
 
   await expect(
     page.getByText(
-      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+      "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
     ),
   ).toBeVisible();
   await expect(currentQuantityInput).toBeFocused();
@@ -1000,7 +1010,7 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
     await currentQuantityInput.getAttribute("aria-describedby");
   expect(describedBy).toBeTruthy();
   await expect(page.locator(`[id="${describedBy}"]`)).toContainText(
-    "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+    "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
   );
 
   await expect(currentQuantityInput).toHaveAttribute("inputmode", "decimal");
