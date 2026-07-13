@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -116,6 +116,49 @@ function createZip(entries) {
   end.writeUInt16LE(0, 20);
 
   return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
+function readZipEntry(archive, targetName) {
+  let endOffset = archive.length - 22;
+
+  while (endOffset >= 0 && archive.readUInt32LE(endOffset) !== 0x06054b50) {
+    endOffset -= 1;
+  }
+
+  assert.ok(endOffset >= 0, "zip end record must exist");
+  const entryCount = archive.readUInt16LE(endOffset + 10);
+  let offset = archive.readUInt32LE(endOffset + 16);
+
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.equal(archive.readUInt32LE(offset), 0x02014b50);
+    const method = archive.readUInt16LE(offset + 10);
+    const compressedSize = archive.readUInt32LE(offset + 20);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const localHeaderOffset = archive.readUInt32LE(offset + 42);
+    const name = archive
+      .subarray(offset + 46, offset + 46 + nameLength)
+      .toString("utf8");
+
+    if (name === targetName) {
+      const localNameLength = archive.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = archive.readUInt16LE(localHeaderOffset + 28);
+      const dataStart =
+        localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressed = archive.subarray(
+        dataStart,
+        dataStart + compressedSize,
+      );
+      const content = method === 8 ? inflateRawSync(compressed) : compressed;
+
+      return content.toString("utf8");
+    }
+
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+
+  assert.fail(`zip entry must exist: ${targetName}`);
 }
 
 function createWorkbook(sheets) {
@@ -322,6 +365,66 @@ test("parseInventoryOpeningWorkbook rejects quantities past one decimal", async 
       error instanceof InventoryOpeningImportError &&
       error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
   );
+});
+
+test("parseInventoryOpeningWorkbook reads the tracked namespaced inventory template", async () => {
+  const { parseInventoryOpeningWorkbook } =
+    await importInventoryOpeningImport();
+  const workbook = readFileSync(
+    path.join(
+      root,
+      "outputs",
+      "inventory_import_template",
+      "과거_재고_간단_입력_양식.xlsx",
+    ),
+  );
+
+  const result = parseInventoryOpeningWorkbook(workbook);
+
+  assert.equal(result.sheetName, "재고입력");
+  assert.equal(result.rows[0]?.quantity, 12);
+});
+
+test("tracked inventory template preserves blank validation and page setup metadata", async () => {
+  const workbook = readFileSync(
+    path.join(
+      root,
+      "outputs",
+      "inventory_import_template",
+      "과거_재고_간단_입력_양식.xlsx",
+    ),
+  );
+
+  for (let sheetNumber = 1; sheetNumber <= 4; sheetNumber += 1) {
+    const worksheet = readZipEntry(
+      workbook,
+      `xl/worksheets/sheet${sheetNumber}.xml`,
+    );
+    assert.match(
+      worksheet,
+      /<(?:\w+:)?pageSetUpPr\b[^>]*fitToPage="1"[^>]*\/>/,
+    );
+    assert.match(
+      worksheet,
+      /<(?:\w+:)?pageSetup\b[^>]*fitToHeight="0"[^>]*orientation="landscape"[^>]*\/>/,
+    );
+  }
+
+  const inventory = readZipEntry(workbook, "xl/worksheets/sheet3.xml");
+  const lots = readZipEntry(workbook, "xl/worksheets/sheet4.xml");
+  for (const [worksheet, range, validationType] of [
+    [inventory, "E4:E2004", "list"],
+    [inventory, "F4:F2004", "custom"],
+    [inventory, "G4:G2004", "whole"],
+    [lots, "F4:F1004", "whole"],
+    [lots, "G4:G1004", "custom"],
+  ]) {
+    const validation = new RegExp(
+      `<(?:\\w+:)?dataValidation\\b(?=[^>]*type="${validationType}")(?=[^>]*sqref="${range}")[^>]*>`,
+    ).exec(worksheet)?.[0];
+    assert.ok(validation, `${range} ${validationType} validation must exist`);
+    assert.match(validation, /\ballowBlank="1"/);
+  }
 });
 
 test("inventory product identity accepts blank specs but enforces shared product bounds", async () => {

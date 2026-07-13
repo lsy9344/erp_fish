@@ -165,7 +165,8 @@ function columnIndex(ref: string) {
 
 function readTexts(xml: string) {
   const texts: string[] = [];
-  const regex = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+  const regex =
+    /<(?:[A-Za-z_][\w.-]*:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(xml))) {
@@ -181,7 +182,8 @@ function parseSharedStrings(xml: string | undefined) {
   }
 
   const strings: string[] = [];
-  const regex = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
+  const regex =
+    /<(?:[A-Za-z_][\w.-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?si>/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(xml))) {
@@ -202,7 +204,10 @@ function parseCellValue(
     return readTexts(cellBody);
   }
 
-  const value = /<v>([\s\S]*?)<\/v>/.exec(cellBody)?.[1] ?? "";
+  const value =
+    /<(?:[A-Za-z_][\w.-]*:)?v>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?v>/.exec(
+      cellBody,
+    )?.[1] ?? "";
 
   if (type === "s") {
     const index = Number.parseInt(value, 10);
@@ -220,7 +225,8 @@ function parseCellValue(
 
 function parseSheetRows(xml: string, shared: string[]) {
   const rows: { rowNumber: number; cells: CellValue[] }[] = [];
-  const rowRegex = /<row\b([^>]*)>([\s\S]*?)<\/row>/g;
+  const rowRegex =
+    /<(?:[A-Za-z_][\w.-]*:)?row\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?row>/g;
   let rowMatch: RegExpExecArray | null;
 
   while ((rowMatch = rowRegex.exec(xml))) {
@@ -229,7 +235,8 @@ function parseSheetRows(xml: string, shared: string[]) {
       10,
     );
     const cells: CellValue[] = [];
-    const cellRegex = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    const cellRegex =
+      /<(?:[A-Za-z_][\w.-]*:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g;
     let cellMatch: RegExpExecArray | null;
 
     while ((cellMatch = cellRegex.exec(rowMatch[2] ?? ""))) {
@@ -316,7 +323,7 @@ function getSheetNames(workbookXml: string | undefined) {
   }
 
   const names: string[] = [];
-  const regex = /<sheet\b[^>]*>/g;
+  const regex = /<(?:[A-Za-z_][\w.-]*:)?sheet\b[^>]*>/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(workbookXml))) {
