@@ -616,7 +616,7 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.doesNotMatch(clientSource, /스냅샷만 갱신했습니다/);
 });
 
-test("inventory template builders allow one decimal only for stock quantities", () => {
+test("inventory template builders keep their approved quantity precision", () => {
   const simpleSource = readFileSync(
     path.join(
       root,
@@ -636,16 +636,13 @@ test("inventory template builders allow one decimal only for stock quantities", 
     "utf8",
   );
 
-  for (const source of [simpleSource, fullSource]) {
-    assert.match(source, /type:\s*"custom"/);
-    assert.match(source, /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/);
-    assert.match(source, /소수점 첫째 자리까지/);
-  }
-
-  assert.match(simpleSource, /numFmt:\s*"#,##0\.0"/);
+  assert.match(simpleSource, /type:\s*"custom"/);
+  assert.match(simpleSource, /ROUND\(\$\{firstCell\},2\)=\$\{firstCell\}/);
+  assert.match(simpleSource, /소수점 둘째 자리까지/);
+  assert.match(simpleSource, /numFmt:\s*"#,##0\.00"/);
   assert.match(
     simpleSource,
-    /oneDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
+    /twoDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
   );
   assert.match(
     simpleSource,
@@ -654,8 +651,12 @@ test("inventory template builders allow one decimal only for stock quantities", 
   assert.match(simpleSource, /wholeNumberValidation\(lots,\s*"F4:F1004"\)/);
   assert.match(
     simpleSource,
-    /oneDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
+    /twoDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
   );
+
+  assert.match(fullSource, /type:\s*"custom"/);
+  assert.match(fullSource, /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/);
+  assert.match(fullSource, /소수점 첫째 자리까지/);
 
   for (const [sheet, quantityRange, wholeNumberRange] of [
     ["invSheet", "H4:K2004", "L4:L2004"],
