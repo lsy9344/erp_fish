@@ -19,6 +19,7 @@ import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { decimalToNumber } from "~/lib/decimal";
+import { resolveStoredDecimalQuantity } from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
@@ -1131,21 +1132,45 @@ export async function saveLedgerPurchases(
         },
       );
 
+      const existingPurchaseItemsById = new Map(
+        beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
+      );
+      const storedQuantityById = new Map(
+        beforeLedger.ledgerPurchaseItems.map((item) => [
+          item.id,
+          decimalToNumber(item.quantity),
+        ]),
+      );
+
       // carryover 행(전일 이월 품목)은 매입 행이 아니라 판매 예정가만 받는 행이다.
       // ledgerPurchaseItem 생성/검증에서는 제외하고, 판매 예정가 저장에만 포함한다.
       const realPurchases = parsed.data.purchases.filter(
         (purchase) => purchase.kind !== "carryover",
       );
+      const resolvedPurchases = realPurchases.map((purchase, index) => {
+        const quantity = resolveStoredDecimalQuantity(
+          purchase.id,
+          purchase.quantity,
+          storedQuantityById,
+        );
 
-      const existingPurchaseItemsById = new Map(
-        beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
-      );
+        if (quantity === null) {
+          throw new LedgerPurchaseValidationError({
+            [`purchases.${index}.quantity`]: [
+              "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+            ],
+          });
+        }
+
+        return { ...purchase, quantity };
+      });
+
       const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
         beforeLedger.ledgerPurchaseItems.map((item) => ({
           ...item,
           quantity: decimalToNumber(item.quantity),
         })),
-        realPurchases,
+        resolvedPurchases,
       );
 
       if (Object.keys(ecountPurchaseEditErrors).length > 0) {
@@ -1154,14 +1179,14 @@ export async function saveLedgerPurchases(
 
       const standardIds = [
         ...new Set(
-          realPurchases
+          resolvedPurchases
             .map((purchase) => purchase.purchaseStandardId)
             .filter((id): id is string => Boolean(id)),
         ),
       ];
       const productIds = [
         ...new Set(
-          realPurchases
+          resolvedPurchases
             .map((purchase) => purchase.productId)
             .filter((id): id is string => Boolean(id)),
         ),
@@ -1209,9 +1234,9 @@ export async function saveLedgerPurchases(
         where: { dailyLedgerId: beforeLedger.id },
       });
 
-      if (realPurchases.length > 0) {
+      if (resolvedPurchases.length > 0) {
         await tx.ledgerPurchaseItem.createMany({
-          data: realPurchases.map((purchase, index) => {
+          data: resolvedPurchases.map((purchase, index) => {
             const standard = purchase.purchaseStandardId
               ? standardsById.get(purchase.purchaseStandardId)
               : null;

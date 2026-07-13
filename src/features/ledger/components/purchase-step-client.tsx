@@ -106,12 +106,26 @@ function parseQuantity(value: string) {
     return 0;
   }
 
-  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
     return 0;
   }
 
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toQuantitySaveInput(
+  value: string,
+  storedQuantity: number | null | undefined,
+) {
+  const trimmed = value.trim();
+
+  return storedQuantity !== null &&
+    storedQuantity !== undefined &&
+    trimmed === String(storedQuantity) &&
+    !/^\d+(?:\.\d)?$/.test(trimmed)
+    ? null
+    : value;
 }
 
 function createLineState(id: string): PurchaseLine {
@@ -400,7 +414,10 @@ export function PurchaseStepClient({
           productSpec: line.productSpec,
           referenceInfo: line.referenceInfo,
           unitPrice: line.unitPrice,
-          quantity: line.quantity,
+          quantity: toQuantitySaveInput(
+            line.quantity,
+            ledger.purchaseItems.find((item) => item.id === line.id)?.quantity,
+          ),
           // 판매 예정가는 지점장 매입 화면 전용이고 품목 행만 저장 대상이다.
           ...(showSalesPricePlan
             ? { plannedUnitPrice: line.productId ? line.plannedUnitPrice : "" }

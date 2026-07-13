@@ -10,6 +10,7 @@ import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
+import { resolveStoredDecimalQuantity } from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
@@ -115,6 +116,9 @@ type ActiveLossType = {
 };
 
 type ExistingLossItem = LossStepData["lossItems"][number];
+type ResolvedLossInput = LedgerLossesInput["losses"][number] & {
+  quantity: number;
+};
 
 type NormalizedLossItem = {
   id: string | null;
@@ -138,7 +142,7 @@ function normalizeLossItem({
   product,
   lossType,
 }: {
-  loss: LedgerLossesInput["losses"][number];
+  loss: ResolvedLossInput;
   existing: ExistingLossItem | undefined;
   product: ActiveProduct | undefined;
   lossType: ActiveLossType | undefined;
@@ -292,14 +296,34 @@ export async function saveLedgerLosses(
       const existingById = new Map(
         before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
       );
+      const storedQuantityById = new Map(
+        before.lossItems.map((lossItem) => [lossItem.id, lossItem.quantity]),
+      );
       const normalizedLosses: NormalizedLossItem[] = [];
 
       for (let index = 0; index < parsed.data.losses.length; index += 1) {
         const loss = parsed.data.losses[index]!;
         const existing = existingById.get(loss.id);
+        const quantity = resolveStoredDecimalQuantity(
+          loss.id,
+          loss.quantity,
+          storedQuantityById,
+        );
+
+        if (quantity === null) {
+          return actionError<StoreManagerLossStepData>(
+            "VALIDATION_ERROR",
+            "입력값을 확인해 주세요.",
+            {
+              [`losses.${index}.quantity`]: [
+                "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+              ],
+            },
+          );
+        }
 
         const normalized = normalizeLossItem({
-          loss,
+          loss: { ...loss, quantity },
           existing,
           product: productsById.get(loss.productId),
           lossType: lossTypesById.get(loss.ledgerInputCodeId),

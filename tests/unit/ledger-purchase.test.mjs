@@ -282,6 +282,24 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
     ["수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다."],
   );
 
+  const unchangedLegacyQuantity = ledgerPurchaseSchema.parse({
+    ...basePayload,
+    purchases: [
+      { ...basePayload.purchases[0], id: "purchase-1", quantity: null },
+    ],
+  });
+  assert.equal(unchangedLegacyQuantity.purchases[0].quantity, null);
+
+  const forgedLegacySentinel = ledgerPurchaseSchema.safeParse({
+    ...basePayload,
+    purchases: [{ ...basePayload.purchases[0], id: "", quantity: null }],
+  });
+  assert.equal(forgedLegacySentinel.success, false);
+  assert.deepEqual(
+    forgedLegacySentinel.error.flatten().fieldErrors.purchases,
+    ["수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다."],
+  );
+
   const formattedPrice = ledgerPurchaseSchema.safeParse({
     ...basePayload,
     purchases: [{ ...basePayload.purchases[0], unitPrice: "1,000" }],
@@ -683,6 +701,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   );
   assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
+  assert.match(actionSource, /resolveStoredDecimalQuantity/);
   assert.match(actionSource, /isExistingSnapshotPurchase/);
   assert.match(actionSource, /LedgerPurchaseValidationError/);
   assert.match(actionSource, /getStoreEcountPurchaseEditErrors/);
@@ -758,10 +777,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // 이카운트 원본 식별 정보(품목/구분/규격/수량)는 기존 행에서 그대로 가져온다.
   // 따라서 HQ 저장은 ECOUNT 행에 한해 입력값 quantity/원본필드를 그대로 신뢰하지 않는다.
   assert.match(hqActionSource, /const snapshot = isEcountUpload/);
-  assert.match(
-    hqActionSource,
-    /const quantity = isEcountUpload\s*\?\s*decimalToNumber\(existing\.quantity\)/,
-  );
+  assert.match(hqActionSource, /resolveStoredDecimalQuantity/);
   // 적용 단가는 입력값을 그대로 반영한다(본사 단가 보정 허용).
   assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
   assert.match(hqActionSource, /amount:\s*getPurchaseAmount\(/);
@@ -891,6 +907,8 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /sourceType\s*===\s*"ECOUNT_UPLOAD"/);
   assert.match(componentSource, /sourceType:\s*line\.sourceType/);
   assert.match(componentSource, /inputMode="decimal"/);
+  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
+  assert.match(componentSource, /toQuantitySaveInput/);
   assert.match(componentSource, /focusFirstError/);
   assert.doesNotMatch(componentSource, /sanitizeAmount/);
   assert.match(componentSource, /getDraftPurchaseTotal/);

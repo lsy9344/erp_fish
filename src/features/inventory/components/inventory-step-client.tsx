@@ -133,13 +133,27 @@ function parseQuantityInput(value: string) {
     return null;
   }
 
-  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
 
   const parsed = Number(trimmed);
 
   return isValidQuantity(parsed) ? roundQuantity(parsed) : null;
+}
+
+function toQuantitySaveInput(
+  value: string,
+  storedQuantity: number | null | undefined,
+) {
+  const trimmed = value.trim();
+
+  return storedQuantity !== null &&
+    storedQuantity !== undefined &&
+    trimmed === String(storedQuantity) &&
+    !/^\d+(?:\.\d)?$/.test(trimmed)
+    ? null
+    : value;
 }
 
 function hasSensitiveInventoryAmounts(
@@ -597,19 +611,23 @@ export function InventoryStepClient({
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
-        items: items.map((item) => ({
-          productId: item.productId,
-          currentQuantity:
+        items: items.map((item) => {
+          const quantityInput = toQuantitySaveInput(
             currentQuantityRefs.current[item.productId]?.value ??
-            item.currentQuantityInput,
-          quantity:
-            currentQuantityRefs.current[item.productId]?.value ??
-            item.currentQuantityInput,
-          // 행별 "고친 이유"도 함께 보낸다. 차이가 있는 행이면 서버가 이 사유로 조정을 만든다.
-          adjustmentReason:
-            reasonRefs.current[item.productId]?.value ??
-            item.adjustmentReasonInput,
-        })),
+              item.currentQuantityInput,
+            item.currentQuantity,
+          );
+
+          return {
+            productId: item.productId,
+            currentQuantity: quantityInput,
+            quantity: quantityInput,
+            // 행별 "고친 이유"도 함께 보낸다. 차이가 있는 행이면 서버가 이 사유로 조정을 만든다.
+            adjustmentReason:
+              reasonRefs.current[item.productId]?.value ??
+              item.adjustmentReasonInput,
+          };
+        }),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 

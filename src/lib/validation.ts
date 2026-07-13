@@ -22,6 +22,14 @@ export function roundToOneDecimal(value: number) {
   return Object.is(rounded, -0) ? 0 : rounded;
 }
 
+export function resolveStoredDecimalQuantity(
+  id: string,
+  value: number | null,
+  storedQuantityById: ReadonlyMap<string, number>,
+) {
+  return value ?? storedQuantityById.get(id) ?? null;
+}
+
 export function isNonNegativeDecimalInRange(
   value: number,
   max = MAX_VALIDATION_DECIMAL,

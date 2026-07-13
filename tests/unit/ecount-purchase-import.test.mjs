@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -637,8 +638,51 @@ test("rejects ECount rows when amount does not match quantity times unit price",
   );
 });
 
-test("parses ECount purchase rows with decimal quantities up to two places", async () => {
+test("parses ECount purchase rows with decimal quantities up to one place", async () => {
   const { parseEcountPurchaseWorkbook } = await importParser();
+  const workbook = createWorkbook([
+    ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
+    [
+      "일자-No.",
+      "거래처명",
+      "품목명(규격)",
+      "수량",
+      "단가",
+      "공급가액",
+      "부가세",
+      "합계",
+    ],
+    [
+      "2026/06/17 -1",
+      "진수산",
+      "고등어 [28미]",
+      2.2,
+      205000,
+      451000,
+      null,
+      451000,
+    ],
+  ]);
+
+  const result = parseEcountPurchaseWorkbook(workbook, {
+    storeName: "진수산",
+    closingDate: "2026-06-17",
+    validateLedgerScope: true,
+  });
+
+  assert.equal(result.matchedRowCount, 1);
+  assert.equal(result.purchases[0].quantity, "2.2");
+
+  const source = readFileSync(
+    path.join(root, "src", "features", "ledger", "ecount-purchase-import.ts"),
+    "utf8",
+  );
+  assert.match(source, /return roundToOneDecimal\(parsed\);/);
+});
+
+test("rejects ECount purchase quantities past one decimal", async () => {
+  const { parseEcountPurchaseWorkbook, EcountPurchaseImportError } =
+    await importParser();
   const workbook = createWorkbook([
     ["회사명 : 염홍욱 / 2026/06/17  ~ 2026/06/17 "],
     [
@@ -663,14 +707,17 @@ test("parses ECount purchase rows with decimal quantities up to two places", asy
     ],
   ]);
 
-  const result = parseEcountPurchaseWorkbook(workbook, {
-    storeName: "진수산",
-    closingDate: "2026-06-17",
-    validateLedgerScope: true,
-  });
-
-  assert.equal(result.matchedRowCount, 1);
-  assert.equal(result.purchases[0].quantity, "2.28");
+  assert.throws(
+    () =>
+      parseEcountPurchaseWorkbook(workbook, {
+        storeName: "진수산",
+        closingDate: "2026-06-17",
+        validateLedgerScope: true,
+      }),
+    (error) =>
+      error instanceof EcountPurchaseImportError &&
+      error.fieldErrors.file?.[0]?.includes("수량"),
+  );
 });
 
 test("rejects ECount workbooks without item rows to import", async () => {

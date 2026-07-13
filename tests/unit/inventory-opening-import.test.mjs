@@ -229,7 +229,7 @@ test("getNextInventoryLedgerDate rejects non-canonical, nonexistent, and overflo
   }
 });
 
-test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and derives opening months", async () => {
+test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives opening months", async () => {
   const { parseInventoryOpeningWorkbook } =
     await importInventoryOpeningImport();
 
@@ -240,9 +240,9 @@ test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and deriv
       "냉)포크오징어",
       "MA",
       "냉동",
-      2.28,
+      2.2,
       205000,
-      467399.99999999994,
+      451000,
       "",
       "",
       "",
@@ -253,9 +253,9 @@ test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and deriv
       "원문광어",
       "",
       "생물",
-      "0.06",
+      "0.1",
       "29,500",
-      "1,770",
+      "2,950",
       "앱광어",
       "3kg",
       "앱 매핑",
@@ -278,18 +278,25 @@ test("parseInventoryOpeningWorkbook reads the fixed 재고입력 sheet and deriv
     productName: "냉)포크오징어",
     productCategory: "냉동",
     productSpec: "MA",
-    quantity: 2.28,
+    quantity: 2.2,
     unitPrice: 205000,
-    inventoryAmount: 467400,
+    inventoryAmount: 451000,
     memo: "",
   });
   assert.equal(result.rows[1].productName, "앱광어");
   assert.equal(result.rows[1].productSpec, "3kg");
-  assert.equal(result.totalQuantity, 2.34);
-  assert.equal(result.totalInventoryAmount, 469170);
+  assert.equal(result.totalQuantity, 2.3);
+  assert.equal(result.totalInventoryAmount, 453950);
+
+  const source = readFileSync(
+    path.join(root, "src", "features", "inventory", "opening-import.ts"),
+    "utf8",
+  );
+  assert.match(source, /return roundToOneDecimal\(parsed\);/);
+  assert.match(source, /totalQuantity:\s*roundToTwoDecimals\(/);
 });
 
-test("parseInventoryOpeningWorkbook rejects quantities past two decimals", async () => {
+test("parseInventoryOpeningWorkbook rejects quantities past one decimal", async () => {
   const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
     await importInventoryOpeningImport();
 
@@ -300,7 +307,7 @@ test("parseInventoryOpeningWorkbook rejects quantities past two decimals", async
       "냉)포크오징어",
       "MA",
       "냉동",
-      2.285,
+      2.28,
       205000,
       "",
       "",

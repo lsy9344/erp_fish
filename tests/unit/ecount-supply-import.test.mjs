@@ -237,7 +237,7 @@ test("parseEcountSupplyWorkbook flags amount mismatch per-row without throwing",
   );
 });
 
-test("parseEcountSupplyWorkbook preserves decimal quantities up to two places", async () => {
+test("parseEcountSupplyWorkbook preserves decimal quantities up to one place", async () => {
   const { parseEcountSupplyWorkbook } = await importSupplyParser();
 
   const workbook = createWorkbook([
@@ -247,11 +247,11 @@ test("parseEcountSupplyWorkbook preserves decimal quantities up to two places", 
       "2026/06/17 -1",
       "진수산",
       "고등어 [28미]",
-      2.28,
+      2.2,
       205000,
-      467400,
+      451000,
       null,
-      467400,
+      451000,
     ],
     [
       "2026/06/17 -1",
@@ -268,9 +268,41 @@ test("parseEcountSupplyWorkbook preserves decimal quantities up to two places", 
   const result = parseEcountSupplyWorkbook(workbook);
 
   assert.equal(result.matchedRowCount, 2);
-  assert.equal(result.totalQuantity, 2.78);
-  assert.equal(result.lines[0].quantity, 2.28);
-  assert.equal(result.storeGroups[0].totalQuantity, 2.78);
+  assert.equal(result.totalQuantity, 2.7);
+  assert.equal(result.lines[0].quantity, 2.2);
+  assert.equal(result.storeGroups[0].totalQuantity, 2.7);
+
+  const source = readFileSync(
+    path.join(root, "src", "features", "ledger", "ecount-supply-import.ts"),
+    "utf8",
+  );
+  assert.match(source, /return roundToOneDecimal\(parsed\);/);
+});
+
+test("parseEcountSupplyWorkbook rejects quantities past one decimal", async () => {
+  const { parseEcountSupplyWorkbook, EcountSupplyImportError } =
+    await importSupplyParser();
+  const workbook = createWorkbook([
+    ["판매현황"],
+    headerRow,
+    [
+      "2026/06/17 -1",
+      "진수산",
+      "고등어 [28미]",
+      2.28,
+      205000,
+      467400,
+      null,
+      467400,
+    ],
+  ]);
+
+  assert.throws(
+    () => parseEcountSupplyWorkbook(workbook),
+    (error) =>
+      error instanceof EcountSupplyImportError &&
+      error.fieldErrors.file?.[0]?.includes("수량"),
+  );
 });
 
 test("resolveEcountLine reports mapping-required and ready states", async () => {

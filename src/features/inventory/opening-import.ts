@@ -3,6 +3,7 @@ import { inflateRawSync } from "node:zlib";
 
 import {
   isNonNegativeDecimalInRange,
+  roundToOneDecimal,
   roundToTwoDecimals,
 } from "../../lib/validation.ts";
 
@@ -377,7 +378,7 @@ function cellQuantity(
     });
   }
 
-  return roundToTwoDecimals(parsed);
+  return roundToOneDecimal(parsed);
 }
 
 function excelSerialDateToIsoDate(value: number) {

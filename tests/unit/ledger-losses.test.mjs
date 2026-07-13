@@ -128,6 +128,20 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   });
   assert.equal(decimalQuantity.losses[0].quantity, 1.5);
 
+  const unchangedLegacyQuantity = ledgerLossesSchema.parse({
+    ...payload,
+    losses: [{ ...payload.losses[0], id: "loss-1", quantity: null }],
+  });
+  assert.equal(unchangedLegacyQuantity.losses[0].quantity, null);
+
+  assert.equal(
+    ledgerLossesSchema.safeParse({
+      ...payload,
+      losses: [{ ...payload.losses[0], id: "", quantity: null }],
+    }).success,
+    false,
+  );
+
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
@@ -357,6 +371,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
   assert.match(actionSource, /getLossQuantityErrorMessage/);
   assert.match(actionSource, /calculatePlannedPriceLossAmount/);
+  assert.match(actionSource, /resolveStoredDecimalQuantity/);
   assert.match(actionSource, /storeSalesPricePlan\.findMany/);
   assert.match(actionSource, /recoveredAmount:\s*loss\.recoveredAmount/);
   assert.match(actionSource, /normalized\.amount\s*=\s*calculatePlannedPriceLossAmount/);
@@ -388,6 +403,8 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /손실\/폐기\/떨이 입력/);
   assert.match(componentSource, /saveLedgerLosses/);
   assert.match(componentSource, /inputMode="decimal"/);
+  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
+  assert.match(componentSource, /toQuantitySaveInput/);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /기준 초과/);
   // WO-09: 사용자 화면 라벨/문구는 lossTerms 사전을 통해 렌더링한다.
@@ -414,6 +431,14 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /key={item\.clientKey}/);
   assert.match(componentSource, /id:\s*item\.id\s*\|\|\s*undefined/);
   assert.match(componentSource, /<form[\s\S]*손실 항목[\s\S]*type="submit"/);
+
+  const hqActionSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+  assert.match(hqActionSource, /resolveStoredDecimalQuantity/);
 
   const pageSource = readProjectFile(
     "src",

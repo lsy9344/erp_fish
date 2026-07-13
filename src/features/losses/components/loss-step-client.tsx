@@ -122,13 +122,27 @@ function parseNumber(value: string) {
 function parseQuantity(value: string) {
   const trimmed = value.trim();
 
-  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
     return 0;
   }
 
   const parsed = Number(trimmed);
 
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toQuantitySaveInput(
+  value: string,
+  storedQuantity: number | null | undefined,
+) {
+  const trimmed = value.trim();
+
+  return storedQuantity !== null &&
+    storedQuantity !== undefined &&
+    trimmed === String(storedQuantity) &&
+    !/^\d+(?:\.\d)?$/.test(trimmed)
+    ? null
+    : value;
 }
 
 function areLossLinesEqual(left: LossLineState[], right: LossLineState[]) {
@@ -286,7 +300,10 @@ export function LossStepClient({
           productId: productRefs.current[index]?.value ?? item.productId,
           ledgerInputCodeId:
             lossTypeRefs.current[index]?.value ?? item.ledgerInputCodeId,
-          quantity: quantityRefs.current[index]?.value ?? item.quantity,
+          quantity: toQuantitySaveInput(
+            quantityRefs.current[index]?.value ?? item.quantity,
+            data.lossItems.find((loss) => loss.id === item.id)?.quantity,
+          ),
           recoveredAmount:
             recoveredAmountRefs.current[index]?.value ?? item.recoveredAmount,
           reason: reasonRefs.current[index]?.value ?? item.reason,

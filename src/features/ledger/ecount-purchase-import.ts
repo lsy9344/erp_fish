@@ -3,7 +3,7 @@ import { inflateRawSync } from "node:zlib";
 
 import {
   isNonNegativeDecimalInRange,
-  roundToTwoDecimals,
+  roundToOneDecimal,
 } from "../../lib/validation.ts";
 import { classifyProductCategory } from "./ecount-supply-mapping.ts";
 
@@ -300,7 +300,7 @@ function cellQuantity(
     });
   }
 
-  return roundToTwoDecimals(parsed);
+  return roundToOneDecimal(parsed);
 }
 
 function splitProductNameAndSpec(value: string) {

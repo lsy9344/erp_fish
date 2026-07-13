@@ -16,6 +16,7 @@ import {
   type ActionResult,
 } from "~/lib/action-result";
 import { decimalToNumber } from "~/lib/decimal";
+import { resolveStoredDecimalQuantity } from "~/lib/validation";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
@@ -617,6 +618,12 @@ export async function saveHqLedgerPurchases(
         const existingPurchaseItemsById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
         );
+        const storedQuantityById = new Map(
+          beforeLedger.ledgerPurchaseItems.map((item) => [
+            item.id,
+            decimalToNumber(item.quantity),
+          ]),
+        );
         const existingEcountPurchaseIds = new Set(
           beforeLedger.ledgerPurchaseItems
             .filter((item) => item.sourceType === "ECOUNT_UPLOAD")
@@ -836,9 +843,27 @@ export async function saveHqLedgerPurchases(
             ? (existing?.sourceUnitPrice ?? existing?.unitPrice ?? null)
             : (existing?.sourceUnitPrice ?? null);
           // 이카운트 행은 수량도 원본 식별 정보이므로 기존 행에서 가져온다.
+          // 그 외 기존 행의 null은 클라이언트가 손대지 않은 레거시 수량을 뜻하며,
+          // 현재 장부에 같은 id가 있을 때만 DB 값을 보존한다.
           const quantity = isEcountUpload
             ? decimalToNumber(existing.quantity)
-            : purchase.quantity;
+            : resolveStoredDecimalQuantity(
+                purchase.id,
+                purchase.quantity,
+                storedQuantityById,
+              );
+
+          if (quantity === null) {
+            return actionError<LedgerCostStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              {
+                [`purchases.${index}.quantity`]: [
+                  "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+                ],
+              },
+            );
+          }
           const unitPriceChanged = Boolean(
             existing && existing.unitPrice !== purchase.unitPrice,
           );

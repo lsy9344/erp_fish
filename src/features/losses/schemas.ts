@@ -30,6 +30,10 @@ function parseRequiredQuantity(
   context: z.RefinementCtx,
   errorMessage: string,
 ) {
+  if (value === null) {
+    return null;
+  }
+
   return parseRequiredNonNegativeDecimal(value, context, errorMessage);
 }
 
@@ -119,6 +123,14 @@ export const ledgerLossesSchema = ledgerLossesContextSchema
   })
   .superRefine((value, context) => {
     value.losses.forEach((loss, index) => {
+      if (loss.quantity === null && !loss.id) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: quantityError,
+          path: ["losses", index, "quantity"],
+        });
+      }
+
       if (
         typeof loss.quantity !== "number" ||
         typeof loss.recoveredAmount !== "number" ||

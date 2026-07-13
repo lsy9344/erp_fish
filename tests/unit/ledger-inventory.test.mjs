@@ -407,6 +407,33 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
   );
 });
 
+test("stock decimal validation enforces numeric boundaries and resolves only scoped stored quantities", async () => {
+  const validationPath = assertProjectFile("src", "lib", "validation.ts");
+  const {
+    MAX_VALIDATION_DECIMAL,
+    isNonNegativeDecimalInRange,
+    resolveStoredDecimalQuantity,
+  } = await import(pathToFileURL(validationPath).href);
+
+  assert.equal(isNonNegativeDecimalInRange(2.2), true);
+  assert.equal(isNonNegativeDecimalInRange(2.28), false);
+  assert.equal(isNonNegativeDecimalInRange(9_999_999_999.9), true);
+  assert.equal(isNonNegativeDecimalInRange(10_000_000_000), false);
+  assert.equal(MAX_VALIDATION_DECIMAL, 9_999_999_999.9);
+
+  assert.equal(typeof resolveStoredDecimalQuantity, "function");
+  const storedQuantityById = new Map([["stored-row", 2.28]]);
+  assert.equal(
+    resolveStoredDecimalQuantity("stored-row", null, storedQuantityById),
+    2.28,
+  );
+  assert.equal(
+    resolveStoredDecimalQuantity("forged-row", null, storedQuantityById),
+    null,
+  );
+  assert.equal(resolveStoredDecimalQuantity("", 2.2, storedQuantityById), 2.2);
+});
+
 test("inventory calculations expose amount and calculation unavailable states", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -1750,6 +1777,8 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
   assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="decimal"/);
+  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
+  assert.match(componentSource, /toQuantitySaveInput/);
   assert.match(componentSource, /className="h-11 w-24 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(inventoryUiSource, /전일재고 이력/);
