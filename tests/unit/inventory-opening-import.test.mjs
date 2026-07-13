@@ -636,10 +636,40 @@ test("inventory template builders keep their approved quantity precision", () =>
     "utf8",
   );
 
-  assert.match(simpleSource, /type:\s*"custom"/);
-  assert.match(simpleSource, /ROUND\(\$\{firstCell\},2\)=\$\{firstCell\}/);
-  assert.match(simpleSource, /소수점 둘째 자리까지/);
-  assert.match(simpleSource, /numFmt:\s*"#,##0\.00"/);
+  const simpleQuantityValidation = simpleSource.match(
+    /function twoDecimalQuantityValidation\(sheet, range\) \{([\s\S]*?)\r?\n\}/,
+  )?.[1];
+  assert.ok(simpleQuantityValidation);
+  assert.match(simpleQuantityValidation, /type:\s*"custom"/);
+  assert.match(
+    simpleQuantityValidation,
+    /ROUND\(\$\{firstCell\},2\)=\$\{firstCell\}/,
+  );
+  assert.match(
+    simpleQuantityValidation,
+    /error:\s*"0 이상의 수량을 소수점 둘째 자리까지 입력해 주세요\."/,
+  );
+
+  const simpleInventoryColumns = simpleSource.match(
+    /const inventoryColumns = \[([\s\S]*?)\r?\n\];/,
+  )?.[1];
+  const simpleLotColumns = simpleSource.match(
+    /const lotColumns = \[([\s\S]*?)\r?\n\];/,
+  )?.[1];
+  assert.ok(simpleInventoryColumns);
+  assert.ok(simpleLotColumns);
+  assert.match(
+    simpleInventoryColumns,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.00" \}/,
+  );
+  assert.match(
+    simpleLotColumns,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.00" \}/,
+  );
+  assert.match(
+    simpleSource,
+    /\["숫자", "수량은 0 이상 소수점 둘째 자리까지, 단가는 0 이상의 정수로 적어 주세요\. 쉼표는 써도 됩니다\."\]/,
+  );
   assert.match(
     simpleSource,
     /twoDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
@@ -654,9 +684,19 @@ test("inventory template builders keep their approved quantity precision", () =>
     /twoDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
   );
 
-  assert.match(fullSource, /type:\s*"custom"/);
-  assert.match(fullSource, /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/);
-  assert.match(fullSource, /소수점 첫째 자리까지/);
+  const fullQuantityValidation = fullSource.match(
+    /function addOneDecimalQuantityValidation\(sheet, range\) \{([\s\S]*?)\r?\n\}/,
+  )?.[1];
+  assert.ok(fullQuantityValidation);
+  assert.match(fullQuantityValidation, /type:\s*"custom"/);
+  assert.match(
+    fullQuantityValidation,
+    /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/,
+  );
+  assert.match(
+    fullQuantityValidation,
+    /error:\s*"0 이상의 수량을 소수점 첫째 자리까지 입력해 주세요\."/,
+  );
 
   for (const [sheet, quantityRange, wholeNumberRange] of [
     ["invSheet", "H4:K2004", "L4:L2004"],
@@ -677,6 +717,12 @@ test("inventory template builders keep their approved quantity precision", () =>
       ),
     );
   }
-  assert.match(fullSource, /numFmt:\s*"#,##0\.0"/);
-  assert.match(fullSource, /단가·금액은 0 이상의 정수/);
+  assert.match(
+    fullSource,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.0" \}/,
+  );
+  assert.match(
+    fullSource,
+    /\["숫자", "수량은 0 이상 소수점 첫째 자리까지, 단가·금액은 0 이상의 정수로 적어 주세요\. 예: 12\.5, 12000"\]/,
+  );
 });
