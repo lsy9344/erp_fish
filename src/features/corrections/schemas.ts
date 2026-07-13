@@ -200,7 +200,8 @@ export const correctionRecordSchema = z
       value.fieldKey === "workerCount" &&
       value.correctedValue.kind === "quantity" &&
       typeof value.correctedValue.value === "number" &&
-      !Number.isInteger(value.correctedValue.value)
+      (!Number.isInteger(value.correctedValue.value) ||
+        value.correctedValue.value > MAX_CORRECTION_INTEGER)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

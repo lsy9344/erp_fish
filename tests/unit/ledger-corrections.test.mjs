@@ -314,6 +314,19 @@ test("correction schema keeps worker count and money integer-only", async () => 
   assert.equal(integerWorkerCount.success, true);
   assert.equal(integerWorkerCount.data.correctedValue.value, 2);
 
+  const outOfRangeWorkerCount = correctionRecordSchema.safeParse({
+    ...workerInput,
+    correctedValue: {
+      kind: "quantity",
+      value: String(2_147_483_647 + 1),
+    },
+  });
+
+  assert.equal(outOfRangeWorkerCount.success, false);
+  assert.deepEqual(toFieldErrors(outOfRangeWorkerCount.error), {
+    "correctedValue.value": ["근무인원은 0 이상의 정수로 입력해 주세요."],
+  });
+
   const fractionalMoney = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
     targetType: "PAYMENT_FIELD",
