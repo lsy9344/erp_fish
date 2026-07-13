@@ -10,7 +10,10 @@ import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
-import { resolveStoredDecimalQuantity } from "~/lib/validation";
+import {
+  consumeStoredLossQuantity,
+  getLossQuantityIdentity,
+} from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
@@ -297,17 +300,26 @@ export async function saveLedgerLosses(
         before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
       );
       const storedQuantityById = new Map(
-        before.lossItems.map((lossItem) => [lossItem.id, lossItem.quantity]),
+        before.lossItems.map((lossItem) => [
+          lossItem.id,
+          {
+            quantity: lossItem.quantity,
+            identity: getLossQuantityIdentity(lossItem),
+          },
+        ]),
       );
+      const consumedStoredLossIds = new Set<string>();
       const normalizedLosses: NormalizedLossItem[] = [];
 
       for (let index = 0; index < parsed.data.losses.length; index += 1) {
         const loss = parsed.data.losses[index]!;
         const existing = existingById.get(loss.id);
-        const quantity = resolveStoredDecimalQuantity(
+        const quantity = consumeStoredLossQuantity(
           loss.id,
           loss.quantity,
+          loss,
           storedQuantityById,
+          consumedStoredLossIds,
         );
 
         if (quantity === null) {

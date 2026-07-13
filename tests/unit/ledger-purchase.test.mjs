@@ -487,12 +487,16 @@ test("carryover rows: schema discriminates kind; save skips purchase create; GET
     "ledger",
     "actions.ts",
   );
+  assert.match(actionSource, /purchase\.kind !== "carryover"/);
   assert.match(
     actionSource,
-    /const realPurchases = parsed\.data\.purchases\.filter\(/,
+    /parsed\.data\.purchases\s*\.map\(\(purchase, index\)/,
   );
-  assert.match(actionSource, /purchase\.kind !== "carryover"/);
-  assert.match(actionSource, /realPurchases\.map\(\(purchase, index\)/);
+  assert.ok(
+    actionSource.indexOf("consumeStoredPurchaseQuantity(") <
+      actionSource.indexOf('purchase.kind !== "carryover"'),
+    "all incoming existing IDs must be consumed before carryover rows are filtered out",
+  );
   // 계획 저장은 carryover를 포함한 전체 purchases를 받는다(이월 판매가도 저장).
   assert.match(
     actionSource,
@@ -701,7 +705,8 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   );
   assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
-  assert.match(actionSource, /resolveStoredDecimalQuantity/);
+  assert.match(actionSource, /consumeStoredPurchaseQuantity/);
+  assert.match(actionSource, /getPurchaseQuantityIdentity/);
   assert.match(actionSource, /isExistingSnapshotPurchase/);
   assert.match(actionSource, /LedgerPurchaseValidationError/);
   assert.match(actionSource, /getStoreEcountPurchaseEditErrors/);
@@ -777,10 +782,17 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // 이카운트 원본 식별 정보(품목/구분/규격/수량)는 기존 행에서 그대로 가져온다.
   // 따라서 HQ 저장은 ECOUNT 행에 한해 입력값 quantity/원본필드를 그대로 신뢰하지 않는다.
   assert.match(hqActionSource, /const snapshot = isEcountUpload/);
-  assert.match(hqActionSource, /resolveStoredDecimalQuantity/);
+  assert.match(hqActionSource, /consumeStoredPurchaseQuantity/);
+  assert.match(hqActionSource, /validatePurchaseAmount/);
+  assert.match(hqActionSource, /getPurchaseQuantityIdentity/);
   // 적용 단가는 입력값을 그대로 반영한다(본사 단가 보정 허용).
   assert.match(hqActionSource, /unitPrice:\s*purchase\.unitPrice/);
-  assert.match(hqActionSource, /amount:\s*getPurchaseAmount\(/);
+  assert.match(
+    hqActionSource,
+    /const amount = calculateInventoryAmount\(\s*resolvedQuantity,\s*purchase\.unitPrice,\s*\);[\s\S]*validatePurchaseAmount\(index, amount\)[\s\S]*amountResult\.fieldErrors/,
+    "HQ must report a field error when a stored legacy quantity makes the edited amount overflow",
+  );
+  assert.match(hqActionSource, /amount,\s*referenceInfo:/);
   assert.match(hqActionSource, /action:\s*"ledger\.hq\.purchases\.saved"/);
   // WO(2026-06-24) 검토 #4: 적용 단가 보정 감사 로그가 원본/적용 단가를 구분해 남는다.
   assert.match(

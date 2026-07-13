@@ -371,7 +371,8 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /calculateSystemInventoryQuantity/);
   assert.match(actionSource, /getLossQuantityErrorMessage/);
   assert.match(actionSource, /calculatePlannedPriceLossAmount/);
-  assert.match(actionSource, /resolveStoredDecimalQuantity/);
+  assert.match(actionSource, /consumeStoredLossQuantity/);
+  assert.match(actionSource, /getLossQuantityIdentity/);
   assert.match(actionSource, /storeSalesPricePlan\.findMany/);
   assert.match(actionSource, /recoveredAmount:\s*loss\.recoveredAmount/);
   assert.match(actionSource, /normalized\.amount\s*=\s*calculatePlannedPriceLossAmount/);
@@ -438,7 +439,8 @@ test("ledger loss query action and UI contracts are wired", () => {
     "losses",
     "hq-edit-actions.ts",
   );
-  assert.match(hqActionSource, /resolveStoredDecimalQuantity/);
+  assert.match(hqActionSource, /consumeStoredLossQuantity/);
+  assert.match(hqActionSource, /getLossQuantityIdentity/);
 
   const pageSource = readProjectFile(
     "src",

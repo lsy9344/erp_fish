@@ -19,7 +19,11 @@ import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import { decimalToNumber } from "~/lib/decimal";
-import { resolveStoredDecimalQuantity } from "~/lib/validation";
+import {
+  consumeStoredPurchaseQuantity,
+  getPurchaseQuantityIdentity,
+  validatePurchaseAmount,
+} from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
   revalidateStoreEntryPaths,
@@ -429,18 +433,6 @@ function ledgerPurchaseValidationError(
   return new LedgerPurchaseValidationError({
     [`purchases.${index}.${field}`]: [message],
   });
-}
-
-function getPurchaseAmount(quantity: number, unitPrice: number) {
-  const amount = calculateInventoryAmount(quantity, unitPrice);
-
-  if (amount === null) {
-    throw new LedgerPurchaseValidationError({
-      purchases: ["매입금액은 저장 가능한 범위 이하여야 합니다."],
-    });
-  }
-
-  return amount;
 }
 
 async function validateActiveExpenseCodesInTx(
@@ -1138,32 +1130,43 @@ export async function saveLedgerPurchases(
       const storedQuantityById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [
           item.id,
-          decimalToNumber(item.quantity),
+          {
+            quantity: decimalToNumber(item.quantity),
+            identity: getPurchaseQuantityIdentity(item),
+          },
         ]),
       );
+      const consumedStoredPurchaseIds = new Set<string>();
 
-      // carryover 행(전일 이월 품목)은 매입 행이 아니라 판매 예정가만 받는 행이다.
-      // ledgerPurchaseItem 생성/검증에서는 제외하고, 판매 예정가 저장에만 포함한다.
-      const realPurchases = parsed.data.purchases.filter(
-        (purchase) => purchase.kind !== "carryover",
-      );
-      const resolvedPurchases = realPurchases.map((purchase, index) => {
-        const quantity = resolveStoredDecimalQuantity(
-          purchase.id,
-          purchase.quantity,
-          storedQuantityById,
-        );
+      // carryover 행도 기존 ID 중복/레거시 수량 검증은 거친 뒤 매입 저장에서만 제외한다.
+      const resolvedPurchases = parsed.data.purchases
+        .map((purchase, index) => {
+          const quantity = consumeStoredPurchaseQuantity(
+            purchase.id,
+            purchase.quantity,
+            purchase,
+            storedQuantityById,
+            consumedStoredPurchaseIds,
+          );
 
-        if (quantity === null) {
-          throw new LedgerPurchaseValidationError({
-            [`purchases.${index}.quantity`]: [
-              "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
-            ],
-          });
-        }
+          if (quantity === null) {
+            throw new LedgerPurchaseValidationError({
+              [`purchases.${index}.quantity`]: [
+                "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+              ],
+            });
+          }
 
-        return { ...purchase, quantity };
-      });
+          const amount = calculateInventoryAmount(quantity, purchase.unitPrice);
+          const amountResult = validatePurchaseAmount(index, amount);
+
+          if (!amountResult.ok) {
+            throw new LedgerPurchaseValidationError(amountResult.fieldErrors);
+          }
+
+          return { ...purchase, quantity, amount: amountResult.amount };
+        })
+        .filter((purchase) => purchase.kind !== "carryover");
 
       const ecountPurchaseEditErrors = getStoreEcountPurchaseEditErrors(
         beforeLedger.ledgerPurchaseItems.map((item) => ({
@@ -1366,7 +1369,7 @@ export async function saveLedgerPurchases(
               productSpec: snapshot.productSpec,
               unitPrice,
               quantity,
-              amount: getPurchaseAmount(quantity, unitPrice),
+              amount: purchase.amount,
               referenceInfo: snapshot.referenceInfo,
               ecountImportLineId,
               sourceUnitPrice,

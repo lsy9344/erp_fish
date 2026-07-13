@@ -16,7 +16,11 @@ import {
   type ActionResult,
 } from "~/lib/action-result";
 import { decimalToNumber } from "~/lib/decimal";
-import { resolveStoredDecimalQuantity } from "~/lib/validation";
+import {
+  consumeStoredPurchaseQuantity,
+  getPurchaseQuantityIdentity,
+  validatePurchaseAmount,
+} from "~/lib/validation";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireLedgerHqEditAccess,
@@ -367,16 +371,6 @@ function isExistingSnapshotPurchase(
   );
 }
 
-function getPurchaseAmount(quantity: number, unitPrice: number) {
-  const amount = calculateInventoryAmount(quantity, unitPrice);
-
-  if (amount === null) {
-    throw new Error("PURCHASE_AMOUNT_UNAVAILABLE");
-  }
-
-  return amount;
-}
-
 async function getLedgerByIdInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
@@ -621,9 +615,13 @@ export async function saveHqLedgerPurchases(
         const storedQuantityById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [
             item.id,
-            decimalToNumber(item.quantity),
+            {
+              quantity: decimalToNumber(item.quantity),
+              identity: getPurchaseQuantityIdentity(item),
+            },
           ]),
         );
+        const consumedStoredPurchaseIds = new Set<string>();
         const existingEcountPurchaseIds = new Set(
           beforeLedger.ledgerPurchaseItems
             .filter((item) => item.sourceType === "ECOUNT_UPLOAD")
@@ -847,13 +845,16 @@ export async function saveHqLedgerPurchases(
           // 현재 장부에 같은 id가 있을 때만 DB 값을 보존한다.
           const quantity = isEcountUpload
             ? decimalToNumber(existing.quantity)
-            : resolveStoredDecimalQuantity(
-                purchase.id,
-                purchase.quantity,
-                storedQuantityById,
-              );
+            : purchase.quantity;
+          const resolvedQuantity = consumeStoredPurchaseQuantity(
+            purchase.id,
+            isEcountUpload ? null : quantity,
+            purchase,
+            storedQuantityById,
+            consumedStoredPurchaseIds,
+          );
 
-          if (quantity === null) {
+          if (resolvedQuantity === null) {
             return actionError<LedgerCostStepData>(
               "VALIDATION_ERROR",
               "입력값을 확인해 주세요.",
@@ -862,6 +863,19 @@ export async function saveHqLedgerPurchases(
                   "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
                 ],
               },
+            );
+          }
+          const amount = calculateInventoryAmount(
+            resolvedQuantity,
+            purchase.unitPrice,
+          );
+          const amountResult = validatePurchaseAmount(index, amount);
+
+          if (!amountResult.ok) {
+            return actionError<LedgerCostStepData>(
+              "VALIDATION_ERROR",
+              "입력값을 확인해 주세요.",
+              amountResult.fieldErrors,
             );
           }
           const unitPriceChanged = Boolean(
@@ -903,8 +917,8 @@ export async function saveHqLedgerPurchases(
             productCategory: snapshot.productCategory,
             productSpec: snapshot.productSpec,
             unitPrice: purchase.unitPrice,
-            quantity,
-            amount: getPurchaseAmount(quantity, purchase.unitPrice),
+            quantity: resolvedQuantity,
+            amount: amountResult.amount,
             referenceInfo: snapshot.referenceInfo,
             ecountImportLineId,
             sourceUnitPrice,

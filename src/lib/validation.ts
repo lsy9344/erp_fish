@@ -30,6 +30,118 @@ export function resolveStoredDecimalQuantity(
   return value ?? storedQuantityById.get(id) ?? null;
 }
 
+type StoredDecimalQuantity = {
+  quantity: number;
+  identity: string;
+};
+
+export function consumeStoredDecimalQuantity(
+  id: string,
+  value: number | null,
+  identity: string,
+  storedQuantityById: ReadonlyMap<string, StoredDecimalQuantity>,
+  consumedStoredIds: Set<string>,
+) {
+  const stored = storedQuantityById.get(id);
+
+  if (!stored) {
+    return value;
+  }
+
+  if (consumedStoredIds.has(id)) {
+    return null;
+  }
+
+  consumedStoredIds.add(id);
+
+  if (value !== null) {
+    return value;
+  }
+
+  return stored.identity === identity ? stored.quantity : null;
+}
+
+type PurchaseQuantityIdentityInput = {
+  productId: string | null;
+  purchaseStandardId: string | null;
+  sourceType: string;
+  productName: string;
+  productCategory: string;
+  productSpec: string;
+  referenceInfo: string | null;
+};
+
+export function getPurchaseQuantityIdentity(
+  purchase: PurchaseQuantityIdentityInput,
+) {
+  return JSON.stringify([
+    purchase.productId,
+    purchase.purchaseStandardId,
+    purchase.sourceType,
+    purchase.productName,
+    purchase.productCategory,
+    purchase.productSpec,
+    purchase.referenceInfo,
+  ]);
+}
+
+type LossQuantityIdentityInput = {
+  productId: string;
+  ledgerInputCodeId: string;
+};
+
+export function getLossQuantityIdentity(loss: LossQuantityIdentityInput) {
+  return JSON.stringify([loss.productId, loss.ledgerInputCodeId]);
+}
+
+export function consumeStoredPurchaseQuantity(
+  id: string,
+  value: number | null,
+  purchase: PurchaseQuantityIdentityInput,
+  storedQuantityById: ReadonlyMap<string, StoredDecimalQuantity>,
+  consumedStoredIds: Set<string>,
+) {
+  return consumeStoredDecimalQuantity(
+    id,
+    value,
+    getPurchaseQuantityIdentity(purchase),
+    storedQuantityById,
+    consumedStoredIds,
+  );
+}
+
+export function consumeStoredLossQuantity(
+  id: string,
+  value: number | null,
+  loss: LossQuantityIdentityInput,
+  storedQuantityById: ReadonlyMap<string, StoredDecimalQuantity>,
+  consumedStoredIds: Set<string>,
+) {
+  return consumeStoredDecimalQuantity(
+    id,
+    value,
+    getLossQuantityIdentity(loss),
+    storedQuantityById,
+    consumedStoredIds,
+  );
+}
+
+export function validatePurchaseAmount(
+  index: number,
+  amount: number | null,
+) {
+  return amount === null
+    ? {
+        ok: false as const,
+        fieldErrors: {
+          [`purchases.${index}.quantity`]: [
+            "매입금액은 저장 가능한 범위 이하여야 합니다.",
+          ],
+        },
+      }
+    : { ok: true as const, amount };
+}
+
 export function isNonNegativeDecimalInRange(
   value: number,
   max = MAX_VALIDATION_DECIMAL,

@@ -164,6 +164,189 @@ test("validation helper preserves dotted field paths for nested step errors", as
   });
 });
 
+test("stored decimal quantity resolution requires matching identity and consumes each row once", async () => {
+  const validationPath = assertProjectFile("src", "lib", "validation.ts");
+  const inventoryCalculationPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "inventory.ts",
+  );
+  const {
+    consumeStoredPurchaseQuantity,
+    consumeStoredLossQuantity,
+    getLossQuantityIdentity,
+    getPurchaseQuantityIdentity,
+    validatePurchaseAmount,
+  } = await import(pathToFileURL(validationPath).href);
+  const { calculateInventoryAmount } = await import(
+    pathToFileURL(inventoryCalculationPath).href
+  );
+  const storedPurchase = {
+    id: "purchase-1",
+    kind: "purchase",
+    productId: "product-1",
+    purchaseStandardId: "standard-1",
+    sourceType: "MANUAL",
+    productName: "광어",
+    productCategory: "생물",
+    productSpec: "1kg",
+    referenceInfo: "거래처 A",
+    unitPrice: 10_000,
+    plannedUnitPrice: null,
+    quantity: 2.28,
+  };
+  const storedPurchases = new Map([
+    [
+      "purchase-1",
+      {
+        quantity: storedPurchase.quantity,
+        identity: getPurchaseQuantityIdentity(storedPurchase),
+      },
+    ],
+  ]);
+  const unrelatedPurchaseEdit = { ...storedPurchase, unitPrice: 11_000 };
+
+  const validEditIds = new Set();
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "purchase-1",
+      null,
+      { ...unrelatedPurchaseEdit, kind: "carryover" },
+      storedPurchases,
+      validEditIds,
+    ),
+    2.28,
+    "a legacy sentinel may preserve the stored quantity when stable identity is unchanged",
+  );
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "purchase-1",
+      null,
+      unrelatedPurchaseEdit,
+      storedPurchases,
+      validEditIds,
+    ),
+    null,
+    "the same stored row cannot be reused twice",
+  );
+
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "purchase-1",
+      null,
+      { ...unrelatedPurchaseEdit, productId: "product-2" },
+      storedPurchases,
+      new Set(),
+    ),
+    null,
+    "a legacy sentinel cannot be paired with changed identity fields",
+  );
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "foreign-purchase",
+      null,
+      unrelatedPurchaseEdit,
+      storedPurchases,
+      new Set(),
+    ),
+    null,
+    "a missing or foreign stored row stays rejected",
+  );
+
+  const explicitEditIds = new Set();
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "purchase-1",
+      1.5,
+      { ...unrelatedPurchaseEdit, productId: "product-2" },
+      storedPurchases,
+      explicitEditIds,
+    ),
+    1.5,
+    "an explicit valid quantity does not need legacy identity recovery",
+  );
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "purchase-1",
+      1.6,
+      { ...unrelatedPurchaseEdit, productId: "product-2" },
+      storedPurchases,
+      explicitEditIds,
+    ),
+    null,
+    "duplicate existing IDs are rejected even when both quantities are explicit",
+  );
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "new-purchase",
+      1.2,
+      { ...unrelatedPurchaseEdit, id: "new-purchase" },
+      storedPurchases,
+      new Set(),
+    ),
+    1.2,
+    "a new row with an explicit quantity remains valid",
+  );
+
+  const storedLoss = {
+    id: "loss-1",
+    productId: "product-1",
+    ledgerInputCodeId: "loss-type-1",
+    quantity: 2.28,
+    recoveredAmount: 0,
+    reason: "기존 사유",
+  };
+  const storedLosses = new Map([
+    [
+      storedLoss.id,
+      {
+        quantity: storedLoss.quantity,
+        identity: getLossQuantityIdentity(storedLoss),
+      },
+    ],
+  ]);
+  assert.equal(
+    consumeStoredLossQuantity(
+      storedLoss.id,
+      null,
+      { ...storedLoss, recoveredAmount: 1_000, reason: "수정 사유" },
+      storedLosses,
+      new Set(),
+    ),
+    2.28,
+    "loss recovery preserves a legacy quantity across unrelated edits",
+  );
+  assert.equal(
+    consumeStoredLossQuantity(
+      storedLoss.id,
+      null,
+      { ...storedLoss, ledgerInputCodeId: "loss-type-2" },
+      storedLosses,
+      new Set(),
+    ),
+    null,
+    "loss recovery rejects changed product/type identity",
+  );
+
+  const overflowAmountResult = validatePurchaseAmount(
+    4,
+    calculateInventoryAmount(2.28, 2_147_483_647),
+  );
+  assert.deepEqual(overflowAmountResult, {
+    ok: false,
+    fieldErrors: {
+      "purchases.4.quantity": [
+        "매입금액은 저장 가능한 범위 이하여야 합니다.",
+      ],
+    },
+  });
+  assert.deepEqual(
+    validatePurchaseAmount(4, calculateInventoryAmount(1.2, 10_000)),
+    { ok: true, amount: 12_000 },
+  );
+});
+
 test("store save actions authorize store access before detailed field validation", () => {
   const ledgerActionSource = readProjectFile(
     "src",

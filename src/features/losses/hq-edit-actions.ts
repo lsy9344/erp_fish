@@ -29,8 +29,9 @@ import {
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
 import { db } from "~/server/db";
 import {
+  consumeStoredLossQuantity,
+  getLossQuantityIdentity,
   parseRequiredNonNegativeDecimal,
-  resolveStoredDecimalQuantity,
 } from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
@@ -471,17 +472,26 @@ export async function saveHqLedgerLosses(
           before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
         );
         const storedQuantityById = new Map(
-          before.lossItems.map((lossItem) => [lossItem.id, lossItem.quantity]),
+          before.lossItems.map((lossItem) => [
+            lossItem.id,
+            {
+              quantity: lossItem.quantity,
+              identity: getLossQuantityIdentity(lossItem),
+            },
+          ]),
         );
+        const consumedStoredLossIds = new Set<string>();
         const normalizedLosses: NormalizedLossItem[] = [];
 
         for (let index = 0; index < parsed.data.losses.length; index += 1) {
           const loss = parsed.data.losses[index]!;
           const existing = existingById.get(loss.id);
-          const quantity = resolveStoredDecimalQuantity(
+          const quantity = consumeStoredLossQuantity(
             loss.id,
             loss.quantity,
+            loss,
             storedQuantityById,
+            consumedStoredLossIds,
           );
 
           if (quantity === null) {
