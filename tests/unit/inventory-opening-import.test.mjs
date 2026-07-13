@@ -316,12 +316,38 @@ test("parseInventoryOpeningWorkbook reads up to two-decimal quantities and deriv
       "",
       "",
     ],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "우럭",
+      "1kg",
+      "생물",
+      0.2,
+      10000,
+      2000,
+      "",
+      "",
+      "",
+    ],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "도미",
+      "1kg",
+      "생물",
+      0,
+      10000,
+      0,
+      "",
+      "",
+      "",
+    ],
   ]);
 
   const result = parseInventoryOpeningWorkbook(workbook);
 
   assert.equal(result.sheetName, "재고입력");
-  assert.equal(result.rows.length, 3);
+  assert.equal(result.rows.length, 5);
   assert.deepEqual(result.yearMonths, ["2026-07"]);
   assert.deepEqual(result.rows[0], {
     rowNumber: 4,
@@ -342,10 +368,10 @@ test("parseInventoryOpeningWorkbook reads up to two-decimal quantities and deriv
   assert.equal(result.rows[1].productSpec, "3kg");
   assert.deepEqual(
     result.rows.map((row) => row.quantity),
-    [2.2, 0.62, 0.71],
+    [2.2, 0.62, 0.71, 0.2, 0],
   );
-  assert.equal(result.totalQuantity, 3.53);
-  assert.equal(result.totalInventoryAmount, 476390);
+  assert.equal(result.totalQuantity, 3.73);
+  assert.equal(result.totalInventoryAmount, 478390);
 
   const source = readFileSync(
     path.join(root, "src", "features", "inventory", "opening-import.ts"),
