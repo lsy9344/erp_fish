@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const MAX_VALIDATION_INTEGER = 2_147_483_647;
-export const MAX_VALIDATION_DECIMAL = 9_999_999_999.99;
+export const MAX_VALIDATION_DECIMAL = 9_999_999_999.9;
 
 export function isNonNegativeIntegerInRange(
   value: number,
@@ -16,6 +16,12 @@ export function roundToTwoDecimals(value: number) {
   return Object.is(rounded, -0) ? 0 : rounded;
 }
 
+export function roundToOneDecimal(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 export function isNonNegativeDecimalInRange(
   value: number,
   max = MAX_VALIDATION_DECIMAL,
@@ -24,9 +30,11 @@ export function isNonNegativeDecimalInRange(
     return false;
   }
 
-  const scaled = value * 100;
+  const scaled = value * 10;
+  const tolerance =
+    Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
 
-  return Math.abs(scaled - Math.round(scaled)) < 1e-9;
+  return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }
 
 export function parseRequiredNonNegativeInteger(
@@ -66,17 +74,17 @@ export function parseRequiredNonNegativeDecimal(
   max = MAX_VALIDATION_DECIMAL,
 ) {
   if (typeof value === "number" && isNonNegativeDecimalInRange(value, max)) {
-    return roundToTwoDecimals(value);
+    return roundToOneDecimal(value);
   }
 
   if (typeof value === "string") {
     const trimmed = value.trim();
 
-    if (/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+    if (/^\d+(?:\.\d)?$/.test(trimmed)) {
       const parsed = Number(trimmed);
 
       if (isNonNegativeDecimalInRange(parsed, max)) {
-        return roundToTwoDecimals(parsed);
+        return roundToOneDecimal(parsed);
       }
     }
   }

@@ -21,7 +21,7 @@ const purchaseProductCategoryError = "구분을 입력해 주세요.";
 const purchaseProductSpecError = "규격을 입력해 주세요.";
 const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.";
 const purchaseQuantityError =
-  "수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+  "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
 const plannedUnitPriceError =
   "오늘 팔 가격(예상)은 0원 이상의 정수여야 합니다.";

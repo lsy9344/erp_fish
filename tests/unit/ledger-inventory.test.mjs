@@ -300,10 +300,10 @@ test("inventory schema validates current inventory and quantity separately", asy
   const parsedDecimal = ledgerInventorySchema.parse({
     ...payload,
     items: [
-      { productId: "product-1", currentQuantity: "2.28", quantity: "1.5" },
+      { productId: "product-1", currentQuantity: "2.2", quantity: "1.5" },
     ],
   });
-  assert.equal(parsedDecimal.items[0].currentQuantity, 2.28);
+  assert.equal(parsedDecimal.items[0].currentQuantity, 2.2);
   assert.equal(parsedDecimal.items[0].quantity, 1.5);
 
   const parsedBlank = ledgerInventorySchema.parse({
@@ -313,7 +313,7 @@ test("inventory schema validates current inventory and quantity separately", asy
   assert.equal(parsedBlank.items[0].currentQuantity, null);
   assert.equal(parsedBlank.items[0].quantity, null);
 
-  for (const value of [-1, "2.285", "1,000"]) {
+  for (const value of [-1, "2.28", "1,000"]) {
     const parsed = ledgerInventorySchema.safeParse({
       ...payload,
       items: [
@@ -322,6 +322,10 @@ test("inventory schema validates current inventory and quantity separately", asy
     });
 
     assert.equal(parsed.success, false);
+    assert.equal(
+      parsed.error.issues[0].message,
+      "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+    );
   }
 
   const invalidQuantity = ledgerInventorySchema.safeParse({
@@ -375,16 +379,20 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
 
   const decimal = ledgerInventoryAdjustmentSchema.parse({
     ...payload,
-    actualQuantity: "2.28",
+    actualQuantity: "1.5",
   });
-  assert.equal(decimal.actualQuantity, 2.28);
+  assert.equal(decimal.actualQuantity, 1.5);
 
-  for (const actualQuantity of [-1, "2.285", "1,000", ""]) {
+  for (const actualQuantity of [-1, "2.28", "1,000", ""]) {
     const invalid = ledgerInventoryAdjustmentSchema.safeParse({
       ...payload,
       actualQuantity,
     });
     assert.equal(invalid.success, false);
+    assert.equal(
+      invalid.error.issues[0].message,
+      "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+    );
   }
 
   assert.equal(

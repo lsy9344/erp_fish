@@ -106,7 +106,7 @@ function parseQuantity(value: string) {
     return 0;
   }
 
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
     return 0;
   }
 

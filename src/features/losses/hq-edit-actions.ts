@@ -117,7 +117,7 @@ const hqLedgerLossItemSchema = z.object({
       parseRequiredNonNegativeDecimal(
         value,
         context,
-        "수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
+        "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
       ),
     ),
   recoveredAmount: z

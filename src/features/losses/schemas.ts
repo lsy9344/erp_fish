@@ -12,7 +12,7 @@ import { recoveredAmountError } from "./amount.ts";
 const productError = "품목을 선택해 주세요.";
 const lossTypeError = "손실 유형을 선택해 주세요.";
 const quantityError =
-  "수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+  "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const reasonError = "사유/특이사항을 입력해 주세요.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";

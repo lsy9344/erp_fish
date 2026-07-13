@@ -122,7 +122,7 @@ function parseNumber(value: string) {
 function parseQuantity(value: string) {
   const trimmed = value.trim();
 
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
     return 0;
   }
 

@@ -8,9 +8,9 @@ import {
 
 const productError = "품목을 확인해 주세요.";
 const inventoryQuantityError =
-  "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+  "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const actualQuantityError =
-  "실제 재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+  "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 

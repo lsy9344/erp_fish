@@ -138,7 +138,7 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
-      losses: [{ ...payload.losses[0], quantity: "1.555" }],
+      losses: [{ ...payload.losses[0], quantity: "1.55" }],
     }).success,
     false,
   );

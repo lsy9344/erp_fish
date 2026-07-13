@@ -268,18 +268,18 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
 
   const decimalQuantity = ledgerPurchaseSchema.parse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], quantity: "2.28" }],
+    purchases: [{ ...basePayload.purchases[0], quantity: "2.2" }],
   });
-  assert.equal(decimalQuantity.purchases[0].quantity, 2.28);
+  assert.equal(decimalQuantity.purchases[0].quantity, 2.2);
 
   const tooManyDecimalPlaces = ledgerPurchaseSchema.safeParse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], quantity: "2.285" }],
+    purchases: [{ ...basePayload.purchases[0], quantity: "2.28" }],
   });
   assert.equal(tooManyDecimalPlaces.success, false);
   assert.deepEqual(
     tooManyDecimalPlaces.error.flatten().fieldErrors.purchases,
-    ["수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다."],
+    ["수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다."],
   );
 
   const formattedPrice = ledgerPurchaseSchema.safeParse({
