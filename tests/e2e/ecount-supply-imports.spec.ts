@@ -297,10 +297,21 @@ async function seedTargetInventoryLedger(input: {
   const inventoryDate = getPreviousKstDateString();
   const closingDate = new Date(`${inventoryDate}T00:00:00.000Z`);
   closingDate.setUTCDate(closingDate.getUTCDate() + 1);
-  const ledger = await prisma.dailyLedger.create({
-    data: {
+  const ledger = await prisma.dailyLedger.upsert({
+    where: {
+      storeId_closingDate: {
+        storeId: input.storeId,
+        closingDate,
+      },
+    },
+    create: {
       storeId: input.storeId,
       closingDate,
+      workMemo: `${CONFLICT_INVENTORY_LEDGER_MARKER} ${input.product.id}`,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    update: {
       workMemo: `${CONFLICT_INVENTORY_LEDGER_MARKER} ${input.product.id}`,
       createdById: actor.id,
       updatedById: actor.id,
