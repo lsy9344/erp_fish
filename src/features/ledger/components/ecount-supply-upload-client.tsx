@@ -13,7 +13,7 @@ import {
 import { previewEcountSupplyUpload } from "~/features/ledger/ecount-supply-actions";
 import type { EcountImportBatchListItem } from "~/features/ledger/ecount-supply-queries";
 import type { FieldErrors } from "~/lib/action-result";
-import { formatQuantityValue } from "~/lib/format";
+import { formatQuantityValue, formatShortKstDateTime } from "~/lib/format";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
@@ -37,18 +37,6 @@ function formatKrw(value: number | null) {
   }
 
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
 }
 
 function statusBadgeVariant(status: string) {
@@ -333,7 +321,9 @@ export function EcountSupplyUploadClient({
                     {formatKrw(batch.totalSupplyAmount)}
                   </TableCell>
                   <TableCell>{batch.uploadedByName ?? "-"}</TableCell>
-                  <TableCell>{formatDateTime(batch.createdAt)}</TableCell>
+                  <TableCell>
+                    {formatShortKstDateTime(batch.createdAt)}
+                  </TableCell>
                 </TableRow>
               ))}
               {batches.length === 0 ? (

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
+import { formatKstDateTime } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
 type LedgerSaveStatusProps = {
@@ -20,14 +21,6 @@ type LedgerSaveStatusProps = {
   onRetry?: () => void;
   retryDisabled?: boolean;
 };
-
-function formatSavedAt(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
-}
 
 function formatAuthorDisplayName(value?: string | null) {
   const displayName = value?.trim();
@@ -84,7 +77,7 @@ export function LedgerSaveStatus({
             </span>
           </p>
           <p className="text-muted-foreground text-sm break-words">
-            마지막 저장: {formatSavedAt(updatedAt)}
+            마지막 저장: {formatKstDateTime(updatedAt)}
           </p>
           <p className="text-muted-foreground text-sm break-words">
             작성자 표시명: {formatAuthorDisplayName(authorDisplayName)}

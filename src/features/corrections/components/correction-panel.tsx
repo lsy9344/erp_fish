@@ -20,6 +20,7 @@ import type {
   CorrectionTargetOption,
 } from "~/features/corrections/types";
 import type { FieldErrors } from "~/lib/action-result";
+import { formatShortKstDateTime } from "~/lib/format";
 
 type CorrectionPanelProps = {
   ledgerId: string;
@@ -41,14 +42,6 @@ function formatCorrectionValue(value: unknown) {
       : "-";
 
   return label ? `${label}: ${displayValue}` : displayValue;
-}
-
-function formatCreatedAt(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
 }
 
 function getCorrectionInputMode(target: CorrectionTargetOption | null) {
@@ -269,7 +262,7 @@ export function CorrectionPanel({
                 </TableCell>
                 <TableCell>{record.reason}</TableCell>
                 <TableCell>
-                  {formatCreatedAt(record.createdAt)} ·{" "}
+                  {formatShortKstDateTime(record.createdAt)} ·{" "}
                   {record.createdBy.name ?? record.createdBy.email ?? "본사"}
                 </TableCell>
               </TableRow>
