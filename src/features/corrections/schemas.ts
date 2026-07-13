@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { parseRequiredNonNegativeDecimal } from "../../lib/validation.ts";
+
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 
 const correctionTargetTypes = [
@@ -18,6 +20,8 @@ const unsupportedPurchaseRowCorrectionMessage =
   "매입 행 정정은 아직 지원하지 않습니다. 리포트 반영 경로가 준비된 뒤 사용해 주세요.";
 const unsupportedInventoryAmountCorrectionMessage =
   "재고 금액 정정은 아직 지원하지 않습니다. 수량 정정으로 반영해 주세요.";
+const correctionQuantityError =
+  "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.";
 
 function parseNumericCorrectionValue(value: unknown) {
   if (
@@ -111,7 +115,25 @@ export const correctionValueSchema = z
       };
     }
 
-    const parsed = parseNumericCorrectionValue(value.value);
+    const parsed =
+      value.kind === "quantity"
+        ? parseRequiredNonNegativeDecimal(
+            value.value,
+            {
+              addIssue: (issue) =>
+                context.addIssue({
+                  ...issue,
+                  path: ["value", ...(issue.path ?? [])],
+                }),
+              path: [...context.path, "value"],
+            },
+            correctionQuantityError,
+          )
+        : parseNumericCorrectionValue(value.value);
+
+    if (parsed === z.NEVER) {
+      return z.NEVER;
+    }
 
     if (parsed === null) {
       context.addIssue({
@@ -170,6 +192,20 @@ export const correctionRecordSchema = z
         code: z.ZodIssueCode.custom,
         message: unsupportedInventoryAmountCorrectionMessage,
         path: ["fieldKey"],
+      });
+    }
+
+    if (
+      value.targetType === "LEDGER_FIELD" &&
+      value.fieldKey === "workerCount" &&
+      value.correctedValue.kind === "quantity" &&
+      typeof value.correctedValue.value === "number" &&
+      !Number.isInteger(value.correctedValue.value)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "근무인원은 0 이상의 정수로 입력해 주세요.",
+        path: ["correctedValue", "value"],
       });
     }
   });

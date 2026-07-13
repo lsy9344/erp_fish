@@ -196,7 +196,7 @@ test("ledger summary falls back when FIFO lot rows are empty", async () => {
   assert.deepEqual(summary.inventoryAmount, { value: 8_000, status: "ok" });
 });
 
-test("inventory corrections discard stale FIFO amounts", async () => {
+test("one-decimal inventory corrections discard stale FIFO amounts and recalculate inventory", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -246,17 +246,138 @@ test("inventory corrections discard stale FIFO amounts", async () => {
         targetType: "INVENTORY_ROW",
         targetId: "inventory-1",
         fieldKey: "currentQuantity",
-        latestAppliedValue: { kind: "quantity", value: 4 },
+        latestAppliedValue: { kind: "quantity", value: 4.5 },
       },
     ],
   });
 
   assert.equal(overlay.correctionState.appliedCorrectionCount, 1);
+  assert.deepEqual(overlay.reviewInput.inventoryItems[0], {
+    id: "inventory-1",
+    previousQuantity: 10,
+    purchasedQuantity: 0,
+    currentQuantity: 4.5,
+    quantity: 4.5,
+    unitPrice: 100,
+    inventoryAmount: 800,
+    fifoConsumedAmount: null,
+    fifoRemainingAmount: null,
+    fifoContainsLegacyOpening: false,
+    fifoLots: undefined,
+  });
 
   const summary = calculateLedgerReviewSummary(overlay.reviewInput);
 
-  assert.deepEqual(summary.costOfGoodsSold, { value: 600, status: "ok" });
-  assert.deepEqual(summary.inventoryAmount, { value: 400, status: "ok" });
+  assert.deepEqual(summary.costOfGoodsSold, { value: 550, status: "ok" });
+  assert.deepEqual(summary.inventoryAmount, { value: 450, status: "ok" });
+});
+
+test("one-decimal loss corrections apply while finer precision remains unapplied", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(calcPath).href
+  );
+  const reviewInput = {
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 10_000,
+    workerCount: 4,
+    expenseTotal: 0,
+    inventoryItems: [],
+  };
+  const lossItems = [
+    {
+      id: "loss-1",
+      productId: "product-1",
+      productName: "광어",
+      quantity: 1,
+      amount: 100,
+    },
+  ];
+
+  const accepted = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput,
+    lossItems,
+    corrections: [
+      {
+        targetType: "LOSS_ROW",
+        targetId: "loss-1",
+        fieldKey: "quantity",
+        latestAppliedValue: { kind: "quantity", value: 1.5 },
+      },
+    ],
+  });
+
+  assert.equal(accepted.lossItems[0].quantity, 1.5);
+  assert.equal(accepted.correctionState.appliedCorrectionCount, 1);
+
+  const rejected = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput,
+    lossItems,
+    corrections: [
+      {
+        targetType: "LOSS_ROW",
+        targetId: "loss-1",
+        fieldKey: "quantity",
+        latestAppliedValue: { kind: "quantity", value: 1.25 },
+      },
+    ],
+  });
+
+  assert.equal(rejected.lossItems[0].quantity, 1);
+  assert.equal(rejected.correctionState.appliedCorrectionCount, 0);
+  assert.equal(rejected.correctionState.hasUnappliedCorrections, true);
+});
+
+test("fractional worker-count and money corrections remain unapplied", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(calcPath).href
+  );
+  const overlay = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100_000,
+      cashAmount: 40_000,
+      cardAmount: 50_000,
+      otherPaymentAmount: 10_000,
+      workerCount: 4,
+      expenseTotal: 0,
+      inventoryItems: [],
+    },
+    corrections: [
+      {
+        targetType: "LEDGER_FIELD",
+        targetId: "ledger-1",
+        fieldKey: "workerCount",
+        latestAppliedValue: { kind: "quantity", value: 2.5 },
+      },
+      {
+        targetType: "PAYMENT_FIELD",
+        targetId: "ledger-1",
+        fieldKey: "cashAmount",
+        latestAppliedValue: { kind: "money", value: 10.5 },
+      },
+    ],
+  });
+
+  assert.equal(overlay.reviewInput.workerCount, 4);
+  assert.equal(overlay.reviewInput.cashAmount, 40_000);
+  assert.equal(overlay.correctionState.appliedCorrectionCount, 0);
+  assert.equal(overlay.correctionState.hasUnappliedCorrections, true);
 });
 
 test("dashboard and reports use shared calculation or policy gate helpers instead of local OQ formulas", () => {

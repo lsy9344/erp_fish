@@ -219,6 +219,152 @@ test("correction schema rejects inventory amount corrections until all calculati
   });
 });
 
+test("correction schema accepts one-decimal inventory quantities and rejects finer precision", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "schemas.ts",
+  );
+  const { correctionRecordSchema, toFieldErrors } = await import(
+    pathToFileURL(schemaPath).href
+  );
+  const input = {
+    ledgerId: "ledger-1",
+    targetType: "INVENTORY_ROW",
+    targetId: "inventory-1",
+    fieldKey: "currentQuantity",
+    correctedValue: { kind: "quantity", value: "1.5" },
+    reason: "재고 실사 반영",
+  };
+
+  const accepted = correctionRecordSchema.safeParse(input);
+
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.data.correctedValue.value, 1.5);
+
+  const rejected = correctionRecordSchema.safeParse({
+    ...input,
+    correctedValue: { kind: "quantity", value: "1.25" },
+  });
+
+  assert.equal(rejected.success, false);
+  assert.deepEqual(toFieldErrors(rejected.error), {
+    "correctedValue.value": [
+      "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.",
+    ],
+  });
+});
+
+test("correction schema accepts one-decimal loss quantities", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "schemas.ts",
+  );
+  const { correctionRecordSchema } = await import(
+    pathToFileURL(schemaPath).href
+  );
+
+  const result = correctionRecordSchema.safeParse({
+    ledgerId: "ledger-1",
+    targetType: "LOSS_ROW",
+    targetId: "loss-1",
+    fieldKey: "quantity",
+    correctedValue: { kind: "quantity", value: "1.5" },
+    reason: "손실 수량 확인",
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data.correctedValue.value, 1.5);
+});
+
+test("correction schema keeps worker count and money integer-only", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "schemas.ts",
+  );
+  const { correctionRecordSchema, toFieldErrors } = await import(
+    pathToFileURL(schemaPath).href
+  );
+  const workerInput = {
+    ledgerId: "ledger-1",
+    targetType: "LEDGER_FIELD",
+    targetId: "ledger-1",
+    fieldKey: "workerCount",
+    correctedValue: { kind: "quantity", value: "1.5" },
+    reason: "근무인원 확인",
+  };
+
+  const fractionalWorkerCount = correctionRecordSchema.safeParse(workerInput);
+
+  assert.equal(fractionalWorkerCount.success, false);
+  assert.deepEqual(toFieldErrors(fractionalWorkerCount.error), {
+    "correctedValue.value": ["근무인원은 0 이상의 정수로 입력해 주세요."],
+  });
+
+  const integerWorkerCount = correctionRecordSchema.safeParse({
+    ...workerInput,
+    correctedValue: { kind: "quantity", value: "2" },
+  });
+
+  assert.equal(integerWorkerCount.success, true);
+  assert.equal(integerWorkerCount.data.correctedValue.value, 2);
+
+  const fractionalMoney = correctionRecordSchema.safeParse({
+    ledgerId: "ledger-1",
+    targetType: "PAYMENT_FIELD",
+    targetId: "ledger-1",
+    fieldKey: "cashAmount",
+    correctedValue: { kind: "money", value: "10.5" },
+    reason: "현금 확인",
+  });
+
+  assert.equal(fractionalMoney.success, false);
+  assert.deepEqual(toFieldErrors(fractionalMoney.error), {
+    "correctedValue.value": [
+      "정정값은 0 이상의 저장 가능한 정수로 입력해 주세요.",
+    ],
+  });
+});
+
+test("correction action and panel keep decimal quantities target-aware", () => {
+  const actions = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "actions.ts",
+  );
+  const panel = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "components",
+    "correction-panel.tsx",
+  );
+
+  assert.match(actions, /isNonNegativeDecimalInRange/);
+  assert.match(
+    actions,
+    /normalizeCorrectedValueForTarget\(\s*target: Pick<CorrectionRecordInput, "targetType" \| "fieldKey">/,
+  );
+  assert.match(actions, /target\.targetType === "INVENTORY_ROW"/);
+  assert.match(actions, /target\.targetType === "LOSS_ROW"/);
+  assert.match(actions, /target\.fieldKey === "currentQuantity"/);
+  assert.match(actions, /target\.fieldKey === "quantity"/);
+
+  assert.match(panel, /function getCorrectionInputMode/);
+  assert.match(panel, /target\.originalValue\.kind === "text"/);
+  assert.match(panel, /target\.targetType === "INVENTORY_ROW"/);
+  assert.match(panel, /target\.targetType === "LOSS_ROW"/);
+  assert.match(panel, /return "decimal"/);
+  assert.match(panel, /return "numeric"/);
+  assert.match(panel, /inputMode=\{getCorrectionInputMode\(selectedTarget\)\}/);
+});
+
 test("correction queries expose batched latest values for dashboard calculations", () => {
   const queries = readProjectFile(
     "src",

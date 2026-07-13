@@ -1,5 +1,6 @@
 import { calculateInventoryAmount } from "./inventory.ts";
 import { createPolicyUnconfirmedMetric } from "./policy-gates.ts";
+import { isNonNegativeDecimalInRange } from "../../lib/validation.ts";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 const CALCULATION_LOG_PREFIX = "ledger calculation unavailable";
@@ -1099,6 +1100,7 @@ function applyInventoryCorrection(
       const value = getCorrectionNumber(
         correction.latestAppliedValue,
         "quantity",
+        true,
       );
 
       if (value === null) {
@@ -1127,6 +1129,7 @@ function applyLossCorrection(
       const value = getCorrectionNumber(
         correction.latestAppliedValue,
         "quantity",
+        true,
       );
 
       if (value === null) {
@@ -1151,7 +1154,11 @@ function applyLossCorrection(
   }
 }
 
-function getCorrectionNumber(value: unknown, kind: "money" | "quantity") {
+function getCorrectionNumber(
+  value: unknown,
+  kind: "money" | "quantity",
+  allowDecimalQuantity = false,
+) {
   if (
     !value ||
     typeof value !== "object" ||
@@ -1159,11 +1166,19 @@ function getCorrectionNumber(value: unknown, kind: "money" | "quantity") {
     !("kind" in value) ||
     !("value" in value) ||
     value.kind !== kind ||
-    typeof value.value !== "number" ||
-    !Number.isSafeInteger(value.value) ||
-    value.value < 0 ||
-    value.value > MAX_CORRECTION_INTEGER
+    typeof value.value !== "number"
   ) {
+    return null;
+  }
+
+  const isValidNumber =
+    allowDecimalQuantity && kind === "quantity"
+      ? isNonNegativeDecimalInRange(value.value)
+      : Number.isSafeInteger(value.value) &&
+        value.value >= 0 &&
+        value.value <= MAX_CORRECTION_INTEGER;
+
+  if (!isValidNumber) {
     return null;
   }
 

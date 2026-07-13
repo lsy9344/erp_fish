@@ -4,6 +4,7 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 const prisma = new PrismaClient();
 const STORE_ID = "store-story-4-3-corrections";
 const STORY_MARKER = "story-4-3-test";
+const PRODUCT_NAME = "스토리4-3 정정 광어";
 
 test.beforeEach(async () => {
   await cleanupStoryFourThreeData();
@@ -74,6 +75,15 @@ async function seedClosedLedger() {
       updatedById: actorId,
     },
   });
+  const product = await prisma.product.create({
+    data: {
+      name: PRODUCT_NAME,
+      category: "냉동",
+      spec: "1kg",
+      defaultUnitPrice: 100,
+      updatedById: actorId,
+    },
+  });
 
   const ledger = await prisma.dailyLedger.create({
     data: {
@@ -93,7 +103,26 @@ async function seedClosedLedger() {
     },
   });
 
-  return { actorId, ledger };
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 100,
+      previousQuantity: 10,
+      purchasedQuantity: 0,
+      currentQuantity: 8,
+      quantity: 8,
+      inventoryAmount: 800,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  return { actorId, ledger, inventoryItem };
 }
 
 async function cleanupStoryFourThreeData() {
@@ -124,6 +153,9 @@ async function cleanupStoryFourThreeData() {
     await prisma.correctionRecord.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.dailyLedger.deleteMany({
       where: { id: { in: ledgerIds } },
     });
@@ -134,6 +166,9 @@ async function cleanupStoryFourThreeData() {
   });
   await prisma.store.deleteMany({
     where: { id: STORE_ID },
+  });
+  await prisma.product.deleteMany({
+    where: { name: PRODUCT_NAME },
   });
 }
 
@@ -303,6 +338,55 @@ test("정정 기록 폼은 한국어 검증 오류와 첫 오류 포커스를 �
     correctionPanel.getByText("정정 사유를 입력해 주세요."),
   ).toBeVisible();
   await expect(reasonInput).toBeFocused();
+});
+
+test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산에 반영한다", async ({
+  page,
+}) => {
+  const { ledger, inventoryItem } = await seedClosedLedger();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+
+  const metricArea = page.locator('section[aria-label="장부 주요 숫자"]');
+  const correctionPanel = page
+    .getByRole("region")
+    .filter({ has: page.getByRole("heading", { name: "정정 기록" }) });
+  const correctedValueInput = correctionPanel.getByLabel("정정값");
+
+  await correctionPanel
+    .getByLabel("정정 대상")
+    .selectOption({ label: `재고 1 · ${PRODUCT_NAME} · 현재고` });
+  await expect(correctedValueInput).toHaveAttribute("inputmode", "decimal");
+  await replaceControlValue(correctedValueInput, "1.5");
+  await replaceControlValue(
+    correctionPanel.getByLabel("정정 사유"),
+    "재고 소수 수량 반영",
+  );
+  await correctionPanel.getByRole("button", { name: "정정 기록 저장" }).click();
+
+  await expect(
+    correctionPanel.getByText("정정 기록이 저장됐습니다."),
+  ).toBeVisible();
+  await expect(correctionPanel).toContainText("1.5");
+  await expect(metricArea).toContainText("91.5%");
+
+  await expect
+    .poll(async () => {
+      const correction = await prisma.correctionRecord.findFirst({
+        where: {
+          dailyLedgerId: ledger.id,
+          targetType: "INVENTORY_ROW",
+          targetId: inventoryItem.id,
+          fieldKey: "currentQuantity",
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { correctedValue: true },
+      });
+
+      return correction?.correctedValue;
+    })
+    .toMatchObject({ kind: "quantity", value: 1.5 });
 });
 
 test("지점장은 마감 장부 정정 화면에 접근해도 정정 기록을 생성할 수 없다", async ({

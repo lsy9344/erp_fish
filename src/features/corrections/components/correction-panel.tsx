@@ -51,6 +51,25 @@ function formatCreatedAt(value: string) {
   }).format(new Date(value));
 }
 
+function getCorrectionInputMode(target: CorrectionTargetOption | null) {
+  if (!target) {
+    return "numeric";
+  }
+
+  if (target.originalValue.kind === "text") {
+    return "text";
+  }
+
+  if (
+    target.originalValue.kind === "quantity" &&
+    (target.targetType === "INVENTORY_ROW" || target.targetType === "LOSS_ROW")
+  ) {
+    return "decimal";
+  }
+
+  return "numeric";
+}
+
 export function CorrectionPanel({
   ledgerId,
   targetOptions,
@@ -177,9 +196,7 @@ export function CorrectionPanel({
             id="correction-value"
             value={correctedValue}
             onChange={(event) => setCorrectedValue(event.currentTarget.value)}
-            inputMode={
-              selectedTarget?.originalValue.kind === "text" ? "text" : "numeric"
-            }
+            inputMode={getCorrectionInputMode(selectedTarget)}
             aria-invalid={Boolean(correctedValueError)}
             aria-describedby={
               correctedValueError ? "correction-value-error" : undefined

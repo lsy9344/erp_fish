@@ -24,6 +24,7 @@ import {
 } from "./queries";
 import type { CorrectionValue, CreateCorrectionRecordResult } from "./types";
 import { nullableDecimalToNumber } from "~/lib/decimal";
+import { isNonNegativeDecimalInRange } from "~/lib/validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 
@@ -179,6 +180,7 @@ function isValidCorrectionInteger(value: unknown) {
 }
 
 function normalizeCorrectedValueForTarget(
+  target: Pick<CorrectionRecordInput, "targetType" | "fieldKey">,
   originalValue: CorrectionValue,
   correctedValue: CorrectionValue,
 ): ActionResult<CorrectionValue> {
@@ -186,8 +188,26 @@ function normalizeCorrectedValueForTarget(
     return correctionValueShapeError();
   }
 
-  if (correctedValue.kind === "money" || correctedValue.kind === "quantity") {
+  if (correctedValue.kind === "money") {
     if (!isValidCorrectionInteger(correctedValue.value)) {
+      return correctionValueShapeError();
+    }
+
+    return actionOk(correctedValue);
+  }
+
+  if (correctedValue.kind === "quantity") {
+    const allowsDecimalQuantity =
+      (target.targetType === "INVENTORY_ROW" &&
+        (target.fieldKey === "currentQuantity" ||
+          target.fieldKey === "quantity")) ||
+      (target.targetType === "LOSS_ROW" && target.fieldKey === "quantity");
+    const isValidQuantity = allowsDecimalQuantity
+      ? typeof correctedValue.value === "number" &&
+        isNonNegativeDecimalInRange(correctedValue.value)
+      : isValidCorrectionInteger(correctedValue.value);
+
+    if (!isValidQuantity) {
       return correctionValueShapeError();
     }
 
@@ -492,6 +512,7 @@ export async function createCorrectionRecord(
         }
 
         const correctedValue = normalizeCorrectedValueForTarget(
+          parsed.data,
           originalValue.data,
           parsed.data.correctedValue,
         );
