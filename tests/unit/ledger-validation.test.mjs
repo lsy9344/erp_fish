@@ -206,18 +206,23 @@ test("stored decimal quantity resolution requires matching identity and consumes
     ],
   ]);
   const unrelatedPurchaseEdit = { ...storedPurchase, unitPrice: 11_000 };
+  const clientShapedPurchase = {
+    ...unrelatedPurchaseEdit,
+    purchaseStandardId: storedPurchase.purchaseStandardId,
+    quantity: null,
+  };
 
   const validEditIds = new Set();
   assert.equal(
     consumeStoredPurchaseQuantity(
-      "purchase-1",
-      null,
-      { ...unrelatedPurchaseEdit, kind: "carryover" },
+      clientShapedPurchase.id,
+      clientShapedPurchase.quantity,
+      clientShapedPurchase,
       storedPurchases,
       validEditIds,
     ),
     2.28,
-    "a legacy sentinel may preserve the stored quantity when stable identity is unchanged",
+    "the shared store/HQ client payload preserves a standard-linked legacy quantity",
   );
   assert.equal(
     consumeStoredPurchaseQuantity(

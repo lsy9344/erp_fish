@@ -353,7 +353,7 @@ export function PurchaseStepClient({
     return purchaseItems.map((line, index) => ({
       ...line,
       productId: productRefs.current[index]?.value ?? line.productId,
-      purchaseStandardId: "",
+      purchaseStandardId: line.purchaseStandardId,
       productName: productNameRefs.current[index]?.value ?? line.productName,
       productCategory:
         productCategoryRefs.current[index]?.value ?? line.productCategory,

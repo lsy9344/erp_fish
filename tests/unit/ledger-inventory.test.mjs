@@ -409,10 +409,12 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
 
 test("stock decimal validation enforces numeric boundaries and resolves only scoped stored quantities", async () => {
   const validationPath = assertProjectFile("src", "lib", "validation.ts");
+  const validationSource = readProjectFile("src", "lib", "validation.ts");
   const {
     MAX_VALIDATION_DECIMAL,
+    consumeStoredPurchaseQuantity,
+    getPurchaseQuantityIdentity,
     isNonNegativeDecimalInRange,
-    resolveStoredDecimalQuantity,
   } = await import(pathToFileURL(validationPath).href);
 
   assert.equal(isNonNegativeDecimalInRange(2.2), true);
@@ -421,17 +423,56 @@ test("stock decimal validation enforces numeric boundaries and resolves only sco
   assert.equal(isNonNegativeDecimalInRange(10_000_000_000), false);
   assert.equal(MAX_VALIDATION_DECIMAL, 9_999_999_999.9);
 
-  assert.equal(typeof resolveStoredDecimalQuantity, "function");
-  const storedQuantityById = new Map([["stored-row", 2.28]]);
+  assert.doesNotMatch(
+    validationSource,
+    /export function resolveStoredDecimalQuantity/,
+  );
+  const storedRow = {
+    productId: "product-1",
+    purchaseStandardId: "standard-1",
+    sourceType: "MANUAL",
+    productName: "광어",
+    productCategory: "생물",
+    productSpec: "1kg",
+    referenceInfo: "거래처 A",
+  };
+  const storedQuantityById = new Map([
+    [
+      "stored-row",
+      { quantity: 2.28, identity: getPurchaseQuantityIdentity(storedRow) },
+    ],
+  ]);
+  const consumedIds = new Set();
   assert.equal(
-    resolveStoredDecimalQuantity("stored-row", null, storedQuantityById),
+    consumeStoredPurchaseQuantity(
+      "stored-row",
+      null,
+      storedRow,
+      storedQuantityById,
+      consumedIds,
+    ),
     2.28,
   );
   assert.equal(
-    resolveStoredDecimalQuantity("forged-row", null, storedQuantityById),
+    consumeStoredPurchaseQuantity(
+      "stored-row",
+      null,
+      storedRow,
+      storedQuantityById,
+      consumedIds,
+    ),
     null,
   );
-  assert.equal(resolveStoredDecimalQuantity("", 2.2, storedQuantityById), 2.2);
+  assert.equal(
+    consumeStoredPurchaseQuantity(
+      "forged-row",
+      null,
+      storedRow,
+      storedQuantityById,
+      new Set(),
+    ),
+    null,
+  );
 });
 
 test("stock draft quantities allow only exact persisted legacy strings", async () => {

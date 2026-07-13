@@ -909,6 +909,18 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     "components",
     "purchase-step-client.tsx",
   );
+  const currentLinesSource = componentSource.slice(
+    componentSource.indexOf("function getCurrentPurchaseLines"),
+    componentSource.indexOf("async function persistPurchaseLines"),
+  );
+  assert.match(
+    currentLinesSource,
+    /purchaseStandardId:\s*line\.purchaseStandardId/,
+    "the shared store/HQ client payload must preserve an unchanged purchase standard",
+  );
+  assert.doesNotMatch(currentLinesSource, /purchaseStandardId:\s*""/);
+  assert.match(componentSource, /saveAction = saveLedgerPurchases/);
+  assert.match(componentSource, /const result = await saveAction\(/);
   assert.match(componentSource, /saveLedgerPurchases/);
   assert.doesNotMatch(componentSource, /previewEcountPurchaseUpload/);
   assert.doesNotMatch(componentSource, /accept="\.xlsx"/);
