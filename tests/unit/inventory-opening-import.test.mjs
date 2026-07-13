@@ -426,10 +426,22 @@ test("parseInventoryOpeningWorkbook reads the tracked namespaced inventory templ
   const result = parseInventoryOpeningWorkbook(workbook);
 
   assert.equal(result.sheetName, "재고입력");
-  assert.equal(result.rows[0]?.quantity, 12);
+  assert.equal(result.rows.length, 66);
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 4)?.quantity,
+    1.5,
+  );
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 5)?.quantity,
+    0.71,
+  );
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 53)?.quantity,
+    1.38,
+  );
 });
 
-test("tracked inventory template preserves blank validation and page setup metadata", async () => {
+test("tracked inventory template preserves customer validations and relationships", async () => {
   const workbook = readFileSync(
     path.join(
       root,
@@ -439,36 +451,18 @@ test("tracked inventory template preserves blank validation and page setup metad
     ),
   );
 
-  for (let sheetNumber = 1; sheetNumber <= 4; sheetNumber += 1) {
-    const worksheet = readZipEntry(
-      workbook,
-      `xl/worksheets/sheet${sheetNumber}.xml`,
-    );
-    assert.match(
-      worksheet,
-      /<(?:\w+:)?pageSetUpPr\b[^>]*fitToPage="1"[^>]*\/>/,
-    );
-    assert.match(
-      worksheet,
-      /<(?:\w+:)?pageSetup\b[^>]*fitToHeight="0"[^>]*orientation="landscape"[^>]*\/>/,
-    );
-  }
-
   const inventory = readZipEntry(workbook, "xl/worksheets/sheet3.xml");
   const lots = readZipEntry(workbook, "xl/worksheets/sheet4.xml");
-  for (const [worksheet, range, validationType] of [
-    [inventory, "E4:E2004", "list"],
-    [inventory, "F4:F2004", "custom"],
-    [inventory, "G4:G2004", "whole"],
-    [lots, "F4:F1004", "whole"],
-    [lots, "G4:G1004", "custom"],
-  ]) {
-    const validation = new RegExp(
-      `<(?:\\w+:)?dataValidation\\b(?=[^>]*type="${validationType}")(?=[^>]*sqref="${range}")[^>]*>`,
-    ).exec(worksheet)?.[0];
-    assert.ok(validation, `${range} ${validationType} validation must exist`);
-    assert.match(validation, /\ballowBlank="1"/);
-  }
+  assert.match(inventory, /sqref="E4:E72"/);
+  assert.match(inventory, /sqref="F4:F2004"/);
+  assert.match(inventory, /ROUND\(F4,2\)=F4/);
+  assert.match(lots, /sqref="G4:G1004"/);
+  assert.match(lots, /ROUND\(G4,2\)=G4/);
+  const workbookRelationships = readZipEntry(
+    workbook,
+    "xl/_rels/workbook.xml.rels",
+  );
+  assert.doesNotMatch(workbookRelationships, /externalLink/);
 });
 
 test("inventory product identity accepts blank specs but enforces shared product bounds", async () => {
