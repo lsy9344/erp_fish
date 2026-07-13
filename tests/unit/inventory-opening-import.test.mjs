@@ -272,7 +272,7 @@ test("getNextInventoryLedgerDate rejects non-canonical, nonexistent, and overflo
   }
 });
 
-test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives opening months", async () => {
+test("parseInventoryOpeningWorkbook reads up to two-decimal quantities and derives opening months", async () => {
   const { parseInventoryOpeningWorkbook } =
     await importInventoryOpeningImport();
 
@@ -296,20 +296,32 @@ test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives ope
       "원문광어",
       "",
       "생물",
-      "0.1",
+      "0.62",
       "29,500",
-      "2,950",
+      "18,290",
       "앱광어",
       "3kg",
       "앱 매핑",
     ],
-    ["", "삼국유통", "", "", "", "", "", "", "", "", ""],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "참돔",
+      "1kg",
+      "생물",
+      0.71,
+      10000,
+      7100,
+      "",
+      "",
+      "",
+    ],
   ]);
 
   const result = parseInventoryOpeningWorkbook(workbook);
 
   assert.equal(result.sheetName, "재고입력");
-  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows.length, 3);
   assert.deepEqual(result.yearMonths, ["2026-07"]);
   assert.deepEqual(result.rows[0], {
     rowNumber: 4,
@@ -328,43 +340,49 @@ test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives ope
   });
   assert.equal(result.rows[1].productName, "앱광어");
   assert.equal(result.rows[1].productSpec, "3kg");
-  assert.equal(result.totalQuantity, 2.3);
-  assert.equal(result.totalInventoryAmount, 453950);
+  assert.deepEqual(
+    result.rows.map((row) => row.quantity),
+    [2.2, 0.62, 0.71],
+  );
+  assert.equal(result.totalQuantity, 3.53);
+  assert.equal(result.totalInventoryAmount, 476390);
 
   const source = readFileSync(
     path.join(root, "src", "features", "inventory", "opening-import.ts"),
     "utf8",
   );
-  assert.match(source, /return roundToOneDecimal\(parsed\);/);
+  assert.match(source, /return roundToTwoDecimals\(parsed\);/);
   assert.match(source, /totalQuantity:\s*roundToTwoDecimals\(/);
 });
 
-test("parseInventoryOpeningWorkbook rejects quantities past one decimal", async () => {
+test("parseInventoryOpeningWorkbook rejects negative quantities and quantities past two decimals", async () => {
   const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
     await importInventoryOpeningImport();
 
-  const workbook = createInventoryWorkbook([
-    [
-      "2026-06-30",
-      "삼국유통",
-      "냉)포크오징어",
-      "MA",
-      "냉동",
-      2.28,
-      205000,
-      "",
-      "",
-      "",
-      "",
-    ],
-  ]);
+  for (const invalidQuantity of [2.281, -0.1]) {
+    const workbook = createInventoryWorkbook([
+      [
+        "2026-06-30",
+        "삼국유통",
+        "냉)포크오징어",
+        "MA",
+        "냉동",
+        invalidQuantity,
+        205000,
+        "",
+        "",
+        "",
+        "",
+      ],
+    ]);
 
-  assert.throws(
-    () => parseInventoryOpeningWorkbook(workbook),
-    (error) =>
-      error instanceof InventoryOpeningImportError &&
-      error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
-  );
+    assert.throws(
+      () => parseInventoryOpeningWorkbook(workbook),
+      (error) =>
+        error instanceof InventoryOpeningImportError &&
+        error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
+    );
+  }
 });
 
 test("parseInventoryOpeningWorkbook reads the tracked namespaced inventory template", async () => {
