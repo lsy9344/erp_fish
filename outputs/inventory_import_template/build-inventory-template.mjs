@@ -137,6 +137,20 @@ function addWholeNumberValidation(sheet, range) {
   });
 }
 
+function addOneDecimalQuantityValidation(sheet, range) {
+  const firstCell = range.split(":")[0];
+  sheet.dataValidations.add(range, {
+    type: "custom",
+    formulae: [
+      `OR(${firstCell}="",AND(ISNUMBER(${firstCell}),${firstCell}>=0,ROUND(${firstCell},1)=${firstCell}))`,
+    ],
+    allowBlank: true,
+    showErrorMessage: true,
+    errorTitle: "수량 확인",
+    error: "0 이상의 수량을 소수점 첫째 자리까지 입력해 주세요.",
+  });
+}
+
 function addDateValidation(sheet, range) {
   sheet.dataValidations.add(range, {
     type: "date",
@@ -223,7 +237,7 @@ guide.addRows([
   ["있으면 작성", "입고별_남은재고 시트는 장기재고와 선입선출 금액을 정확히 맞출 때 필요합니다."],
   ["있으면 작성", "입고_매입내역, 손실_폐기내역은 과거 흐름까지 복원할 때 필요합니다."],
   ["품목명이 다를 때", "기존 장부 품목명과 시스템 품목명이 다르면 품목맞추기 시트에 적어 주세요."],
-  ["숫자", "수량·단가는 0 이상의 정수로 적어 주세요. 예: 12, 12000"],
+  ["숫자", "수량은 0 이상 소수점 첫째 자리까지, 단가·금액은 0 이상의 정수로 적어 주세요. 예: 12.5, 12000"],
   ["날짜", "날짜는 yyyy-mm-dd 형식으로 적어 주세요. 예: 2026-06-30"],
   ["구분", "구분은 냉동 또는 생물 중 하나로 골라 주세요."],
   ["차이 이유", "날짜별_재고의 수량 차이가 0이 아니면 차이 이유를 적어 주세요."],
@@ -307,13 +321,13 @@ const inventoryColumns = [
   { header: "앱 품목명", key: "appName", width: 22, required: true },
   { header: "구분", key: "category", width: 11, required: true },
   { header: "앱 규격", key: "appSpec", width: 16, required: true },
-  { header: "전날 재고 수량", key: "prevQty", width: 16, required: true, align: "right", numFmt: "#,##0" },
-  { header: "그날 들어온 수량", key: "inQty", width: 16, optional: true, align: "right", numFmt: "#,##0" },
-  { header: "그날 버린 수량", key: "lossQty", width: 16, optional: true, align: "right", numFmt: "#,##0" },
-  { header: "그날 끝 재고 수량", key: "endQty", width: 18, required: true, align: "right", numFmt: "#,##0" },
+  { header: "전날 재고 수량", key: "prevQty", width: 16, required: true, align: "right", numFmt: "#,##0.0" },
+  { header: "그날 들어온 수량", key: "inQty", width: 16, optional: true, align: "right", numFmt: "#,##0.0" },
+  { header: "그날 버린 수량", key: "lossQty", width: 16, optional: true, align: "right", numFmt: "#,##0.0" },
+  { header: "그날 끝 재고 수량", key: "endQty", width: 18, required: true, align: "right", numFmt: "#,##0.0" },
   { header: "재고 단가", key: "unitPrice", width: 14, required: true, align: "right", numFmt: "#,##0" },
   { header: "재고 금액", key: "amount", width: 14, align: "right", numFmt: "#,##0" },
-  { header: "수량 차이", key: "diff", width: 13, align: "right", numFmt: "#,##0" },
+  { header: "수량 차이", key: "diff", width: 13, align: "right", numFmt: "#,##0.0" },
   { header: "차이 이유", key: "reason", width: 28, optional: true },
   { header: "메모", key: "memo", width: 30, optional: true },
 ];
@@ -352,7 +366,8 @@ for (let row = 5; row <= 2004; row += 1) {
 }
 addDateValidation(invSheet, "A4:A2004");
 addListValidation(invSheet, "F4:F2004", ["'선택목록'!$A$3:$A$4"]);
-addWholeNumberValidation(invSheet, "H4:L2004");
+addOneDecimalQuantityValidation(invSheet, "H4:K2004");
+addWholeNumberValidation(invSheet, "L4:L2004");
 invSheet.views = [{ state: "frozen", ySplit: 3 }];
 invSheet.autoFilter = "A3:P3";
 
@@ -366,8 +381,8 @@ const lotColumns = [
   { header: "앱 규격", key: "appSpec", width: 16, required: true },
   { header: "처음 들어온 날", key: "inDate", width: 16, required: true, numFmt: "yyyy-mm-dd" },
   { header: "매입 단가", key: "unitPrice", width: 14, required: true, align: "right", numFmt: "#,##0" },
-  { header: "남은 수량", key: "leftQty", width: 14, required: true, align: "right", numFmt: "#,##0" },
-  { header: "처음 들어온 수량", key: "firstQty", width: 16, optional: true, align: "right", numFmt: "#,##0" },
+  { header: "남은 수량", key: "leftQty", width: 14, required: true, align: "right", numFmt: "#,##0.0" },
+  { header: "처음 들어온 수량", key: "firstQty", width: 16, optional: true, align: "right", numFmt: "#,##0.0" },
   { header: "남은 금액", key: "leftAmount", width: 14, align: "right", numFmt: "#,##0" },
   { header: "전표/매입처", key: "source", width: 20, optional: true },
   { header: "메모", key: "memo", width: 30, optional: true },
@@ -403,7 +418,8 @@ for (let row = 5; row <= 1004; row += 1) {
 addDateValidation(lotSheet, "A4:A1004");
 addDateValidation(lotSheet, "H4:H1004");
 addListValidation(lotSheet, "F4:F1004", ["'선택목록'!$A$3:$A$4"]);
-addWholeNumberValidation(lotSheet, "I4:K1004");
+addWholeNumberValidation(lotSheet, "I4:I1004");
+addOneDecimalQuantityValidation(lotSheet, "J4:K1004");
 lotSheet.views = [{ state: "frozen", ySplit: 3 }];
 lotSheet.autoFilter = "A3:N3";
 
@@ -415,7 +431,7 @@ const purchaseColumns = [
   { header: "앱 품목명", key: "appName", width: 22, required: true },
   { header: "구분", key: "category", width: 11, required: true },
   { header: "앱 규격", key: "appSpec", width: 16, required: true },
-  { header: "들어온 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0" },
+  { header: "들어온 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.0" },
   { header: "매입 단가", key: "unitPrice", width: 14, required: true, align: "right", numFmt: "#,##0" },
   { header: "공급 금액", key: "amount", width: 14, align: "right", numFmt: "#,##0" },
   { header: "전표/매입처", key: "source", width: 20, optional: true },
@@ -449,7 +465,8 @@ for (let row = 5; row <= 1004; row += 1) {
 }
 addDateValidation(purchaseSheet, "A4:A1004");
 addListValidation(purchaseSheet, "F4:F1004", ["'선택목록'!$A$3:$A$4"]);
-addWholeNumberValidation(purchaseSheet, "H4:I1004");
+addOneDecimalQuantityValidation(purchaseSheet, "H4:H1004");
+addWholeNumberValidation(purchaseSheet, "I4:I1004");
 purchaseSheet.views = [{ state: "frozen", ySplit: 3 }];
 purchaseSheet.autoFilter = "A3:L3";
 
@@ -462,7 +479,7 @@ const lossColumns = [
   { header: "구분", key: "category", width: 11, required: true },
   { header: "앱 규격", key: "appSpec", width: 16, required: true },
   { header: "손실 종류", key: "lossType", width: 14, required: true },
-  { header: "버린 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0" },
+  { header: "버린 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.0" },
   { header: "회수 금액", key: "recover", width: 14, optional: true, align: "right", numFmt: "#,##0" },
   { header: "사유", key: "reason", width: 28, required: true },
   { header: "메모", key: "memo", width: 30, optional: true },
@@ -491,7 +508,8 @@ styleInputArea(lossSheet, 4, 1004, lossColumns);
 addDateValidation(lossSheet, "A4:A1004");
 addListValidation(lossSheet, "F4:F1004", ["'선택목록'!$A$3:$A$4"]);
 addListValidation(lossSheet, "H4:H1004", ["'선택목록'!$C$3:$C$7"]);
-addWholeNumberValidation(lossSheet, "I4:J1004");
+addOneDecimalQuantityValidation(lossSheet, "I4:I1004");
+addWholeNumberValidation(lossSheet, "J4:J1004");
 lossSheet.views = [{ state: "frozen", ySplit: 3 }];
 lossSheet.autoFilter = "A3:L3";
 

@@ -468,3 +468,67 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.match(clientSource, /uploadInventoryOpeningSnapshots/);
   assert.doesNotMatch(clientSource, /스냅샷만 갱신했습니다/);
 });
+
+test("inventory template builders allow one decimal only for stock quantities", () => {
+  const simpleSource = readFileSync(
+    path.join(
+      root,
+      "outputs",
+      "inventory_import_template",
+      "build-simple-inventory-template.mjs",
+    ),
+    "utf8",
+  );
+  const fullSource = readFileSync(
+    path.join(
+      root,
+      "outputs",
+      "inventory_import_template",
+      "build-inventory-template.mjs",
+    ),
+    "utf8",
+  );
+
+  for (const source of [simpleSource, fullSource]) {
+    assert.match(source, /type:\s*"custom"/);
+    assert.match(source, /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/);
+    assert.match(source, /소수점 첫째 자리까지/);
+  }
+
+  assert.match(simpleSource, /numFmt:\s*"#,##0\.0"/);
+  assert.match(
+    simpleSource,
+    /oneDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
+  );
+  assert.match(
+    simpleSource,
+    /wholeNumberValidation\(inventory,\s*"G4:G2004"\)/,
+  );
+  assert.match(simpleSource, /wholeNumberValidation\(lots,\s*"F4:F1004"\)/);
+  assert.match(
+    simpleSource,
+    /oneDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
+  );
+
+  for (const [sheet, quantityRange, wholeNumberRange] of [
+    ["invSheet", "H4:K2004", "L4:L2004"],
+    ["lotSheet", "J4:K1004", "I4:I1004"],
+    ["purchaseSheet", "H4:H1004", "I4:I1004"],
+    ["lossSheet", "I4:I1004", "J4:J1004"],
+  ]) {
+    assert.match(
+      fullSource,
+      new RegExp(
+        `addOneDecimalQuantityValidation\\(${sheet},\\s*"${quantityRange}"\\)`,
+      ),
+    );
+    assert.match(
+      fullSource,
+      new RegExp(
+        `addWholeNumberValidation\\(${sheet},\\s*"${wholeNumberRange}"\\)`,
+      ),
+    );
+  }
+  assert.match(fullSource, /numFmt:\s*"#,##0\.0"/);
+  assert.match(fullSource, /단가·금액은 0 이상의 정수/);
+});
