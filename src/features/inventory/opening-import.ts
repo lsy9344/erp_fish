@@ -354,11 +354,7 @@ function parseNumber(value: CellValue | undefined) {
 }
 
 function isNonNegativeTwoDecimalInRange(value: number) {
-  if (
-    !Number.isFinite(value) ||
-    value < 0 ||
-    value > MAX_VALIDATION_DECIMAL
-  ) {
+  if (!Number.isFinite(value) || value < 0 || value > MAX_VALIDATION_DECIMAL) {
     return false;
   }
 
