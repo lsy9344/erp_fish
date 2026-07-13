@@ -163,8 +163,7 @@ const hqLedgerLossesSchema = z
       if (loss.quantity === null && !loss.id) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+          message: "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
           path: ["losses", index, "quantity"],
         });
       }

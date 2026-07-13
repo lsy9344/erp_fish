@@ -1563,8 +1563,7 @@ export function InventoryStepClient({
                           parseQuantityInput(
                             item.currentQuantityInput,
                             item.currentQuantity,
-                          ) ??
-                            systemQuantity,
+                          ) ?? systemQuantity,
                           item.lossQuantity,
                         ),
                         className:

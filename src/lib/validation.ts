@@ -118,10 +118,7 @@ export function consumeStoredLossQuantity(
   );
 }
 
-export function validatePurchaseAmount(
-  index: number,
-  amount: number | null,
-) {
+export function validatePurchaseAmount(index: number, amount: number | null) {
   return amount === null
     ? {
         ok: false as const,
@@ -143,8 +140,7 @@ export function isNonNegativeDecimalInRange(
   }
 
   const scaled = value * 10;
-  const tolerance =
-    Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
 
   return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }

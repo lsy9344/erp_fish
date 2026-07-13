@@ -349,8 +349,7 @@ export function LossStepClient({
   }
 
   const draftTotalQuantity = items.reduce(
-    (sum, item) =>
-      sum + parseQuantity(item.quantity, item.storedQuantity),
+    (sum, item) => sum + parseQuantity(item.quantity, item.storedQuantity),
     0,
   );
   const draftTotalAmount = items.reduce(
