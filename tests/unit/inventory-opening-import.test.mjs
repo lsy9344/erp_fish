@@ -385,7 +385,7 @@ test("parseInventoryOpeningWorkbook rejects negative quantities and quantities p
   const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
     await importInventoryOpeningImport();
 
-  for (const invalidQuantity of [2.281, -0.1]) {
+  for (const invalidQuantity of [2.281, 0.001, -0.1]) {
     const workbook = createInventoryWorkbook([
       [
         "2026-06-30",
@@ -409,6 +409,43 @@ test("parseInventoryOpeningWorkbook rejects negative quantities and quantities p
         error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
     );
   }
+});
+
+test("parseInventoryOpeningWorkbook enforces the maximum quantity boundary", async () => {
+  const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
+    await importInventoryOpeningImport();
+  const validationModulePath = path.join(root, "src", "lib", "validation.ts");
+  const { MAX_VALIDATION_DECIMAL } = await import(
+    pathToFileURL(validationModulePath).href
+  );
+  const row = (quantity) => [
+    "2026-06-30",
+    "삼국유통",
+    "냉)포크오징어",
+    "MA",
+    "냉동",
+    quantity,
+    0,
+    0,
+    "",
+    "",
+    "",
+  ];
+
+  const result = parseInventoryOpeningWorkbook(
+    createInventoryWorkbook([row(MAX_VALIDATION_DECIMAL)]),
+  );
+  assert.equal(result.rows[0]?.quantity, MAX_VALIDATION_DECIMAL);
+
+  assert.throws(
+    () =>
+      parseInventoryOpeningWorkbook(
+        createInventoryWorkbook([row(MAX_VALIDATION_DECIMAL + 0.01)]),
+      ),
+    (error) =>
+      error instanceof InventoryOpeningImportError &&
+      error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
+  );
 });
 
 test("parseInventoryOpeningWorkbook reads the tracked namespaced inventory template", async () => {
@@ -453,7 +490,12 @@ test("tracked inventory template preserves customer validations and relationship
 
   const inventory = readZipEntry(workbook, "xl/worksheets/sheet3.xml");
   const lots = readZipEntry(workbook, "xl/worksheets/sheet4.xml");
-  assert.match(inventory, /sqref="E4:E72"/);
+  const categoryValidation =
+    /<(?:\w+:)?dataValidation\b(?=[^>]*type="list")(?=[^>]*sqref="E4:E72")[^>]*>/.exec(
+      inventory,
+    )?.[0];
+  assert.ok(categoryValidation, "E4:E72 list validation must exist");
+  assert.match(categoryValidation, /\ballowBlank="1"/);
   assert.match(inventory, /sqref="F4:F2004"/);
   assert.match(inventory, /ROUND\(F4,2\)=F4/);
   assert.match(lots, /sqref="G4:G1004"/);
