@@ -15,6 +15,7 @@
 **Files:**
 
 - Create: `tests/unit/date-time-format.test.mjs`
+- Modify: `tests/unit/ledger-step-navigation.test.mjs`
 - Modify: `src/lib/format.ts`
 - Modify: `src/features/ledger/components/ledger-save-status.tsx`
 - Modify: `src/features/ledger/components/ecount-supply-upload-client.tsx`
@@ -126,7 +127,7 @@ and render it directly:
 ```tsx
 import { formatKstDateTime } from "~/lib/format";
 
-마지막 저장: {formatKstDateTime(lastSavedAt)}
+마지막 저장: {formatKstDateTime(updatedAt)}
 ```
 
 In `ecount-supply-upload-client.tsx`, delete `formatDateTime`, add the helper to
@@ -147,7 +148,22 @@ import { formatShortKstDateTime } from "~/lib/format";
 <TableCell>{formatShortKstDateTime(record.createdAt)}</TableCell>;
 ```
 
-- [ ] **Step 6: Verify the unit suite and static checks**
+- [ ] **Step 6: Update the saved-status source contract**
+
+In `tests/unit/ledger-step-navigation.test.mjs`, replace the removed time-zone
+literal assertion:
+
+```js
+assert.match(saveStatusSource, /timeZone:\s*"Asia\/Seoul"/);
+```
+
+with the shared formatter call contract:
+
+```js
+assert.match(saveStatusSource, /formatKstDateTime\(updatedAt\)/);
+```
+
+- [ ] **Step 7: Verify the unit suite and static checks**
 
 Run:
 
@@ -156,12 +172,13 @@ pnpm test:unit
 pnpm check
 ```
 
-Expected: all unit tests pass with the existing single skip; lint and typecheck exit 0.
+Expected: all unit tests, including the saved-status source-contract assertion,
+pass with the existing single skip; lint and typecheck exit 0.
 
-- [ ] **Step 7: Commit Task 1**
+- [ ] **Step 8: Commit Task 1**
 
 ```powershell
-git add -- tests/unit/date-time-format.test.mjs src/lib/format.ts src/features/ledger/components/ledger-save-status.tsx src/features/ledger/components/ecount-supply-upload-client.tsx src/features/corrections/components/correction-panel.tsx
+git add -- tests/unit/date-time-format.test.mjs tests/unit/ledger-step-navigation.test.mjs src/lib/format.ts src/features/ledger/components/ledger-save-status.tsx src/features/ledger/components/ecount-supply-upload-client.tsx src/features/corrections/components/correction-panel.tsx
 git commit -m "fix: stabilize hydrated KST timestamps"
 ```
 
@@ -286,10 +303,12 @@ Run:
 
 ```powershell
 git diff --stat main...HEAD
-git diff main...HEAD -- src/lib/format.ts src/features/ledger/components/ledger-save-status.tsx src/features/ledger/components/ecount-supply-upload-client.tsx src/features/corrections/components/correction-panel.tsx tests/unit/date-time-format.test.mjs tests/e2e/ecount-supply-imports.spec.ts
+git diff main...HEAD -- src/lib/format.ts src/features/ledger/components/ledger-save-status.tsx src/features/ledger/components/ecount-supply-upload-client.tsx src/features/corrections/components/correction-panel.tsx tests/unit/date-time-format.test.mjs tests/unit/ledger-step-navigation.test.mjs tests/e2e/ecount-supply-imports.spec.ts
 ```
 
-Expected: only the approved formatter, three callers, regression test, and fixture changes are present alongside the approved design and plan docs.
+Expected: only the approved formatter, three callers, formatter regression test,
+saved-status source-contract test, and fixture changes are present alongside the
+approved design and plan docs.
 
 - [ ] **Step 4: Merge and push**
 
