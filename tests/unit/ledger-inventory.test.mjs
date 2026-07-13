@@ -434,6 +434,31 @@ test("stock decimal validation enforces numeric boundaries and resolves only sco
   assert.equal(resolveStoredDecimalQuantity("", 2.2, storedQuantityById), 2.2);
 });
 
+test("stock draft quantities allow only exact persisted legacy strings", async () => {
+  const decimalPath = assertProjectFile("src", "lib", "decimal.ts");
+  const { parseStockQuantityDraft, toStockQuantitySaveInput } = await import(
+    pathToFileURL(decimalPath).href
+  );
+
+  assert.equal(typeof parseStockQuantityDraft, "function");
+  assert.equal(typeof toStockQuantitySaveInput, "function");
+
+  assert.equal(parseStockQuantityDraft("2.28", 2.28), 2.28);
+  assert.equal(parseStockQuantityDraft(" 2.28 ", 2.28), null);
+  assert.equal(parseStockQuantityDraft("02.28", 2.28), null);
+  assert.equal(parseStockQuantityDraft("2.280", 2.28), null);
+  assert.equal(parseStockQuantityDraft("2.28", null), null);
+  assert.equal(parseStockQuantityDraft("2.28", 1.28), null);
+  assert.equal(parseStockQuantityDraft("1.5", null), 1.5);
+
+  assert.equal(toStockQuantitySaveInput("2.28", 2.28), null);
+  assert.equal(toStockQuantitySaveInput(" 2.28 ", 2.28), " 2.28 ");
+  assert.equal(toStockQuantitySaveInput("02.28", 2.28), "02.28");
+  assert.equal(toStockQuantitySaveInput("2.280", 2.28), "2.280");
+  assert.equal(toStockQuantitySaveInput("2.28", null), "2.28");
+  assert.equal(toStockQuantitySaveInput("1.5", 1.5), "1.5");
+});
+
 test("inventory calculations expose amount and calculation unavailable states", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -1777,8 +1802,8 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /ROW_PAGING_THRESHOLD = 30/);
   assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="decimal"/);
-  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
-  assert.match(componentSource, /toQuantitySaveInput/);
+  assert.match(componentSource, /parseStockQuantityDraft/);
+  assert.match(componentSource, /toStockQuantitySaveInput/);
   assert.match(componentSource, /className="h-11 w-24 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(inventoryUiSource, /전일재고 이력/);

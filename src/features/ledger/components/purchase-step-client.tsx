@@ -24,6 +24,10 @@ import {
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
+import {
+  parseStockQuantityDraft,
+  toStockQuantitySaveInput,
+} from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
@@ -49,6 +53,7 @@ type PurchaseLine = {
   referenceUnitPrice: number | null;
   unitPrice: string;
   quantity: string;
+  storedQuantity: number | null;
   referenceInfo: string;
   // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". 빈 문자열은 "계획 없음"이다.
   // 품목이 없는 자유 입력 행은 저장 대상이 아니라 항상 빈 값으로 둔다.
@@ -99,33 +104,11 @@ function parseAmount(value: string) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function parseQuantity(value: string) {
-  const trimmed = value.trim();
-
-  if (trimmed === "") {
-    return 0;
-  }
-
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
-    return 0;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function toQuantitySaveInput(
+function parseQuantity(
   value: string,
   storedQuantity: number | null | undefined,
 ) {
-  const trimmed = value.trim();
-
-  return storedQuantity !== null &&
-    storedQuantity !== undefined &&
-    trimmed === String(storedQuantity) &&
-    !/^\d+(?:\.\d)?$/.test(trimmed)
-    ? null
-    : value;
+  return parseStockQuantityDraft(value, storedQuantity) ?? 0;
 }
 
 function createLineState(id: string): PurchaseLine {
@@ -140,6 +123,7 @@ function createLineState(id: string): PurchaseLine {
     referenceUnitPrice: null,
     unitPrice: "",
     quantity: "",
+    storedQuantity: null,
     referenceInfo: "",
     plannedUnitPrice: "",
     kind: "purchase",
@@ -163,6 +147,7 @@ function toPurchaseLines(
     referenceUnitPrice: item.unitPrice,
     unitPrice: String(item.unitPrice),
     quantity: String(item.quantity),
+    storedQuantity: item.quantity,
     referenceInfo: item.referenceInfo ?? "",
     plannedUnitPrice:
       item.plannedUnitPrice === null ? "" : String(item.plannedUnitPrice),
@@ -174,7 +159,10 @@ function toPurchaseLines(
 }
 
 function getLineAmount(line: PurchaseLine) {
-  return Math.round(parseAmount(line.unitPrice) * parseQuantity(line.quantity));
+  return Math.round(
+    parseAmount(line.unitPrice) *
+      parseQuantity(line.quantity, line.storedQuantity),
+  );
 }
 
 function getDraftPurchaseTotal(lines: PurchaseLine[]) {
@@ -414,9 +402,9 @@ export function PurchaseStepClient({
           productSpec: line.productSpec,
           referenceInfo: line.referenceInfo,
           unitPrice: line.unitPrice,
-          quantity: toQuantitySaveInput(
+          quantity: toStockQuantitySaveInput(
             line.quantity,
-            ledger.purchaseItems.find((item) => item.id === line.id)?.quantity,
+            line.storedQuantity,
           ),
           // 판매 예정가는 지점장 매입 화면 전용이고 품목 행만 저장 대상이다.
           ...(showSalesPricePlan

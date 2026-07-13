@@ -34,6 +34,10 @@ import {
   type StoreManagerLossStepData,
 } from "~/features/losses/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import {
+  parseStockQuantityDraft,
+  toStockQuantitySaveInput,
+} from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
 
 type LossLineState = {
@@ -47,6 +51,7 @@ type LossLineState = {
   unitPrice?: number;
   lossTypeName: string;
   quantity: string;
+  storedQuantity: number | null;
   recoveredAmount: string;
   amount?: string;
   reason: string;
@@ -81,6 +86,7 @@ function createLineState(clientKey: string): LossLineState {
     productSpec: "",
     lossTypeName: "",
     quantity: "",
+    storedQuantity: null,
     recoveredAmount: "",
     reason: "",
   };
@@ -98,6 +104,7 @@ function toLineState(data: LossDisplayData): LossLineState[] {
     unitPrice: "unitPrice" in item ? item.unitPrice : undefined,
     lossTypeName: item.lossTypeName,
     quantity: String(item.quantity),
+    storedQuantity: item.quantity,
     recoveredAmount:
       "recoveredAmount" in item ? String(item.recoveredAmount) : "",
     amount: "amount" in item ? String(item.amount) : undefined,
@@ -119,30 +126,11 @@ function parseNumber(value: string) {
   return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
-function parseQuantity(value: string) {
-  const trimmed = value.trim();
-
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
-    return 0;
-  }
-
-  const parsed = Number(trimmed);
-
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function toQuantitySaveInput(
+function parseQuantity(
   value: string,
   storedQuantity: number | null | undefined,
 ) {
-  const trimmed = value.trim();
-
-  return storedQuantity !== null &&
-    storedQuantity !== undefined &&
-    trimmed === String(storedQuantity) &&
-    !/^\d+(?:\.\d)?$/.test(trimmed)
-    ? null
-    : value;
+  return parseStockQuantityDraft(value, storedQuantity) ?? 0;
 }
 
 function areLossLinesEqual(left: LossLineState[], right: LossLineState[]) {
@@ -300,9 +288,9 @@ export function LossStepClient({
           productId: productRefs.current[index]?.value ?? item.productId,
           ledgerInputCodeId:
             lossTypeRefs.current[index]?.value ?? item.ledgerInputCodeId,
-          quantity: toQuantitySaveInput(
+          quantity: toStockQuantitySaveInput(
             quantityRefs.current[index]?.value ?? item.quantity,
-            data.lossItems.find((loss) => loss.id === item.id)?.quantity,
+            item.storedQuantity,
           ),
           recoveredAmount:
             recoveredAmountRefs.current[index]?.value ?? item.recoveredAmount,
@@ -361,7 +349,8 @@ export function LossStepClient({
   }
 
   const draftTotalQuantity = items.reduce(
-    (sum, item) => sum + parseQuantity(item.quantity),
+    (sum, item) =>
+      sum + parseQuantity(item.quantity, item.storedQuantity),
     0,
   );
   const draftTotalAmount = items.reduce(

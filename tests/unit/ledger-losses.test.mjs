@@ -403,8 +403,8 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /손실\/폐기\/떨이 입력/);
   assert.match(componentSource, /saveLedgerLosses/);
   assert.match(componentSource, /inputMode="decimal"/);
-  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
-  assert.match(componentSource, /toQuantitySaveInput/);
+  assert.match(componentSource, /parseStockQuantityDraft/);
+  assert.match(componentSource, /toStockQuantitySaveInput/);
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /기준 초과/);
   // WO-09: 사용자 화면 라벨/문구는 lossTerms 사전을 통해 렌더링한다.

@@ -907,8 +907,8 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /sourceType\s*===\s*"ECOUNT_UPLOAD"/);
   assert.match(componentSource, /sourceType:\s*line\.sourceType/);
   assert.match(componentSource, /inputMode="decimal"/);
-  assert.match(componentSource, /\^\\d\+\(\?:\\\.\\d\{1,2\}\)\?\$/);
-  assert.match(componentSource, /toQuantitySaveInput/);
+  assert.match(componentSource, /parseStockQuantityDraft/);
+  assert.match(componentSource, /toStockQuantitySaveInput/);
   assert.match(componentSource, /focusFirstError/);
   assert.doesNotMatch(componentSource, /sanitizeAmount/);
   assert.match(componentSource, /getDraftPurchaseTotal/);

@@ -68,6 +68,10 @@ import {
   type StoreManagerInventoryStepData,
 } from "~/features/inventory/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
+import {
+  parseStockQuantityDraft,
+  toStockQuantitySaveInput,
+} from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
@@ -126,34 +130,15 @@ function isValidQuantity(value: number) {
   );
 }
 
-function parseQuantityInput(value: string) {
-  const trimmed = value.trim();
-
-  if (trimmed === "") {
-    return null;
-  }
-
-  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
-    return null;
-  }
-
-  const parsed = Number(trimmed);
-
-  return isValidQuantity(parsed) ? roundQuantity(parsed) : null;
-}
-
-function toQuantitySaveInput(
+function parseQuantityInput(
   value: string,
-  storedQuantity: number | null | undefined,
+  storedQuantity: number | null | undefined = null,
 ) {
-  const trimmed = value.trim();
+  const parsed = parseStockQuantityDraft(value, storedQuantity);
 
-  return storedQuantity !== null &&
-    storedQuantity !== undefined &&
-    trimmed === String(storedQuantity) &&
-    !/^\d+(?:\.\d)?$/.test(trimmed)
-    ? null
-    : value;
+  return parsed !== null && isValidQuantity(parsed)
+    ? roundQuantity(parsed)
+    : null;
 }
 
 function hasSensitiveInventoryAmounts(
@@ -511,6 +496,7 @@ export function InventoryStepClient({
       const currentQuantity = parseQuantityInput(
         currentQuantityRefs.current[item.productId]?.value ??
           item.currentQuantityInput,
+        item.currentQuantity,
       );
 
       // 매입 정상 판매 소진(부족 방향·손실 없음)은 실사 차이가 아니라 판매로 본다.
@@ -552,6 +538,7 @@ export function InventoryStepClient({
     const firstCurrentQuantity = parseQuantityInput(
       currentQuantityRefs.current[firstInvalidItem.productId]?.value ??
         firstInvalidItem.currentQuantityInput,
+      firstInvalidItem.currentQuantity,
     );
     const firstMessage =
       firstSystemQuantity !== null && firstCurrentQuantity !== null
@@ -612,7 +599,7 @@ export function InventoryStepClient({
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
         items: items.map((item) => {
-          const quantityInput = toQuantitySaveInput(
+          const quantityInput = toStockQuantitySaveInput(
             currentQuantityRefs.current[item.productId]?.value ??
               item.currentQuantityInput,
             item.currentQuantity,
@@ -758,7 +745,10 @@ export function InventoryStepClient({
     }
 
     const systemQuantity = getSystemQuantity(item);
-    const actualQuantity = parseQuantityInput(item.currentQuantityInput);
+    const actualQuantity = parseQuantityInput(
+      item.currentQuantityInput,
+      item.currentQuantity,
+    );
 
     // 매입 정상 판매 소진은 조정 대상이 아니다(배지/조정 프롬프트 숨김).
     if (isPurchaseDrivenSale({ ...item, currentQuantity: actualQuantity })) {
@@ -898,7 +888,10 @@ export function InventoryStepClient({
   }
 
   function isLineModified(item: InventoryLineState) {
-    const currentQuantity = parseQuantityInput(item.currentQuantityInput);
+    const currentQuantity = parseQuantityInput(
+      item.currentQuantityInput,
+      item.currentQuantity,
+    );
 
     return (
       currentQuantity !== null && currentQuantity !== item.previousQuantity
@@ -1004,7 +997,10 @@ export function InventoryStepClient({
 
   function getQuantityDifference(item: InventoryLineState) {
     const systemQuantity = getSystemQuantity(item);
-    const actualQuantity = parseQuantityInput(item.currentQuantityInput);
+    const actualQuantity = parseQuantityInput(
+      item.currentQuantityInput,
+      item.currentQuantity,
+    );
 
     if (systemQuantity === null || actualQuantity === null) {
       return null;
@@ -1564,7 +1560,10 @@ export function InventoryStepClient({
                         label: "고칠 내용 있음",
                         detail: describeAdjustmentReason(
                           systemQuantity,
-                          parseQuantityInput(item.currentQuantityInput) ??
+                          parseQuantityInput(
+                            item.currentQuantityInput,
+                            item.currentQuantity,
+                          ) ??
                             systemQuantity,
                           item.lossQuantity,
                         ),
