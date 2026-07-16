@@ -714,6 +714,117 @@ export function PurchaseStepClient({
                 isFormSaving ||
                 isOriginalEditBlocked ||
                 isStoreManagerExistingLine;
+              const productSnapshotFields = (
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Field data-invalid={Boolean(productNameError)}>
+                    <FieldLabel
+                      htmlFor={`purchase-product-name-${line.id}`}
+                    >
+                      원문명
+                    </FieldLabel>
+                    <Input
+                      id={`purchase-product-name-${line.id}`}
+                      ref={(node) => {
+                        productNameRefs.current[index] = node;
+                      }}
+                      autoComplete="off"
+                      value={line.productName}
+                      disabled={isLineEditBlocked}
+                      onChange={(event) =>
+                        updatePurchaseLine(line.id, {
+                          productName: event.currentTarget.value,
+                        })
+                      }
+                      className="min-h-11"
+                      aria-invalid={Boolean(productNameError)}
+                      aria-describedby={
+                        productNameError
+                          ? `purchase-product-name-${line.id}-error`
+                          : undefined
+                      }
+                    />
+                    {productNameError ? (
+                      <FieldError
+                        id={`purchase-product-name-${line.id}-error`}
+                      >
+                        {productNameError}
+                      </FieldError>
+                    ) : null}
+                  </Field>
+
+                  <Field data-invalid={Boolean(productCategoryError)}>
+                    <FieldLabel
+                      htmlFor={`purchase-product-category-${line.id}`}
+                    >
+                      구분
+                    </FieldLabel>
+                    <Input
+                      id={`purchase-product-category-${line.id}`}
+                      ref={(node) => {
+                        productCategoryRefs.current[index] = node;
+                      }}
+                      autoComplete="off"
+                      value={line.productCategory}
+                      disabled={isLineEditBlocked}
+                      onChange={(event) =>
+                        updatePurchaseLine(line.id, {
+                          productCategory: event.currentTarget.value,
+                        })
+                      }
+                      className="min-h-11"
+                      aria-invalid={Boolean(productCategoryError)}
+                      aria-describedby={
+                        productCategoryError
+                          ? `purchase-product-category-${line.id}-error`
+                          : undefined
+                      }
+                    />
+                    {productCategoryError ? (
+                      <FieldError
+                        id={`purchase-product-category-${line.id}-error`}
+                      >
+                        {productCategoryError}
+                      </FieldError>
+                    ) : null}
+                  </Field>
+
+                  <Field data-invalid={Boolean(productSpecError)}>
+                    <FieldLabel
+                      htmlFor={`purchase-product-spec-${line.id}`}
+                    >
+                      규격
+                    </FieldLabel>
+                    <Input
+                      id={`purchase-product-spec-${line.id}`}
+                      ref={(node) => {
+                        productSpecRefs.current[index] = node;
+                      }}
+                      autoComplete="off"
+                      value={line.productSpec}
+                      disabled={isLineEditBlocked}
+                      onChange={(event) =>
+                        updatePurchaseLine(line.id, {
+                          productSpec: event.currentTarget.value,
+                        })
+                      }
+                      className="min-h-11"
+                      aria-invalid={Boolean(productSpecError)}
+                      aria-describedby={
+                        productSpecError
+                          ? `purchase-product-spec-${line.id}-error`
+                          : undefined
+                      }
+                    />
+                    {productSpecError ? (
+                      <FieldError
+                        id={`purchase-product-spec-${line.id}-error`}
+                      >
+                        {productSpecError}
+                      </FieldError>
+                    ) : null}
+                  </Field>
+                </div>
+              );
 
               return (
                 <div
@@ -810,115 +921,7 @@ export function PurchaseStepClient({
                       </span>
                     </summary>
                     <div className="border-t p-3">
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <Field data-invalid={Boolean(productNameError)}>
-                          <FieldLabel
-                            htmlFor={`purchase-product-name-${line.id}`}
-                          >
-                            원문명
-                          </FieldLabel>
-                          <Input
-                            id={`purchase-product-name-${line.id}`}
-                            ref={(node) => {
-                              productNameRefs.current[index] = node;
-                            }}
-                            autoComplete="off"
-                            value={line.productName}
-                            disabled={isLineEditBlocked}
-                            onChange={(event) =>
-                              updatePurchaseLine(line.id, {
-                                productName: event.currentTarget.value,
-                              })
-                            }
-                            className="min-h-11"
-                            aria-invalid={Boolean(productNameError)}
-                            aria-describedby={
-                              productNameError
-                                ? `purchase-product-name-${line.id}-error`
-                                : undefined
-                            }
-                          />
-                          {productNameError ? (
-                            <FieldError
-                              id={`purchase-product-name-${line.id}-error`}
-                            >
-                              {productNameError}
-                            </FieldError>
-                          ) : null}
-                        </Field>
-
-                        <Field data-invalid={Boolean(productCategoryError)}>
-                          <FieldLabel
-                            htmlFor={`purchase-product-category-${line.id}`}
-                          >
-                            구분
-                          </FieldLabel>
-                          <Input
-                            id={`purchase-product-category-${line.id}`}
-                            ref={(node) => {
-                              productCategoryRefs.current[index] = node;
-                            }}
-                            autoComplete="off"
-                            value={line.productCategory}
-                            disabled={isLineEditBlocked}
-                            onChange={(event) =>
-                              updatePurchaseLine(line.id, {
-                                productCategory: event.currentTarget.value,
-                              })
-                            }
-                            className="min-h-11"
-                            aria-invalid={Boolean(productCategoryError)}
-                            aria-describedby={
-                              productCategoryError
-                                ? `purchase-product-category-${line.id}-error`
-                                : undefined
-                            }
-                          />
-                          {productCategoryError ? (
-                            <FieldError
-                              id={`purchase-product-category-${line.id}-error`}
-                            >
-                              {productCategoryError}
-                            </FieldError>
-                          ) : null}
-                        </Field>
-
-                        <Field data-invalid={Boolean(productSpecError)}>
-                          <FieldLabel
-                            htmlFor={`purchase-product-spec-${line.id}`}
-                          >
-                            규격
-                          </FieldLabel>
-                          <Input
-                            id={`purchase-product-spec-${line.id}`}
-                            ref={(node) => {
-                              productSpecRefs.current[index] = node;
-                            }}
-                            autoComplete="off"
-                            value={line.productSpec}
-                            disabled={isLineEditBlocked}
-                            onChange={(event) =>
-                              updatePurchaseLine(line.id, {
-                                productSpec: event.currentTarget.value,
-                              })
-                            }
-                            className="min-h-11"
-                            aria-invalid={Boolean(productSpecError)}
-                            aria-describedby={
-                              productSpecError
-                                ? `purchase-product-spec-${line.id}-error`
-                                : undefined
-                            }
-                          />
-                          {productSpecError ? (
-                            <FieldError
-                              id={`purchase-product-spec-${line.id}-error`}
-                            >
-                              {productSpecError}
-                            </FieldError>
-                          ) : null}
-                        </Field>
-                      </div>
+                      {productSnapshotFields}
 
                       {helperProduct || line.referenceInfo ? (
                         <p className="bg-muted/40 text-muted-foreground mt-2 rounded-md px-3 py-2 text-xs">
@@ -931,6 +934,8 @@ export function PurchaseStepClient({
                       ) : null}
                     </div>
                     </details>
+                  ) : !line.productId ? (
+                    productSnapshotFields
                   ) : null}
 
                   {/* 매입 단가 / 수량 / 오늘 팔 가격(예상)을 같은 줄에서 본다.
