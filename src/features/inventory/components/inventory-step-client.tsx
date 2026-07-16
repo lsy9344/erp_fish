@@ -1934,8 +1934,7 @@ export function InventoryStepClient({
         <div className="flex justify-end">
           <Button
             type="button"
-            variant="outline"
-            className="min-h-11"
+            className="min-h-11 font-semibold"
             onClick={() => setIsPreviousStockOpen(true)}
           >
             전날 재고 보기

@@ -782,14 +782,10 @@ export function PurchaseStepClient({
                     ) : null}
                   </Field>
 
-                  {/* 간소화(2026-07-02): 원문명/구분/규격/참고 단가는 품목을 고르면 자동으로
-                      채워져 자주 확인하지 않는 보조 정보다. 접을 수 있는 상세로 숨기고, 품목을
-                      고르지 않은 자유 입력 행(직접 입력 필수)에서만 기본으로 펼친다. 오류가 있으면
-                      항상 펼쳐 사용자가 고칠 수 있게 한다.
-                      ponytail: open을 controlled로 두면 품목 선택 행에서 펼친 뒤 다른 칸 입력으로
-                      re-render되면 다시 접힌다. 자동 채움 보조 필드라 실사용 영향이 작아 허용.
-                      자주 수정하는 흐름이 생기면 행별 expanded state로 승격. */}
-                  <details
+                  {/* 본사 보정 화면에서만 원문 스냅샷을 수정한다. 지점 화면은 품목 선택 시
+                      채운 내부 스냅샷을 그대로 저장한다. */}
+                  {!showSalesPricePlan ? (
+                    <details
                     className="group rounded-md border"
                     open={
                       !line.productId ||
@@ -934,7 +930,8 @@ export function PurchaseStepClient({
                         </p>
                       ) : null}
                     </div>
-                  </details>
+                    </details>
+                  ) : null}
 
                   {/* 매입 단가 / 수량 / 오늘 팔 가격(예상)을 같은 줄에서 본다.
                       모바일(<sm)에서는 세로로 쌓여 겹치거나 가로 overflow가 없다. */}

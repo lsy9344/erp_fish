@@ -1825,6 +1825,21 @@ test("inventory UI is wired to the canonical inventory route", () => {
     "terms.ts",
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
+  const previousStockButtonStart = componentSource.indexOf(
+    "{/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}",
+  );
+  const previousStockButtonSource = componentSource.slice(
+    previousStockButtonStart,
+    componentSource.indexOf("</Button>", previousStockButtonStart) +
+      "</Button>".length,
+  );
+  assert.ok(previousStockButtonStart >= 0);
+  assert.doesNotMatch(previousStockButtonSource, /variant="outline"/);
+  assert.match(previousStockButtonSource, /className="min-h-11 font-semibold"/);
+  assert.equal(
+    (previousStockButtonSource.match(/전날 재고 보기/g) ?? []).length,
+    1,
+  );
   assert.match(componentSource, /saveLedgerInventoryItems/);
   assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);

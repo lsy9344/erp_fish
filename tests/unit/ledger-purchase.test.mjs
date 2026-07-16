@@ -938,7 +938,12 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /getDraftPurchaseTotal/);
   assert.match(componentSource, /clearRowErrors/);
   assert.match(componentSource, /referenceUnitPrice/);
-  // 간소화(2026-07-02): "품목명:" 요약 박스는 제거되고 원문명/구분/규격은 접이식 상세로 이동.
+  // 지점 화면(showSalesPricePlan=true)에서는 상세/참고 단가 박스를 숨기고,
+  // 본사 화면(showSalesPricePlan=false)에서만 보정용 원문 스냅샷 입력을 렌더링한다.
+  assert.match(
+    componentSource,
+    /\{!showSalesPricePlan\s*\?\s*\(\s*<details[\s\S]*?<\/details>\s*\)\s*:\s*null\}/,
+  );
   assert.match(componentSource, /원문명/);
   // WO(2026-06-24): 매입 기준 select 제거 → 헬퍼 문구에서 "매입 기준" 표현이 사라지고
   // 품목 선택은 defaultUnitPrice만 채운다.
