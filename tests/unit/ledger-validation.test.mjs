@@ -84,8 +84,8 @@ test("validation helper preserves dotted field paths for nested step errors", as
   });
   assert.equal(expenseInvalid.success, false);
   assert.deepEqual(toFieldErrors(expenseInvalid.error), {
-    "expenses.0.ledgerInputCodeId": ["비용 항목을 선택해 주세요."],
-    "expenses.0.amount": ["비용 금액은 0원 이상의 정수여야 합니다."],
+    "expenses.0.ledgerInputCodeId": ["지출 항목을 선택해 주세요."],
+    "expenses.0.amount": ["지출 금액은 0원 이상의 정수여야 합니다."],
   });
 
   const purchaseInvalid = ledgerPurchaseSchema.safeParse({

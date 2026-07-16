@@ -25,7 +25,7 @@ type SaveConflictDialogProps = {
 
 const sectionLabels: Record<string, string> = {
   sales: "매출/결제",
-  expenses: "비용",
+  expenses: "지출",
   purchases: "매입",
   inventory: "재고",
   "inventory-adjustment": "재고 조정",

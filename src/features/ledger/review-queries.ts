@@ -276,7 +276,7 @@ export function buildLedgerReviewStepSummaries({
   const missingById = new Map(missingItems.map((item) => [item.id, item]));
 
   // 단계 순서 변경(2026-07-02): 검토 요약 카드도 지점 입력 순서
-  // (매입>손실>재고>비용>근무>매출)와 동일하게 정렬한다.
+  // (매입>손실>재고>지출>근무>매출)와 동일하게 정렬한다.
   return [
     {
       id: "purchases",
@@ -324,19 +324,19 @@ export function buildLedgerReviewStepSummaries({
     },
     {
       id: "expenses",
-      label: "비용",
+      label: "지출",
       status: stepStatus("expenses", missingById),
       detail: stepDetail({
         stepId: "expenses",
         missingItems: missingById,
-        savedDetail: `비용 ${expenseCount}건이 저장되어 있습니다.`,
+        savedDetail: `지출 ${expenseCount}건이 저장되어 있습니다.`,
       }),
       href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
-      metrics: [textMetric("expenseCount", "비용 저장", `${expenseCount}건`)],
+      metrics: [textMetric("expenseCount", "지출 저장", `${expenseCount}건`)],
     },
     {
       id: "work",
-      label: "근무/인건비",
+      label: "근무인원/이름",
       status: stepStatus("work", missingById, summary.workerCount),
       detail: stepDetail({
         stepId: "work",

@@ -83,7 +83,7 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   });
   assert.equal(expenseBlankCode.success, false);
   assert.deepEqual(expenseBlankCode.error.flatten().fieldErrors.expenses, [
-    "비용 항목을 선택해 주세요.",
+    "지출 항목을 선택해 주세요.",
   ]);
 
   const expenseNegative = ledgerExpenseSchema.safeParse({
@@ -97,7 +97,7 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   });
   assert.equal(expenseNegative.success, false);
   assert.deepEqual(expenseNegative.error.flatten().fieldErrors.expenses, [
-    "비용 금액은 0원 이상의 정수여야 합니다.",
+    "지출 금액은 0원 이상의 정수여야 합니다.",
   ]);
 
   const expenseDecimal = ledgerExpenseSchema.safeParse({
@@ -111,7 +111,7 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   });
   assert.equal(expenseDecimal.success, false);
   assert.deepEqual(expenseDecimal.error.flatten().fieldErrors.expenses, [
-    "비용 금액은 0원 이상의 정수여야 합니다.",
+    "지출 금액은 0원 이상의 정수여야 합니다.",
   ]);
 
   const expenseFormatted = ledgerExpenseSchema.safeParse({
@@ -125,7 +125,7 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   });
   assert.equal(expenseFormatted.success, false);
   assert.deepEqual(expenseFormatted.error.flatten().fieldErrors.expenses, [
-    "비용 금액은 0원 이상의 정수여야 합니다.",
+    "지출 금액은 0원 이상의 정수여야 합니다.",
   ]);
 
   const workBase = {
@@ -382,7 +382,7 @@ test("ledger labor model, query payload, and save actions follow expected contra
   assert.match(componentSource, /employeeId:\s*line\.employeeId/);
 });
 
-test("work step exposes labor reference headcount and non-blocking mismatch hint (WO 2026-06-25)", () => {
+test("work step keeps store work copy neutral and HQ salary helpers role-specific", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -391,13 +391,33 @@ test("work step exposes labor reference headcount and non-blocking mismatch hint
     "workstep-client.tsx",
   );
 
-  // Task 2: 첫 카드에 "근무 요약" 제목과 설명, stepLabel은 근무/인건비.
+  // 두 저장 경계는 유지하되 하나의 카드 안에서 근무 정보와 근무자 행을 입력한다.
   assert.match(componentSource, /근무 요약/);
   assert.match(
     componentSource,
-    /급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\./,
+    /근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다\./,
   );
-  assert.match(componentSource, /stepLabel="5단계 근무\/인건비"/);
+  assert.match(componentSource, /stepLabel="5단계: 근무인원\/이름"/);
+  assert.equal(
+    (componentSource.match(/<section className="bg-card/g) ?? []).length,
+    1,
+  );
+  assert.match(
+    componentSource,
+    /showSensitiveAccountingMetrics\s*\?\s*"급여 \/ 인건비"\s*:\s*"근무자"/,
+  );
+  assert.match(
+    componentSource,
+    /showSensitiveAccountingMetrics\s*\?\s*`급여 항목 \$\{savedCount\}건을 저장했습니다\.`\s*:\s*`근무자 \$\{savedCount\}명을 저장했습니다\.`/,
+  );
+  assert.match(
+    componentSource,
+    /showSensitiveAccountingMetrics\s*\?\s*"등록된 급여 항목이 없습니다\. 직원을 추가해 주세요\."\s*:\s*"등록된 근무자가 없습니다\. 직원을 추가해 주세요\."/,
+  );
+  assert.match(
+    componentSource,
+    /showSensitiveAccountingMetrics\s*\?\s*"급여 저장"\s*:\s*"근무자 저장"/,
+  );
 
   // Task 3: employeeId 우선 중복 제거 helper와 참고 인원 표시.
   assert.match(componentSource, /function getDraftLaborHeadcount/);
@@ -415,12 +435,25 @@ test("work step exposes labor reference headcount and non-blocking mismatch hint
   // 안내는 오류 색상(text-destructive)을 쓰지 않는다(안내 <p>만 검사).
   const hintBlock = componentSource.slice(
     componentSource.indexOf("showLaborHeadcountHint ? ("),
-    componentSource.indexOf(
-      "있으면 그대로 저장할 수 있습니다.",
-    ),
+    componentSource.indexOf("있으면 그대로 저장할 수 있습니다."),
   );
   assert.ok(hintBlock.length > 0);
   assert.doesNotMatch(hintBlock, /text-destructive/);
+
+  const hqSalaryHelperBlock = componentSource.slice(
+    componentSource.lastIndexOf(
+      "{showSensitiveAccountingMetrics ? (",
+      componentSource.indexOf("입력 중 급여 합계"),
+    ),
+    componentSource.indexOf(
+      "{hqEditReasonRequired ? (",
+      componentSource.indexOf("입력 중 급여 합계"),
+    ),
+  );
+  assert.match(hqSalaryHelperBlock, /입력 중 급여 합계/);
+  assert.match(hqSalaryHelperBlock, /마지막 서버 저장 급여 합계/);
+  assert.match(hqSalaryHelperBlock, /급여 행 기준 참고 인원/);
+  assert.match(hqSalaryHelperBlock, /showLaborHeadcountHint/);
 
   // Task 2/3 경계: 근무정보 저장 payload에는 laborItems/payrollTotal을 넣지 않는다.
   const workSavePayload = componentSource.slice(
@@ -583,7 +616,7 @@ test("ledger cost/work data model, actions, and queries follow expected contract
     actionSource,
     /expenses\.findIndex\([\s\S]*activeExpenseCodeIds\.has\(expense\.ledgerInputCodeId\)/s,
   );
-  assert.match(actionSource, /"활성 비용 항목만 저장할 수 있습니다\."/);
+  assert.match(actionSource, /"활성 지출 항목만 저장할 수 있습니다\."/);
 });
 
 test("store manager ledger responses omit sensitive accounting metrics", async () => {
@@ -804,7 +837,7 @@ test("expense step preserves inactive historical code display without adding it 
   );
 });
 
-test("expense UI distinguishes draft total from authoritative server total", () => {
+test("store-entry expense surfaces use customer-facing expenditure wording", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -814,9 +847,60 @@ test("expense UI distinguishes draft total from authoritative server total", () 
   );
 
   assert.match(source, /const\s+draftExpenseTotal\s*=\s*getDraftExpenseTotal/);
-  assert.match(source, /입력 중 비용 합계/);
-  assert.match(source, /마지막 서버 저장 합계/);
+  assert.match(source, /ledgerTerms\.draftExpenseTotal/);
+  assert.match(source, /ledgerTerms\.lastSavedExpenseTotal/);
+  assert.match(source, /stepLabel="4단계: 지출"/);
   assert.match(source, /formatKrw\(ledger\.expenseTotal\)/);
+
+  const termsSource = readProjectFile("src", "features", "ledger", "terms.ts");
+  const navigationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "store-entry-step-navigation.tsx",
+  );
+  const conflictSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "save-conflict-dialog.tsx",
+  );
+  const aliasSource = readProjectFile(
+    "src",
+    "features",
+    "master-data",
+    "code-alias-terms.ts",
+  );
+  const hqPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(termsSource, /expenseItem:\s*"지출 항목"/);
+  assert.match(termsSource, /expenseAmount:\s*"지출 금액"/);
+  assert.match(termsSource, /draftExpenseTotal:\s*"입력 중 지출 합계"/);
+  assert.match(
+    termsSource,
+    /lastSavedExpenseTotal:\s*"마지막 서버 저장 지출 합계"/,
+  );
+  assert.match(navigationSource, /4단계: 지출/);
+  assert.match(navigationSource, /5단계: 근무인원\/이름/);
+  assert.match(conflictSource, /expenses:\s*"지출"/);
+  assert.match(aliasSource, /heading:\s*"지출 항목 표시명"/);
+  assert.match(
+    hqPageSource,
+    /<TabsTrigger value="expenses"[^>]*>[\s\S]*지출[\s\S]*<\/TabsTrigger>/,
+  );
+  assert.match(
+    hqPageSource,
+    /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
+  );
 });
 
 test("cost and work migration exists and defines required schema objects", () => {

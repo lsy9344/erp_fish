@@ -298,8 +298,12 @@ export function WorkStepClient({
     const savedCount = next.laborItems.length;
     const message =
       savedCount > 0
-        ? `급여 항목 ${savedCount}건을 저장했습니다.`
-        : "저장됐습니다.";
+        ? showSensitiveAccountingMetrics
+          ? `급여 항목 ${savedCount}건을 저장했습니다.`
+          : `근무자 ${savedCount}명을 저장했습니다.`
+        : showSensitiveAccountingMetrics
+          ? "급여 항목을 저장했습니다."
+          : "근무자를 저장했습니다.";
     setLaborResultMessage(message);
     toast.success(message);
   }
@@ -510,7 +514,7 @@ export function WorkStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="5단계 근무/인건비"
+        stepLabel="5단계: 근무인원/이름"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isSaving}
@@ -531,7 +535,7 @@ export function WorkStepClient({
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">근무 요약</p>
             <p className="text-muted-foreground text-sm">
-              급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다.
+              근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다.
             </p>
           </div>
 
@@ -593,7 +597,7 @@ export function WorkStepClient({
 
           <div className="bg-muted/40 rounded-md p-3">
             <div className="flex justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">비용 합계</span>
+              <span className="text-muted-foreground">지출 합계</span>
               <span className="font-semibold tabular-nums">
                 {formatKrw(ledger.expenseTotal)}
               </span>
@@ -657,16 +661,15 @@ export function WorkStepClient({
             </Button>
           </div>
         </form>
-      </section>
-
-      <section className="bg-card text-card-foreground rounded-lg border p-4">
         <form
           onSubmit={handleLaborSubmit}
-          className="flex flex-col gap-3"
+          className="mt-4 flex flex-col gap-3 border-t pt-4"
           noValidate
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium">급여 / 인건비</p>
+            <p className="text-sm font-medium">
+              {showSensitiveAccountingMetrics ? "급여 / 인건비" : "근무자"}
+            </p>
             <Button
               type="button"
               variant="outline"
@@ -681,7 +684,9 @@ export function WorkStepClient({
 
           {laborItems.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              등록된 급여 항목이 없습니다. 직원을 추가해 주세요.
+              {showSensitiveAccountingMetrics
+                ? "등록된 급여 항목이 없습니다. 직원을 추가해 주세요."
+                : "등록된 근무자가 없습니다. 직원을 추가해 주세요."}
             </p>
           ) : (
             <div className="flex flex-col gap-3">
@@ -761,11 +766,13 @@ export function WorkStepClient({
                             </option>
                           ))}
                         </select>
-                        <p className="text-muted-foreground mt-1 text-xs">
-                          직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다.
-                          연결하지 않으면 “미연결” 합계로만 집계되어 직원별
-                          분석에서 빠집니다.
-                        </p>
+                        {showSensitiveAccountingMetrics ? (
+                          <p className="text-muted-foreground mt-1 text-xs">
+                            직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다.
+                            연결하지 않으면 “미연결” 합계로만 집계되어 직원별
+                            분석에서 빠집니다.
+                          </p>
+                        ) : null}
                       </Field>
                     ) : null}
 
@@ -921,45 +928,40 @@ export function WorkStepClient({
             </div>
           )}
 
-          <div className="bg-muted/40 rounded-md p-3">
-            {/* WO-10(2026-06-28): 급여 합계 금액은 본사 전용. 지점장에게는 참고 인원만 보인다. */}
-            {showSensitiveAccountingMetrics ? (
-              <>
-                <div className="flex justify-between gap-2 text-sm">
-                  <span className="text-muted-foreground">
-                    입력 중 급여 합계
-                  </span>
-                  <span className="font-semibold tabular-nums">
-                    {formatKrw(draftPayrollTotal)}
-                  </span>
-                </div>
-                <div className="mt-2 flex justify-between gap-2 text-sm">
-                  <span className="text-muted-foreground">
-                    마지막 서버 저장 합계
-                  </span>
-                  <span className="font-semibold tabular-nums">
-                    {formatKrw(
-                      "payrollTotal" in ledger ? ledger.payrollTotal : 0,
-                    )}
-                  </span>
-                </div>
-              </>
-            ) : null}
-            <div className="flex justify-between gap-2 text-sm [&:not(:first-child)]:mt-2">
-              <span className="text-muted-foreground">
-                급여 행 기준 참고 인원
-              </span>
-              <span className="font-semibold tabular-nums">
-                {draftLaborHeadcount}명
-              </span>
+          {showSensitiveAccountingMetrics ? (
+            <div className="bg-muted/40 rounded-md p-3">
+              <div className="flex justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">입력 중 급여 합계</span>
+                <span className="font-semibold tabular-nums">
+                  {formatKrw(draftPayrollTotal)}
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  마지막 서버 저장 급여 합계
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {formatKrw(
+                    "payrollTotal" in ledger ? ledger.payrollTotal : 0,
+                  )}
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  급여 행 기준 참고 인원
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {draftLaborHeadcount}명
+                </span>
+              </div>
+              {showLaborHeadcountHint ? (
+                <p className="text-muted-foreground mt-2 text-sm">
+                  근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록
+                  근무자가 있으면 그대로 저장할 수 있습니다.
+                </p>
+              ) : null}
             </div>
-            {showLaborHeadcountHint ? (
-              <p className="text-muted-foreground mt-2 text-sm">
-                근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록
-                근무자가 있으면 그대로 저장할 수 있습니다.
-              </p>
-            ) : null}
-          </div>
+          ) : null}
 
           {hqEditReasonRequired ? (
             <HqEditReasonField
@@ -1001,7 +1003,11 @@ export function WorkStepClient({
               className="min-h-11 w-full sm:w-auto"
               disabled={!isHydrated || isLaborSaving || isOriginalEditBlocked}
             >
-              {isLaborSaving ? "저장 중..." : "급여 저장"}
+              {isLaborSaving
+                ? "저장 중..."
+                : showSensitiveAccountingMetrics
+                  ? "급여 저장"
+                  : "근무자 저장"}
             </Button>
             {resultMessage || laborResultMessage ? (
               <Button
