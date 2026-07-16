@@ -1299,9 +1299,8 @@ export function toStoreManagerInventoryStepData(
 ): StoreManagerInventoryStepData {
   return {
     ...data,
-    // 정책 반전(2026-06-28, §4): inventoryAmount(FIFO 재고금액)·lot 금액/단가는 본사 전용으로
-    // 차단한다. 지점장에게는 수량·입고일·lot 식별만 남긴 fifoLots 안전 뷰를 노출한다.
-    // unitPrice/매입액/손실액과 조정 금액도 계속 차단한다.
+    // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
+    // 당일·최근 실제 매입단가만 ...item 안의 중첩 purchasePrice 예외로 유지한다.
     items: data.items.map(
       ({
         unitPrice,
