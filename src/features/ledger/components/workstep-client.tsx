@@ -302,7 +302,7 @@ export function WorkStepClient({
           ? `급여 항목 ${savedCount}건을 저장했습니다.`
           : `근무자 ${savedCount}명을 저장했습니다.`
         : showSensitiveAccountingMetrics
-          ? "급여 항목을 저장했습니다."
+          ? "저장됐습니다."
           : "근무자를 저장했습니다.";
     setLaborResultMessage(message);
     toast.success(message);
@@ -514,7 +514,11 @@ export function WorkStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="5단계: 근무인원/이름"
+        stepLabel={
+          showSensitiveAccountingMetrics
+            ? "5단계 근무/인건비"
+            : "5단계: 근무인원/이름"
+        }
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isSaving}
@@ -940,7 +944,7 @@ export function WorkStepClient({
               </div>
               <div className="mt-2 flex justify-between gap-2 text-sm">
                 <span className="text-muted-foreground">
-                  마지막 서버 저장 급여 합계
+                  마지막 서버 저장 합계
                 </span>
                 <span className="font-semibold tabular-nums">
                   {formatKrw(

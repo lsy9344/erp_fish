@@ -397,7 +397,10 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
     componentSource,
     /showSensitiveAccountingMetrics\s*\?\s*"급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\."\s*:\s*"근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다\."/,
   );
-  assert.match(componentSource, /stepLabel="5단계: 근무인원\/이름"/);
+  assert.match(
+    componentSource,
+    /stepLabel=\{\s*showSensitiveAccountingMetrics\s*\?\s*"5단계 근무\/인건비"\s*:\s*"5단계: 근무인원\/이름"\s*\}/,
+  );
   assert.equal(
     (componentSource.match(/<section className="bg-card/g) ?? []).length,
     1,
@@ -409,6 +412,10 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
   assert.match(
     componentSource,
     /showSensitiveAccountingMetrics\s*\?\s*`급여 항목 \$\{savedCount\}건을 저장했습니다\.`\s*:\s*`근무자 \$\{savedCount\}명을 저장했습니다\.`/,
+  );
+  assert.match(
+    componentSource,
+    /showSensitiveAccountingMetrics\s*\?\s*"저장됐습니다\."\s*:\s*"근무자를 저장했습니다\."/,
   );
   assert.match(
     componentSource,
@@ -451,7 +458,7 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
     ),
   );
   assert.match(hqSalaryHelperBlock, /입력 중 급여 합계/);
-  assert.match(hqSalaryHelperBlock, /마지막 서버 저장 급여 합계/);
+  assert.match(hqSalaryHelperBlock, /마지막 서버 저장 합계/);
   assert.match(hqSalaryHelperBlock, /급여 행 기준 참고 인원/);
   assert.match(hqSalaryHelperBlock, /showLaborHeadcountHint/);
 
