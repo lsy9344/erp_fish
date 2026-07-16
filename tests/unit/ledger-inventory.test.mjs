@@ -1211,6 +1211,96 @@ test("inventory normal save requires a reason only for real overstock", async ()
   );
 });
 
+test("inventory save errors follow submitted product identity instead of row order", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-save-errors.ts",
+  );
+  const { mapInventorySaveErrors } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  const mapped = mapInventorySaveErrors(
+    {
+      "items.0.adjustmentReason": ["reason for submitted product-2"],
+      "items.1.quantity": ["quantity for submitted product-1"],
+      "items.99.currentQuantity": ["unknown product"],
+      reason: ["HQ edit reason"],
+    },
+    ["product-2", "product-1"],
+    ["product-1", "product-2"],
+  );
+
+  assert.deepEqual(mapped, {
+    fieldErrors: {
+      "items.0.currentQuantity": ["quantity for submitted product-1"],
+      reason: ["HQ edit reason"],
+    },
+    adjustmentErrors: {
+      "product-2": "reason for submitted product-2",
+    },
+    firstFocusTarget: {
+      productId: "product-2",
+      currentIndex: 1,
+      field: "reason",
+    },
+  });
+
+  assert.deepEqual(
+    mapInventorySaveErrors(
+      { "items.0.currentQuantity": ["current quantity error"] },
+      ["product-2"],
+      ["product-1", "product-2"],
+    ).firstFocusTarget,
+    {
+      productId: "product-2",
+      currentIndex: 1,
+      field: "quantity",
+    },
+  );
+});
+
+test("inventory bulk-save errors preserve drafts and reveal the mapped row before focus", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const saveStart = componentSource.indexOf(
+    "async function saveCurrentDraft()",
+  );
+  const successStart = componentSource.indexOf(
+    "setData(result.data);",
+    saveStart,
+  );
+  const failurePaths = componentSource.slice(saveStart, successStart);
+
+  assert.match(componentSource, /mapInventorySaveErrors/);
+  assert.match(componentSource, /const submittedItems = items\.map/);
+  assert.match(
+    componentSource,
+    /const submittedProductIds = submittedItems\.map\(\(item\) => item\.productId\)/,
+  );
+  assert.match(componentSource, /items: submittedItems/);
+  assert.match(
+    componentSource,
+    /setAdjustmentErrors\(mappedErrors\.adjustmentErrors\)/,
+  );
+  assert.match(
+    componentSource,
+    /focusInventoryError\(mappedErrors\.firstFocusTarget\)/,
+  );
+  assert.match(
+    componentSource,
+    /function focusInventoryError[\s\S]*setActiveCategory\(category\)[\s\S]*setCategoryPage\([\s\S]*ROW_PAGE_SIZE[\s\S]*window\.setTimeout\([\s\S]*(?:reasonRefs|currentQuantityRefs)\.current/,
+  );
+  assert.doesNotMatch(failurePaths, /setItems\(|toLineState\(result\.data\)/);
+});
+
 test("describeAdjustmentReason explains overstock with normalized basis numbers", async () => {
   const guardPath = assertProjectFile(
     "src",

@@ -338,31 +338,57 @@ test("실제 재고 차이를 바꾼 이유와 함께 저장하고 재방문 시
   expect(auditLog?.after).toBeTruthy();
 });
 
-test("바꾼 이유가 비어 있으면 저장을 막고 이유 필드에 포커스한다", async ({
+test("바꾼 이유가 비어 있으면 여러 행 초안을 유지하고 첫 이유 필드에 포커스한다", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  const product = await seedProduct("스토리2-7 사유 우럭", "냉동", 8000);
+  const product = await seedProduct("스토리2-7 01 사유 우럭", "냉동", 8000);
+  const draftProduct = await seedProduct(
+    "스토리2-7 02 초안 광어",
+    "생물",
+    9000,
+  );
   await seedTodayLedger();
 
-  await prisma.inventoryOpeningSnapshot.create({
-    data: {
-      storeId: STORY_STORE_ID,
-      yearMonth: getCurrentYearMonth(),
-      productId: product.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      unitPrice: product.defaultUnitPrice,
-      quantity: 4,
-    },
+  await prisma.inventoryOpeningSnapshot.createMany({
+    data: [
+      {
+        storeId: STORY_STORE_ID,
+        yearMonth: getCurrentYearMonth(),
+        productId: product.id,
+        productName: product.name,
+        productCategory: product.category,
+        productSpec: product.spec,
+        unitPrice: product.defaultUnitPrice,
+        quantity: 4,
+      },
+      {
+        storeId: STORY_STORE_ID,
+        yearMonth: getCurrentYearMonth(),
+        productId: draftProduct.id,
+        productName: draftProduct.name,
+        productCategory: draftProduct.category,
+        productSpec: draftProduct.spec,
+        unitPrice: draftProduct.defaultUnitPrice,
+        quantity: 2,
+      },
+    ],
   });
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
 
   const row = await fillInventoryQuantityAndWait(page, product.name, "6");
   const reasonInput = page.getByLabel(`${product.name} 재고 조정 이유`);
+  const draftQuantityInput = page.getByLabel(`${draftProduct.name} 당일재고`, {
+    exact: true,
+  });
+  const draftReasonInput = page.getByLabel(
+    `${draftProduct.name} 재고 조정 이유`,
+  );
+  await draftQuantityInput.fill("1");
+  await draftReasonInput.fill("다른 행 초안");
+  await page.getByRole("tab", { name: "생물" }).click();
   const saveButton = getInventorySaveButton(page);
 
   await saveButton.click();
@@ -372,13 +398,23 @@ test("바꾼 이유가 비어 있으면 저장을 막고 이유 필드에 포커
       hasText: /기준재고 4개인데 당일재고가 6개입니다/,
     }),
   ).toBeVisible();
+  await expect(page.getByRole("tab", { name: "냉동" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(reasonInput).toBeFocused();
-
+  await expect(
+    page.getByLabel(`${product.name} 당일재고`, { exact: true }),
+  ).toHaveValue("6");
   const inputBox = await reasonInput.boundingBox();
   const buttonBox = await saveButton.boundingBox();
 
   expect(inputBox?.height).toBeGreaterThanOrEqual(44);
   expect(buttonBox?.height).toBeGreaterThanOrEqual(44);
+
+  await page.getByRole("tab", { name: "생물" }).click();
+  await expect(draftQuantityInput).toHaveValue("1");
+  await expect(draftReasonInput).toHaveValue("다른 행 초안");
 });
 
 test("본사 마감 장부는 원본 재고 조정을 막고 정정 기록 안내를 보여준다", async ({

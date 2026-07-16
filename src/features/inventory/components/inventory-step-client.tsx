@@ -61,6 +61,10 @@ import {
   isManualFirstInventoryEntry,
 } from "~/features/inventory/inventory-persist-policy";
 import {
+  mapInventorySaveErrors,
+  type InventoryErrorFocusTarget,
+} from "~/features/inventory/inventory-save-errors";
+import {
   type InventoryAdjustmentView,
   type InventoryManualProductOption,
   type InventoryStepData,
@@ -393,48 +397,56 @@ export function InventoryStepClient({
     setPageByCategory((current) => ({ ...current, [category]: page }));
   }
 
-  function focusFirstError(errors: FieldErrors) {
+  function focusInventoryError(target?: InventoryErrorFocusTarget) {
+    if (!target) {
+      return;
+    }
+
+    const item = items.find(
+      (candidate) => candidate.productId === target.productId,
+    );
+
+    if (!item) {
+      return;
+    }
+
+    const category = normalizeCategory(item.productCategory);
+    const categoryIndex = getCategoryItems(category).findIndex(
+      (candidate) => candidate.productId === target.productId,
+    );
+    setActiveCategory(category);
+    setCategoryPage(
+      category,
+      Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+    );
     window.setTimeout(() => {
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]!;
-
-        if (errors[`items.${index}.currentQuantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
-          window.setTimeout(() => {
-            currentQuantityRefs.current[item.productId]?.focus();
-          }, 0);
-          return;
-        }
-
-        if (errors[`items.${index}.quantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
-          window.setTimeout(() => {
-            currentQuantityRefs.current[item.productId]?.focus();
-          }, 0);
-          return;
-        }
-      }
-
-      if (errors.reason?.length) {
-        hqEditReasonInputRef.current?.focus();
-      }
+      const refs = target.field === "reason" ? reasonRefs : currentQuantityRefs;
+      refs.current[target.productId]?.focus();
     }, 0);
+  }
+
+  function focusFirstError(errors: FieldErrors) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]!;
+
+      if (
+        errors[`items.${index}.currentQuantity`]?.length ||
+        errors[`items.${index}.quantity`]?.length
+      ) {
+        focusInventoryError({
+          productId: item.productId,
+          currentIndex: index,
+          field: "quantity",
+        });
+        return;
+      }
+    }
+
+    if (errors.reason?.length) {
+      window.setTimeout(() => {
+        hqEditReasonInputRef.current?.focus();
+      }, 0);
+    }
   }
 
   // 매입/손실이 있어 판매량이 잡히는 품목은 당일재고를 직접 입력해야 한다. 빈칸으로 두면
@@ -553,10 +565,13 @@ export function InventoryStepClient({
 
     setAdjustmentErrors(nextErrors);
     setFormError(firstMessage);
-    setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
-    window.setTimeout(() => {
-      reasonRefs.current[firstInvalidItem.productId]?.focus();
-    }, 0);
+    focusInventoryError({
+      productId: firstInvalidItem.productId,
+      currentIndex: items.findIndex(
+        (item) => item.productId === firstInvalidItem.productId,
+      ),
+      field: "reason",
+    });
     toast.error(firstMessage);
 
     return false;
@@ -593,6 +608,24 @@ export function InventoryStepClient({
     setFieldErrors({});
     setAdjustmentErrors({});
 
+    const submittedItems = items.map((item) => {
+      const quantityInput = toStockQuantitySaveInput(
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
+        item.currentQuantity,
+      );
+
+      return {
+        productId: item.productId,
+        currentQuantity: quantityInput,
+        quantity: quantityInput,
+        adjustmentReason:
+          reasonRefs.current[item.productId]?.value ??
+          item.adjustmentReasonInput,
+      };
+    });
+    const submittedProductIds = submittedItems.map((item) => item.productId);
+
     try {
       const result = await saveItemsAction({
         ledgerId: data.id,
@@ -600,23 +633,7 @@ export function InventoryStepClient({
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
-        items: items.map((item) => {
-          const quantityInput = toStockQuantitySaveInput(
-            currentQuantityRefs.current[item.productId]?.value ??
-              item.currentQuantityInput,
-            item.currentQuantity,
-          );
-
-          return {
-            productId: item.productId,
-            currentQuantity: quantityInput,
-            quantity: quantityInput,
-            // 행별 "고친 이유"도 함께 보낸다. 차이가 있는 행이면 서버가 이 사유로 조정을 만든다.
-            adjustmentReason:
-              reasonRefs.current[item.productId]?.value ??
-              item.adjustmentReasonInput,
-          };
-        }),
+        items: submittedItems,
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -627,10 +644,19 @@ export function InventoryStepClient({
           return false;
         }
 
-        const nextErrors = result.error.fieldErrors ?? {};
-        setFieldErrors(nextErrors);
+        const mappedErrors = mapInventorySaveErrors(
+          result.error.fieldErrors ?? {},
+          submittedProductIds,
+          items.map((item) => item.productId),
+        );
+        setFieldErrors(mappedErrors.fieldErrors);
+        setAdjustmentErrors(mappedErrors.adjustmentErrors);
         setFormError(result.error.message);
-        focusFirstError(nextErrors);
+        if (mappedErrors.firstFocusTarget) {
+          focusInventoryError(mappedErrors.firstFocusTarget);
+        } else {
+          focusFirstError(mappedErrors.fieldErrors);
+        }
         toast.error(result.error.message);
         return false;
       }
