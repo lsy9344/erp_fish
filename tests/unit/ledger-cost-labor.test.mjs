@@ -768,7 +768,10 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   // 원본 이카운트 단가/보정 메타는 본사 전용이라 제거된다.
   assert.equal(safeLedger.purchaseItems.length, 1);
   assert.equal(safeLedger.purchaseItems[0].unitPrice, 5_000);
-  assert.equal(Object.hasOwn(safeLedger.purchaseItems[0], "sourceUnitPrice"), false);
+  assert.equal(
+    Object.hasOwn(safeLedger.purchaseItems[0], "sourceUnitPrice"),
+    false,
+  );
   assert.equal(
     Object.hasOwn(safeLedger.purchaseItems[0], "unitPriceOverridden"),
     false,
@@ -888,6 +891,12 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     "[ledgerId]",
     "page.tsx",
   );
+  const hqClosePreflightSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-close-preflight.ts",
+  );
 
   assert.match(termsSource, /expenseItem:\s*"지출 항목"/);
   assert.match(termsSource, /expenseAmount:\s*"지출 금액"/);
@@ -908,6 +917,7 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     hqPageSource,
     /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
   );
+  assert.match(hqClosePreflightSource, /expenseTotal:\s*"지출 합계"/);
 });
 
 test("cost and work migration exists and defines required schema objects", () => {
