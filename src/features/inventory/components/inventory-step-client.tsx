@@ -421,7 +421,9 @@ export function InventoryStepClient({
     );
     window.setTimeout(() => {
       const refs = target.field === "reason" ? reasonRefs : currentQuantityRefs;
-      refs.current[target.productId]?.focus();
+      window.setTimeout(() => {
+        refs.current[target.productId]?.focus();
+      }, 0);
     }, 0);
   }
 

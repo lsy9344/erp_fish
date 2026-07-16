@@ -472,7 +472,7 @@ test("검토 대기 장부에서도 권한 있는 사용자가 원본 재고 조
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
   await page.getByRole("tab", { name: "생물" }).click();
-  await fillInventoryQuantityAndWait(page, product.name, "4");
+  await fillInventoryQuantityAndWait(page, product.name, "6");
   await page
     .getByLabel(`${product.name} 재고 조정 이유`)
     .fill("검토 중 실사 차이");
