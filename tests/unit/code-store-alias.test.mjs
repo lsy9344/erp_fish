@@ -176,12 +176,16 @@ test("WO-09 input code alias editor and terms generalize loss type and expense i
     "code-alias-terms.ts",
   );
 
-  // 코드 그룹 키로 손실 유형/비용 항목 모두를 다룬다.
+  // 내부 expenseItem 키는 유지하고 사용자에게는 지출 항목으로 표시한다.
   assert.match(editorSource, /groupKey:\s*CodeAliasGroupKey/);
   assert.match(termsSource, /lossType:/);
   assert.match(termsSource, /expenseItem:/);
   assert.match(termsSource, /손실 유형 표시명/);
-  assert.match(termsSource, /비용 항목 표시명/);
+  assert.match(termsSource, /heading:\s*"지출 항목 표시명"/);
+  assert.match(
+    termsSource,
+    /본사가 등록한 지출 항목의 표시명을 이 지점 화면에서만 바꿀 수 있습니다\./,
+  );
 });
 
 test("WO-09 expense item alias applies by store while headquarters keeps canonical names", () => {
