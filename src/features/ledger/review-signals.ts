@@ -1,4 +1,4 @@
-import { isPurchaseDrivenSale } from "../inventory/inventory-persist-policy.ts";
+import { getInventoryQuantityRelation } from "../inventory/inventory-persist-policy.ts";
 import type { LedgerReviewSignal } from "./review-types";
 
 export type LedgerReviewSignalInventoryItem = {
@@ -37,7 +37,7 @@ export function buildLedgerReviewSignals({
         return [];
       }
 
-      if (isPurchaseDrivenSale(item)) {
+      if (getInventoryQuantityRelation(item) !== "OVERSTOCK") {
         return [];
       }
 
@@ -56,28 +56,11 @@ export function buildLedgerReviewSignals({
   return [...inventorySignals, ...lossSignals];
 }
 
-// 손실이 섞인 부족 방향은 재고 실사 차이가 아니라 "손실 제외 후 남은 재고 기준 판매
-// 추정"으로 읽는다(2026-06-26 WO). 원시 quantity 부호는 본사/리포트와 공유하므로 그대로
-// 두고, 지점장 표시용 라벨/문구만 quantityLabel·quantityText로 분리해 덧붙인다.
 function buildInventorySignal(
   item: LedgerReviewSignalInventoryItem,
   differenceQuantity: number,
   differenceAmount: number,
 ): LedgerReviewSignal {
-  if (differenceQuantity < 0 && item.lossQuantity > 0) {
-    const estimatedSalesQuantity = Math.abs(differenceQuantity);
-
-    return {
-      id: `inventory-${item.productId}`,
-      label: "판매 추정 확인",
-      detail: `${item.productName}는 손실 ${item.lossQuantity}개를 제외한 뒤, 남은 재고를 기준으로 ${estimatedSalesQuantity}개 판매로 계산됩니다.`,
-      quantity: differenceQuantity,
-      quantityLabel: "판매 추정",
-      quantityText: `${estimatedSalesQuantity}개`,
-      amount: differenceAmount,
-    };
-  }
-
   const signal: LedgerReviewSignal = {
     id: `inventory-${item.productId}`,
     label: "재고 확인 필요",

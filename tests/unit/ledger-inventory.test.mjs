@@ -1082,7 +1082,7 @@ test("purchase, loss, and inventory save actions refresh FIFO lot snapshots", ()
   }
 });
 
-test("inventory normal save requires matching adjustment record for changed actual quantities", async () => {
+test("inventory normal save requires a reason only for real overstock", async () => {
   const guardPath = assertProjectFile(
     "src",
     "features",
@@ -1098,7 +1098,7 @@ test("inventory normal save requires matching adjustment record for changed actu
       previousQuantity: 10,
       purchasedQuantity: 3,
       lossQuantity: 1,
-      currentQuantity: 9,
+      currentQuantity: 13,
     },
     {
       productId: "product-2",
@@ -1117,21 +1117,21 @@ test("inventory normal save requires matching adjustment record for changed actu
   ];
 
   assert.deepEqual(getInventorySaveAdjustmentErrors(items, []), {
-    "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
+    "items.0.adjustmentReason": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
   });
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
-      { productId: "product-1", afterQuantity: 8 },
+      { productId: "product-1", afterQuantity: 12 },
     ]),
     {
-      "items.0.currentQuantity": [
+      "items.0.adjustmentReason": [
         "재고 차이를 고친 이유를 먼저 저장해 주세요.",
       ],
     },
   );
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
-      { productId: "product-1", afterQuantity: 9 },
+      { productId: "product-1", afterQuantity: 13 },
     ]),
     {},
   );
@@ -1155,27 +1155,63 @@ test("inventory normal save requires matching adjustment record for changed actu
     "manual first-entry rows should not require an adjustment reason on later saves",
   );
 
-  // 매입 정상 판매 소진(매입 6, 손실 0, 당일재고 2 ≤ 기준 8)은 실사 차이가 아니라
-  // 판매로 보므로 조정 사유 없이 통과해야 한다.
+  for (const item of [
+    {
+      productId: "purchase-sale",
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    },
+    {
+      productId: "carryover-sale",
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    },
+    {
+      productId: "loss-mixed-shortage",
+      previousQuantity: 5,
+      purchasedQuantity: 2,
+      lossQuantity: 1,
+      currentQuantity: 3,
+    },
+    {
+      productId: "equal",
+      previousQuantity: 5,
+      purchasedQuantity: 2,
+      lossQuantity: 1,
+      currentQuantity: 6,
+    },
+  ]) {
+    assert.deepEqual(
+      getInventorySaveAdjustmentErrors([item], []),
+      {},
+      `${item.productId} should not require an adjustment reason`,
+    );
+  }
+
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(
       [
         {
-          productId: "purchase-sale",
-          previousQuantity: 2,
-          purchasedQuantity: 6,
+          productId: "incoming-reason",
+          previousQuantity: 1,
+          purchasedQuantity: 2,
           lossQuantity: 0,
-          currentQuantity: 2,
+          currentQuantity: 4,
         },
       ],
       [],
+      new Map([["incoming-reason", "counted case"]]),
     ),
     {},
-    "purchase-driven normal sale should be exempt from the adjustment reason",
+    "an incoming reason should allow real overstock",
   );
 });
 
-test("describeAdjustmentReason explains the gap with numbers, noting loss separately", async () => {
+test("describeAdjustmentReason explains overstock with normalized basis numbers", async () => {
   const guardPath = assertProjectFile(
     "src",
     "features",
@@ -1186,75 +1222,84 @@ test("describeAdjustmentReason explains the gap with numbers, noting loss separa
     pathToFileURL(guardPath).href
   );
 
-  // 사용자 케이스: 기준재고 3, 당일재고 1, 손실 1 → "손실 1개 외에 2개 차이"가 보여야 한다.
   assert.equal(
-    describeAdjustmentReason(3, 1, 1),
-    "기준재고 3개인데 당일재고가 1개입니다(손실 1개 외에 2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+    describeAdjustmentReason(3, 4, 1),
+    "기준재고 3개인데 당일재고가 4개입니다(손실 1개 반영 후 기준보다 1개 많음). 차이가 생긴 사유를 남겨 주세요.",
   );
 
-  // 손실이 없으면 "손실 N개 외에" 문구를 붙이지 않는다.
   assert.equal(
-    describeAdjustmentReason(5, 3, 0),
-    "기준재고 5개인데 당일재고가 3개입니다(2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+    describeAdjustmentReason(5, 6, 0),
+    "기준재고 5개인데 당일재고가 6개입니다(기준보다 1개 많음). 차이가 생긴 사유를 남겨 주세요.",
   );
 });
 
-test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no loss, purchased)", async () => {
+test("getInventoryQuantityRelation normalizes every inventory flow before comparing", async () => {
   const policyPath = assertProjectFile(
     "src",
     "features",
     "inventory",
     "inventory-persist-policy.ts",
   );
-  const { isPurchaseDrivenSale } = await import(pathToFileURL(policyPath).href);
+  const { getInventoryQuantityRelation } = await import(
+    pathToFileURL(policyPath).href
+  );
 
-  // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 정상 판매(면제).
-  assert.equal(
-    isPurchaseDrivenSale({
+  const relation = (overrides) =>
+    getInventoryQuantityRelation({
       previousQuantity: 2,
       purchasedQuantity: 6,
       lossQuantity: 0,
       currentQuantity: 2,
-    }),
-    true,
-    "under-stock with purchase and no loss is a normal sale",
-  );
+      ...overrides,
+    });
 
-  // 초과: 당일재고 9 > 기준 8 → 이상 입력(조정 요구).
+  assert.equal(relation({}), "NORMAL", "purchase sale is normal");
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 0,
-      currentQuantity: 9,
-    }),
-    false,
-    "over-stock beyond system quantity still requires an adjustment",
+    relation({ purchasedQuantity: 0, previousQuantity: 5 }),
+    "NORMAL",
+    "carryover sale is normal",
   );
-
-  // 손실 혼재: 손실 1 → 정상 판매와 차이 구분 불가(조정 요구).
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 1,
-      currentQuantity: 2,
-    }),
-    false,
-    "mixed loss still requires an adjustment",
+    relation({ lossQuantity: 1 }),
+    "NORMAL",
+    "loss-mixed shortage is normal",
   );
-
-  // 매입 없음: 이월 품목 차이는 진짜 실사 차이(조정 요구).
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 5,
-      purchasedQuantity: 0,
-      lossQuantity: 0,
-      currentQuantity: 2,
-    }),
-    false,
-    "carryover difference without purchase still requires an adjustment",
+    relation({ currentQuantity: 8 }),
+    "NORMAL",
+    "equality is normal",
   );
+  assert.equal(relation({ currentQuantity: 8.01 }), "OVERSTOCK");
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.3,
+    }),
+    "NORMAL",
+    "floating sums must not create false overstock",
+  );
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.304,
+    }),
+    "NORMAL",
+    "current quantity uses the same two-decimal normalization",
+  );
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.306,
+    }),
+    "OVERSTOCK",
+    "normalized current quantity above the boundary is overstock",
+  );
+  assert.equal(relation({ currentQuantity: null }), "UNAVAILABLE");
+  assert.equal(relation({ currentQuantity: Number.NaN }), "UNAVAILABLE");
+  assert.equal(relation({ previousQuantity: -1 }), "UNAVAILABLE");
 });
 
 test("getRequiredCurrentQuantityErrors blocks blank actual quantity for purchase/loss seed rows", async () => {
@@ -1497,7 +1542,7 @@ test("store-manager bulk inventory save persists per-row adjustment reasons", ()
   assert.match(client, /adjustmentReason:\s*\n?\s*reasonRefs\.current/);
 });
 
-test("inventory adjustment reconciliation drops records that became purchase-driven sales", () => {
+test("inventory adjustment reconciliation drops every stale normal shortage record", () => {
   const reconcileSource = readProjectFile(
     "src",
     "features",
@@ -1507,24 +1552,139 @@ test("inventory adjustment reconciliation drops records that became purchase-dri
 
   assert.match(
     reconcileSource,
-    /isPurchaseDrivenSale\(/,
-    "reconciliation should detect purchase-driven sales",
+    /getInventoryQuantityRelation\(/,
+    "reconciliation should use the shared inventory relation",
   );
-  // reconcile 함수 본문 안에서만 확인한다(같은 파일의 applyInventoryAdjustmentReasonsInTx도
-  // isPurchaseDrivenSale을 쓰지만 그 경우는 조정을 만들지 않고 skip한다).
+  // reconcile 함수 본문 안에서만 확인한다(같은 파일의 reason apply path도 relation을 쓴다).
   const reconcileBody = reconcileSource.slice(
     reconcileSource.indexOf(
       "export async function reconcileLedgerInventoryAdjustments",
     ),
   );
   // 정상 판매로 바뀐 기존 조정 레코드는 삭제해 salesDifference 합산에서 빠지게 한다.
-  const purchaseSaleIndex = reconcileBody.indexOf("isPurchaseDrivenSale(");
+  const purchaseSaleIndex = reconcileBody.indexOf(
+    "getInventoryQuantityRelation(",
+  );
   const deleteAfter = reconcileBody
     .slice(purchaseSaleIndex)
     .indexOf("ledgerInventoryAdjustment.delete(");
   assert.ok(
     deleteAfter > 0 && deleteAfter < 400,
     "a purchase-driven sale should delete the stale adjustment record",
+  );
+});
+
+test("inventory adjustment reason apply and reconciliation keep only real overstock records", async () => {
+  const reconcilePath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-reconciliation.ts",
+  );
+  const {
+    applyInventoryAdjustmentReasonsInTx,
+    reconcileLedgerInventoryAdjustments,
+  } = await import(pathToFileURL(reconcilePath).href);
+  const inventoryItems = [
+    {
+      id: "row-carryover",
+      productId: "carryover",
+      productName: "carryover",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 5,
+      currentQuantity: 2,
+      quantity: 2,
+    },
+    {
+      id: "row-loss-mixed",
+      productId: "loss-mixed",
+      productName: "loss-mixed",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 5,
+      currentQuantity: 3,
+      quantity: 3,
+    },
+    {
+      id: "row-overstock",
+      productId: "overstock",
+      productName: "overstock",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 2,
+      currentQuantity: 3,
+      quantity: 3,
+    },
+  ];
+  const purchases = [{ productId: "loss-mixed", quantity: 2 }];
+  const losses = [{ productId: "loss-mixed", quantity: 1 }];
+  const created = [];
+  const deleted = [];
+  const updatedAdjustments = [];
+  const tx = {
+    ledgerInventoryItem: {
+      findMany: async ({ where }) =>
+        where.productId?.in
+          ? inventoryItems.filter((item) =>
+              where.productId.in.includes(item.productId),
+            )
+          : inventoryItems,
+      update: async () => {},
+    },
+    ledgerPurchaseItem: { findMany: async () => purchases },
+    ledgerLossItem: { findMany: async () => losses },
+    ledgerInventoryAdjustment: {
+      findMany: async ({ where }) =>
+        where.productId?.in
+          ? []
+          : [
+              { id: "adjust-carryover", productId: "carryover", reason: "old" },
+              {
+                id: "adjust-loss-mixed",
+                productId: "loss-mixed",
+                reason: "old",
+              },
+              {
+                id: "adjust-overstock",
+                productId: "overstock",
+                reason: "counted",
+              },
+            ],
+      create: async ({ data }) => created.push(data),
+      delete: async ({ where }) => deleted.push(where.id),
+      update: async ({ where, data }) =>
+        updatedAdjustments.push({ where, data }),
+    },
+  };
+
+  await applyInventoryAdjustmentReasonsInTx(
+    tx,
+    "ledger-1",
+    new Map(inventoryItems.map((item) => [item.productId, "counted"])),
+    "actor-1",
+  );
+
+  assert.deepEqual(
+    created.map((adjustment) => adjustment.productId),
+    ["overstock"],
+    "a reason must not create shortage adjustments",
+  );
+
+  await reconcileLedgerInventoryAdjustments(tx, "ledger-1", "actor-1");
+
+  assert.deepEqual(
+    deleted,
+    ["adjust-carryover", "adjust-loss-mixed"],
+    "carryover and loss-mixed shortage adjustments should be deleted",
+  );
+  assert.deepEqual(
+    updatedAdjustments.map((adjustment) => adjustment.where.id),
+    ["adjust-overstock"],
+    "real overstock should retain the existing adjustment flow",
   );
 });
 
@@ -1936,7 +2096,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     "store manager action must not write inventory adjustments anymore",
   );
 
-  // 단독 재고조정 내부 계약(upsert/감사/POLICY_UNCONFIRMED/0차이 차단/충돌)은 본사 액션으로 이관됐다.
+  // 단독 재고조정 내부 계약(upsert/감사/POLICY_UNCONFIRMED/초과만 허용/충돌)은 본사 액션으로 이관됐다.
   const hqActionSource = readProjectFile(
     "src",
     "features",
@@ -1955,8 +2115,8 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   assert.match(hqActionSource, /재고 기준을 계산할 수 없습니다/);
   assert.match(
     hqActionSource,
-    /differenceQuantity\s*===\s*0/,
-    "zero-difference adjustments should be blocked",
+    /getInventoryQuantityRelation\(/,
+    "HQ adjustment creation should use the shared overstock relation",
   );
   assert.doesNotMatch(
     hqActionSource,

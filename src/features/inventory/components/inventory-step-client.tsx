@@ -57,8 +57,8 @@ import {
   missingAdjustmentReasonMessage,
 } from "~/features/inventory/adjustment-save-guard";
 import {
+  getInventoryQuantityRelation,
   isManualFirstInventoryEntry,
-  isPurchaseDrivenSale,
 } from "~/features/inventory/inventory-persist-policy";
 import {
   type InventoryAdjustmentView,
@@ -500,8 +500,10 @@ export function InventoryStepClient({
         item.currentQuantity,
       );
 
-      // 매입 정상 판매 소진(부족 방향·손실 없음)은 실사 차이가 아니라 판매로 본다.
-      if (isPurchaseDrivenSale({ ...item, currentQuantity })) {
+      if (
+        getInventoryQuantityRelation({ ...item, currentQuantity }) !==
+        "OVERSTOCK"
+      ) {
         continue;
       }
 
@@ -515,7 +517,6 @@ export function InventoryStepClient({
       if (
         systemQuantity === null ||
         currentQuantity === null ||
-        currentQuantity === systemQuantity ||
         item.adjustment?.afterQuantity === currentQuantity ||
         reasonInput
       ) {
@@ -751,15 +752,12 @@ export function InventoryStepClient({
       item.currentQuantity,
     );
 
-    // 매입 정상 판매 소진은 조정 대상이 아니다(배지/조정 프롬프트 숨김).
-    if (isPurchaseDrivenSale({ ...item, currentQuantity: actualQuantity })) {
-      return false;
-    }
-
     return (
       systemQuantity !== null &&
-      actualQuantity !== null &&
-      actualQuantity !== systemQuantity
+      getInventoryQuantityRelation({
+        ...item,
+        currentQuantity: actualQuantity,
+      }) === "OVERSTOCK"
     );
   }
 

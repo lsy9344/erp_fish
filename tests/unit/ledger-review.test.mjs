@@ -507,7 +507,7 @@ test("ledger review missing item helper preserves KST links and separates review
   );
 });
 
-test("ledger review inventory signals ignore purchase-driven normal sales and label unresolved differences", async () => {
+test("ledger review inventory signals ignore all normal shortages and keep real overstock", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -590,29 +590,12 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
     })),
     [
       {
-        id: "inventory-unexplained-shortage",
-        label: "재고 확인 필요",
-        detail: "바지락 기준보다 5개 부족합니다.",
-        quantity: -5,
-        quantityLabel: undefined,
-        quantityText: undefined,
-      },
-      {
         id: "inventory-overstock",
         label: "재고 확인 필요",
         detail: "문어 기준보다 2개 많습니다.",
         quantity: 2,
         quantityLabel: undefined,
         quantityText: undefined,
-      },
-      {
-        id: "inventory-loss-sale-estimate",
-        label: "판매 추정 확인",
-        detail:
-          "고등어는 손실 1개를 제외한 뒤, 남은 재고를 기준으로 2개 판매로 계산됩니다.",
-        quantity: -2,
-        quantityLabel: "판매 추정",
-        quantityText: "2개",
       },
       {
         id: "loss-loss-1",

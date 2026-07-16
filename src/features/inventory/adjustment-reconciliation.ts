@@ -5,7 +5,7 @@ import {
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "../../server/calculations/inventory.ts";
-import { isPurchaseDrivenSale } from "./inventory-persist-policy.ts";
+import { getInventoryQuantityRelation } from "./inventory-persist-policy.ts";
 import { decimalToNumber, type DecimalNumber } from "../../lib/decimal.ts";
 
 const adjustmentSelect = {
@@ -160,14 +160,13 @@ export async function applyInventoryAdjustmentReasonsInTx(
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
 
-    // 정상 판매 소진은 실사 차이가 아니므로 사유가 있어도 조정으로 만들지 않는다.
     if (
-      isPurchaseDrivenSale({
+      getInventoryQuantityRelation({
         previousQuantity,
         purchasedQuantity,
         lossQuantity,
         currentQuantity,
-      })
+      }) !== "OVERSTOCK"
     ) {
       continue;
     }
@@ -287,20 +286,21 @@ export async function reconcileLedgerInventoryAdjustments(
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
 
-    // 정상 판매 소진(매입 있음·손실 없음·기준재고 이하)은 실사 차이가 아니므로,
-    // 매입 반영 후 정상 판매로 바뀐 기존 조정 레코드는 삭제한다. 남겨두면
-    // salesDifference에 계속 합산돼 이번 정책("정상 판매는 조정 아님")이 깨진다.
-    if (
-      isPurchaseDrivenSale({
-        previousQuantity,
-        purchasedQuantity,
-        lossQuantity,
-        currentQuantity,
-      })
-    ) {
+    const relation = getInventoryQuantityRelation({
+      previousQuantity,
+      purchasedQuantity,
+      lossQuantity,
+      currentQuantity,
+    });
+
+    if (relation === "NORMAL") {
       await tx.ledgerInventoryAdjustment.delete({
         where: { id: adjustment.id },
       });
+      continue;
+    }
+
+    if (relation === "UNAVAILABLE") {
       continue;
     }
 
