@@ -30,6 +30,7 @@
 ### Task 1: Store-entry wording and role-specific surface
 
 **Files:**
+
 - Modify: `src/features/ledger/terms.ts`
 - Modify: `src/features/ledger/components/store-entry-step-navigation.tsx`
 - Modify: `src/features/ledger/components/expense-step-client.tsx`
@@ -70,10 +71,18 @@
   ```tsx
   const isHeadquartersView = showSensitiveAccountingMetrics;
 
-  {isHeadquartersView ? "급여 / 인건비" : "근무자"}
-  {isHeadquartersView ? "급여 저장" : "근무자 저장"}
-  {isHeadquartersView ? <LaborTotalsAndHeadcountHint /> : null}
-  {!showSalesPricePlan ? <details>{/* existing HQ fields */}</details> : null}
+  {
+    isHeadquartersView ? "급여 / 인건비" : "근무자";
+  }
+  {
+    isHeadquartersView ? "급여 저장" : "근무자 저장";
+  }
+  {
+    isHeadquartersView ? <LaborTotalsAndHeadcountHint /> : null;
+  }
+  {
+    !showSalesPricePlan ? <details>{/* existing HQ fields */}</details> : null;
+  }
   ```
 
   Merge the two work forms under one existing card wrapper without merging their save actions. Change only user-visible ledger-entry/review strings; keep Prisma/schema field names and code-group identifiers. Remove the three category-chart calls and then delete the now-unused chart component. Use the existing default `Button` variant for the previous-stock button so its built-in hover/focus states provide the emphasis.
@@ -87,6 +96,7 @@
 ### Task 2: Approved purchase-price display on inventory rows
 
 **Files:**
+
 - Create: `src/features/inventory/purchase-price.ts`
 - Modify: `src/features/inventory/types.ts`
 - Modify: `src/features/inventory/queries.ts`
@@ -137,9 +147,11 @@
   In `getInventoryStepDataForLedgerInTx`, query `LedgerPurchaseItem` through `DailyLedger` with the target `storeId`, `closingDate <= target`, and the item/manual-option product IDs. Select `DailyLedger.closingDate`, `productId`, `quantity`, and `amount`, then attach the helper result to both existing rows and manual options. Render exactly:
 
   ```tsx
-  {item.purchasePrice
-    ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-    : "매입 이력 없음"}
+  {
+    item.purchasePrice
+      ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+      : "매입 이력 없음";
+  }
   ```
 
   `ponytail:` ceiling: this reads eligible purchase history once; replace with a DB aggregate/window query only if measured history volume makes it slow.
@@ -153,6 +165,7 @@
 ### Task 3: Shared overstock-only adjustment policy
 
 **Files:**
+
 - Modify: `src/features/inventory/inventory-persist-policy.ts`
 - Modify: `src/features/inventory/adjustment-save-guard.ts`
 - Modify: `src/features/inventory/adjustment-reconciliation.ts`
@@ -166,8 +179,24 @@
   Test one shared function with carryover-only sale, purchase sale, loss-mixed sale, exact equality, floating boundary, and real overstock:
 
   ```ts
-  assert.equal(getInventoryQuantityRelation({ previousQuantity: 10, purchasedQuantity: 0, lossQuantity: 0, currentQuantity: 4 }), "NORMAL");
-  assert.equal(getInventoryQuantityRelation({ previousQuantity: 10, purchasedQuantity: 2, lossQuantity: 1, currentQuantity: 11.01 }), "OVERSTOCK");
+  assert.equal(
+    getInventoryQuantityRelation({
+      previousQuantity: 10,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 4,
+    }),
+    "NORMAL",
+  );
+  assert.equal(
+    getInventoryQuantityRelation({
+      previousQuantity: 10,
+      purchasedQuantity: 2,
+      lossQuantity: 1,
+      currentQuantity: 11.01,
+    }),
+    "OVERSTOCK",
+  );
   ```
 
   Update guard expectations so only overstock without a reason returns an error, keyed to `items.N.adjustmentReason`. Update review tests so shortage rows do not emit adjustment signals.
@@ -181,12 +210,16 @@
 - [ ] **Step 3: Implement and reuse one normalized relation**
 
   ```ts
-  export function getInventoryQuantityRelation(item): "NORMAL" | "OVERSTOCK" | "UNAVAILABLE" {
+  export function getInventoryQuantityRelation(
+    item,
+  ): "NORMAL" | "OVERSTOCK" | "UNAVAILABLE" {
     const systemQuantity = calculateSystemInventoryQuantity(item);
-    const currentQuantity = item.currentQuantity === null
-      ? null
-      : roundToTwoDecimals(item.currentQuantity);
-    if (systemQuantity === null || currentQuantity === null) return "UNAVAILABLE";
+    const currentQuantity =
+      item.currentQuantity === null
+        ? null
+        : roundToTwoDecimals(item.currentQuantity);
+    if (systemQuantity === null || currentQuantity === null)
+      return "UNAVAILABLE";
     return currentQuantity > systemQuantity ? "OVERSTOCK" : "NORMAL";
   }
   ```
@@ -202,6 +235,7 @@
 ### Task 4: Error focus and draft preservation
 
 **Files:**
+
 - Modify: `src/features/inventory/components/inventory-step-client.tsx`
 - Modify: `src/features/inventory/adjustment-save-guard.ts`
 - Test: `tests/unit/ledger-inventory.test.mjs`
