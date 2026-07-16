@@ -22,7 +22,7 @@ export function resolveInventoryPurchasePrices(
       continue;
     }
     prices.set(row.productId, null);
-    if (row.businessDate > targetDate) {
+    if (row.businessDate > targetDate || row.quantity <= 0) {
       continue;
     }
 

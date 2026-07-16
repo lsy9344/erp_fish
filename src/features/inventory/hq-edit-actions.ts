@@ -266,6 +266,11 @@ export async function saveHqLedgerInventoryItems(
         }
 
         const before = beforeResult.data;
+
+        if (before.updatedAt !== expectedUpdatedAt.toISOString()) {
+          return await hqInventoryConflictError(tx, "inventory", parsed.data);
+        }
+
         const inputByProductId = new Map(
           parsed.data.items.map((item) => [item.productId, item]),
         );

@@ -561,6 +561,31 @@ test("inventory purchase price uses the most recent prior business date", async 
   });
 });
 
+test("inventory purchase price ignores zero-quantity dates when finding the latest purchase", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 11_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 0,
+      amount: 0,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 11_000,
+  });
+});
+
 test("inventory purchase price uses a same-day quantity-weighted average", async () => {
   const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
 
@@ -1573,6 +1598,18 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
     "HQ inventory save should enforce the adjustment-reason guard server-side",
   );
 
+  const staleConflictIndex = hqSource.indexOf(
+    "before.updatedAt !== expectedUpdatedAt.toISOString()",
+  );
+  const requiredEntryGuardIndex = hqSource.indexOf(
+    "getRequiredCurrentQuantityErrors(",
+  );
+  assert.ok(staleConflictIndex > 0, "HQ should detect stale inventory drafts");
+  assert.ok(
+    staleConflictIndex < requiredEntryGuardIndex,
+    "HQ stale drafts should return a conflict before row validation",
+  );
+
   // 가드는 버전 증가(markEditableLedgerInTx) 전에 위치해 빈 저장으로 버전만 올라가지
   // 않게 한다. 정의가 아니라 호출부(const updated = await markEditableLedgerInTx) 기준.
   const adjustmentGuardIndex = hqSource.indexOf(
@@ -1709,6 +1746,20 @@ test("inventory adjustment reason apply and reconciliation keep only real overst
       currentQuantity: 3,
       quantity: 3,
     },
+    {
+      id: "row-manual",
+      productId: "manual",
+      productName: "manual",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 0,
+      currentQuantity: 3,
+      quantity: 3,
+      carryoverSource: "MANUAL",
+      carryoverStatus: "CARRYOVER_EMPTY",
+      carryoverLedgerId: null,
+    },
   ];
   const purchases = [{ productId: "loss-mixed", quantity: 2 }];
   const losses = [{ productId: "loss-mixed", quantity: 1 }];
@@ -1743,6 +1794,7 @@ test("inventory adjustment reason apply and reconciliation keep only real overst
                 productId: "overstock",
                 reason: "counted",
               },
+              { id: "adjust-manual", productId: "manual", reason: "old" },
             ],
       create: async ({ data }) => created.push(data),
       delete: async ({ where }) => deleted.push(where.id),
@@ -1768,8 +1820,8 @@ test("inventory adjustment reason apply and reconciliation keep only real overst
 
   assert.deepEqual(
     deleted,
-    ["adjust-carryover", "adjust-loss-mixed"],
-    "carryover and loss-mixed shortage adjustments should be deleted",
+    ["adjust-carryover", "adjust-loss-mixed", "adjust-manual"],
+    "normal shortages and manual first-entry adjustments should be deleted",
   );
   assert.deepEqual(
     updatedAdjustments.map((adjustment) => adjustment.where.id),

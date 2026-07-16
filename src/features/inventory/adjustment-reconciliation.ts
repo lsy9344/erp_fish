@@ -5,7 +5,10 @@ import {
   calculateInventoryAmount,
   calculateSystemInventoryQuantity,
 } from "../../server/calculations/inventory.ts";
-import { getInventoryQuantityRelation } from "./inventory-persist-policy.ts";
+import {
+  getInventoryQuantityRelation,
+  isManualFirstInventoryEntry,
+} from "./inventory-persist-policy.ts";
 import { decimalToNumber, type DecimalNumber } from "../../lib/decimal.ts";
 
 const adjustmentSelect = {
@@ -24,6 +27,9 @@ const inventoryItemSelect = {
   previousQuantity: true,
   currentQuantity: true,
   quantity: true,
+  carryoverSource: true,
+  carryoverStatus: true,
+  carryoverLedgerId: true,
 } as const;
 
 function aggregatePurchasedQuantity(
@@ -161,6 +167,17 @@ export async function applyInventoryAdjustmentReasonsInTx(
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
 
     if (
+      isManualFirstInventoryEntry({
+        ...item,
+        previousQuantity,
+        purchasedQuantity,
+        lossQuantity,
+      })
+    ) {
+      continue;
+    }
+
+    if (
       getInventoryQuantityRelation({
         previousQuantity,
         purchasedQuantity,
@@ -285,6 +302,20 @@ export async function reconcileLedgerInventoryAdjustments(
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
+
+    if (
+      isManualFirstInventoryEntry({
+        ...item,
+        previousQuantity,
+        purchasedQuantity,
+        lossQuantity,
+      })
+    ) {
+      await tx.ledgerInventoryAdjustment.delete({
+        where: { id: adjustment.id },
+      });
+      continue;
+    }
 
     const relation = getInventoryQuantityRelation({
       previousQuantity,
