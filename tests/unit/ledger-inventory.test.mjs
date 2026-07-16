@@ -500,6 +500,150 @@ test("stock draft quantities allow only exact persisted legacy strings", async (
   assert.equal(toStockQuantitySaveInput("1.5", 1.5), "1.5");
 });
 
+async function loadPurchasePriceHelper() {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "purchase-price.ts",
+  );
+
+  return import(pathToFileURL(helperPath).href);
+}
+
+test("inventory purchase price uses target-day purchases", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 10_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 12_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "TODAY",
+    businessDate: "2026-07-16",
+    unitPrice: 12_000,
+  });
+});
+
+test("inventory purchase price uses the most recent prior business date", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-12",
+      quantity: 1,
+      amount: 9_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 11_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 11_000,
+  });
+});
+
+test("inventory purchase price uses a same-day quantity-weighted average", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 2,
+      amount: 20_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 20_000,
+    },
+  ]);
+
+  assert.equal(prices.get("p1")?.unitPrice, 13_333);
+});
+
+test("inventory purchase price ignores future and null-product rows", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-17",
+      quantity: 1,
+      amount: 99_000,
+    },
+    {
+      productId: "future-only",
+      businessDate: "2026-07-17",
+      quantity: 1,
+      amount: 77_000,
+    },
+    {
+      productId: null,
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 88_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 10_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 10_000,
+  });
+  assert.equal(prices.get("future-only"), null);
+  assert.equal(prices.has(""), false);
+});
+
+test("inventory purchase price returns null without positive selected-day quantity", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "zero",
+      businessDate: "2026-07-16",
+      quantity: 0,
+      amount: 12_000,
+    },
+    {
+      productId: "negative",
+      businessDate: "2026-07-16",
+      quantity: -1,
+      amount: 12_000,
+    },
+  ]);
+
+  assert.equal(prices.get("zero"), null);
+  assert.equal(prices.get("negative"), null);
+  assert.equal(prices.get("missing") ?? null, null);
+});
+
 test("inventory calculations expose amount and calculation unavailable states", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -1403,6 +1547,11 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     typeSource,
     /manualProductOptions:\s+InventoryManualProductOption\[\]/,
   );
+  assert.match(typeSource, /export\s+type\s+InventoryPurchasePrice/);
+  assert.match(
+    typeSource,
+    /purchasePrice:\s+InventoryPurchasePrice\s+\|\s+null/,
+  );
 
   const querySource = readProjectFile(
     "src",
@@ -1466,6 +1615,22 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     /manualProductOptions/,
     "step data should carry manual product options",
   );
+  assert.match(querySource, /ledgerPurchaseItem\.findMany/);
+  assert.match(querySource, /storeId:\s*ledger\.storeId/);
+  assert.match(querySource, /closingDate:\s*{\s*lte:\s*ledger\.closingDate/s);
+  assert.match(querySource, /dailyLedger:\s*{[\s\S]*closingDate:\s*true/);
+  assert.doesNotMatch(
+    querySource.slice(querySource.indexOf("ledgerPurchaseItem.findMany")),
+    /createdAt:\s*true/,
+    "display history must use DailyLedger.closingDate, not row creation time",
+  );
+  assert.match(querySource, /resolveInventoryPurchasePrices/);
+  assert.match(querySource, /purchasePrice:/);
+  assert.match(
+    querySource,
+    /manualProductOptions\.map|attachPurchasePrices/,
+    "manual product options should receive the same historical purchase price",
+  );
   const emptyCarryoverFallback = querySource.slice(
     querySource.indexOf("전일 장부나 월초 스냅샷이 없습니다. 오늘 매입"),
   );
@@ -1513,6 +1678,49 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateInventoryPaths\(\)/);
   assert.match(actionSource, /revalidateStoreEntryPaths\(\["inventory"\]\)/);
+});
+
+test("inventory purchase price DTO and UI expose only the approved nested field", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "queries.ts",
+  );
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const safeMapperSource = querySource.slice(
+    querySource.indexOf("export function toStoreManagerInventoryStepData"),
+  );
+
+  assert.match(componentSource, /item\.purchasePrice/);
+  assert.match(componentSource, /당일/);
+  assert.match(componentSource, /최근/);
+  assert.match(componentSource, /매입단가 ·/);
+  assert.match(componentSource, /매입 이력 없음/);
+  assert.match(componentSource, /formatKrw\(item\.purchasePrice\.unitPrice\)/);
+  assert.match(componentSource, /purchasePrice:\s*option\.purchasePrice/);
+  assert.match(
+    componentSource,
+    /text-muted-foreground/,
+    "purchase-price copy should use the existing muted semantic text",
+  );
+  assert.match(safeMapperSource, /\.\.\.item/);
+  assert.doesNotMatch(safeMapperSource, /unitPrice:\s*item\.unitPrice/);
+  assert.doesNotMatch(
+    safeMapperSource,
+    /purchaseAmount:\s*item\.purchaseAmount/,
+  );
+  assert.doesNotMatch(safeMapperSource, /lossAmount:\s*item\.lossAmount/);
+  assert.doesNotMatch(
+    safeMapperSource,
+    /inventoryAmount:\s*item\.inventoryAmount/,
+  );
 });
 
 test("manual product add lets ungrounded products be entered without auto-listing them", () => {

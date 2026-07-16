@@ -194,6 +194,7 @@ function toManualLineState(
     productName: option.productName,
     productCategory: option.productCategory,
     productSpec: option.productSpec,
+    purchasePrice: option.purchasePrice,
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
@@ -1583,6 +1584,12 @@ export function InventoryStepClient({
                   {sourceBadges.map(renderBadgeWithTooltip)}
                 </div>
               </div>
+
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {item.purchasePrice
+                  ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+                  : "매입 이력 없음"}
+              </p>
 
               {/* 2줄: 전일→기준 흐름 요약 (한 줄, 행 높이 고정) */}
               <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums">

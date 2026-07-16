@@ -9,12 +9,19 @@ import { type InventoryFifoLotView } from "~/features/inventory/fifo-lots";
 
 export type { InventoryFifoLotView };
 
+export type InventoryPurchasePrice = {
+  kind: "TODAY" | "RECENT";
+  businessDate: string;
+  unitPrice: number;
+};
+
 export type InventoryStepLine = {
   id: string;
   productId: string;
   productName: string;
   productCategory: string;
   productSpec: string;
+  purchasePrice: InventoryPurchasePrice | null;
   unitPrice: number;
   previousQuantity: number;
   purchasedQuantity: number;
@@ -90,6 +97,7 @@ export type InventoryManualProductOption = {
   productName: string;
   productCategory: string;
   productSpec: string;
+  purchasePrice: InventoryPurchasePrice | null;
 };
 
 export type InventoryStepData = {

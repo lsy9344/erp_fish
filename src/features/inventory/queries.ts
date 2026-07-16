@@ -6,6 +6,7 @@ import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
+import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-price";
 import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
@@ -409,6 +410,7 @@ function toInventoryLine(
     productName: base.productName,
     productCategory: base.productCategory,
     productSpec: base.productSpec,
+    purchasePrice: null,
     unitPrice: base.unitPrice,
     previousQuantity: base.previousQuantity,
     purchasedQuantity,
@@ -464,6 +466,7 @@ function toExistingInventoryLine(
     productName: item.productName,
     productCategory: item.productCategory,
     productSpec: item.productSpec,
+    purchasePrice: null,
     unitPrice: item.unitPrice,
     previousQuantity,
     purchasedQuantity:
@@ -939,6 +942,7 @@ async function getManualProductOptions(
       productName: product.name,
       productCategory: product.category,
       productSpec: product.spec,
+      purchasePrice: null,
     }));
 }
 
@@ -1049,6 +1053,61 @@ async function attachFifoLots(
   }));
 }
 
+async function attachPurchasePrices(
+  tx: Prisma.TransactionClient,
+  ledger: InventoryLedgerPayload,
+  items: InventoryStepLine[],
+  manualProductOptions: InventoryManualProductOption[],
+) {
+  const productIds = [
+    ...new Set([
+      ...items.map((item) => item.productId),
+      ...manualProductOptions.map((option) => option.productId),
+    ]),
+  ];
+
+  if (productIds.length === 0) {
+    return { items, manualProductOptions };
+  }
+
+  // ponytail: one eligible-history query; use a DB aggregate/window query only if measured history volume makes this slow.
+  const purchaseHistory = await tx.ledgerPurchaseItem.findMany({
+    where: {
+      productId: { in: productIds },
+      dailyLedger: {
+        storeId: ledger.storeId,
+        closingDate: { lte: ledger.closingDate },
+      },
+    },
+    select: {
+      productId: true,
+      quantity: true,
+      amount: true,
+      dailyLedger: { select: { closingDate: true } },
+    },
+  });
+  const purchasePrices = resolveInventoryPurchasePrices(
+    ledger.closingDate.toISOString().slice(0, 10),
+    purchaseHistory.map((purchase) => ({
+      productId: purchase.productId,
+      businessDate: purchase.dailyLedger.closingDate.toISOString().slice(0, 10),
+      quantity: decimalToNumber(purchase.quantity),
+      amount: purchase.amount,
+    })),
+  );
+
+  return {
+    items: items.map((item) => ({
+      ...item,
+      purchasePrice: purchasePrices.get(item.productId) ?? null,
+    })),
+    manualProductOptions: manualProductOptions.map((option) => ({
+      ...option,
+      purchasePrice: purchasePrices.get(option.productId) ?? null,
+    })),
+  };
+}
+
 async function getInventoryStepDataForLedgerInTx(
   tx: Prisma.TransactionClient,
   ledger: InventoryLedgerPayload,
@@ -1106,6 +1165,12 @@ async function getInventoryStepDataForLedgerInTx(
       tx,
       new Set(itemsWithFifoLots.map((item) => item.productId)),
     );
+    const priced = await attachPurchasePrices(
+      tx,
+      ledger,
+      itemsWithFifoLots,
+      manualProductOptions,
+    );
 
     return {
       id: ledger.id,
@@ -1116,8 +1181,8 @@ async function getInventoryStepDataForLedgerInTx(
       authorDisplayName: ledger.authorDisplayName ?? null,
       status: ledger.status,
       stepCompletion,
-      items: itemsWithFifoLots,
-      manualProductOptions,
+      items: priced.items,
+      manualProductOptions: priced.manualProductOptions,
       carryover: {
         status: toCarryoverLoadStatus(carryoverStatus),
         source,
@@ -1153,6 +1218,12 @@ async function getInventoryStepDataForLedgerInTx(
     tx,
     new Set(itemsWithHistory.map((item) => item.productId)),
   );
+  const priced = await attachPurchasePrices(
+    tx,
+    ledger,
+    itemsWithHistory,
+    manualProductOptions,
+  );
 
   return {
     id: ledger.id,
@@ -1163,8 +1234,8 @@ async function getInventoryStepDataForLedgerInTx(
     authorDisplayName: ledger.authorDisplayName ?? null,
     status: ledger.status,
     stepCompletion,
-    items: itemsWithHistory,
-    manualProductOptions,
+    items: priced.items,
+    manualProductOptions: priced.manualProductOptions,
     carryover: {
       status: carryover.status,
       source: carryover.source,
