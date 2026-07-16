@@ -482,7 +482,7 @@ test("ledger review missing item helper preserves KST links and separates review
     workerCount: 0,
   });
 
-  // 단계 순서 변경(2026-07-02): 매입>손실>재고>비용>근무>매출 순서로 정렬한다.
+  // 단계 순서 변경(2026-07-02): 매입>손실>재고>지출>근무>매출 순서로 정렬한다.
   assert.deepEqual(
     missingItems.map((item) => [item.id, item.status]),
     [
@@ -507,7 +507,7 @@ test("ledger review missing item helper preserves KST links and separates review
   );
 });
 
-test("ledger review inventory signals ignore purchase-driven normal sales and label unresolved differences", async () => {
+test("ledger review inventory signals ignore all normal shortages and keep real overstock", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -590,29 +590,12 @@ test("ledger review inventory signals ignore purchase-driven normal sales and la
     })),
     [
       {
-        id: "inventory-unexplained-shortage",
-        label: "재고 확인 필요",
-        detail: "바지락 기준보다 5개 부족합니다.",
-        quantity: -5,
-        quantityLabel: undefined,
-        quantityText: undefined,
-      },
-      {
         id: "inventory-overstock",
         label: "재고 확인 필요",
         detail: "문어 기준보다 2개 많습니다.",
         quantity: 2,
         quantityLabel: undefined,
         quantityText: undefined,
-      },
-      {
-        id: "inventory-loss-sale-estimate",
-        label: "판매 추정 확인",
-        detail:
-          "고등어는 손실 1개를 제외한 뒤, 남은 재고를 기준으로 2개 판매로 계산됩니다.",
-        quantity: -2,
-        quantityLabel: "판매 추정",
-        quantityText: "2개",
       },
       {
         id: "loss-loss-1",
@@ -654,8 +637,17 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
   assert.match(validationSource, /getLedgerReviewStepHref/);
   assert.match(validationSource, /getKstLedgerDateParam\(closingDate\)/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
-  // WO(2026-06-25): work 단계 라벨은 입력 화면과 맞춰 "근무/인건비"로 노출한다.
-  assert.match(querySource, /id:\s*"work",\s*\n\s*label:\s*"근무\/인건비"/);
+  assert.match(querySource, /id:\s*"expenses",\s*\n\s*label:\s*"지출"/);
+  assert.match(
+    querySource,
+    /savedDetail:\s*`지출 \$\{expenseCount\}건이 저장되어 있습니다\.`/,
+  );
+  assert.match(querySource, /id:\s*"work",\s*\n\s*label:\s*"근무인원\/이름"/);
+  assert.match(validationSource, /label:\s*"지출"/);
+  assert.match(
+    validationSource,
+    /detail:\s*"지출 항목이 아직 입력되지 않았습니다\."/,
+  );
   assert.match(querySource, /"paymentDifference"/);
   assert.match(querySource, /"결제수단 합계와 총매출 차이"/);
   assert.match(querySource, /"signed-krw"/);

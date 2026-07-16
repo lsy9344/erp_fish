@@ -5,7 +5,6 @@ import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
-import { ProductCategoryMarginChart } from "~/features/reports/components/product-category-margin-chart";
 import { ProductProfitabilityReport } from "~/features/reports/components/product-profitability-report";
 import { ReviewViewToggle } from "~/features/reports/components/review-view-toggle";
 import {
@@ -70,13 +69,6 @@ export default async function ProductReviewPage({
           </Button>
         </form>
       </div>
-
-      <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">냉동/생물 매출 (추정)</h2>
-        <div className="mt-3">
-          <ProductCategoryMarginChart data={report.categoryPerformance} />
-        </div>
-      </section>
 
       <section className="rounded-lg border p-4">
         <h2 className="text-base font-semibold">품목별 판매 현황 (추정)</h2>

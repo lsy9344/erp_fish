@@ -230,7 +230,7 @@ export function ExpenseStepClient({
     const savedCount = next.expenseItems.length;
     const message =
       savedCount > 0
-        ? `비용 항목 ${savedCount}건을 저장했습니다.`
+        ? `지출 항목 ${savedCount}건을 저장했습니다.`
         : "저장됐습니다.";
     setResultMessage(message);
     toast.success(message);
@@ -243,9 +243,9 @@ export function ExpenseStepClient({
 
   async function saveCurrentDraft() {
     if (!hasRegisteredExpenseCodeOptions) {
-      setFormError("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
+      setFormError("지출 항목 코드가 등록된 뒤 저장할 수 있습니다.");
       setResultMessage(null);
-      toast.error("비용 항목 코드가 등록된 뒤 저장할 수 있습니다.");
+      toast.error("지출 항목 코드가 등록된 뒤 저장할 수 있습니다.");
       return false;
     }
 
@@ -390,13 +390,13 @@ export function ExpenseStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="4단계 비용"
+        stepLabel="4단계: 지출"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isFormSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["비용 항목", "비용 금액", "메모"]}
+        unsavedFields={["지출 항목", "지출 금액", "메모"]}
         onRetry={handleRetry}
         retryDisabled={
           isFormSaving ||
@@ -489,7 +489,7 @@ export function ExpenseStepClient({
                       }
                       className="h-11 min-h-11 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs"
                     >
-                      <option value="">비용 항목 선택</option>
+                      <option value="">지출 항목 선택</option>
                       {!selectedCode && line.ledgerInputCodeId ? (
                         <option value={line.ledgerInputCodeId}>
                           {line.ledgerInputCodeName || line.ledgerInputCodeId}
@@ -590,20 +590,24 @@ export function ExpenseStepClient({
 
         {!hasRegisteredExpenseCodeOptions ? (
           <p className="text-destructive mb-3 text-sm">
-            비용 항목 코드가 없습니다. 본사에서 비용 항목 코드가 등록되어야
+            지출 항목 코드가 없습니다. 본사에서 지출 항목 코드가 등록되어야
             합니다.
           </p>
         ) : null}
 
         <div className="bg-muted/40 rounded-md p-3">
           <div className="flex justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">입력 중 비용 합계</span>
+            <span className="text-muted-foreground">
+              {ledgerTerms.draftExpenseTotal}
+            </span>
             <span className="font-semibold tabular-nums">
               {formatKrw(draftExpenseTotal)}
             </span>
           </div>
           <div className="mt-2 flex justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">마지막 서버 저장 합계</span>
+            <span className="text-muted-foreground">
+              {ledgerTerms.lastSavedExpenseTotal}
+            </span>
             <span className="font-semibold tabular-nums">
               {formatKrw(ledger.expenseTotal)}
             </span>

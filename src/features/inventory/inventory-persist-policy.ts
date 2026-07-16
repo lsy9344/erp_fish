@@ -1,3 +1,6 @@
+import { roundToTwoDecimals } from "../../lib/validation.ts";
+import { calculateSystemInventoryQuantity } from "../../server/calculations/inventory.ts";
+
 /**
  * 재고 행을 다시 기록(delete+recreate)해야 하는지 판단한다.
  *
@@ -78,34 +81,34 @@ export function isManualFirstInventoryEntry(item: {
   );
 }
 
-/**
- * 당일 매입이 있고 손실이 없으며 당일재고가 기준재고(전일+매입-손실) 이하인 정상 판매
- * 소진. 이 경우 기준재고와의 차이는 실사 차이(재고조정)가 아니라 판매로 본다.
- *
- * 매입 6개 중 2개 남음(4개 판매)을 "4개 차이→조정 사유 요구"로 막던 동작을 면제한다.
- * 단, 면제는 정상 판매(부족 방향)에 한한다:
- * - 매입 없음(purchasedQuantity===0): 이월 품목의 차이는 진짜 실사 차이 → 조정 요구.
- * - 손실 있음(lossQuantity>0): "정상 판매 + 추가 차이" 구분 불가 → 조정 요구.
- * - 초과(currentQuantity > systemQuantity): 재고가 매입보다 많은 이상 입력 → 조정 요구.
- *
- * 서버 조정 가드와 클라이언트 검증/표시가 같은 기준을 쓰도록 한 곳에 둔다.
- */
-export function isPurchaseDrivenSale(item: {
+export type InventoryQuantityRelation = "NORMAL" | "OVERSTOCK" | "UNAVAILABLE";
+
+/** 기준재고 이하(판매/동일)는 정상이고, 기준재고를 넘는 실사 수량만 조정 대상이다. */
+export function getInventoryQuantityRelation(item: {
   previousQuantity: number;
   purchasedQuantity: number;
   lossQuantity: number;
   currentQuantity: number | null;
-}) {
-  if (item.purchasedQuantity <= 0 || item.lossQuantity > 0) {
-    return false;
+}): InventoryQuantityRelation {
+  const systemQuantity = calculateSystemInventoryQuantity(item);
+
+  if (
+    systemQuantity === null ||
+    item.currentQuantity === null ||
+    !Number.isFinite(item.currentQuantity) ||
+    item.currentQuantity < 0
+  ) {
+    return "UNAVAILABLE";
   }
 
-  if (item.currentQuantity === null) {
-    return false;
+  const currentQuantity = calculateSystemInventoryQuantity({
+    previousQuantity: roundToTwoDecimals(item.currentQuantity),
+    purchasedQuantity: 0,
+  });
+
+  if (currentQuantity === null) {
+    return "UNAVAILABLE";
   }
 
-  const systemQuantity =
-    item.previousQuantity + item.purchasedQuantity - item.lossQuantity;
-
-  return item.currentQuantity <= systemQuantity;
+  return currentQuantity <= systemQuantity ? "NORMAL" : "OVERSTOCK";
 }

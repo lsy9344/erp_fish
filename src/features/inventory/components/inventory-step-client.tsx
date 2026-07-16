@@ -57,9 +57,13 @@ import {
   missingAdjustmentReasonMessage,
 } from "~/features/inventory/adjustment-save-guard";
 import {
+  getInventoryQuantityRelation,
   isManualFirstInventoryEntry,
-  isPurchaseDrivenSale,
 } from "~/features/inventory/inventory-persist-policy";
+import {
+  mapInventorySaveErrors,
+  type InventoryErrorFocusTarget,
+} from "~/features/inventory/inventory-save-errors";
 import {
   type InventoryAdjustmentView,
   type InventoryManualProductOption,
@@ -194,6 +198,7 @@ function toManualLineState(
     productName: option.productName,
     productCategory: option.productCategory,
     productSpec: option.productSpec,
+    purchasePrice: option.purchasePrice,
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
@@ -392,48 +397,56 @@ export function InventoryStepClient({
     setPageByCategory((current) => ({ ...current, [category]: page }));
   }
 
-  function focusFirstError(errors: FieldErrors) {
+  function focusInventoryError(target?: InventoryErrorFocusTarget) {
+    if (!target) {
+      return;
+    }
+
+    const item = items.find(
+      (candidate) => candidate.productId === target.productId,
+    );
+
+    if (!item) {
+      return;
+    }
+
+    const category = normalizeCategory(item.productCategory);
+    const categoryIndex = getCategoryItems(category).findIndex(
+      (candidate) => candidate.productId === target.productId,
+    );
+    setActiveCategory(category);
+    setCategoryPage(
+      category,
+      Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
+    );
     window.setTimeout(() => {
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]!;
-
-        if (errors[`items.${index}.currentQuantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
-          window.setTimeout(() => {
-            currentQuantityRefs.current[item.productId]?.focus();
-          }, 0);
-          return;
-        }
-
-        if (errors[`items.${index}.quantity`]?.length) {
-          const category = normalizeCategory(item.productCategory);
-          const categoryIndex = getCategoryItems(category).findIndex(
-            (candidate) => candidate.productId === item.productId,
-          );
-          setActiveCategory(category);
-          setCategoryPage(
-            category,
-            Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
-          );
-          window.setTimeout(() => {
-            currentQuantityRefs.current[item.productId]?.focus();
-          }, 0);
-          return;
-        }
-      }
-
-      if (errors.reason?.length) {
-        hqEditReasonInputRef.current?.focus();
-      }
+      const refs = target.field === "reason" ? reasonRefs : currentQuantityRefs;
+      refs.current[target.productId]?.focus();
     }, 0);
+  }
+
+  function focusFirstError(errors: FieldErrors) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]!;
+
+      if (
+        errors[`items.${index}.currentQuantity`]?.length ||
+        errors[`items.${index}.quantity`]?.length
+      ) {
+        focusInventoryError({
+          productId: item.productId,
+          currentIndex: index,
+          field: "quantity",
+        });
+        return;
+      }
+    }
+
+    if (errors.reason?.length) {
+      window.setTimeout(() => {
+        hqEditReasonInputRef.current?.focus();
+      }, 0);
+    }
   }
 
   // 매입/손실이 있어 판매량이 잡히는 품목은 당일재고를 직접 입력해야 한다. 빈칸으로 두면
@@ -499,8 +512,10 @@ export function InventoryStepClient({
         item.currentQuantity,
       );
 
-      // 매입 정상 판매 소진(부족 방향·손실 없음)은 실사 차이가 아니라 판매로 본다.
-      if (isPurchaseDrivenSale({ ...item, currentQuantity })) {
+      if (
+        getInventoryQuantityRelation({ ...item, currentQuantity }) !==
+        "OVERSTOCK"
+      ) {
         continue;
       }
 
@@ -514,7 +529,6 @@ export function InventoryStepClient({
       if (
         systemQuantity === null ||
         currentQuantity === null ||
-        currentQuantity === systemQuantity ||
         item.adjustment?.afterQuantity === currentQuantity ||
         reasonInput
       ) {
@@ -551,10 +565,13 @@ export function InventoryStepClient({
 
     setAdjustmentErrors(nextErrors);
     setFormError(firstMessage);
-    setActiveCategory(normalizeCategory(firstInvalidItem.productCategory));
-    window.setTimeout(() => {
-      reasonRefs.current[firstInvalidItem.productId]?.focus();
-    }, 0);
+    focusInventoryError({
+      productId: firstInvalidItem.productId,
+      currentIndex: items.findIndex(
+        (item) => item.productId === firstInvalidItem.productId,
+      ),
+      field: "reason",
+    });
     toast.error(firstMessage);
 
     return false;
@@ -591,6 +608,24 @@ export function InventoryStepClient({
     setFieldErrors({});
     setAdjustmentErrors({});
 
+    const submittedItems = items.map((item) => {
+      const quantityInput = toStockQuantitySaveInput(
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
+        item.currentQuantity,
+      );
+
+      return {
+        productId: item.productId,
+        currentQuantity: quantityInput,
+        quantity: quantityInput,
+        adjustmentReason:
+          reasonRefs.current[item.productId]?.value ??
+          item.adjustmentReasonInput,
+      };
+    });
+    const submittedProductIds = submittedItems.map((item) => item.productId);
+
     try {
       const result = await saveItemsAction({
         ledgerId: data.id,
@@ -598,23 +633,7 @@ export function InventoryStepClient({
         closingDate: getKstLedgerDateParam(data.closingDate),
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
-        items: items.map((item) => {
-          const quantityInput = toStockQuantitySaveInput(
-            currentQuantityRefs.current[item.productId]?.value ??
-              item.currentQuantityInput,
-            item.currentQuantity,
-          );
-
-          return {
-            productId: item.productId,
-            currentQuantity: quantityInput,
-            quantity: quantityInput,
-            // 행별 "고친 이유"도 함께 보낸다. 차이가 있는 행이면 서버가 이 사유로 조정을 만든다.
-            adjustmentReason:
-              reasonRefs.current[item.productId]?.value ??
-              item.adjustmentReasonInput,
-          };
-        }),
+        items: submittedItems,
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -625,10 +644,19 @@ export function InventoryStepClient({
           return false;
         }
 
-        const nextErrors = result.error.fieldErrors ?? {};
-        setFieldErrors(nextErrors);
+        const mappedErrors = mapInventorySaveErrors(
+          result.error.fieldErrors ?? {},
+          submittedProductIds,
+          items.map((item) => item.productId),
+        );
+        setFieldErrors(mappedErrors.fieldErrors);
+        setAdjustmentErrors(mappedErrors.adjustmentErrors);
         setFormError(result.error.message);
-        focusFirstError(nextErrors);
+        if (mappedErrors.firstFocusTarget) {
+          focusInventoryError(mappedErrors.firstFocusTarget);
+        } else {
+          focusFirstError(mappedErrors.fieldErrors);
+        }
         toast.error(result.error.message);
         return false;
       }
@@ -750,15 +778,12 @@ export function InventoryStepClient({
       item.currentQuantity,
     );
 
-    // 매입 정상 판매 소진은 조정 대상이 아니다(배지/조정 프롬프트 숨김).
-    if (isPurchaseDrivenSale({ ...item, currentQuantity: actualQuantity })) {
-      return false;
-    }
-
     return (
       systemQuantity !== null &&
-      actualQuantity !== null &&
-      actualQuantity !== systemQuantity
+      getInventoryQuantityRelation({
+        ...item,
+        currentQuantity: actualQuantity,
+      }) === "OVERSTOCK"
     );
   }
 
@@ -1584,6 +1609,12 @@ export function InventoryStepClient({
                 </div>
               </div>
 
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {item.purchasePrice
+                  ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+                  : "매입 이력 없음"}
+              </p>
+
               {/* 2줄: 전일→기준 흐름 요약 (한 줄, 행 높이 고정) */}
               <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums">
                 <span>
@@ -1934,8 +1965,7 @@ export function InventoryStepClient({
         <div className="flex justify-end">
           <Button
             type="button"
-            variant="outline"
-            className="min-h-11"
+            className="min-h-11 font-semibold"
             onClick={() => setIsPreviousStockOpen(true)}
           >
             전날 재고 보기

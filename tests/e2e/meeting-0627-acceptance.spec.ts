@@ -140,11 +140,10 @@ test("회의 0627 지점장 화면은 급여액과 전날재고 민감 금액을
   await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=work`);
   await page.getByRole("button", { name: "직원 추가" }).click();
   await expect(page.getByLabel("급여 금액")).toHaveCount(0);
-  const laborSection = page
-    .locator("section")
-    .filter({ hasText: "급여 / 인건비" });
+  const laborSection = page.locator("section").filter({ hasText: "근무자" });
+  await expect(laborSection).not.toContainText("급여 / 인건비");
   await expect(laborSection).not.toContainText("급여 합계");
-  await expect(laborSection).toContainText("급여 행 기준 참고 인원");
+  await expect(laborSection).not.toContainText("급여 행 기준 참고 인원");
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
   await page.getByRole("button", { name: "전날 재고 보기" }).click();

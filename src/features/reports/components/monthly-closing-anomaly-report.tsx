@@ -14,7 +14,6 @@ import { DashboardSignalSummary } from "~/features/dashboard/components/dashboar
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
 import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import { ProductCategoryMarginChart } from "./product-category-margin-chart";
 import type {
   DailyMeetingReportMetricEvidence,
   DailyMeetingReportMetricValue,
@@ -59,7 +58,6 @@ export function MonthlyClosingAnomalyReport({
         <HeadquartersExpenseSummary summary={headquartersExpense} />
       ) : null}
       <LossInventoryFlowSummary report={report} />
-      <CategoryPerformanceSummary report={report} />
       <TopRevenueItemSummary report={report} />
       <RevenueRankingSummary report={report} />
       <ProfitAndLossReadinessSummary report={report} />
@@ -67,31 +65,6 @@ export function MonthlyClosingAnomalyReport({
       <CalculationDaySummary report={report} />
       <DayStatusTable days={report.days} />
       <AnomalyList items={report.anomalyItems} />
-    </section>
-  );
-}
-
-// WO-03(2026-06-22): 냉동/생물 카테고리별 매출 차트. 품목별 POS 매출이 없어 추정값이다.
-function CategoryPerformanceSummary({
-  report,
-}: {
-  report: MonthlyClosingAnomalyReportData;
-}) {
-  return (
-    <section
-      className="space-y-3"
-      aria-label="냉동/생물 매출"
-      data-testid="hq-report-monthly-category-performance"
-    >
-      <h2 className="text-lg font-semibold tracking-normal">
-        냉동/생물 매출 (추정)
-      </h2>
-      <p className="text-muted-foreground text-xs break-words">
-        품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.
-      </p>
-      <div className="bg-card rounded-lg border p-4 shadow-sm">
-        <ProductCategoryMarginChart data={report.categoryPerformance} />
-      </div>
     </section>
   );
 }

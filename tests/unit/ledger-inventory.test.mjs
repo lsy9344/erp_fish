@@ -500,6 +500,175 @@ test("stock draft quantities allow only exact persisted legacy strings", async (
   assert.equal(toStockQuantitySaveInput("1.5", 1.5), "1.5");
 });
 
+async function loadPurchasePriceHelper() {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "purchase-price.ts",
+  );
+
+  return import(pathToFileURL(helperPath).href);
+}
+
+test("inventory purchase price uses target-day purchases", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 10_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 12_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "TODAY",
+    businessDate: "2026-07-16",
+    unitPrice: 12_000,
+  });
+});
+
+test("inventory purchase price uses the most recent prior business date", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-12",
+      quantity: 1,
+      amount: 9_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 11_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 11_000,
+  });
+});
+
+test("inventory purchase price ignores zero-quantity dates when finding the latest purchase", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 11_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 0,
+      amount: 0,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 11_000,
+  });
+});
+
+test("inventory purchase price uses a same-day quantity-weighted average", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 2,
+      amount: 20_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 20_000,
+    },
+  ]);
+
+  assert.equal(prices.get("p1")?.unitPrice, 13_333);
+});
+
+test("inventory purchase price ignores future and null-product rows", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "p1",
+      businessDate: "2026-07-17",
+      quantity: 1,
+      amount: 99_000,
+    },
+    {
+      productId: "future-only",
+      businessDate: "2026-07-17",
+      quantity: 1,
+      amount: 77_000,
+    },
+    {
+      productId: null,
+      businessDate: "2026-07-16",
+      quantity: 1,
+      amount: 88_000,
+    },
+    {
+      productId: "p1",
+      businessDate: "2026-07-15",
+      quantity: 1,
+      amount: 10_000,
+    },
+  ]);
+
+  assert.deepEqual(prices.get("p1"), {
+    kind: "RECENT",
+    businessDate: "2026-07-15",
+    unitPrice: 10_000,
+  });
+  assert.equal(prices.get("future-only"), null);
+  assert.equal(prices.has(""), false);
+});
+
+test("inventory purchase price returns null without positive selected-day quantity", async () => {
+  const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
+
+  const prices = resolveInventoryPurchasePrices("2026-07-16", [
+    {
+      productId: "zero",
+      businessDate: "2026-07-16",
+      quantity: 0,
+      amount: 12_000,
+    },
+    {
+      productId: "negative",
+      businessDate: "2026-07-16",
+      quantity: -1,
+      amount: 12_000,
+    },
+  ]);
+
+  assert.equal(prices.get("zero"), null);
+  assert.equal(prices.get("negative"), null);
+  assert.equal(prices.get("missing") ?? null, null);
+});
+
 test("inventory calculations expose amount and calculation unavailable states", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -938,7 +1107,7 @@ test("purchase, loss, and inventory save actions refresh FIFO lot snapshots", ()
   }
 });
 
-test("inventory normal save requires matching adjustment record for changed actual quantities", async () => {
+test("inventory normal save requires a reason only for real overstock", async () => {
   const guardPath = assertProjectFile(
     "src",
     "features",
@@ -954,7 +1123,7 @@ test("inventory normal save requires matching adjustment record for changed actu
       previousQuantity: 10,
       purchasedQuantity: 3,
       lossQuantity: 1,
-      currentQuantity: 9,
+      currentQuantity: 13,
     },
     {
       productId: "product-2",
@@ -973,21 +1142,21 @@ test("inventory normal save requires matching adjustment record for changed actu
   ];
 
   assert.deepEqual(getInventorySaveAdjustmentErrors(items, []), {
-    "items.0.currentQuantity": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
+    "items.0.adjustmentReason": ["재고 차이를 고친 이유를 먼저 저장해 주세요."],
   });
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
-      { productId: "product-1", afterQuantity: 8 },
+      { productId: "product-1", afterQuantity: 12 },
     ]),
     {
-      "items.0.currentQuantity": [
+      "items.0.adjustmentReason": [
         "재고 차이를 고친 이유를 먼저 저장해 주세요.",
       ],
     },
   );
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(items, [
-      { productId: "product-1", afterQuantity: 9 },
+      { productId: "product-1", afterQuantity: 13 },
     ]),
     {},
   );
@@ -1011,27 +1180,153 @@ test("inventory normal save requires matching adjustment record for changed actu
     "manual first-entry rows should not require an adjustment reason on later saves",
   );
 
-  // 매입 정상 판매 소진(매입 6, 손실 0, 당일재고 2 ≤ 기준 8)은 실사 차이가 아니라
-  // 판매로 보므로 조정 사유 없이 통과해야 한다.
+  for (const item of [
+    {
+      productId: "purchase-sale",
+      previousQuantity: 2,
+      purchasedQuantity: 6,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    },
+    {
+      productId: "carryover-sale",
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      lossQuantity: 0,
+      currentQuantity: 2,
+    },
+    {
+      productId: "loss-mixed-shortage",
+      previousQuantity: 5,
+      purchasedQuantity: 2,
+      lossQuantity: 1,
+      currentQuantity: 3,
+    },
+    {
+      productId: "equal",
+      previousQuantity: 5,
+      purchasedQuantity: 2,
+      lossQuantity: 1,
+      currentQuantity: 6,
+    },
+  ]) {
+    assert.deepEqual(
+      getInventorySaveAdjustmentErrors([item], []),
+      {},
+      `${item.productId} should not require an adjustment reason`,
+    );
+  }
+
   assert.deepEqual(
     getInventorySaveAdjustmentErrors(
       [
         {
-          productId: "purchase-sale",
-          previousQuantity: 2,
-          purchasedQuantity: 6,
+          productId: "incoming-reason",
+          previousQuantity: 1,
+          purchasedQuantity: 2,
           lossQuantity: 0,
-          currentQuantity: 2,
+          currentQuantity: 4,
         },
       ],
       [],
+      new Map([["incoming-reason", "counted case"]]),
     ),
     {},
-    "purchase-driven normal sale should be exempt from the adjustment reason",
+    "an incoming reason should allow real overstock",
   );
 });
 
-test("describeAdjustmentReason explains the gap with numbers, noting loss separately", async () => {
+test("inventory save errors follow submitted product identity instead of row order", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-save-errors.ts",
+  );
+  const { mapInventorySaveErrors } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  const mapped = mapInventorySaveErrors(
+    {
+      "items.0.adjustmentReason": ["reason for submitted product-2"],
+      "items.1.quantity": ["quantity for submitted product-1"],
+      "items.99.currentQuantity": ["unknown product"],
+      reason: ["HQ edit reason"],
+    },
+    ["product-2", "product-1"],
+    ["product-1", "product-2"],
+  );
+
+  assert.deepEqual(mapped, {
+    fieldErrors: {
+      "items.0.currentQuantity": ["quantity for submitted product-1"],
+      reason: ["HQ edit reason"],
+    },
+    adjustmentErrors: {
+      "product-2": "reason for submitted product-2",
+    },
+    firstFocusTarget: {
+      productId: "product-2",
+      currentIndex: 1,
+      field: "reason",
+    },
+  });
+
+  assert.deepEqual(
+    mapInventorySaveErrors(
+      { "items.0.currentQuantity": ["current quantity error"] },
+      ["product-2"],
+      ["product-1", "product-2"],
+    ).firstFocusTarget,
+    {
+      productId: "product-2",
+      currentIndex: 1,
+      field: "quantity",
+    },
+  );
+});
+
+test("inventory bulk-save errors preserve drafts and reveal the mapped row before focus", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const saveStart = componentSource.indexOf(
+    "async function saveCurrentDraft()",
+  );
+  const successStart = componentSource.indexOf(
+    "setData(result.data);",
+    saveStart,
+  );
+  const failurePaths = componentSource.slice(saveStart, successStart);
+
+  assert.match(componentSource, /mapInventorySaveErrors/);
+  assert.match(componentSource, /const submittedItems = items\.map/);
+  assert.match(
+    componentSource,
+    /const submittedProductIds = submittedItems\.map\(\(item\) => item\.productId\)/,
+  );
+  assert.match(componentSource, /items: submittedItems/);
+  assert.match(
+    componentSource,
+    /setAdjustmentErrors\(mappedErrors\.adjustmentErrors\)/,
+  );
+  assert.match(
+    componentSource,
+    /focusInventoryError\(mappedErrors\.firstFocusTarget\)/,
+  );
+  assert.match(
+    componentSource,
+    /function focusInventoryError[\s\S]*setActiveCategory\(category\)[\s\S]*setCategoryPage\([\s\S]*ROW_PAGE_SIZE[\s\S]*window\.setTimeout\([\s\S]*(?:reasonRefs|currentQuantityRefs)\.current/,
+  );
+  assert.doesNotMatch(failurePaths, /setItems\(|toLineState\(result\.data\)/);
+});
+
+test("describeAdjustmentReason explains overstock with normalized basis numbers", async () => {
   const guardPath = assertProjectFile(
     "src",
     "features",
@@ -1042,75 +1337,84 @@ test("describeAdjustmentReason explains the gap with numbers, noting loss separa
     pathToFileURL(guardPath).href
   );
 
-  // 사용자 케이스: 기준재고 3, 당일재고 1, 손실 1 → "손실 1개 외에 2개 차이"가 보여야 한다.
   assert.equal(
-    describeAdjustmentReason(3, 1, 1),
-    "기준재고 3개인데 당일재고가 1개입니다(손실 1개 외에 2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+    describeAdjustmentReason(3, 4, 1),
+    "기준재고 3개인데 당일재고가 4개입니다(손실 1개 반영 후 기준보다 1개 많음). 차이가 생긴 사유를 남겨 주세요.",
   );
 
-  // 손실이 없으면 "손실 N개 외에" 문구를 붙이지 않는다.
   assert.equal(
-    describeAdjustmentReason(5, 3, 0),
-    "기준재고 5개인데 당일재고가 3개입니다(2개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.",
+    describeAdjustmentReason(5, 6, 0),
+    "기준재고 5개인데 당일재고가 6개입니다(기준보다 1개 많음). 차이가 생긴 사유를 남겨 주세요.",
   );
 });
 
-test("isPurchaseDrivenSale exempts only normal purchase-driven sale (under, no loss, purchased)", async () => {
+test("getInventoryQuantityRelation normalizes every inventory flow before comparing", async () => {
   const policyPath = assertProjectFile(
     "src",
     "features",
     "inventory",
     "inventory-persist-policy.ts",
   );
-  const { isPurchaseDrivenSale } = await import(pathToFileURL(policyPath).href);
+  const { getInventoryQuantityRelation } = await import(
+    pathToFileURL(policyPath).href
+  );
 
-  // 매입 6, 손실 0, 당일재고 2 ≤ 기준 8 → 정상 판매(면제).
-  assert.equal(
-    isPurchaseDrivenSale({
+  const relation = (overrides) =>
+    getInventoryQuantityRelation({
       previousQuantity: 2,
       purchasedQuantity: 6,
       lossQuantity: 0,
       currentQuantity: 2,
-    }),
-    true,
-    "under-stock with purchase and no loss is a normal sale",
-  );
+      ...overrides,
+    });
 
-  // 초과: 당일재고 9 > 기준 8 → 이상 입력(조정 요구).
+  assert.equal(relation({}), "NORMAL", "purchase sale is normal");
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 0,
-      currentQuantity: 9,
-    }),
-    false,
-    "over-stock beyond system quantity still requires an adjustment",
+    relation({ purchasedQuantity: 0, previousQuantity: 5 }),
+    "NORMAL",
+    "carryover sale is normal",
   );
-
-  // 손실 혼재: 손실 1 → 정상 판매와 차이 구분 불가(조정 요구).
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 2,
-      purchasedQuantity: 6,
-      lossQuantity: 1,
-      currentQuantity: 2,
-    }),
-    false,
-    "mixed loss still requires an adjustment",
+    relation({ lossQuantity: 1 }),
+    "NORMAL",
+    "loss-mixed shortage is normal",
   );
-
-  // 매입 없음: 이월 품목 차이는 진짜 실사 차이(조정 요구).
   assert.equal(
-    isPurchaseDrivenSale({
-      previousQuantity: 5,
-      purchasedQuantity: 0,
-      lossQuantity: 0,
-      currentQuantity: 2,
-    }),
-    false,
-    "carryover difference without purchase still requires an adjustment",
+    relation({ currentQuantity: 8 }),
+    "NORMAL",
+    "equality is normal",
   );
+  assert.equal(relation({ currentQuantity: 8.01 }), "OVERSTOCK");
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.3,
+    }),
+    "NORMAL",
+    "floating sums must not create false overstock",
+  );
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.304,
+    }),
+    "NORMAL",
+    "current quantity uses the same two-decimal normalization",
+  );
+  assert.equal(
+    relation({
+      previousQuantity: 0.1,
+      purchasedQuantity: 0.2,
+      currentQuantity: 0.306,
+    }),
+    "OVERSTOCK",
+    "normalized current quantity above the boundary is overstock",
+  );
+  assert.equal(relation({ currentQuantity: null }), "UNAVAILABLE");
+  assert.equal(relation({ currentQuantity: Number.NaN }), "UNAVAILABLE");
+  assert.equal(relation({ previousQuantity: -1 }), "UNAVAILABLE");
 });
 
 test("getRequiredCurrentQuantityErrors blocks blank actual quantity for purchase/loss seed rows", async () => {
@@ -1294,6 +1598,18 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
     "HQ inventory save should enforce the adjustment-reason guard server-side",
   );
 
+  const staleConflictIndex = hqSource.indexOf(
+    "before.updatedAt !== expectedUpdatedAt.toISOString()",
+  );
+  const requiredEntryGuardIndex = hqSource.indexOf(
+    "getRequiredCurrentQuantityErrors(",
+  );
+  assert.ok(staleConflictIndex > 0, "HQ should detect stale inventory drafts");
+  assert.ok(
+    staleConflictIndex < requiredEntryGuardIndex,
+    "HQ stale drafts should return a conflict before row validation",
+  );
+
   // 가드는 버전 증가(markEditableLedgerInTx) 전에 위치해 빈 저장으로 버전만 올라가지
   // 않게 한다. 정의가 아니라 호출부(const updated = await markEditableLedgerInTx) 기준.
   const adjustmentGuardIndex = hqSource.indexOf(
@@ -1353,7 +1669,7 @@ test("store-manager bulk inventory save persists per-row adjustment reasons", ()
   assert.match(client, /adjustmentReason:\s*\n?\s*reasonRefs\.current/);
 });
 
-test("inventory adjustment reconciliation drops records that became purchase-driven sales", () => {
+test("inventory adjustment reconciliation drops every stale normal shortage record", () => {
   const reconcileSource = readProjectFile(
     "src",
     "features",
@@ -1363,24 +1679,154 @@ test("inventory adjustment reconciliation drops records that became purchase-dri
 
   assert.match(
     reconcileSource,
-    /isPurchaseDrivenSale\(/,
-    "reconciliation should detect purchase-driven sales",
+    /getInventoryQuantityRelation\(/,
+    "reconciliation should use the shared inventory relation",
   );
-  // reconcile 함수 본문 안에서만 확인한다(같은 파일의 applyInventoryAdjustmentReasonsInTx도
-  // isPurchaseDrivenSale을 쓰지만 그 경우는 조정을 만들지 않고 skip한다).
+  // reconcile 함수 본문 안에서만 확인한다(같은 파일의 reason apply path도 relation을 쓴다).
   const reconcileBody = reconcileSource.slice(
     reconcileSource.indexOf(
       "export async function reconcileLedgerInventoryAdjustments",
     ),
   );
   // 정상 판매로 바뀐 기존 조정 레코드는 삭제해 salesDifference 합산에서 빠지게 한다.
-  const purchaseSaleIndex = reconcileBody.indexOf("isPurchaseDrivenSale(");
+  const purchaseSaleIndex = reconcileBody.indexOf(
+    "getInventoryQuantityRelation(",
+  );
   const deleteAfter = reconcileBody
     .slice(purchaseSaleIndex)
     .indexOf("ledgerInventoryAdjustment.delete(");
   assert.ok(
     deleteAfter > 0 && deleteAfter < 400,
     "a purchase-driven sale should delete the stale adjustment record",
+  );
+});
+
+test("inventory adjustment reason apply and reconciliation keep only real overstock records", async () => {
+  const reconcilePath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "adjustment-reconciliation.ts",
+  );
+  const {
+    applyInventoryAdjustmentReasonsInTx,
+    reconcileLedgerInventoryAdjustments,
+  } = await import(pathToFileURL(reconcilePath).href);
+  const inventoryItems = [
+    {
+      id: "row-carryover",
+      productId: "carryover",
+      productName: "carryover",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 5,
+      currentQuantity: 2,
+      quantity: 2,
+    },
+    {
+      id: "row-loss-mixed",
+      productId: "loss-mixed",
+      productName: "loss-mixed",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 5,
+      currentQuantity: 3,
+      quantity: 3,
+    },
+    {
+      id: "row-overstock",
+      productId: "overstock",
+      productName: "overstock",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 2,
+      currentQuantity: 3,
+      quantity: 3,
+    },
+    {
+      id: "row-manual",
+      productId: "manual",
+      productName: "manual",
+      productCategory: "fish",
+      productSpec: "1kg",
+      unitPrice: 1_000,
+      previousQuantity: 0,
+      currentQuantity: 3,
+      quantity: 3,
+      carryoverSource: "MANUAL",
+      carryoverStatus: "CARRYOVER_EMPTY",
+      carryoverLedgerId: null,
+    },
+  ];
+  const purchases = [{ productId: "loss-mixed", quantity: 2 }];
+  const losses = [{ productId: "loss-mixed", quantity: 1 }];
+  const created = [];
+  const deleted = [];
+  const updatedAdjustments = [];
+  const tx = {
+    ledgerInventoryItem: {
+      findMany: async ({ where }) =>
+        where.productId?.in
+          ? inventoryItems.filter((item) =>
+              where.productId.in.includes(item.productId),
+            )
+          : inventoryItems,
+      update: async () => {},
+    },
+    ledgerPurchaseItem: { findMany: async () => purchases },
+    ledgerLossItem: { findMany: async () => losses },
+    ledgerInventoryAdjustment: {
+      findMany: async ({ where }) =>
+        where.productId?.in
+          ? []
+          : [
+              { id: "adjust-carryover", productId: "carryover", reason: "old" },
+              {
+                id: "adjust-loss-mixed",
+                productId: "loss-mixed",
+                reason: "old",
+              },
+              {
+                id: "adjust-overstock",
+                productId: "overstock",
+                reason: "counted",
+              },
+              { id: "adjust-manual", productId: "manual", reason: "old" },
+            ],
+      create: async ({ data }) => created.push(data),
+      delete: async ({ where }) => deleted.push(where.id),
+      update: async ({ where, data }) =>
+        updatedAdjustments.push({ where, data }),
+    },
+  };
+
+  await applyInventoryAdjustmentReasonsInTx(
+    tx,
+    "ledger-1",
+    new Map(inventoryItems.map((item) => [item.productId, "counted"])),
+    "actor-1",
+  );
+
+  assert.deepEqual(
+    created.map((adjustment) => adjustment.productId),
+    ["overstock"],
+    "a reason must not create shortage adjustments",
+  );
+
+  await reconcileLedgerInventoryAdjustments(tx, "ledger-1", "actor-1");
+
+  assert.deepEqual(
+    deleted,
+    ["adjust-carryover", "adjust-loss-mixed", "adjust-manual"],
+    "normal shortages and manual first-entry adjustments should be deleted",
+  );
+  assert.deepEqual(
+    updatedAdjustments.map((adjustment) => adjustment.where.id),
+    ["adjust-overstock"],
+    "real overstock should retain the existing adjustment flow",
   );
 });
 
@@ -1402,6 +1848,11 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(
     typeSource,
     /manualProductOptions:\s+InventoryManualProductOption\[\]/,
+  );
+  assert.match(typeSource, /export\s+type\s+InventoryPurchasePrice/);
+  assert.match(
+    typeSource,
+    /purchasePrice:\s+InventoryPurchasePrice\s+\|\s+null/,
   );
 
   const querySource = readProjectFile(
@@ -1466,6 +1917,22 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     /manualProductOptions/,
     "step data should carry manual product options",
   );
+  assert.match(querySource, /ledgerPurchaseItem\.findMany/);
+  assert.match(querySource, /storeId:\s*ledger\.storeId/);
+  assert.match(querySource, /closingDate:\s*{\s*lte:\s*ledger\.closingDate/s);
+  assert.match(querySource, /dailyLedger:\s*{[\s\S]*closingDate:\s*true/);
+  assert.doesNotMatch(
+    querySource.slice(querySource.indexOf("ledgerPurchaseItem.findMany")),
+    /createdAt:\s*true/,
+    "display history must use DailyLedger.closingDate, not row creation time",
+  );
+  assert.match(querySource, /resolveInventoryPurchasePrices/);
+  assert.match(querySource, /purchasePrice:/);
+  assert.match(
+    querySource,
+    /manualProductOptions\.map|attachPurchasePrices/,
+    "manual product options should receive the same historical purchase price",
+  );
   const emptyCarryoverFallback = querySource.slice(
     querySource.indexOf("전일 장부나 월초 스냅샷이 없습니다. 오늘 매입"),
   );
@@ -1513,6 +1980,49 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateInventoryPaths\(\)/);
   assert.match(actionSource, /revalidateStoreEntryPaths\(\["inventory"\]\)/);
+});
+
+test("inventory purchase price DTO and UI expose only the approved nested field", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "queries.ts",
+  );
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const safeMapperSource = querySource.slice(
+    querySource.indexOf("export function toStoreManagerInventoryStepData"),
+  );
+
+  assert.match(componentSource, /item\.purchasePrice/);
+  assert.match(componentSource, /당일/);
+  assert.match(componentSource, /최근/);
+  assert.match(componentSource, /매입단가 ·/);
+  assert.match(componentSource, /매입 이력 없음/);
+  assert.match(componentSource, /formatKrw\(item\.purchasePrice\.unitPrice\)/);
+  assert.match(componentSource, /purchasePrice:\s*option\.purchasePrice/);
+  assert.match(
+    componentSource,
+    /text-muted-foreground/,
+    "purchase-price copy should use the existing muted semantic text",
+  );
+  assert.match(safeMapperSource, /\.\.\.item/);
+  assert.doesNotMatch(safeMapperSource, /unitPrice:\s*item\.unitPrice/);
+  assert.doesNotMatch(
+    safeMapperSource,
+    /purchaseAmount:\s*item\.purchaseAmount/,
+  );
+  assert.doesNotMatch(safeMapperSource, /lossAmount:\s*item\.lossAmount/);
+  assert.doesNotMatch(
+    safeMapperSource,
+    /inventoryAmount:\s*item\.inventoryAmount/,
+  );
 });
 
 test("manual product add lets ungrounded products be entered without auto-listing them", () => {
@@ -1728,7 +2238,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     "store manager action must not write inventory adjustments anymore",
   );
 
-  // 단독 재고조정 내부 계약(upsert/감사/POLICY_UNCONFIRMED/0차이 차단/충돌)은 본사 액션으로 이관됐다.
+  // 단독 재고조정 내부 계약(upsert/감사/POLICY_UNCONFIRMED/초과만 허용/충돌)은 본사 액션으로 이관됐다.
   const hqActionSource = readProjectFile(
     "src",
     "features",
@@ -1747,8 +2257,8 @@ test("inventory adjustment query action and audit contracts are wired", () => {
   assert.match(hqActionSource, /재고 기준을 계산할 수 없습니다/);
   assert.match(
     hqActionSource,
-    /differenceQuantity\s*===\s*0/,
-    "zero-difference adjustments should be blocked",
+    /getInventoryQuantityRelation\(/,
+    "HQ adjustment creation should use the shared overstock relation",
   );
   assert.doesNotMatch(
     hqActionSource,
@@ -1825,6 +2335,21 @@ test("inventory UI is wired to the canonical inventory route", () => {
     "terms.ts",
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
+  const previousStockButtonStart = componentSource.indexOf(
+    "{/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}",
+  );
+  const previousStockButtonSource = componentSource.slice(
+    previousStockButtonStart,
+    componentSource.indexOf("</Button>", previousStockButtonStart) +
+      "</Button>".length,
+  );
+  assert.ok(previousStockButtonStart >= 0);
+  assert.doesNotMatch(previousStockButtonSource, /variant="outline"/);
+  assert.match(previousStockButtonSource, /className="min-h-11 font-semibold"/);
+  assert.equal(
+    (previousStockButtonSource.match(/전날 재고 보기/g) ?? []).length,
+    1,
+  );
   assert.match(componentSource, /saveLedgerInventoryItems/);
   assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);

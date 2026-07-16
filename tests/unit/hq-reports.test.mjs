@@ -407,7 +407,7 @@ test("buildProductProfitability flags zero-sales items as 계산 불가", async 
   assert.equal(summary.unavailableItemCount, 1);
 });
 
-test("HQ daily and monthly reports render the category margin chart with 추정 labeling", () => {
+test("HQ report pages omit the category margin chart while preserving category calculations", () => {
   const policyDocSource = readProjectFile(
     "docs",
     "meeting",
@@ -428,12 +428,13 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
     "components",
     "monthly-closing-anomaly-report.tsx",
   );
-  const chartSource = readProjectFile(
+  const productReviewPageSource = readProjectFile(
     "src",
-    "features",
+    "app",
+    "app",
     "reports",
-    "components",
-    "product-category-margin-chart.tsx",
+    "product-review",
+    "page.tsx",
   );
   const querySource = readProjectFile(
     "src",
@@ -442,9 +443,27 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
     "queries.ts",
   );
 
-  assert.match(dailyPageSource, /ProductCategoryMarginChart/);
-  assert.match(dailyPageSource, /report\.categoryPerformance/);
-  assert.match(dailyPageSource, /재고 흐름 기반 추정값/);
+  for (const source of [
+    dailyPageSource,
+    productReviewPageSource,
+    monthlyComponentSource,
+  ]) {
+    assert.doesNotMatch(source, /ProductCategoryMarginChart/);
+    assert.doesNotMatch(source, /냉동\/생물 매출 \(추정\)/);
+  }
+  assert.equal(
+    existsSync(
+      path.join(
+        root,
+        "src",
+        "features",
+        "reports",
+        "components",
+        "product-category-margin-chart.tsx",
+      ),
+    ),
+    false,
+  );
 
   // WO(2026-06-25): 지점별 토글 차트 + 품목별 이익률 차트가 일별 리포트에 노출된다.
   assert.match(dailyPageSource, /StoreDailyPerformanceChart/);
@@ -452,18 +471,6 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
   assert.match(dailyPageSource, /ProductProfitabilityReport/);
   assert.match(dailyPageSource, /report\.productProfitability/);
   assert.match(querySource, /buildProductProfitability\(ledgersWithPlannedPrice\)/);
-
-  assert.match(monthlyComponentSource, /ProductCategoryMarginChart/);
-  assert.match(monthlyComponentSource, /report\.categoryPerformance/);
-  assert.match(monthlyComponentSource, /재고 흐름 기반 추정값/);
-
-  // 차트는 추정 라벨을 명시하고 확정 매출처럼 보이지 않게 한다.
-  assert.match(chartSource, /추정 매출/);
-  assert.match(chartSource, /`이익률 \$\{percentFormatter/);
-  assert.doesNotMatch(chartSource, /`마진 \$\{percentFormatter/);
-  assert.match(chartSource, /추정 이익률/);
-  // JSX는 줄바꿈을 공백으로 합쳐 렌더링하므로 소스 줄바꿈에 영향받지 않게 \s+로 매칭한다.
-  assert.match(chartSource, /확정\s+매출·원가가 아닙니다/);
 
   // 정책 문서는 원문 요구에 맞춰 "계산 불가" 고정이 아니라 추정 이익률 노출을 허용한다.
   assert.match(policyDocSource, /추정 이익률/);
@@ -478,8 +485,6 @@ test("HQ daily and monthly reports render the category margin chart with 추정 
     /categoryPerformance:\s*buildProductCategoryPerformance\(\s*ledgersWithPlannedPrice,?\s*\)/,
   );
   assert.match(querySource, /getPlannedUnitPriceLookup/);
-  // 판매가 계획이 없는 품목은 매입단가로 폴백했음을 차트가 안내한다.
-  assert.match(chartSource, /판매가 미반영/);
 });
 
 test("correction creation revalidates daily reports after correction values change", () => {

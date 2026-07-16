@@ -938,7 +938,36 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /getDraftPurchaseTotal/);
   assert.match(componentSource, /clearRowErrors/);
   assert.match(componentSource, /referenceUnitPrice/);
-  // 간소화(2026-07-02): "품목명:" 요약 박스는 제거되고 원문명/구분/규격은 접이식 상세로 이동.
+  const productSnapshotFieldsStart = componentSource.indexOf(
+    "const productSnapshotFields = (",
+  );
+  const productSnapshotFieldsSource = componentSource.slice(
+    productSnapshotFieldsStart,
+    componentSource.indexOf("              return (", productSnapshotFieldsStart),
+  );
+  assert.ok(
+    productSnapshotFieldsStart >= 0,
+    "store free-form rows and HQ details should reuse the snapshot fields",
+  );
+  for (const contract of [
+    /원문명/,
+    /구분/,
+    /규격/,
+    /productNameRefs\.current\[index\]/,
+    /productCategoryRefs\.current\[index\]/,
+    /productSpecRefs\.current\[index\]/,
+    /productNameError/,
+    /productCategoryError/,
+    /productSpecError/,
+  ]) {
+    assert.match(productSnapshotFieldsSource, contract);
+  }
+  // 본사는 기존 상세 상자 안에서 공용 필드를 렌더링한다. 지점은 품목 미선택
+  // 자유 입력 행에서만 같은 필드를 직접 렌더링하므로 상세/펼치기 UI가 노출되지 않는다.
+  assert.match(
+    componentSource,
+    /\{!showSalesPricePlan\s*\?\s*\(\s*<details[\s\S]*?\{productSnapshotFields\}[\s\S]*?<\/details>\s*\)\s*:\s*!line\.productId\s*\?\s*\(\s*productSnapshotFields\s*\)\s*:\s*null\}/,
+  );
   assert.match(componentSource, /원문명/);
   // WO(2026-06-24): 매입 기준 select 제거 → 헬퍼 문구에서 "매입 기준" 표현이 사라지고
   // 품목 선택은 defaultUnitPrice만 채운다.

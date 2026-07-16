@@ -9,12 +9,19 @@ import { type InventoryFifoLotView } from "~/features/inventory/fifo-lots";
 
 export type { InventoryFifoLotView };
 
+export type InventoryPurchasePrice = {
+  kind: "TODAY" | "RECENT";
+  businessDate: string;
+  unitPrice: number;
+};
+
 export type InventoryStepLine = {
   id: string;
   productId: string;
   productName: string;
   productCategory: string;
   productSpec: string;
+  purchasePrice: InventoryPurchasePrice | null;
   unitPrice: number;
   previousQuantity: number;
   purchasedQuantity: number;
@@ -90,6 +97,7 @@ export type InventoryManualProductOption = {
   productName: string;
   productCategory: string;
   productSpec: string;
+  purchasePrice: InventoryPurchasePrice | null;
 };
 
 export type InventoryStepData = {
@@ -119,8 +127,8 @@ export type StoreManagerInventoryFifoLotView = Omit<
   "unitPrice" | "originalAmount" | "consumedAmount" | "remainingAmount"
 >;
 
-// 2026-06-28 결정: FIFO 재고금액(inventoryAmount)과 lot 금액/단가는 본사 전용으로 차단한다.
-// 지점장에게는 fifoLots를 금액 없는 안전 뷰로만 노출한다. 단가/매입액/손실액/조정 금액도 차단.
+// FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
+// 당일·최근 실제 매입단가만 중첩 purchasePrice 예외로 노출한다.
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
   | "unitPrice"

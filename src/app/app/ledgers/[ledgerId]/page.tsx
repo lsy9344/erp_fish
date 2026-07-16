@@ -93,7 +93,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 
 const hqLedgerLabel = "본사 검토 장부";
 // 단계 순서 변경(2026-07-02): 본사 장부 상세 탭 순서를 지점 입력 순서
-// (매입>손실>재고>비용>근무>매출)와 동일하게 맞춘다.
+// (매입>손실>재고>지출>근무>매출)와 동일하게 맞춘다.
 const ledgerDetailTabs = [
   "purchases",
   "losses",
@@ -408,7 +408,7 @@ export default async function LedgerDetailPage({
               재고
             </TabsTrigger>
             <TabsTrigger value="expenses" className="min-h-9 px-3">
-              비용
+              지출
             </TabsTrigger>
             <TabsTrigger value="work" className="min-h-9 px-3">
               근무
@@ -565,11 +565,11 @@ function getCorrectionTargetOptions({
       targetType: "EXPENSE_ROW",
       targetId: item.id,
       fieldKey: "amount",
-      label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
+      label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       originalValue: {
         kind: "money",
         value: item.amount,
-        label: `비용 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
+        label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       },
     })),
     ...inventoryData.items

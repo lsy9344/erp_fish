@@ -439,15 +439,13 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(
     page.getByRole("heading", { name: "아침 회의 리포트" }),
   ).toBeVisible();
-  // WO-03(2026-06-22): 냉동/생물 매출 차트가 추정값임을 명시하며 노출된다.
+  // 냉동/생물 매출 차트 카드는 일별 리포트에서 제거됐다.
   await expect(
     page.getByRole("heading", { name: "냉동/생물 매출 (추정)" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
-    page
-      .getByText("품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다.")
-      .first(),
-  ).toBeVisible();
+    page.getByText("품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다."),
+  ).toHaveCount(0);
   // WO(2026-06-25): 지점별 토글 차트 + 품목별 이익률 차트가 추정 라벨로 노출된다.
   await expect(
     page.getByRole("heading", { name: /지점별 .* 매출·이익률 \(추정\)/ }),
@@ -759,6 +757,9 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   await expect(page).toHaveURL(new RegExp(`month=${currentMonth}`));
   await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.closed}`));
   await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
+  await expect(
+    page.getByRole("heading", { name: "냉동/생물 매출 (추정)" }),
+  ).toHaveCount(0);
   const kpiSummary = page.getByLabel("월간 핵심 성과", { exact: true });
   await expect(kpiSummary).toContainText("월간 매출");
   await expect(kpiSummary).toContainText("마감 장부 숫자만 포함");
@@ -1251,6 +1252,9 @@ test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다"
   await expect(
     page.getByRole("heading", { name: "품목 검토 (추정)" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "냉동/생물 매출 (추정)" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "품목별 판매 현황 (추정)" }),
   ).toBeVisible();

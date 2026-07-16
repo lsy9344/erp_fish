@@ -52,7 +52,7 @@ export function getLedgerReviewMissingItems({
   const items: LedgerReviewMissingItem[] = [];
 
   // 단계 순서 변경(2026-07-02): 누락/확인 항목도 지점 입력 순서
-  // (매입>손실>재고>비용>근무>매출)와 동일하게 정렬한다.
+  // (매입>손실>재고>지출>근무>매출)와 동일하게 정렬한다.
   if (purchaseCount === 0) {
     items.push({
       id: "purchases",
@@ -90,10 +90,10 @@ export function getLedgerReviewMissingItems({
   if (expenseCount === 0) {
     items.push({
       id: "expenses",
-      label: "비용",
+      label: "지출",
       href: getLedgerReviewStepHref(storeId, closingDate, "expenses"),
       status: "missing",
-      detail: "비용 항목이 아직 입력되지 않았습니다.",
+      detail: "지출 항목이 아직 입력되지 않았습니다.",
     });
   }
 

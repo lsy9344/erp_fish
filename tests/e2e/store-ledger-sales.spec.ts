@@ -472,7 +472,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
     .getByRole("textbox", { name: "총매출", exact: true })
     .fill("77777");
 
-  await page.getByRole("link", { name: /4단계: 비용/ }).click();
+  await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toBeVisible();
@@ -482,7 +482,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
     page.getByRole("textbox", { name: "총매출", exact: true }),
   ).toHaveValue("77,777");
 
-  await page.getByRole("link", { name: /4단계: 비용/ }).click();
+  await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await page
     .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
     .getByRole("button", { name: "변경 버리고 이동" })
@@ -511,7 +511,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
     .getByRole("textbox", { name: "총매출", exact: true })
     .fill("77777");
 
-  await page.getByRole("link", { name: /4단계: 비용/ }).click();
+  await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await page
     .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
     .getByRole("button", { name: "저장" })

@@ -39,7 +39,10 @@ import {
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { buildManualInventoryRows } from "./manual-inventory-rows";
-import { shouldPersistInventoryLine } from "./inventory-persist-policy";
+import {
+  getInventoryQuantityRelation,
+  shouldPersistInventoryLine,
+} from "./inventory-persist-policy";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -263,6 +266,11 @@ export async function saveHqLedgerInventoryItems(
         }
 
         const before = beforeResult.data;
+
+        if (before.updatedAt !== expectedUpdatedAt.toISOString()) {
+          return await hqInventoryConflictError(tx, "inventory", parsed.data);
+        }
+
         const inputByProductId = new Map(
           parsed.data.items.map((item) => [item.productId, item]),
         );
@@ -523,7 +531,14 @@ export async function saveHqLedgerInventoryAdjustment(
           );
         }
 
-        if (adjustment.differenceQuantity === 0) {
+        if (
+          getInventoryQuantityRelation({
+            previousQuantity: line.previousQuantity,
+            purchasedQuantity: line.purchasedQuantity,
+            lossQuantity: line.lossQuantity,
+            currentQuantity: parsed.data.actualQuantity,
+          }) !== "OVERSTOCK"
+        ) {
           return actionError<InventoryStepData>(
             "VALIDATION_ERROR",
             "실제 재고 차이가 있을 때만 조정을 저장할 수 있습니다.",

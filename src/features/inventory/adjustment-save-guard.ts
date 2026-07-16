@@ -1,7 +1,6 @@
-import { calculateSystemInventoryQuantity } from "../../server/calculations/inventory.ts";
 import {
+  getInventoryQuantityRelation,
   isManualFirstInventoryEntry,
-  isPurchaseDrivenSale,
 } from "./inventory-persist-policy.ts";
 
 export const missingAdjustmentReasonMessage =
@@ -17,10 +16,10 @@ export function describeAdjustmentReason(
   currentQuantity: number,
   lossQuantity: number,
 ) {
-  const difference = systemQuantity - currentQuantity;
-  const lossNote = lossQuantity > 0 ? `손실 ${lossQuantity}개 외에 ` : "";
+  const difference = currentQuantity - systemQuantity;
+  const lossNote = lossQuantity > 0 ? `손실 ${lossQuantity}개 반영 후 ` : "";
 
-  return `기준재고 ${systemQuantity}개인데 당일재고가 ${currentQuantity}개입니다(${lossNote}${difference}개 차이). 판매로 나간 건지 재고 오차인지 사유를 남겨 주세요.`;
+  return `기준재고 ${systemQuantity}개인데 당일재고가 ${currentQuantity}개입니다(${lossNote}기준보다 ${difference}개 많음). 차이가 생긴 사유를 남겨 주세요.`;
 }
 
 export const missingRequiredCurrentQuantityMessage =
@@ -140,21 +139,7 @@ export function getInventorySaveAdjustmentErrors(
       continue;
     }
 
-    if (isPurchaseDrivenSale(item)) {
-      continue;
-    }
-
-    const systemQuantity = calculateSystemInventoryQuantity({
-      previousQuantity: item.previousQuantity,
-      purchasedQuantity: item.purchasedQuantity,
-      lossQuantity: item.lossQuantity,
-    });
-
-    if (
-      systemQuantity === null ||
-      item.currentQuantity === null ||
-      item.currentQuantity === systemQuantity
-    ) {
+    if (getInventoryQuantityRelation(item) !== "OVERSTOCK") {
       continue;
     }
 
@@ -169,7 +154,9 @@ export function getInventorySaveAdjustmentErrors(
       continue;
     }
 
-    errors[`items.${index}.currentQuantity`] = [missingAdjustmentReasonMessage];
+    errors[`items.${index}.adjustmentReason`] = [
+      missingAdjustmentReasonMessage,
+    ];
   }
 
   return errors;

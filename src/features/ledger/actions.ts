@@ -305,7 +305,7 @@ function toStoreLedgerConflictValues(
     case "expenses":
       return Object.fromEntries(
         data.expenseItems.map((item, index) => [
-          `비용 ${index + 1}`,
+          `지출 ${index + 1}`,
           `${item.ledgerInputCodeName} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
         ]),
       );
@@ -358,7 +358,7 @@ function toStoreLedgerClientValues(
     case "expenses":
       return Object.fromEntries(
         (input as LedgerExpensesInput).expenses.map((item, index) => [
-          `비용 ${index + 1}`,
+          `지출 ${index + 1}`,
           `${item.ledgerInputCodeId} ${item.amount}원${item.memo ? ` / ${item.memo}` : ""}`,
         ]),
       );
@@ -455,9 +455,9 @@ async function validateActiveExpenseCodesInTx(
   if (activeExpenseCodeIds.size === 0) {
     return actionError(
       "VALIDATION_ERROR",
-      "비용 항목 코드가 등록된 뒤 저장할 수 있습니다.",
+      "지출 항목 코드가 등록된 뒤 저장할 수 있습니다.",
       {
-        expenses: ["비용 항목 코드가 등록된 뒤 저장할 수 있습니다."],
+        expenses: ["지출 항목 코드가 등록된 뒤 저장할 수 있습니다."],
       },
     );
   }
@@ -467,9 +467,9 @@ async function validateActiveExpenseCodesInTx(
   );
 
   if (invalidExpenseIndex !== -1) {
-    return actionError("VALIDATION_ERROR", "비용 항목을 확인해 주세요.", {
+    return actionError("VALIDATION_ERROR", "지출 항목을 확인해 주세요.", {
       [`expenses.${invalidExpenseIndex}.ledgerInputCodeId`]: [
-        "활성 비용 항목만 저장할 수 있습니다.",
+        "활성 지출 항목만 저장할 수 있습니다.",
       ],
     });
   }
