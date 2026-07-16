@@ -395,7 +395,7 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
   assert.match(componentSource, /근무 요약/);
   assert.match(
     componentSource,
-    /근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다\./,
+    /showSensitiveAccountingMetrics\s*\?\s*"급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\."\s*:\s*"근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다\."/,
   );
   assert.match(componentSource, /stepLabel="5단계: 근무인원\/이름"/);
   assert.equal(

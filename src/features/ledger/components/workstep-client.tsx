@@ -535,7 +535,9 @@ export function WorkStepClient({
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">근무 요약</p>
             <p className="text-muted-foreground text-sm">
-              근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다.
+              {showSensitiveAccountingMetrics
+                ? "급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다."
+                : "근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다."}
             </p>
           </div>
 
