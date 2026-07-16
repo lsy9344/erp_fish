@@ -717,9 +717,7 @@ export function PurchaseStepClient({
               const productSnapshotFields = (
                 <div className="grid gap-2 sm:grid-cols-3">
                   <Field data-invalid={Boolean(productNameError)}>
-                    <FieldLabel
-                      htmlFor={`purchase-product-name-${line.id}`}
-                    >
+                    <FieldLabel htmlFor={`purchase-product-name-${line.id}`}>
                       원문명
                     </FieldLabel>
                     <Input
@@ -744,9 +742,7 @@ export function PurchaseStepClient({
                       }
                     />
                     {productNameError ? (
-                      <FieldError
-                        id={`purchase-product-name-${line.id}-error`}
-                      >
+                      <FieldError id={`purchase-product-name-${line.id}-error`}>
                         {productNameError}
                       </FieldError>
                     ) : null}
@@ -789,9 +785,7 @@ export function PurchaseStepClient({
                   </Field>
 
                   <Field data-invalid={Boolean(productSpecError)}>
-                    <FieldLabel
-                      htmlFor={`purchase-product-spec-${line.id}`}
-                    >
+                    <FieldLabel htmlFor={`purchase-product-spec-${line.id}`}>
                       규격
                     </FieldLabel>
                     <Input
@@ -816,9 +810,7 @@ export function PurchaseStepClient({
                       }
                     />
                     {productSpecError ? (
-                      <FieldError
-                        id={`purchase-product-spec-${line.id}-error`}
-                      >
+                      <FieldError id={`purchase-product-spec-${line.id}-error`}>
                         {productSpecError}
                       </FieldError>
                     ) : null}
@@ -897,42 +889,44 @@ export function PurchaseStepClient({
                       채운 내부 스냅샷을 그대로 저장한다. */}
                   {!showSalesPricePlan ? (
                     <details
-                    className="group rounded-md border"
-                    open={
-                      !line.productId ||
-                      Boolean(productNameError) ||
-                      Boolean(productCategoryError) ||
-                      Boolean(productSpecError)
-                    }
-                  >
-                    <summary className="text-muted-foreground flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 px-3 text-xs font-medium">
-                      <span className="truncate">
-                        상세: {line.productName || "원문명 미입력"}
-                        {line.productCategory
-                          ? ` · ${line.productCategory}`
-                          : ""}
-                        {line.productSpec ? ` · ${line.productSpec}` : ""}
-                        {" · 참고 단가 "}
-                        {formatKrw(line.referenceUnitPrice)}
-                      </span>
-                      <span className="shrink-0 group-open:hidden">펼치기</span>
-                      <span className="hidden shrink-0 group-open:inline">
-                        접기
-                      </span>
-                    </summary>
-                    <div className="border-t p-3">
-                      {productSnapshotFields}
-
-                      {helperProduct || line.referenceInfo ? (
-                        <p className="bg-muted/40 text-muted-foreground mt-2 rounded-md px-3 py-2 text-xs">
-                          참고 단가:{" "}
-                          {formatKrw(helperProduct?.defaultUnitPrice ?? null)}
-                          {line.referenceInfo
-                            ? ` · 참조: ${line.referenceInfo}`
+                      className="group rounded-md border"
+                      open={
+                        !line.productId ||
+                        Boolean(productNameError) ||
+                        Boolean(productCategoryError) ||
+                        Boolean(productSpecError)
+                      }
+                    >
+                      <summary className="text-muted-foreground flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 px-3 text-xs font-medium">
+                        <span className="truncate">
+                          상세: {line.productName || "원문명 미입력"}
+                          {line.productCategory
+                            ? ` · ${line.productCategory}`
                             : ""}
-                        </p>
-                      ) : null}
-                    </div>
+                          {line.productSpec ? ` · ${line.productSpec}` : ""}
+                          {" · 참고 단가 "}
+                          {formatKrw(line.referenceUnitPrice)}
+                        </span>
+                        <span className="shrink-0 group-open:hidden">
+                          펼치기
+                        </span>
+                        <span className="hidden shrink-0 group-open:inline">
+                          접기
+                        </span>
+                      </summary>
+                      <div className="border-t p-3">
+                        {productSnapshotFields}
+
+                        {helperProduct || line.referenceInfo ? (
+                          <p className="bg-muted/40 text-muted-foreground mt-2 rounded-md px-3 py-2 text-xs">
+                            참고 단가:{" "}
+                            {formatKrw(helperProduct?.defaultUnitPrice ?? null)}
+                            {line.referenceInfo
+                              ? ` · 참조: ${line.referenceInfo}`
+                              : ""}
+                          </p>
+                        ) : null}
+                      </div>
                     </details>
                   ) : !line.productId ? (
                     productSnapshotFields
