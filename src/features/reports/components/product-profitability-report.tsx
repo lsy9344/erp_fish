@@ -137,7 +137,7 @@ export function ProductProfitabilityReport({
         } as React.CSSProperties
       }
     >
-      {tableVariant === "profitability" ? (
+      {showChart ? (
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
             <dt className="text-muted-foreground text-xs">추정 판매액 합계</dt>
@@ -226,11 +226,13 @@ export function ProductProfitabilityReport({
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
       {showTable && tableVariant === "salesRanking" ? (
         <div className="flex flex-col gap-3">
-          <div className="flex justify-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <h3 className="text-sm font-medium">판매수량 상위 10개</h3>
             <Field className="w-full sm:max-w-xs">
               <FieldLabel htmlFor="product-search">품목 검색</FieldLabel>
               <Input
                 id="product-search"
+                type="search"
                 value={searchQuery}
                 placeholder="품목명 또는 규격 검색"
                 onChange={(event) => setSearchQuery(event.currentTarget.value)}

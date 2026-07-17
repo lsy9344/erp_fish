@@ -61,18 +61,33 @@ const expectedPercentFormatter = new Intl.NumberFormat("ko-KR", {
 
 const koreanCollator = new Intl.Collator("ko-KR");
 
+function formatActualMargin(value: number | null) {
+  return value === null ? "데이터 부족" : actualPercentFormatter.format(value);
+}
+
+function formatExpectedMargin(value: number | null) {
+  return value === null
+    ? "데이터 부족"
+    : expectedPercentFormatter.format(value);
+}
+
+function formatMarginWarning(actual: number | null, expected: number | null) {
+  if (actual === null || expected === null) return "판정 불가";
+  return hasSignificantGrossMarginGap(actual, expected)
+    ? "1.5%p 이상"
+    : "기준 이내";
+}
+
 function formatMarginComparison(
   actual: number | null,
   expected: number | null,
 ) {
   const actualLabel =
-    actual === null
-      ? "실제 데이터 부족"
-      : `실제 ${actualPercentFormatter.format(actual)}`;
+    actual === null ? "실제 데이터 부족" : `실제 ${formatActualMargin(actual)}`;
   const expectedLabel =
     expected === null
       ? "예상 데이터 부족"
-      : `예상 ${expectedPercentFormatter.format(expected)}`;
+      : `예상 ${formatExpectedMargin(expected)}`;
 
   return `${actualLabel} (${expectedLabel})`;
 }
@@ -189,61 +204,97 @@ export function StoreDailyPerformanceChart({
           표시할 지점 데이터 없음
         </div>
       ) : (
-        <ChartContainer
-          config={chartConfig}
-          className="w-full min-w-0"
-          style={{ height: chartHeight }}
+        <div
+          data-testid="store-performance-chart-scroll"
+          className="w-full overflow-x-auto"
         >
-          <BarChart
-            accessibilityLayer
-            data={chartData}
-            layout="vertical"
-            maxBarSize={36}
-            margin={{ top: 4, right: 190, left: 4, bottom: 4 }}
+          <ChartContainer
+            config={chartConfig}
+            className="min-w-[560px]"
+            style={{ height: chartHeight }}
           >
-            <CartesianGrid horizontal={false} />
-            <XAxis
-              type="number"
-              tickFormatter={(value: number) => krwFormatter.format(value)}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              type="category"
-              dataKey="storeName"
-              tickLine={false}
-              axisLine={false}
-              width={96}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(_value, _name, item) =>
-                    (item.payload as StoreChartRow).label
-                  }
-                />
-              }
-            />
-            <Bar dataKey="salesAmount" radius={4}>
-              {chartData.map((row) => (
-                <Cell
-                  key={row.storeId}
-                  data-testid={`store-performance-bar-${row.storeId}`}
-                  fill={
-                    hasSignificantGrossMarginGap(
-                      row.grossMarginRate,
-                      row.expectedGrossMarginRate,
-                    )
-                      ? "var(--destructive)"
-                      : "var(--chart-1)"
-                  }
-                />
-              ))}
-              <LabelList dataKey="label" content={StorePerformanceLabel} />
-            </Bar>
-          </BarChart>
-        </ChartContainer>
+            <BarChart
+              accessibilityLayer
+              title="지점별 장부 입력 매출·마진율"
+              desc="막대는 장부 입력 매출이며 실제 마진, 예상 마진과 1.5%p 이상 차이 경고를 함께 표시합니다."
+              data={chartData}
+              layout="vertical"
+              maxBarSize={36}
+              margin={{ top: 4, right: 190, left: 4, bottom: 4 }}
+            >
+              <CartesianGrid horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={(value: number) => krwFormatter.format(value)}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="storeName"
+                tickLine={false}
+                axisLine={false}
+                width={96}
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    formatter={(_value, _name, item) =>
+                      (item.payload as StoreChartRow).label
+                    }
+                  />
+                }
+              />
+              <Bar dataKey="salesAmount" radius={4}>
+                {chartData.map((row) => (
+                  <Cell
+                    key={row.storeId}
+                    data-testid={`store-performance-bar-${row.storeId}`}
+                    fill={
+                      hasSignificantGrossMarginGap(
+                        row.grossMarginRate,
+                        row.expectedGrossMarginRate,
+                      )
+                        ? "var(--destructive)"
+                        : "var(--chart-1)"
+                    }
+                  />
+                ))}
+                <LabelList dataKey="label" content={StorePerformanceLabel} />
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+        </div>
       )}
+
+      <table className="sr-only" style={{ tableLayout: "fixed" }}>
+        <caption>지점별 매출과 마진 데이터</caption>
+        <thead>
+          <tr>
+            <th>지점</th>
+            <th>매출액</th>
+            <th>실제 마진</th>
+            <th>예상 마진</th>
+            <th>마진 차이 경고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {chartData.map((row) => (
+            <tr key={row.storeId}>
+              <td>{row.storeName}</td>
+              <td>{krwFormatter.format(row.salesAmount)}</td>
+              <td>{formatActualMargin(row.grossMarginRate)}</td>
+              <td>{formatExpectedMargin(row.expectedGrossMarginRate)}</td>
+              <td>
+                {formatMarginWarning(
+                  row.grossMarginRate,
+                  row.expectedGrossMarginRate,
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <p className="text-muted-foreground text-xs">
         막대는 지점장이 입력한 총매출이며, 실제 마진율은 매출과 매출원가로, 예상

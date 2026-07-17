@@ -844,6 +844,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
   test("지점별 장부 매출 차트는 raw 마진율로 정렬하고 1.5%p 경계를 표시한다", async ({
     page,
   }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await login(page, "hq@example.com");
     await page.goto("/app/reports/daily?date=today");
 
@@ -865,6 +866,40 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await expect(
       section.getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`),
     ).toBeAttached();
+    const scroller = section.getByTestId("store-performance-chart-scroll");
+    await expect(scroller).toBeVisible();
+    expect(
+      await scroller.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+
+    const closedBar = section.getByTestId(
+      `store-performance-bar-${STORE_IDS.marginDefault}`,
+    );
+    expect((await closedBar.boundingBox())?.width ?? 0).toBeGreaterThan(80);
+
+    const accessibleTable = section.getByRole("table", {
+      name: "지점별 매출과 마진 데이터",
+    });
+    const defaultMarginRow = accessibleTable
+      .locator("tbody tr")
+      .filter({ hasText: "경계 기본점" });
+    await expect(defaultMarginRow).toContainText("경계 기본점");
+    await expect(defaultMarginRow).toContainText("₩100만");
+    await expect(defaultMarginRow).toContainText("30%");
+    await expect(defaultMarginRow).toContainText("28.51%");
+    await expect(defaultMarginRow).toContainText("기준 이내");
+
+    const missingMarginRow = accessibleTable
+      .locator("tbody tr")
+      .filter({ hasText: "경계 예상없음점" });
+    await expect(missingMarginRow).toContainText("경계 예상없음점");
+    await expect(missingMarginRow).toContainText("₩100만");
+    await expect(missingMarginRow).toContainText("30%");
+    await expect(missingMarginRow).toContainText("데이터 부족");
+    await expect(missingMarginRow).toContainText("판정 불가");
+
     const salesOrder = await bars.evaluateAll((elements) =>
       elements.map((element) => element.getAttribute("data-testid")),
     );
@@ -969,6 +1004,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .locator("section")
       .filter({ hasText: "품목 판매순위" });
     await expect(section.locator(".recharts-wrapper")).toHaveCount(0);
+    await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
     for (const summaryLabel of [
       "추정 판매액 합계",
       "추정 매출이익 합계",
@@ -1005,6 +1041,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await expect(section.getByText("검색전용품목11")).toHaveCount(0);
 
     const search = section.getByLabel("품목 검색");
+    await expect(search).toHaveAttribute("type", "search");
     await expect(search).toHaveAttribute(
       "placeholder",
       "품목명 또는 규격 검색",
@@ -1792,6 +1829,9 @@ test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다"
     .locator("section")
     .filter({ hasText: "품목별 판매 현황 (추정)" });
   await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
+  await expect(
+    profitabilitySection.getByText("추정 판매액 합계", { exact: true }),
+  ).toHaveCount(0);
   await expect(
     profitabilitySection
       .getByRole("columnheader", { name: "추정 판매 수량" })

@@ -181,6 +181,14 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
   assert.match(chartSource, /실제 데이터 부족/);
   assert.match(chartSource, /예상 데이터 부족/);
   assert.match(chartSource, /마진 차이 1\.5%p 이상/);
+  assert.match(chartSource, /title="지점별 장부 입력 매출·마진율"/);
+  assert.match(chartSource, /desc="막대는 장부 입력 매출/);
+  assert.match(chartSource, /<table className="sr-only"/);
+  assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
+  assert.match(
+    chartSource,
+    /actual === null \|\| expected === null[\s\S]*?"판정 불가"/,
+  );
   assert.match(
     chartSource,
     /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as StoreChartRow[\s\S]*?\.label/,
@@ -216,6 +224,7 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     /tableVariant\?: "profitability" \| "salesRanking"/,
   );
   assert.match(componentSource, /tableVariant = "profitability"/);
+  assert.match(componentSource, /\{showChart \? \(\s*<dl/);
   assert.match(componentSource, /tableVariant === "salesRanking"/);
   assert.match(componentSource, /b\.soldQuantity - a\.soldQuantity/);
   assert.match(componentSource, /\.slice\(0, 10\)/);
@@ -230,6 +239,10 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
   );
   assert.match(componentSource, /FieldLabel[^>]*htmlFor="product-search"/);
   assert.match(componentSource, /placeholder="품목명 또는 규격 검색"/);
+  assert.match(
+    componentSource,
+    /<h3 className="text-sm font-medium">판매수량 상위 10개<\/h3>/,
+  );
   assert.match(componentSource, /colSpan=\{3\}/);
   assert.match(componentSource, /검색 결과가 없습니다\./);
   assert.match(componentSource, /추정 판매 수량/);
