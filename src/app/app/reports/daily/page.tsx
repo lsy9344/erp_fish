@@ -205,10 +205,12 @@ export default async function DailyMeetingReportPage({
 
       <section className="rounded-lg border p-4">
         <h2 className="text-base font-semibold">
-          지점별 {dateLabel} 매출·이익률 (추정)
+          지점별 장부 입력 매출·마진율
         </h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          버튼으로 이익률과 매출액을 전환해 모든 지점을 한눈에 봅니다.
+          막대는 지점장이 입력한 총매출이며, 실제 마진율은 매출과 매출원가로,
+          예상 마진율은 재고 흐름과 계획 판매가로 계산합니다. 버튼은 정렬 기준만
+          바꿉니다.
         </p>
         <div className="mt-3">
           <StoreDailyPerformanceChart rows={report.rows} />
@@ -216,13 +218,16 @@ export default async function DailyMeetingReportPage({
       </section>
 
       <section className="rounded-lg border p-4">
-        {/* WO-04(2026-06-28): 제목을 "품목별 판매 현황 (추정)"으로 통일하고 표를 추가한다. */}
-        <h2 className="text-base font-semibold">품목별 판매 현황 (추정)</h2>
+        <h2 className="text-base font-semibold">품목 판매순위</h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          냉동/생물 카테고리 합계를 품목 단위로 펼친 추정값입니다.
+          재고 흐름으로 계산한 판매수량 기준 상위 품목입니다.
         </p>
         <div className="mt-3">
-          <ProductProfitabilityReport data={report.productProfitability} />
+          <ProductProfitabilityReport
+            data={report.productProfitability}
+            mode="table"
+            tableVariant="salesRanking"
+          />
         </div>
       </section>
 

@@ -3688,6 +3688,9 @@ function toEmptyReportRow({
       "장부 입력 전이라 분석 매출 데이터가 없습니다.",
     ),
     grossMarginRate: metrics.grossMarginRate,
+    expectedGrossMarginRate: dataInsufficient(
+      "장부 입력 전이라 예상 마진율 데이터가 없습니다.",
+    ),
     marginDisplay: buildMarginDisplay(
       thresholdSettings,
       metrics.totalSales,
@@ -3847,6 +3850,7 @@ function toLedgerReportRow({
     salesAmount: reviewSummary.totalSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
+    expectedGrossMarginRate: reviewSummary.plannedGrossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.totalSales,

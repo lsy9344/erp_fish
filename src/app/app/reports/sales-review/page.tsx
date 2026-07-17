@@ -73,9 +73,13 @@ export default async function SalesReviewPage({
       </div>
 
       <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">지점별 매출·이익률 (추정)</h2>
+        <h2 className="text-base font-semibold">
+          지점별 장부 입력 매출·마진율
+        </h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          버튼으로 이익률과 매출액을 전환해 모든 지점을 한눈에 봅니다.
+          막대는 지점장이 입력한 총매출이며, 실제 마진율은 매출과 매출원가로,
+          예상 마진율은 재고 흐름과 계획 판매가로 계산합니다. 버튼은 정렬 기준만
+          바꿉니다.
         </p>
         <div className="mt-3">
           <ReviewViewToggle

@@ -59,6 +59,7 @@ export type DailyMeetingReportMetricEvidenceInput = {
 };
 
 export type DailyMeetingReportRow = HqDashboardRow & {
+  expectedGrossMarginRate: LedgerReviewMetric;
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
 };
 
