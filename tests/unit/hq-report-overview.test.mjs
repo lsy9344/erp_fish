@@ -1089,6 +1089,14 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   assert.match(lossLegend, /formatKrw\(item\.amount\)/);
   assert.match(lossLegend, /percentFormatter\.format\(item\.ratio\)/);
   assert.match(loss, /판매가 계획 기준 계산 가능/);
+  assert.match(
+    loss,
+    /report\.lossBreakdown\.computableCount\s*>\s*0[\s\S]*?계산 가능한 손실 금액이 0원입니다/,
+  );
+  assert.match(
+    loss,
+    /:\s*"판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다\. 손실 입력의 가격 기준을 확인해 주세요\."/,
+  );
   assert.match(loss, /<Label/);
   assert.match(loss, /viewBox/);
   assert.match(loss, /<text/);

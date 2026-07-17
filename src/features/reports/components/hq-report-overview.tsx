@@ -385,7 +385,11 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
       <CardContent className="min-w-0">
         {report.lossBreakdown.items.length === 0 ? (
           <EmptyChartState
-            message="판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요."
+            message={
+              report.lossBreakdown.computableCount > 0
+                ? "계산 가능한 손실 금액이 0원입니다."
+                : "판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요."
+            }
             href={report.lossBreakdown.detailHref}
           />
         ) : (
