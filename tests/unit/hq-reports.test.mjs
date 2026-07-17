@@ -56,7 +56,7 @@ test("HQ daily meeting report source files follow story 6.1 boundaries", () => {
   assert.match(loadingSource, /Skeleton/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
-  assert.match(sidebarSource, /href:\s*"\/app\/reports\/daily"/);
+  assert.match(sidebarSource, /href:\s*"\/app\/reports\/overview"/);
 });
 
 test("HQ daily meeting report query reuses dashboard calculation contracts", () => {

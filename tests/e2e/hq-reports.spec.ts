@@ -250,6 +250,25 @@ async function seedStorySixOneData() {
       lossTypeName: "스토리5-5 폐기",
       quantity: 1,
       amount: 10000,
+      usedPlannedPrice: false,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: closedLedger.id,
+      productId: PRODUCT_IDS.fish,
+      ledgerInputCodeId: LOSS_CODE_IDS.waste,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      lossTypeName: "스토리5-5 폐기",
+      quantity: 2,
+      amount: 20000,
+      usedPlannedPrice: true,
       reason: STORY_MARKER,
       createdById: actorId,
       updatedById: actorId,
@@ -429,6 +448,115 @@ function getDesktopRow(page: Page, storeId: string) {
 function getStoreSelect(page: Page) {
   return page.getByRole("combobox", { name: "지점" });
 }
+
+test("본사는 사이드바에서 통합 리포트를 열고 차트와 같은 표를 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.getByRole("link", { name: "리포트" }).click();
+
+  await expect(page).toHaveURL(/\/app\/reports\/overview/);
+  await expect(
+    page.getByRole("heading", { name: "통합 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+  await expect(page.getByText("실제 총매출").first()).toBeVisible();
+  await expect(page.getByText("손실 유형").first()).toBeVisible();
+  await expect(page.getByText("월 손익 흐름").first()).toBeVisible();
+  await expect(page.getByText(/오늘 기준/)).toBeVisible();
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  await expect(page.getByRole("table").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /상세/ }).first()).toBeVisible();
+});
+
+test("통합 리포트 월 지점 필터는 URL과 모든 표에 유지된다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/overview?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
+
+  await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+  await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
+  await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.closed}`));
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  expect(await page.getByRole("table").count()).toBeGreaterThanOrEqual(5);
+  await expect(
+    page.getByRole("table").getByText("스토리6-1 정정마감점").first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table").getByText("스토리6-2 입력중점"),
+  ).toHaveCount(0);
+});
+
+test("통합 리포트는 정정과 손실 계산 기준 누락을 0으로 숨기지 않는다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/overview?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  await expect(page.getByText(/45,000/).first()).toBeVisible();
+  await expect(page.getByText(/계산 가능 1\/2건/).first()).toBeVisible();
+  await expect(page.getByText(/판매가 계획 기준/).first()).toBeVisible();
+  await expect(page.getByText(/^미입력 \d+건$/)).toBeVisible();
+});
+
+test("통합 리포트는 조회와 export 권한을 분리한다", async ({ page }) => {
+  await login(page, "hq-viewer@example.com");
+  await page.goto("/app/reports/overview");
+
+  await expect(
+    page.getByRole("heading", { name: "통합 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /Excel/ })).toHaveCount(0);
+});
+
+test("지정 지점 본사는 통합 리포트에서 배정 지점만 본다", async ({ page }) => {
+  await login(page, "hq-assigned@example.com");
+  await page.goto("/app/reports/overview");
+
+  const options = await page
+    .locator('select[name="storeId"] option')
+    .allTextContents();
+  expect(options).toContain("서초점");
+  expect(options).not.toContain("스토리6-1 정정마감점");
+  expect(options).not.toContain("스토리6-2 입력중점");
+});
+
+test("지점장은 통합 리포트에 접근할 수 없다", async ({ page }) => {
+  await login(page, "manager@example.com");
+  await page.goto("/app/reports/overview");
+
+  await expect(
+    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
+  ).toBeVisible();
+});
+
+test("통합 리포트는 좁은 화면에서 가로 넘침 없이 키보드로 표를 전환한다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await login(page, "hq@example.com");
+  await page.goto("/app/reports/overview");
+
+  await page.getByRole("button", { name: "표 보기" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("table").first()).toBeVisible();
+
+  const viewportWidths = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
+    viewportWidths.clientWidth + 1,
+  );
+});
 
 test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 반영 숫자를 본다", async ({
   page,
@@ -771,7 +899,7 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   const lossSummary = page.getByTestId("hq-report-monthly-loss-summary");
   await expect(lossSummary).toContainText("손실 유형별 요약");
   await expect(lossSummary).toContainText("스토리5-5 폐기");
-  await expect(lossSummary).toContainText("₩10,000");
+  await expect(lossSummary).toContainText("₩30,000");
 
   const inventoryFlow = page.getByTestId("hq-report-monthly-inventory-flow");
   await expect(inventoryFlow).toContainText("전일재고");

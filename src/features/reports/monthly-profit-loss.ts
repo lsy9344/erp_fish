@@ -10,6 +10,9 @@ import { requireReportAccess, getHeadquartersStoreScope } from "~/server/authz";
 import { db } from "~/server/db";
 import { getHeadquartersExpenseMonthRange } from "~/features/headquarters-expenses/queries";
 import { getStoreProfitSummariesForRange } from "./queries";
+import { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
+
+export { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
 
 // 월별 손익 조정 항목(C-16 확정). 본사가 HeadquartersExpense의 category로 입력한다.
 // 이 라벨과 정확히 일치하는 category 금액은 해당 컬럼으로, 그 외 category는 기타비용으로 합산한다.
@@ -71,9 +74,11 @@ function joinOrNull(values: string[] | undefined): string | null {
 export async function buildMonthlyProfitAndLoss({
   month,
   storeId,
+  includeCompanyWide,
 }: {
   month?: string;
   storeId?: string | null;
+  includeCompanyWide?: boolean;
 }): Promise<MonthlyProfitAndLossData> {
   await requireReportAccess();
 
@@ -95,8 +100,8 @@ export async function buildMonthlyProfitAndLoss({
     startDate,
     endDate,
     targetStoreIds,
-    // 특정 지점이 지정되면 전사 공통 비용 행은 제외한다.
-    includeCompanyWide: !storeId,
+    // 특정 지점이 지정되면 전사 공통 비용 행은 항상 제외한다.
+    includeCompanyWide: !storeId && (includeCompanyWide ?? true),
   });
 
   return { monthInput, rows };
@@ -211,6 +216,7 @@ async function computeMonthProfitAndLossRows({
         dailyLedger: {
           storeId: { in: targetStoreIds },
           closingDate: { gte: startDate, lte: endDate },
+          status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
         },
       },
       select: { amount: true, dailyLedger: { select: { storeId: true } } },
@@ -244,7 +250,6 @@ async function computeMonthProfitAndLossRows({
   }
 
   // 지점별 비용 누적기. storeId가 null인 본사 지출은 "(전사)" 가상 행에 모은다.
-  const COMPANY_WIDE = "__company_wide__";
   type CostBucket = {
     fixedCosts: MonthlyProfitAndLossRow["fixedCosts"];
     otherExpenseAmount: number;
@@ -256,7 +261,7 @@ async function computeMonthProfitAndLossRows({
   const fixedCostSet = new Set<string>(MONTHLY_PNL_FIXED_COST_CATEGORIES);
 
   for (const expense of expenses) {
-    const key = expense.storeId ?? COMPANY_WIDE;
+    const key = expense.storeId ?? MONTHLY_PNL_COMPANY_WIDE_STORE_ID;
     const bucket = costByStore.get(key) ?? {
       fixedCosts: emptyFixedCosts(),
       otherExpenseAmount: 0,
@@ -329,13 +334,13 @@ async function computeMonthProfitAndLossRows({
   // 전사(본사 지출 storeId=null) 비용은 별도 "(전사)" 행으로 노출한다.
   // 특정 지점 범위 export에서는 애초에 조회하지 않지만, 방어적으로 한 번 더 가드한다.
   const companyWide = includeCompanyWide
-    ? costByStore.get(COMPANY_WIDE)
+    ? costByStore.get(MONTHLY_PNL_COMPANY_WIDE_STORE_ID)
     : undefined;
   if (companyWide) {
     const expenseTotal = sumBucketCosts(companyWide);
     rows.push({
       monthInput,
-      storeId: COMPANY_WIDE,
+      storeId: MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
       storeName: "(전사 공통)",
       salesAmount: 0,
       cogsAmount: 0,

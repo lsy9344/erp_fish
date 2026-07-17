@@ -32,6 +32,7 @@ test("shared revalidation helper owns dashboard, report, store-entry, detail, an
 
   for (const route of [
     "/app/dashboard",
+    "/app/reports/overview",
     "/app/reports/daily",
     "/app/reports/comparison",
     "/app/reports/monthly",
@@ -61,6 +62,7 @@ test("ledger and store-entry actions call semantic revalidation helpers", () => 
     ["src", "features", "losses", "actions.ts"],
     ["src", "features", "losses", "hq-edit-actions.ts"],
     ["src", "features", "corrections", "actions.ts"],
+    ["src", "features", "sales-plan", "actions.ts"],
   ];
 
   for (const segments of files) {
@@ -74,6 +76,17 @@ test("ledger and store-entry actions call semantic revalidation helpers", () => 
     );
     assert.doesNotMatch(source, /revalidatePath\("\/app\/reports\/monthly"\)/);
   }
+
+  const salesPlanSource = readProjectFile(
+    "src",
+    "features",
+    "sales-plan",
+    "actions.ts",
+  );
+  assert.match(
+    salesPlanSource,
+    /revalidateStoreEntryPaths\(\["sales-plan", "losses"\]\);\s*revalidateDashboardAndReports\(\);/,
+  );
 });
 
 test("master-data and threshold actions use semantic revalidation helpers", () => {

@@ -100,6 +100,61 @@ test("monthly P&L computes net = grossProfit - labor - expenses, no new DB", () 
   assert.match(source, /본사조정/);
 });
 
+test("monthly P&L labor matches the report ledger population", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  const reportTypesSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "types.ts",
+  );
+  const overviewSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "overview.ts",
+  );
+  const laborQueryStart = source.indexOf("db.ledgerLaborItem.findMany");
+  const laborQueryEnd = source.indexOf(
+    "db.headquartersExpense.findMany",
+    laborQueryStart,
+  );
+  assert.ok(laborQueryStart >= 0 && laborQueryEnd > laborQueryStart);
+  const laborQuery = source.slice(laborQueryStart, laborQueryEnd);
+
+  assert.match(
+    laborQuery,
+    /dailyLedger:\s*\{[\s\S]*?status:\s*\{\s*in:\s*\["IN_REVIEW",\s*"HEADQUARTERS_CLOSED"\]\s*\}/,
+  );
+  assert.match(
+    reportTypesSource,
+    /export const MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*=\s*"__company_wide__";/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.match(
+    source,
+    /export\s*\{\s*MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.match(
+    overviewSource,
+    /import\s*\{[\s\S]*MONTHLY_PNL_COMPANY_WIDE_STORE_ID[\s\S]*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.equal(
+    [source, reportTypesSource, overviewSource]
+      .join("\n")
+      .match(/"__company_wide__"/g)?.length,
+    1,
+  );
+});
+
 test("monthly report xlsx attaches the 월별손익 sheet for all months", () => {
   const route = readProjectFile(
     "src",
@@ -260,7 +315,10 @@ test("monthly P&L reads adjustmentReason separately from memo", () => {
 
   assert.match(source, /adjustmentReason:\s*true/);
   assert.match(source, /expense\.adjustmentReason/);
-  assert.doesNotMatch(source, /bucket\.adjustmentReasons\.push\(expense\.memo\)/);
+  assert.doesNotMatch(
+    source,
+    /bucket\.adjustmentReasons\.push\(expense\.memo\)/,
+  );
 });
 
 test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
@@ -283,6 +341,34 @@ test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
   // "(전사 공통)" 행도 플래그로 가드한다.
   assert.match(
     source,
-    /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(COMPANY_WIDE\)\s*\n?\s*:\s*undefined/s,
+    /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(MONTHLY_PNL_COMPANY_WIDE_STORE_ID\)\s*\n?\s*:\s*undefined/s,
+  );
+});
+
+test("monthly P&L keeps company-wide costs by default and allows an explicit query opt-out", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  const publicQueryStart = source.indexOf(
+    "export async function buildMonthlyProfitAndLoss",
+  );
+  const publicQueryEnd = source.indexOf(
+    "function monthRangeFromInput",
+    publicQueryStart,
+  );
+  assert.ok(publicQueryStart >= 0 && publicQueryEnd > publicQueryStart);
+  const publicQuery = source.slice(publicQueryStart, publicQueryEnd);
+
+  assert.match(publicQuery, /includeCompanyWide\?:\s*boolean/);
+  assert.match(
+    publicQuery,
+    /includeCompanyWide:\s*!storeId\s*&&\s*\(includeCompanyWide\s*\?\?\s*true\)/,
+  );
+  assert.match(
+    source,
+    /includeCompanyWide\s*\n?\s*\?\s*\{\s*OR:[\s\S]*?\{\s*storeId:\s*null\s*\}[\s\S]*?:\s*\{\s*storeId:\s*\{\s*in:\s*targetStoreIds\s*\}\s*\}/,
   );
 });
