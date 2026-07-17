@@ -120,9 +120,41 @@ test("ledger amount calculation helper validates payment difference", async () =
     pathToFileURL(calculatorPath).href
   );
 
-  assert.equal(calculatePaymentDifference(120000, 50000, 30000, 20000), 20000);
-  assert.equal(calculatePaymentDifference(50000, 60000, 20000, 10000), -40000);
-  assert.equal(calculatePaymentDifference(0, 0, 0, 0), 0);
+  assert.equal(
+    calculatePaymentDifference(120000, 50000, 30000, 20000, 15000),
+    5000,
+  );
+  assert.equal(
+    calculatePaymentDifference(50000, 60000, 20000, 10000, 5000),
+    -45000,
+  );
+  assert.equal(calculatePaymentDifference(0, 0, 0, 0, 0), 0);
+});
+
+test("ledger query settlement difference includes saved expenses", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+  const salesStepSource = querySource.match(
+    /export function toLedgerSalesStepData[\s\S]*?\r?\n}\r?\n\r?\nfunction getLedgerExpenseItems/,
+  )?.[0];
+  const auditSource = querySource.match(
+    /export function toLedgerAuditPayload[\s\S]*?\r?\n}\r?\n\r?\nexport async function getOrCreateStoreLedgerInTx/,
+  )?.[0];
+
+  assert.ok(salesStepSource);
+  assert.match(
+    salesStepSource,
+    /calculatePaymentDifference\([\s\S]*calculateExpenseTotal\(/,
+  );
+  assert.ok(auditSource);
+  assert.match(
+    auditSource,
+    /calculatePaymentDifference\([\s\S]*otherPaymentAmount,\s*expenseTotal,\s*\)/,
+  );
 });
 
 test("ledger sales schema rejects blank, negative, decimal, and formatted values", async () => {

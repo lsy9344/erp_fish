@@ -203,6 +203,9 @@ export function toLedgerSalesStepData(
       ledger.cashAmount,
       ledger.cardAmount,
       ledger.otherPaymentAmount,
+      calculateExpenseTotal(
+        ledger.ledgerExpenses.map((expense) => expense.amount),
+      ),
     ),
   };
 }
@@ -395,6 +398,7 @@ export function toLedgerAuditPayload(
       ledger.cashAmount,
       ledger.cardAmount,
       ledger.otherPaymentAmount,
+      expenseTotal,
     ),
   };
 }
