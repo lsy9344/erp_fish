@@ -409,7 +409,9 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
                     ))}
                   </Pie>
                   <ChartLegend
-                    content={<ChartLegendContent nameKey="name" />}
+                    content={
+                      <LossBreakdownLegend items={report.lossBreakdown.items} />
+                    }
                   />
                 </PieChart>
               </ChartContainer>
@@ -434,6 +436,30 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function LossBreakdownLegend({
+  items,
+}: {
+  items: HqReportOverviewData["lossBreakdown"]["items"];
+}) {
+  return (
+    <ul className="flex flex-wrap items-center justify-center gap-3 pt-3 text-xs">
+      {items.map((item, index) => (
+        <li className="flex items-center gap-1.5" key={item.name}>
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 rounded-sm"
+            style={{ backgroundColor: lossColors[index] }}
+          />
+          <span>
+            {item.name} · {formatKrw(item.amount)} ·{" "}
+            {percentFormatter.format(item.ratio)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -724,7 +750,9 @@ function ClosingStatusChart({ report }: { report: HqReportOverviewData }) {
                     />
                   }
                 />
-                <ChartLegend content={<ChartLegendContent />} />
+                <ChartLegend
+                  content={<ClosingStatusLegend items={report.closingStatus} />}
+                />
                 {report.closingStatus.map((item) => (
                   <Bar
                     dataKey={item.key}
@@ -756,6 +784,30 @@ function ClosingStatusChart({ report }: { report: HqReportOverviewData }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ClosingStatusLegend({
+  items,
+}: {
+  items: HqReportOverviewData["closingStatus"];
+}) {
+  return (
+    <ul className="flex flex-wrap items-center justify-center gap-3 pt-3 text-xs">
+      {items.map((item, index) => (
+        <li className="flex items-center gap-1.5" key={item.key}>
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 rounded-sm"
+            style={{ backgroundColor: lossColors[index] }}
+          />
+          <span>
+            {item.label} · {percentFormatter.format(item.ratio)} · {item.count}
+            건
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -109,6 +109,13 @@ function readProjectFile(...segments) {
   return readFileSync(filePath, "utf8");
 }
 
+function functionSource(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  assert.notEqual(start, -1, `${name} should exist`);
+  const next = source.indexOf("\nfunction ", start + 1);
+  return source.slice(start, next === -1 ? source.length : next);
+}
+
 test("overview query enforces report access and headquarters store scope", () => {
   const source = readProjectFile("src", "features", "reports", "overview.ts");
 
@@ -898,7 +905,7 @@ test("overview action severity follows priority rank instead of signal or correc
   assert.match(report.actions[0].detail, /^정보/);
 });
 
-test("overview UI uses existing chart primitives and keeps a table alternative", () => {
+test("overview UI keeps each chart accessible and protects its chart contract", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -907,14 +914,95 @@ test("overview UI uses existing chart primitives and keeps a table alternative",
     "hq-report-overview.tsx",
   );
 
-  assert.match(source, /ChartContainer/);
-  assert.match(source, /ChartTooltipContent/);
+  const chartFunctions = [
+    ["SalesTrendChart", /<LineChart\s+accessibilityLayer/],
+    ["LossDonutChart", /<PieChart\s+accessibilityLayer/],
+    ["StoreRankingChart", /<BarChart\s+accessibilityLayer/],
+    ["ProfitAndLossChart", /<BarChart\s+accessibilityLayer/],
+    ["ClosingStatusChart", /<BarChart\s+accessibilityLayer/],
+  ];
+
+  assert.ok((source.match(/accessibilityLayer/g) ?? []).length >= 5);
+  for (const [name, rootPattern] of chartFunctions) {
+    assert.match(functionSource(source, name), rootPattern);
+  }
+
+  const sales = functionSource(source, "SalesTrendChart");
+  assert.equal((sales.match(/connectNulls=\{false\}/g) ?? []).length, 2);
+  assert.match(sales, /ChartTooltipContent/);
+  assert.match(sales, /정정 반영 실제 총매출 기준/);
+
+  const loss = functionSource(source, "LossDonutChart");
+  const lossLegend = functionSource(source, "LossBreakdownLegend");
+  assert.match(loss, /innerRadius=\{58\}/);
+  assert.match(loss, /outerRadius=\{84\}/);
+  assert.match(
+    source,
+    /const lossColors = \[[\s\S]*?--chart-1[\s\S]*?--chart-2[\s\S]*?--chart-3[\s\S]*?--chart-4[\s\S]*?\] as const/,
+  );
+  assert.match(
+    loss,
+    /<LossBreakdownLegend\s+items=\{report\.lossBreakdown\.items\}/,
+  );
+  assert.match(lossLegend, /item\.name/);
+  assert.match(lossLegend, /formatKrw\(item\.amount\)/);
+  assert.match(lossLegend, /percentFormatter\.format\(item\.ratio\)/);
+  assert.match(loss, /판매가 계획 기준 계산 가능/);
+
+  const ranking = functionSource(source, "StoreRankingChart");
+  assert.match(ranking, /aria-pressed=\{metric === item\.key\}/);
+  assert.match(ranking, /<ReferenceLine x=\{0\}/);
+  assert.match(ranking, /data=\{ranking\.rows\}/);
+  assert.doesNotMatch(ranking, /\.sort\(/);
+
+  const profitAndLoss = functionSource(source, "ProfitAndLossChart");
+  assert.ok(
+    profitAndLoss.indexOf("!report.profitAndLoss.available") <
+      profitAndLoss.indexOf("<ChartContainer"),
+  );
+  assert.match(profitAndLoss, /!report\.profitAndLoss\.available\s*\?\s*\(/);
+  assert.match(
+    profitAndLoss,
+    /<Bar(?=[^>]*dataKey="offset")(?=[^>]*stackId="waterfall")[^>]*\/>/,
+  );
+  assert.match(
+    profitAndLoss,
+    /<Bar(?=[^>]*dataKey="amount")(?=[^>]*stackId="waterfall")[^>]*>/,
+  );
+
+  const closing = functionSource(source, "ClosingStatusChart");
+  const closingLegend = functionSource(source, "ClosingStatusLegend");
+  assert.match(
+    closing,
+    /<Bar(?=[^>]*dataKey=\{item\.key\})(?=[^>]*stackId="closing")[^>]*\/>/,
+  );
+  assert.match(
+    closing,
+    /<ClosingStatusLegend\s+items=\{report\.closingStatus\}/,
+  );
+  assert.match(closingLegend, /item\.label/);
+  assert.match(closingLegend, /percentFormatter\.format\(item\.ratio\)/);
+  assert.match(closingLegend, /item\.count/);
+});
+
+test("overview UI keeps five table alternatives and today's action list", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "hq-report-overview.tsx",
+  );
+  const tables = functionSource(source, "OverviewTables");
+  const actions = functionSource(source, "ActionList");
+
   assert.match(source, /ReviewViewToggle/);
-  assert.match(source, /accessibilityLayer/g);
-  assert.match(source, /실제 총매출/);
-  assert.match(source, /판매가 계획 기준/);
-  assert.match(source, /오늘 기준/);
-  assert.match(source, /계산 가능/);
-  assert.match(source, /Table/);
+  assert.match(tables, /<SalesTrendTable report=\{report\}/);
+  assert.match(tables, /<LossBreakdownTable report=\{report\}/);
+  assert.match(tables, /<RankingsTable report=\{report\}/);
+  assert.match(tables, /<ProfitAndLossTable report=\{report\}/);
+  assert.match(tables, /<ClosingStatusTable report=\{report\}/);
+  assert.match(actions, /오늘 기준/);
+  assert.match(actions, /오늘 바로 조치할 항목이 없습니다/);
   assert.doesNotMatch(source, /grossProfit\s*\?\?\s*0/);
 });
