@@ -126,6 +126,11 @@ function toDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+export function normalizeOverviewStoreIdForTest(storeId: unknown) {
+  if (typeof storeId !== "string") return null;
+  return storeId.trim() || null;
+}
+
 function getDateInputs(startDate: Date, endDate: Date) {
   const inputs: string[] = [];
   const date = new Date(startDate);
@@ -912,11 +917,11 @@ export async function getHqReportOverview({
   await requireReportAccess();
   const scope = await getHeadquartersStoreScope();
   const monthRange = getMonthlyClosingAnomalyReportMonthRange(month);
-  const normalizedStoreId =
-    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const normalizedStoreId = normalizeOverviewStoreIdForTest(storeId);
   const selectedStore = normalizedStoreId
     ? (scope.stores.find((store) => store.id === normalizedStoreId) ?? null)
     : null;
+  const selectedStoreId = selectedStore?.id ?? null;
   const selectedStores = normalizedStoreId
     ? selectedStore
       ? [selectedStore]
@@ -928,6 +933,9 @@ export async function getHqReportOverview({
     normalizedStoreId && !selectedStore
       ? "조회 지점이 권한 범위에 없거나 비활성입니다."
       : null,
+    monthRange.isFutureMonth
+      ? "미래 월은 월간 집계와 Excel 내보내기를 제공하지 않습니다."
+      : null,
   ].filter((message): message is string => Boolean(message));
 
   if (targetStoreIds.length === 0) {
@@ -935,7 +943,7 @@ export async function getHqReportOverview({
       monthRange,
       stores: scope.stores,
       calculationStoreIds: [],
-      selectedStoreId: normalizedStoreId,
+      selectedStoreId,
       currentLedgers: [],
       previousLedgers: [],
       statusRows: [],
@@ -956,7 +964,7 @@ export async function getHqReportOverview({
       monthRange,
       stores: scope.stores,
       calculationStoreIds: [],
-      selectedStoreId: normalizedStoreId,
+      selectedStoreId,
       currentLedgers: [],
       previousLedgers: [],
       statusRows: [],
@@ -982,7 +990,7 @@ export async function getHqReportOverview({
     }),
     buildMonthlyProfitAndLoss({
       month: monthRange.monthInput,
-      storeId: selectedStore?.id ?? null,
+      storeId: selectedStoreId,
       includeCompanyWide: scope.mode === "ALL_STORES" && !selectedStore,
     }),
     getHqDashboardRows({
@@ -1005,7 +1013,7 @@ export async function getHqReportOverview({
   return buildHqReportOverviewForTest({
     monthRange,
     stores: scope.stores,
-    selectedStoreId: normalizedStoreId,
+    selectedStoreId,
     currentLedgers: [...currentMap.values()],
     previousLedgers: [...previousMap.values()],
     statusRows: rawStatuses.map((row) => ({

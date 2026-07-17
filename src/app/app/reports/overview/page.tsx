@@ -32,6 +32,10 @@ export default async function HqReportOverviewPage({
     hasActionPermission(user.id, PermissionAction.EXPORT_CREATE),
     getHqReportOverview({ month, storeId }),
   ]);
+  const canExportOverview =
+    canExportReports &&
+    report.errorMessages.length === 0 &&
+    !report.monthRange.isFutureMonth;
   const exportParams = new URLSearchParams("report=comparison");
   exportParams.set("startDate", report.monthRange.startDateInput);
   exportParams.set("endDate", report.monthRange.endDateInput);
@@ -107,7 +111,7 @@ export default async function HqReportOverviewPage({
             <Button type="submit" variant="outline" size="sm">
               조회
             </Button>
-            {canExportReports ? (
+            {canExportOverview ? (
               <Button asChild variant="outline" size="sm">
                 <a href={`/api/reports/export?${exportParams.toString()}`}>
                   <DownloadIcon data-icon="inline-start" />

@@ -144,9 +144,41 @@ test("overview page is the report entry and uses server authorization", () => {
   assert.match(page, /type="month"/);
   assert.match(page, /전체 지점/);
   assert.match(page, /report=comparison/);
+  assert.match(
+    page,
+    /const canExportOverview =\s*canExportReports &&[\s\S]*?report\.errorMessages\.length === 0 &&[\s\S]*?!report\.monthRange\.isFutureMonth/,
+  );
+  assert.match(page, /\{canExportOverview \? \(/);
   assert.match(loading, /Skeleton/);
+  assert.match(loading, /HeadquartersShell/);
+  assert.match(loading, /PageHeader/);
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(loading, /xl:col-span-8/);
+  assert.match(loading, /xl:col-span-4/);
+  assert.match(loading, /xl:col-span-6/);
+  assert.match(loading, /xl:col-span-12/);
   assert.match(sidebar, /href:\s*"\/app\/reports\/overview"/);
   assert.match(revalidation, /"\/app\/reports\/overview"/);
+});
+
+test("overview loader trims store input and returns only a validated store id", async () => {
+  const { normalizeOverviewStoreIdForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const source = readProjectFile("src", "features", "reports", "overview.ts");
+  const query = source.slice(
+    source.indexOf("export async function getHqReportOverview"),
+  );
+
+  assert.equal(normalizeOverviewStoreIdForTest("  store-1  "), "store-1");
+  assert.equal(normalizeOverviewStoreIdForTest("   "), null);
+  assert.equal(normalizeOverviewStoreIdForTest(null), null);
+  assert.match(query, /const selectedStoreId = selectedStore\?\.id \?\? null/);
+  assert.doesNotMatch(query, /selectedStoreId:\s*normalizedStoreId/);
+  assert.match(
+    query,
+    /미래 월은 월간 집계와 Excel 내보내기를 제공하지 않습니다/,
+  );
 });
 
 test("overview query enforces report access and headquarters store scope", () => {
