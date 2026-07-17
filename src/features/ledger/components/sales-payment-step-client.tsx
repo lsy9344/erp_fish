@@ -352,7 +352,7 @@ export function SalesPaymentStepClient({
               aria-invalid={Boolean(cashAmountError)}
               aria-describedby={
                 cashAmountError
-                  ? "cash-amount-error"
+                  ? "cash-amount-help cash-amount-error"
                   : "cash-amount-preview cash-amount-help"
               }
             />

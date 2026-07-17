@@ -172,6 +172,10 @@ test("sales payment step explains cash after saved expenses without a difference
     source,
     /당일 현금지출을 하고 남은 당일 현금매출을 입력합니다\./,
   );
+  assert.match(
+    source,
+    /cashAmountError\s*\?\s*"cash-amount-help cash-amount-error"\s*:\s*"cash-amount-preview cash-amount-help"/,
+  );
   assert.match(source, /4단계 지출 합계/);
   assert.match(source, /ledger\.expenseTotal/);
   assert.match(source, /readOnly/);
