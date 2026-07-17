@@ -112,20 +112,26 @@ test("ledger migrations create DailyLedger, unique constraint, and version token
 test("main seed settles cash after reusing precomputed same-day expenses", () => {
   const source = readProjectFile("scripts", "seed-main.mjs");
   const settlementSource = source.match(
-    /\/\/ 매출\/결제:[\s\S]*?\/\/ 인건비\(직원\) 2~3명/,
+    /\/\/ 매입\(입고\):[\s\S]*?\/\/ 인건비\(직원\) 2~3명/,
   )?.[0];
 
   assert.ok(settlementSource, "seed settlement block should exist");
-  const expenseRowsIndex = settlementSource.indexOf("const expenseRows");
-  const expenseTotalIndex = settlementSource.indexOf("const expenseTotal");
-  const ledgerUpdateIndex = settlementSource.indexOf(
-    "await db.dailyLedger.update",
+  const firstLedgerAccessIndex = settlementSource.indexOf(
+    "const existing = await db.dailyLedger.findUnique",
   );
   assert.ok(
-    expenseRowsIndex !== -1 &&
-      expenseTotalIndex > expenseRowsIndex &&
-      expenseTotalIndex < ledgerUpdateIndex,
-    "expense rows and total should be computed before the ledger update",
+    [
+      "const purchasedQtyByProduct",
+      "const lossQtyByProduct",
+      "const inventoryRows",
+      "const expenseRows",
+      "const expenseTotal",
+      "if (expenseTotal > grossCashAllocation)",
+    ].every((marker) => {
+      const markerIndex = settlementSource.indexOf(marker);
+      return markerIndex !== -1 && markerIndex < firstLedgerAccessIndex;
+    }),
+    "daily calculations and settlement validation should finish before ledger access",
   );
   assert.match(
     settlementSource,
@@ -133,7 +139,7 @@ test("main seed settles cash after reusing precomputed same-day expenses", () =>
   );
   assert.match(
     settlementSource,
-    /if \(expenseTotal > grossCashAllocation\) \{[\s\S]*throw new Error\(/,
+    /if \(expenseTotal > grossCashAllocation\) \{[\s\S]*throw new Error\(`[\s\S]*\$\{storeName\}[\s\S]*\$\{day\}[\s\S]*\$\{expenseTotal\}[\s\S]*\$\{grossCashAllocation\}[\s\S]*`\)/,
   );
   assert.match(
     settlementSource,

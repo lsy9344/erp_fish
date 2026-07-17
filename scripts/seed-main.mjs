@@ -103,6 +103,66 @@ async function main() {
         }
       }
 
+      const purchasedQtyByProduct = new Map();
+      for (const { product: p, qty } of purchasesForDay) {
+        purchasedQtyByProduct.set(p.id, (purchasedQtyByProduct.get(p.id) ?? 0) + qty);
+      }
+
+      const lossQtyByProduct = new Map();
+      const lossRows = lossesForDay.map(({ product: p, qty }) => {
+        const lossCode = lossCodes[Math.floor(seeded(si + di + p.unitPrice) * lossCodes.length) % lossCodes.length];
+        lossQtyByProduct.set(p.id, qty);
+        return { product: p, qty, lossCode };
+      });
+
+      const inventoryRows = [];
+      let estimatedSalesValue = 0;
+      for (let pi = 0; pi < lineup.length; pi++) {
+        const p = lineup[pi];
+        const previousQuantity = prevQtyByProduct.get(p.id) ?? 0;
+        const purchasedQuantity = purchasedQtyByProduct.get(p.id) ?? 0;
+        const lossQuantity = lossQtyByProduct.get(p.id) ?? 0;
+        const available = previousQuantity + purchasedQuantity - lossQuantity;
+        // 판매량: 가용재고의 0~70% 정도 무작위.
+        const sellRatio = 0.1 + seeded(si * 3000 + di * 100 + pi + 5) * 0.6;
+        const sold = Math.max(0, Math.min(available, Math.round(available * sellRatio)));
+        const currentQuantity = available - sold;
+        estimatedSalesValue += sold * p.unitPrice;
+
+        const carryoverSource = di === 0 ? "OPENING_SNAPSHOT" : "PREVIOUS_CLOSED_LEDGER";
+        const carryoverStatus = di === 0 ? "OPENING_CARRYOVER" : "PREVIOUS_CARRYOVER";
+
+        inventoryRows.push({
+          product: p,
+          previousQuantity,
+          purchasedQuantity,
+          currentQuantity,
+          carryoverSource,
+          carryoverStatus,
+        });
+      }
+
+      // 매출/결제: 추정 판매가치에 마진(약 +28%)을 얹어 매출 총액 구성.
+      const margin = 1.28 + seeded(si * 7 + di) * 0.12; // 1.28~1.40
+      const totalSales = Math.round((estimatedSalesValue * margin) / 1000) * 1000;
+      const grossCashAllocation = Math.round(totalSales * 0.35 / 1000) * 1000;
+      const card = Math.round(totalSales * 0.55 / 1000) * 1000;
+      const other = totalSales - grossCashAllocation - card;
+      const workerCount = 2 + (si % 2);
+
+      // 비용 2~3건
+      const expenseCount = 2 + (di % 2);
+      const expenseRows = Array.from({ length: expenseCount }, (_, ei) => {
+        const code = expenseCodes[ei % expenseCodes.length];
+        const amount = 10000 + Math.floor(seeded(si * 50 + di * 10 + ei) * 90000);
+        return { code, amount, memo: `${code.name} 지출` };
+      });
+      const expenseTotal = expenseRows.reduce((sum, expense) => sum + expense.amount, 0);
+      if (expenseTotal > grossCashAllocation) {
+        throw new Error(`Seed expenses exceed cash allocation for ${storeName} on ${day}: expenseTotal=${expenseTotal}, grossCashAllocation=${grossCashAllocation}`);
+      }
+      const cash = grossCashAllocation - expenseTotal;
+
       // 장부 생성/획득
       const existing = await db.dailyLedger.findUnique({
         where: { storeId_closingDate: { storeId: store.id, closingDate } },
@@ -133,7 +193,6 @@ async function main() {
       }
 
       // 매입 행 생성
-      const purchasedQtyByProduct = new Map();
       for (const { product: p, qty } of purchasesForDay) {
         await db.ledgerPurchaseItem.create({
           data: {
@@ -144,13 +203,10 @@ async function main() {
             createdById: smId, updatedById: smId,
           },
         });
-        purchasedQtyByProduct.set(p.id, (purchasedQtyByProduct.get(p.id) ?? 0) + qty);
       }
 
       // 손실 행 생성
-      const lossQtyByProduct = new Map();
-      for (const { product: p, qty } of lossesForDay) {
-        const lossCode = lossCodes[Math.floor(seeded(si + di + p.unitPrice) * lossCodes.length) % lossCodes.length];
+      for (const { product: p, qty, lossCode } of lossRows) {
         await db.ledgerLossItem.create({
           data: {
             dailyLedgerId: ledgerId, productId: p.id, ledgerInputCodeId: lossCode.id,
@@ -160,26 +216,10 @@ async function main() {
             createdById: smId, updatedById: smId,
           },
         });
-        lossQtyByProduct.set(p.id, qty);
       }
 
       // 재고 행: previous → 판매 추정 → current(마감수량)
-      let estimatedSalesValue = 0;
-      for (let pi = 0; pi < lineup.length; pi++) {
-        const p = lineup[pi];
-        const previousQuantity = prevQtyByProduct.get(p.id) ?? 0;
-        const purchasedQuantity = purchasedQtyByProduct.get(p.id) ?? 0;
-        const lossQuantity = lossQtyByProduct.get(p.id) ?? 0;
-        const available = previousQuantity + purchasedQuantity - lossQuantity;
-        // 판매량: 가용재고의 0~70% 정도 무작위.
-        const sellRatio = 0.1 + seeded(si * 3000 + di * 100 + pi + 5) * 0.6;
-        const sold = Math.max(0, Math.min(available, Math.round(available * sellRatio)));
-        const currentQuantity = available - sold;
-        estimatedSalesValue += sold * p.unitPrice;
-
-        const carryoverSource = di === 0 ? "OPENING_SNAPSHOT" : "PREVIOUS_CLOSED_LEDGER";
-        const carryoverStatus = di === 0 ? "OPENING_CARRYOVER" : "PREVIOUS_CARRYOVER";
-
+      for (const { product: p, previousQuantity, purchasedQuantity, currentQuantity, carryoverSource, carryoverStatus } of inventoryRows) {
         await db.ledgerInventoryItem.create({
           data: {
             dailyLedgerId: ledgerId, productId: p.id,
@@ -193,31 +233,7 @@ async function main() {
             createdById: smId, updatedById: smId,
           },
         });
-
-        // 다음 날 previous = 오늘 current
-        prevQtyByProduct.set(p.id, currentQuantity);
       }
-
-      // 매출/결제: 추정 판매가치에 마진(약 +28%)을 얹어 매출 총액 구성.
-      const margin = 1.28 + seeded(si * 7 + di) * 0.12; // 1.28~1.40
-      const totalSales = Math.round((estimatedSalesValue * margin) / 1000) * 1000;
-      const grossCashAllocation = Math.round(totalSales * 0.35 / 1000) * 1000;
-      const card = Math.round(totalSales * 0.55 / 1000) * 1000;
-      const other = totalSales - grossCashAllocation - card;
-      const workerCount = 2 + (si % 2);
-
-      // 비용 2~3건
-      const expenseCount = 2 + (di % 2);
-      const expenseRows = Array.from({ length: expenseCount }, (_, ei) => {
-        const code = expenseCodes[ei % expenseCodes.length];
-        const amount = 10000 + Math.floor(seeded(si * 50 + di * 10 + ei) * 90000);
-        return { code, amount, memo: `${code.name} 지출` };
-      });
-      const expenseTotal = expenseRows.reduce((sum, expense) => sum + expense.amount, 0);
-      if (expenseTotal > grossCashAllocation) {
-        throw new Error(`Seed expenses exceed cash allocation for ${storeName} on ${day}`);
-      }
-      const cash = grossCashAllocation - expenseTotal;
 
       await db.dailyLedger.update({
         where: { id: ledgerId },
@@ -266,6 +282,10 @@ async function main() {
         },
         { timeout: 30000, maxWait: 30000 },
       );
+
+      for (const { product: p, currentQuantity } of inventoryRows) {
+        prevQtyByProduct.set(p.id, currentQuantity);
+      }
 
       console.log(`   [${storeName}] ${day} status=${status} 매출=${totalSales.toLocaleString()} 매입행=${purchasesForDay.length} 손실=${lossesForDay.length}`);
     }
