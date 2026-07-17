@@ -10,6 +10,9 @@ import { requireReportAccess, getHeadquartersStoreScope } from "~/server/authz";
 import { db } from "~/server/db";
 import { getHeadquartersExpenseMonthRange } from "~/features/headquarters-expenses/queries";
 import { getStoreProfitSummariesForRange } from "./queries";
+import { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
+
+export { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
 
 // 월별 손익 조정 항목(C-16 확정). 본사가 HeadquartersExpense의 category로 입력한다.
 // 이 라벨과 정확히 일치하는 category 금액은 해당 컬럼으로, 그 외 category는 기타비용으로 합산한다.
@@ -24,7 +27,6 @@ export const MONTHLY_PNL_FIXED_COST_CATEGORIES = [
 ] as const;
 
 export const MONTHLY_PNL_HQ_ADJUSTMENT_CATEGORY = "본사조정";
-export const MONTHLY_PNL_COMPANY_WIDE_STORE_ID = "__company_wide__";
 
 export type MonthlyProfitAndLossRow = {
   monthInput: string;

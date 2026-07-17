@@ -436,7 +436,7 @@ test("overview sorts all four rankings and excludes incomplete values instead of
       ranking.rows.every(
         (row) =>
           row.detailHref ===
-          `/app/reports/monthly?month=2026-06&storeId=${row.storeId}`,
+          `/app/reports/comparison?startDate=2026-06-01&endDate=2026-06-01&storeId=${row.storeId}`,
       ),
     ),
   );
@@ -598,4 +598,67 @@ test("overview actions filter by selected store, use dashboard state, and keep d
   assert.match(report.actions[0].detail, /정정|조치 1|매출/);
   assert.equal(report.actions[0].detailHref, "/app/reports/daily?date=today");
   assert.equal(report.actions[1].detailHref, "/app/ledgers/ledger-today-1");
+});
+
+test("overview action severity follows priority rank instead of signal or correction state", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    selectedStoreId: null,
+    currentLedgers: [],
+    previousLedgers: [],
+    statusRows: [],
+    pnlRows: [],
+    todayRows: [
+      todayRow({
+        ledgerId: "ledger-rank-10",
+        priority: { rank: 10, label: "심각 이상", reasons: ["심각"] },
+        signals: [
+          { id: "info", label: "정보 신호", severity: "info", detail: "정보" },
+        ],
+      }),
+      todayRow({
+        ledgerId: "ledger-rank-30",
+        priority: { rank: 30, label: "검토 대기", reasons: ["검토"] },
+        signals: [
+          {
+            id: "critical",
+            label: "심각 신호",
+            severity: "critical",
+            detail: "심각",
+          },
+        ],
+      }),
+      todayRow({
+        ledgerId: "ledger-rank-90",
+        priority: { rank: 90, label: "정상", reasons: ["정상"] },
+        signals: [
+          {
+            id: "critical-normal",
+            label: "심각 신호",
+            severity: "critical",
+            detail: "심각",
+          },
+        ],
+        correctionState: {
+          appliedCorrectionCount: 0,
+          hasAppliedCorrections: false,
+          hasUnappliedCorrections: true,
+        },
+      }),
+    ],
+    errorMessages: [],
+  });
+
+  assert.deepEqual(
+    report.actions.map((action) => [action.detailHref, action.severity]),
+    [
+      ["/app/ledgers/ledger-rank-10", "critical"],
+      ["/app/ledgers/ledger-rank-30", "warning"],
+      ["/app/ledgers/ledger-rank-90", "info"],
+    ],
+  );
 });

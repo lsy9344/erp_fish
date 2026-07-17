@@ -107,6 +107,18 @@ test("monthly P&L labor matches the report ledger population", () => {
     "reports",
     "monthly-profit-loss.ts",
   );
+  const reportTypesSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "types.ts",
+  );
+  const overviewSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "overview.ts",
+  );
   const laborQueryStart = source.indexOf("db.ledgerLaborItem.findMany");
   const laborQueryEnd = source.indexOf(
     "db.headquartersExpense.findMany",
@@ -120,8 +132,26 @@ test("monthly P&L labor matches the report ledger population", () => {
     /dailyLedger:\s*\{[\s\S]*?status:\s*\{\s*in:\s*\["IN_REVIEW",\s*"HEADQUARTERS_CLOSED"\]\s*\}/,
   );
   assert.match(
-    source,
+    reportTypesSource,
     /export const MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*=\s*"__company_wide__";/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.match(
+    source,
+    /export\s*\{\s*MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.match(
+    overviewSource,
+    /import\s*\{[\s\S]*MONTHLY_PNL_COMPANY_WIDE_STORE_ID[\s\S]*\}\s*from\s*"\.\/types\.ts";/,
+  );
+  assert.equal(
+    [source, reportTypesSource, overviewSource]
+      .join("\n")
+      .match(/"__company_wide__"/g)?.length,
+    1,
   );
 });
 

@@ -1,14 +1,12 @@
 import type { DailyLedgerStatus } from "../../../generated/prisma";
 import type { HqDashboardRow } from "../dashboard/types.ts";
-import type {
-  MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
-  MonthlyProfitAndLossRow,
-} from "./monthly-profit-loss.ts";
+import type { MonthlyProfitAndLossRow } from "./monthly-profit-loss.ts";
 import type { LedgerProfitSummary } from "./queries.ts";
-import type { MonthlyClosingAnomalyReportMonthRange } from "./types.ts";
+import {
+  MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
+  type MonthlyClosingAnomalyReportMonthRange,
+} from "./types.ts";
 
-const COMPANY_WIDE_STORE_ID: typeof MONTHLY_PNL_COMPANY_WIDE_STORE_ID =
-  "__company_wide__";
 const includedStatuses = new Set<DailyLedgerStatus>([
   "IN_REVIEW",
   "HEADQUARTERS_CLOSED",
@@ -232,6 +230,19 @@ function monthlyHref(monthInput: string, storeId?: string | null) {
   return `/app/reports/monthly?${params.toString()}`;
 }
 
+function comparisonHref(
+  startDateInput: string,
+  endDateInput: string,
+  storeId: string,
+) {
+  const params = new URLSearchParams({
+    startDate: startDateInput,
+    endDate: endDateInput,
+    storeId,
+  });
+  return `/app/reports/comparison?${params.toString()}`;
+}
+
 function sumFixedCosts(row: MonthlyProfitAndLossRow) {
   return Object.values(row.fixedCosts).reduce((sum, amount) => sum + amount, 0);
 }
@@ -262,7 +273,7 @@ export function buildProfitAndLossWaterfallForTest(input: {
   const monthInput = input.rows[0]?.monthInput ?? "";
   const detailHref = monthlyHref(monthInput);
   const businessRows = input.rows.filter(
-    (row) => row.storeId !== COMPANY_WIDE_STORE_ID,
+    (row) => row.storeId !== MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
   );
   const businessStoreIds = new Set(
     input.ledgers.map((ledger) => ledger.storeId),
@@ -290,7 +301,7 @@ export function buildProfitAndLossWaterfallForTest(input: {
   }
 
   const companyWideRow = input.rows.find(
-    (row) => row.storeId === COMPANY_WIDE_STORE_ID,
+    (row) => row.storeId === MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
   );
   const sales = businessRows.reduce((sum, row) => sum + row.salesAmount, 0);
   const cogs = businessRows.reduce((sum, row) => sum + row.cogsAmount, 0);
@@ -458,7 +469,8 @@ function buildLossBreakdown(
 
 function buildRankings(input: {
   stores: Array<{ id: string; name: string }>;
-  monthInput: string;
+  startDateInput: string;
+  endDateInput: string;
   dateInputs: string[];
   ledgers: LedgerProfitSummary[];
   statusRows: ReportOverviewStatusRow[];
@@ -515,7 +527,14 @@ function buildRankings(input: {
         if (value === null) reason = "계산 가능한 값이 없습니다.";
       }
 
-      addRankingValue(result[metric], store, value, reason, input.monthInput);
+      addRankingValue(
+        result[metric],
+        store,
+        value,
+        reason,
+        input.startDateInput,
+        input.endDateInput,
+      );
     }
 
     const storeLedgers = input.ledgers.filter(
@@ -531,7 +550,8 @@ function buildRankings(input: {
         ? null
         : usableLosses.reduce((sum, item) => sum + item.amount, 0),
       "판매가 계획 기준이 없습니다.",
-      input.monthInput,
+      input.startDateInput,
+      input.endDateInput,
     );
   }
 
@@ -565,7 +585,8 @@ function addRankingValue(
   store: { id: string; name: string },
   value: number | null,
   reason: string,
-  monthInput: string,
+  startDateInput: string,
+  endDateInput: string,
 ) {
   if (value === null) {
     ranking.excluded.push({
@@ -580,7 +601,7 @@ function addRankingValue(
     storeId: store.id,
     storeName: store.name,
     value,
-    detailHref: monthlyHref(monthInput, store.id),
+    detailHref: comparisonHref(startDateInput, endDateInput, store.id),
   });
 }
 
@@ -618,14 +639,11 @@ function buildActions(
         label: signal?.label ?? row.priority.label,
         detail: details.join(" · "),
         severity:
-          signal?.severity ??
-          (row.correctionState.hasUnappliedCorrections
-            ? "warning"
-            : row.priority.rank <= 10
-              ? "critical"
-              : row.priority.rank <= 20
-                ? "warning"
-                : "info"),
+          row.priority.rank <= 10
+            ? "critical"
+            : row.priority.rank <= 50
+              ? "warning"
+              : "info",
         detailHref: row.ledgerId
           ? `/app/ledgers/${row.ledgerId}`
           : "/app/reports/daily?date=today",
@@ -758,7 +776,8 @@ export function buildHqReportOverviewForTest(input: {
   const pnlRows = input.pnlRows.filter(
     (row) =>
       scopedStoreIds.has(row.storeId) ||
-      (!input.selectedStoreId && row.storeId === COMPANY_WIDE_STORE_ID),
+      (!input.selectedStoreId &&
+        row.storeId === MONTHLY_PNL_COMPANY_WIDE_STORE_ID),
   );
   const profitAndLossResult = buildProfitAndLossWaterfallForTest({
     ledgers: currentLedgers,
@@ -776,7 +795,8 @@ export function buildHqReportOverviewForTest(input: {
   };
   const rankings = buildRankings({
     stores: scopedStores,
-    monthInput: input.monthRange.monthInput,
+    startDateInput: input.monthRange.startDateInput,
+    endDateInput: input.monthRange.endDateInput,
     dateInputs,
     ledgers: currentLedgers,
     statusRows: input.statusRows,
