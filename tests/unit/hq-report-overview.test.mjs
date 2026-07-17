@@ -422,10 +422,7 @@ test("overview loss donut keeps zero-amount coverage but renders an empty state"
     selectedStoreId: null,
     currentLedgers: [
       ledger({
-        lossItems: [
-          lossItem("1", "폐기", 0),
-          lossItem("2", "파손", 0),
-        ],
+        lossItems: [lossItem("1", "폐기", 0), lossItem("2", "파손", 0)],
       }),
     ],
     previousLedgers: [],
