@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  parseOptionalNonNegativeInteger,
   parseOptionalNonNegativeDecimal,
   parseRequiredNonNegativeDecimal,
   toFieldErrors,
@@ -13,6 +14,7 @@ const actualQuantityError =
   "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
+const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합니다.";
 
 function parseOptionalInventoryQuantity(
   value: unknown,
@@ -96,6 +98,11 @@ const ledgerInventoryItemSchema = z.object({
     .unknown()
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
+    ),
+  unitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalNonNegativeInteger(value, context, inventoryUnitPriceError),
     ),
   // 당일재고가 기준재고와 다른 행의 "고친 이유". 지점장이 일반 저장과 함께 보내면 서버가
   // 조정 레코드를 생성한다(단독 본사 전용 조정 액션과 별개로, 지점 실사 차이 사유 입력 경로).

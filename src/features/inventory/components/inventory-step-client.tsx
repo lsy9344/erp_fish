@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { Field, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import {
   Table,
@@ -37,6 +38,10 @@ import {
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import {
+  formatKrwInput,
+  toRawKrwInputValue,
+} from "~/features/ledger/components/krw-input-format";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
@@ -97,6 +102,7 @@ type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
 
 type InventoryLineState = InventoryDisplayData["items"][number] & {
   currentQuantityInput: string;
+  manualUnitPriceInput: string;
   adjustmentReasonInput: string;
 };
 
@@ -181,6 +187,7 @@ function toLineState(data: InventoryDisplayData): InventoryLineState[] {
       item.currentQuantity === null || requiresCurrentQuantityEntry(item)
         ? ""
         : String(item.currentQuantity),
+    manualUnitPriceInput: "",
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
 }
@@ -233,6 +240,7 @@ function toManualLineState(
     isModified: false,
     adjustment: null,
     currentQuantityInput: "",
+    manualUnitPriceInput: "",
     adjustmentReasonInput: "",
   };
 }
@@ -289,6 +297,9 @@ export function InventoryStepClient({
   const formRef = useRef<HTMLFormElement>(null);
   const manualProductSelectRef = useRef<HTMLSelectElement>(null);
   const currentQuantityRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {},
+  );
+  const manualUnitPriceRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -420,7 +431,12 @@ export function InventoryStepClient({
       Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
     );
     window.setTimeout(() => {
-      const refs = target.field === "reason" ? reasonRefs : currentQuantityRefs;
+      const refs =
+        target.field === "reason"
+          ? reasonRefs
+          : target.field === "unitPrice"
+            ? manualUnitPriceRefs
+            : currentQuantityRefs;
       refs.current[target.productId]?.focus();
     }, 0);
   }
@@ -428,6 +444,15 @@ export function InventoryStepClient({
   function focusFirstError(errors: FieldErrors) {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index]!;
+
+      if (errors[`items.${index}.unitPrice`]?.length) {
+        focusInventoryError({
+          productId: item.productId,
+          currentIndex: index,
+          field: "unitPrice",
+        });
+        return;
+      }
 
       if (
         errors[`items.${index}.currentQuantity`]?.length ||
@@ -619,6 +644,12 @@ export function InventoryStepClient({
         productId: item.productId,
         currentQuantity: quantityInput,
         quantity: quantityInput,
+        unitPrice: addedManualIds.has(item.productId)
+          ? toRawKrwInputValue(
+              manualUnitPriceRefs.current[item.productId]?.value ??
+                item.manualUnitPriceInput,
+            )
+          : null,
         adjustmentReason:
           reasonRefs.current[item.productId]?.value ??
           item.adjustmentReasonInput,
@@ -691,11 +722,26 @@ export function InventoryStepClient({
   }
 
   function updateCurrentQuantity(productId: string, value: string) {
+    setFieldErrors({});
+    setFormError(null);
+    setAdjustmentErrors({});
     const normalized = normalizeNumericInput(value);
     setItems((current) =>
       current.map((item) =>
         item.productId === productId
           ? { ...item, currentQuantityInput: normalized }
+          : item,
+      ),
+    );
+  }
+
+  function updateManualUnitPrice(productId: string, value: string) {
+    setFieldErrors({});
+    setFormError(null);
+    setItems((current) =>
+      current.map((item) =>
+        item.productId === productId
+          ? { ...item, manualUnitPriceInput: formatKrwInput(value) }
           : item,
       ),
     );
@@ -1522,6 +1568,7 @@ export function InventoryStepClient({
       );
       const quantityError =
         fieldErrors[`items.${globalIndex}.currentQuantity`]?.[0];
+      const unitPriceError = fieldErrors[`items.${globalIndex}.unitPrice`]?.[0];
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
@@ -1708,6 +1755,42 @@ export function InventoryStepClient({
                     className="h-11 w-24 tabular-nums"
                   />
                 </div>
+                {addedManualIds.has(item.productId) ? (
+                  <Field
+                    data-invalid={Boolean(unitPriceError)}
+                    className="w-auto gap-1"
+                  >
+                    <FieldLabel
+                      htmlFor={`inventory-unit-price-${item.productId}`}
+                    >
+                      매입단가
+                    </FieldLabel>
+                    <Input
+                      id={`inventory-unit-price-${item.productId}`}
+                      ref={(node) => {
+                        manualUnitPriceRefs.current[item.productId] = node;
+                      }}
+                      aria-label={`${item.productName} 매입단가`}
+                      aria-invalid={Boolean(unitPriceError)}
+                      aria-describedby={
+                        unitPriceError
+                          ? `inventory-unit-price-${item.productId}-error`
+                          : undefined
+                      }
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={item.manualUnitPriceInput}
+                      onChange={(event) =>
+                        updateManualUnitPrice(
+                          item.productId,
+                          event.currentTarget.value,
+                        )
+                      }
+                      disabled={isSaving || isClosed || isAdjustmentSavePending}
+                      className="h-11 w-32 tabular-nums"
+                    />
+                  </Field>
+                ) : null}
                 <div className="flex flex-col gap-1 pb-2.5">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1744,6 +1827,15 @@ export function InventoryStepClient({
                   className="text-destructive text-xs"
                 >
                   {quantityError}
+                </p>
+              ) : null}
+              {unitPriceError ? (
+                <p
+                  id={`inventory-unit-price-${item.productId}-error`}
+                  role="alert"
+                  className="text-destructive text-xs"
+                >
+                  {unitPriceError}
                 </p>
               ) : null}
 

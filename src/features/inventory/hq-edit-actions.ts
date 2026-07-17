@@ -38,7 +38,10 @@ import {
 } from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
-import { buildManualInventoryRows } from "./manual-inventory-rows";
+import {
+  buildManualInventoryRows,
+  getManualInventoryUnitPriceErrors,
+} from "./manual-inventory-rows";
 import {
   getInventoryQuantityRelation,
   shouldPersistInventoryLine,
@@ -274,6 +277,9 @@ export async function saveHqLedgerInventoryItems(
         const inputByProductId = new Map(
           parsed.data.items.map((item) => [item.productId, item]),
         );
+        const existingProductIds = new Set(
+          before.items.map((item) => item.productId),
+        );
 
         // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(버전 증가 전 검증).
         const requiredEntryErrors = getRequiredCurrentQuantityErrors(
@@ -318,6 +324,22 @@ export async function saveHqLedgerInventoryItems(
             "VALIDATION_ERROR",
             missingAdjustmentReasonMessage,
             adjustmentErrors,
+          );
+        }
+
+        const manualUnitPriceErrors = getManualInventoryUnitPriceErrors(
+          existingProductIds,
+          parsed.data.items,
+        );
+        const manualUnitPriceError = Object.values(
+          manualUnitPriceErrors,
+        )[0]?.[0];
+
+        if (manualUnitPriceError) {
+          return actionError<InventoryStepData>(
+            "VALIDATION_ERROR",
+            manualUnitPriceError,
+            manualUnitPriceErrors,
           );
         }
 
@@ -387,7 +409,7 @@ export async function saveHqLedgerInventoryItems(
         const manualRows = await buildManualInventoryRows(
           tx,
           before.id,
-          new Set(before.items.map((item) => item.productId)),
+          existingProductIds,
           parsed.data.items,
           actor.user.id,
         );

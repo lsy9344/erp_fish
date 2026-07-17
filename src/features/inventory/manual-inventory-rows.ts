@@ -1,10 +1,58 @@
 import {
   InventoryCarryoverSource,
   InventoryCarryoverStatus,
-} from "../../../generated/prisma";
-import type { Prisma } from "../../../generated/prisma";
+} from "../../../generated/prisma/index.js";
+import type { Prisma } from "../../../generated/prisma/index.js";
 
-import { calculateInventoryAmount } from "~/server/calculations/inventory";
+import { calculateInventoryAmount } from "../../server/calculations/inventory.ts";
+
+const missingManualInventoryUnitPriceMessage =
+  "직접 추가한 품목의 매입단가를 입력해 주세요.";
+const invalidManualInventoryAmountMessage =
+  "재고금액을 계산할 수 없습니다. 수량과 매입단가를 확인해 주세요.";
+
+type ManualInventoryInputItem = {
+  productId: string;
+  currentQuantity: number | null;
+  quantity: number | null;
+  unitPrice: number | null;
+};
+
+export function getManualInventoryUnitPriceErrors(
+  existingProductIds: ReadonlySet<string>,
+  inputItems: ManualInventoryInputItem[],
+) {
+  const errors: Record<string, string[]> = {};
+
+  inputItems.forEach((item, index) => {
+    const willPersist = item.currentQuantity !== null || item.quantity !== null;
+    const effectiveQuantity = item.currentQuantity ?? item.quantity;
+
+    if (
+      !existingProductIds.has(item.productId) &&
+      willPersist &&
+      item.unitPrice === null
+    ) {
+      errors[`items.${index}.unitPrice`] = [
+        missingManualInventoryUnitPriceMessage,
+      ];
+      return;
+    }
+
+    if (
+      !existingProductIds.has(item.productId) &&
+      effectiveQuantity !== null &&
+      item.unitPrice !== null &&
+      calculateInventoryAmount(effectiveQuantity, item.unitPrice) === null
+    ) {
+      errors[`items.${index}.unitPrice`] = [
+        invalidManualInventoryAmountMessage,
+      ];
+    }
+  });
+
+  return errors;
+}
 
 /**
  * "품목 추가"로 직접 넣은 행을 저장할 수 있게 보강한다.
@@ -18,19 +66,14 @@ import { calculateInventoryAmount } from "~/server/calculations/inventory";
  * 행은 제외해, 추가했다는 이유만으로 0개 재고가 저장되지 않게 한다.
  *
  * 이월 근거가 없는 수동 행이므로 previousQuantity/purchasedQuantity=0,
- * carryover는 MANUAL/CARRYOVER_EMPTY로 둔다. 단가는 0으로 두며(매입/스냅샷에서만 단가가
- * 들어온다), carryover detail은 저장하지 않는다. 재조회 시 저장행 경로가 detail 부재를
- * 보강한다.
+ * carryover는 MANUAL/CARRYOVER_EMPTY로 두고, 사용자가 입력한 단가를 저장한다.
+ * carryover detail은 저장하지 않는다. 재조회 시 저장행 경로가 detail 부재를 보강한다.
  */
 export async function buildManualInventoryRows(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,
   existingProductIds: ReadonlySet<string>,
-  inputItems: {
-    productId: string;
-    currentQuantity: number | null;
-    quantity: number | null;
-  }[],
+  inputItems: ManualInventoryInputItem[],
   actorId: string,
 ) {
   const manualInputs = inputItems.filter(
@@ -66,6 +109,7 @@ export async function buildManualInventoryRows(
 
     const currentQuantity = item.currentQuantity;
     const quantity = item.quantity;
+    const unitPrice = item.unitPrice!;
 
     return [
       {
@@ -74,12 +118,12 @@ export async function buildManualInventoryRows(
         productName: product.name,
         productCategory: product.category,
         productSpec: product.spec,
-        unitPrice: 0,
+        unitPrice,
         previousQuantity: 0,
         purchasedQuantity: 0,
         currentQuantity,
         quantity,
-        inventoryAmount: calculateInventoryAmount(quantity, 0),
+        inventoryAmount: calculateInventoryAmount(quantity, unitPrice),
         isModified:
           (currentQuantity !== null && currentQuantity !== 0) ||
           (quantity !== null && quantity !== 0),
