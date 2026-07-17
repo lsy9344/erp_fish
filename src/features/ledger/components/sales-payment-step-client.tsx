@@ -5,7 +5,12 @@ import { CheckCircle2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
-import { Field, FieldError, FieldLabel } from "~/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
@@ -32,15 +37,6 @@ import type { ActionResult, FieldErrors } from "~/lib/action-result";
 
 function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
-}
-
-function calculatePaymentDifference(
-  totalSalesAmount: number,
-  cashAmount: number,
-  cardAmount: number,
-  otherPaymentAmount: number,
-) {
-  return totalSalesAmount - (cashAmount + cardAmount + otherPaymentAmount);
 }
 
 function stepHref(
@@ -118,13 +114,6 @@ export function SalesPaymentStepClient({
   const cashAmountValue = parseKrwInputValue(cashAmount);
   const cardAmountValue = parseKrwInputValue(cardAmount);
   const otherPaymentAmountValue = parseKrwInputValue(otherPaymentAmount);
-  const paymentDifference = calculatePaymentDifference(
-    totalSalesAmountValue,
-    cashAmountValue,
-    cardAmountValue,
-    otherPaymentAmountValue,
-  );
-  const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
@@ -347,7 +336,7 @@ export function SalesPaymentStepClient({
           </Field>
 
           <Field data-invalid={Boolean(cashAmountError)}>
-            <FieldLabel htmlFor="cash-amount">현금</FieldLabel>
+            <FieldLabel htmlFor="cash-amount">현금 (당일 지출 후)</FieldLabel>
             <Input
               ref={cashAmountInputRef}
               id="cash-amount"
@@ -362,7 +351,9 @@ export function SalesPaymentStepClient({
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(cashAmountError)}
               aria-describedby={
-                cashAmountError ? "cash-amount-error" : "cash-amount-preview"
+                cashAmountError
+                  ? "cash-amount-error"
+                  : "cash-amount-preview cash-amount-help"
               }
             />
             <p
@@ -371,6 +362,9 @@ export function SalesPaymentStepClient({
             >
               표시: {formatKrw(cashAmountValue)}
             </p>
+            <FieldDescription id="cash-amount-help">
+              당일 현금지출을 하고 남은 당일 현금매출을 입력합니다.
+            </FieldDescription>
             {cashAmountError ? (
               <FieldError id="cash-amount-error">{cashAmountError}</FieldError>
             ) : null}
@@ -404,6 +398,22 @@ export function SalesPaymentStepClient({
             {cardAmountError ? (
               <FieldError id="card-amount-error">{cardAmountError}</FieldError>
             ) : null}
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="expense-total">4단계 지출 합계</FieldLabel>
+            <Input
+              id="expense-total"
+              value={formatKrw(ledger.expenseTotal)}
+              readOnly
+              aria-readonly="true"
+              aria-describedby="expense-total-help"
+              className="min-h-11 tabular-nums"
+            />
+            <FieldDescription id="expense-total-help">
+              4단계에서 마지막으로 저장한 당일 현금지출 합계입니다. 수정은
+              4단계에서 합니다.
+            </FieldDescription>
           </Field>
 
           <Field data-invalid={Boolean(otherPaymentAmountError)}>
@@ -441,27 +451,6 @@ export function SalesPaymentStepClient({
               </FieldError>
             ) : null}
           </Field>
-
-          <div
-            className={`rounded-md px-3 py-2 text-sm ${
-              hasPaymentDifference
-                ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                : "text-muted-foreground border border-transparent"
-            }`}
-            role={hasPaymentDifference ? "status" : undefined}
-          >
-            {hasPaymentDifference ? (
-              <p>
-                결제 합계 차액{" "}
-                <strong className="tabular-nums">
-                  {formatKrw(paymentDifference)}
-                </strong>{" "}
-                (총매출 - 결제 합계)
-              </p>
-            ) : (
-              <p className="text-muted-foreground">결제 합계 차액 0원</p>
-            )}
-          </div>
 
           {hqEditReasonRequired ? (
             <HqEditReasonField

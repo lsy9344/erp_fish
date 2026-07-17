@@ -113,7 +113,9 @@ test("stale sales 저장은 structured conflict dialog를 보여주고 첫 저�
   await page
     .getByRole("textbox", { name: "총매출", exact: true })
     .fill("33333");
-  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
+  await page
+    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
+    .fill("13000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
   await page
     .getByRole("textbox", { name: "기타 결제수단", exact: true })
@@ -175,7 +177,10 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "총매출", exact: true })
       .fill("55555");
     await firstPage
-      .getByRole("textbox", { name: "현금", exact: true })
+      .getByRole("textbox", {
+        name: "현금 (당일 지출 후)",
+        exact: true,
+      })
       .fill("15000");
     await firstPage
       .getByRole("textbox", { name: "카드", exact: true })
@@ -193,7 +198,10 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "총매출", exact: true })
       .fill("66666");
     await secondPage
-      .getByRole("textbox", { name: "현금", exact: true })
+      .getByRole("textbox", {
+        name: "현금 (당일 지출 후)",
+        exact: true,
+      })
       .fill("16000");
     await secondPage
       .getByRole("textbox", { name: "카드", exact: true })
@@ -264,7 +272,9 @@ test("서로 다른 섹션 변경도 안전 병합 없이 stale 저장으로 명
   await page
     .getByRole("textbox", { name: "총매출", exact: true })
     .fill("22222");
-  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
+  await page
+    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
+    .fill("12000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("10000");
   await page
     .getByRole("textbox", { name: "기타 결제수단", exact: true })

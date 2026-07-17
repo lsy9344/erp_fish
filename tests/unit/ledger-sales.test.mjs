@@ -148,13 +148,37 @@ test("ledger query settlement difference includes saved expenses", () => {
   assert.ok(salesStepSource);
   assert.match(
     salesStepSource,
-    /calculatePaymentDifference\([\s\S]*calculateExpenseTotal\(/,
+    /calculatePaymentDifference\(\s*ledger\.totalSalesAmount,\s*ledger\.cashAmount,\s*ledger\.cardAmount,\s*ledger\.otherPaymentAmount,\s*calculateExpenseTotal\(/,
   );
   assert.ok(auditSource);
   assert.match(
     auditSource,
     /calculatePaymentDifference\([\s\S]*otherPaymentAmount,\s*expenseTotal,\s*\)/,
   );
+});
+
+test("sales payment step explains cash after saved expenses without a difference box", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "sales-payment-step-client.tsx",
+  );
+  const termsSource = readProjectFile("src", "features", "ledger", "terms.ts");
+
+  assert.match(source, /현금 \(당일 지출 후\)/);
+  assert.match(
+    source,
+    /당일 현금지출을 하고 남은 당일 현금매출을 입력합니다\./,
+  );
+  assert.match(source, /4단계 지출 합계/);
+  assert.match(source, /ledger\.expenseTotal/);
+  assert.match(source, /readOnly/);
+  assert.doesNotMatch(source, /결제 합계 차액/);
+  assert.doesNotMatch(source, /hasPaymentDifference/);
+  assert.doesNotMatch(source, /function\s+calculatePaymentDifference\s*\(/);
+  assert.doesNotMatch(termsSource, /paymentDifference/);
 });
 
 test("ledger sales schema rejects blank, negative, decimal, and formatted values", async () => {
