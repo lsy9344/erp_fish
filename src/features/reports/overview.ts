@@ -762,17 +762,19 @@ export function buildHqReportOverviewForTest(input: {
         detailHref: `/app/reports/daily?date=${dateInput}`,
       })),
   );
-  const coverageComplete = scopedStores.every((store) =>
-    dateInputs.every((dateInput) => {
-      const status = statuses.get(statusKey(store.id, dateInput));
-      return (
-        status === "HOLIDAY" ||
-        (status !== undefined &&
-          includedStatuses.has(status) &&
-          currentByDate.has(statusKey(store.id, dateInput)))
-      );
-    }),
-  );
+  const coverageComplete =
+    scopedStores.length > 0 &&
+    scopedStores.every((store) =>
+      dateInputs.every((dateInput) => {
+        const status = statuses.get(statusKey(store.id, dateInput));
+        return (
+          status === "HOLIDAY" ||
+          (status !== undefined &&
+            includedStatuses.has(status) &&
+            currentByDate.has(statusKey(store.id, dateInput)))
+        );
+      }),
+    );
   const pnlRows = input.pnlRows.filter(
     (row) =>
       scopedStoreIds.has(row.storeId) ||
@@ -881,4 +883,109 @@ export function buildHqReportOverviewForTest(input: {
     },
     errorMessages: input.errorMessages,
   };
+}
+
+export async function getHqReportOverview({
+  month,
+  storeId,
+}: {
+  month?: unknown;
+  storeId?: unknown;
+} = {}): Promise<HqReportOverviewData> {
+  const { requireReportAccess, getHeadquartersStoreScope } =
+    await import("../../server/authz.ts");
+  const {
+    getLedgerProfitSummariesForRange,
+    getMonthlyClosingAnomalyReportMonthRange,
+  } = await import("./queries.ts");
+  const { getHqDashboardRows } = await import("../dashboard/queries.ts");
+  const { buildMonthlyProfitAndLoss } =
+    await import("./monthly-profit-loss.ts");
+  const { db } = await import("../../server/db.ts");
+
+  await requireReportAccess();
+  const scope = await getHeadquartersStoreScope();
+  const monthRange = getMonthlyClosingAnomalyReportMonthRange(month);
+  const normalizedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const selectedStore = normalizedStoreId
+    ? (scope.stores.find((store) => store.id === normalizedStoreId) ?? null)
+    : null;
+  const selectedStores = normalizedStoreId
+    ? selectedStore
+      ? [selectedStore]
+      : []
+    : scope.stores;
+  const targetStoreIds = selectedStores.map((store) => store.id);
+  const errorMessages = [
+    monthRange.errorMessage,
+    normalizedStoreId && !selectedStore
+      ? "조회 지점이 권한 범위에 없거나 비활성입니다."
+      : null,
+  ].filter((message): message is string => Boolean(message));
+
+  if (targetStoreIds.length === 0) {
+    return buildHqReportOverviewForTest({
+      monthRange,
+      stores: scope.stores,
+      selectedStoreId: normalizedStoreId,
+      currentLedgers: [],
+      previousLedgers: [],
+      statusRows: [],
+      pnlRows: [],
+      todayRows: [],
+      errorMessages,
+    });
+  }
+
+  const previousRange = getPreviousMonthComparisonRange(monthRange);
+  const [currentMap, previousMap, pnl, today, rawStatuses] = await Promise.all([
+    getLedgerProfitSummariesForRange({
+      storeIds: targetStoreIds,
+      startDate: monthRange.startDate,
+      endDate: monthRange.endDate,
+    }),
+    getLedgerProfitSummariesForRange({
+      storeIds: targetStoreIds,
+      startDate: previousRange.startDate,
+      endDate: previousRange.endDate,
+    }),
+    buildMonthlyProfitAndLoss({
+      month: monthRange.monthInput,
+      storeId: selectedStore?.id ?? null,
+    }),
+    getHqDashboardRows({
+      datePreset: "today",
+      sortMode: "priority",
+      filterMode: "needs-attention",
+    }),
+    db.dailyLedger.findMany({
+      where: {
+        storeId: { in: targetStoreIds },
+        closingDate: {
+          gte: previousRange.startDate,
+          lte: monthRange.endDate,
+        },
+      },
+      select: { storeId: true, closingDate: true, status: true },
+    }),
+  ]);
+
+  return buildHqReportOverviewForTest({
+    monthRange,
+    stores: scope.stores,
+    selectedStoreId: normalizedStoreId,
+    currentLedgers: [...currentMap.values()],
+    previousLedgers: [...previousMap.values()],
+    statusRows: rawStatuses.map((row) => ({
+      storeId: row.storeId,
+      dateInput: row.closingDate.toISOString().slice(0, 10),
+      status: row.status,
+    })),
+    pnlRows: pnl.rows,
+    todayRows: selectedStore
+      ? today.rows.filter((row) => row.storeId === selectedStore.id)
+      : today.rows,
+    errorMessages,
+  });
 }

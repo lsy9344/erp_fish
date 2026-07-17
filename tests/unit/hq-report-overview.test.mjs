@@ -109,6 +109,21 @@ function readProjectFile(...segments) {
   return readFileSync(filePath, "utf8");
 }
 
+test("overview query enforces report access and headquarters store scope", () => {
+  const source = readProjectFile("src", "features", "reports", "overview.ts");
+
+  assert.match(source, /export\s+async\s+function\s+getHqReportOverview/);
+  assert.match(source, /requireReportAccess\(\)/);
+  assert.match(source, /getHeadquartersStoreScope\(\)/);
+  assert.match(source, /getLedgerProfitSummariesForRange\(/);
+  assert.match(source, /buildMonthlyProfitAndLoss\(/);
+  assert.match(source, /getHqDashboardRows\(/);
+  assert.doesNotMatch(
+    source,
+    /\.(create|createMany|update|upsert|delete|deleteMany)\(/,
+  );
+});
+
 test("ledger profit summaries retain the saved loss price basis", () => {
   const source = readProjectFile("src", "features", "reports", "queries.ts");
   const ledgerProfitSummaryStart = source.indexOf(
@@ -327,6 +342,46 @@ test("overview keeps incomplete-month loss summary unavailable instead of confir
   assert.doesNotMatch(report.chartSummaries.lossBreakdown, /손실 금액이 없/);
   assert.match(report.chartSummaries.lossBreakdown, /월 범위 미완전|일부 장부/);
   assert.match(report.dataQuality.lossBasisLabel, /월 범위 미완전|일부 장부/);
+});
+
+test("overview keeps store filters but uses an empty calculation scope for an unauthorized store", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [
+      { id: "store-1", name: "강남점" },
+      { id: "store-2", name: "서초점" },
+    ],
+    selectedStoreId: "unauthorized-store",
+    currentLedgers: [],
+    previousLedgers: [],
+    statusRows: [],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: ["조회 지점이 권한 범위에 없거나 비활성입니다."],
+  });
+
+  assert.equal(report.stores.length, 2);
+  assert.deepEqual(report.summary, {
+    salesAmount: null,
+    grossProfit: null,
+    netAmount: null,
+    lossAmount: null,
+    actionCount: 0,
+  });
+  assert.equal(report.closingMissingDays.length, 0);
+  assert.equal(
+    report.closingStatus.reduce((sum, row) => sum + row.count, 0),
+    0,
+  );
+  assert.ok(
+    Object.values(report.rankings).every(
+      (ranking) => ranking.rows.length === 0 && ranking.excluded.length === 0,
+    ),
+  );
+  assert.match(report.errorMessages[0], /권한 범위|비활성/);
 });
 
 test("overview closing groups always add up to store count times visible days", async () => {
