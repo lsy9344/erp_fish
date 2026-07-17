@@ -1075,6 +1075,10 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
 
   const loss = functionSource(source, "LossDonutChart");
   const lossLegend = functionSource(source, "LossBreakdownLegend");
+  const lossEmptyStateMessage = functionSource(
+    source,
+    "getLossEmptyStateMessage",
+  );
   assert.match(loss, /innerRadius=\{58\}/);
   assert.match(loss, /outerRadius=\{84\}/);
   assert.match(
@@ -1090,12 +1094,16 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   assert.match(lossLegend, /percentFormatter\.format\(item\.ratio\)/);
   assert.match(loss, /판매가 계획 기준 계산 가능/);
   assert.match(
-    loss,
-    /report\.lossBreakdown\.computableCount\s*>\s*0[\s\S]*?계산 가능한 손실 금액이 0원입니다/,
+    lossEmptyStateMessage,
+    /lossBreakdown\.computableCount\s*>\s*0[\s\S]*?계산 가능한 손실 금액이 0원입니다/,
+  );
+  assert.match(
+    lossEmptyStateMessage,
+    /:\s*"판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다\. 손실 입력의 가격 기준을 확인해 주세요\."/,
   );
   assert.match(
     loss,
-    /:\s*"판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다\. 손실 입력의 가격 기준을 확인해 주세요\."/,
+    /message=\{getLossEmptyStateMessage\(report\.lossBreakdown\)\}/,
   );
   assert.match(loss, /<Label/);
   assert.match(loss, /viewBox/);
@@ -1154,6 +1162,7 @@ test("overview UI keeps five table alternatives and today's action list", () => 
     "hq-report-overview.tsx",
   );
   const tables = functionSource(source, "OverviewTables");
+  const lossTable = functionSource(source, "LossBreakdownTable");
   const actions = functionSource(source, "ActionList");
 
   assert.match(source, /ReviewViewToggle/);
@@ -1162,6 +1171,15 @@ test("overview UI keeps five table alternatives and today's action list", () => 
   assert.match(tables, /<RankingsTable report=\{report\}/);
   assert.match(tables, /<ProfitAndLossTable report=\{report\}/);
   assert.match(tables, /<ClosingStatusTable report=\{report\}/);
+  assert.match(
+    lossTable,
+    /\{getLossEmptyStateMessage\(report\.lossBreakdown\)\}/,
+  );
+  assert.equal(
+    (source.match(/getLossEmptyStateMessage\(report\.lossBreakdown\)/g) ?? [])
+      .length,
+    2,
+  );
   assert.match(actions, /오늘 기준/);
   assert.match(actions, /오늘 바로 조치할 항목이 없습니다/);
   assert.doesNotMatch(source, /grossProfit\s*\?\?\s*0/);

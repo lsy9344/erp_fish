@@ -118,6 +118,14 @@ function chartNumber(value: unknown) {
   return typeof value === "number" ? formatKrw(value) : "계산 불가";
 }
 
+function getLossEmptyStateMessage(
+  lossBreakdown: HqReportOverviewData["lossBreakdown"],
+) {
+  return lossBreakdown.computableCount > 0
+    ? "계산 가능한 손실 금액이 0원입니다."
+    : "판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요.";
+}
+
 function formatWaterfallAxisLabel(value: unknown) {
   const key = String(value);
   return waterfallAxisLabels[key] ?? key;
@@ -385,11 +393,7 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
       <CardContent className="min-w-0">
         {report.lossBreakdown.items.length === 0 ? (
           <EmptyChartState
-            message={
-              report.lossBreakdown.computableCount > 0
-                ? "계산 가능한 손실 금액이 0원입니다."
-                : "판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요."
-            }
+            message={getLossEmptyStateMessage(report.lossBreakdown)}
             href={report.lossBreakdown.detailHref}
           />
         ) : (
@@ -978,7 +982,7 @@ function LossBreakdownTable({ report }: { report: HqReportOverviewData }) {
           {report.lossBreakdown.items.length === 0 ? (
             <TableRow>
               <TableCell colSpan={4}>
-                계산 가능한 손실 유형이 없습니다.
+                {getLossEmptyStateMessage(report.lossBreakdown)}
               </TableCell>
             </TableRow>
           ) : null}
