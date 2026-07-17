@@ -166,9 +166,9 @@ async function seedStoryThreeOneData() {
     actorId,
     storeId: STORE_IDS.progress,
     status: "IN_PROGRESS",
-    totalSalesAmount: 120000,
-    cashAmount: 50000,
-    cardAmount: 70000,
+    totalSalesAmount: 2574300,
+    cashAmount: 2574300,
+    cardAmount: 0,
     otherPaymentAmount: 0,
     workerCount: 2,
   });
@@ -213,13 +213,36 @@ async function seedStoryThreeOneData() {
     workerCount: 1,
   });
 
-  await seedInventoryItem(progressLedger.id, product.id, actorId);
+  const progressInventoryItem = await seedInventoryItem(
+    progressLedger.id,
+    product.id,
+    actorId,
+  );
+  await prisma.ledgerInventoryItem.update({
+    where: { id: progressInventoryItem.id },
+    data: {
+      unitPrice: 1650130,
+      currentQuantity: 14,
+      quantity: 14,
+      inventoryAmount: 23101820,
+    },
+  });
   const reviewInventoryItem = await seedInventoryItem(
     reviewLedger.id,
     product.id,
     actorId,
   );
   await seedInventoryItem(closedLedger.id, product.id, actorId);
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_IDS.closed,
+      businessDate: getTodayKstMidnight(),
+      productId: product.id,
+      plannedUnitPrice: 1524,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
   await prisma.ledgerInventoryAdjustment.create({
     data: {
       dailyLedgerId: reviewLedger.id,
@@ -303,7 +326,7 @@ async function seedStoryThreeThreeThresholds() {
   await prisma.anomalyThresholdSetting.create({
     data: {
       scope: "GLOBAL",
-      marginRateBps: 3500,
+      marginRateBps: 9000,
       inventoryDifferenceQuantity: 10,
       updatedById: actorId,
     },
@@ -432,6 +455,10 @@ async function cleanupStoryThreeOneData() {
         ...(productIds.length > 0 ? [{ productId: { in: productIds } }] : []),
       ],
     },
+  });
+
+  await prisma.storeSalesPricePlan.deleteMany({
+    where: { storeId: { in: STORY_STORE_IDS } },
   });
 
   await prisma.userStoreAssignment.deleteMany({
@@ -833,7 +860,7 @@ test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불�
   await expect(metrics).not.toContainText("계산 불가");
 });
 
-test("기준값이 저장된 관제판은 재고 이상 신호와 상세 이동을 제공한다", async ({
+test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 신호를 구분한다", async ({
   page,
 }) => {
   await seedStoryThreeThreeThresholds();
@@ -857,8 +884,16 @@ test("기준값이 저장된 관제판은 재고 이상 신호와 상세 이동�
   await expect(reviewRow).not.toContainText("손실 이상");
   await expect(reviewRow).not.toContainText("기준값 저장됨");
   await expect(reviewRow.getByLabel(/재고 이상:/)).toBeVisible();
-  // 미팅 결정(2026-06-21): 기준값이 있으면 마진율을 "현재 / 기준"으로 보여준다.
-  await expect(reviewRow).toContainText("/ 35.0%");
+  await expect(
+    page.getByRole("columnheader", { name: "실제 / 예상 마진율" }),
+  ).toBeVisible();
+  const progressRow = getDesktopRow(page, STORE_IDS.progress);
+  await expect(progressRow).toContainText("실제 35.9% / 예상 데이터 부족");
+  await expect(progressRow).toContainText("경보 기준 90.0%");
+  await expect(progressRow).toContainText("90.0% 기준 미달 금액 1,392,700원");
+  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
+    "예상 34.4%",
+  );
 
   const holidayRow = getDesktopRow(page, STORE_IDS.holiday);
   await expect(holidayRow).not.toContainText("재고 입력 필요");

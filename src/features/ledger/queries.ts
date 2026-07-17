@@ -182,6 +182,10 @@ export function getTodayKstMidnight(inputDate = new Date()) {
 export function toLedgerSalesStepData(
   ledger: DailyLedgerPayload,
 ): LedgerSalesStepData {
+  const expenseTotal = calculateExpenseTotal(
+    ledger.ledgerExpenses.map((expense) => expense.amount),
+  );
+
   return {
     id: ledger.id,
     storeId: ledger.storeId,
@@ -203,6 +207,7 @@ export function toLedgerSalesStepData(
       ledger.cashAmount,
       ledger.cardAmount,
       ledger.otherPaymentAmount,
+      expenseTotal,
     ),
   };
 }
@@ -395,6 +400,7 @@ export function toLedgerAuditPayload(
       ledger.cashAmount,
       ledger.cardAmount,
       ledger.otherPaymentAmount,
+      expenseTotal,
     ),
   };
 }

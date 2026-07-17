@@ -77,6 +77,9 @@ async function cleanupSelectedLedger() {
     return;
   }
 
+  await prisma.ledgerExpense.deleteMany({
+    where: { dailyLedgerId: { in: ledgerIds } },
+  });
   await prisma.auditLog.deleteMany({
     where: {
       targetType: "DailyLedger",
@@ -582,14 +585,60 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
   // 매출/결제는 6단계로 이동했으므로 명시적으로 해당 단계를 연다.
   await page.goto("/app/store-entry?storeId=store-gangnam&step=sales");
 
+  const [ledger, manager, expenseCode] = await Promise.all([
+    prisma.dailyLedger.findFirstOrThrow({
+      where: {
+        storeId: STORE_ID,
+        closingDate: new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`),
+      },
+      select: { id: true },
+    }),
+    prisma.user.findUniqueOrThrow({
+      where: { email: "manager@example.com" },
+      select: { id: true },
+    }),
+    prisma.ledgerInputCode.findFirstOrThrow({
+      where: { group: "EXPENSE_ITEM", isActive: true },
+      select: { id: true },
+    }),
+  ]);
+  await prisma.ledgerExpense.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      ledgerInputCodeId: expenseCode.id,
+      amount: 2000,
+      createdById: manager.id,
+      updatedById: manager.id,
+    },
+  });
+  await page.reload();
+
   const total = page.getByRole("textbox", { name: "총매출", exact: true });
   const cash = page.getByRole("textbox", { name: "현금", exact: true });
   const card = page.getByRole("textbox", { name: "카드", exact: true });
+  const expense = page.getByRole("textbox", {
+    name: "4단계 지출 합계",
+    exact: true,
+  });
   const other = page.getByRole("textbox", {
     name: "기타 결제수단",
     exact: true,
   });
   const save = page.getByRole("button", { name: "저장" });
+
+  await expect(expense).toHaveValue("2,000");
+  await expect(expense).toHaveAttribute("readonly", "");
+  await expect(expense).toHaveAttribute("aria-readonly", "true");
+  await expect(expense).toBeEnabled();
+  const paymentInputOrder = await page
+    .locator("form input")
+    .evaluateAll((inputs) => inputs.map((input) => input.id));
+  expect(paymentInputOrder.indexOf("card-amount")).toBeLessThan(
+    paymentInputOrder.indexOf("expense-total"),
+  );
+  expect(paymentInputOrder.indexOf("expense-total")).toBeLessThan(
+    paymentInputOrder.indexOf("other-payment-amount"),
+  );
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
   await total.fill("10000");
@@ -597,7 +646,7 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
   await card.fill("2000");
   await other.fill("1000");
 
-  await expect(page.getByText(/결제 합계 차액.*4,000원/)).toBeVisible();
+  await expect(page.getByText(/결제 합계 차액.*2,000원/)).toBeVisible();
   await save.click();
 
   await expect(
@@ -608,11 +657,12 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
   await expect(total).toHaveValue("10,000");
   await expect(cash).toHaveValue("3,000");
   await expect(card).toHaveValue("2,000");
+  await expect(expense).toHaveValue("2,000");
   await expect(other).toHaveValue("1,000");
-  await expect(page.getByText(/결제 합계 차액.*4,000원/)).toBeVisible();
+  await expect(page.getByText(/결제 합계 차액.*2,000원/)).toBeVisible();
 
   await cash.fill("12,000");
-  await expect(page.getByText(/결제 합계 차액.*-5,000원/)).toBeVisible();
+  await expect(page.getByText(/결제 합계 차액.*-7,000원/)).toBeVisible();
   await expect(save).toBeVisible();
 
   await page.goto("/app/store-entry/inventory?storeId=store-gangnam");

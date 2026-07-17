@@ -76,7 +76,7 @@ const dashboardColumnWidthConfig = [
   },
   {
     id: "grossMarginRate",
-    label: "마진율",
+    label: "실제 / 예상 마진율",
     defaultWidth: 110,
     minWidth: 100,
     maxWidth: 180,
@@ -768,24 +768,27 @@ function SalesCell({ row }: { row: HqDashboardRow }) {
 }
 
 function MarginCell({ row }: { row: HqDashboardRow }) {
-  const { currentLabel, targetLabel, shortfallAmountLabel } = row.marginDisplay;
-  // WO-14 part3(2026-06-29): 장부 이익률 아래에 분석 이익률(AE5)을 함께 보여준다.
-  const analysisLabel = row.analysisMarginDisplay.currentLabel;
+  const actual = row.marginDisplay;
+  const {
+    currentLabel: actualLabel,
+    targetLabel,
+    shortfallAmountLabel,
+  } = actual;
+  const expectedLabel = row.analysisMarginDisplay.currentLabel;
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
       <span>
-        {currentLabel}
-        {targetLabel ? (
-          <span className="text-muted-foreground"> / {targetLabel}</span>
-        ) : null}
+        실제 {actualLabel} / 예상 {expectedLabel}
       </span>
-      <span className="text-muted-foreground text-xs font-normal">
-        분석 {analysisLabel}
-      </span>
-      {shortfallAmountLabel ? (
+      {targetLabel ? (
+        <span className="text-muted-foreground text-xs font-normal">
+          경보 기준 {targetLabel}
+        </span>
+      ) : null}
+      {targetLabel && shortfallAmountLabel ? (
         <span className="text-warning text-xs font-normal whitespace-nowrap">
-          {shortfallAmountLabel}
+          {targetLabel} 기준 {shortfallAmountLabel}
         </span>
       ) : null}
     </div>

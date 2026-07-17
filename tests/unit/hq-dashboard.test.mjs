@@ -369,11 +369,32 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   assert.doesNotMatch(tableSource, /lossAmount/);
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
   assert.doesNotMatch(tableSource, /baselineSales/);
-  // 미팅 결정(2026-06-21): 마진율 "현재 / 기준"과 미달 금액은 쿼리에서 만든
-  // marginDisplay 라벨만 렌더링하고, UI에서 마진 계산을 다시 하지 않는다.
+  // 실제/예상 마진율과 경보 기준/미달 금액은 쿼리에서 만든 라벨만 렌더링하고,
+  // UI에서 마진 계산을 다시 하지 않는다.
   assert.match(tableSource, /row\.marginDisplay/);
+  assert.match(tableSource, /row\.analysisMarginDisplay\.currentLabel/);
+  assert.match(
+    tableSource,
+    /const expectedLabel = row\.analysisMarginDisplay\.currentLabel/,
+  );
+  assert.match(tableSource, /실제 \{actualLabel\} \/ 예상 \{expectedLabel\}/);
+  assert.doesNotMatch(tableSource, /expectedDisplayLabel|endsWith\("%"\)/);
+  assert.match(tableSource, /경보 기준 \{targetLabel\}/);
+  assert.match(tableSource, /\{targetLabel\} 기준 \{shortfallAmountLabel\}/);
   assert.match(tableSource, /shortfallAmountLabel/);
   assert.doesNotMatch(tableSource, /marginRateBps/);
+});
+
+test("HQ dashboard margin heading states actual and expected meanings", () => {
+  const tableSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "hq-dashboard-table.tsx",
+  );
+
+  assert.match(tableSource, /label: "실제 \/ 예상 마진율"/);
 });
 
 test("HQ dashboard does not render a 매출 차이 column or signal label", () => {
@@ -1225,12 +1246,12 @@ function makeDashboardRow(overrides = {}) {
     analysisSalesAmount: { value: 1300 },
     grossMarginRate: { value: 0.3 },
     marginDisplay: {
-      currentLabel: "30.0%",
-      targetLabel: null,
-      shortfallAmountLabel: null,
+      currentLabel: "35.9%",
+      targetLabel: "90.0%",
+      shortfallAmountLabel: "미달 금액 1,392,700원",
     },
     analysisMarginDisplay: {
-      currentLabel: "23.0%",
+      currentLabel: "34.4%",
       targetLabel: null,
       shortfallAmountLabel: null,
     },

@@ -120,9 +120,15 @@ test("ledger amount calculation helper validates payment difference", async () =
     pathToFileURL(calculatorPath).href
   );
 
-  assert.equal(calculatePaymentDifference(120000, 50000, 30000, 20000), 20000);
-  assert.equal(calculatePaymentDifference(50000, 60000, 20000, 10000), -40000);
-  assert.equal(calculatePaymentDifference(0, 0, 0, 0), 0);
+  assert.equal(
+    calculatePaymentDifference(120000, 50000, 30000, 20000, 15000),
+    5000,
+  );
+  assert.equal(
+    calculatePaymentDifference(50000, 60000, 20000, 10000, 5000),
+    -45000,
+  );
+  assert.equal(calculatePaymentDifference(0, 0, 0, 0, 0), 0);
 });
 
 test("ledger sales schema rejects blank, negative, decimal, and formatted values", async () => {

@@ -85,7 +85,7 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
   assert.deepEqual(summary.operatingProfit, ok(79_000));
   assert.deepEqual(summary.productivity, ok(25_000));
   assert.deepEqual(summary.inventoryAmount, ok(16_000));
-  assert.deepEqual(summary.paymentDifference, ok(2_000));
+  assert.deepEqual(summary.paymentDifference, ok(-10_000));
   assert.deepEqual(summary.salesDifference, ok(91_000));
 });
 
