@@ -930,7 +930,7 @@ export async function getHqReportOverview({
       : null,
   ].filter((message): message is string => Boolean(message));
 
-  if (targetStoreIds.length === 0 || monthRange.isFutureMonth) {
+  if (targetStoreIds.length === 0) {
     return buildHqReportOverviewForTest({
       monthRange,
       stores: scope.stores,
@@ -941,6 +941,29 @@ export async function getHqReportOverview({
       statusRows: [],
       pnlRows: [],
       todayRows: [],
+      errorMessages,
+    });
+  }
+
+  if (monthRange.isFutureMonth) {
+    const today = await getHqDashboardRows({
+      datePreset: "today",
+      sortMode: "priority",
+      filterMode: "needs-attention",
+    });
+
+    return buildHqReportOverviewForTest({
+      monthRange,
+      stores: scope.stores,
+      calculationStoreIds: [],
+      selectedStoreId: normalizedStoreId,
+      currentLedgers: [],
+      previousLedgers: [],
+      statusRows: [],
+      pnlRows: [],
+      todayRows: selectedStore
+        ? today.rows.filter((row) => row.storeId === selectedStore.id)
+        : today.rows,
       errorMessages,
     });
   }

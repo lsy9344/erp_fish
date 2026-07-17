@@ -124,7 +124,7 @@ test("overview query enforces report access and headquarters store scope", () =>
   );
 });
 
-test("overview query authorizes and rejects empty month scopes before scoped reads", () => {
+test("overview query separates no-target and future-month reads before monthly queries", () => {
   const source = readProjectFile("src", "features", "reports", "overview.ts");
   const queryStart = source.indexOf(
     "export async function getHqReportOverview",
@@ -134,14 +134,29 @@ test("overview query authorizes and rejects empty month scopes before scoped rea
   const accessIndex = query.indexOf("await requireReportAccess()");
   const scopeIndex = query.indexOf("getHeadquartersStoreScope();");
   const ledgerQueryIndex = query.indexOf("getLedgerProfitSummariesForRange({");
+  const noTargetIndex = query.indexOf("if (targetStoreIds.length === 0)");
+  const futureMonthIndex = query.indexOf("if (monthRange.isFutureMonth)");
   const promiseAllIndex = query.indexOf("Promise.all(");
-  const earlyBoundary = query.slice(0, promiseAllIndex);
+  const noTargetBranch = query.slice(noTargetIndex, futureMonthIndex);
+  const futureMonthBranch = query.slice(futureMonthIndex, promiseAllIndex);
 
   assert.ok(accessIndex >= 0 && accessIndex < scopeIndex);
   assert.ok(scopeIndex < ledgerQueryIndex);
-  assert.match(earlyBoundary, /targetStoreIds\.length\s*===\s*0/);
-  assert.match(earlyBoundary, /monthRange\.isFutureMonth/);
-  assert.match(earlyBoundary, /calculationStoreIds:\s*\[\]/);
+  assert.ok(
+    noTargetIndex >= 0 &&
+      noTargetIndex < futureMonthIndex &&
+      futureMonthIndex < promiseAllIndex,
+  );
+  assert.doesNotMatch(noTargetBranch, /getHqDashboardRows\(/);
+  assert.match(
+    futureMonthBranch,
+    /getHqDashboardRows\(\{[\s\S]*?datePreset:\s*"today"[\s\S]*?sortMode:\s*"priority"[\s\S]*?filterMode:\s*"needs-attention"/,
+  );
+  assert.match(futureMonthBranch, /calculationStoreIds:\s*\[\]/);
+  assert.match(
+    futureMonthBranch,
+    /todayRows:\s*selectedStore[\s\S]*?today\.rows\.filter/,
+  );
   assert.ok(
     (query.match(/storeIds:\s*targetStoreIds/g) ?? []).length >= 2,
     "both ledger range queries should use targetStoreIds",
@@ -423,7 +438,7 @@ test("overview keeps store filters but uses an empty calculation scope for an un
   assert.match(report.errorMessages[0], /권한 범위|비활성/);
 });
 
-test("overview keeps store filters but leaves future-month calculations empty", async () => {
+test("overview keeps future-month calculations empty and today actions visible", async () => {
   const { buildHqReportOverviewForTest } = await import(
     pathToFileURL(overviewPath).href
   );
@@ -441,12 +456,19 @@ test("overview keeps store filters but leaves future-month calculations empty", 
       { id: "store-2", name: "서초점" },
     ],
     calculationStoreIds: [],
-    selectedStoreId: null,
+    selectedStoreId: "store-1",
     currentLedgers: [],
     previousLedgers: [],
     statusRows: [],
     pnlRows: [],
-    todayRows: [],
+    todayRows: [
+      todayRow({
+        storeId: "store-2",
+        storeName: "서초점",
+        ledgerId: "ledger-other",
+      }),
+      todayRow(),
+    ],
     errorMessages: [],
   });
 
@@ -463,6 +485,9 @@ test("overview keeps store filters but leaves future-month calculations empty", 
     ),
   );
   assert.equal(report.summary.lossAmount, null);
+  assert.equal(report.actions.length, 1);
+  assert.equal(report.actions[0].storeName, "강남점");
+  assert.equal(report.actions[0].detailHref, "/app/ledgers/ledger-today-1");
 });
 
 test("overview closing groups always add up to store count times visible days", async () => {
