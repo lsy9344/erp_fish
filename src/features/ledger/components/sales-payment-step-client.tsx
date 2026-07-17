@@ -416,7 +416,7 @@ export function SalesPaymentStepClient({
             <FieldLabel htmlFor="expense-total">4단계 지출 합계</FieldLabel>
             <Input
               id="expense-total"
-              value={formatKrwInput(String(ledger.expenseTotal))}
+              value={formatKrw(ledger.expenseTotal)}
               readOnly
               aria-readonly="true"
               className="min-h-11 tabular-nums"
