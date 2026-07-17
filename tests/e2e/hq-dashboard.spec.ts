@@ -891,6 +891,16 @@ test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 
   await expect(progressRow).toContainText("실제 35.9% / 예상 데이터 부족");
   await expect(progressRow).toContainText("경보 기준 90.0%");
   await expect(progressRow).toContainText("90.0% 기준 미달 금액 1,392,700원");
+  const marginCell = progressRow.getByTestId(
+    `hq-dashboard-margin-${STORE_IDS.progress}`,
+  );
+  await expect
+    .poll(() =>
+      marginCell.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth + 1,
+      ),
+    )
+    .toBe(true);
   await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
     "예상 34.4%",
   );

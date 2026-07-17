@@ -449,6 +449,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                       <SalesCell row={row} />
                     </TableCell>
                     <TableCell
+                      data-testid={`hq-dashboard-margin-${row.storeId}`}
                       className={getColumnCellClassName("grossMarginRate")}
                     >
                       <MarginCell row={row} />
@@ -623,13 +624,13 @@ function getColumnStyle(
 function getColumnCellClassName(columnId: DashboardColumnId) {
   const column = dashboardColumnConfigById[columnId];
 
-  // 신호 칼럼은 뱃지가 여러 줄로 줄바꿈되어야 하므로 클리핑하지 않고 높이가 늘어나게 둔다.
-  // 나머지 칼럼은 한 줄 말줄임(truncate) 유지.
-  const isSignals = columnId === "signals";
+  // 신호·마진 칼럼은 여러 줄로 줄바꿈되므로 클리핑하지 않고 높이가 늘어나게 둔다.
+  // 나머지 칼럼은 한 줄 말줄임을 유지한다.
+  const wraps = columnId === "signals" || columnId === "grossMarginRate";
 
   return cn(
     "min-w-0 align-top",
-    isSignals ? "whitespace-normal" : "overflow-hidden text-ellipsis",
+    wraps ? "whitespace-normal break-words" : "overflow-hidden text-ellipsis",
     columnId === "store" && "font-medium",
     getColumnConfigClassName(column),
   );
@@ -787,7 +788,7 @@ function MarginCell({ row }: { row: HqDashboardRow }) {
         </span>
       ) : null}
       {targetLabel && shortfallAmountLabel ? (
-        <span className="text-warning text-xs font-normal whitespace-nowrap">
+        <span className="text-warning text-xs font-normal">
           {targetLabel} 기준 {shortfallAmountLabel}
         </span>
       ) : null}

@@ -81,6 +81,14 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
   assert.doesNotMatch(tableSource, /disabled[\s\S]*상세 준비 중/);
   assert.match(tableSource, /break-words/);
+  assert.match(
+    tableSource,
+    /columnId === "signals" \|\| columnId === "grossMarginRate"/,
+  );
+  assert.doesNotMatch(
+    tableSource,
+    /shortfallAmountLabel[\s\S]*whitespace-nowrap/,
+  );
   assert.match(tableSource, /tabular-nums/);
   assert.match(tableSource, /useRouter/);
   assert.match(tableSource, /onKeyDown/);
