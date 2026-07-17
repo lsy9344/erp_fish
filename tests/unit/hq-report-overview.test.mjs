@@ -948,6 +948,12 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   assert.match(lossLegend, /formatKrw\(item\.amount\)/);
   assert.match(lossLegend, /percentFormatter\.format\(item\.ratio\)/);
   assert.match(loss, /판매가 계획 기준 계산 가능/);
+  assert.match(loss, /<Label/);
+  assert.match(loss, /viewBox/);
+  assert.match(loss, /<text/);
+  assert.match(loss, /<tspan/);
+  assert.match(loss, /formatKrw\(report\.lossBreakdown\.totalAmount\)/);
+  assert.doesNotMatch(loss, /pointer-events-none absolute/);
 
   const ranking = functionSource(source, "StoreRankingChart");
   assert.match(ranking, /aria-pressed=\{metric === item\.key\}/);
@@ -969,6 +975,11 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
     profitAndLoss,
     /<Bar(?=[^>]*dataKey="amount")(?=[^>]*stackId="waterfall")[^>]*>/,
   );
+  assert.match(profitAndLoss, /dataKey="key"/);
+  assert.match(profitAndLoss, /tickFormatter=\{formatWaterfallAxisLabel\}/);
+  assert.match(profitAndLoss, /tick=\{\{ fontSize: 10 \}\}/);
+  assert.match(profitAndLoss, /tickMargin=\{8\}/);
+  assert.match(profitAndLoss, /formatWaterfallDisplayAmount\(step\)/);
 
   const closing = functionSource(source, "ClosingStatusChart");
   const closingLegend = functionSource(source, "ClosingStatusLegend");
@@ -1005,4 +1016,53 @@ test("overview UI keeps five table alternatives and today's action list", () => 
   assert.match(actions, /오늘 기준/);
   assert.match(actions, /오늘 바로 조치할 항목이 없습니다/);
   assert.doesNotMatch(source, /grossProfit\s*\?\?\s*0/);
+});
+
+test("overview UI preserves waterfall signs and separates missing closing days", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "hq-report-overview.tsx",
+  );
+  const displayAmount = functionSource(source, "formatWaterfallDisplayAmount");
+  const axisLabel = functionSource(source, "formatWaterfallAxisLabel");
+  const profitTable = functionSource(source, "ProfitAndLossTable");
+  const closingTable = functionSource(source, "ClosingStatusTable");
+
+  assert.match(displayAmount, /step\.kind === "total"/);
+  assert.match(displayAmount, /formatSignedKrw\(step\.end\)/);
+  assert.match(displayAmount, /step\.kind === "decrease"/);
+  assert.match(displayAmount, /formatSignedKrw\(-step\.amount\)/);
+  assert.match(displayAmount, /formatSignedKrw\(step\.amount\)/);
+  assert.match(profitTable, /formatWaterfallDisplayAmount\(step\)/);
+  assert.match(axisLabel, /waterfallAxisLabels\[key\]/);
+
+  for (const [key, label] of [
+    ["sales", "매출"],
+    ["cogs", "원가"],
+    ["grossProfit", "매출이익"],
+    ["labor", "인건비"],
+    ["storeExpenses", "지점비"],
+    ["companyWideExpenses", "전사비"],
+    ["hqAdjustment", "본사조정"],
+    ["net", "순이익"],
+  ]) {
+    assert.match(source, new RegExp(`${key}: "${label}"`));
+  }
+
+  assert.equal((closingTable.match(/<Table>/g) ?? []).length, 2);
+  assert.match(
+    closingTable,
+    /closingStatus\.every\(\(item\) => item\.count === 0\)[\s\S]*?<TableCell colSpan=\{4\}>/,
+  );
+  const firstTableEnd = closingTable.indexOf("</Table>");
+  const missingDays = closingTable.indexOf("closingMissingDays.map");
+  assert.ok(firstTableEnd >= 0 && missingDays > firstTableEnd);
+  assert.match(closingTable, /closingMissingDays\.length > 0[\s\S]*?<Table>/);
+  assert.match(
+    closingTable.slice(firstTableEnd),
+    /<TableHead>지점<\/TableHead>[\s\S]*?<TableHead>미입력 일자<\/TableHead>[\s\S]*?<TableHead>근거<\/TableHead>/,
+  );
 });

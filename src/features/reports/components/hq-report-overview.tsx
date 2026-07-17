@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Label,
   LabelList,
   Line,
   LineChart,
@@ -82,6 +83,17 @@ const closingConfig = {
   holiday: { label: "휴무", color: "var(--chart-4)" },
 } satisfies ChartConfig;
 
+const waterfallAxisLabels: Record<string, string> = {
+  sales: "매출",
+  cogs: "원가",
+  grossProfit: "매출이익",
+  labor: "인건비",
+  storeExpenses: "지점비",
+  companyWideExpenses: "전사비",
+  hqAdjustment: "본사조정",
+  net: "순이익",
+};
+
 const rankingMetrics: Array<{
   key: ReportOverviewMetricKey;
   label: string;
@@ -104,6 +116,19 @@ function formatRankingValue(metric: ReportOverviewMetricKey, value: number) {
 
 function chartNumber(value: unknown) {
   return typeof value === "number" ? formatKrw(value) : "계산 불가";
+}
+
+function formatWaterfallAxisLabel(value: unknown) {
+  const key = String(value);
+  return waterfallAxisLabels[key] ?? key;
+}
+
+function formatWaterfallDisplayAmount(
+  step: HqReportOverviewData["profitAndLoss"]["steps"][number],
+) {
+  if (step.kind === "total") return formatSignedKrw(step.end);
+  if (step.kind === "decrease") return formatSignedKrw(-step.amount);
+  return formatSignedKrw(step.amount);
 }
 
 function DetailLink({
@@ -365,7 +390,7 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
           />
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
-            <div className="relative min-w-0">
+            <div className="min-w-0">
               <ChartContainer
                 aria-label="판매가 계획 기준 손실 유형 도넛 차트"
                 className="mx-auto h-64 w-full min-w-0"
@@ -407,6 +432,43 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
                     {report.lossBreakdown.items.map((item, index) => (
                       <Cell fill={lossColors[index]} key={item.name} />
                     ))}
+                    <Label
+                      content={({ viewBox }) => {
+                        if (
+                          !viewBox ||
+                          !("cx" in viewBox) ||
+                          !("cy" in viewBox) ||
+                          typeof viewBox.cx !== "number" ||
+                          typeof viewBox.cy !== "number"
+                        ) {
+                          return null;
+                        }
+
+                        return (
+                          <text
+                            dominantBaseline="middle"
+                            textAnchor="middle"
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                          >
+                            <tspan
+                              className="fill-muted-foreground text-[10px]"
+                              x={viewBox.cx}
+                              y={viewBox.cy - 7}
+                            >
+                              계산 가능 총액
+                            </tspan>
+                            <tspan
+                              className="fill-foreground text-xs font-semibold"
+                              dy="1.4em"
+                              x={viewBox.cx}
+                            >
+                              {formatKrw(report.lossBreakdown.totalAmount)}
+                            </tspan>
+                          </text>
+                        );
+                      }}
+                    />
                   </Pie>
                   <ChartLegend
                     content={
@@ -415,12 +477,6 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
                   />
                 </PieChart>
               </ChartContainer>
-              <div className="pointer-events-none absolute inset-x-0 top-[5.4rem] text-center">
-                <p className="text-muted-foreground text-xs">계산 가능 총액</p>
-                <p className="text-sm font-semibold tabular-nums">
-                  {formatKrw(report.lossBreakdown.totalAmount)}
-                </p>
-              </div>
             </div>
             <p className="text-muted-foreground text-xs">
               판매가 계획 기준 계산 가능 {report.lossBreakdown.computableCount}/
@@ -630,10 +686,13 @@ function ProfitAndLossChart({ report }: { report: HqReportOverviewData }) {
               >
                 <CartesianGrid vertical={false} />
                 <XAxis
-                  dataKey="label"
+                  dataKey="key"
                   tickLine={false}
                   axisLine={false}
                   interval={0}
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={formatWaterfallAxisLabel}
+                  tickMargin={8}
                 />
                 <YAxis
                   tickFormatter={(value) => formatKrw(Number(value))}
@@ -645,7 +704,7 @@ function ProfitAndLossChart({ report }: { report: HqReportOverviewData }) {
                   content={
                     <ChartTooltipContent
                       hideLabel
-                      formatter={(value, _name, item) => {
+                      formatter={(_value, _name, item) => {
                         const step =
                           item.payload as HqReportOverviewData["profitAndLoss"]["steps"][number];
                         return (
@@ -654,7 +713,7 @@ function ProfitAndLossChart({ report }: { report: HqReportOverviewData }) {
                               {step.label}
                             </span>
                             <span className="font-mono font-medium tabular-nums">
-                              {chartNumber(value)}
+                              {formatWaterfallDisplayAmount(step)}
                             </span>
                           </div>
                         );
@@ -1013,7 +1072,7 @@ function ProfitAndLossTable({ report }: { report: HqReportOverviewData }) {
                 {formatSignedKrw(step.end)}
               </TableCell>
               <TableCell className="tabular-nums">
-                {formatKrw(step.amount)}
+                {formatWaterfallDisplayAmount(step)}
               </TableCell>
               <TableCell>
                 <DetailLink href={report.profitAndLoss.detailHref} />
@@ -1051,30 +1110,51 @@ function ClosingStatusTable({ report }: { report: HqReportOverviewData }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {report.closingStatus.map((row) => (
-            <TableRow key={row.key}>
-              <TableCell>{row.label}</TableCell>
-              <TableCell className="tabular-nums">
-                {percentFormatter.format(row.ratio)}
-              </TableCell>
-              <TableCell className="tabular-nums">{row.count}건</TableCell>
-              <TableCell>
-                <DetailLink href={row.detailHref} />
-              </TableCell>
+          {report.closingStatus.every((item) => item.count === 0) ? (
+            <TableRow>
+              <TableCell colSpan={4}>표시할 마감 상태가 없습니다.</TableCell>
             </TableRow>
-          ))}
-          {report.closingMissingDays.map((row) => (
-            <TableRow key={`${row.storeId}:${row.dateInput}`}>
-              <TableCell>미입력 · {row.storeName}</TableCell>
-              <TableCell>{row.dateInput}</TableCell>
-              <TableCell>1건</TableCell>
-              <TableCell>
-                <DetailLink href={row.detailHref} />
-              </TableCell>
-            </TableRow>
-          ))}
+          ) : (
+            report.closingStatus.map((row) => (
+              <TableRow key={row.key}>
+                <TableCell>{row.label}</TableCell>
+                <TableCell className="tabular-nums">
+                  {percentFormatter.format(row.ratio)}
+                </TableCell>
+                <TableCell className="tabular-nums">{row.count}건</TableCell>
+                <TableCell>
+                  <DetailLink href={row.detailHref} />
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
+      {report.closingMissingDays.length > 0 ? (
+        <div className="mt-5 min-w-0 overflow-x-auto">
+          <p className="mb-2 text-sm font-medium">미입력 일자</p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>지점</TableHead>
+                <TableHead>미입력 일자</TableHead>
+                <TableHead>근거</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.closingMissingDays.map((row) => (
+                <TableRow key={`${row.storeId}:${row.dateInput}`}>
+                  <TableCell>{row.storeName}</TableCell>
+                  <TableCell>{row.dateInput}</TableCell>
+                  <TableCell>
+                    <DetailLink href={row.detailHref} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
     </TableCard>
   );
 }
