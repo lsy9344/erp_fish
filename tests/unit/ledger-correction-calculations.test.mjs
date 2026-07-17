@@ -376,7 +376,7 @@ test("ledger review correction overlay applies expense amount corrections to ope
     ledgerId: "ledger-1",
     reviewInput: {
       totalSalesAmount: 100000,
-      cashAmount: 40000,
+      cashAmount: 10000,
       cardAmount: 50000,
       otherPaymentAmount: 10000,
       workerCount: 4,

@@ -700,7 +700,7 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
     closedById: null,
     closedAt: null,
     totalSalesAmount: 100_000,
-    cashAmount: 40_000,
+    cashAmount: 10_000,
     cardAmount: 50_000,
     otherPaymentAmount: 10_000,
     paymentDifferenceAmount: 0,

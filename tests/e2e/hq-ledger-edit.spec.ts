@@ -159,7 +159,7 @@ async function seedEditableStoryData() {
       closingDate: getTodayKstMidnight(),
       status: "IN_REVIEW",
       totalSalesAmount: 10000,
-      cashAmount: 4000,
+      cashAmount: 3000,
       cardAmount: 6000,
       otherPaymentAmount: 0,
       workerCount: 2,
@@ -412,7 +412,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await expect(expenseTotalInput).toHaveValue("1,000원");
   await expect(expenseTotalInput).toHaveJSProperty("readOnly", true);
   await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "45000");
-  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "15000");
+  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "12000");
   await replaceKrwControlValue(salesPanel.getByLabel("카드"), "25000");
   await replaceKrwControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
   await fillHqEditReason(salesPanel, "매출 결제 원본 보완");
@@ -436,7 +436,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
     })
     .toEqual({
       totalSalesAmount: 45000,
-      cashAmount: 15000,
+      cashAmount: 12000,
       cardAmount: 25000,
       otherPaymentAmount: 5000,
     });
@@ -622,7 +622,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   });
 
   expect(savedLedger.totalSalesAmount).toBe(45000);
-  expect(savedLedger.cashAmount).toBe(15000);
+  expect(savedLedger.cashAmount).toBe(12000);
   expect(savedLedger.cardAmount).toBe(25000);
   expect(savedLedger.otherPaymentAmount).toBe(5000);
   expect(savedLedger.workerCount).toBe(5);
@@ -810,7 +810,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
     where: { id: ledger.id },
     data: {
       totalSalesAmount: 77777,
-      cashAmount: 17000,
+      cashAmount: 16000,
       cardAmount: 60000,
       otherPaymentAmount: 777,
       updatedById: actorId,
@@ -852,7 +852,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
   });
   expect(current).toEqual({
     totalSalesAmount: 77777,
-    cashAmount: 17000,
+    cashAmount: 16000,
     cardAmount: 60000,
     otherPaymentAmount: 777,
   });

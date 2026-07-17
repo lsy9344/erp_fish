@@ -201,10 +201,23 @@ async function main() {
       // 매출/결제: 추정 판매가치에 마진(약 +28%)을 얹어 매출 총액 구성.
       const margin = 1.28 + seeded(si * 7 + di) * 0.12; // 1.28~1.40
       const totalSales = Math.round((estimatedSalesValue * margin) / 1000) * 1000;
-      const cash = Math.round(totalSales * 0.35 / 1000) * 1000;
+      const grossCashAllocation = Math.round(totalSales * 0.35 / 1000) * 1000;
       const card = Math.round(totalSales * 0.55 / 1000) * 1000;
-      const other = totalSales - cash - card;
+      const other = totalSales - grossCashAllocation - card;
       const workerCount = 2 + (si % 2);
+
+      // 비용 2~3건
+      const expenseCount = 2 + (di % 2);
+      const expenseRows = Array.from({ length: expenseCount }, (_, ei) => {
+        const code = expenseCodes[ei % expenseCodes.length];
+        const amount = 10000 + Math.floor(seeded(si * 50 + di * 10 + ei) * 90000);
+        return { code, amount, memo: `${code.name} 지출` };
+      });
+      const expenseTotal = expenseRows.reduce((sum, expense) => sum + expense.amount, 0);
+      if (expenseTotal > grossCashAllocation) {
+        throw new Error(`Seed expenses exceed cash allocation for ${storeName} on ${day}`);
+      }
+      const cash = grossCashAllocation - expenseTotal;
 
       await db.dailyLedger.update({
         where: { id: ledgerId },
@@ -223,15 +236,11 @@ async function main() {
         },
       });
 
-      // 비용 2~3건
-      const expenseCount = 2 + (di % 2);
-      for (let ei = 0; ei < expenseCount; ei++) {
-        const code = expenseCodes[ei % expenseCodes.length];
-        const amt = 10000 + Math.floor(seeded(si * 50 + di * 10 + ei) * 90000);
+      for (const expense of expenseRows) {
         await db.ledgerExpense.create({
           data: {
-            dailyLedgerId: ledgerId, ledgerInputCodeId: code.id,
-            amount: amt, memo: `${code.name} 지출`,
+            dailyLedgerId: ledgerId, ledgerInputCodeId: expense.code.id,
+            amount: expense.amount, memo: expense.memo,
             createdById: smId, updatedById: smId,
           },
         });

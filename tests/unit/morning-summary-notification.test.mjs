@@ -128,7 +128,7 @@ test("ledger review summary uses COGS for gross profit (not sales minus expense)
   // 매출원가(COGS) = 6 * 5,000 = 30,000 → grossProfit = 100,000 - 30,000 = 70,000
   const summary = calculateLedgerReviewSummary({
     totalSalesAmount: 100_000,
-    cashAmount: 100_000,
+    cashAmount: 90_000,
     cardAmount: 0,
     otherPaymentAmount: 0,
     workerCount: 2,
@@ -175,7 +175,7 @@ test("ledger review summary yields negative operating profit when COGS+expense e
   // grossProfit = 2,000, operatingProfit = 2,000 - 20,000 = -18,000 (적자)
   const summary = calculateLedgerReviewSummary({
     totalSalesAmount: 50_000,
-    cashAmount: 50_000,
+    cashAmount: 30_000,
     cardAmount: 0,
     otherPaymentAmount: 0,
     workerCount: 1,

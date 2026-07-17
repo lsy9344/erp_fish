@@ -109,6 +109,46 @@ test("ledger migrations create DailyLedger, unique constraint, and version token
   );
 });
 
+test("main seed settles cash after reusing precomputed same-day expenses", () => {
+  const source = readProjectFile("scripts", "seed-main.mjs");
+  const settlementSource = source.match(
+    /\/\/ 매출\/결제:[\s\S]*?\/\/ 인건비\(직원\) 2~3명/,
+  )?.[0];
+
+  assert.ok(settlementSource, "seed settlement block should exist");
+  const expenseRowsIndex = settlementSource.indexOf("const expenseRows");
+  const expenseTotalIndex = settlementSource.indexOf("const expenseTotal");
+  const ledgerUpdateIndex = settlementSource.indexOf(
+    "await db.dailyLedger.update",
+  );
+  assert.ok(
+    expenseRowsIndex !== -1 &&
+      expenseTotalIndex > expenseRowsIndex &&
+      expenseTotalIndex < ledgerUpdateIndex,
+    "expense rows and total should be computed before the ledger update",
+  );
+  assert.match(
+    settlementSource,
+    /const expenseTotal = expenseRows\.reduce\([\s\S]*expense\.amount[\s\S]*, 0\);/,
+  );
+  assert.match(
+    settlementSource,
+    /if \(expenseTotal > grossCashAllocation\) \{[\s\S]*throw new Error\(/,
+  );
+  assert.match(
+    settlementSource,
+    /const grossCashAllocation = Math\.round\(totalSales \* 0\.35 \/ 1000\) \* 1000;[\s\S]*const cash = grossCashAllocation - expenseTotal;[\s\S]*cashAmount: cash/,
+  );
+  assert.match(
+    settlementSource,
+    /for \(const expense of expenseRows\) \{[\s\S]*ledgerInputCodeId: expense\.code\.id[\s\S]*amount: expense\.amount/,
+  );
+  assert.doesNotMatch(
+    settlementSource,
+    /Math\.max\(0,\s*grossCashAllocation - expenseTotal\)/,
+  );
+});
+
 test("ledger amount calculation helper validates payment difference", async () => {
   const calculatorPath = assertProjectFile(
     "src",
