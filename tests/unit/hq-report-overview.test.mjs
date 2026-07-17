@@ -13,6 +13,9 @@ function readProjectFile(...segments) {
 
 test("ledger profit summaries retain the saved loss price basis", () => {
   const source = readProjectFile("src", "features", "reports", "queries.ts");
+  const ledgerProfitSummaryStart = source.indexOf(
+    "export type LedgerProfitSummary",
+  );
   const rangeQueryStart = source.indexOf(
     "export async function getLedgerProfitSummariesForRange",
   );
@@ -21,22 +24,28 @@ test("ledger profit summaries retain the saved loss price basis", () => {
     rangeQueryStart,
   );
 
+  assert.notEqual(ledgerProfitSummaryStart, -1);
   assert.notEqual(rangeQueryStart, -1);
   assert.notEqual(rangeQueryEnd, -1);
 
+  const ledgerProfitSummarySource = source.slice(
+    ledgerProfitSummaryStart,
+    rangeQueryStart,
+  );
   const rangeQuerySource = source.slice(rangeQueryStart, rangeQueryEnd);
 
   assert.match(
     source,
     /type\s+ReportLedgerRecord\s*=\s*\{[\s\S]*?ledgerLossItems:\s*\{[\s\S]*?usedPlannedPrice\?:\s*boolean;[\s\S]*?\}\[\];[\s\S]*?\};/,
   );
+  assert.match(ledgerProfitSummarySource, /status:\s*DailyLedgerStatus;/);
   assert.match(
-    source,
-    /export\s+type\s+LedgerProfitSummary\s*=\s*\{[\s\S]*?status:\s*DailyLedgerStatus;/,
+    ledgerProfitSummarySource,
+    /lossItems:\s*Array<\{\s*id\?:\s*string;\s*lossTypeName:\s*string;\s*quantity:\s*number;\s*amount:\s*number;\s*usedPlannedPrice:\s*boolean;\s*\}>;/,
   );
   assert.match(
-    source,
-    /export\s+type\s+LedgerProfitSummary\s*=\s*\{[\s\S]*?lossItems:\s*Array<\{\s*id\?:\s*string;\s*lossTypeName:\s*string;\s*quantity:\s*number;\s*amount:\s*number;\s*usedPlannedPrice:\s*boolean;\s*\}>;[\s\S]*?hasUnappliedCorrections:\s*boolean;/,
+    ledgerProfitSummarySource,
+    /hasUnappliedCorrections:\s*boolean;/,
   );
   assert.match(
     rangeQuerySource,
