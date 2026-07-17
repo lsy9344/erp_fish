@@ -246,7 +246,12 @@ test("overview includes company-wide costs only for all-store headquarters scope
 
   assert.match(
     query,
-    /buildMonthlyProfitAndLoss\(\{[\s\S]*?includeCompanyWide:\s*scope\.mode\s*===\s*"ALL_STORES"\s*&&\s*!selectedStore/,
+    /const\s+companyWideCostsIncluded\s*=\s*scope\.mode\s*===\s*"ALL_STORES"\s*&&\s*normalizedStoreId\s*===\s*null/,
+  );
+  assert.match(query, /includeCompanyWide:\s*companyWideCostsIncluded/);
+  assert.match(
+    query,
+    /buildHqReportOverviewForTest\(\{[\s\S]*?companyWideCostsIncluded/,
   );
 });
 
@@ -405,6 +410,37 @@ test("overview loss donut keeps four types and excludes missing price bases", as
   assert.equal(report.lossBreakdown.totalCount, 5);
   assert.equal(report.lossBreakdown.uncomputableCount, 1);
   assert.match(report.lossBreakdown.detailHref, /month=2026-06/);
+});
+
+test("overview loss donut keeps zero-amount coverage but renders an empty state", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    selectedStoreId: null,
+    currentLedgers: [
+      ledger({
+        lossItems: [
+          lossItem("1", "폐기", 0),
+          lossItem("2", "파손", 0),
+        ],
+      }),
+    ],
+    previousLedgers: [],
+    statusRows: [status("store-1", "2026-06-01", "HEADQUARTERS_CLOSED")],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.deepEqual(report.lossBreakdown.items, []);
+  assert.equal(report.lossBreakdown.totalAmount, 0);
+  assert.equal(report.lossBreakdown.computableCount, 2);
+  assert.equal(report.lossBreakdown.totalCount, 2);
+  assert.match(report.chartSummaries.lossBreakdown, /손실 금액이 없/);
+  assert.doesNotMatch(report.chartSummaries.lossBreakdown, /가장 크/);
 });
 
 test("overview loss donut groups five usable types as top three plus other", async () => {
@@ -745,6 +781,7 @@ test("overview waterfall includes company-wide costs as a separate step", async 
   const waterfall = buildProfitAndLossWaterfallForTest({
     ledgers: [ledger({ totalSales: 1_000, grossProfit: 400 })],
     coverageComplete: true,
+    companyWideCostsIncluded: true,
     rows: [
       pnlRow({
         salesAmount: 1_000,
@@ -796,6 +833,7 @@ test("overview waterfall includes company-wide costs as a separate step", async 
   const zeroCompanyWide = buildProfitAndLossWaterfallForTest({
     ledgers: [ledger({ totalSales: 1_000, grossProfit: 400 })],
     coverageComplete: true,
+    companyWideCostsIncluded: true,
     rows: [
       pnlRow({
         salesAmount: 1_000,
@@ -818,6 +856,7 @@ test("overview waterfall includes company-wide costs as a separate step", async 
   const selectedStore = buildHqReportOverviewForTest({
     monthRange: monthRange(),
     stores: [{ id: "store-1", name: "강남점" }],
+    companyWideCostsIncluded: false,
     selectedStoreId: "store-1",
     currentLedgers: [ledger({ totalSales: 1_000, grossProfit: 400 })],
     previousLedgers: [],
@@ -844,6 +883,43 @@ test("overview waterfall includes company-wide costs as a separate step", async 
     false,
   );
   assert.match(selectedStore.profitAndLoss.detailHref, /storeId=store-1/);
+});
+
+test("assigned-store overview marks company-wide costs excluded and omits the step", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    companyWideCostsIncluded: false,
+    selectedStoreId: null,
+    currentLedgers: [ledger({ totalSales: 1_000, grossProfit: 400 })],
+    previousLedgers: [],
+    statusRows: [status("store-1", "2026-06-01", "HEADQUARTERS_CLOSED")],
+    pnlRows: [
+      pnlRow({
+        salesAmount: 1_000,
+        cogsAmount: 600,
+        grossProfit: 400,
+        laborAmount: 50,
+        fixedCosts: { 월세: 20 },
+        otherExpenseAmount: 10,
+        netAmount: 320,
+      }),
+    ],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.equal(report.profitAndLoss.companyWideCostsIncluded, false);
+  assert.equal(
+    report.profitAndLoss.steps.some(
+      (step) => step.key === "companyWideExpenses",
+    ),
+    false,
+  );
+  assert.match(report.chartSummaries.profitAndLoss, /전사 공통 비용.*제외/);
 });
 
 test("overview actions filter by selected store, use dashboard state, and keep detail links", async () => {

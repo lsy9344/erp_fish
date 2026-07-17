@@ -79,6 +79,7 @@ export type HqReportOverviewData = {
   profitAndLoss: {
     available: boolean;
     reason: string | null;
+    companyWideCostsIncluded: boolean;
     steps: Array<{
       key: string;
       label: string;
@@ -274,6 +275,7 @@ export function buildProfitAndLossWaterfallForTest(input: {
   ledgers: LedgerProfitSummary[];
   rows: MonthlyProfitAndLossRow[];
   coverageComplete: boolean;
+  companyWideCostsIncluded: boolean;
 }): HqReportOverviewData["profitAndLoss"] {
   const monthInput = input.rows[0]?.monthInput ?? "";
   const detailHref = monthlyHref(monthInput);
@@ -300,6 +302,7 @@ export function buildProfitAndLossWaterfallForTest(input: {
     return {
       available: false,
       reason: "모든 영업일의 FIFO 매출이익이 계산되어야 합니다.",
+      companyWideCostsIncluded: input.companyWideCostsIncluded,
       steps: [],
       detailHref,
     };
@@ -343,6 +346,9 @@ export function buildProfitAndLossWaterfallForTest(input: {
     ["companyWideExpenses", "전사 공통 비용", companyWideExpenses],
     ["hqAdjustment", "본사조정", hqAdjustment],
   ] as Array<[string, string, number]>) {
+    if (key === "companyWideExpenses" && !input.companyWideCostsIncluded) {
+      continue;
+    }
     const start = running;
     running -= amount;
     steps.push(
@@ -358,7 +364,13 @@ export function buildProfitAndLossWaterfallForTest(input: {
 
   steps.push(waterfallStep("net", "순이익", 0, net, "total"));
 
-  return { available: true, reason: null, steps, detailHref };
+  return {
+    available: true,
+    reason: null,
+    companyWideCostsIncluded: input.companyWideCostsIncluded,
+    steps,
+    detailHref,
+  };
 }
 
 function ledgersByStoreAndDate(ledgers: LedgerProfitSummary[]) {
@@ -428,9 +440,10 @@ function buildLossBreakdown(
 ): HqReportOverviewData["lossBreakdown"] {
   const allLossItems = ledgers.flatMap((ledger) => ledger.lossItems);
   const usableLossItems = allLossItems.filter((item) => item.usedPlannedPrice);
+  const positiveLossItems = usableLossItems.filter((item) => item.amount > 0);
   const groupedLosses = new Map<string, number>();
 
-  for (const item of usableLossItems) {
+  for (const item of positiveLossItems) {
     const name = item.lossTypeName.trim() || "유형 미지정";
     groupedLosses.set(name, (groupedLosses.get(name) ?? 0) + item.amount);
   }
@@ -454,7 +467,7 @@ function buildLossBreakdown(
               .reduce((sum, item) => sum + item.amount, 0),
           },
         ];
-  const totalAmount = usableLossItems.reduce(
+  const totalAmount = positiveLossItems.reduce(
     (sum, item) => sum + item.amount,
     0,
   );
@@ -689,6 +702,7 @@ export function buildHqReportOverviewForTest(input: {
   monthRange: MonthlyClosingAnomalyReportMonthRange;
   stores: Array<{ id: string; name: string }>;
   calculationStoreIds?: string[];
+  companyWideCostsIncluded: boolean;
   selectedStoreId: string | null;
   currentLedgers: LedgerProfitSummary[];
   previousLedgers: LedgerProfitSummary[];
@@ -792,18 +806,16 @@ export function buildHqReportOverviewForTest(input: {
       (!input.selectedStoreId &&
         row.storeId === MONTHLY_PNL_COMPANY_WIDE_STORE_ID),
   );
+  const companyWideCostsIncluded =
+    input.companyWideCostsIncluded && !input.selectedStoreId;
   const profitAndLossResult = buildProfitAndLossWaterfallForTest({
     ledgers: currentLedgers,
     rows: pnlRows,
     coverageComplete,
+    companyWideCostsIncluded,
   });
   const profitAndLoss = {
     ...profitAndLossResult,
-    steps: input.selectedStoreId
-      ? profitAndLossResult.steps.filter(
-          (step) => step.key !== "companyWideExpenses",
-        )
-      : profitAndLossResult.steps,
     detailHref: monthlyHref(input.monthRange.monthInput, input.selectedStoreId),
   };
   const rankings = buildRankings({
@@ -872,7 +884,11 @@ export function buildHqReportOverviewForTest(input: {
           : `손실 금액이 없으며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`,
       profitAndLoss:
         profitAndLoss.available && netAmount !== null
-          ? `순이익은 ${netAmount}원입니다.`
+          ? `순이익은 ${netAmount}원입니다.${
+              profitAndLoss.companyWideCostsIncluded
+                ? ""
+                : " 전사 공통 비용은 제외되었습니다."
+            }`
           : (profitAndLoss.reason ?? "손익을 계산할 수 없습니다."),
       closingStatus: `미입력은 ${missingCount}건입니다.`,
     },
@@ -889,7 +905,11 @@ export function buildHqReportOverviewForTest(input: {
         ? `판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`
         : `월 범위 미완전 · 일부 장부 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`,
       profitAndLossLabel: profitAndLoss.available
-        ? "FIFO 손익 계산 완료"
+        ? `FIFO 손익 계산 완료${
+            profitAndLoss.companyWideCostsIncluded
+              ? ""
+              : " · 전사 공통 비용 제외"
+          }`
         : (profitAndLoss.reason ?? "손익 계산 불가"),
     },
     errorMessages: input.errorMessages,
@@ -922,6 +942,8 @@ export async function getHqReportOverview({
     ? (scope.stores.find((store) => store.id === normalizedStoreId) ?? null)
     : null;
   const selectedStoreId = selectedStore?.id ?? null;
+  const companyWideCostsIncluded =
+    scope.mode === "ALL_STORES" && normalizedStoreId === null;
   const selectedStores = normalizedStoreId
     ? selectedStore
       ? [selectedStore]
@@ -943,6 +965,7 @@ export async function getHqReportOverview({
       monthRange,
       stores: scope.stores,
       calculationStoreIds: [],
+      companyWideCostsIncluded,
       selectedStoreId,
       currentLedgers: [],
       previousLedgers: [],
@@ -964,6 +987,7 @@ export async function getHqReportOverview({
       monthRange,
       stores: scope.stores,
       calculationStoreIds: [],
+      companyWideCostsIncluded,
       selectedStoreId,
       currentLedgers: [],
       previousLedgers: [],
@@ -991,7 +1015,7 @@ export async function getHqReportOverview({
     buildMonthlyProfitAndLoss({
       month: monthRange.monthInput,
       storeId: selectedStoreId,
-      includeCompanyWide: scope.mode === "ALL_STORES" && !selectedStore,
+      includeCompanyWide: companyWideCostsIncluded,
     }),
     getHqDashboardRows({
       datePreset: "today",
@@ -1013,6 +1037,7 @@ export async function getHqReportOverview({
   return buildHqReportOverviewForTest({
     monthRange,
     stores: scope.stores,
+    companyWideCostsIncluded,
     selectedStoreId,
     currentLedgers: [...currentMap.values()],
     previousLedgers: [...previousMap.values()],
