@@ -341,9 +341,7 @@ test("stored decimal quantity resolution requires matching identity and consumes
   assert.deepEqual(overflowAmountResult, {
     ok: false,
     fieldErrors: {
-      "purchases.4.quantity": [
-        "매입금액은 저장 가능한 범위 이하여야 합니다.",
-      ],
+      "purchases.4.quantity": ["매입금액은 저장 가능한 범위 이하여야 합니다."],
     },
   });
   assert.deepEqual(
