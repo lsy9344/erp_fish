@@ -5,17 +5,25 @@ export const lossTerms = {
   // 항목 라벨
   product: "품목",
   lossType: "처리 유형",
-  quantity: "수량",
-  recoveredAmount: "실제 판매/회수액(원)",
+  quantity: "박스단위 수량",
+  quantityHelp:
+    "한 박스 100마리 중 10마리를 폐기하면 0.1, 한 박스 10바구니 중 2바구니를 폐기하면 0.2로 입력하세요.",
+  recoveredAmount: "떨이로 실제 판매한 금액",
   reason: "사유/특이사항",
 
   // 합계/요약
-  totalLossQuantity: "총 손실 수량",
+  totalLossQuantity: "총 박스단위 손실 수량",
   totalLossAmount: "총 손실액",
 
   // 도움말/검증 문구
   recoveredAmountHelp:
-    "손실액은 개점 전 판매가 계획에서 이 금액을 뺀 값으로 자동 계산됩니다.",
+    "손실액은 개점 전 판매가 계획에서 떨이로 실제 판매한 금액을 뺀 값으로 자동 계산됩니다.",
+  quantityInvalid:
+    "박스단위 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+  recoveredAmountInvalid:
+    "떨이로 실제 판매한 금액은 0원 이상의 정수여야 합니다.",
+  positiveValueRequired:
+    "박스단위 수량 또는 떨이로 실제 판매한 금액 중 하나는 0보다 커야 합니다.",
   reasonRequired: "사유/특이사항을 입력해 주세요.",
   noOptions: "선택 가능한 active 품목 또는 active 손실 유형이 없습니다.",
 } as const;

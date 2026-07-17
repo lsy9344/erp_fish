@@ -416,11 +416,11 @@ export function LossStepClient({
         errorMessage={formError}
         successMessage={resultMessage}
         unsavedFields={[
-          "손실 품목",
-          "손실 유형",
-          "수량",
-          "실제 판매/회수액",
-          "사유",
+          lossTerms.product,
+          lossTerms.lossType,
+          lossTerms.quantity,
+          lossTerms.recoveredAmount,
+          lossTerms.reason,
         ]}
         onRetry={handleRetry}
         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
@@ -471,7 +471,9 @@ export function LossStepClient({
               <Badge key={candidate.productId} variant="secondary">
                 기준 초과 {candidate.productName}{" "}
                 {formatQuantityValue(candidate.quantity)} ·{" "}
-                {"amount" in candidate ? formatKrw(candidate.amount) : "수량"}
+                {"amount" in candidate
+                  ? formatKrw(candidate.amount)
+                  : lossTerms.quantity}
               </Badge>
             ))}
           </div>
@@ -521,6 +523,7 @@ export function LossStepClient({
                 const recoveredAmountError =
                   fieldErrors[`losses.${index}.recoveredAmount`]?.[0];
                 const reasonError = fieldErrors[`losses.${index}.reason`]?.[0];
+                const quantityDescriptionId = `loss-quantity-${item.clientKey}-description`;
                 const recoveredAmountDescriptionId = `loss-recovered-${item.clientKey}-description`;
                 const productActive = data.productOptions.some(
                   (option) => option.id === item.productId,
@@ -681,12 +684,18 @@ export function LossStepClient({
                           disabled={isSaving || isOriginalEditBlocked}
                           className="min-h-11 tabular-nums"
                           aria-invalid={Boolean(quantityError)}
-                          aria-describedby={
+                          aria-describedby={[
+                            quantityDescriptionId,
                             quantityError
                               ? `loss-quantity-${item.clientKey}-error`
-                              : undefined
-                          }
+                              : undefined,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                         />
+                        <FieldDescription id={quantityDescriptionId}>
+                          {lossTerms.quantityHelp}
+                        </FieldDescription>
                         {quantityError ? (
                           <FieldError
                             id={`loss-quantity-${item.clientKey}-error`}

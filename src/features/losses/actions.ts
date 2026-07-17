@@ -27,6 +27,7 @@ import {
 } from "./schemas";
 import { getLossStepDataInTx, toStoreManagerLossStepData } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
+import { lossTerms } from "./terms";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 import {
   getLedgerConflictMetaInTx,
@@ -87,7 +88,7 @@ function toLossConflictValues(data: StoreManagerLossStepData) {
   return Object.fromEntries(
     data.lossItems.map((item, index) => [
       `손실 ${index + 1}`,
-      `${item.productName} / ${item.lossTypeName} / ${item.quantity}개 / ${item.reason}`,
+      `${item.productName} / ${item.lossTypeName} / ${lossTerms.quantity} ${item.quantity}개 / ${lossTerms.recoveredAmount} ${item.recoveredAmount}원 / ${item.reason}`,
     ]),
   );
 }
@@ -96,7 +97,7 @@ function toLossClientValues(input: LedgerLossesInput) {
   return Object.fromEntries(
     input.losses.map((item, index) => [
       `손실 ${index + 1}`,
-      `${item.productId} / ${item.ledgerInputCodeId} / ${item.quantity}개 / ${item.reason}`,
+      `${item.productId} / ${item.ledgerInputCodeId} / ${lossTerms.quantity} ${item.quantity}개 / ${lossTerms.recoveredAmount} ${item.recoveredAmount}원 / ${item.reason}`,
     ]),
   );
 }
@@ -327,9 +328,7 @@ export async function saveLedgerLosses(
             "VALIDATION_ERROR",
             "입력값을 확인해 주세요.",
             {
-              [`losses.${index}.quantity`]: [
-                "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
-              ],
+              [`losses.${index}.quantity`]: [lossTerms.quantityInvalid],
             },
           );
         }
