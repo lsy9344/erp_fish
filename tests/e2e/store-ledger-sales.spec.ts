@@ -13,6 +13,7 @@ import {
 
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
+const SALES_EXPENSE_CODE_NAME = "매출 E2E 지출";
 
 // WO-A(2026-06-22): 지점장 저장/제출 서버 액션이 KST 오늘 날짜만 허용하므로,
 // 하드코딩 과거 날짜 대신 동적 KST 오늘 날짜를 사용한다.
@@ -58,10 +59,16 @@ type LoginDiagnostics = {
 
 test.beforeEach(async () => {
   await cleanupSelectedLedger();
+  await prisma.ledgerInputCode.deleteMany({
+    where: { group: "EXPENSE_ITEM", name: SALES_EXPENSE_CODE_NAME },
+  });
 });
 
 test.afterAll(async () => {
   await cleanupSelectedLedger();
+  await prisma.ledgerInputCode.deleteMany({
+    where: { group: "EXPENSE_ITEM", name: SALES_EXPENSE_CODE_NAME },
+  });
   await prisma.$disconnect();
 });
 
@@ -597,8 +604,12 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
       where: { email: "manager@example.com" },
       select: { id: true },
     }),
-    prisma.ledgerInputCode.findFirstOrThrow({
-      where: { group: "EXPENSE_ITEM", isActive: true },
+    prisma.ledgerInputCode.create({
+      data: {
+        group: "EXPENSE_ITEM",
+        name: SALES_EXPENSE_CODE_NAME,
+        displayOrder: 1,
+      },
       select: { id: true },
     }),
   ]);

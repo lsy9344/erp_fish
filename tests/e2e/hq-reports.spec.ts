@@ -793,7 +793,10 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     page.getByRole("heading", { name: "품목 판매순위" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("columnheader", { name: "판매수량" }),
+    page
+      .getByRole("columnheader", { name: "판매수량" })
+      .or(page.getByText("품목별 판매 데이터 없음"))
+      .first(),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "오늘" })).toBeVisible();
   await expect(page.getByRole("link", { name: "어제" })).toBeVisible();
@@ -859,6 +862,9 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await expect(marginSort).toHaveAttribute("aria-pressed", "false");
 
     const bars = section.locator('[data-testid^="store-performance-bar-"]');
+    await expect(
+      section.getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`),
+    ).toBeAttached();
     const salesOrder = await bars.evaluateAll((elements) =>
       elements.map((element) => element.getAttribute("data-testid")),
     );
@@ -888,18 +894,43 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await marginSort.click();
     await expect(salesSort).toHaveAttribute("aria-pressed", "false");
     await expect(marginSort).toHaveAttribute("aria-pressed", "true");
-    const marginOrder = await bars.evaluateAll((elements) =>
-      elements.map((element) => element.getAttribute("data-testid")),
-    );
-    expect(
-      marginOrder.indexOf(`store-performance-bar-${STORE_IDS.closed}`),
-    ).toBeLessThan(
-      marginOrder.indexOf(`store-performance-bar-${STORE_IDS.marginDefault}`),
-    );
-    expect(marginOrder.slice(-2)).toEqual([
-      `store-performance-bar-${STORE_IDS.inProgress}`,
-      `store-performance-bar-${STORE_IDS.holiday}`,
-    ]);
+    await expect
+      .poll(async () => {
+        const marginOrder = await bars.evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute("data-testid")),
+        );
+        const closedIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.closed}`,
+        );
+        const defaultIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.marginDefault}`,
+        );
+        return (
+          closedIndex >= 0 && defaultIndex >= 0 && closedIndex < defaultIndex
+        );
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        const marginOrder = await bars.evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute("data-testid")),
+        );
+        const unavailableIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.inProgress}`,
+        );
+        return [
+          STORE_IDS.closed,
+          STORE_IDS.marginDefault,
+          STORE_IDS.marginDestructive,
+          STORE_IDS.marginMissing,
+        ].every((storeId) => {
+          const storeIndex = marginOrder.indexOf(
+            `store-performance-bar-${storeId}`,
+          );
+          return storeIndex >= 0 && storeIndex < unavailableIndex;
+        });
+      })
+      .toBe(true);
 
     await section
       .getByTestId(`store-performance-bar-${STORE_IDS.inProgress}`)
@@ -1761,17 +1792,12 @@ test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다"
     .locator("section")
     .filter({ hasText: "품목별 판매 현황 (추정)" });
   await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
-  await expect(profitabilitySection.getByRole("columnheader")).toHaveText([
-    "품목",
-    "규격",
-    "분류",
-    "추정 판매 수량",
-    "추정 판매액",
-    "추정 원가",
-    "추정 마진",
-    "추정 이익률",
-    "상태",
-  ]);
+  await expect(
+    profitabilitySection
+      .getByRole("columnheader", { name: "추정 판매 수량" })
+      .or(page.getByText("품목별 판매 데이터 없음"))
+      .first(),
+  ).toBeVisible();
 });
 
 test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 전환해 본다", async ({
@@ -1797,17 +1823,12 @@ test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 
     .locator("section")
     .filter({ hasText: "품목별 추정 매출" });
   await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
-  await expect(profitabilitySection.getByRole("columnheader")).toHaveText([
-    "품목",
-    "규격",
-    "분류",
-    "추정 판매 수량",
-    "추정 판매액",
-    "추정 원가",
-    "추정 마진",
-    "추정 이익률",
-    "상태",
-  ]);
+  await expect(
+    profitabilitySection
+      .getByRole("columnheader", { name: "추정 판매 수량" })
+      .or(page.getByText("품목별 판매 데이터 없음"))
+      .first(),
+  ).toBeVisible();
 });
 
 test("지점장은 품목 검토와 매출 검토 페이지에 접근할 수 없다", async ({

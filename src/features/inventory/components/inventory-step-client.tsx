@@ -303,6 +303,8 @@ export function InventoryStepClient({
     {},
   );
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pendingFocusTargetRef = useRef<InventoryErrorFocusTarget | null>(null);
+  const pendingFocusOriginRef = useRef<Element | null>(null);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [data, setData] = useState(initialData);
@@ -430,16 +432,56 @@ export function InventoryStepClient({
       category,
       Math.floor(Math.max(0, categoryIndex) / ROW_PAGE_SIZE) + 1,
     );
-    window.setTimeout(() => {
-      const refs =
-        target.field === "reason"
-          ? reasonRefs
-          : target.field === "unitPrice"
-            ? manualUnitPriceRefs
-            : currentQuantityRefs;
-      refs.current[target.productId]?.focus();
-    }, 0);
+    pendingFocusTargetRef.current = target;
+    pendingFocusOriginRef.current = document.activeElement;
   }
+
+  useEffect(() => {
+    const target = pendingFocusTargetRef.current;
+
+    if (!target || isSaving) {
+      return;
+    }
+
+    const refs =
+      target.field === "reason"
+        ? reasonRefs
+        : target.field === "unitPrice"
+          ? manualUnitPriceRefs
+          : currentQuantityRefs;
+    const input = refs.current[target.productId];
+    const activeElement = document.activeElement;
+
+    if (
+      input &&
+      !input.disabled &&
+      (activeElement === document.body ||
+        activeElement === pendingFocusOriginRef.current ||
+        activeElement === input)
+    ) {
+      input.focus();
+    }
+
+    window.setTimeout(() => {
+      const currentInput = refs.current[target.productId];
+      const activeElement = document.activeElement;
+
+      if (pendingFocusTargetRef.current === target) {
+        if (
+          currentInput &&
+          !currentInput.disabled &&
+          (activeElement === document.body ||
+            activeElement === pendingFocusOriginRef.current ||
+            activeElement === input)
+        ) {
+          currentInput.focus();
+        }
+
+        pendingFocusTargetRef.current = null;
+        pendingFocusOriginRef.current = null;
+      }
+    }, 250);
+  }, [activeCategory, adjustmentErrors, fieldErrors, isSaving, pageByCategory]);
 
   function focusFirstError(errors: FieldErrors) {
     for (let index = 0; index < items.length; index += 1) {
@@ -695,6 +737,8 @@ export function InventoryStepClient({
       setData(result.data);
       setItems(toLineState(result.data));
       setAddedManualIds(new Set());
+      pendingFocusTargetRef.current = null;
+      pendingFocusOriginRef.current = null;
       notifyLedgerUpdated(result.data.id, result.data.updatedAt);
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
@@ -722,6 +766,8 @@ export function InventoryStepClient({
   }
 
   function updateCurrentQuantity(productId: string, value: string) {
+    pendingFocusTargetRef.current = null;
+    pendingFocusOriginRef.current = null;
     setFieldErrors({});
     setFormError(null);
     setAdjustmentErrors({});
@@ -736,6 +782,8 @@ export function InventoryStepClient({
   }
 
   function updateManualUnitPrice(productId: string, value: string) {
+    pendingFocusTargetRef.current = null;
+    pendingFocusOriginRef.current = null;
     setFieldErrors({});
     setFormError(null);
     setItems((current) =>
@@ -779,6 +827,8 @@ export function InventoryStepClient({
   }
 
   function updateAdjustmentReason(productId: string, value: string) {
+    pendingFocusTargetRef.current = null;
+    pendingFocusOriginRef.current = null;
     setAdjustmentErrors((current) => {
       const next = { ...current };
       delete next[productId];
