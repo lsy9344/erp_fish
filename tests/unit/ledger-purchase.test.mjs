@@ -987,6 +987,22 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /7단계 추정 매출에 쓰는 판매 예정가입니다\./);
   assert.match(componentSource, /showSalesPricePlan/);
   assert.match(componentSource, /plannedUnitPrice/);
+  const authorSectionStart = componentSource.indexOf(
+    "{showAuthorDisplayName ? (",
+  );
+  const authorSectionSource = componentSource.slice(
+    authorSectionStart,
+    componentSource.indexOf("</section>", authorSectionStart),
+  );
+  assert.match(
+    authorSectionSource,
+    /<section className="border-primary\/30 bg-primary\/5 text-card-foreground rounded-lg border p-4">/,
+  );
+  assert.match(
+    authorSectionSource,
+    /aria-invalid=\{Boolean\(authorDisplayNameError\)\}/,
+  );
+  assert.match(authorSectionSource, /readOnly=\{isAuthorLocked\}/);
 
   const hqDetailSource = readProjectFile(
     "src",
