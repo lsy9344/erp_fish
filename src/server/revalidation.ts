@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 
 const dashboardAndReportPaths = [
   "/app/dashboard",
+  "/app/reports/overview",
   "/app/reports/daily",
   "/app/reports/comparison",
   "/app/reports/monthly",

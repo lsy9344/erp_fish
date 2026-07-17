@@ -32,6 +32,7 @@ test("shared revalidation helper owns dashboard, report, store-entry, detail, an
 
   for (const route of [
     "/app/dashboard",
+    "/app/reports/overview",
     "/app/reports/daily",
     "/app/reports/comparison",
     "/app/reports/monthly",

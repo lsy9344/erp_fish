@@ -116,6 +116,39 @@ function functionSource(source, name) {
   return source.slice(start, next === -1 ? source.length : next);
 }
 
+test("overview page is the report entry and uses server authorization", () => {
+  const page = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "overview",
+    "page.tsx",
+  );
+  const loading = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "overview",
+    "loading.tsx",
+  );
+  const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
+  const revalidation = readProjectFile("src", "server", "revalidation.ts");
+
+  assert.match(page, /requireReportAccess\(/);
+  assert.match(page, /hasActionPermission\(/);
+  assert.match(page, /PermissionAction\.EXPORT_CREATE/);
+  assert.match(page, /getHqReportOverview\(/);
+  assert.match(page, /HqReportOverview/);
+  assert.match(page, /type="month"/);
+  assert.match(page, /전체 지점/);
+  assert.match(page, /report=comparison/);
+  assert.match(loading, /Skeleton/);
+  assert.match(sidebar, /href:\s*"\/app\/reports\/overview"/);
+  assert.match(revalidation, /"\/app\/reports\/overview"/);
+});
+
 test("overview query enforces report access and headquarters store scope", () => {
   const source = readProjectFile("src", "features", "reports", "overview.ts");
 

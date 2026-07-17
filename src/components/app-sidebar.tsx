@@ -26,7 +26,7 @@ const headquartersNavigationItems = [
   },
   {
     label: "리포트",
-    href: "/app/reports/daily",
+    href: "/app/reports/overview",
     icon: "reports",
     requiredAction: PermissionAction.REPORT_VIEW,
   },
