@@ -914,13 +914,43 @@ test("ledger sync publishes and replays complete metadata snapshots", () => {
   assert.match(source, /new Map<string,\s*LedgerUpdatedSnapshot>\(\)/);
   assert.match(
     source,
-    /notifyLedgerUpdated\(snapshot:\s*LedgerUpdatedSnapshot\)[\s\S]*\.set\(snapshot\.id,\s*snapshot\)[\s\S]*detail:\s*snapshot/,
-  );
-  assert.match(
-    source,
     /useLedgerSync\([\s\S]*onSnapshot:\s*\(snapshot:\s*LedgerUpdatedSnapshot\)\s*=>\s*void[\s\S]*onSnapshotRef\.current\(latestSnapshot\)[\s\S]*onSnapshotRef\.current\(detail\)/,
   );
   assert.doesNotMatch(source, /useLedgerUpdatedAtSync/);
+});
+
+test("ledger notifications strip unrelated action response fields", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-updated-at-sync.ts",
+  );
+
+  assert.match(
+    source,
+    /notifyLedgerUpdated\(snapshot:\s*LedgerUpdatedSnapshot\)[\s\S]*const normalizedSnapshot:\s*LedgerUpdatedSnapshot\s*=\s*\{\s*id:\s*snapshot\.id,\s*updatedAt:\s*snapshot\.updatedAt,\s*version:\s*snapshot\.version,\s*\.\.\.\(snapshot\.expenseTotal\s*!==\s*undefined\s*\?\s*\{\s*expenseTotal:\s*snapshot\.expenseTotal\s*\}\s*:\s*\{\s*\}\),\s*\};[\s\S]*latestLedgerSnapshot\.set\(normalizedSnapshot\.id,\s*normalizedSnapshot\)[\s\S]*detail:\s*normalizedSnapshot/,
+  );
+  assert.doesNotMatch(
+    source,
+    /latestLedgerSnapshot\.set\(snapshot\.id,\s*snapshot\)/,
+  );
+});
+
+test("ledger notifications ignore versions older than the cached snapshot", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-updated-at-sync.ts",
+  );
+
+  assert.match(
+    source,
+    /const previous\s*=\s*latestLedgerSnapshot\.get\(snapshot\.id\)[\s\S]*if\s*\(previous\s*&&\s*snapshot\.version\s*<\s*previous\.version\)\s*\{\s*return;\s*\}[\s\S]*latestLedgerSnapshot\.set/,
+  );
 });
 
 test("cost tabs merge synchronized metadata without replacing drafts", () => {

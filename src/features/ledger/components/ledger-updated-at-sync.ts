@@ -14,11 +14,26 @@ export type LedgerUpdatedSnapshot = {
 };
 
 export function notifyLedgerUpdated(snapshot: LedgerUpdatedSnapshot) {
-  latestLedgerSnapshot.set(snapshot.id, snapshot);
+  const previous = latestLedgerSnapshot.get(snapshot.id);
+
+  if (previous && snapshot.version < previous.version) {
+    return;
+  }
+
+  const normalizedSnapshot: LedgerUpdatedSnapshot = {
+    id: snapshot.id,
+    updatedAt: snapshot.updatedAt,
+    version: snapshot.version,
+    ...(snapshot.expenseTotal !== undefined
+      ? { expenseTotal: snapshot.expenseTotal }
+      : {}),
+  };
+
+  latestLedgerSnapshot.set(normalizedSnapshot.id, normalizedSnapshot);
 
   window.dispatchEvent(
     new CustomEvent<LedgerUpdatedSnapshot>(LEDGER_UPDATED_EVENT, {
-      detail: snapshot,
+      detail: normalizedSnapshot,
     }),
   );
 }
