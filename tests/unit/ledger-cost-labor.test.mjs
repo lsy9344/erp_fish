@@ -917,7 +917,9 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     hqPageSource,
     /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
   );
-  assert.match(hqClosePreflightSource, /expenseTotal:\s*"지출 합계"/);
+  assert.match(hqClosePreflightSource, /paymentTotal:\s*"현금·카드·기타 합계"/);
+  assert.match(hqClosePreflightSource, /expenseTotal:\s*"4단계 지출 합계"/);
+  assert.match(hqClosePreflightSource, /paymentDifference:\s*"마감 정산 차액"/);
 });
 
 test("cost and work migration exists and defines required schema objects", () => {

@@ -67,12 +67,12 @@ function getWarnings(
     return [
       {
         id: "payment-difference-unavailable",
-        label: "결제 차액 계산 상태 확인",
+        label: "마감 정산 차액 계산 상태 확인",
         detail:
           paymentDifference.reason ??
           paymentDifference.label ??
           paymentDifference.unavailableReason ??
-          "결제 차액을 계산할 수 없습니다.",
+          "마감 정산 차액을 계산할 수 없습니다.",
       },
     ];
   }
@@ -84,8 +84,9 @@ function getWarnings(
   return [
     {
       id: "payment-difference",
-      label: "결제 합계 불일치",
-      detail: "총매출과 결제수단 합계가 다릅니다. 제출을 막지는 않습니다.",
+      label: "마감 정산 불일치",
+      detail:
+        "총매출과 현금·카드·기타·지출 합계가 다릅니다. 제출을 막지는 않습니다.",
       amount: paymentDifference.value,
     },
   ];
@@ -371,16 +372,21 @@ export function buildLedgerReviewStepSummaries({
       detail: stepDetail({
         stepId: "sales",
         missingItems: missingById,
-        savedDetail: "총매출과 결제수단 합계를 확인했습니다.",
+        savedDetail: "총매출과 마감 정산 합계를 확인했습니다.",
         calculationMetric: summary.paymentDifference,
       }),
       href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
       metrics: [
         moneyMetric("totalSales", "총매출", summary.totalSales),
-        moneyMetric("paymentTotal", "결제수단 합계", summary.paymentTotal),
+        moneyMetric(
+          "paymentTotal",
+          "현금·카드·기타 합계",
+          summary.paymentTotal,
+        ),
+        moneyMetric("expenseTotal", "4단계 지출 합계", summary.expenseTotal),
         moneyMetric(
           "paymentDifference",
-          "결제수단 합계와 총매출 차이",
+          "마감 정산 차액",
           summary.paymentDifference,
           "signed-krw",
         ),

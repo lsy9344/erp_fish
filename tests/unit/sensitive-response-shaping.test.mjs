@@ -127,8 +127,9 @@ test("store manager response shaping recursively removes sensitive ledger metric
     warnings: [
       {
         id: "payment-difference",
-        label: "결제수단 합계와 총매출 불일치",
-        detail: "결제수단 합계가 총매출과 일치하지 않습니다.",
+        label: "마감 정산 불일치",
+        detail:
+          "총매출과 현금·카드·기타·지출 합계가 다릅니다. 제출을 막지는 않습니다.",
         amount: -5_000,
       },
     ],
@@ -158,14 +159,21 @@ test("store manager response shaping recursively removes sensitive ledger metric
         id: "sales",
         label: "매출/결제",
         status: "saved",
-        detail: "총매출과 결제수단 합계를 확인했습니다.",
+        detail: "총매출과 마감 정산 합계를 확인했습니다.",
         href: "/app/store-entry?storeId=store-1&date=2026-06-10&step=sales",
         metrics: [
           {
             id: "paymentDifference",
-            label: "결제수단 합계와 총매출 차이",
+            label: "마감 정산 차액",
             value: 0,
             kind: "signed-krw",
+            status: "ok",
+          },
+          {
+            id: "expenseTotal",
+            label: "4단계 지출 합계",
+            value: 10_000,
+            kind: "krw",
             status: "ok",
           },
           {
@@ -208,6 +216,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
     "salesDifference",
     "hopedSalePriceLossAmount",
     "paymentDifference",
+    "expenseTotal",
     "grossMarginRate",
     "inventoryAmount",
     "plannedSalesTotal",
@@ -245,8 +254,9 @@ test("store manager response shaping recursively removes sensitive ledger metric
   // 지점장 화면에 노출하지 않는다. 경고 사실(label/detail)만 남고 amount는 제거된다.
   assert.deepEqual(safeReview.warnings[0], {
     id: "payment-difference",
-    label: "결제수단 합계와 총매출 불일치",
-    detail: "결제수단 합계가 총매출과 일치하지 않습니다.",
+    label: "마감 정산 불일치",
+    detail:
+      "총매출과 현금·카드·기타·지출 합계가 다릅니다. 제출을 막지는 않습니다.",
   });
   assert.equal(Object.hasOwn(safeReview.warnings[0], "amount"), false);
   // 화이트리스트(2026-06-28 반전): inventoryAmount·paymentDifference 모두 단계 요약에서 제거됨.
@@ -254,6 +264,12 @@ test("store manager response shaping recursively removes sensitive ledger metric
   assert.deepEqual(
     safeReview.stepSummaries[0].metrics.map((metric) => metric.id).sort(),
     [],
+  );
+  assert.equal(
+    safeReview.stepSummaries[0].metrics.some((metric) =>
+      ["paymentDifference", "expenseTotal"].includes(metric.id),
+    ),
+    false,
   );
   // 매출원가와 희망 판매가 손실액은 단계 요약에서 차단된다.
   assert.equal(
@@ -356,7 +372,7 @@ test("store manager response shaping replaces internal OQ details with generic c
         metrics: [
           {
             id: "paymentTotal",
-            label: "결제수단 합계",
+            label: "현금·카드·기타 합계",
             value: "기준 확인 필요",
             kind: "status",
             status: "policy-unconfirmed",
