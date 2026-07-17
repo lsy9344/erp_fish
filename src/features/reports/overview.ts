@@ -683,6 +683,7 @@ function aggregateCompleteMetric(input: {
 export function buildHqReportOverviewForTest(input: {
   monthRange: MonthlyClosingAnomalyReportMonthRange;
   stores: Array<{ id: string; name: string }>;
+  calculationStoreIds?: string[];
   selectedStoreId: string | null;
   currentLedgers: LedgerProfitSummary[];
   previousLedgers: LedgerProfitSummary[];
@@ -691,9 +692,14 @@ export function buildHqReportOverviewForTest(input: {
   todayRows: HqDashboardRow[];
   errorMessages: string[];
 }): HqReportOverviewData {
-  const scopedStores = input.selectedStoreId
-    ? input.stores.filter((store) => store.id === input.selectedStoreId)
+  const calculationStores = input.calculationStoreIds
+    ? input.stores.filter((store) =>
+        input.calculationStoreIds?.includes(store.id),
+      )
     : input.stores;
+  const scopedStores = input.selectedStoreId
+    ? calculationStores.filter((store) => store.id === input.selectedStoreId)
+    : calculationStores;
   const scopedStoreIds = new Set(scopedStores.map((store) => store.id));
   const currentLedgers = input.currentLedgers.filter((ledger) =>
     scopedStoreIds.has(ledger.storeId),
@@ -701,10 +707,10 @@ export function buildHqReportOverviewForTest(input: {
   const previousLedgers = input.previousLedgers.filter((ledger) =>
     scopedStoreIds.has(ledger.storeId),
   );
-  const dateInputs = getDateInputs(
-    input.monthRange.startDate,
-    input.monthRange.endDate,
-  );
+  const dateInputs =
+    scopedStores.length === 0
+      ? []
+      : getDateInputs(input.monthRange.startDate, input.monthRange.endDate);
   const previousRange = getPreviousMonthComparisonRange(input.monthRange);
   const previousDateInputs = getDateInputs(
     previousRange.startDate,
@@ -924,10 +930,11 @@ export async function getHqReportOverview({
       : null,
   ].filter((message): message is string => Boolean(message));
 
-  if (targetStoreIds.length === 0) {
+  if (targetStoreIds.length === 0 || monthRange.isFutureMonth) {
     return buildHqReportOverviewForTest({
       monthRange,
       stores: scope.stores,
+      calculationStoreIds: [],
       selectedStoreId: normalizedStoreId,
       currentLedgers: [],
       previousLedgers: [],
@@ -953,6 +960,7 @@ export async function getHqReportOverview({
     buildMonthlyProfitAndLoss({
       month: monthRange.monthInput,
       storeId: selectedStore?.id ?? null,
+      includeCompanyWide: scope.mode === "ALL_STORES" && !selectedStore,
     }),
     getHqDashboardRows({
       datePreset: "today",

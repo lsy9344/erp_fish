@@ -344,3 +344,31 @@ test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
     /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(MONTHLY_PNL_COMPANY_WIDE_STORE_ID\)\s*\n?\s*:\s*undefined/s,
   );
 });
+
+test("monthly P&L keeps company-wide costs by default and allows an explicit query opt-out", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  const publicQueryStart = source.indexOf(
+    "export async function buildMonthlyProfitAndLoss",
+  );
+  const publicQueryEnd = source.indexOf(
+    "function monthRangeFromInput",
+    publicQueryStart,
+  );
+  assert.ok(publicQueryStart >= 0 && publicQueryEnd > publicQueryStart);
+  const publicQuery = source.slice(publicQueryStart, publicQueryEnd);
+
+  assert.match(publicQuery, /includeCompanyWide\?:\s*boolean/);
+  assert.match(
+    publicQuery,
+    /includeCompanyWide:\s*!storeId\s*&&\s*\(includeCompanyWide\s*\?\?\s*true\)/,
+  );
+  assert.match(
+    source,
+    /includeCompanyWide\s*\n?\s*\?\s*\{\s*OR:[\s\S]*?\{\s*storeId:\s*null\s*\}[\s\S]*?:\s*\{\s*storeId:\s*\{\s*in:\s*targetStoreIds\s*\}\s*\}/,
+  );
+});

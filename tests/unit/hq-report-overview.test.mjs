@@ -124,6 +124,45 @@ test("overview query enforces report access and headquarters store scope", () =>
   );
 });
 
+test("overview query authorizes and rejects empty month scopes before scoped reads", () => {
+  const source = readProjectFile("src", "features", "reports", "overview.ts");
+  const queryStart = source.indexOf(
+    "export async function getHqReportOverview",
+  );
+  assert.notEqual(queryStart, -1);
+  const query = source.slice(queryStart);
+  const accessIndex = query.indexOf("await requireReportAccess()");
+  const scopeIndex = query.indexOf("getHeadquartersStoreScope();");
+  const ledgerQueryIndex = query.indexOf("getLedgerProfitSummariesForRange({");
+  const promiseAllIndex = query.indexOf("Promise.all(");
+  const earlyBoundary = query.slice(0, promiseAllIndex);
+
+  assert.ok(accessIndex >= 0 && accessIndex < scopeIndex);
+  assert.ok(scopeIndex < ledgerQueryIndex);
+  assert.match(earlyBoundary, /targetStoreIds\.length\s*===\s*0/);
+  assert.match(earlyBoundary, /monthRange\.isFutureMonth/);
+  assert.match(earlyBoundary, /calculationStoreIds:\s*\[\]/);
+  assert.ok(
+    (query.match(/storeIds:\s*targetStoreIds/g) ?? []).length >= 2,
+    "both ledger range queries should use targetStoreIds",
+  );
+  assert.match(query, /storeId:\s*\{\s*in:\s*targetStoreIds\s*\}/);
+});
+
+test("overview includes company-wide costs only for all-store headquarters scope", () => {
+  const source = readProjectFile("src", "features", "reports", "overview.ts");
+  const queryStart = source.indexOf(
+    "export async function getHqReportOverview",
+  );
+  assert.notEqual(queryStart, -1);
+  const query = source.slice(queryStart);
+
+  assert.match(
+    query,
+    /buildMonthlyProfitAndLoss\(\{[\s\S]*?includeCompanyWide:\s*scope\.mode\s*===\s*"ALL_STORES"\s*&&\s*!selectedStore/,
+  );
+});
+
 test("ledger profit summaries retain the saved loss price basis", () => {
   const source = readProjectFile("src", "features", "reports", "queries.ts");
   const ledgerProfitSummaryStart = source.indexOf(
@@ -382,6 +421,48 @@ test("overview keeps store filters but uses an empty calculation scope for an un
     ),
   );
   assert.match(report.errorMessages[0], /권한 범위|비활성/);
+});
+
+test("overview keeps store filters but leaves future-month calculations empty", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: {
+      ...monthRange({
+        monthInput: "2026-08",
+        startDateInput: "2026-08-01",
+        endDateInput: "2026-08-31",
+      }),
+      isFutureMonth: true,
+    },
+    stores: [
+      { id: "store-1", name: "강남점" },
+      { id: "store-2", name: "서초점" },
+    ],
+    calculationStoreIds: [],
+    selectedStoreId: null,
+    currentLedgers: [],
+    previousLedgers: [],
+    statusRows: [],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.equal(report.stores.length, 2);
+  assert.deepEqual(report.salesTrend, []);
+  assert.equal(report.closingMissingDays.length, 0);
+  assert.equal(
+    report.closingStatus.reduce((sum, row) => sum + row.count, 0),
+    0,
+  );
+  assert.ok(
+    Object.values(report.rankings).every(
+      (ranking) => ranking.rows.length === 0 && ranking.excluded.length === 0,
+    ),
+  );
+  assert.equal(report.summary.lossAmount, null);
 });
 
 test("overview closing groups always add up to store count times visible days", async () => {

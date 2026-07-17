@@ -74,9 +74,11 @@ function joinOrNull(values: string[] | undefined): string | null {
 export async function buildMonthlyProfitAndLoss({
   month,
   storeId,
+  includeCompanyWide,
 }: {
   month?: string;
   storeId?: string | null;
+  includeCompanyWide?: boolean;
 }): Promise<MonthlyProfitAndLossData> {
   await requireReportAccess();
 
@@ -98,8 +100,8 @@ export async function buildMonthlyProfitAndLoss({
     startDate,
     endDate,
     targetStoreIds,
-    // 특정 지점이 지정되면 전사 공통 비용 행은 제외한다.
-    includeCompanyWide: !storeId,
+    // 특정 지점이 지정되면 전사 공통 비용 행은 항상 제외한다.
+    includeCompanyWide: !storeId && (includeCompanyWide ?? true),
   });
 
   return { monthInput, rows };
