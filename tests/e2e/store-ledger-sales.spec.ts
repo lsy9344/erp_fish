@@ -80,18 +80,6 @@ async function cleanupSelectedLedger() {
       targetId: { in: ledgerIds },
     },
   });
-  await prisma.ledgerLossItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
-  await prisma.ledgerInventoryAdjustment.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
-  await prisma.ledgerInventoryItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
-  await prisma.ledgerPurchaseItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
   await prisma.ledgerExpense.deleteMany({
     where: { dailyLedgerId: { in: ledgerIds } },
   });
