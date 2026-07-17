@@ -524,6 +524,7 @@ test("지정 지점 본사는 통합 리포트에서 배정 지점만 본다", a
   const options = await page
     .locator('select[name="storeId"] option')
     .allTextContents();
+  expect(options).toContain("서초점");
   expect(options).not.toContain("스토리6-1 정정마감점");
   expect(options).not.toContain("스토리6-2 입력중점");
 });
