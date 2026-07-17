@@ -24,7 +24,7 @@ import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
-  useLedgerUpdatedAtSync,
+  useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import {
   formatKrwInput,
@@ -102,8 +102,17 @@ export function SalesPaymentStepClient({
   const [formError, setFormError] = useState<string | null>(null);
   const saveConflict = useSaveConflictDialog();
 
-  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
-    setLedger((current) => ({ ...current, updatedAt }));
+  useLedgerSync(ledger.id, (snapshot) => {
+    setLedger((current) =>
+      snapshot.version < current.version
+        ? current
+        : {
+            ...current,
+            updatedAt: snapshot.updatedAt,
+            version: snapshot.version,
+            expenseTotal: snapshot.expenseTotal ?? current.expenseTotal,
+          },
+    );
   });
 
   useEffect(() => {
@@ -205,7 +214,7 @@ export function SalesPaymentStepClient({
       }
 
       fillLedger(result.data);
-      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
+      notifyLedgerUpdated(result.data);
       setResultMessage("저장됐습니다.");
       toast.success("매출/결제 정보를 저장했습니다.");
       return true;

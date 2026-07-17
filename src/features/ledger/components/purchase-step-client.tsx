@@ -19,7 +19,7 @@ import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
-  useLedgerUpdatedAtSync,
+  useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
 import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
@@ -239,8 +239,17 @@ export function PurchaseStepClient({
     ) || isAuthorDirty;
   const previousInitialLedgerRef = useRef(initialLedger);
 
-  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
-    setLedger((current) => ({ ...current, updatedAt }));
+  useLedgerSync(ledger.id, (snapshot) => {
+    setLedger((current) =>
+      snapshot.version < current.version
+        ? current
+        : {
+            ...current,
+            updatedAt: snapshot.updatedAt,
+            version: snapshot.version,
+            expenseTotal: snapshot.expenseTotal ?? current.expenseTotal,
+          },
+    );
   });
 
   useEffect(() => {
@@ -321,7 +330,7 @@ export function PurchaseStepClient({
     setLedger(next);
     setAuthorDisplayName(next.authorDisplayName ?? "");
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
-    notifyLedgerUpdated(next.id, next.updatedAt);
+    notifyLedgerUpdated(next);
     const savedCount = next.purchaseItems.filter(
       (item) => item.kind !== "carryover",
     ).length;

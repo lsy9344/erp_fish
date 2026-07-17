@@ -32,7 +32,7 @@ import {
 } from "~/components/ui/tooltip";
 import {
   notifyLedgerUpdated,
-  useLedgerUpdatedAtSync,
+  useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
@@ -331,8 +331,16 @@ export function InventoryStepClient({
   const saveConflict = useSaveConflictDialog();
   const hqEditReasonError = fieldErrors.reason?.[0];
 
-  useLedgerUpdatedAtSync(data.id, (updatedAt) => {
-    setData((current) => ({ ...current, updatedAt }));
+  useLedgerSync(data.id, (snapshot) => {
+    setData((current) =>
+      snapshot.version < current.version
+        ? current
+        : {
+            ...current,
+            updatedAt: snapshot.updatedAt,
+            version: snapshot.version,
+          },
+    );
   });
 
   const carryoverMessage =
@@ -664,7 +672,7 @@ export function InventoryStepClient({
       setData(result.data);
       setItems(toLineState(result.data));
       setAddedManualIds(new Set());
-      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
+      notifyLedgerUpdated(result.data);
       setAdjustmentErrors({});
       setResultMessage("저장됐습니다.");
       toast.success("재고 정보를 저장했습니다.");
@@ -896,7 +904,7 @@ export function InventoryStepClient({
       }
 
       setData(result.data);
-      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
+      notifyLedgerUpdated(result.data);
       setItems((current) =>
         mergeAdjustedLineState(result.data, current, item.productId),
       );

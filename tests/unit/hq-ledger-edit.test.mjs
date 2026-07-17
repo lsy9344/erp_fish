@@ -898,7 +898,136 @@ test("HQ ledger detail displays human-readable headquarters close metadata", () 
   assert.match(pageSource, /closedAt/);
 });
 
-test("HQ close dialog follows cross-tab ledger updatedAt sync", () => {
+test("ledger sync publishes and replays complete metadata snapshots", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-updated-at-sync.ts",
+  );
+
+  assert.match(
+    source,
+    /export\s+type\s+LedgerUpdatedSnapshot\s*=\s*\{[\s\S]*id:\s*string[\s\S]*updatedAt:\s*string[\s\S]*version:\s*number[\s\S]*expenseTotal\?:\s*number[\s\S]*\}/,
+  );
+  assert.match(source, /new Map<string,\s*LedgerUpdatedSnapshot>\(\)/);
+  assert.match(
+    source,
+    /notifyLedgerUpdated\(snapshot:\s*LedgerUpdatedSnapshot\)[\s\S]*\.set\(snapshot\.id,\s*snapshot\)[\s\S]*detail:\s*snapshot/,
+  );
+  assert.match(
+    source,
+    /useLedgerSync\([\s\S]*onSnapshot:\s*\(snapshot:\s*LedgerUpdatedSnapshot\)\s*=>\s*void[\s\S]*onSnapshotRef\.current\(latestSnapshot\)[\s\S]*onSnapshotRef\.current\(detail\)/,
+  );
+  assert.doesNotMatch(source, /useLedgerUpdatedAtSync/);
+});
+
+test("cost tabs merge synchronized metadata without replacing drafts", () => {
+  const clients = [
+    ["sales-payment-step-client.tsx", /notifyLedgerUpdated\(result\.data\)/],
+    ["expense-step-client.tsx", /notifyLedgerUpdated\(next\)/],
+    ["purchase-step-client.tsx", /notifyLedgerUpdated\(next\)/],
+    ["workstep-client.tsx", /notifyLedgerUpdated\(next\)/],
+  ];
+
+  for (const [fileName, notifyPattern] of clients) {
+    const source = readProjectFile(
+      "src",
+      "features",
+      "ledger",
+      "components",
+      fileName,
+    );
+
+    assert.match(source, notifyPattern);
+    assert.match(
+      source,
+      /useLedgerSync\(ledger\.id,\s*\(snapshot\)\s*=>\s*\{[\s\S]*setLedger\(\(current\)\s*=>[\s\S]*snapshot\.version\s*<\s*current\.version[\s\S]*\.\.\.current[\s\S]*updatedAt:\s*snapshot\.updatedAt[\s\S]*version:\s*snapshot\.version[\s\S]*expenseTotal:\s*snapshot\.expenseTotal\s*\?\?\s*current\.expenseTotal/,
+      `${fileName} should merge only synchronized ledger metadata`,
+    );
+  }
+});
+
+test("loss and inventory sync only metadata exposed by their narrow responses", () => {
+  const clients = [
+    ["losses", "loss-step-client.tsx", 1],
+    ["inventory", "inventory-step-client.tsx", 2],
+  ];
+
+  for (const [feature, fileName, expectedNotifications] of clients) {
+    const source = readProjectFile(
+      "src",
+      "features",
+      feature,
+      "components",
+      fileName,
+    );
+    const syncCall = source.match(
+      /useLedgerSync\(data\.id,\s*\(snapshot\)\s*=>\s*\{[\s\S]*?\n  \}\);/,
+    )?.[0];
+
+    assert.ok(syncCall, `${fileName} should subscribe to ledger snapshots`);
+    assert.match(syncCall, /snapshot\.version\s*<\s*current\.version/);
+    assert.match(syncCall, /\.\.\.current/);
+    assert.match(syncCall, /updatedAt:\s*snapshot\.updatedAt/);
+    assert.match(syncCall, /version:\s*snapshot\.version/);
+    assert.doesNotMatch(syncCall, /expenseTotal/);
+    assert.equal(
+      source.match(/notifyLedgerUpdated\(result\.data\)/g)?.length,
+      expectedNotifications,
+    );
+  }
+
+  // Loss and inventory responses intentionally omit the sensitive expense total.
+  const lossTypes = readProjectFile("src", "features", "losses", "types.ts");
+  const inventoryTypes = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "types.ts",
+  );
+  const lossStepData = lossTypes.match(
+    /export type LossStepData = \{[\s\S]*?\n\};/,
+  )?.[0];
+  const inventoryStepData = inventoryTypes.match(
+    /export type InventoryStepData = \{[\s\S]*?\n\};/,
+  )?.[0];
+
+  assert.ok(lossStepData);
+  assert.ok(inventoryStepData);
+  assert.doesNotMatch(lossStepData, /expenseTotal/);
+  assert.doesNotMatch(inventoryStepData, /expenseTotal/);
+  assert.doesNotMatch(
+    readProjectFile("src", "features", "losses", "hq-edit-actions.ts"),
+    /expenseTotal/,
+  );
+  assert.doesNotMatch(
+    readProjectFile("src", "features", "inventory", "hq-edit-actions.ts"),
+    /expenseTotal/,
+  );
+});
+
+test("runtime ledger sync callers use the snapshot API", () => {
+  const runtimeFiles = [
+    ["ledger", "components", "sales-payment-step-client.tsx"],
+    ["ledger", "components", "expense-step-client.tsx"],
+    ["ledger", "components", "purchase-step-client.tsx"],
+    ["ledger", "components", "workstep-client.tsx"],
+    ["ledger", "components", "hq-ledger-close-dialog.tsx"],
+    ["losses", "components", "loss-step-client.tsx"],
+    ["inventory", "components", "inventory-step-client.tsx"],
+  ];
+
+  for (const segments of runtimeFiles) {
+    const source = readProjectFile("src", "features", ...segments);
+
+    assert.doesNotMatch(source, /useLedgerUpdatedAtSync/);
+    assert.doesNotMatch(source, /notifyLedgerUpdated\([^,\n]+,\s*[^)]+\)/);
+  }
+});
+
+test("HQ close dialog extracts updatedAt from synchronized snapshots", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -909,7 +1038,7 @@ test("HQ close dialog follows cross-tab ledger updatedAt sync", () => {
 
   assert.match(
     source,
-    /useLedgerUpdatedAtSync\(ledgerId,\s*setCurrentLedgerUpdatedAt\)/,
+    /useLedgerSync\(ledgerId,\s*\(snapshot\)\s*=>\s*\{[\s\S]*setCurrentLedgerUpdatedAt\(snapshot\.updatedAt\)/,
   );
   assert.match(source, /ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/);
 });
