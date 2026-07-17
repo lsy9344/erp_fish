@@ -33,7 +33,7 @@ export type HqReportOverviewData = {
     salesAmount: number | null;
     grossProfit: number | null;
     netAmount: number | null;
-    lossAmount: number;
+    lossAmount: number | null;
     actionCount: number;
   };
   chartSummaries: {
@@ -438,7 +438,7 @@ function buildLossBreakdown(
         left.name.localeCompare(right.name, "ko-KR"),
     );
   const lossItems =
-    sortedLosses.length <= 3
+    sortedLosses.length <= 4
       ? sortedLosses
       : [
           ...sortedLosses.slice(0, 3),
@@ -636,7 +636,7 @@ function buildActions(
       return {
         id: `${row.storeId}:${row.ledgerId ?? "missing"}:${signal?.id ?? index}`,
         storeName: row.storeName,
-        label: signal?.label ?? row.priority.label,
+        label: row.priority.label,
         detail: details.join(" · "),
         severity:
           row.priority.rank <= 10
@@ -841,7 +841,7 @@ export function buildHqReportOverviewForTest(input: {
         key: "grossProfit",
       }),
       netAmount,
-      lossAmount: lossBreakdown.totalAmount,
+      lossAmount: coverageComplete ? lossBreakdown.totalAmount : null,
       actionCount: actions.length,
     },
     chartSummaries: {
@@ -852,9 +852,11 @@ export function buildHqReportOverviewForTest(input: {
               : ` 전월 같은 날보다 ${previousChange}원 변했습니다.`
           }`
         : "계산 가능한 일 매출이 없습니다.",
-      lossBreakdown: topLoss
-        ? `${topLoss.name} 손실이 가장 크며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`
-        : `손실 금액이 없으며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`,
+      lossBreakdown: !coverageComplete
+        ? `월 범위 미완전으로 일부 장부 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건만 계산했습니다.`
+        : topLoss
+          ? `${topLoss.name} 손실이 가장 크며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`
+          : `손실 금액이 없으며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`,
       profitAndLoss:
         profitAndLoss.available && netAmount !== null
           ? `순이익은 ${netAmount}원입니다.`
@@ -870,7 +872,9 @@ export function buildHqReportOverviewForTest(input: {
     actions,
     dataQuality: {
       missingCount,
-      lossBasisLabel: `판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`,
+      lossBasisLabel: coverageComplete
+        ? `판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`
+        : `월 범위 미완전 · 일부 장부 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`,
       profitAndLossLabel: profitAndLoss.available
         ? "FIFO 손익 계산 완료"
         : (profitAndLoss.reason ?? "손익 계산 불가"),

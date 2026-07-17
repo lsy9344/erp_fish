@@ -229,7 +229,7 @@ test("overview aligns the current month with the same previous-month day and kee
   );
 });
 
-test("overview loss donut keeps top three plus other and excludes missing price bases", async () => {
+test("overview loss donut keeps four types and excludes missing price bases", async () => {
   const { buildHqReportOverviewForTest } = await import(
     pathToFileURL(overviewPath).href
   );
@@ -257,13 +257,76 @@ test("overview loss donut keeps top three plus other and excludes missing price 
 
   assert.deepEqual(
     report.lossBreakdown.items.map((item) => item.name),
-    ["폐기", "파손", "변질", "기타"],
+    ["폐기", "파손", "변질", "시식"],
   );
   assert.equal(report.lossBreakdown.totalAmount, 1_000);
   assert.equal(report.lossBreakdown.computableCount, 4);
   assert.equal(report.lossBreakdown.totalCount, 5);
   assert.equal(report.lossBreakdown.uncomputableCount, 1);
   assert.match(report.lossBreakdown.detailHref, /month=2026-06/);
+});
+
+test("overview loss donut groups five usable types as top three plus other", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    selectedStoreId: null,
+    currentLedgers: [
+      ledger({
+        lossItems: [
+          lossItem("1", "폐기", 500),
+          lossItem("2", "파손", 400),
+          lossItem("3", "변질", 300),
+          lossItem("4", "시식", 200),
+          lossItem("5", "기타손실", 100),
+        ],
+      }),
+    ],
+    previousLedgers: [],
+    statusRows: [status("store-1", "2026-06-01", "HEADQUARTERS_CLOSED")],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.deepEqual(
+    report.lossBreakdown.items.map((item) => [item.name, item.amount]),
+    [
+      ["폐기", 500],
+      ["파손", 400],
+      ["변질", 300],
+      ["기타", 300],
+    ],
+  );
+  assert.equal(report.lossBreakdown.computableCount, 5);
+  assert.equal(report.lossBreakdown.totalCount, 5);
+});
+
+test("overview keeps incomplete-month loss summary unavailable instead of confirmed zero", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    selectedStoreId: "store-1",
+    currentLedgers: [],
+    previousLedgers: [],
+    statusRows: [status("store-1", "2026-06-01", "IN_PROGRESS")],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.equal(report.summary.lossAmount, null);
+  assert.equal(report.lossBreakdown.totalAmount, 0);
+  assert.equal(report.lossBreakdown.totalCount, 0);
+  assert.doesNotMatch(report.chartSummaries.lossBreakdown, /손실 금액이 없/);
+  assert.match(report.chartSummaries.lossBreakdown, /월 범위 미완전|일부 장부/);
+  assert.match(report.dataQuality.lossBasisLabel, /월 범위 미완전|일부 장부/);
 });
 
 test("overview closing groups always add up to store count times visible days", async () => {
@@ -594,7 +657,7 @@ test("overview actions filter by selected store, use dashboard state, and keep d
 
   assert.equal(report.actions.length, 7);
   assert.ok(report.actions.every((action) => action.storeName === "강남점"));
-  assert.equal(report.actions[0].label, "매출 급락");
+  assert.equal(report.actions[0].label, "심각 이상");
   assert.match(report.actions[0].detail, /정정|조치 1|매출/);
   assert.equal(report.actions[0].detailHref, "/app/reports/daily?date=today");
   assert.equal(report.actions[1].detailHref, "/app/ledgers/ledger-today-1");
@@ -618,11 +681,17 @@ test("overview action severity follows priority rank instead of signal or correc
         priority: { rank: 10, label: "심각 이상", reasons: ["심각"] },
         signals: [
           { id: "info", label: "정보 신호", severity: "info", detail: "정보" },
+          {
+            id: "critical-after-info",
+            label: "심각 신호",
+            severity: "critical",
+            detail: "심각",
+          },
         ],
       }),
       todayRow({
-        ledgerId: "ledger-rank-30",
-        priority: { rank: 30, label: "검토 대기", reasons: ["검토"] },
+        ledgerId: "ledger-rank-25",
+        priority: { rank: 25, label: "확인 필요", reasons: ["확인"] },
         signals: [
           {
             id: "critical",
@@ -654,11 +723,16 @@ test("overview action severity follows priority rank instead of signal or correc
   });
 
   assert.deepEqual(
-    report.actions.map((action) => [action.detailHref, action.severity]),
+    report.actions.map((action) => [
+      action.detailHref,
+      action.label,
+      action.severity,
+    ]),
     [
-      ["/app/ledgers/ledger-rank-10", "critical"],
-      ["/app/ledgers/ledger-rank-30", "warning"],
-      ["/app/ledgers/ledger-rank-90", "info"],
+      ["/app/ledgers/ledger-rank-10", "심각 이상", "critical"],
+      ["/app/ledgers/ledger-rank-25", "확인 필요", "warning"],
+      ["/app/ledgers/ledger-rank-90", "정상", "info"],
     ],
   );
+  assert.match(report.actions[0].detail, /^정보/);
 });
