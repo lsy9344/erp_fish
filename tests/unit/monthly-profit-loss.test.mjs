@@ -100,6 +100,31 @@ test("monthly P&L computes net = grossProfit - labor - expenses, no new DB", () 
   assert.match(source, /본사조정/);
 });
 
+test("monthly P&L labor matches the report ledger population", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "monthly-profit-loss.ts",
+  );
+  const laborQueryStart = source.indexOf("db.ledgerLaborItem.findMany");
+  const laborQueryEnd = source.indexOf(
+    "db.headquartersExpense.findMany",
+    laborQueryStart,
+  );
+  assert.ok(laborQueryStart >= 0 && laborQueryEnd > laborQueryStart);
+  const laborQuery = source.slice(laborQueryStart, laborQueryEnd);
+
+  assert.match(
+    laborQuery,
+    /dailyLedger:\s*\{[\s\S]*?status:\s*\{\s*in:\s*\["IN_REVIEW",\s*"HEADQUARTERS_CLOSED"\]\s*\}/,
+  );
+  assert.match(
+    source,
+    /export const MONTHLY_PNL_COMPANY_WIDE_STORE_ID\s*=\s*"__company_wide__";/,
+  );
+});
+
 test("monthly report xlsx attaches the 월별손익 sheet for all months", () => {
   const route = readProjectFile(
     "src",
@@ -260,7 +285,10 @@ test("monthly P&L reads adjustmentReason separately from memo", () => {
 
   assert.match(source, /adjustmentReason:\s*true/);
   assert.match(source, /expense\.adjustmentReason/);
-  assert.doesNotMatch(source, /bucket\.adjustmentReasons\.push\(expense\.memo\)/);
+  assert.doesNotMatch(
+    source,
+    /bucket\.adjustmentReasons\.push\(expense\.memo\)/,
+  );
 });
 
 test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
@@ -283,6 +311,6 @@ test("store-scoped P&L excludes company-wide (storeId=null) expenses", () => {
   // "(전사 공통)" 행도 플래그로 가드한다.
   assert.match(
     source,
-    /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(COMPANY_WIDE\)\s*\n?\s*:\s*undefined/s,
+    /companyWide\s*=\s*includeCompanyWide\s*\n?\s*\?\s*costByStore\.get\(MONTHLY_PNL_COMPANY_WIDE_STORE_ID\)\s*\n?\s*:\s*undefined/s,
   );
 });
