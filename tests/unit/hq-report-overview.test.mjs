@@ -897,3 +897,24 @@ test("overview action severity follows priority rank instead of signal or correc
   );
   assert.match(report.actions[0].detail, /^정보/);
 });
+
+test("overview UI uses existing chart primitives and keeps a table alternative", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "hq-report-overview.tsx",
+  );
+
+  assert.match(source, /ChartContainer/);
+  assert.match(source, /ChartTooltipContent/);
+  assert.match(source, /ReviewViewToggle/);
+  assert.match(source, /accessibilityLayer/g);
+  assert.match(source, /실제 총매출/);
+  assert.match(source, /판매가 계획 기준/);
+  assert.match(source, /오늘 기준/);
+  assert.match(source, /계산 가능/);
+  assert.match(source, /Table/);
+  assert.doesNotMatch(source, /grossProfit\s*\?\?\s*0/);
+});
