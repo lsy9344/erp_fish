@@ -21,7 +21,7 @@ import {
   closeHqLedger,
   runHqLedgerClosePreflight,
 } from "~/features/ledger/hq-close-actions";
-import { useLedgerUpdatedAtSync } from "~/features/ledger/components/ledger-updated-at-sync";
+import { useLedgerSync } from "~/features/ledger/components/ledger-updated-at-sync";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import type {
@@ -84,7 +84,9 @@ export function HqLedgerCloseDialog({
     !isChecking &&
     !isSubmitting;
 
-  useLedgerUpdatedAtSync(ledgerId, setCurrentLedgerUpdatedAt);
+  useLedgerSync(ledgerId, (snapshot) => {
+    setCurrentLedgerUpdatedAt(snapshot.updatedAt);
+  });
 
   useEffect(() => {
     setIsHydrated(true);

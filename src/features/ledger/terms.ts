@@ -16,9 +16,6 @@ export const ledgerTerms = {
   workerCount: "근무인원",
   workMemo: "특이사항 메모",
 
-  // 결제 합계 차액(매출/결제 단계)
-  paymentDifference: "결제 합계 차액",
-
   // 공통 버튼/상태
   addLine: "항목 추가",
   removeLine: "삭제",

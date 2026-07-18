@@ -3,43 +3,61 @@
 import { useEffect, useRef } from "react";
 
 const LEDGER_UPDATED_EVENT = "erp-fish:ledger-updated";
-const latestLedgerUpdatedAt = new Map<string, string>();
+const latestLedgerSnapshot = new Map<string, LedgerUpdatedSnapshot>();
 
-type LedgerUpdatedEventDetail = {
-  ledgerId: string;
+export type LedgerUpdatedSnapshot = {
+  id: string;
   updatedAt: string;
+  version: number;
+  // Loss and inventory step responses do not include this unrelated aggregate.
+  expenseTotal?: number;
 };
 
-export function notifyLedgerUpdated(ledgerId: string, updatedAt: string) {
-  latestLedgerUpdatedAt.set(ledgerId, updatedAt);
+export function notifyLedgerUpdated(snapshot: LedgerUpdatedSnapshot) {
+  const previous = latestLedgerSnapshot.get(snapshot.id);
+
+  if (previous && snapshot.version < previous.version) {
+    return;
+  }
+
+  const normalizedSnapshot: LedgerUpdatedSnapshot = {
+    id: snapshot.id,
+    updatedAt: snapshot.updatedAt,
+    version: snapshot.version,
+    ...(snapshot.expenseTotal !== undefined
+      ? { expenseTotal: snapshot.expenseTotal }
+      : {}),
+  };
+
+  latestLedgerSnapshot.set(normalizedSnapshot.id, normalizedSnapshot);
 
   window.dispatchEvent(
-    new CustomEvent<LedgerUpdatedEventDetail>(LEDGER_UPDATED_EVENT, {
-      detail: { ledgerId, updatedAt },
+    new CustomEvent<LedgerUpdatedSnapshot>(LEDGER_UPDATED_EVENT, {
+      detail: normalizedSnapshot,
     }),
   );
 }
 
-export function useLedgerUpdatedAtSync(
+export function useLedgerSync(
   ledgerId: string,
-  onUpdatedAt: (updatedAt: string) => void,
+  onSnapshot: (snapshot: LedgerUpdatedSnapshot) => void,
 ) {
-  const onUpdatedAtRef = useRef(onUpdatedAt);
+  const onSnapshotRef = useRef(onSnapshot);
 
-  onUpdatedAtRef.current = onUpdatedAt;
+  onSnapshotRef.current = onSnapshot;
 
   useEffect(() => {
-    const latestUpdatedAt = latestLedgerUpdatedAt.get(ledgerId);
+    const latestSnapshot = latestLedgerSnapshot.get(ledgerId);
 
-    if (latestUpdatedAt) {
-      onUpdatedAtRef.current(latestUpdatedAt);
+    if (latestSnapshot) {
+      onSnapshotRef.current(latestSnapshot);
     }
 
     function handleLedgerUpdated(event: Event) {
-      const detail = (event as CustomEvent<LedgerUpdatedEventDetail>).detail;
+      const detail = (event as CustomEvent<LedgerUpdatedSnapshot>).detail;
 
-      if (detail?.ledgerId === ledgerId) {
-        onUpdatedAtRef.current(detail.updatedAt);
+      if (detail?.id === ledgerId) {
+        onSnapshotRef.current(detail);
       }
     }
 

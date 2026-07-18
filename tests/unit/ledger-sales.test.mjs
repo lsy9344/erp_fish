@@ -109,6 +109,52 @@ test("ledger migrations create DailyLedger, unique constraint, and version token
   );
 });
 
+test("main seed settles cash after reusing precomputed same-day expenses", () => {
+  const source = readProjectFile("scripts", "seed-main.mjs");
+  const settlementSource = source.match(
+    /\/\/ 매입\(입고\):[\s\S]*?\/\/ 인건비\(직원\) 2~3명/,
+  )?.[0];
+
+  assert.ok(settlementSource, "seed settlement block should exist");
+  const firstLedgerAccessIndex = settlementSource.indexOf(
+    "const existing = await db.dailyLedger.findUnique",
+  );
+  assert.ok(
+    [
+      "const purchasedQtyByProduct",
+      "const lossQtyByProduct",
+      "const inventoryRows",
+      "const expenseRows",
+      "const expenseTotal",
+      "if (expenseTotal > grossCashAllocation)",
+    ].every((marker) => {
+      const markerIndex = settlementSource.indexOf(marker);
+      return markerIndex !== -1 && markerIndex < firstLedgerAccessIndex;
+    }),
+    "daily calculations and settlement validation should finish before ledger access",
+  );
+  assert.match(
+    settlementSource,
+    /const expenseTotal = expenseRows\.reduce\([\s\S]*expense\.amount[\s\S]*, 0\);/,
+  );
+  assert.match(
+    settlementSource,
+    /if \(expenseTotal > grossCashAllocation\) \{[\s\S]*throw new Error\(`[\s\S]*\$\{storeName\}[\s\S]*\$\{day\}[\s\S]*\$\{expenseTotal\}[\s\S]*\$\{grossCashAllocation\}[\s\S]*`\)/,
+  );
+  assert.match(
+    settlementSource,
+    /const grossCashAllocation = Math\.round\(totalSales \* 0\.35 \/ 1000\) \* 1000;[\s\S]*const cash = grossCashAllocation - expenseTotal;[\s\S]*cashAmount: cash/,
+  );
+  assert.match(
+    settlementSource,
+    /for \(const expense of expenseRows\) \{[\s\S]*ledgerInputCodeId: expense\.code\.id[\s\S]*amount: expense\.amount/,
+  );
+  assert.doesNotMatch(
+    settlementSource,
+    /Math\.max\(0,\s*grossCashAllocation - expenseTotal\)/,
+  );
+});
+
 test("ledger amount calculation helper validates payment difference", async () => {
   const calculatorPath = assertProjectFile(
     "src",
@@ -129,6 +175,60 @@ test("ledger amount calculation helper validates payment difference", async () =
     -45000,
   );
   assert.equal(calculatePaymentDifference(0, 0, 0, 0, 0), 0);
+});
+
+test("ledger query settlement difference includes saved expenses", () => {
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+  const salesStepSource = querySource.match(
+    /export function toLedgerSalesStepData[\s\S]*?\r?\n}\r?\n\r?\nfunction getLedgerExpenseItems/,
+  )?.[0];
+  const auditSource = querySource.match(
+    /export function toLedgerAuditPayload[\s\S]*?\r?\n}\r?\n\r?\nexport async function getOrCreateStoreLedgerInTx/,
+  )?.[0];
+
+  assert.ok(salesStepSource);
+  assert.match(
+    salesStepSource,
+    /const expenseTotal = calculateExpenseTotal\([\s\S]*calculatePaymentDifference\([\s\S]*ledger\.otherPaymentAmount,\s*expenseTotal,/,
+  );
+  assert.ok(auditSource);
+  assert.match(
+    auditSource,
+    /calculatePaymentDifference\([\s\S]*otherPaymentAmount,\s*expenseTotal,\s*\)/,
+  );
+});
+
+test("sales payment step explains cash after saved expenses without a difference box", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "sales-payment-step-client.tsx",
+  );
+  const termsSource = readProjectFile("src", "features", "ledger", "terms.ts");
+
+  assert.match(source, /현금 \(당일 지출 후\)/);
+  assert.match(
+    source,
+    /당일 현금지출을 하고 남은 당일 현금매출을 입력합니다\./,
+  );
+  assert.match(
+    source,
+    /cashAmountError\s*\?\s*"cash-amount-help cash-amount-error"\s*:\s*"cash-amount-preview cash-amount-help"/,
+  );
+  assert.match(source, /4단계 지출 합계/);
+  assert.match(source, /ledger\.expenseTotal/);
+  assert.match(source, /readOnly/);
+  assert.doesNotMatch(source, /결제 합계 차액/);
+  assert.doesNotMatch(source, /hasPaymentDifference/);
+  assert.doesNotMatch(source, /function\s+calculatePaymentDifference\s*\(/);
+  assert.doesNotMatch(termsSource, /paymentDifference/);
 });
 
 test("ledger sales schema rejects blank, negative, decimal, and formatted values", async () => {

@@ -648,14 +648,33 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
     validationSource,
     /detail:\s*"지출 항목이 아직 입력되지 않았습니다\."/,
   );
-  assert.match(querySource, /"paymentDifference"/);
-  assert.match(querySource, /"결제·지출 합계 불일치"/);
+  assert.match(querySource, /label:\s*"마감 정산 차액 계산 상태 확인"/);
+  assert.match(querySource, /"마감 정산 차액을 계산할 수 없습니다\."/);
+  assert.match(querySource, /label:\s*"마감 정산 불일치"/);
   assert.match(
     querySource,
-    /"총매출과 결제 합계 \+ 지출 합계가 다릅니다\. 제출을 막지는 않습니다\."/,
+    /detail:\s*"총매출과 현금·카드·기타·지출 합계가 다릅니다\. 제출을 막지는 않습니다\."/,
   );
-  assert.match(querySource, /"총매출, 결제 합계, 지출 합계를 확인했습니다\."/);
-  assert.match(querySource, /"총매출 - 결제 합계 - 지출 합계"/);
+  assert.match(
+    querySource,
+    /savedDetail:\s*"총매출과 마감 정산 합계를 확인했습니다\."/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\("totalSales",\s*"총매출",\s*summary\.totalSales\)/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\(\s*"paymentTotal",\s*"현금·카드·기타 합계",\s*summary\.paymentTotal,?\s*\)/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\(\s*"expenseTotal",\s*"4단계 지출 합계",\s*summary\.expenseTotal,?\s*\)/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\(\s*"paymentDifference",\s*"마감 정산 차액",\s*summary\.paymentDifference,\s*"signed-krw",\s*\)/,
+  );
   assert.match(querySource, /"signed-krw"/);
   assert.match(querySource, /"reviewStatus"/);
   assert.match(querySource, /"데이터 부족"/);
@@ -722,7 +741,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.doesNotMatch(clientSource, /summary\.salesDifference/);
   assert.match(clientSource, /stepSummaries/);
   assert.match(clientSource, /formatSignedKrw/);
-  assert.match(querySource, /총매출 - 결제 합계 - 지출 합계/);
+  assert.match(querySource, /마감 정산 차액/);
   assert.doesNotMatch(clientSource, /임계값 초과|확정 이상/);
   assert.doesNotMatch(clientSource, /label="매출원가"/);
   assert.doesNotMatch(clientSource, /label="매출이익"/);
@@ -804,7 +823,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
           },
           {
             id: "paymentDifference",
-            label: "총매출 - 결제 합계 - 지출 합계",
+            label: "마감 정산 차액",
             value: 0,
             kind: "signed-krw",
             status: "ok",

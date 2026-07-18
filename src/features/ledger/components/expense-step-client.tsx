@@ -20,7 +20,7 @@ import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
-  useLedgerUpdatedAtSync,
+  useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import {
   formatKrwInput,
@@ -176,8 +176,17 @@ export function ExpenseStepClient({
   );
   const previousInitialLedgerRef = useRef(initialLedger);
 
-  useLedgerUpdatedAtSync(ledger.id, (updatedAt) => {
-    setLedger((current) => ({ ...current, updatedAt }));
+  useLedgerSync(ledger.id, (snapshot) => {
+    setLedger((current) =>
+      snapshot.version < current.version
+        ? current
+        : {
+            ...current,
+            updatedAt: snapshot.updatedAt,
+            version: snapshot.version,
+            expenseTotal: snapshot.expenseTotal ?? current.expenseTotal,
+          },
+    );
   });
 
   useEffect(() => {
@@ -226,7 +235,7 @@ export function ExpenseStepClient({
   function fillLedger(next: ExpenseLedgerData) {
     setLedger(next);
     setExpenseItems(toExpenseLines(next.expenseItems));
-    notifyLedgerUpdated(next.id, next.updatedAt);
+    notifyLedgerUpdated(next);
     const savedCount = next.expenseItems.length;
     const message =
       savedCount > 0

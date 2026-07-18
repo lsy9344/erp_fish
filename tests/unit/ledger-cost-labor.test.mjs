@@ -700,7 +700,7 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
     closedById: null,
     closedAt: null,
     totalSalesAmount: 100_000,
-    cashAmount: 40_000,
+    cashAmount: 10_000,
     cardAmount: 50_000,
     otherPaymentAmount: 10_000,
     paymentDifferenceAmount: 0,
@@ -917,7 +917,9 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     hqPageSource,
     /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
   );
-  assert.match(hqClosePreflightSource, /expenseTotal:\s*"지출 합계"/);
+  assert.match(hqClosePreflightSource, /paymentTotal:\s*"현금·카드·기타 합계"/);
+  assert.match(hqClosePreflightSource, /expenseTotal:\s*"4단계 지출 합계"/);
+  assert.match(hqClosePreflightSource, /paymentDifference:\s*"마감 정산 차액"/);
 });
 
 test("cost and work migration exists and defines required schema objects", () => {

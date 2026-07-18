@@ -131,16 +131,43 @@ test("ledger calculations mark invalid KRW arithmetic as unavailable and log con
       reason:
         "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
     });
+
+    const unsafeExpenseSummary = calculateLedgerReviewSummary({
+      totalSalesAmount: 100_000,
+      cashAmount: 90_000,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 1,
+      expenseTotal: Number.MAX_SAFE_INTEGER + 1,
+      inventoryItems: [],
+    });
+
+    assert.equal(
+      unsafeExpenseSummary.expenseTotal.status,
+      "calculation-unavailable",
+    );
+    assert.deepEqual(unsafeExpenseSummary.paymentDifference, {
+      value: null,
+      status: "calculation-unavailable",
+      label: "계산 불가",
+      unavailableReason: "계산 불가",
+      reason:
+        "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+    });
   } finally {
     console.error = originalError;
   }
 
-  assert.equal(errors.length, 1);
+  assert.equal(errors.length, 3);
   assert.match(String(errors[0][0]), /ledger calculation unavailable/);
-  assert.deepEqual(errors[0][1], {
-    metricId: "paymentDifference",
-    reason: "unsafe-krw-integer",
-  });
+  assert.deepEqual(
+    errors.map((entry) => entry[1]),
+    [
+      { metricId: "paymentDifference", reason: "unsafe-krw-integer" },
+      { metricId: "expenseTotal", reason: "unsafe-krw-integer" },
+      { metricId: "paymentDifference", reason: "unsafe-krw-integer" },
+    ],
+  );
 });
 
 test("ledger calculations reject payment difference when expense total is unsafe", async () => {

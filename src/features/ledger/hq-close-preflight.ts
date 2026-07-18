@@ -695,8 +695,8 @@ function dedupeItems(items: HqLedgerClosePreflightItem[]) {
 
 const calculationMetricLabels: Record<string, string> = {
   totalSales: "총매출",
-  paymentTotal: "결제 합계",
-  expenseTotal: "지출 합계",
+  paymentTotal: "현금·카드·기타 합계",
+  expenseTotal: "4단계 지출 합계",
   workerCount: "근무인원",
   costOfGoodsSold: "매출원가",
   grossProfit: "매출이익",
@@ -704,7 +704,7 @@ const calculationMetricLabels: Record<string, string> = {
   operatingProfit: "영업이익",
   productivity: "생산성",
   inventoryAmount: "재고금액",
-  paymentDifference: "결제 차액",
+  paymentDifference: "마감 정산 차액",
   salesDifference: "매출차액",
 };
 

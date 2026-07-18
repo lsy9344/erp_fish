@@ -15,7 +15,7 @@ import {
 import { Input } from "~/components/ui/input";
 import {
   notifyLedgerUpdated,
-  useLedgerUpdatedAtSync,
+  useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
@@ -165,8 +165,16 @@ export function LossStepClient({
   const isDirty = !areLossLinesEqual(items, toLineState(data));
   const previousInitialDataRef = useRef(initialData);
 
-  useLedgerUpdatedAtSync(data.id, (updatedAt) => {
-    setData((current) => ({ ...current, updatedAt }));
+  useLedgerSync(data.id, (snapshot) => {
+    setData((current) =>
+      snapshot.version < current.version
+        ? current
+        : {
+            ...current,
+            updatedAt: snapshot.updatedAt,
+            version: snapshot.version,
+          },
+    );
   });
 
   useEffect(() => {
@@ -317,7 +325,7 @@ export function LossStepClient({
 
       setData(result.data);
       setItems(toLineState(result.data));
-      notifyLedgerUpdated(result.data.id, result.data.updatedAt);
+      notifyLedgerUpdated(result.data);
       const savedCount = result.data.lossItems.length;
       const message =
         savedCount > 0
