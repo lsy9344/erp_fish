@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Tabs } from "~/components/ui/tabs";
@@ -41,6 +41,7 @@ export function LedgerDetailTabs({
   className,
 }: LedgerDetailTabsProps) {
   const [activeTab, setActiveTab] = useState(value);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 뒤로/앞으로가기로 URL이 바뀌면 탭 상태도 같이 움직인다.
   useEffect(() => {
@@ -67,15 +68,22 @@ export function LedgerDetailTabs({
       "",
       `${window.location.pathname}?${params.toString()}`,
     );
+
+    // 탭바가 요약 섹션들 아래에 있어, 탭만 바꾸면 선택한 항목이 화면에 보이지
+    // 않는다. 클릭한 탭 영역을 화면 상단으로 스크롤해 해당 섹션으로 이동시킨다.
+    // scroll-mt로 모바일 sticky 헤더(h-14) 높이만큼 여백을 둔다.
+    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={handleValueChange}
-      className={className}
-    >
-      {children}
-    </Tabs>
+    <div ref={containerRef} className="scroll-mt-16">
+      <Tabs
+        value={activeTab}
+        onValueChange={handleValueChange}
+        className={className}
+      >
+        {children}
+      </Tabs>
+    </div>
   );
 }
