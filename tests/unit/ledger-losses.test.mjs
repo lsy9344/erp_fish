@@ -175,6 +175,36 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
     invalidReason.error.issues[0].message,
     "사유/특이사항을 입력해 주세요.",
   );
+
+  const invalidQuantity = ledgerLossesSchema.safeParse({
+    ...payload,
+    losses: [{ ...payload.losses[0], quantity: "1.55" }],
+  });
+  assert.equal(invalidQuantity.success, false);
+  assert.equal(
+    invalidQuantity.error.issues[0].message,
+    "박스단위 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+  );
+
+  const invalidRecoveredAmount = ledgerLossesSchema.safeParse({
+    ...payload,
+    losses: [{ ...payload.losses[0], recoveredAmount: "" }],
+  });
+  assert.equal(invalidRecoveredAmount.success, false);
+  assert.equal(
+    invalidRecoveredAmount.error.issues[0].message,
+    "떨이로 실제 판매한 금액은 0원 이상의 정수여야 합니다.",
+  );
+
+  const emptyLoss = ledgerLossesSchema.safeParse({
+    ...payload,
+    losses: [{ ...payload.losses[0], quantity: "0", recoveredAmount: "0" }],
+  });
+  assert.equal(emptyLoss.success, false);
+  assert.equal(
+    emptyLoss.error.issues[0].message,
+    "박스단위 수량 또는 떨이로 실제 판매한 금액 중 하나는 0보다 커야 합니다.",
+  );
 });
 
 test("planned sale price loss amount uses target price minus recovered sales", async () => {
@@ -320,7 +350,7 @@ test("ledger loss quantity errors explain product and inventory flow", async () 
       purchasedQuantity: 0,
       requestedLossQuantity: 2,
     }),
-    "포크오징어 / M2 손실 수량이 재고보다 많습니다. 입력 수량 2개, 손실 가능 수량 0개입니다. 전일재고 0개 + 오늘매입 0개를 확인해 주세요.",
+    "포크오징어 / M2 박스단위 손실 수량이 재고보다 많습니다. 입력 박스단위 수량 2개, 손실 가능 수량 0개입니다. 전일재고 0개 + 오늘매입 0개를 확인해 주세요.",
   );
 
   assert.equal(
@@ -375,7 +405,10 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /getLossQuantityIdentity/);
   assert.match(actionSource, /storeSalesPricePlan\.findMany/);
   assert.match(actionSource, /recoveredAmount:\s*loss\.recoveredAmount/);
-  assert.match(actionSource, /normalized\.amount\s*=\s*calculatePlannedPriceLossAmount/);
+  assert.match(
+    actionSource,
+    /normalized\.amount\s*=\s*calculatePlannedPriceLossAmount/,
+  );
   assert.match(actionSource, /existing\.productName/);
   assert.match(actionSource, /reconcileLedgerInventoryAdjustments\(/);
   // WO-02(2026-06-22): 손실 저장은 조정 정합화 이후 FIFO lot snapshot을 최신화한다.
@@ -412,6 +445,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /lossTerms/);
   assert.match(componentSource, /lossTerms\.totalLossQuantity/);
   assert.match(componentSource, /lossTerms\.totalLossAmount/);
+  assert.match(componentSource, /lossTerms\.quantityHelp/);
   assert.match(componentSource, /lossTerms\.recoveredAmount/);
   assert.match(componentSource, /lossTerms\.recoveredAmountHelp/);
   const lossTermsSource = readProjectFile(
@@ -420,12 +454,17 @@ test("ledger loss query action and UI contracts are wired", () => {
     "losses",
     "terms.ts",
   );
-  assert.match(lossTermsSource, /totalLossQuantity:\s*"총 손실 수량"/);
-  assert.match(lossTermsSource, /totalLossAmount:\s*"총 손실액"/);
-  assert.match(lossTermsSource, /recoveredAmount:\s*"실제 판매\/회수액\(원\)"/);
+  assert.match(lossTermsSource, /quantity:\s*"박스단위 수량"/);
   assert.match(
     lossTermsSource,
-    /recoveredAmountHelp:\s*"손실액은 개점 전 판매가 계획에서 이 금액을 뺀 값으로 자동 계산됩니다\."/,
+    /quantityHelp:\s*"한 박스 100마리 중 10마리를 폐기하면 0\.1, 한 박스 10바구니 중 2바구니를 폐기하면 0\.2로 입력하세요\."/,
+  );
+  assert.match(lossTermsSource, /totalLossQuantity:\s*"총 박스단위 손실 수량"/);
+  assert.match(lossTermsSource, /totalLossAmount:\s*"총 손실액"/);
+  assert.match(lossTermsSource, /recoveredAmount:\s*"떨이로 실제 판매한 금액"/);
+  assert.match(
+    lossTermsSource,
+    /recoveredAmountHelp:\s*"손실액은 개점 전 판매가 계획에서 떨이로 실제 판매한 금액을 뺀 값으로 자동 계산됩니다\."/,
   );
   assert.match(componentSource, /clientKey/);
   assert.match(componentSource, /id:\s*""/);

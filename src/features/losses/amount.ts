@@ -1,7 +1,8 @@
+import { lossTerms } from "./terms.ts";
+
 const MAX_KRW_INTEGER = 2_147_483_647;
 
-export const recoveredAmountError =
-  "실제 판매/회수액은 0원 이상의 정수여야 합니다.";
+export const recoveredAmountError = lossTerms.recoveredAmountInvalid;
 
 export function isValidKrwInteger(value: number) {
   return Number.isSafeInteger(value) && value >= 0 && value <= MAX_KRW_INTEGER;

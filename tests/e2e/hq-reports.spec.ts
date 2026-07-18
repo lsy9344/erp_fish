@@ -12,12 +12,31 @@ const STORE_IDS = {
   closed: "store-story-6-1-closed",
   holiday: "store-story-6-1-holiday",
   inProgress: "store-story-6-2-in-progress",
+  marginDefault: "store-report-margin-default",
+  marginDestructive: "store-report-margin-destructive",
+  marginMissing: "store-report-margin-missing",
+  productRanking: "store-report-product-ranking",
 } as const;
 const STORY_STORE_IDS = Object.values(STORE_IDS);
+const DAILY_CHART_STORE_IDS = [
+  STORE_IDS.marginDefault,
+  STORE_IDS.marginDestructive,
+  STORE_IDS.marginMissing,
+  STORE_IDS.productRanking,
+];
 const PRODUCT_IDS = {
   fish: "product-story-5-5-fish",
+  margin: "product-report-margin",
 } as const;
-const STORY_PRODUCT_IDS = Object.values(PRODUCT_IDS);
+const PRODUCT_RANKING_IDS = Array.from(
+  { length: 12 },
+  (_, index) => `product-report-ranking-${String(index + 1).padStart(2, "0")}`,
+);
+const STORY_PRODUCT_IDS = [
+  ...Object.values(PRODUCT_IDS),
+  ...PRODUCT_RANKING_IDS,
+];
+const DAILY_CHART_PRODUCT_IDS = [PRODUCT_IDS.margin, ...PRODUCT_RANKING_IDS];
 const LOSS_CODE_IDS = {
   waste: "loss-code-story-5-5-waste",
 } as const;
@@ -250,6 +269,25 @@ async function seedStorySixOneData() {
       lossTypeName: "스토리5-5 폐기",
       quantity: 1,
       amount: 10000,
+      usedPlannedPrice: false,
+      reason: STORY_MARKER,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: closedLedger.id,
+      productId: PRODUCT_IDS.fish,
+      ledgerInputCodeId: LOSS_CODE_IDS.waste,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      lossTypeName: "스토리5-5 폐기",
+      quantity: 2,
+      amount: 20000,
+      usedPlannedPrice: true,
       reason: STORY_MARKER,
       createdById: actorId,
       updatedById: actorId,
@@ -294,6 +332,179 @@ async function seedStorySixOneData() {
     originalValue: closedLedger.totalSalesAmount,
     correctedValue: 45000,
     reason: STORY_MARKER,
+  });
+}
+
+async function seedDailyChartAndRankingFixtures() {
+  const actorId = await getHeadquartersUserId();
+
+  await prisma.product.create({
+    data: {
+      id: PRODUCT_IDS.margin,
+      name: "마진 경계 품목",
+      category: "선어",
+      spec: "1개",
+      defaultUnitPrice: 700000,
+      updatedById: actorId,
+    },
+  });
+  await prisma.product.createMany({
+    data: PRODUCT_RANKING_IDS.map((id, index) => ({
+      id,
+      name: `검색전용품목${String(index + 1).padStart(2, "0")}`,
+      category: index % 2 === 0 ? "냉동" : "생물",
+      spec: `숨은규격${String(index + 1).padStart(2, "0")}`,
+      defaultUnitPrice: 1000,
+      updatedById: actorId,
+    })),
+  });
+  await prisma.store.createMany({
+    data: [
+      {
+        id: STORE_IDS.marginDefault,
+        name: "경계 기본점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
+        id: STORE_IDS.marginDestructive,
+        name: "경계 경고점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
+        id: STORE_IDS.marginMissing,
+        name: "경계 예상없음점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
+        id: STORE_IDS.productRanking,
+        name: "품목 순위점",
+        isActive: true,
+        updatedById: actorId,
+      },
+    ],
+  });
+
+  await seedMarginFixture({
+    actorId,
+    storeId: STORE_IDS.marginDefault,
+    plannedUnitPrice: 979158,
+  });
+  await seedMarginFixture({
+    actorId,
+    storeId: STORE_IDS.marginDestructive,
+    plannedUnitPrice: 979020,
+  });
+  await seedMarginFixture({
+    actorId,
+    storeId: STORE_IDS.marginMissing,
+    plannedUnitPrice: null,
+  });
+  await seedProductRankingFixture(actorId);
+}
+
+async function seedMarginFixture(input: {
+  actorId: string;
+  storeId: string;
+  plannedUnitPrice: number | null;
+}) {
+  const ledger = await seedLedger({
+    actorId: input.actorId,
+    storeId: input.storeId,
+    status: "HEADQUARTERS_CLOSED",
+    totalSalesAmount: 1000001,
+    cashAmount: 1000001,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+  });
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: PRODUCT_IDS.margin,
+      productName: "마진 경계 품목",
+      productCategory: "선어",
+      productSpec: "1개",
+      unitPrice: 700000,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity: 0,
+      quantity: 0,
+      inventoryAmount: 0,
+      isModified: true,
+      carryoverSource: "MANUAL",
+      createdById: input.actorId,
+      updatedById: input.actorId,
+    },
+  });
+  await prisma.ledgerInventoryFifoLot.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      ledgerInventoryItemId: inventoryItem.id,
+      productId: PRODUCT_IDS.margin,
+      sourceType: "PURCHASE",
+      unitPrice: 700000,
+      originalQuantity: 1,
+      consumedQuantity: 1,
+      remainingQuantity: 0,
+      originalAmount: 700000,
+      consumedAmount: 700000,
+      remainingAmount: 0,
+      sortOrder: 1,
+      sourceBusinessDate: ledger.closingDate,
+    },
+  });
+
+  if (input.plannedUnitPrice !== null) {
+    await prisma.storeSalesPricePlan.create({
+      data: {
+        storeId: input.storeId,
+        businessDate: ledger.closingDate,
+        productId: PRODUCT_IDS.margin,
+        plannedUnitPrice: input.plannedUnitPrice,
+        createdById: input.actorId,
+        updatedById: input.actorId,
+      },
+    });
+  }
+}
+
+async function seedProductRankingFixture(actorId: string) {
+  const ledger = await seedLedger({
+    actorId,
+    storeId: STORE_IDS.productRanking,
+    status: "HEADQUARTERS_CLOSED",
+    totalSalesAmount: 100000,
+    cashAmount: 100000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+  });
+
+  await prisma.ledgerInventoryItem.createMany({
+    data: PRODUCT_RANKING_IDS.map((productId, index) => {
+      const rank = index + 1;
+      const soldQuantity = 13 - rank;
+      return {
+        dailyLedgerId: ledger.id,
+        productId,
+        productName: `검색전용품목${String(rank).padStart(2, "0")}`,
+        productCategory: index % 2 === 0 ? "냉동" : "생물",
+        productSpec: `숨은규격${String(rank).padStart(2, "0")}`,
+        unitPrice: 1000,
+        previousQuantity: soldQuantity,
+        purchasedQuantity: 0,
+        currentQuantity: 0,
+        quantity: 0,
+        inventoryAmount: 0,
+        isModified: true,
+        carryoverSource: "MANUAL" as const,
+        createdById: actorId,
+        updatedById: actorId,
+      };
+    }),
   });
 }
 
@@ -362,9 +573,12 @@ async function createCorrectionRecord(input: {
   });
 }
 
-async function cleanupStorySixOneData() {
+async function cleanupStoreFixtures(
+  storeIds: readonly string[],
+  productIds: readonly string[],
+) {
   const ledgers = await prisma.dailyLedger.findMany({
-    where: { storeId: { in: STORY_STORE_IDS } },
+    where: { storeId: { in: [...storeIds] } },
     select: { id: true },
   });
   const ledgerIds = ledgers.map((ledger) => ledger.id);
@@ -411,14 +625,25 @@ async function cleanupStorySixOneData() {
     });
   }
 
-  await prisma.store.deleteMany({
-    where: { id: { in: STORY_STORE_IDS } },
+  await prisma.storeSalesPricePlan.deleteMany({
+    where: { storeId: { in: [...storeIds] } },
   });
-  await prisma.ledgerInputCode.deleteMany({
-    where: { id: { in: STORY_LOSS_CODE_IDS } },
+  await prisma.store.deleteMany({
+    where: { id: { in: [...storeIds] } },
   });
   await prisma.product.deleteMany({
-    where: { id: { in: STORY_PRODUCT_IDS } },
+    where: { id: { in: [...productIds] } },
+  });
+}
+
+async function cleanupDailyChartAndRankingFixtures() {
+  await cleanupStoreFixtures(DAILY_CHART_STORE_IDS, DAILY_CHART_PRODUCT_IDS);
+}
+
+async function cleanupStorySixOneData() {
+  await cleanupStoreFixtures(STORY_STORE_IDS, STORY_PRODUCT_IDS);
+  await prisma.ledgerInputCode.deleteMany({
+    where: { id: { in: STORY_LOSS_CODE_IDS } },
   });
 }
 
@@ -429,6 +654,115 @@ function getDesktopRow(page: Page, storeId: string) {
 function getStoreSelect(page: Page) {
   return page.getByRole("combobox", { name: "지점" });
 }
+
+test("본사는 사이드바에서 통합 리포트를 열고 차트와 같은 표를 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.getByRole("link", { name: "리포트" }).click();
+
+  await expect(page).toHaveURL(/\/app\/reports\/overview/);
+  await expect(
+    page.getByRole("heading", { name: "통합 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+  await expect(page.getByText("실제 총매출").first()).toBeVisible();
+  await expect(page.getByText("손실 유형").first()).toBeVisible();
+  await expect(page.getByText("월 손익 흐름").first()).toBeVisible();
+  await expect(page.getByText(/오늘 기준/)).toBeVisible();
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  await expect(page.getByRole("table").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /상세/ }).first()).toBeVisible();
+});
+
+test("통합 리포트 월 지점 필터는 URL과 모든 표에 유지된다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/overview?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
+
+  await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
+  await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
+  await expect(page).toHaveURL(new RegExp(`storeId=${STORE_IDS.closed}`));
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  expect(await page.getByRole("table").count()).toBeGreaterThanOrEqual(5);
+  await expect(
+    page.getByRole("table").getByText("스토리6-1 정정마감점").first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table").getByText("스토리6-2 입력중점"),
+  ).toHaveCount(0);
+});
+
+test("통합 리포트는 정정과 손실 계산 기준 누락을 0으로 숨기지 않는다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/overview?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+  );
+
+  await page.getByRole("button", { name: "표 보기" }).click();
+  await expect(page.getByText(/45,000/).first()).toBeVisible();
+  await expect(page.getByText(/계산 가능 1\/2건/).first()).toBeVisible();
+  await expect(page.getByText(/판매가 계획 기준/).first()).toBeVisible();
+  await expect(page.getByText(/^미입력 \d+건$/)).toBeVisible();
+});
+
+test("통합 리포트는 조회와 export 권한을 분리한다", async ({ page }) => {
+  await login(page, "hq-viewer@example.com");
+  await page.goto("/app/reports/overview");
+
+  await expect(
+    page.getByRole("heading", { name: "통합 리포트" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /Excel/ })).toHaveCount(0);
+});
+
+test("지정 지점 본사는 통합 리포트에서 배정 지점만 본다", async ({ page }) => {
+  await login(page, "hq-assigned@example.com");
+  await page.goto("/app/reports/overview");
+
+  const options = await page
+    .locator('select[name="storeId"] option')
+    .allTextContents();
+  expect(options).toContain("서초점");
+  expect(options).not.toContain("스토리6-1 정정마감점");
+  expect(options).not.toContain("스토리6-2 입력중점");
+});
+
+test("지점장은 통합 리포트에 접근할 수 없다", async ({ page }) => {
+  await login(page, "manager@example.com");
+  await page.goto("/app/reports/overview");
+
+  await expect(
+    page.getByRole("heading", { name: "접근 권한이 없습니다." }),
+  ).toBeVisible();
+});
+
+test("통합 리포트는 좁은 화면에서 가로 넘침 없이 키보드로 표를 전환한다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await login(page, "hq@example.com");
+  await page.goto("/app/reports/overview");
+
+  await page.getByRole("button", { name: "표 보기" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("table").first()).toBeVisible();
+
+  const viewportWidths = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
+    viewportWidths.clientWidth + 1,
+  );
+});
 
 test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 반영 숫자를 본다", async ({
   page,
@@ -446,25 +780,21 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(
     page.getByText("품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다."),
   ).toHaveCount(0);
-  // WO(2026-06-25): 지점별 토글 차트 + 품목별 이익률 차트가 추정 라벨로 노출된다.
   await expect(
-    page.getByRole("heading", { name: /지점별 .* 매출·이익률 \(추정\)/ }),
+    page.getByRole("heading", { name: "지점별 장부 입력 매출·마진율" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "이익률", exact: true }),
+    page.getByRole("button", { name: "마진율순", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "매출액", exact: true }),
+    page.getByRole("button", { name: "매출액순", exact: true }),
   ).toBeVisible();
-  // WO-04(2026-06-28): 제목은 "품목별 판매 현황 (추정)"으로 통일한다.
   await expect(
-    page.getByRole("heading", { name: "품목별 판매 현황 (추정)" }),
+    page.getByRole("heading", { name: "품목 판매순위" }),
   ).toBeVisible();
-  // 이 시드에는 판매 품목이 없을 수 있다. 데이터가 있으면 표 헤더(추정 판매 수량)를,
-  // 없으면 빈 상태를 보이며 둘 중 하나는 반드시 노출된다.
   await expect(
     page
-      .getByRole("columnheader", { name: "추정 판매 수량" })
+      .getByRole("columnheader", { name: "판매수량" })
       .or(page.getByText("품목별 판매 데이터 없음"))
       .first(),
   ).toBeVisible();
@@ -500,6 +830,241 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(holidayRow).toContainText("휴무");
   await expect(holidayRow).toContainText("휴무일");
   await expect(holidayRow).toContainText("정정 확인 필요");
+});
+
+test.describe("일별 차트와 품목 순위 전용 데이터", () => {
+  test.beforeEach(async () => {
+    await seedDailyChartAndRankingFixtures();
+  });
+
+  test.afterEach(async () => {
+    await cleanupDailyChartAndRankingFixtures();
+  });
+
+  test("지점별 장부 매출 차트는 raw 마진율로 정렬하고 1.5%p 경계를 표시한다", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page, "hq@example.com");
+    await page.goto("/app/reports/daily?date=today");
+
+    const section = page
+      .locator("section")
+      .filter({ hasText: "지점별 장부 입력 매출·마진율" });
+    const salesSort = section.getByRole("button", {
+      name: "매출액순",
+      exact: true,
+    });
+    const marginSort = section.getByRole("button", {
+      name: "마진율순",
+      exact: true,
+    });
+    await expect(salesSort).toHaveAttribute("aria-pressed", "true");
+    await expect(marginSort).toHaveAttribute("aria-pressed", "false");
+
+    const bars = section.locator('[data-testid^="store-performance-bar-"]');
+    await expect(
+      section.getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`),
+    ).toBeAttached();
+    const scroller = section.getByTestId("store-performance-chart-scroll");
+    await expect(scroller).toBeVisible();
+    expect(
+      await scroller.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+
+    const closedBar = section.getByTestId(
+      `store-performance-bar-${STORE_IDS.marginDefault}`,
+    );
+    expect((await closedBar.boundingBox())?.width ?? 0).toBeGreaterThan(80);
+
+    const accessibleTable = section.getByRole("table", {
+      name: "지점별 매출과 마진 데이터",
+    });
+    const defaultMarginRow = accessibleTable
+      .locator("tbody tr")
+      .filter({ hasText: "경계 기본점" });
+    await expect(defaultMarginRow).toContainText("경계 기본점");
+    await expect(defaultMarginRow).toContainText("₩100만");
+    await expect(defaultMarginRow).toContainText("30%");
+    await expect(defaultMarginRow).toContainText("28.51%");
+    await expect(defaultMarginRow).toContainText("기준 이내");
+
+    const missingMarginRow = accessibleTable
+      .locator("tbody tr")
+      .filter({ hasText: "경계 예상없음점" });
+    await expect(missingMarginRow).toContainText("경계 예상없음점");
+    await expect(missingMarginRow).toContainText("₩100만");
+    await expect(missingMarginRow).toContainText("30%");
+    await expect(missingMarginRow).toContainText("데이터 부족");
+    await expect(missingMarginRow).toContainText("판정 불가");
+
+    const salesOrder = await bars.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-testid")),
+    );
+    expect(
+      salesOrder.indexOf(`store-performance-bar-${STORE_IDS.marginDefault}`),
+    ).toBeLessThan(
+      salesOrder.indexOf(`store-performance-bar-${STORE_IDS.closed}`),
+    );
+    expect(salesOrder).not.toContain(
+      `store-performance-bar-${STORE_IDS.empty}`,
+    );
+
+    await section
+      .getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`)
+      .hover();
+    await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
+      /₩100만 · 실제 30% \(예상 28\.51%\)/,
+    );
+
+    await section
+      .getByTestId(`store-performance-bar-${STORE_IDS.marginDestructive}`)
+      .hover();
+    await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
+      /₩100만 · 실제 30% \(예상 28\.50%\) · 마진 차이 1\.5%p 이상/,
+    );
+
+    await marginSort.click();
+    await expect(salesSort).toHaveAttribute("aria-pressed", "false");
+    await expect(marginSort).toHaveAttribute("aria-pressed", "true");
+    await expect
+      .poll(async () => {
+        const marginOrder = await bars.evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute("data-testid")),
+        );
+        const closedIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.closed}`,
+        );
+        const defaultIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.marginDefault}`,
+        );
+        return (
+          closedIndex >= 0 && defaultIndex >= 0 && closedIndex < defaultIndex
+        );
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        const marginOrder = await bars.evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute("data-testid")),
+        );
+        const unavailableIndex = marginOrder.indexOf(
+          `store-performance-bar-${STORE_IDS.inProgress}`,
+        );
+        return [
+          STORE_IDS.closed,
+          STORE_IDS.marginDefault,
+          STORE_IDS.marginDestructive,
+          STORE_IDS.marginMissing,
+        ].every((storeId) => {
+          const storeIndex = marginOrder.indexOf(
+            `store-performance-bar-${storeId}`,
+          );
+          return storeIndex >= 0 && storeIndex < unavailableIndex;
+        });
+      })
+      .toBe(true);
+
+    await section
+      .getByTestId(`store-performance-bar-${STORE_IDS.inProgress}`)
+      .hover();
+    await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
+      /₩15만 · 실제 데이터 부족 \(예상 데이터 부족\)/,
+    );
+
+    await expect(section.getByText(/실제 30% \(예상 28\.51%\)/)).toBeVisible();
+    await expect(
+      section.getByText("마진 차이 1.5%p 이상", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      section.getByText(/실제 30% \(예상 데이터 부족\)/),
+    ).toBeVisible();
+    await expect(
+      section.getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`),
+    ).toHaveAttribute("fill", "var(--chart-1)");
+    await expect(
+      section.getByTestId(
+        `store-performance-bar-${STORE_IDS.marginDestructive}`,
+      ),
+    ).toHaveAttribute("fill", "var(--destructive)");
+    await expect(
+      section.getByTestId(`store-performance-bar-${STORE_IDS.marginMissing}`),
+    ).toHaveAttribute("fill", "var(--chart-1)");
+  });
+
+  test("일별 품목 판매순위는 판매수량 상위 10개와 이름·규격 검색을 제공한다", async ({
+    page,
+  }) => {
+    await login(page, "hq@example.com");
+    await page.goto("/app/reports/daily?date=today");
+
+    const section = page
+      .locator("section")
+      .filter({ hasText: "품목 판매순위" });
+    await expect(section.locator(".recharts-wrapper")).toHaveCount(0);
+    await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
+    for (const summaryLabel of [
+      "추정 판매액 합계",
+      "추정 매출이익 합계",
+      "당일 추정 이익률",
+      "품목 수",
+    ]) {
+      await expect(
+        section.getByText(summaryLabel, { exact: true }),
+      ).toHaveCount(0);
+    }
+
+    await expect(section.getByRole("columnheader")).toHaveText([
+      "품목",
+      "규격",
+      "판매수량",
+    ]);
+    for (const removedHeader of [
+      "분류",
+      "추정 판매액",
+      "추정 원가",
+      "추정 마진",
+      "추정 이익률",
+      "상태",
+    ]) {
+      await expect(
+        section.getByRole("columnheader", { name: removedHeader, exact: true }),
+      ).toHaveCount(0);
+    }
+
+    const rows = section.locator("tbody tr");
+    await expect(rows).toHaveCount(10);
+    await expect(rows.first()).toContainText("검색전용품목01");
+    await expect(rows.last()).toContainText("검색전용품목10");
+    await expect(section.getByText("검색전용품목11")).toHaveCount(0);
+
+    const search = section.getByLabel("품목 검색");
+    await expect(search).toHaveAttribute("type", "search");
+    await expect(search).toHaveAttribute(
+      "placeholder",
+      "품목명 또는 규격 검색",
+    );
+    await search.fill("검색전용품목11");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("검색전용품목11");
+
+    await search.fill("");
+    await expect(rows).toHaveCount(10);
+    await search.fill("숨은규격12");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("검색전용품목12");
+    await search.fill("없는 품목");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first().locator("td")).toHaveCount(1);
+    await expect(rows.first().locator("td")).toHaveAttribute("colspan", "3");
+    await expect(rows.first()).toHaveText("검색 결과가 없습니다.");
+
+    await expect(section).toContainText(
+      "판매수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매 데이터가 아닌 재고 흐름 기반 추정값입니다.",
+    );
+  });
 });
 
 test("본사는 선택한 특정 일자의 리포트를 본다", async ({ page }) => {
@@ -771,7 +1336,7 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   const lossSummary = page.getByTestId("hq-report-monthly-loss-summary");
   await expect(lossSummary).toContainText("손실 유형별 요약");
   await expect(lossSummary).toContainText("스토리5-5 폐기");
-  await expect(lossSummary).toContainText("₩10,000");
+  await expect(lossSummary).toContainText("₩30,000");
 
   const inventoryFlow = page.getByTestId("hq-report-monthly-inventory-flow");
   await expect(inventoryFlow).toContainText("전일재고");
@@ -1265,6 +1830,9 @@ test("본사는 품목 검토 페이지에서 차트와 표를 전환해 본다"
     .filter({ hasText: "품목별 판매 현황 (추정)" });
   await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
   await expect(
+    profitabilitySection.getByText("추정 판매액 합계", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
     profitabilitySection
       .getByRole("columnheader", { name: "추정 판매 수량" })
       .or(page.getByText("품목별 판매 데이터 없음"))
@@ -1282,13 +1850,24 @@ test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 
     page.getByRole("heading", { name: "매출 검토 (추정)" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "지점별 매출·이익률 (추정)" }),
+    page.getByRole("heading", { name: "지점별 장부 입력 매출·마진율" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "차트 보기" }).first(),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "표 보기" }).first(),
+  ).toBeVisible();
+
+  const profitabilitySection = page
+    .locator("section")
+    .filter({ hasText: "품목별 추정 매출" });
+  await profitabilitySection.getByRole("button", { name: "표 보기" }).click();
+  await expect(
+    profitabilitySection
+      .getByRole("columnheader", { name: "추정 판매 수량" })
+      .or(page.getByText("품목별 판매 데이터 없음"))
+      .first(),
   ).toBeVisible();
 });
 

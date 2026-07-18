@@ -8,12 +8,12 @@ import {
   toFieldErrors,
 } from "../../lib/validation.ts";
 import { recoveredAmountError } from "./amount.ts";
+import { lossTerms } from "./terms.ts";
 
 const productError = "품목을 선택해 주세요.";
 const lossTypeError = "손실 유형을 선택해 주세요.";
-const quantityError =
-  "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
-const reasonError = "사유/특이사항을 입력해 주세요.";
+const quantityError = lossTerms.quantityInvalid;
+const reasonError = lossTerms.reasonRequired;
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 
@@ -143,7 +143,7 @@ export const ledgerLossesSchema = ledgerLossesContextSchema
       if (loss.quantity === 0 && loss.recoveredAmount === 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "수량 또는 실제 판매/회수액 중 하나는 0보다 커야 합니다.",
+          message: lossTerms.positiveValueRequired,
           path: ["losses", index, "quantity"],
         });
       }

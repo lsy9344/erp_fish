@@ -277,10 +277,9 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
     purchases: [{ ...basePayload.purchases[0], quantity: "2.28" }],
   });
   assert.equal(tooManyDecimalPlaces.success, false);
-  assert.deepEqual(
-    tooManyDecimalPlaces.error.flatten().fieldErrors.purchases,
-    ["수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다."],
-  );
+  assert.deepEqual(tooManyDecimalPlaces.error.flatten().fieldErrors.purchases, [
+    "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+  ]);
 
   const unchangedLegacyQuantity = ledgerPurchaseSchema.parse({
     ...basePayload,
@@ -295,10 +294,9 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
     purchases: [{ ...basePayload.purchases[0], id: "", quantity: null }],
   });
   assert.equal(forgedLegacySentinel.success, false);
-  assert.deepEqual(
-    forgedLegacySentinel.error.flatten().fieldErrors.purchases,
-    ["수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다."],
-  );
+  assert.deepEqual(forgedLegacySentinel.error.flatten().fieldErrors.purchases, [
+    "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+  ]);
 
   const formattedPrice = ledgerPurchaseSchema.safeParse({
     ...basePayload,
@@ -943,7 +941,10 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   );
   const productSnapshotFieldsSource = componentSource.slice(
     productSnapshotFieldsStart,
-    componentSource.indexOf("              return (", productSnapshotFieldsStart),
+    componentSource.indexOf(
+      "              return (",
+      productSnapshotFieldsStart,
+    ),
   );
   assert.ok(
     productSnapshotFieldsStart >= 0,
@@ -987,6 +988,22 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /7단계 추정 매출에 쓰는 판매 예정가입니다\./);
   assert.match(componentSource, /showSalesPricePlan/);
   assert.match(componentSource, /plannedUnitPrice/);
+  const authorSectionStart = componentSource.indexOf(
+    "{showAuthorDisplayName ? (",
+  );
+  const authorSectionSource = componentSource.slice(
+    authorSectionStart,
+    componentSource.indexOf("</section>", authorSectionStart),
+  );
+  assert.match(
+    authorSectionSource,
+    /<section className="border-primary\/30 bg-primary\/5 text-card-foreground rounded-lg border p-4">/,
+  );
+  assert.match(
+    authorSectionSource,
+    /aria-invalid=\{Boolean\(authorDisplayNameError\)\}/,
+  );
+  assert.match(authorSectionSource, /readOnly=\{isAuthorLocked\}/);
 
   const hqDetailSource = readProjectFile(
     "src",

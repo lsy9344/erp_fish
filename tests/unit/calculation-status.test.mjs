@@ -43,7 +43,7 @@ test("ledger calculations expose separated status code, label, and legacy reason
     value: 100_000,
     status: "ok",
   });
-  assert.equal(summary.paymentDifference.value, 5_000);
+  assert.equal(summary.paymentDifference.value, -5_000);
   assert.equal(summary.paymentDifference.status, "ok");
   assert.deepEqual(summary.paymentTotal, {
     value: 95_000,
@@ -84,7 +84,10 @@ test("ledger calculations expose separated status code, label, and legacy reason
         "OQ-14 차이를 당일 판매량으로 바꾸는 계산 의미 변경이 확정되지 않아 기존 차이 외 파생 계산은 기준 확인 필요입니다. 정책 story로 분리하세요.",
     },
   );
-  assert.equal(summary.salesDifference.metricId, "salesDifferenceMeaningChange");
+  assert.equal(
+    summary.salesDifference.metricId,
+    "salesDifferenceMeaningChange",
+  );
   assert.equal(
     summary.salesDifference.policyLabel,
     "차이의 당일 판매량 의미 변경",
@@ -138,6 +141,56 @@ test("ledger calculations mark invalid KRW arithmetic as unavailable and log con
     metricId: "paymentDifference",
     reason: "unsafe-krw-integer",
   });
+});
+
+test("ledger calculations reject payment difference when expense total is unsafe", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+  const maxSafeKrw = Number.MAX_SAFE_INTEGER;
+  const errors = [];
+  const originalError = console.error;
+
+  console.error = (...args) => {
+    errors.push(args);
+  };
+
+  try {
+    const summary = calculateLedgerReviewSummary({
+      totalSalesAmount: maxSafeKrw,
+      cashAmount: -maxSafeKrw,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 1,
+      expenseTotal: maxSafeKrw + 1,
+      inventoryItems: [],
+    });
+
+    assert.deepEqual(summary.paymentDifference, {
+      value: null,
+      status: "calculation-unavailable",
+      label: "계산 불가",
+      unavailableReason: "계산 불가",
+      reason:
+        "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(
+    errors.map((entry) => entry[1]),
+    [
+      { metricId: "expenseTotal", reason: "unsafe-krw-integer" },
+      { metricId: "paymentDifference", reason: "unsafe-krw-integer" },
+    ],
+  );
 });
 
 test("ledger calculations convert unexpected calculation errors into metric status", async () => {

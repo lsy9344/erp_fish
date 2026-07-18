@@ -2,6 +2,7 @@ import {
   getInventoryQuantityRelation,
   isManualFirstInventoryEntry,
 } from "./inventory-persist-policy.ts";
+import { formatQuantity } from "../../lib/format.ts";
 
 export const missingAdjustmentReasonMessage =
   "재고 차이를 고친 이유를 먼저 저장해 주세요.";
@@ -17,9 +18,10 @@ export function describeAdjustmentReason(
   lossQuantity: number,
 ) {
   const difference = currentQuantity - systemQuantity;
-  const lossNote = lossQuantity > 0 ? `손실 ${lossQuantity}개 반영 후 ` : "";
+  const lossNote =
+    lossQuantity > 0 ? `손실 ${formatQuantity(lossQuantity)} 반영 후 ` : "";
 
-  return `기준재고 ${systemQuantity}개인데 당일재고가 ${currentQuantity}개입니다(${lossNote}기준보다 ${difference}개 많음). 차이가 생긴 사유를 남겨 주세요.`;
+  return `기준재고 ${formatQuantity(systemQuantity)}인데 당일재고가 ${formatQuantity(currentQuantity)}입니다(${lossNote}기준보다 ${formatQuantity(difference)} 많음). 차이가 생긴 사유를 남겨 주세요.`;
 }
 
 export const missingRequiredCurrentQuantityMessage =

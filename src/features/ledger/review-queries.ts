@@ -84,8 +84,9 @@ function getWarnings(
   return [
     {
       id: "payment-difference",
-      label: "결제 합계 불일치",
-      detail: "총매출과 결제수단 합계가 다릅니다. 제출을 막지는 않습니다.",
+      label: "결제·지출 합계 불일치",
+      detail:
+        "총매출과 결제 합계 + 지출 합계가 다릅니다. 제출을 막지는 않습니다.",
       amount: paymentDifference.value,
     },
   ];
@@ -371,7 +372,7 @@ export function buildLedgerReviewStepSummaries({
       detail: stepDetail({
         stepId: "sales",
         missingItems: missingById,
-        savedDetail: "총매출과 결제수단 합계를 확인했습니다.",
+        savedDetail: "총매출, 결제 합계, 지출 합계를 확인했습니다.",
         calculationMetric: summary.paymentDifference,
       }),
       href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
@@ -380,7 +381,7 @@ export function buildLedgerReviewStepSummaries({
         moneyMetric("paymentTotal", "결제수단 합계", summary.paymentTotal),
         moneyMetric(
           "paymentDifference",
-          "결제수단 합계와 총매출 차이",
+          "총매출 - 결제 합계 - 지출 합계",
           summary.paymentDifference,
           "signed-krw",
         ),

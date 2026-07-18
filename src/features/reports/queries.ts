@@ -131,6 +131,7 @@ type ReportLedgerRecord = {
     lossTypeName: string;
     quantity: number;
     amount: number;
+    usedPlannedPrice?: boolean;
   }[];
 };
 
@@ -1510,11 +1511,20 @@ export type LedgerProfitSummary = {
   ledgerId: string;
   storeId: string;
   closingDate: Date;
+  status: DailyLedgerStatus;
   workerCount: number | null;
   totalSales: number | null;
   grossProfit: number | null;
   grossMarginRate: number | null;
   grossMarginReason: string | null;
+  lossItems: Array<{
+    id?: string;
+    lossTypeName: string;
+    quantity: number;
+    amount: number;
+    usedPlannedPrice: boolean;
+  }>;
+  hasUnappliedCorrections: boolean;
 };
 
 export async function getLedgerProfitSummariesForRange({
@@ -1598,6 +1608,7 @@ export async function getLedgerProfitSummariesForRange({
           lossTypeName: true,
           quantity: true,
           amount: true,
+          usedPlannedPrice: true,
         },
       },
     },
@@ -1621,6 +1632,7 @@ export async function getLedgerProfitSummariesForRange({
       ledgerId: ledger.id,
       storeId: ledger.storeId,
       closingDate: ledger.closingDate,
+      status: ledger.status,
       workerCount: summary.workerCount,
       totalSales: applied.totalSales.value,
       grossProfit: applied.grossProfit.value,
@@ -1631,6 +1643,8 @@ export async function getLedgerProfitSummariesForRange({
             applied.grossMarginRate.label ??
             "계산 불가")
           : null,
+      lossItems: summary.lossItems,
+      hasUnappliedCorrections: summary.hasUnappliedCorrections,
     });
   }
 
@@ -3062,13 +3076,24 @@ function toReportLedgerCalculationSummary(
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
   });
-  const lossTypeNameById = new Map(
-    ledger.ledgerLossItems.map((item) => [item.id, item.lossTypeName]),
+  const lossMetadataById = new Map(
+    ledger.ledgerLossItems.map((item) => [
+      item.id,
+      {
+        lossTypeName: item.lossTypeName,
+        usedPlannedPrice: item.usedPlannedPrice ?? false,
+      },
+    ]),
   );
-  const correctedLossItems = correctionOverlay.lossItems.map((item) => ({
-    ...item,
-    lossTypeName: lossTypeNameById.get(item.id ?? "") ?? null,
-  }));
+  const correctedLossItems = correctionOverlay.lossItems.map((item) => {
+    const metadata = lossMetadataById.get(item.id ?? "");
+
+    return {
+      ...item,
+      lossTypeName: metadata?.lossTypeName ?? "유형 미지정",
+      usedPlannedPrice: metadata?.usedPlannedPrice ?? false,
+    };
+  });
 
   return {
     ledgerId: ledger.id,
@@ -3663,6 +3688,9 @@ function toEmptyReportRow({
       "장부 입력 전이라 분석 매출 데이터가 없습니다.",
     ),
     grossMarginRate: metrics.grossMarginRate,
+    expectedGrossMarginRate: dataInsufficient(
+      "장부 입력 전이라 예상 마진율 데이터가 없습니다.",
+    ),
     marginDisplay: buildMarginDisplay(
       thresholdSettings,
       metrics.totalSales,
@@ -3822,6 +3850,7 @@ function toLedgerReportRow({
     salesAmount: reviewSummary.totalSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
+    expectedGrossMarginRate: reviewSummary.plannedGrossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
       reviewSummary.totalSales,

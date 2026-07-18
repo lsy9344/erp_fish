@@ -9,7 +9,10 @@ import {
   getKstBusinessDate,
 } from "~/features/ledger/date";
 import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
-import { revalidateStoreEntryPaths } from "~/server/revalidation";
+import {
+  revalidateDashboardAndReports,
+  revalidateStoreEntryPaths,
+} from "~/server/revalidation";
 import {
   salesPricePlanSchema,
   salesPricePlanStoreAccessSchema,
@@ -206,6 +209,7 @@ export async function saveSalesPricePlan(
     }
 
     revalidateStoreEntryPaths(["sales-plan", "losses"]);
+    revalidateDashboardAndReports();
 
     return result;
   } catch {

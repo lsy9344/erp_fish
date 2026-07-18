@@ -488,9 +488,23 @@ export function PurchaseStepClient({
     clearRowErrors();
     setResultMessage(null);
     setCarryoverWarning(null);
-    setPurchaseItems((current) =>
-      current.map((line) => (line.id === lineId ? { ...line, ...next } : line)),
-    );
+    setPurchaseItems((current) => {
+      const targetProductId = current.find(
+        (line) => line.id === lineId,
+      )?.productId;
+
+      return current.map((line) => {
+        if (line.id === lineId) {
+          return { ...line, ...next };
+        }
+
+        return next.plannedUnitPrice !== undefined &&
+          targetProductId &&
+          line.productId === targetProductId
+          ? { ...line, plannedUnitPrice: next.plannedUnitPrice }
+          : line;
+      });
+    });
   }
 
   function applyProduct(lineId: string, productId: string) {
@@ -610,7 +624,7 @@ export function PurchaseStepClient({
       />
 
       {showAuthorDisplayName ? (
-        <section className="bg-card text-card-foreground rounded-lg border p-4">
+        <section className="border-primary/30 bg-primary/5 text-card-foreground rounded-lg border p-4">
           <Field data-invalid={Boolean(authorDisplayNameError)}>
             <FieldLabel htmlFor="author-display-name">작성자 표시명</FieldLabel>
             <Input

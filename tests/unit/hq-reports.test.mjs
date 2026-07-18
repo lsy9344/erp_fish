@@ -56,7 +56,7 @@ test("HQ daily meeting report source files follow story 6.1 boundaries", () => {
   assert.match(loadingSource, /Skeleton/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
-  assert.match(sidebarSource, /href:\s*"\/app\/reports\/daily"/);
+  assert.match(sidebarSource, /href:\s*"\/app\/reports\/overview"/);
 });
 
 test("HQ daily meeting report query reuses dashboard calculation contracts", () => {
@@ -105,6 +105,163 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /correction-review-required/);
   assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
   assert.doesNotMatch(querySource, /export\s+async\s+function\s+(GET|POST)/);
+});
+
+test("HQ daily meeting rows carry the raw expected gross-margin metric", () => {
+  const typeSource = readProjectFile("src", "features", "reports", "types.ts");
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+
+  assert.match(typeSource, /expectedGrossMarginRate:\s*LedgerReviewMetric/);
+  assert.match(
+    querySource,
+    /expectedGrossMarginRate:\s*reviewSummary\.plannedGrossMarginRate/,
+  );
+  assert.match(
+    querySource,
+    /expectedGrossMarginRate:\s*dataInsufficient\([\s\S]*?예상 마진율 데이터가 없습니다/,
+  );
+  assert.doesNotMatch(
+    querySource,
+    /expectedGrossMarginRate:[\s\S]{0,120}(?:parseFloat|parseInt|Number)\s*\(.*analysisMarginDisplay/,
+  );
+});
+
+test("gross-margin gap threshold includes the exact 1.5%p boundary", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "store-daily-performance.ts",
+  );
+  const { hasSignificantGrossMarginGap } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.1851), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.18505), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.185), true);
+  assert.equal(hasSignificantGrossMarginGap(0.21, 0.195), true);
+  assert.equal(hasSignificantGrossMarginGap(-1000, -1000.015), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.015), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0149), false);
+  assert.equal(hasSignificantGrossMarginGap(null, 0.195), false);
+  assert.equal(hasSignificantGrossMarginGap(0.21, null), false);
+});
+
+test("HQ daily chart always uses sales bars and raw actual/expected margin rates", () => {
+  const chartSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "store-daily-performance-chart.tsx",
+  );
+
+  assert.match(
+    chartSource,
+    /type SortMode = "salesAmount" \| "grossMarginRate"/,
+  );
+  assert.match(chartSource, /<Bar dataKey="salesAmount"/);
+  assert.match(chartSource, /<Cell/);
+  assert.match(chartSource, /hasSignificantGrossMarginGap/);
+  assert.match(chartSource, /expectedGrossMarginRate\.value/);
+  assert.match(
+    chartSource,
+    /\.filter\(\(row\) => row\.salesAmount\.value !== null\)/,
+  );
+  assert.match(
+    chartSource,
+    /function compareNullableDescending[\s\S]*?if \(a === null\) return b === null \? 0 : 1;[\s\S]*?if \(b === null\) return -1;/,
+  );
+  assert.match(chartSource, /실제 데이터 부족/);
+  assert.match(chartSource, /예상 데이터 부족/);
+  assert.match(chartSource, /마진 차이 1\.5%p 이상/);
+  assert.match(chartSource, /title="지점별 장부 입력 매출·마진율"/);
+  assert.match(chartSource, /desc="막대는 장부 입력 매출/);
+  assert.match(chartSource, /<table className="sr-only"/);
+  assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
+  assert.match(
+    chartSource,
+    /actual === null \|\| expected === null[\s\S]*?"판정 불가"/,
+  );
+  assert.match(
+    chartSource,
+    /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as StoreChartRow[\s\S]*?\.label/,
+  );
+  assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|sortMode)\}/);
+  assert.doesNotMatch(chartSource, /추정 매출액|추정 이익률/);
+});
+
+test("daily product table is searchable, quantity-ranked, and limited to three columns", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "product-profitability-report.tsx",
+  );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+
+  assert.match(
+    componentSource,
+    /const \[searchQuery, setSearchQuery\] = useState/,
+  );
+  assert.match(componentSource, /const rankedItems = useMemo/);
+  assert.match(
+    componentSource,
+    /tableVariant\?: "profitability" \| "salesRanking"/,
+  );
+  assert.match(componentSource, /tableVariant = "profitability"/);
+  assert.match(componentSource, /\{showChart \? \(\s*<dl/);
+  assert.match(componentSource, /tableVariant === "salesRanking"/);
+  assert.match(componentSource, /b\.soldQuantity - a\.soldQuantity/);
+  assert.match(componentSource, /\.slice\(0, 10\)/);
+  assert.match(componentSource, /<BarChart[\s\S]*?data=\{data\.items\}/);
+  assert.match(componentSource, /data\.items\.map\(\(item\) =>/);
+  assert.doesNotMatch(componentSource, /<BarChart[\s\S]*?data=\{rankedItems\}/);
+  assert.equal(
+    componentSource.match(
+      /className="text-xs text-amber-600 dark:text-amber-500"/g,
+    )?.length,
+    2,
+  );
+  assert.match(componentSource, /FieldLabel[^>]*htmlFor="product-search"/);
+  assert.match(componentSource, /placeholder="품목명 또는 규격 검색"/);
+  assert.match(
+    componentSource,
+    /<h3 className="text-sm font-medium">판매수량 상위 10개<\/h3>/,
+  );
+  assert.match(componentSource, /colSpan=\{3\}/);
+  assert.match(componentSource, /검색 결과가 없습니다\./);
+  assert.match(componentSource, /추정 판매 수량/);
+  assert.match(componentSource, /추정 판매액/);
+  assert.match(componentSource, /추정 원가/);
+  assert.match(componentSource, /추정 마진/);
+  assert.match(componentSource, /추정 이익률/);
+  assert.match(componentSource, /item\.statusLabel/);
+  assert.match(
+    componentSource,
+    /판매수량 = 전일재고 \+ 당일매입 − 손실수량 − 당일재고/,
+  );
+  assert.match(dailyPageSource, /mode="table"/);
+  assert.match(dailyPageSource, /tableVariant="salesRanking"/);
+  assert.match(dailyPageSource, /품목 판매순위/);
+  assert.match(
+    dailyPageSource,
+    /재고 흐름으로 계산한 판매수량 기준 상위 품목입니다\./,
+  );
 });
 
 test("HQ daily meeting report UI reuses status and signal components without UI math", () => {
@@ -470,7 +627,10 @@ test("HQ report pages omit the category margin chart while preserving category c
   assert.match(dailyPageSource, /report\.rows/);
   assert.match(dailyPageSource, /ProductProfitabilityReport/);
   assert.match(dailyPageSource, /report\.productProfitability/);
-  assert.match(querySource, /buildProductProfitability\(ledgersWithPlannedPrice\)/);
+  assert.match(
+    querySource,
+    /buildProductProfitability\(ledgersWithPlannedPrice\)/,
+  );
 
   // 정책 문서는 원문 요구에 맞춰 "계산 불가" 고정이 아니라 추정 이익률 노출을 허용한다.
   assert.match(policyDocSource, /추정 이익률/);
@@ -3047,10 +3207,7 @@ test("monthly report lists P&L inputs as actual, estimated, or unavailable", asy
   assert.equal(byKey.get("sales")?.availabilityLabel, "실측");
   assert.equal(byKey.get("productSales")?.availabilityLabel, "추정");
   assert.equal(byKey.get("labor")?.availabilityLabel, "실측");
-  assert.equal(
-    byKey.get("purchaseCost")?.source,
-    "재고 흐름/FIFO 원가",
-  );
+  assert.equal(byKey.get("purchaseCost")?.source, "재고 흐름/FIFO 원가");
   assert.equal(
     byKey.get("purchaseCost")?.note,
     "재고 흐름과 FIFO 원가 기준으로 추정 산출합니다. 품목별 실판매 기록은 아직 직접 기록되지 않습니다.",

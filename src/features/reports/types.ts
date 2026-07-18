@@ -8,6 +8,8 @@ import type {
 } from "../dashboard/types.ts";
 import type { LedgerReviewMetric } from "../../server/calculations/ledger.ts";
 
+export const MONTHLY_PNL_COMPANY_WIDE_STORE_ID = "__company_wide__";
+
 export type DailyMeetingReportDatePreset = "today" | "yesterday" | "custom";
 
 export type DailyMeetingReportMetricKind = "money" | "percent" | "boolean";
@@ -57,6 +59,7 @@ export type DailyMeetingReportMetricEvidenceInput = {
 };
 
 export type DailyMeetingReportRow = HqDashboardRow & {
+  expectedGrossMarginRate: LedgerReviewMetric;
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
 };
 

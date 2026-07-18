@@ -3,7 +3,7 @@ type InventoryFieldErrors = Record<string, string[]>;
 export type InventoryErrorFocusTarget = {
   productId: string;
   currentIndex: number;
-  field: "quantity" | "reason";
+  field: "quantity" | "reason" | "unitPrice";
 };
 
 export function mapInventorySaveErrors(
@@ -17,7 +17,9 @@ export function mapInventorySaveErrors(
 
   for (const [key, messages] of Object.entries(errors)) {
     const match =
-      /^items\.(\d+)\.(adjustmentReason|currentQuantity|quantity)$/.exec(key);
+      /^items\.(\d+)\.(adjustmentReason|currentQuantity|quantity|unitPrice)$/.exec(
+        key,
+      );
 
     if (!match) {
       fieldErrors[key] = messages;
@@ -31,11 +33,24 @@ export function mapInventorySaveErrors(
       continue;
     }
 
-    const field = match[2] === "adjustmentReason" ? "reason" : "quantity";
+    const field =
+      match[2] === "adjustmentReason"
+        ? "reason"
+        : match[2] === "unitPrice"
+          ? "unitPrice"
+          : "quantity";
     firstFocusTarget ??= { productId, currentIndex, field };
 
     if (field === "reason") {
       adjustmentErrors[productId] ??= messages[0]!;
+      continue;
+    }
+
+    if (field === "unitPrice") {
+      fieldErrors[`items.${currentIndex}.unitPrice`] = [
+        ...(fieldErrors[`items.${currentIndex}.unitPrice`] ?? []),
+        ...messages,
+      ];
       continue;
     }
 

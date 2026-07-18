@@ -39,8 +39,13 @@ function calculatePaymentDifference(
   cashAmount: number,
   cardAmount: number,
   otherPaymentAmount: number,
+  expenseTotal: number,
 ) {
-  return totalSalesAmount - (cashAmount + cardAmount + otherPaymentAmount);
+  return (
+    totalSalesAmount -
+    (cashAmount + cardAmount + otherPaymentAmount) -
+    expenseTotal
+  );
 }
 
 function stepHref(
@@ -123,6 +128,7 @@ export function SalesPaymentStepClient({
     cashAmountValue,
     cardAmountValue,
     otherPaymentAmountValue,
+    ledger.expenseTotal,
   );
   const hasPaymentDifference = paymentDifference !== 0;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
@@ -406,6 +412,17 @@ export function SalesPaymentStepClient({
             ) : null}
           </Field>
 
+          <Field>
+            <FieldLabel htmlFor="expense-total">4단계 지출 합계</FieldLabel>
+            <Input
+              id="expense-total"
+              value={formatKrw(ledger.expenseTotal)}
+              readOnly
+              aria-readonly="true"
+              className="min-h-11 tabular-nums"
+            />
+          </Field>
+
           <Field data-invalid={Boolean(otherPaymentAmountError)}>
             <FieldLabel htmlFor="other-payment-amount">
               기타 결제수단
@@ -456,7 +473,7 @@ export function SalesPaymentStepClient({
                 <strong className="tabular-nums">
                   {formatKrw(paymentDifference)}
                 </strong>{" "}
-                (총매출 - 결제 합계)
+                (총매출 - 결제 합계 - 지출 합계)
               </p>
             ) : (
               <p className="text-muted-foreground">결제 합계 차액 0원</p>

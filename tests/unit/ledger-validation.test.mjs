@@ -159,7 +159,7 @@ test("validation helper preserves dotted field paths for nested step errors", as
   assert.equal(lossesInvalid.success, false);
   assert.deepEqual(toFieldErrors(lossesInvalid.error), {
     "losses.0.quantity": [
-      "수량 또는 실제 판매/회수액 중 하나는 0보다 커야 합니다.",
+      "박스단위 수량 또는 떨이로 실제 판매한 금액 중 하나는 0보다 커야 합니다.",
     ],
   });
 });
@@ -341,9 +341,7 @@ test("stored decimal quantity resolution requires matching identity and consumes
   assert.deepEqual(overflowAmountResult, {
     ok: false,
     fieldErrors: {
-      "purchases.4.quantity": [
-        "매입금액은 저장 가능한 범위 이하여야 합니다.",
-      ],
+      "purchases.4.quantity": ["매입금액은 저장 가능한 범위 이하여야 합니다."],
     },
   });
   assert.deepEqual(

@@ -85,7 +85,7 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
   assert.deepEqual(summary.operatingProfit, ok(79_000));
   assert.deepEqual(summary.productivity, ok(25_000));
   assert.deepEqual(summary.inventoryAmount, ok(16_000));
-  assert.deepEqual(summary.paymentDifference, ok(2_000));
+  assert.deepEqual(summary.paymentDifference, ok(-10_000));
   assert.deepEqual(summary.salesDifference, ok(91_000));
 });
 
@@ -649,7 +649,13 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
     /detail:\s*"지출 항목이 아직 입력되지 않았습니다\."/,
   );
   assert.match(querySource, /"paymentDifference"/);
-  assert.match(querySource, /"결제수단 합계와 총매출 차이"/);
+  assert.match(querySource, /"결제·지출 합계 불일치"/);
+  assert.match(
+    querySource,
+    /"총매출과 결제 합계 \+ 지출 합계가 다릅니다\. 제출을 막지는 않습니다\."/,
+  );
+  assert.match(querySource, /"총매출, 결제 합계, 지출 합계를 확인했습니다\."/);
+  assert.match(querySource, /"총매출 - 결제 합계 - 지출 합계"/);
   assert.match(querySource, /"signed-krw"/);
   assert.match(querySource, /"reviewStatus"/);
   assert.match(querySource, /"데이터 부족"/);
@@ -716,7 +722,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.doesNotMatch(clientSource, /summary\.salesDifference/);
   assert.match(clientSource, /stepSummaries/);
   assert.match(clientSource, /formatSignedKrw/);
-  assert.match(querySource, /결제수단 합계와 총매출 차이/);
+  assert.match(querySource, /총매출 - 결제 합계 - 지출 합계/);
   assert.doesNotMatch(clientSource, /임계값 초과|확정 이상/);
   assert.doesNotMatch(clientSource, /label="매출원가"/);
   assert.doesNotMatch(clientSource, /label="매출이익"/);
@@ -798,7 +804,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
           },
           {
             id: "paymentDifference",
-            label: "결제수단 합계와 총매출 차이",
+            label: "총매출 - 결제 합계 - 지출 합계",
             value: 0,
             kind: "signed-krw",
             status: "ok",

@@ -308,10 +308,37 @@ test("inventory schema validates current inventory and quantity separately", asy
 
   const parsedBlank = ledgerInventorySchema.parse({
     ...payload,
-    items: [{ productId: "product-1", currentQuantity: "", quantity: "" }],
+    items: [
+      {
+        productId: "product-1",
+        currentQuantity: "",
+        quantity: "",
+        unitPrice: "",
+      },
+    ],
   });
   assert.equal(parsedBlank.items[0].currentQuantity, null);
   assert.equal(parsedBlank.items[0].quantity, null);
+  assert.equal(parsedBlank.items[0].unitPrice, null);
+
+  const parsedUnitPrice = ledgerInventorySchema.parse({
+    ...payload,
+    items: [{ ...payload.items[0], unitPrice: "7000" }],
+  });
+  assert.equal(parsedUnitPrice.items[0].unitPrice, 7000);
+
+  for (const unitPrice of [-1, "1.5", "1,000"]) {
+    const parsed = ledgerInventorySchema.safeParse({
+      ...payload,
+      items: [{ ...payload.items[0], unitPrice }],
+    });
+
+    assert.equal(parsed.success, false);
+    assert.equal(
+      parsed.error.issues[0].message,
+      "매입단가는 0원 이상의 정수여야 합니다.",
+    );
+  }
 
   for (const value of [-1, "2.28", "1,000"]) {
     const parsed = ledgerInventorySchema.safeParse({
@@ -1285,6 +1312,25 @@ test("inventory save errors follow submitted product identity instead of row ord
       field: "quantity",
     },
   );
+
+  assert.deepEqual(
+    mapInventorySaveErrors(
+      { "items.0.unitPrice": ["manual unit price error"] },
+      ["manual-product"],
+      ["product-1", "manual-product"],
+    ),
+    {
+      fieldErrors: {
+        "items.1.unitPrice": ["manual unit price error"],
+      },
+      adjustmentErrors: {},
+      firstFocusTarget: {
+        productId: "manual-product",
+        currentIndex: 1,
+        field: "unitPrice",
+      },
+    },
+  );
 });
 
 test("inventory bulk-save errors preserve drafts and reveal the mapped row before focus", () => {
@@ -1345,6 +1391,11 @@ test("describeAdjustmentReason explains overstock with normalized basis numbers"
   assert.equal(
     describeAdjustmentReason(5, 6, 0),
     "기준재고 5개인데 당일재고가 6개입니다(기준보다 1개 많음). 차이가 생긴 사유를 남겨 주세요.",
+  );
+
+  assert.equal(
+    describeAdjustmentReason(0.8, 1.4, 0),
+    "기준재고 0.8개인데 당일재고가 1.4개입니다(기준보다 0.6개 많음). 차이가 생긴 사유를 남겨 주세요.",
   );
 });
 
@@ -2077,6 +2128,118 @@ test("manual product add lets ungrounded products be entered without auto-listin
   // 추가 행 배지는 "이월 공백"이 아니라 "직접 입력"으로 0 오해를 막는다.
   assert.match(componentSource, /직접 입력/);
   assert.match(componentSource, /addedManualIds/);
+});
+
+test("manual inventory unit price is required only for new rows that will persist", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "manual-inventory-rows.ts",
+  );
+  const { getManualInventoryUnitPriceErrors } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  assert.deepEqual(
+    getManualInventoryUnitPriceErrors(new Set(["existing-product"]), [
+      {
+        productId: "new-persisted-product",
+        currentQuantity: null,
+        quantity: 3,
+        unitPrice: null,
+      },
+      {
+        productId: "existing-product",
+        currentQuantity: 3,
+        quantity: 3,
+        unitPrice: null,
+      },
+      {
+        productId: "new-empty-product",
+        currentQuantity: null,
+        quantity: null,
+        unitPrice: null,
+      },
+    ]),
+    {
+      "items.0.unitPrice": ["직접 추가한 품목의 매입단가를 입력해 주세요."],
+    },
+  );
+
+  assert.deepEqual(
+    getManualInventoryUnitPriceErrors(new Set(), [
+      {
+        productId: "zero-price-product",
+        currentQuantity: 3,
+        quantity: 3,
+        unitPrice: 0,
+      },
+    ]),
+    {},
+  );
+
+  assert.deepEqual(
+    getManualInventoryUnitPriceErrors(new Set(), [
+      {
+        productId: "overflow-product",
+        currentQuantity: 3,
+        quantity: 3,
+        unitPrice: 1_000_000_000,
+      },
+    ]),
+    {
+      "items.0.unitPrice": [
+        "재고금액을 계산할 수 없습니다. 수량과 매입단가를 확인해 주세요.",
+      ],
+    },
+  );
+
+  assert.deepEqual(
+    getManualInventoryUnitPriceErrors(new Set(), [
+      {
+        productId: "current-quantity-overflow-product",
+        currentQuantity: 3,
+        quantity: null,
+        unitPrice: 1_000_000_000,
+      },
+    ]),
+    {
+      "items.0.unitPrice": [
+        "재고금액을 계산할 수 없습니다. 수량과 매입단가를 확인해 주세요.",
+      ],
+    },
+  );
+
+  for (const [file, mutation] of [
+    ["actions.ts", "dailyLedger.updateMany"],
+    ["hq-edit-actions.ts", "markEditableLedgerInTx("],
+  ]) {
+    const actionSource = readProjectFile("src", "features", "inventory", file);
+    const guardIndex = actionSource.indexOf(
+      "getManualInventoryUnitPriceErrors(",
+      actionSource.indexOf("export async function save"),
+    );
+
+    assert.ok(guardIndex >= 0);
+    assert.ok(
+      guardIndex < actionSource.indexOf(mutation, guardIndex),
+      `${file} should validate manual inventory amounts before mutation`,
+    );
+    assert.ok(
+      guardIndex <
+        actionSource.indexOf("ledgerInventoryItem.deleteMany", guardIndex),
+      `${file} should validate manual inventory amounts before deleteMany`,
+    );
+    assert.match(
+      actionSource.slice(
+        guardIndex,
+        actionSource.indexOf(mutation, guardIndex),
+      ),
+      /Object\.values\(\s*manualUnitPriceErrors,?\s*\)\[0\]\?\.\[0\]/,
+      `${file} should use the actual manual inventory field error as its top-level message`,
+    );
+  }
 });
 
 test("purchase/loss seed rows persist explicit zero or one current quantity", async () => {

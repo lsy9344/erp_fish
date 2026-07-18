@@ -76,7 +76,7 @@ const dashboardColumnWidthConfig = [
   },
   {
     id: "grossMarginRate",
-    label: "마진율",
+    label: "실제 / 예상 마진율",
     defaultWidth: 110,
     minWidth: 100,
     maxWidth: 180,
@@ -449,6 +449,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                       <SalesCell row={row} />
                     </TableCell>
                     <TableCell
+                      data-testid={`hq-dashboard-margin-${row.storeId}`}
                       className={getColumnCellClassName("grossMarginRate")}
                     >
                       <MarginCell row={row} />
@@ -623,13 +624,13 @@ function getColumnStyle(
 function getColumnCellClassName(columnId: DashboardColumnId) {
   const column = dashboardColumnConfigById[columnId];
 
-  // 신호 칼럼은 뱃지가 여러 줄로 줄바꿈되어야 하므로 클리핑하지 않고 높이가 늘어나게 둔다.
-  // 나머지 칼럼은 한 줄 말줄임(truncate) 유지.
-  const isSignals = columnId === "signals";
+  // 신호·마진 칼럼은 여러 줄로 줄바꿈되므로 클리핑하지 않고 높이가 늘어나게 둔다.
+  // 나머지 칼럼은 한 줄 말줄임을 유지한다.
+  const wraps = columnId === "signals" || columnId === "grossMarginRate";
 
   return cn(
     "min-w-0 align-top",
-    isSignals ? "whitespace-normal" : "overflow-hidden text-ellipsis",
+    wraps ? "whitespace-normal break-words" : "overflow-hidden text-ellipsis",
     columnId === "store" && "font-medium",
     getColumnConfigClassName(column),
   );
@@ -768,24 +769,27 @@ function SalesCell({ row }: { row: HqDashboardRow }) {
 }
 
 function MarginCell({ row }: { row: HqDashboardRow }) {
-  const { currentLabel, targetLabel, shortfallAmountLabel } = row.marginDisplay;
-  // WO-14 part3(2026-06-29): 장부 이익률 아래에 분석 이익률(AE5)을 함께 보여준다.
-  const analysisLabel = row.analysisMarginDisplay.currentLabel;
+  const actual = row.marginDisplay;
+  const {
+    currentLabel: actualLabel,
+    targetLabel,
+    shortfallAmountLabel,
+  } = actual;
+  const expectedLabel = row.analysisMarginDisplay.currentLabel;
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
       <span>
-        {currentLabel}
-        {targetLabel ? (
-          <span className="text-muted-foreground"> / {targetLabel}</span>
-        ) : null}
+        실제 {actualLabel} / 예상 {expectedLabel}
       </span>
-      <span className="text-muted-foreground text-xs font-normal">
-        분석 {analysisLabel}
-      </span>
-      {shortfallAmountLabel ? (
-        <span className="text-warning text-xs font-normal whitespace-nowrap">
-          {shortfallAmountLabel}
+      {targetLabel ? (
+        <span className="text-muted-foreground text-xs font-normal">
+          경보 기준 {targetLabel}
+        </span>
+      ) : null}
+      {targetLabel && shortfallAmountLabel ? (
+        <span className="text-warning text-xs font-normal">
+          {targetLabel} 기준 {shortfallAmountLabel}
         </span>
       ) : null}
     </div>

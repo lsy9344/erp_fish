@@ -29,10 +29,12 @@ export function calculatePaymentDifference(
   cashAmount: number,
   cardAmount: number,
   otherPaymentAmount: number,
+  expenseTotal: number,
 ) {
   return (
     totalSalesAmount -
-    calculatePaymentTotal(cashAmount, cardAmount, otherPaymentAmount)
+    calculatePaymentTotal(cashAmount, cardAmount, otherPaymentAmount) -
+    expenseTotal
   );
 }
 
@@ -604,7 +606,9 @@ export function calculateLedgerReviewSummary({
   const paymentTotalMetric = asKrwMetric("paymentTotal", paymentTotal);
   const expenseTotalMetric = asKrwMetric("expenseTotal", expenseTotal);
   const paymentDifference =
-    totalSales.status !== "ok" || paymentTotalMetric.status !== "ok"
+    totalSales.status !== "ok" ||
+    paymentTotalMetric.status !== "ok" ||
+    expenseTotalMetric.status !== "ok"
       ? calculationUnavailable({
           metricId: "paymentDifference",
           reason:
@@ -618,6 +622,7 @@ export function calculateLedgerReviewSummary({
             cashAmount,
             cardAmount,
             otherPaymentAmount,
+            expenseTotal,
           ),
         );
   const hasSalesDifferenceContext =

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -16,6 +17,8 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "~/components/ui/chart";
+import { Field, FieldLabel } from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
 import {
   Table,
   TableBody,
@@ -33,6 +36,7 @@ type ProductProfitabilityReportProps = {
   data: ProductProfitabilitySummary;
   // WO-16(2026-06-28): "both"(기본·일별 리포트)면 차트+표를 함께, "chart"/"table"이면 한쪽만.
   mode?: "both" | "chart" | "table";
+  tableVariant?: "profitability" | "salesRanking";
 };
 
 const chartConfig = {
@@ -46,7 +50,6 @@ const krwFormatter = new Intl.NumberFormat("ko-KR", {
   notation: "compact",
 });
 
-// 표는 정확한 금액을 보여주므로 compact 표기를 쓰지 않는다.
 const krwTableFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
   currency: "KRW",
@@ -75,12 +78,42 @@ function marginLabel(rate: number | null): string {
   return rate === null ? "계산 불가" : percentFormatter.format(rate);
 }
 
+const koreanCollator = new Intl.Collator("ko-KR");
+
+function normalizeSearch(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").trim();
+}
+
 export function ProductProfitabilityReport({
   data,
   mode = "both",
+  tableVariant = "profitability",
 }: ProductProfitabilityReportProps) {
+  const [searchQuery, setSearchQuery] = useState("");
   const showChart = mode !== "table";
   const showTable = mode !== "chart";
+  const rankedItems = useMemo(
+    () =>
+      tableVariant === "salesRanking"
+        ? [...data.items].sort(
+            (a, b) =>
+              b.soldQuantity - a.soldQuantity ||
+              koreanCollator.compare(a.productName, b.productName) ||
+              koreanCollator.compare(a.productSpec, b.productSpec),
+          )
+        : data.items,
+    [data.items, tableVariant],
+  );
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizeSearch(searchQuery);
+    return normalizedQuery
+      ? rankedItems.filter((item) =>
+          normalizeSearch(`${item.productName} ${item.productSpec}`).includes(
+            normalizedQuery,
+          ),
+        )
+      : rankedItems.slice(0, 10);
+  }, [rankedItems, searchQuery]);
 
   if (data.items.length === 0) {
     return (
@@ -104,33 +137,36 @@ export function ProductProfitabilityReport({
         } as React.CSSProperties
       }
     >
-      {/* 당일 전체 판매분 합산 요약 (WO Task 3). */}
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <dt className="text-muted-foreground text-xs">추정 판매액 합계</dt>
-          <dd className="text-base font-semibold tabular-nums">
-            {krwFormatter.format(data.totalSalesAmount)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">추정 매출이익 합계</dt>
-          <dd className="text-base font-semibold tabular-nums">
-            {krwFormatter.format(data.totalGrossProfit)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">당일 추정 이익률</dt>
-          <dd className="text-base font-semibold tabular-nums">
-            {marginLabel(data.totalGrossMarginRate)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">품목 수</dt>
-          <dd className="text-base font-semibold tabular-nums">
-            {data.items.length}
-          </dd>
-        </div>
-      </dl>
+      {showChart ? (
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div>
+            <dt className="text-muted-foreground text-xs">추정 판매액 합계</dt>
+            <dd className="text-base font-semibold tabular-nums">
+              {krwFormatter.format(data.totalSalesAmount)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">
+              추정 매출이익 합계
+            </dt>
+            <dd className="text-base font-semibold tabular-nums">
+              {krwFormatter.format(data.totalGrossProfit)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">당일 추정 이익률</dt>
+            <dd className="text-base font-semibold tabular-nums">
+              {marginLabel(data.totalGrossMarginRate)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">품목 수</dt>
+            <dd className="text-base font-semibold tabular-nums">
+              {data.items.length}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
 
       {showChart ? (
         <ChartContainer config={chartConfig} className="h-[360px] w-full">
@@ -188,7 +224,60 @@ export function ProductProfitabilityReport({
       ) : null}
 
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
-      {showTable ? (
+      {showTable && tableVariant === "salesRanking" ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <h3 className="text-sm font-medium">판매수량 상위 10개</h3>
+            <Field className="w-full sm:max-w-xs">
+              <FieldLabel htmlFor="product-search">품목 검색</FieldLabel>
+              <Input
+                id="product-search"
+                type="search"
+                value={searchQuery}
+                placeholder="품목명 또는 규격 검색"
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+              />
+            </Field>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>품목</TableHead>
+                  <TableHead>규격</TableHead>
+                  <TableHead className="text-right">판매수량</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3}
+                      className="text-muted-foreground text-center"
+                    >
+                      검색 결과가 없습니다.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  visibleItems.map((item) => (
+                    <TableRow key={item.productId}>
+                      <TableCell className="font-medium">
+                        {item.productName}
+                      </TableCell>
+                      <TableCell>{item.productSpec || "-"}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {quantityFormatter.format(item.soldQuantity)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
+
+      {showTable && tableVariant === "profitability" ? (
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -234,9 +323,19 @@ export function ProductProfitabilityReport({
           </Table>
         </div>
       ) : null}
+
       <p className="text-muted-foreground text-xs">
-        추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제
-        판매 데이터가 아닌 재고 흐름 기반 추정값입니다.
+        {tableVariant === "salesRanking" ? (
+          <>
+            판매수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매
+            데이터가 아닌 재고 흐름 기반 추정값입니다.
+          </>
+        ) : (
+          <>
+            추정 판매 수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제
+            판매 데이터가 아닌 재고 흐름 기반 추정값입니다.
+          </>
+        )}
       </p>
 
       {showChart ? (
