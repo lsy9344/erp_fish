@@ -72,7 +72,10 @@ export function LedgerDetailTabs({
     // 탭바가 요약 섹션들 아래에 있어, 탭만 바꾸면 선택한 항목이 화면에 보이지
     // 않는다. 클릭한 탭 영역을 화면 상단으로 스크롤해 해당 섹션으로 이동시킨다.
     // scroll-mt로 모바일 sticky 헤더(h-14) 높이만큼 여백을 둔다.
-    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    containerRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   return (
