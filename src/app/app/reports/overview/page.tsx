@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { DownloadIcon } from "lucide-react";
 
 import { PermissionAction } from "../../../../../generated/prisma";
@@ -8,6 +7,7 @@ import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { HqReportOverview } from "~/features/reports/components/hq-report-overview";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { getHqReportOverview } from "~/features/reports/overview";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
@@ -51,26 +51,14 @@ export default async function HqReportOverviewPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="overview" />
+
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader
           title="통합 리포트"
           description="매출 흐름부터 손실 원인과 오늘의 조치 대상까지 한 화면에서 확인합니다."
         />
         <div className="flex flex-col gap-2 lg:items-end">
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/daily">일별</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/comparison">기간 비교</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/monthly">월간 상세</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/inventory">재고</Link>
-            </Button>
-          </div>
           <form
             action="/app/reports/overview"
             className="flex flex-wrap items-end gap-2"

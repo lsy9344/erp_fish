@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { DownloadIcon } from "lucide-react";
 
 import { PermissionAction } from "../../../../../generated/prisma";
@@ -8,10 +7,8 @@ import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
 import { MonthlyClosingAnomalyReport } from "~/features/reports/components/monthly-closing-anomaly-report";
-import {
-  getHqMonthlyClosingAnomalyReport,
-  getMonthlyClosingAnomalyReportPath,
-} from "~/features/reports/queries";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
+import { getHqMonthlyClosingAnomalyReport } from "~/features/reports/queries";
 import { getHeadquartersExpenseReportSummary } from "~/features/headquarters-expenses/queries";
 import type { MonthlyHeadquartersExpenseSummary } from "~/features/reports/types";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
@@ -76,33 +73,14 @@ export default async function MonthlyClosingAnomalyReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="monthly" />
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="월간 요약 리포트"
           description={`${reportTargetDescription} 핵심 성과와 손실/재고 흐름, 마감 상태를 봅니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/daily">아침 회의</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/comparison">기간 비교</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/inventory">재고 현황</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link
-                href={getMonthlyClosingAnomalyReportPath({
-                  monthInput: report.monthRange.monthInput,
-                  storeId: report.selectedStoreId,
-                })}
-              >
-                월간
-              </Link>
-            </Button>
-          </div>
           <form
             action="/app/reports/monthly"
             className="flex flex-wrap items-end gap-2"

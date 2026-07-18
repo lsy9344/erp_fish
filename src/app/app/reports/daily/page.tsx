@@ -12,6 +12,7 @@ import { DailyAttendanceReport } from "~/features/reports/components/daily-atten
 import { DailyMeetingReportTable } from "~/features/reports/components/daily-meeting-report-table";
 import { DailySalesAnalysis } from "~/features/reports/components/daily-sales-analysis";
 import { ProductProfitabilityReport } from "~/features/reports/components/product-profitability-report";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { StoreDailyPerformanceChart } from "~/features/reports/components/store-daily-performance-chart";
 import {
   getDailyMeetingReportDateQuery,
@@ -91,38 +92,14 @@ export default async function DailyMeetingReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="daily" />
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="아침 회의 리포트"
           description={`${dateLabel} 기준 전체 지점의 매출 변화·재고비율, 품목 판매, 직원 근태, 마감·이상 신호를 봅니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild size="sm">
-              <Link href={getDailyMeetingReportPath({ dateQuery })}>
-                아침 회의
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/comparison">기간 비교</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/inventory">재고 현황</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/ecount-supply">출고/입고</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/monthly">월간</Link>
-            </Button>
-            {/* WO-16(2026-06-28): 품목/매출 검토 차트 페이지. */}
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/product-review">품목 검토</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/sales-review">매출 검토</Link>
-            </Button>
-          </div>
           <div
             className="flex flex-wrap items-center gap-2"
             aria-label="빠른 날짜 선택"

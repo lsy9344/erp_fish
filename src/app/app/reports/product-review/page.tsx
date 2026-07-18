@@ -1,11 +1,10 @@
-import Link from "next/link";
-
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
 import { ProductProfitabilityReport } from "~/features/reports/components/product-profitability-report";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { ReviewViewToggle } from "~/features/reports/components/review-view-toggle";
 import {
   getDailyMeetingReportDateQuery,
@@ -36,18 +35,14 @@ export default async function ProductReviewPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="product-review" />
+
       <PageHeader
         title="품목 검토 (추정)"
         description="품목군 분포와 품목별 판매 현황을 차트와 표로 확인합니다. POS 실판매가 아닌 재고 흐름 기반 추정값입니다."
       />
 
       <div className="flex flex-wrap items-end gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link href="/app/reports/daily">일별 리포트</Link>
-        </Button>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/app/reports/sales-review">매출 검토</Link>
-        </Button>
         <form
           action="/app/reports/product-review"
           className="flex items-end gap-2"

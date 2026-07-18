@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { DownloadIcon } from "lucide-react";
 
 import { PermissionAction } from "../../../../../generated/prisma";
@@ -7,11 +6,9 @@ import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { StoreComparisonReportTable } from "~/features/reports/components/store-comparison-report-table";
-import {
-  getHqStoreComparisonReport,
-  getStoreComparisonReportPath,
-} from "~/features/reports/queries";
+import { getHqStoreComparisonReport } from "~/features/reports/queries";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type StoreComparisonReportPageProps = {
@@ -66,33 +63,14 @@ export default async function StoreComparisonReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="comparison" />
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="기간 비교 리포트"
           description={`${report.range.startDateInput}부터 ${report.range.endDateInput}까지 ${selectedStoreLabel}의 단일 기간 지점별 실적을 비교합니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/daily">아침 회의</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link
-                href={getStoreComparisonReportPath({
-                  ...report.range,
-                  storeId: report.selectedStoreId,
-                })}
-              >
-                기간 비교
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/inventory">재고 현황</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/monthly">월간</Link>
-            </Button>
-          </div>
           <form
             action="/app/reports/comparison"
             className="flex flex-wrap items-end gap-2"

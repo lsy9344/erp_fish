@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { DownloadIcon } from "lucide-react";
 
 import { PermissionAction } from "../../../../../generated/prisma";
@@ -9,10 +8,8 @@ import { Input } from "~/components/ui/input";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
 import { InventoryPositionReportTable } from "~/features/reports/components/inventory-position-report-table";
-import {
-  getHqInventoryPositionReport,
-  getInventoryPositionReportPath,
-} from "~/features/reports/inventory-position-queries";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
+import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
@@ -111,35 +108,14 @@ export default async function InventoryPositionReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="inventory" />
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="전 지점 재고 현황"
           description={`${report.filters.dateInput} 기준 ${selectedStoreLabel}의 지점·품목별 남은 재고를 한 화면에서 봅니다. 미입력·계산 불가 상태를 실측값과 구분해 표시합니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/daily">아침 회의</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/comparison">기간 비교</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link
-                href={getInventoryPositionReportPath({
-                  dateInput: report.filters.dateInput,
-                  storeId: report.filters.storeId,
-                  category: report.filters.category,
-                  productQuery: report.filters.productQuery,
-                })}
-              >
-                재고 현황
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/reports/monthly">월간</Link>
-            </Button>
-          </div>
           <form
             action="/app/reports/inventory"
             className="flex flex-wrap items-end gap-2"
