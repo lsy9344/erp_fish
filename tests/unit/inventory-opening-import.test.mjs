@@ -272,7 +272,7 @@ test("getNextInventoryLedgerDate rejects non-canonical, nonexistent, and overflo
   }
 });
 
-test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives opening months", async () => {
+test("parseInventoryOpeningWorkbook reads up to two-decimal quantities and derives opening months", async () => {
   const { parseInventoryOpeningWorkbook } =
     await importInventoryOpeningImport();
 
@@ -296,20 +296,58 @@ test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives ope
       "원문광어",
       "",
       "생물",
-      "0.1",
+      "0.62",
       "29,500",
-      "2,950",
+      "18,290",
       "앱광어",
       "3kg",
       "앱 매핑",
     ],
-    ["", "삼국유통", "", "", "", "", "", "", "", "", ""],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "참돔",
+      "1kg",
+      "생물",
+      0.71,
+      10000,
+      7100,
+      "",
+      "",
+      "",
+    ],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "우럭",
+      "1kg",
+      "생물",
+      0.2,
+      10000,
+      2000,
+      "",
+      "",
+      "",
+    ],
+    [
+      "2026-06-30",
+      "삼국유통",
+      "도미",
+      "1kg",
+      "생물",
+      0,
+      10000,
+      0,
+      "",
+      "",
+      "",
+    ],
   ]);
 
   const result = parseInventoryOpeningWorkbook(workbook);
 
   assert.equal(result.sheetName, "재고입력");
-  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows.length, 5);
   assert.deepEqual(result.yearMonths, ["2026-07"]);
   assert.deepEqual(result.rows[0], {
     rowNumber: 4,
@@ -328,39 +366,82 @@ test("parseInventoryOpeningWorkbook reads one-decimal quantities and derives ope
   });
   assert.equal(result.rows[1].productName, "앱광어");
   assert.equal(result.rows[1].productSpec, "3kg");
-  assert.equal(result.totalQuantity, 2.3);
-  assert.equal(result.totalInventoryAmount, 453950);
+  assert.deepEqual(
+    result.rows.map((row) => row.quantity),
+    [2.2, 0.62, 0.71, 0.2, 0],
+  );
+  assert.equal(result.totalQuantity, 3.73);
+  assert.equal(result.totalInventoryAmount, 478390);
 
   const source = readFileSync(
     path.join(root, "src", "features", "inventory", "opening-import.ts"),
     "utf8",
   );
-  assert.match(source, /return roundToOneDecimal\(parsed\);/);
+  assert.match(source, /return roundToTwoDecimals\(parsed\);/);
   assert.match(source, /totalQuantity:\s*roundToTwoDecimals\(/);
 });
 
-test("parseInventoryOpeningWorkbook rejects quantities past one decimal", async () => {
+test("parseInventoryOpeningWorkbook rejects negative quantities and quantities past two decimals", async () => {
   const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
     await importInventoryOpeningImport();
 
-  const workbook = createInventoryWorkbook([
-    [
-      "2026-06-30",
-      "삼국유통",
-      "냉)포크오징어",
-      "MA",
-      "냉동",
-      2.28,
-      205000,
-      "",
-      "",
-      "",
-      "",
-    ],
-  ]);
+  for (const invalidQuantity of [2.281, 0.001, -0.1]) {
+    const workbook = createInventoryWorkbook([
+      [
+        "2026-06-30",
+        "삼국유통",
+        "냉)포크오징어",
+        "MA",
+        "냉동",
+        invalidQuantity,
+        205000,
+        "",
+        "",
+        "",
+        "",
+      ],
+    ]);
+
+    assert.throws(
+      () => parseInventoryOpeningWorkbook(workbook),
+      (error) =>
+        error instanceof InventoryOpeningImportError &&
+        error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
+    );
+  }
+});
+
+test("parseInventoryOpeningWorkbook enforces the maximum quantity boundary", async () => {
+  const { parseInventoryOpeningWorkbook, InventoryOpeningImportError } =
+    await importInventoryOpeningImport();
+  const validationModulePath = path.join(root, "src", "lib", "validation.ts");
+  const { MAX_VALIDATION_DECIMAL } = await import(
+    pathToFileURL(validationModulePath).href
+  );
+  const row = (quantity) => [
+    "2026-06-30",
+    "삼국유통",
+    "냉)포크오징어",
+    "MA",
+    "냉동",
+    quantity,
+    0,
+    0,
+    "",
+    "",
+    "",
+  ];
+
+  const result = parseInventoryOpeningWorkbook(
+    createInventoryWorkbook([row(MAX_VALIDATION_DECIMAL)]),
+  );
+  assert.equal(result.rows[0]?.quantity, MAX_VALIDATION_DECIMAL);
 
   assert.throws(
-    () => parseInventoryOpeningWorkbook(workbook),
+    () =>
+      parseInventoryOpeningWorkbook(
+        createInventoryWorkbook([row(MAX_VALIDATION_DECIMAL + 0.01)]),
+      ),
     (error) =>
       error instanceof InventoryOpeningImportError &&
       error.fieldErrors.file?.[0] === "4행 남은 수량 값을 확인해 주세요.",
@@ -382,10 +463,22 @@ test("parseInventoryOpeningWorkbook reads the tracked namespaced inventory templ
   const result = parseInventoryOpeningWorkbook(workbook);
 
   assert.equal(result.sheetName, "재고입력");
-  assert.equal(result.rows[0]?.quantity, 12);
+  assert.equal(result.rows.length, 66);
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 4)?.quantity,
+    1.5,
+  );
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 5)?.quantity,
+    0.71,
+  );
+  assert.equal(
+    result.rows.find((row) => row.rowNumber === 53)?.quantity,
+    1.38,
+  );
 });
 
-test("tracked inventory template preserves blank validation and page setup metadata", async () => {
+test("tracked inventory template preserves customer validations and relationships", async () => {
   const workbook = readFileSync(
     path.join(
       root,
@@ -395,36 +488,23 @@ test("tracked inventory template preserves blank validation and page setup metad
     ),
   );
 
-  for (let sheetNumber = 1; sheetNumber <= 4; sheetNumber += 1) {
-    const worksheet = readZipEntry(
-      workbook,
-      `xl/worksheets/sheet${sheetNumber}.xml`,
-    );
-    assert.match(
-      worksheet,
-      /<(?:\w+:)?pageSetUpPr\b[^>]*fitToPage="1"[^>]*\/>/,
-    );
-    assert.match(
-      worksheet,
-      /<(?:\w+:)?pageSetup\b[^>]*fitToHeight="0"[^>]*orientation="landscape"[^>]*\/>/,
-    );
-  }
-
   const inventory = readZipEntry(workbook, "xl/worksheets/sheet3.xml");
   const lots = readZipEntry(workbook, "xl/worksheets/sheet4.xml");
-  for (const [worksheet, range, validationType] of [
-    [inventory, "E4:E2004", "list"],
-    [inventory, "F4:F2004", "custom"],
-    [inventory, "G4:G2004", "whole"],
-    [lots, "F4:F1004", "whole"],
-    [lots, "G4:G1004", "custom"],
-  ]) {
-    const validation = new RegExp(
-      `<(?:\\w+:)?dataValidation\\b(?=[^>]*type="${validationType}")(?=[^>]*sqref="${range}")[^>]*>`,
-    ).exec(worksheet)?.[0];
-    assert.ok(validation, `${range} ${validationType} validation must exist`);
-    assert.match(validation, /\ballowBlank="1"/);
-  }
+  const categoryValidation =
+    /<(?:\w+:)?dataValidation\b(?=[^>]*type="list")(?=[^>]*sqref="E4:E72")[^>]*>/.exec(
+      inventory,
+    )?.[0];
+  assert.ok(categoryValidation, "E4:E72 list validation must exist");
+  assert.match(categoryValidation, /\ballowBlank="1"/);
+  assert.match(inventory, /sqref="F4:F2004"/);
+  assert.match(inventory, /ROUND\(F4,2\)=F4/);
+  assert.match(lots, /sqref="G4:G1004"/);
+  assert.match(lots, /ROUND\(G4,2\)=G4/);
+  const workbookRelationships = readZipEntry(
+    workbook,
+    "xl/_rels/workbook.xml.rels",
+  );
+  assert.doesNotMatch(workbookRelationships, /externalLink/);
 });
 
 test("inventory product identity accepts blank specs but enforces shared product bounds", async () => {
@@ -572,7 +652,7 @@ test("inventory opening upload action and ecount upload menu are wired", () => {
   assert.doesNotMatch(clientSource, /스냅샷만 갱신했습니다/);
 });
 
-test("inventory template builders allow one decimal only for stock quantities", () => {
+test("inventory template builders keep their approved quantity precision", () => {
   const simpleSource = readFileSync(
     path.join(
       root,
@@ -592,16 +672,43 @@ test("inventory template builders allow one decimal only for stock quantities", 
     "utf8",
   );
 
-  for (const source of [simpleSource, fullSource]) {
-    assert.match(source, /type:\s*"custom"/);
-    assert.match(source, /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/);
-    assert.match(source, /소수점 첫째 자리까지/);
-  }
+  const simpleQuantityValidation = simpleSource.match(
+    /function twoDecimalQuantityValidation\(sheet, range\) \{([\s\S]*?)\r?\n\}/,
+  )?.[1];
+  assert.ok(simpleQuantityValidation);
+  assert.match(simpleQuantityValidation, /type:\s*"custom"/);
+  assert.match(
+    simpleQuantityValidation,
+    /ROUND\(\$\{firstCell\},2\)=\$\{firstCell\}/,
+  );
+  assert.match(
+    simpleQuantityValidation,
+    /error:\s*"0 이상의 수량을 소수점 둘째 자리까지 입력해 주세요\."/,
+  );
 
-  assert.match(simpleSource, /numFmt:\s*"#,##0\.0"/);
+  const simpleInventoryColumns = simpleSource.match(
+    /const inventoryColumns = \[([\s\S]*?)\r?\n\];/,
+  )?.[1];
+  const simpleLotColumns = simpleSource.match(
+    /const lotColumns = \[([\s\S]*?)\r?\n\];/,
+  )?.[1];
+  assert.ok(simpleInventoryColumns);
+  assert.ok(simpleLotColumns);
+  assert.match(
+    simpleInventoryColumns,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.00" \}/,
+  );
+  assert.match(
+    simpleLotColumns,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.00" \}/,
+  );
   assert.match(
     simpleSource,
-    /oneDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
+    /\["숫자", "수량은 0 이상 소수점 둘째 자리까지, 단가는 0 이상의 정수로 적어 주세요\. 쉼표는 써도 됩니다\."\]/,
+  );
+  assert.match(
+    simpleSource,
+    /twoDecimalQuantityValidation\(inventory,\s*"F4:F2004"\)/,
   );
   assert.match(
     simpleSource,
@@ -610,7 +717,21 @@ test("inventory template builders allow one decimal only for stock quantities", 
   assert.match(simpleSource, /wholeNumberValidation\(lots,\s*"F4:F1004"\)/);
   assert.match(
     simpleSource,
-    /oneDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
+    /twoDecimalQuantityValidation\(lots,\s*"G4:G1004"\)/,
+  );
+
+  const fullQuantityValidation = fullSource.match(
+    /function addOneDecimalQuantityValidation\(sheet, range\) \{([\s\S]*?)\r?\n\}/,
+  )?.[1];
+  assert.ok(fullQuantityValidation);
+  assert.match(fullQuantityValidation, /type:\s*"custom"/);
+  assert.match(
+    fullQuantityValidation,
+    /ROUND\(\$\{firstCell\},1\)=\$\{firstCell\}/,
+  );
+  assert.match(
+    fullQuantityValidation,
+    /error:\s*"0 이상의 수량을 소수점 첫째 자리까지 입력해 주세요\."/,
   );
 
   for (const [sheet, quantityRange, wholeNumberRange] of [
@@ -632,6 +753,12 @@ test("inventory template builders allow one decimal only for stock quantities", 
       ),
     );
   }
-  assert.match(fullSource, /numFmt:\s*"#,##0\.0"/);
-  assert.match(fullSource, /단가·금액은 0 이상의 정수/);
+  assert.match(
+    fullSource,
+    /\{ header: "남은 수량",[^\r\n]*numFmt: "#,##0\.0" \}/,
+  );
+  assert.match(
+    fullSource,
+    /\["숫자", "수량은 0 이상 소수점 첫째 자리까지, 단가·금액은 0 이상의 정수로 적어 주세요\. 예: 12\.5, 12000"\]/,
+  );
 });

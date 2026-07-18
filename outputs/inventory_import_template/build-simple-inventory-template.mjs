@@ -113,17 +113,17 @@ function wholeNumberValidation(sheet, range) {
   });
 }
 
-function oneDecimalQuantityValidation(sheet, range) {
+function twoDecimalQuantityValidation(sheet, range) {
   const firstCell = range.split(":")[0];
   sheet.dataValidations.add(range, {
     type: "custom",
     formulae: [
-      `OR(${firstCell}="",AND(ISNUMBER(${firstCell}),${firstCell}>=0,ROUND(${firstCell},1)=${firstCell}))`,
+      `OR(${firstCell}="",AND(ISNUMBER(${firstCell}),${firstCell}>=0,ROUND(${firstCell},2)=${firstCell}))`,
     ],
     allowBlank: true,
     showErrorMessage: true,
     errorTitle: "수량 확인",
-    error: "0 이상의 수량을 소수점 첫째 자리까지 입력해 주세요.",
+    error: "0 이상의 수량을 소수점 둘째 자리까지 입력해 주세요.",
   });
 }
 
@@ -159,7 +159,7 @@ guide.addRows([
   ["꼭 작성", "재고입력 시트만 작성해도 됩니다. 날짜·지점·품목·규격·구분·남은 수량·재고 단가가 핵심입니다."],
   ["선택 작성", "입고별잔량_선택 시트는 입고일별로 남은 수량을 알고 있을 때만 작성해 주세요."],
   ["날짜", "yyyy-mm-dd 형식으로 적어 주세요. 예: 2026-06-30"],
-  ["숫자", "수량은 0 이상 소수점 첫째 자리까지, 단가는 0 이상의 정수로 적어 주세요. 쉼표는 써도 됩니다."],
+  ["숫자", "수량은 0 이상 소수점 둘째 자리까지, 단가는 0 이상의 정수로 적어 주세요. 쉼표는 써도 됩니다."],
   ["품목명", "품목명과 규격은 기존 장부에 적힌 그대로 적어 주세요. 앱에서 쓸 이름이 다르면 오른쪽 선택 칸에 적어 주세요."],
   ["단가", "정확한 입고별 단가를 모르면, 그날 재고를 평가할 대표 단가를 적어 주세요."],
   ["중복", "같은 날짜·지점·품목·규격은 한 번만 적어 주세요."],
@@ -184,7 +184,7 @@ const inventoryColumns = [
   { header: "품목명", key: "name", width: 24, required: true },
   { header: "규격", key: "spec", width: 16, required: true },
   { header: "구분", key: "category", width: 11, required: true },
-  { header: "남은 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.0" },
+  { header: "남은 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.00" },
   { header: "재고 단가", key: "unitPrice", width: 14, required: true, align: "right", numFmt: "#,##0" },
   { header: "재고 금액", key: "amount", width: 14, align: "right", numFmt: "#,##0" },
   { header: "앱 품목명\n다르면만", key: "appName", width: 22, optional: true },
@@ -219,7 +219,7 @@ for (let rowNumber = 5; rowNumber <= 2004; rowNumber += 1) {
 }
 dateValidation(inventory, "A4:A2004");
 listValidation(inventory, "E4:E2004", ["'선택목록'!$A$2:$A$3"]);
-oneDecimalQuantityValidation(inventory, "F4:F2004");
+twoDecimalQuantityValidation(inventory, "F4:F2004");
 wholeNumberValidation(inventory, "G4:G2004");
 inventory.views = [{ state: "frozen", ySplit: 3 }];
 inventory.autoFilter = "A3:K3";
@@ -231,7 +231,7 @@ const lotColumns = [
   { header: "규격", key: "spec", width: 16, required: true },
   { header: "입고일", key: "inDate", width: 14, required: true, numFmt: "yyyy-mm-dd" },
   { header: "매입 단가", key: "unitPrice", width: 14, required: true, align: "right", numFmt: "#,##0" },
-  { header: "남은 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.0" },
+  { header: "남은 수량", key: "qty", width: 14, required: true, align: "right", numFmt: "#,##0.00" },
   { header: "남은 금액", key: "amount", width: 14, align: "right", numFmt: "#,##0" },
   { header: "메모", key: "memo", width: 30, optional: true },
 ];
@@ -262,7 +262,7 @@ for (let rowNumber = 5; rowNumber <= 1004; rowNumber += 1) {
 dateValidation(lots, "A4:A1004");
 dateValidation(lots, "E4:E1004");
 wholeNumberValidation(lots, "F4:F1004");
-oneDecimalQuantityValidation(lots, "G4:G1004");
+twoDecimalQuantityValidation(lots, "G4:G1004");
 lots.views = [{ state: "frozen", ySplit: 3 }];
 lots.autoFilter = "A3:I3";
 

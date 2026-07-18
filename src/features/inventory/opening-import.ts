@@ -2,8 +2,7 @@ import { Buffer } from "node:buffer";
 import { inflateRawSync } from "node:zlib";
 
 import {
-  isNonNegativeDecimalInRange,
-  roundToOneDecimal,
+  MAX_VALIDATION_DECIMAL,
   roundToTwoDecimals,
 } from "../../lib/validation.ts";
 
@@ -354,6 +353,17 @@ function parseNumber(value: CellValue | undefined) {
   return Number.NaN;
 }
 
+function isNonNegativeTwoDecimalInRange(value: number) {
+  if (!Number.isFinite(value) || value < 0 || value > MAX_VALIDATION_DECIMAL) {
+    return false;
+  }
+
+  const scaled = value * 100;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+
+  return Math.abs(scaled - Math.round(scaled)) <= tolerance;
+}
+
 function cellInteger(
   row: CellValue[],
   index: number,
@@ -379,13 +389,13 @@ function cellQuantity(
 ) {
   const parsed = parseNumber(row[index]);
 
-  if (!isNonNegativeDecimalInRange(parsed)) {
+  if (!isNonNegativeTwoDecimalInRange(parsed)) {
     throw new InventoryOpeningImportError("엑셀 숫자 값을 확인해 주세요.", {
       file: [`${rowNumber}행 ${label} 값을 확인해 주세요.`],
     });
   }
 
-  return roundToOneDecimal(parsed);
+  return roundToTwoDecimals(parsed);
 }
 
 function excelSerialDateToIsoDate(value: number) {
