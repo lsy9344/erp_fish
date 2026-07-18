@@ -8,7 +8,9 @@ import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { MetricCard } from "~/components/metric-card";
 import { PageHeader } from "~/components/page-header";
+import { DailyAttendanceReport } from "~/features/reports/components/daily-attendance-report";
 import { DailyMeetingReportTable } from "~/features/reports/components/daily-meeting-report-table";
+import { DailySalesAnalysis } from "~/features/reports/components/daily-sales-analysis";
 import { ProductProfitabilityReport } from "~/features/reports/components/product-profitability-report";
 import { StoreDailyPerformanceChart } from "~/features/reports/components/store-daily-performance-chart";
 import {
@@ -92,7 +94,7 @@ export default async function DailyMeetingReportPage({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="아침 회의 리포트"
-          description={`${dateLabel} 기준 전체 지점의 마감 상태, 이상 신호, 매출, 손실 현황을 봅니다.`}
+          description={`${dateLabel} 기준 전체 지점의 매출 변화·재고비율, 품목 판매, 직원 근태, 마감·이상 신호를 봅니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
           <div className="flex flex-wrap items-center gap-2">
@@ -189,28 +191,12 @@ export default async function DailyMeetingReportPage({
         </div>
       </div>
 
-      <section
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-        aria-label="아침 회의 리포트 요약"
-      >
-        {summaryItems.map((item) => (
-          <MetricCard
-            key={item.label}
-            label={item.label}
-            value={item.value.toLocaleString("ko-KR")}
-            variant={item.variant}
-          />
-        ))}
-      </section>
-
       <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">
-          지점별 장부 입력 매출·마진율
-        </h2>
+        <h2 className="text-base font-semibold">지점별 매출·이익률</h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          막대는 지점장이 입력한 총매출이며, 실제 마진율은 매출과 매출원가로,
-          예상 마진율은 재고 흐름과 계획 판매가로 계산합니다. 버튼은 정렬 기준만
-          바꿉니다.
+          막대는 정정 반영 총매출이며, 실제 이익률은 매출과 매출원가로, 예상
+          이익률은 재고 흐름과 계획 판매가로 계산합니다. 버튼은 정렬 기준만
+          변경합니다.
         </p>
         <div className="mt-3">
           <StoreDailyPerformanceChart rows={report.rows} />
@@ -218,7 +204,14 @@ export default async function DailyMeetingReportPage({
       </section>
 
       <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">품목 판매순위</h2>
+        <h2 className="text-base font-semibold">매출 분석</h2>
+        <div className="mt-3">
+          <DailySalesAnalysis data={report.salesAnalysis} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">품목별 판매 현황</h2>
         <p className="text-muted-foreground mt-1 text-xs">
           재고 흐름으로 계산한 판매수량 기준 상위 품목입니다.
         </p>
@@ -231,7 +224,32 @@ export default async function DailyMeetingReportPage({
         </div>
       </section>
 
-      <DailyMeetingReportTable report={report} />
+      <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">직원 근태 현황</h2>
+        <div className="mt-3">
+          <DailyAttendanceReport attendance={report.attendance} />
+        </div>
+      </section>
+
+      <section className="grid gap-3" aria-labelledby="closing-signals-title">
+        <h2 id="closing-signals-title" className="text-base font-semibold">
+          마감·이상 신호 현황
+        </h2>
+        <div
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          aria-label="아침 회의 리포트 요약"
+        >
+          {summaryItems.map((item) => (
+            <MetricCard
+              key={item.label}
+              label={item.label}
+              value={item.value.toLocaleString("ko-KR")}
+              variant={item.variant}
+            />
+          ))}
+        </div>
+        <DailyMeetingReportTable report={report} />
+      </section>
     </HeadquartersShell>
   );
 }

@@ -36,6 +36,9 @@ import {
   type DecimalNumber,
 } from "../../lib/decimal.ts";
 import type {
+  DailyAttendanceReport,
+  DailyAttendanceStatus,
+  DailySalesAnalysis,
   DailyMeetingReportData,
   DailyMeetingReportDatePreset,
   DailyMeetingReportMetricEvidence,
@@ -132,6 +135,13 @@ type ReportLedgerRecord = {
     quantity: number;
     amount: number;
     usedPlannedPrice?: boolean;
+  }[];
+  ledgerLaborItems?: {
+    workerName: string;
+    employeeId: string | null;
+    lateMemo: string | null;
+    earlyLeaveMemo: string | null;
+    specialMemo: string | null;
   }[];
 };
 
@@ -363,6 +373,12 @@ export function getDailyMeetingReportDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+export function getPreviousReportDate(date: Date) {
+  const previousDate = new Date(date);
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  return previousDate;
+}
+
 export function getDailyMeetingReportPath({
   datePreset,
   dateQuery,
@@ -373,6 +389,277 @@ export function getDailyMeetingReportPath({
   return `/app/reports/daily?date=${encodeURIComponent(
     dateQuery ?? datePreset ?? "today",
   )}`;
+}
+
+type DailyReportAnalysisLedger = {
+  ledgerId: string;
+  status: DailyLedgerStatus;
+  totalSales: LedgerReviewMetric;
+  inventoryItems: { id?: string; inventoryAmount: number | null }[];
+  appliedCorrectionKeys: Set<string>;
+  workerCount: number | null;
+  ledgerLaborItems: NonNullable<ReportLedgerRecord["ledgerLaborItems"]>;
+};
+
+type DailyReportAnalysisStore = {
+  storeId: string;
+  storeName: string;
+  current: DailyReportAnalysisLedger | null;
+  previous: DailyReportAnalysisLedger | null;
+};
+
+const koreanStoreNameCollator = new Intl.Collator("ko-KR");
+
+function dailyUnavailable(reason: string): LedgerReviewMetric {
+  return {
+    value: null,
+    status: "calculation-unavailable",
+    label: "계산 불가",
+    unavailableReason: "계산 불가",
+    reason,
+  };
+}
+
+function getUsableSales(
+  ledger: DailyReportAnalysisLedger | null,
+  dateLabel: "선택일" | "전일",
+) {
+  if (!ledger) return dailyUnavailable(`${dateLabel} 장부 미입력`);
+  if (ledger.status === "HOLIDAY") return dailyUnavailable(`${dateLabel} 휴무`);
+  if (ledger.totalSales.value === null) {
+    return dailyUnavailable(
+      ledger.totalSales.reason ?? `${dateLabel} 매출 계산 불가`,
+    );
+  }
+  return ledger.totalSales;
+}
+
+export function buildDailySalesAnalysis(
+  stores: DailyReportAnalysisStore[],
+): DailySalesAnalysis {
+  const salesChanges = stores
+    .map(({ storeId, storeName, current, previous }) => {
+      const currentSales = getUsableSales(current, "선택일");
+      const previousSales = getUsableSales(previous, "전일");
+      const difference =
+        currentSales.value === null || previousSales.value === null
+          ? dailyUnavailable(
+              currentSales.reason ?? previousSales.reason ?? "매출 계산 불가",
+            )
+          : available(currentSales.value - previousSales.value);
+      const rate =
+        difference.value === null
+          ? dailyUnavailable(difference.reason ?? "증감률 계산 불가")
+          : previousSales.value === null || previousSales.value <= 0
+            ? dailyUnavailable("전일 매출 0원")
+            : available(difference.value / previousSales.value);
+
+      return {
+        storeId,
+        storeName,
+        currentSales,
+        previousSales,
+        difference,
+        rate,
+      };
+    })
+    .sort((a, b) => {
+      if (a.rate.value === null) {
+        return b.rate.value === null
+          ? koreanStoreNameCollator.compare(a.storeName, b.storeName)
+          : 1;
+      }
+      if (b.rate.value === null) return -1;
+      return (
+        Math.abs(b.rate.value) - Math.abs(a.rate.value) ||
+        koreanStoreNameCollator.compare(a.storeName, b.storeName)
+      );
+    });
+
+  const inventoryRatios = stores.map(
+    ({
+      storeId,
+      storeName,
+      current,
+    }): DailySalesAnalysis["inventoryRatios"][number] => {
+      const salesAmount = getUsableSales(current, "선택일");
+      let inventoryAmount: LedgerReviewMetric;
+
+      if (!current || current.inventoryItems.length === 0) {
+        inventoryAmount = dailyUnavailable("재고 항목 없음");
+      } else if (
+        [...current.appliedCorrectionKeys].some((key) =>
+          /:INVENTORY_ROW:[^:]+:(?:currentQuantity|quantity)$/.test(key),
+        )
+      ) {
+        inventoryAmount = dailyUnavailable(
+          "재고 수량 정정으로 FIFO 금액을 확정할 수 없음",
+        );
+      } else if (
+        current.inventoryItems.some(
+          (item) =>
+            item.inventoryAmount === null ||
+            !Number.isFinite(item.inventoryAmount),
+        )
+      ) {
+        inventoryAmount = dailyUnavailable("저장 FIFO 재고금액 누락");
+      } else {
+        inventoryAmount = available(
+          current.inventoryItems.reduce(
+            (sum, item) => sum + (item.inventoryAmount ?? 0),
+            0,
+          ),
+        );
+      }
+
+      return {
+        storeId,
+        storeName,
+        inventoryAmount,
+        salesAmount,
+        ratio:
+          inventoryAmount.value === null
+            ? dailyUnavailable(inventoryAmount.reason ?? "재고비율 계산 불가")
+            : salesAmount.value === null
+              ? dailyUnavailable(salesAmount.reason ?? "매출 계산 불가")
+              : salesAmount.value <= 0
+                ? dailyUnavailable("선택일 매출 0원")
+                : available(inventoryAmount.value / salesAmount.value),
+      };
+    },
+  );
+
+  const positionCandidates = stores
+    .map(({ storeId, storeName, current }) => ({
+      storeId,
+      storeName,
+      salesAmount: getUsableSales(current, "선택일"),
+    }))
+    .filter((row) => row.salesAmount.value !== null)
+    .sort(
+      (a, b) =>
+        (b.salesAmount.value ?? 0) - (a.salesAmount.value ?? 0) ||
+        koreanStoreNameCollator.compare(a.storeName, b.storeName),
+    );
+  const totalSales = positionCandidates.reduce(
+    (sum, row) => sum + (row.salesAmount.value ?? 0),
+    0,
+  );
+  const averageSales =
+    positionCandidates.length > 0 ? totalSales / positionCandidates.length : 0;
+  const positions = positionCandidates.map((row, index) => ({
+    rank: index + 1,
+    ...row,
+    share:
+      totalSales > 0
+        ? available((row.salesAmount.value ?? 0) / totalSales)
+        : dailyUnavailable("순위 대상 매출 합계 0원"),
+    averageComparison:
+      averageSales > 0
+        ? available(
+            ((row.salesAmount.value ?? 0) - averageSales) / averageSales,
+          )
+        : dailyUnavailable("순위 대상 평균 매출 0원"),
+  }));
+  const includedStoreIds = new Set(positions.map((row) => row.storeId));
+  const excludedPositions = stores
+    .filter((store) => !includedStoreIds.has(store.storeId))
+    .map(({ storeId, storeName, current }) => ({
+      storeId,
+      storeName,
+      reason: getUsableSales(current, "선택일").reason ?? "매출 계산 불가",
+    }));
+
+  return { salesChanges, inventoryRatios, positions, excludedPositions };
+}
+
+export function buildDailyAttendanceReport(
+  stores: DailyReportAnalysisStore[],
+): DailyAttendanceReport {
+  const summary = {
+    totalWorkers: 0,
+    late: 0,
+    earlyLeave: 0,
+    special: 0,
+    missingRoster: 0,
+  };
+  const rows: DailyAttendanceReport["rows"] = [];
+
+  for (const { storeId, storeName, current } of stores) {
+    if (!current) {
+      rows.push({
+        storeId,
+        storeName,
+        workerName: "근태 미입력",
+        statuses: ["근태 미입력"],
+        lateMemo: null,
+        earlyLeaveMemo: null,
+        specialMemo: null,
+      });
+      continue;
+    }
+    const laborItems = current.ledgerLaborItems;
+    const workerCount = current.workerCount ?? laborItems.length;
+    const missingRoster = Math.max(workerCount - laborItems.length, 0);
+    summary.totalWorkers += workerCount;
+    summary.missingRoster += missingRoster;
+
+    for (const item of laborItems) {
+      const statuses: DailyAttendanceStatus[] = [];
+      const hasLateMemo = Boolean(item.lateMemo?.trim());
+      const hasEarlyLeaveMemo = Boolean(item.earlyLeaveMemo?.trim());
+      const hasSpecialMemo = Boolean(item.specialMemo?.trim());
+      if (!hasLateMemo && !hasEarlyLeaveMemo && !hasSpecialMemo) {
+        statuses.push("정상");
+      }
+      if (hasLateMemo) {
+        statuses.push("지각");
+        summary.late += 1;
+      }
+      if (hasEarlyLeaveMemo) {
+        statuses.push("조퇴");
+        summary.earlyLeave += 1;
+      }
+      if (hasSpecialMemo) {
+        statuses.push("특이사항");
+        summary.special += 1;
+      }
+      if (!item.employeeId) statuses.push("직원 미연결");
+      rows.push({
+        storeId,
+        storeName,
+        workerName: item.workerName,
+        statuses,
+        lateMemo: item.lateMemo,
+        earlyLeaveMemo: item.earlyLeaveMemo,
+        specialMemo: item.specialMemo,
+      });
+    }
+
+    if (missingRoster > 0) {
+      rows.push({
+        storeId,
+        storeName,
+        workerName: `명단 미입력 ${missingRoster.toLocaleString("ko-KR")}명`,
+        statuses: ["명단 부족"],
+        lateMemo: null,
+        earlyLeaveMemo: null,
+        specialMemo: null,
+      });
+    } else if (laborItems.length === 0 && current.workerCount === null) {
+      rows.push({
+        storeId,
+        storeName,
+        workerName: "근태 미입력",
+        statuses: ["근태 미입력"],
+        lateMemo: null,
+        earlyLeaveMemo: null,
+        specialMemo: null,
+      });
+    }
+  }
+
+  return { summary, rows };
 }
 
 export function getStoreComparisonReportDateRange(
@@ -764,6 +1051,7 @@ export async function getHqDailyMeetingReport({
   const query = getDailyMeetingReportDateQuery(dateQuery ?? datePreset);
   const preset = getDailyMeetingReportDatePreset(query);
   const closingDate = getDailyMeetingReportDate(query);
+  const previousClosingDate = getPreviousReportDate(closingDate);
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("../dashboard/threshold-queries.ts");
@@ -787,7 +1075,7 @@ export async function getHqDailyMeetingReport({
       : await db.dailyLedger.findMany({
           where: {
             storeId: { in: storeIds },
-            closingDate,
+            closingDate: { in: [closingDate, previousClosingDate] },
           },
           select: {
             id: true,
@@ -859,9 +1147,25 @@ export async function getHqDailyMeetingReport({
                 amount: true,
               },
             },
+            ledgerLaborItems: {
+              select: {
+                workerName: true,
+                employeeId: true,
+                lateMemo: true,
+                earlyLeaveMemo: true,
+                specialMemo: true,
+              },
+              orderBy: { createdAt: "asc" },
+            },
           },
         });
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
+  const currentLedgers = ledgers.filter(
+    (ledger) => ledger.closingDate.getTime() === closingDate.getTime(),
+  );
+  const previousLedgers = ledgers.filter(
+    (ledger) => ledger.closingDate.getTime() === previousClosingDate.getTime(),
+  );
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
@@ -870,12 +1174,12 @@ export async function getHqDailyMeetingReport({
   const { getPlannedUnitPriceLookup } =
     await import("../sales-plan/queries.ts");
   const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
-    ledgers.map((ledger) => ({
+    currentLedgers.map((ledger) => ({
       storeId: ledger.storeId,
       businessDate: ledger.closingDate,
     })),
   );
-  const ledgersWithPlannedPrice = ledgers.map((ledger) => {
+  const ledgersWithPlannedPrice = currentLedgers.map((ledger) => {
     const lossQuantityByProductId = aggregateLossQuantityByProductId(
       ledger.ledgerLossItems,
     );
@@ -900,7 +1204,10 @@ export async function getHqDailyMeetingReport({
     ledgersWithPlannedPrice,
   );
   const ledgerByStoreId = new Map<string, ReportLedgerRecord>(
-    ledgers.map((ledger) => [ledger.storeId, ledger]),
+    currentLedgers.map((ledger) => [ledger.storeId, ledger]),
+  );
+  const previousLedgerByStoreId = new Map<string, ReportLedgerRecord>(
+    previousLedgers.map((ledger) => [ledger.storeId, ledger]),
   );
   const rows = stores.map((store) => {
     const ledger = ledgerByStoreId.get(store.id) ?? null;
@@ -918,6 +1225,18 @@ export async function getHqDailyMeetingReport({
         : undefined,
     });
   });
+  const analysisStores = stores.map((store) => ({
+    storeId: store.id,
+    storeName: store.name,
+    current: toDailyReportAnalysisLedger(
+      ledgerByStoreId.get(store.id) ?? null,
+      correctionValuesByLedgerId,
+    ),
+    previous: toDailyReportAnalysisLedger(
+      previousLedgerByStoreId.get(store.id) ?? null,
+      correctionValuesByLedgerId,
+    ),
+  }));
 
   return {
     datePreset: preset,
@@ -930,6 +1249,8 @@ export async function getHqDailyMeetingReport({
       ledgersWithPlannedPrice,
     ),
     productProfitability: buildProductProfitability(ledgersWithPlannedPrice),
+    salesAnalysis: buildDailySalesAnalysis(analysisStores),
+    attendance: buildDailyAttendanceReport(analysisStores),
   };
 }
 
@@ -3043,6 +3364,7 @@ function toStoreComparisonLedgerSummary(
 function toReportLedgerCalculationSummary(
   ledger: ReportLedgerRecord,
   corrections?: Map<string, CorrectionAppliedValue>,
+  plannedSalesItems?: LedgerReviewPlannedSalesInput[],
 ) {
   const originalReviewInput = {
     totalSalesAmount: ledger.totalSalesAmount,
@@ -3075,6 +3397,7 @@ function toReportLedgerCalculationSummary(
     ...correctionOverlay.reviewInput,
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
+    plannedSalesItems,
   });
   const lossMetadataById = new Map(
     ledger.ledgerLossItems.map((item) => [
@@ -3114,6 +3437,27 @@ function toReportLedgerCalculationSummary(
       correctionOverlay.correctionState.appliedCorrectionCount,
     appliedCorrectionKeys: correctionOverlay.appliedCorrectionKeys,
     unappliedCorrectionKeys: correctionOverlay.unappliedCorrectionKeys,
+  };
+}
+
+function toDailyReportAnalysisLedger(
+  ledger: ReportLedgerRecord | null,
+  correctionsByLedgerId: Map<string, Map<string, CorrectionAppliedValue>>,
+): DailyReportAnalysisLedger | null {
+  if (!ledger) return null;
+  const summary = toReportLedgerCalculationSummary(
+    ledger,
+    correctionsByLedgerId.get(ledger.id),
+  );
+
+  return {
+    ledgerId: ledger.id,
+    status: ledger.status,
+    totalSales: summary.applied.totalSales,
+    inventoryItems: summary.inventoryItems,
+    appliedCorrectionKeys: summary.appliedCorrectionKeys,
+    workerCount: summary.workerCount,
+    ledgerLaborItems: ledger.ledgerLaborItems ?? [],
   };
 }
 
@@ -3763,40 +4107,18 @@ function toLedgerReportRow({
   corrections?: Map<string, CorrectionAppliedValue>;
   plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 }): ReportRowWithoutPriority {
-  const originalReviewInput = {
-    totalSalesAmount: ledger.totalSalesAmount,
-    cashAmount: ledger.cashAmount,
-    cardAmount: ledger.cardAmount,
-    otherPaymentAmount: ledger.otherPaymentAmount,
-    workerCount: ledger.workerCount,
-    expenseTotal: calculateExpenseTotal(
-      ledger.ledgerExpenses.map((item) => item.amount),
-    ),
-    inventoryItems: ledger.ledgerInventoryItems,
-  };
-  const originalSummary = calculateLedgerReviewSummary({
-    ...originalReviewInput,
-    inventoryAdjustments: ledger.ledgerInventoryAdjustments,
-    lossItems: ledger.ledgerLossItems,
-  });
-  const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({
-    ledgerId: ledger.id,
-    reviewInput: originalReviewInput,
-    expenseItems: ledger.ledgerExpenses,
-    lossItems: ledger.ledgerLossItems,
-    corrections: corrections?.values() ?? [],
-  });
-  const inventoryAdjustments = toCorrectedInventoryAdjustments(
-    ledger.ledgerInventoryAdjustments,
-    correctionOverlay,
-  );
-  const reviewSummary = calculateLedgerReviewSummary({
-    ...correctionOverlay.reviewInput,
-    inventoryAdjustments,
-    lossItems: correctionOverlay.lossItems,
+  const calculation = toReportLedgerCalculationSummary(
+    ledger,
+    corrections,
     plannedSalesItems,
-  });
-  const correctionState = correctionOverlay.correctionState;
+  );
+  const originalSummary = calculation.original;
+  const reviewSummary = calculation.applied;
+  const correctionState = {
+    appliedCorrectionCount: calculation.appliedCorrectionCount,
+    hasAppliedCorrections: calculation.appliedCorrectionCount > 0,
+    hasUnappliedCorrections: calculation.hasUnappliedCorrections,
+  };
   const signals =
     ledger.status === "HOLIDAY"
       ? getReportSignals({
@@ -3824,10 +4146,10 @@ function toLedgerReportRow({
           },
           inventoryLossCurrent: {
             inventoryItems: toInventoryLossInventoryItems(
-              correctionOverlay.reviewInput.inventoryItems,
+              calculation.inventoryItems,
             ),
-            inventoryAdjustments,
-            lossItems: correctionOverlay.lossItems,
+            inventoryAdjustments: calculation.inventoryAdjustments,
+            lossItems: calculation.lossItems,
           },
           evaluateRevenueAnomalySignals,
           evaluateInventoryLossAnomalySignals,
@@ -3837,7 +4159,7 @@ function toLedgerReportRow({
   const originalHasLoss = ledger.ledgerLossItems.some(
     (item) => item.quantity > 0 || item.amount > 0,
   );
-  const appliedHasLoss = correctionOverlay.lossItems.some(
+  const appliedHasLoss = calculation.lossItems.some(
     (item) => item.quantity > 0 || item.amount > 0,
   );
   const rowWithoutEvidence = {
@@ -3881,8 +4203,8 @@ function toLedgerReportRow({
       originalHasLoss,
       appliedHasLoss,
       correctionState: {
-        appliedKeys: correctionOverlay.appliedCorrectionKeys,
-        unappliedKeys: correctionOverlay.unappliedCorrectionKeys,
+        appliedKeys: calculation.appliedCorrectionKeys,
+        unappliedKeys: calculation.unappliedCorrectionKeys,
       },
     }),
   };

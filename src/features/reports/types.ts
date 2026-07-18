@@ -63,6 +63,75 @@ export type DailyMeetingReportRow = HqDashboardRow & {
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
 };
 
+export type DailySalesChangeRow = {
+  storeId: string;
+  storeName: string;
+  currentSales: LedgerReviewMetric;
+  previousSales: LedgerReviewMetric;
+  difference: LedgerReviewMetric;
+  rate: LedgerReviewMetric;
+};
+
+export type DailyInventoryRatioRow = {
+  storeId: string;
+  storeName: string;
+  inventoryAmount: LedgerReviewMetric;
+  salesAmount: LedgerReviewMetric;
+  ratio: LedgerReviewMetric;
+};
+
+export type DailySalesPositionRow = {
+  rank: number;
+  storeId: string;
+  storeName: string;
+  salesAmount: LedgerReviewMetric;
+  share: LedgerReviewMetric;
+  averageComparison: LedgerReviewMetric;
+};
+
+export type DailySalesPositionExclusion = {
+  storeId: string;
+  storeName: string;
+  reason: string;
+};
+
+export type DailySalesAnalysis = {
+  salesChanges: DailySalesChangeRow[];
+  inventoryRatios: DailyInventoryRatioRow[];
+  positions: DailySalesPositionRow[];
+  excludedPositions: DailySalesPositionExclusion[];
+};
+
+export type DailyAttendanceStatus =
+  | "정상"
+  | "지각"
+  | "조퇴"
+  | "특이사항"
+  | "직원 미연결"
+  | "명단 부족"
+  | "근태 미입력";
+
+export type DailyAttendanceRow = {
+  storeId: string;
+  storeName: string;
+  workerName: string;
+  statuses: DailyAttendanceStatus[];
+  lateMemo: string | null;
+  earlyLeaveMemo: string | null;
+  specialMemo: string | null;
+};
+
+export type DailyAttendanceReport = {
+  summary: {
+    totalWorkers: number;
+    late: number;
+    earlyLeave: number;
+    special: number;
+    missingRoster: number;
+  };
+  rows: DailyAttendanceRow[];
+};
+
 export type DailyMeetingReportData = {
   datePreset: DailyMeetingReportDatePreset;
   dateQuery: string;
@@ -74,6 +143,8 @@ export type DailyMeetingReportData = {
   categoryPerformance: ProductCategoryPerformance[];
   // WO(2026-06-25): 당일 품목별 추정 이익률 + 전체 판매분 합산 요약.
   productProfitability: ProductProfitabilitySummary;
+  salesAnalysis: DailySalesAnalysis;
+  attendance: DailyAttendanceReport;
 };
 
 export type StoreComparisonReportDateRange = {

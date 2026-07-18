@@ -2,21 +2,8 @@ import { HeadquartersShell } from "~/components/headquarters-shell";
 import { PageHeader } from "~/components/page-header";
 import { Skeleton } from "~/components/ui/skeleton";
 
-const summarySkeletons = ["활성", "마감", "검토", "미입력", "손실"];
-const desktopRows = ["desktop-1", "desktop-2", "desktop-3", "desktop-4"];
-const desktopColumns = [
-  "w-32",
-  "w-20",
-  "w-24",
-  "w-40",
-  "w-24",
-  "w-20",
-  "w-28",
-  "w-16",
-  "w-32",
-  "w-24",
-];
-const mobileRows = ["mobile-1", "mobile-2", "mobile-3"];
+const fiveItems = ["1", "2", "3", "4", "5"];
+const rows = ["1", "2", "3"];
 
 export default function DailyMeetingReportLoading() {
   return (
@@ -32,65 +19,79 @@ export default function DailyMeetingReportLoading() {
         </div>
       </div>
 
-      <section
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-        aria-label="아침 회의 리포트 요약 불러오기"
-      >
-        {summarySkeletons.map((item) => (
-          <div key={item} className="bg-background rounded-lg border p-4">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="mt-3 h-8 w-12" />
-          </div>
-        ))}
-      </section>
+      <LoadingSection title="지점별 매출·이익률">
+        <Skeleton className="h-56 w-full" />
+      </LoadingSection>
 
-      <section
-        className="space-y-3"
-        aria-label="아침 회의 리포트 지점 목록 불러오기"
-      >
-        <div className="bg-background hidden overflow-x-auto rounded-lg border p-3 md:block">
-          <div className="min-w-[1320px] space-y-3">
-            <div className="grid grid-cols-10 gap-3 border-b pb-3">
-              {desktopColumns.map((width, index) => (
-                <Skeleton key={`head-${index}`} className={`h-4 ${width}`} />
-              ))}
+      <LoadingSection title="매출 분석">
+        <div className="grid gap-3 lg:grid-cols-3">
+          {["증감", "재고", "포지션"].map((item) => (
+            <div key={item} className="rounded-md border p-3">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="mt-3 h-32 w-full" />
             </div>
-            {desktopRows.map((row) => (
-              <div key={row} className="grid grid-cols-10 items-center gap-3">
-                {desktopColumns.map((width, index) => (
-                  <Skeleton
-                    key={`${row}-${index}`}
-                    className={`h-7 ${width}`}
-                  />
-                ))}
-              </div>
+          ))}
+        </div>
+      </LoadingSection>
+
+      <LoadingSection title="품목별 판매 현황">
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="mt-3 h-48 w-full" />
+      </LoadingSection>
+
+      <LoadingSection title="직원 근태 현황">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {fiveItems.map((item) => (
+            <Skeleton key={`attendance-${item}`} className="h-24 w-full" />
+          ))}
+        </div>
+        <Skeleton className="mt-3 hidden h-48 w-full md:block" />
+        <div className="mt-3 grid gap-3 md:hidden">
+          {rows.map((row) => (
+            <Skeleton
+              key={`attendance-mobile-${row}`}
+              className="h-36 w-full"
+            />
+          ))}
+        </div>
+      </LoadingSection>
+
+      <LoadingSection title="마감·이상 신호 현황" bordered={false}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {fiveItems.map((item) => (
+            <Skeleton key={`summary-${item}`} className="h-24 w-full" />
+          ))}
+        </div>
+        <div className="mt-3 hidden overflow-x-auto rounded-lg border p-3 md:block">
+          <div className="flex min-w-[900px] flex-col gap-3">
+            {rows.map((row) => (
+              <Skeleton key={`closing-${row}`} className="h-10 w-full" />
             ))}
           </div>
         </div>
-
-        <div className="grid gap-3 md:hidden">
-          {mobileRows.map((row) => (
-            <article key={row} className="bg-background rounded-lg border p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-5 w-36" />
-                  <Skeleton className="h-4 w-full" />
-                </div>
-                <Skeleton className="h-6 w-16" />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-              <Skeleton className="mt-4 h-6 w-28" />
-            </article>
+        <div className="mt-3 grid gap-3 md:hidden">
+          {rows.map((row) => (
+            <Skeleton key={`closing-mobile-${row}`} className="h-40 w-full" />
           ))}
         </div>
-      </section>
+      </LoadingSection>
     </HeadquartersShell>
+  );
+}
+
+function LoadingSection({
+  title,
+  children,
+  bordered = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  bordered?: boolean;
+}) {
+  return (
+    <section className={bordered ? "rounded-lg border p-4" : "grid gap-3"}>
+      <h2 className="text-base font-semibold">{title}</h2>
+      <div className="mt-3">{children}</div>
+    </section>
   );
 }

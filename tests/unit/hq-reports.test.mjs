@@ -76,7 +76,10 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /storeScope\.stores/);
   assert.match(querySource, /dailyLedger\.findMany\(/);
   assert.match(querySource, /storeId:\s*\{\s*in:/s);
-  assert.match(querySource, /closingDate/);
+  assert.match(
+    querySource,
+    /closingDate:\s*\{\s*in:\s*\[closingDate,\s*previousClosingDate\]\s*\}/,
+  );
   assert.match(querySource, /getLatestCorrectionValuesForLedgers/);
   assert.match(querySource, /latestReflectedAt/);
   assert.match(querySource, /getLatestReflectedAt/);
@@ -103,6 +106,27 @@ test("HQ daily meeting report query reuses dashboard calculation contracts", () 
   assert.match(querySource, /evaluateRevenueAnomalySignals/);
   assert.match(querySource, /evaluateInventoryLossAnomalySignals/);
   assert.match(querySource, /correction-review-required/);
+  const dailyQueryStart = querySource.indexOf(
+    "export async function getHqDailyMeetingReport",
+  );
+  const dailyQueryEnd = querySource.indexOf("// (2026-06-30)", dailyQueryStart);
+  const dailyQuerySource = querySource.slice(dailyQueryStart, dailyQueryEnd);
+  const laborSelectStart = dailyQuerySource.indexOf("ledgerLaborItems:");
+  const laborSelect = dailyQuerySource.slice(
+    laborSelectStart,
+    laborSelectStart + 420,
+  );
+  for (const field of [
+    "workerName",
+    "employeeId",
+    "lateMemo",
+    "earlyLeaveMemo",
+    "specialMemo",
+  ]) {
+    assert.match(laborSelect, new RegExp(`${field}:\\s*true`));
+  }
+  assert.match(laborSelect, /orderBy:\s*\{\s*createdAt:\s*"asc"\s*\}/);
+  assert.doesNotMatch(laborSelect, /amount:|createdById:|updatedById:/);
   assert.doesNotMatch(querySource, /\.(create|createMany|update|upsert)\(/);
   assert.doesNotMatch(querySource, /export\s+async\s+function\s+(GET|POST)/);
 });
@@ -257,7 +281,7 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
   );
   assert.match(dailyPageSource, /mode="table"/);
   assert.match(dailyPageSource, /tableVariant="salesRanking"/);
-  assert.match(dailyPageSource, /품목 판매순위/);
+  assert.match(dailyPageSource, /품목별 판매 현황/);
   assert.match(
     dailyPageSource,
     /재고 흐름으로 계산한 판매수량 기준 상위 품목입니다\./,
@@ -298,6 +322,117 @@ test("HQ daily meeting report UI reuses status and signal components without UI 
   assert.doesNotMatch(tableSource, /grossMarginDropBps/);
   assert.doesNotMatch(tableSource, /salesDifferenceAmount/);
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
+});
+
+test("daily sales analysis and attendance components are display-only responsive views", () => {
+  const salesSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "daily-sales-analysis.tsx",
+  );
+  const attendanceSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "daily-attendance-report.tsx",
+  );
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const loadingSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "loading.tsx",
+  );
+
+  for (const label of [
+    "전일 대비 매출액 증감률",
+    "재고비율",
+    "매장 매출 포지션",
+    "계산 불가",
+    "순위",
+    "지점",
+    "매출액",
+    "전체 비중",
+    "전체 평균 대비",
+    "제외 지점",
+  ]) {
+    assert.match(salesSource, new RegExp(label));
+  }
+  assert.match(salesSource, /from "~\/components\/ui\/table"/);
+  assert.match(salesSource, /표시할 매출 분석 데이터가 없습니다\./);
+  assert.doesNotMatch(salesSource, /recharts|BarChart|LineChart/);
+  assert.doesNotMatch(salesSource, /<(?:table|thead|tbody|tr|th|td)\b/);
+  assert.doesNotMatch(salesSource, /\.reduce\(|\/\s*(?:total|previous|sales)/);
+
+  for (const label of [
+    "총 근무자",
+    "지각",
+    "조퇴",
+    "특이사항",
+    "명단 부족",
+    "지점",
+    "직원",
+    "상태",
+    "지각 메모",
+    "조퇴 메모",
+  ]) {
+    assert.match(attendanceSource, new RegExp(label));
+  }
+  assert.match(attendanceSource, /attendance\.rows\.map/);
+  assert.match(attendanceSource, /md:block/);
+  assert.match(attendanceSource, /md:hidden/);
+  assert.match(attendanceSource, /선택일에 입력된 직원 근태가 없습니다\./);
+  assert.doesNotMatch(attendanceSource, /급여|인건비|amount|employeeId/);
+  assert.doesNotMatch(attendanceSource, /<(?:table|thead|tbody|tr|th|td)\b/);
+
+  const pageHeadings = [
+    "지점별 매출·이익률",
+    "매출 분석",
+    "품목별 판매 현황",
+    "직원 근태 현황",
+    "마감·이상 신호 현황",
+  ];
+  let previousIndex = -1;
+  for (const heading of pageHeadings) {
+    const index = pageSource.indexOf(heading);
+    assert.ok(
+      index > previousIndex,
+      `${heading} should follow the prior section`,
+    );
+    previousIndex = index;
+  }
+  assert.match(
+    pageSource,
+    /<DailySalesAnalysis data=\{report\.salesAnalysis\}/,
+  );
+  assert.match(
+    pageSource,
+    /<DailyAttendanceReport attendance=\{report\.attendance\}/,
+  );
+  assert.match(pageSource, /<StoreDailyPerformanceChart rows=\{report\.rows\}/);
+  assert.match(pageSource, /<DailyMeetingReportTable report=\{report\}/);
+
+  previousIndex = -1;
+  for (const heading of pageHeadings) {
+    const index = loadingSource.indexOf(heading);
+    assert.ok(
+      index > previousIndex,
+      `${heading} loading skeleton should be ordered`,
+    );
+    previousIndex = index;
+  }
 });
 
 test("HQ reports build frozen/live category performance with 추정 이익률 from FIFO consumed amount (WO-03 + point_summary.md:26)", async () => {
@@ -1939,9 +2074,12 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     "queries.ts",
   );
   const {
+    buildDailyAttendanceReport,
+    buildDailySalesAnalysis,
     getDailyMeetingReportDate,
     getDailyMeetingReportDateQuery,
     getDailyMeetingReportDatePreset,
+    getPreviousReportDate,
   } = await import(pathToFileURL(queryPath).href);
 
   assert.equal(getDailyMeetingReportDatePreset("yesterday"), "yesterday");
@@ -1969,6 +2107,343 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     ).toISOString(),
     "2026-05-31T00:00:00.000Z",
   );
+  assert.equal(
+    getPreviousReportDate(new Date("2026-07-01T00:00:00.000Z")).toISOString(),
+    "2026-06-30T00:00:00.000Z",
+  );
+  assert.equal(
+    getPreviousReportDate(new Date("2026-01-01T00:00:00.000Z")).toISOString(),
+    "2025-12-31T00:00:00.000Z",
+  );
+
+  const metric = (value, reason) => ({
+    value,
+    ...(reason ? { unavailableReason: reason } : {}),
+  });
+  const ledger = ({
+    id,
+    status = "HEADQUARTERS_CLOSED",
+    sales,
+    inventory = [],
+    correctionKeys = [],
+    workerCount = null,
+    labor = [],
+  }) => ({
+    ledgerId: id,
+    status,
+    totalSales: metric(sales),
+    inventoryItems: inventory,
+    appliedCorrectionKeys: new Set(correctionKeys),
+    workerCount,
+    ledgerLaborItems: labor,
+  });
+  const stores = [
+    {
+      storeId: "store-up",
+      storeName: "가 지점",
+      current: ledger({
+        id: "current-up",
+        sales: 120_000,
+        inventory: [{ id: "inventory-up", inventoryAmount: 30_000 }],
+        workerCount: 3,
+        labor: [
+          {
+            workerName: "정상 직원",
+            employeeId: "employee-1",
+            lateMemo: "   ",
+            earlyLeaveMemo: null,
+            specialMemo: null,
+          },
+          {
+            workerName: "복합 직원",
+            employeeId: null,
+            lateMemo: "10분 지각",
+            earlyLeaveMemo: "병원 방문",
+            specialMemo: "인수인계",
+          },
+        ],
+      }),
+      previous: ledger({ id: "previous-up", sales: 80_000 }),
+    },
+    {
+      storeId: "store-down",
+      storeName: "나 지점",
+      current: ledger({ id: "current-down", sales: 100_000 }),
+      previous: ledger({ id: "previous-down", sales: 200_000 }),
+    },
+    {
+      storeId: "store-zero",
+      storeName: "다 지점",
+      current: ledger({
+        id: "current-zero",
+        sales: 0,
+        inventory: [{ id: "inventory-zero", inventoryAmount: 10_000 }],
+      }),
+      previous: ledger({ id: "previous-zero", sales: 0 }),
+    },
+    {
+      storeId: "store-missing",
+      storeName: "라 지점",
+      current: null,
+      previous: null,
+    },
+    {
+      storeId: "store-holiday",
+      storeName: "마 지점",
+      current: ledger({ id: "current-holiday", status: "HOLIDAY", sales: 0 }),
+      previous: ledger({
+        id: "previous-holiday",
+        status: "HOLIDAY",
+        sales: 0,
+      }),
+    },
+    {
+      storeId: "store-incomplete",
+      storeName: "바 지점",
+      current: ledger({
+        id: "current-incomplete",
+        sales: 120_000,
+        inventory: [
+          { id: "inventory-complete", inventoryAmount: 10_000 },
+          { id: "inventory-incomplete", inventoryAmount: null },
+        ],
+      }),
+      previous: ledger({ id: "previous-incomplete", sales: 100_000 }),
+    },
+    {
+      storeId: "store-corrected-inventory",
+      storeName: "사 지점",
+      current: ledger({
+        id: "current-corrected-inventory",
+        sales: 120_000,
+        inventory: [{ id: "inventory-corrected", inventoryAmount: 30_000 }],
+        correctionKeys: [
+          "current-corrected-inventory:INVENTORY_ROW:inventory-corrected:currentQuantity",
+        ],
+      }),
+      previous: ledger({ id: "previous-corrected-inventory", sales: 100_000 }),
+    },
+  ];
+
+  const analysis = buildDailySalesAnalysis(stores);
+  const baselineChange = buildDailySalesAnalysis([
+    {
+      storeId: "baseline",
+      storeName: "기준점",
+      current: ledger({ id: "baseline-current", sales: 120_000 }),
+      previous: ledger({ id: "baseline-previous", sales: 100_000 }),
+    },
+  ]).salesChanges[0];
+  assert.equal(baselineChange.difference.value, 20_000);
+  assert.equal(baselineChange.rate.value, 0.2);
+  const increase = analysis.salesChanges.find(
+    (row) => row.storeId === "store-up",
+  );
+  assert.equal(increase.currentSales.value, 120_000);
+  assert.equal(increase.previousSales.value, 80_000);
+  assert.equal(increase.difference.value, 40_000);
+  assert.equal(increase.rate.value, 0.5);
+  assert.deepEqual(
+    analysis.salesChanges.slice(0, 2).map((row) => row.storeId),
+    ["store-up", "store-down"],
+  );
+  assert.equal(
+    analysis.salesChanges.find((row) => row.storeId === "store-missing").rate
+      .reason,
+    "선택일 장부 미입력",
+  );
+  assert.equal(
+    analysis.salesChanges.find((row) => row.storeId === "store-holiday").rate
+      .reason,
+    "선택일 휴무",
+  );
+  assert.equal(
+    analysis.salesChanges.find((row) => row.storeId === "store-zero").rate
+      .reason,
+    "전일 매출 0원",
+  );
+
+  const inventoryRatio = analysis.inventoryRatios.find(
+    (row) => row.storeId === "store-up",
+  );
+  assert.equal(inventoryRatio.inventoryAmount.value, 30_000);
+  assert.equal(inventoryRatio.salesAmount.value, 120_000);
+  assert.equal(inventoryRatio.ratio.value, 0.25);
+  const zeroSalesInventory = analysis.inventoryRatios.find(
+    (row) => row.storeId === "store-zero",
+  );
+  assert.equal(zeroSalesInventory.inventoryAmount.value, 10_000);
+  assert.equal(zeroSalesInventory.ratio.value, null);
+  assert.equal(zeroSalesInventory.ratio.reason, "선택일 매출 0원");
+  for (const storeId of ["store-incomplete", "store-corrected-inventory"]) {
+    const row = analysis.inventoryRatios.find(
+      (item) => item.storeId === storeId,
+    );
+    assert.equal(row.inventoryAmount.value, null);
+    assert.equal(row.ratio.value, null);
+  }
+  assert.equal(
+    analysis.inventoryRatios.find((row) => row.storeId === "store-incomplete")
+      .ratio.reason,
+    "저장 FIFO 재고금액 누락",
+  );
+  assert.equal(
+    analysis.inventoryRatios.find(
+      (row) => row.storeId === "store-corrected-inventory",
+    ).ratio.reason,
+    "재고 수량 정정으로 FIFO 금액을 확정할 수 없음",
+  );
+
+  const unavailablePrevious = buildDailySalesAnalysis([
+    {
+      storeId: "previous-missing",
+      storeName: "전일 미입력점",
+      current: ledger({ id: "current-present", sales: 100 }),
+      previous: null,
+    },
+    {
+      storeId: "previous-holiday",
+      storeName: "전일 휴무점",
+      current: ledger({ id: "current-present-2", sales: 100 }),
+      previous: ledger({ id: "previous-holiday", status: "HOLIDAY", sales: 0 }),
+    },
+  ]).salesChanges;
+  assert.equal(
+    unavailablePrevious.find((row) => row.storeId === "previous-missing").rate
+      .reason,
+    "전일 장부 미입력",
+  );
+  assert.equal(
+    unavailablePrevious.find((row) => row.storeId === "previous-holiday").rate
+      .reason,
+    "전일 휴무",
+  );
+
+  assert.deepEqual(
+    analysis.positions.slice(0, 3).map((row) => [row.rank, row.storeName]),
+    [
+      [1, "가 지점"],
+      [2, "바 지점"],
+      [3, "사 지점"],
+    ],
+  );
+  assert.equal(analysis.positions[0].share.value, 120_000 / 460_000);
+  assert.equal(
+    analysis.positions[0].averageComparison.value,
+    (120_000 - 92_000) / 92_000,
+  );
+  assert.deepEqual(
+    analysis.excludedPositions.map((row) => [row.storeName, row.reason]),
+    [
+      ["라 지점", "선택일 장부 미입력"],
+      ["마 지점", "선택일 휴무"],
+    ],
+  );
+
+  const tieAnalysis = buildDailySalesAnalysis([
+    {
+      storeId: "tie-na",
+      storeName: "나 지점",
+      current: ledger({ id: "tie-na-ledger", sales: 100 }),
+      previous: null,
+    },
+    {
+      storeId: "tie-ga",
+      storeName: "가 지점",
+      current: ledger({ id: "tie-ga-ledger", sales: 100 }),
+      previous: null,
+    },
+  ]);
+  assert.deepEqual(
+    tieAnalysis.positions.map((row) => row.storeName),
+    ["가 지점", "나 지점"],
+  );
+  assert.deepEqual(
+    tieAnalysis.positions.map((row) => row.share.value),
+    [0.5, 0.5],
+  );
+  assert.deepEqual(
+    tieAnalysis.positions.map((row) => row.averageComparison.value),
+    [0, 0],
+  );
+
+  const positionAnalysis = buildDailySalesAnalysis([
+    {
+      storeId: "position-high",
+      storeName: "가 지점",
+      current: ledger({ id: "position-high-ledger", sales: 300_000 }),
+      previous: null,
+    },
+    {
+      storeId: "position-low",
+      storeName: "나 지점",
+      current: ledger({ id: "position-low-ledger", sales: 100_000 }),
+      previous: null,
+    },
+  ]).positions;
+  assert.deepEqual(
+    positionAnalysis.map((row) => [
+      row.rank,
+      row.share.value,
+      row.averageComparison.value,
+    ]),
+    [
+      [1, 0.75, 0.5],
+      [2, 0.25, -0.5],
+    ],
+  );
+
+  const attendance = buildDailyAttendanceReport(stores);
+  assert.deepEqual(attendance.summary, {
+    totalWorkers: 3,
+    late: 1,
+    earlyLeave: 1,
+    special: 1,
+    missingRoster: 1,
+  });
+  assert.deepEqual(attendance.rows[0].statuses, ["정상"]);
+  assert.deepEqual(attendance.rows[1].statuses, [
+    "지각",
+    "조퇴",
+    "특이사항",
+    "직원 미연결",
+  ]);
+  assert.equal(attendance.rows[1].lateMemo, "10분 지각");
+  assert.equal(attendance.rows[2].workerName, "명단 미입력 1명");
+  assert.deepEqual(attendance.rows[2].statuses, ["명단 부족"]);
+  const attendanceEdges = buildDailyAttendanceReport([
+    {
+      storeId: "missing-ledger",
+      storeName: "장부 미입력점",
+      current: null,
+      previous: null,
+    },
+    {
+      storeId: "unlinked-normal",
+      storeName: "미연결점",
+      current: ledger({
+        id: "unlinked-normal-ledger",
+        sales: 0,
+        workerCount: 1,
+        labor: [
+          {
+            workerName: "미연결 정상 직원",
+            employeeId: null,
+            lateMemo: " ",
+            earlyLeaveMemo: null,
+            specialMemo: null,
+          },
+        ],
+      }),
+      previous: null,
+    },
+  ]);
+  assert.equal(attendanceEdges.rows[0].workerName, "근태 미입력");
+  assert.deepEqual(attendanceEdges.rows[0].statuses, ["근태 미입력"]);
+  assert.deepEqual(attendanceEdges.rows[1].statuses, ["정상", "직원 미연결"]);
+  const serializedAttendance = JSON.stringify(attendance);
+  assert.doesNotMatch(serializedAttendance, /amount|employeeId/);
+  assert.doesNotMatch(serializedAttendance, /employee-1/);
 });
 
 test("HQ store comparison report date range helper keeps valid URL state", async () => {

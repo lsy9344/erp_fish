@@ -12,6 +12,9 @@ const STORE_IDS = {
   closed: "store-story-6-1-closed",
   holiday: "store-story-6-1-holiday",
   inProgress: "store-story-6-2-in-progress",
+  tieGa: "store-story-6-1-tie-ga",
+  tieNa: "store-story-6-1-tie-na",
+  zeroSales: "store-story-6-1-zero-sales",
   marginDefault: "store-report-margin-default",
   marginDestructive: "store-report-margin-destructive",
   marginMissing: "store-report-margin-missing",
@@ -42,6 +45,7 @@ const LOSS_CODE_IDS = {
 } as const;
 const STORY_LOSS_CODE_IDS = Object.values(LOSS_CODE_IDS);
 const STORY_MARKER = "story-6-1-test";
+const STORY_EMPLOYEE_ID = "employee-story-6-1";
 const HISTORICAL_REPORT_DATE = new Date(Date.UTC(2026, 4, 31));
 const THIRTY_PERCENT_EXPORT_PATTERN =
   /30[%_-]?단가|thirty[_-]?percent|thirty[_-]?percent[_-]?unit[_-]?price|price[_-]?30|margin[_-]?30/i;
@@ -124,12 +128,26 @@ function getTodayKstInput() {
   return getTodayKstMidnight().toISOString().slice(0, 10);
 }
 
+function getPreviousKstMidnight() {
+  const date = getTodayKstMidnight();
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date;
+}
+
 function getCurrentMonthInput() {
   return getTodayKstInput().slice(0, 7);
 }
 
 async function seedStorySixOneData() {
   const actorId = await getHeadquartersUserId();
+
+  await prisma.employee.create({
+    data: {
+      id: STORY_EMPLOYEE_ID,
+      name: "정상 연결 직원",
+      hireDate: new Date(Date.UTC(2025, 0, 1)),
+    },
+  });
 
   await prisma.product.create({
     data: {
@@ -177,6 +195,24 @@ async function seedStorySixOneData() {
         isActive: true,
         updatedById: actorId,
       },
+      {
+        id: STORE_IDS.tieGa,
+        name: "가 동률점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
+        id: STORE_IDS.tieNa,
+        name: "나 동률점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
+        id: STORE_IDS.zeroSales,
+        name: "0원 매출점",
+        isActive: true,
+        updatedById: actorId,
+      },
     ],
   });
 
@@ -189,6 +225,17 @@ async function seedStorySixOneData() {
     cardAmount: 190000,
     otherPaymentAmount: 10000,
     workerCount: 4,
+  });
+  const previousClosedLedger = await seedLedger({
+    actorId,
+    storeId: STORE_IDS.closed,
+    closingDate: getPreviousKstMidnight(),
+    status: "HEADQUARTERS_CLOSED",
+    totalSalesAmount: 50000,
+    cashAmount: 50000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 2,
   });
   await seedLedger({
     actorId,
@@ -305,6 +352,17 @@ async function seedStorySixOneData() {
   });
   await seedLedger({
     actorId,
+    storeId: STORE_IDS.holiday,
+    closingDate: getPreviousKstMidnight(),
+    status: "HOLIDAY",
+    totalSalesAmount: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: null,
+  });
+  const inProgressLedger = await seedLedger({
+    actorId,
     storeId: STORE_IDS.inProgress,
     status: "IN_PROGRESS",
     totalSalesAmount: 150000,
@@ -312,6 +370,85 @@ async function seedStorySixOneData() {
     cardAmount: 100000,
     otherPaymentAmount: 0,
     workerCount: 2,
+  });
+  await seedLedger({
+    actorId,
+    storeId: STORE_IDS.inProgress,
+    closingDate: getPreviousKstMidnight(),
+    status: "HEADQUARTERS_CLOSED",
+    totalSalesAmount: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+  });
+  for (const fixture of [
+    { storeId: STORE_IDS.tieGa, sales: 45000 },
+    { storeId: STORE_IDS.tieNa, sales: 45000 },
+    { storeId: STORE_IDS.zeroSales, sales: 0 },
+  ]) {
+    await seedLedger({
+      actorId,
+      storeId: fixture.storeId,
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: fixture.sales,
+      cashAmount: fixture.sales,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 0,
+    });
+    await seedLedger({
+      actorId,
+      storeId: fixture.storeId,
+      closingDate: getPreviousKstMidnight(),
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 100000,
+      cashAmount: 100000,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 0,
+    });
+  }
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: inProgressLedger.id,
+      productId: PRODUCT_IDS.fish,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 10000,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: null,
+      isModified: true,
+      carryoverSource: "MANUAL",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerLaborItem.createMany({
+    data: [
+      {
+        dailyLedgerId: closedLedger.id,
+        employeeId: STORY_EMPLOYEE_ID,
+        workerName: "정상 연결 직원",
+        amount: 987654321,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: closedLedger.id,
+        workerName: "복합 미연결 직원",
+        amount: 876543219,
+        lateMemo: "10분 지각",
+        earlyLeaveMemo: "병원 방문",
+        specialMemo: "인수인계 필요",
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    ],
   });
   await createCorrectionRecord({
     dailyLedgerId: holidayLedger.id,
@@ -331,6 +468,27 @@ async function seedStorySixOneData() {
     label: "총매출",
     originalValue: closedLedger.totalSalesAmount,
     correctedValue: 45000,
+    reason: STORY_MARKER,
+  });
+  await createCorrectionRecord({
+    dailyLedgerId: previousClosedLedger.id,
+    targetType: "PAYMENT_FIELD",
+    targetId: previousClosedLedger.id,
+    fieldKey: "totalSalesAmount",
+    label: "총매출",
+    originalValue: previousClosedLedger.totalSalesAmount,
+    correctedValue: 30000,
+    reason: STORY_MARKER,
+  });
+  await createCorrectionRecord({
+    dailyLedgerId: closedLedger.id,
+    targetType: "LEDGER_FIELD",
+    targetId: closedLedger.id,
+    fieldKey: "workerCount",
+    label: "근무자 수",
+    originalValue: closedLedger.workerCount,
+    correctedValue: 3,
+    correctedValueKind: "quantity",
     reason: STORY_MARKER,
   });
 }
@@ -538,12 +696,13 @@ async function seedLedger(data: {
 
 async function createCorrectionRecord(input: {
   dailyLedgerId: string;
-  targetType: "PAYMENT_FIELD" | "CALCULATED_METRIC";
+  targetType: "PAYMENT_FIELD" | "CALCULATED_METRIC" | "LEDGER_FIELD";
   targetId: string;
   fieldKey: string;
   label: string;
   originalValue: number | null;
   correctedValue: number | string;
+  correctedValueKind?: "money" | "quantity" | "metric";
   reason: string;
 }) {
   const actorId = await getHeadquartersUserId();
@@ -553,7 +712,9 @@ async function createCorrectionRecord(input: {
     label: input.label,
   };
   const correctedValue = {
-    kind: typeof input.correctedValue === "number" ? "money" : "metric",
+    kind:
+      input.correctedValueKind ??
+      (typeof input.correctedValue === "number" ? "money" : "metric"),
     value: input.correctedValue,
     label: input.label,
   };
@@ -620,6 +781,9 @@ async function cleanupStoreFixtures(
     await prisma.ledgerExpense.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.dailyLedger.deleteMany({
       where: { id: { in: ledgerIds } },
     });
@@ -642,6 +806,7 @@ async function cleanupDailyChartAndRankingFixtures() {
 
 async function cleanupStorySixOneData() {
   await cleanupStoreFixtures(STORY_STORE_IDS, STORY_PRODUCT_IDS);
+  await prisma.employee.deleteMany({ where: { id: STORY_EMPLOYEE_ID } });
   await prisma.ledgerInputCode.deleteMany({
     where: { id: { in: STORY_LOSS_CODE_IDS } },
   });
@@ -781,7 +946,7 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     page.getByText("품목별 POS 매출이 없어 재고 흐름 기반 추정값입니다."),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "지점별 장부 입력 매출·마진율" }),
+    page.getByRole("heading", { name: "지점별 매출·이익률" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "마진율순", exact: true }),
@@ -790,7 +955,7 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     page.getByRole("button", { name: "매출액순", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "품목 판매순위" }),
+    page.getByRole("heading", { name: "품목별 판매 현황" }),
   ).toBeVisible();
   await expect(
     page
@@ -800,12 +965,96 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "오늘" })).toBeVisible();
   await expect(page.getByRole("link", { name: "어제" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Excel/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /CSV/ })).toBeVisible();
+  await expect(page.getByLabel("조회 날짜")).toHaveValue(getTodayKstInput());
   await expect(
     page.getByRole("columnheader", { name: "최신 반영" }),
   ).toBeVisible();
   await expect(
     page.getByRole("columnheader", { name: "상태 메시지" }),
   ).toBeVisible();
+
+  const expectedSectionOrder = [
+    "지점별 매출·이익률",
+    "매출 분석",
+    "품목별 판매 현황",
+    "직원 근태 현황",
+    "마감·이상 신호 현황",
+  ];
+  const sectionHeadings = await page.locator("h2").allTextContents();
+  expect(
+    expectedSectionOrder.map((heading) => sectionHeadings.indexOf(heading)),
+  ).toEqual([...expectedSectionOrder.keys()]);
+
+  const salesAnalysisSection = page
+    .getByRole("heading", { name: "매출 분석", exact: true })
+    .locator("..");
+  const salesChangeRow = salesAnalysisSection
+    .getByRole("table")
+    .nth(0)
+    .getByRole("row")
+    .filter({ hasText: "스토리6-1 정정마감점" });
+  await expect(salesChangeRow).toContainText("₩45,000");
+  await expect(salesChangeRow).toContainText("₩30,000");
+  await expect(salesChangeRow).toContainText("+50% 증가");
+  const inventoryRatioRow = salesAnalysisSection
+    .getByRole("table")
+    .nth(1)
+    .getByRole("row")
+    .filter({ hasText: "스토리6-1 정정마감점" });
+  await expect(inventoryRatioRow).toContainText("₩120,000");
+  await expect(inventoryRatioRow).toContainText("+266.7%");
+  const zeroPreviousSalesRow = salesAnalysisSection
+    .getByRole("table")
+    .nth(0)
+    .getByRole("row")
+    .filter({ hasText: "스토리6-2 입력중점" });
+  await expect(zeroPreviousSalesRow).toContainText("전일 매출 0원");
+  const incompleteInventoryRow = salesAnalysisSection
+    .getByRole("table")
+    .nth(1)
+    .getByRole("row")
+    .filter({ hasText: "스토리6-2 입력중점" });
+  await expect(incompleteInventoryRow).toContainText("저장 FIFO 재고금액 누락");
+  const positionTable = salesAnalysisSection.getByRole("table").nth(2);
+  const tiedPositionRows = positionTable
+    .getByRole("row")
+    .filter({ hasText: "₩45,000" });
+  await expect(tiedPositionRows).toHaveCount(3);
+  const tiedPositionTexts = await tiedPositionRows.allTextContents();
+  expect(tiedPositionTexts[0]).toContain("가 동률점");
+  expect(tiedPositionTexts[1]).toContain("나 동률점");
+  expect(tiedPositionTexts[2]).toContain("스토리6-1 정정마감점");
+  const zeroSalesPositionRow = positionTable
+    .getByRole("row")
+    .filter({ hasText: "0원 매출점" });
+  await expect(zeroSalesPositionRow).toContainText("₩0");
+  await expect(zeroSalesPositionRow).toContainText("0%");
+  await expect(salesAnalysisSection).toContainText(
+    "스토리6-1 미입력점: 선택일 장부 미입력",
+  );
+  await expect(salesAnalysisSection).toContainText(
+    "스토리6-1 휴무점: 선택일 휴무",
+  );
+
+  const attendanceSection = page
+    .getByRole("heading", { name: "직원 근태 현황", exact: true })
+    .locator("..");
+  await expect(attendanceSection).toContainText("정상 연결 직원");
+  await expect(attendanceSection).toContainText("복합 미연결 직원");
+  await expect(attendanceSection).toContainText("지각");
+  await expect(attendanceSection).toContainText("조퇴");
+  await expect(attendanceSection).toContainText("특이사항");
+  await expect(attendanceSection).toContainText("직원 미연결");
+  await expect(attendanceSection).toContainText("명단 미입력 1명");
+  await expect(attendanceSection).toContainText("스토리6-1 미입력점");
+  await expect(attendanceSection).toContainText("근태 미입력");
+  const attendanceText = await attendanceSection.innerText();
+  const attendanceDigits = attendanceText.replace(/\D/g, "");
+  expect(attendanceDigits).not.toContain("987654321");
+  expect(attendanceDigits).not.toContain("876543219");
+  expect(attendanceText).not.toContain(STORY_EMPLOYEE_ID);
 
   const emptyRow = getDesktopRow(page, STORE_IDS.empty);
   await expect(emptyRow).toContainText("스토리6-1 미입력점");
@@ -832,6 +1081,38 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(holidayRow).toContainText("정정 확인 필요");
 });
 
+test("지정 지점 본사는 일별 매출 분석과 근태에서 권한 밖 지점을 보지 않는다", async ({
+  page,
+}) => {
+  await login(page, "hq-assigned@example.com");
+  await page.goto("/app/reports/daily?date=today");
+
+  await expect(
+    page.getByRole("heading", { name: "매출 분석", exact: true }),
+  ).toBeVisible();
+  const assignedSalesAnalysis = page
+    .getByRole("heading", { name: "매출 분석", exact: true })
+    .locator("..");
+  const assignedAttendance = page
+    .getByRole("heading", { name: "직원 근태 현황", exact: true })
+    .locator("..");
+  await expect(assignedSalesAnalysis).toContainText("서초점");
+  await expect(assignedAttendance).toContainText("서초점");
+  for (const hiddenText of [
+    "스토리6-1 정정마감점",
+    "스토리6-1 미입력점",
+    "스토리6-1 휴무점",
+    "정상 연결 직원",
+    "복합 미연결 직원",
+    "10분 지각",
+    "가 동률점",
+    "나 동률점",
+    "0원 매출점",
+  ]) {
+    await expect(page.getByText(hiddenText, { exact: false })).toHaveCount(0);
+  }
+});
+
 test.describe("일별 차트와 품목 순위 전용 데이터", () => {
   test.beforeEach(async () => {
     await seedDailyChartAndRankingFixtures();
@@ -841,7 +1122,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await cleanupDailyChartAndRankingFixtures();
   });
 
-  test("지점별 장부 매출 차트는 raw 마진율로 정렬하고 1.5%p 경계를 표시한다", async ({
+  test("아침 회의 지점별 장부 매출 차트는 raw 마진율로 정렬하고 1.5%p 경계를 표시한다", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -850,7 +1131,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
 
     const section = page
       .locator("section")
-      .filter({ hasText: "지점별 장부 입력 매출·마진율" });
+      .filter({ hasText: "지점별 매출·이익률" });
     const salesSort = section.getByRole("button", {
       name: "매출액순",
       exact: true,
@@ -994,7 +1275,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     ).toHaveAttribute("fill", "var(--chart-1)");
   });
 
-  test("일별 품목 판매순위는 판매수량 상위 10개와 이름·규격 검색을 제공한다", async ({
+  test("일별 품목별 판매 현황은 판매수량 상위 10개와 이름·규격 검색을 제공한다", async ({
     page,
   }) => {
     await login(page, "hq@example.com");
@@ -1002,7 +1283,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
 
     const section = page
       .locator("section")
-      .filter({ hasText: "품목 판매순위" });
+      .filter({ hasText: "품목별 판매 현황" });
     await expect(section.locator(".recharts-wrapper")).toHaveCount(0);
     await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
     for (const summaryLabel of [
@@ -1132,6 +1413,25 @@ test("본사는 좁은 화면에서도 일별 아침 회의 리포트 핵심 상
   await expect(
     page.getByRole("heading", { name: "아침 회의 리포트" }),
   ).toBeVisible();
+  const expectedSectionOrder = [
+    "지점별 매출·이익률",
+    "매출 분석",
+    "품목별 판매 현황",
+    "직원 근태 현황",
+    "마감·이상 신호 현황",
+  ];
+  const sectionHeadings = await page.locator("h2").allTextContents();
+  expect(
+    expectedSectionOrder.map((heading) => sectionHeadings.indexOf(heading)),
+  ).toEqual([...expectedSectionOrder.keys()]);
+
+  const attendanceSection = page
+    .getByRole("heading", { name: "직원 근태 현황", exact: true })
+    .locator("..");
+  const attendanceCards = attendanceSection.locator("div.md\\:hidden");
+  await expect(attendanceCards.getByText("정상 연결 직원")).toBeVisible();
+  await expect(attendanceCards.getByText("복합 미연결 직원")).toBeVisible();
+  await expect(attendanceCards.getByText("명단 미입력 1명")).toBeVisible();
 
   const emptyCard = page.locator(
     `[data-testid="hq-report-mobile-row-${STORE_IDS.empty}"]`,
