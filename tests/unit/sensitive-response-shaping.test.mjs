@@ -658,6 +658,7 @@ test("WO-10: store manager cost step omits payroll total and labor amounts", asy
   });
 
   assert.equal(Object.hasOwn(safe, "payrollTotal"), false);
+  assert.equal(Object.hasOwn(safe, "paymentDifferenceAmount"), false);
   assert.equal(safe.laborItems.length, 1);
   assert.equal(Object.hasOwn(safe.laborItems[0], "amount"), false);
   assert.equal(safe.laborItems[0].workerName, "홍길동");

@@ -361,7 +361,7 @@ test("ledger loss quantity errors explain product and inventory flow", async () 
       purchasedQuantity: null,
       requestedLossQuantity: 2,
     }),
-    "포크오징어 / M2 재고 흐름을 확인할 수 없습니다. 재고 단계에서 해당 품목의 전일재고 또는 오늘매입을 확인해 주세요.",
+    "포크오징어 / M2 재고 흐름을 확인할 수 없습니다. 1단계 매입에서 해당 품목의 오늘매입 저장 여부를 확인해 주세요.",
   );
 });
 

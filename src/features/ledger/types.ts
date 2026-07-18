@@ -95,7 +95,11 @@ export type StoreManagerLedgerLaborLine = Omit<LedgerLaborLine, "amount">;
 
 export type StoreManagerLedgerCostStepData = Omit<
   LedgerCostStepData,
-  "grossProfit" | "productivity" | "payrollTotal" | "laborItems"
+  | "grossProfit"
+  | "productivity"
+  | "payrollTotal"
+  | "laborItems"
+  | "paymentDifferenceAmount"
 > & {
   laborItems: StoreManagerLedgerLaborLine[];
 };

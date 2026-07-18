@@ -662,18 +662,17 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
   );
 
   assert.match(typeSource, /StoreManagerLedgerCostStepData/);
-  // WO-10(2026-06-28): 급여액·인건비 합계는 본사 전용. 지점장 DTO에서 payrollTotal과
-  // laborItems(amount 포함)도 제거하고, laborItems는 amount만 뺀 라인으로 재정의한다.
+  // 급여액·인건비 합계와 마감 정산 차액은 본사 전용이다.
   assert.match(
     typeSource,
-    /Omit<\s*LedgerCostStepData,\s*"grossProfit"\s*\|\s*"productivity"\s*\|\s*"payrollTotal"\s*\|\s*"laborItems"\s*>/s,
+    /Omit<\s*LedgerCostStepData,\s*\|\s*"grossProfit"\s*\|\s*"productivity"\s*\|\s*"payrollTotal"\s*\|\s*"laborItems"\s*\|\s*"paymentDifferenceAmount"\s*>/s,
   );
   assert.match(typeSource, /StoreManagerLedgerLaborLine/);
   assert.match(querySource, /shapeStoreManagerLedgerCostStepData/);
   // WO-12(2026-06-28): purchaseItems도 분해해 원본 이카운트 단가/보정 메타를 제거한다.
   assert.match(
     responseShapeSource,
-    /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*laborItems,\s*purchaseItems,\s*\.\.\.safeLedger\s*\}/s,
+    /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*paymentDifferenceAmount,\s*laborItems,\s*purchaseItems,\s*\.\.\.safeLedger\s*\}/s,
   );
   assert.match(actionSource, /toStoreManagerLedgerCostStepData\(afterLedger\)/);
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);

@@ -24,7 +24,7 @@ export function getLossQuantityErrorMessage({
   const productLabel = formatProductLabel(productName, productSpec);
 
   if (previousQuantity === null || purchasedQuantity === null) {
-    return `${productLabel} 재고 흐름을 확인할 수 없습니다. 재고 단계에서 해당 품목의 전일재고 또는 오늘매입을 확인해 주세요.`;
+    return `${productLabel} 재고 흐름을 확인할 수 없습니다. 1단계 매입에서 해당 품목의 오늘매입 저장 여부를 확인해 주세요.`;
   }
 
   const availableQuantity = previousQuantity + purchasedQuantity;

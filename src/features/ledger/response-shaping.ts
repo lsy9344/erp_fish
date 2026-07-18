@@ -18,6 +18,7 @@ export function toStoreManagerLedgerCostStepData(
     grossProfit,
     productivity,
     payrollTotal,
+    paymentDifferenceAmount,
     laborItems,
     purchaseItems,
     ...safeLedger
@@ -26,6 +27,7 @@ export function toStoreManagerLedgerCostStepData(
   void grossProfit;
   void productivity;
   void payrollTotal;
+  void paymentDifferenceAmount;
 
   return {
     ...safeLedger,

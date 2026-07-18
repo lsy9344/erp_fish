@@ -612,6 +612,51 @@ test("손실 수량이 재고 흐름보다 크면 저장을 막는다", async ({
   ).toBeVisible();
 });
 
+test("당일 매입만 있는 품목도 손실을 저장한다", async ({ page }) => {
+  await login(page);
+  const product = await seedProduct("스토리2-7 당일 매입 손실", "냉동", 9000);
+  const lossType = await seedLossType("스토리2-7 당일 매입 폐기");
+  const ledger = await seedTodayLedger();
+  const actorId = await getHeadquartersUserId();
+
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      sourceType: "MANUAL",
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 1,
+      amount: product.defaultUnitPrice,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page.getByLabel("품목").selectOption(product.id);
+  await page.getByLabel("처리 유형").selectOption(lossType.id);
+  await page.getByLabel("박스단위 수량").fill("0.2");
+  await page.getByLabel("떨이로 실제 판매한 금액").fill("0");
+  await page.getByLabel("사유/특이사항").fill("당일 매입 일부 폐기");
+  await lossSaveButton(page).click();
+
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "손실/폐기 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+
+  const savedLoss = await prisma.ledgerLossItem.findFirstOrThrow({
+    where: { dailyLedgerId: ledger.id, productId: product.id },
+  });
+  expect(savedLoss.productId).toBe(product.id);
+  expect(savedLoss.quantity.toNumber()).toBe(0.2);
+});
+
 test("재고 근거가 없는 active 품목의 손실 저장을 막는다", async ({ page }) => {
   await login(page);
   const product = await seedProduct("스토리2-7 재고 흐름 없음", "냉동", 9000);
@@ -632,7 +677,9 @@ test("재고 근거가 없는 active 품목의 손실 저장을 막는다", asyn
       .getByRole("alert")
       .filter({ hasText: /재고 흐름을 확인할 수 없습니다/ })
       .first(),
-  ).toBeVisible();
+  ).toContainText(
+    "1단계 매입에서 해당 품목의 오늘매입 저장 여부를 확인해 주세요.",
+  );
   await expect(page.getByLabel("박스단위 수량")).toHaveValue("1");
 
   expect(
