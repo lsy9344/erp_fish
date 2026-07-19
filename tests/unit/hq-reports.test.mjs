@@ -48,6 +48,13 @@ test("HQ daily meeting report source files follow story 6.1 boundaries", () => {
     "loading.tsx",
   );
   const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
+  const reportsNavSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "reports-nav.tsx",
+  );
 
   assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqDailyMeetingReport\(/);
@@ -56,7 +63,8 @@ test("HQ daily meeting report source files follow story 6.1 boundaries", () => {
   assert.match(loadingSource, /Skeleton/);
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
-  assert.match(sidebarSource, /href:\s*"\/app\/reports\/overview"/);
+  assert.match(sidebarSource, /href:\s*"\/app\/reports\/daily"/);
+  assert.match(reportsNavSource, /href:\s*"\/app\/reports\/overview"/);
 });
 
 test("HQ daily meeting report query reuses dashboard calculation contracts", () => {
@@ -994,6 +1002,13 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
     "comparison",
     "page.tsx",
   );
+  const reportsNavSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "reports-nav.tsx",
+  );
 
   assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqMonthlyClosingAnomalyReport\(/);
@@ -1045,8 +1060,9 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
   assert.match(componentSource, /break-words/);
   assert.doesNotMatch(componentSource, /evaluateRevenueAnomalySignals/);
   assert.doesNotMatch(componentSource, /evaluateInventoryLossAnomalySignals/);
-  assert.match(dailyPageSource, /\/app\/reports\/monthly/);
-  assert.match(comparisonPageSource, /\/app\/reports\/monthly/);
+  assert.match(dailyPageSource, /<ReportsNav active="daily"/);
+  assert.match(comparisonPageSource, /<ReportsNav active="comparison"/);
+  assert.match(reportsNavSource, /href:\s*"\/app\/reports\/monthly"/);
 });
 
 test("HQ monthly closing anomaly report query reuses report calculation contracts", () => {
