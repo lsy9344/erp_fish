@@ -116,7 +116,7 @@ function functionSource(source, name) {
   return source.slice(start, next === -1 ? source.length : next);
 }
 
-test("overview page is the report entry and uses server authorization", () => {
+test("overview page uses server authorization and shared report navigation", () => {
   const page = readProjectFile(
     "src",
     "app",
@@ -134,6 +134,13 @@ test("overview page is the report entry and uses server authorization", () => {
     "loading.tsx",
   );
   const sidebar = readProjectFile("src", "components", "app-sidebar.tsx");
+  const reportsNav = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "reports-nav.tsx",
+  );
   const revalidation = readProjectFile("src", "server", "revalidation.ts");
 
   assert.match(page, /requireReportAccess\(/);
@@ -157,7 +164,8 @@ test("overview page is the report entry and uses server authorization", () => {
   assert.match(loading, /xl:col-span-4/);
   assert.match(loading, /xl:col-span-6/);
   assert.match(loading, /xl:col-span-12/);
-  assert.match(sidebar, /href:\s*"\/app\/reports\/overview"/);
+  assert.match(sidebar, /href:\s*"\/app\/reports\/daily"/);
+  assert.match(reportsNav, /href:\s*"\/app\/reports\/overview"/);
   assert.match(revalidation, /"\/app\/reports\/overview"/);
 });
 

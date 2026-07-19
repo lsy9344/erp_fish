@@ -56,7 +56,7 @@ test("회의 0627 본사 화면은 이중 매출, 검토 페이지, Excel export
   await expect(page.getByRole("link", { name: "매출 검토" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Excel" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "품목 판매순위" }),
+    page.getByRole("heading", { name: "품목별 판매 현황" }),
   ).toBeVisible();
   await expect(
     page.getByRole("columnheader", { name: "판매수량" }),

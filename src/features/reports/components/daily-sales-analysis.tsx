@@ -34,7 +34,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <AnalysisTable title="전일 대비 매출액 증감률">
         <TableHeader>
           <TableRow>
@@ -141,9 +141,9 @@ function AnalysisTable({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-md border p-3">
+    <section className="min-w-0 rounded-md border p-3">
       <h3 className="text-sm font-medium">{title}</h3>
-      <div className="mt-2">
+      <div className="mt-2 min-w-0">
         <Table className="min-w-[620px]" aria-label={title}>
           {children}
         </Table>

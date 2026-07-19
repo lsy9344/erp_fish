@@ -83,13 +83,12 @@ test("HQ inventory position report source files follow WO-08 boundaries", () => 
     "components",
     "inventory-position-history-dialog.tsx",
   );
-  const sidebarReportsDaily = readProjectFile(
+  const reportsNavSource = readProjectFile(
     "src",
-    "app",
-    "app",
+    "features",
     "reports",
-    "daily",
-    "page.tsx",
+    "components",
+    "reports-nav.tsx",
   );
 
   assert.match(pageSource, /requireReportAccess\(/);
@@ -127,7 +126,7 @@ test("HQ inventory position report source files follow WO-08 boundaries", () => 
   assert.match(fifoDialogSource, /sourceBusinessDate/);
   assert.match(fifoDialogSource, /remainingQuantity/);
   // 리포트 간 이동 링크가 존재한다.
-  assert.match(sidebarReportsDaily, /\/app\/reports\/inventory/);
+  assert.match(reportsNavSource, /\/app\/reports\/inventory/);
 });
 
 test("inventory position date range falls back to today for invalid input", async () => {
