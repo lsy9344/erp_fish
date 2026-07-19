@@ -1246,7 +1246,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .getByTestId(`store-performance-bar-${STORE_IDS.tieGa}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /₩45,000 · 실제 데이터 부족 \(예상 데이터 부족\)/,
+      /₩5만 · 실제 데이터 부족 \(예상 데이터 부족\)/,
     );
 
     await expect(section.getByText(/실제 30% \(예상 28\.51%\)/)).toBeVisible();
