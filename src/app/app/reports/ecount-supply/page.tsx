@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { formatEcountDateNo } from "~/features/ledger/ecount-supply-mapping";
 import {
   getHeadquartersSupplyReport,
@@ -103,6 +104,8 @@ export default async function EcountSupplyReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
+      <ReportsNav active="ecount-supply" />
+
       <PageHeader
         title="본사 출고 / 지점 입고 내역"
         description="이카운트로 반영된 지점별 입고 라인입니다. 실제 품목별 판매 데이터가 없어 마진·성과 값은 추정으로만 표시합니다."

@@ -820,12 +820,20 @@ function getStoreSelect(page: Page) {
   return page.getByRole("combobox", { name: "지점" });
 }
 
-test("본사는 사이드바에서 통합 리포트를 열고 차트와 같은 표를 본다", async ({
+test("본사는 리포트에 들어와 통합 리포트를 열고 차트와 같은 표를 본다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
   await page.getByRole("link", { name: "리포트" }).click();
 
+  // 리포트 진입점은 매일 쓰는 아침 회의 리포트로 연다.
+  await expect(page).toHaveURL(/\/app\/reports\/daily/);
+  await expect(
+    page.getByRole("heading", { name: "아침 회의 리포트" }),
+  ).toBeVisible();
+
+  // 통합 리포트는 상단 리포트 메뉴에서 한 번에 이동한다.
+  await page.getByRole("link", { name: "통합 리포트" }).click();
   await expect(page).toHaveURL(/\/app\/reports\/overview/);
   await expect(
     page.getByRole("heading", { name: "통합 리포트" }),

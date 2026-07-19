@@ -25,8 +25,10 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.REPORT_VIEW,
   },
   {
+    // 리포트 진입점은 매일 쓰는 아침 회의 리포트로 연다(사용 빈도 최상위).
+    // 통합 리포트 등 나머지는 페이지 상단 ReportsNav에서 한 번에 이동한다.
     label: "리포트",
-    href: "/app/reports/overview",
+    href: "/app/reports/daily",
     icon: "reports",
     requiredAction: PermissionAction.REPORT_VIEW,
   },
