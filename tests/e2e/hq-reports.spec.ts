@@ -1233,7 +1233,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
           elements.map((element) => element.getAttribute("data-testid")),
         );
         const unavailableIndex = marginOrder.indexOf(
-          `store-performance-bar-${STORE_IDS.zeroSales}`,
+          `store-performance-bar-${STORE_IDS.tieGa}`,
         );
         const availableIndex = marginOrder.indexOf(
           `store-performance-bar-${STORE_IDS.marginDefault}`,
@@ -1243,10 +1243,10 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .toBe(true);
 
     await section
-      .getByTestId(`store-performance-bar-${STORE_IDS.zeroSales}`)
+      .getByTestId(`store-performance-bar-${STORE_IDS.tieGa}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /₩0 · 실제 데이터 부족 \(예상 데이터 부족\)/,
+      /₩45,000 · 실제 데이터 부족 \(예상 데이터 부족\)/,
     );
 
     await expect(section.getByText(/실제 30% \(예상 28\.51%\)/)).toBeVisible();
