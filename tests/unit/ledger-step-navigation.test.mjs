@@ -170,11 +170,26 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     );
     assert.match(source, /UnsavedChangeDialog/);
     assert.match(source, /useUnsavedStepGuard/);
-    assert.match(source, /onNavigateAttempt=\{guard\.requestNavigation\}/);
-    assert.match(
-      source,
-      /guard\.requestNavigation\(nextStepHref, event\.currentTarget\)/,
-    );
+
+    if (component.includes(path.join("inventory", "components"))) {
+      assert.match(source, /async function handleInventoryNavigation/);
+      assert.match(
+        source,
+        /targetStep === "cost"[\s\S]*targetStep === "work"[\s\S]*targetStep === "sales"[\s\S]*targetStep === "review"/,
+      );
+      assert.match(source, /if \(await saveCurrentDraft\(\)\)/);
+      assert.match(source, /onNavigateAttempt=\{handleInventoryNavigation\}/);
+      assert.match(
+        source,
+        /handleInventoryNavigation\(\s*nextStepHref,\s*event\.currentTarget,\s*"cost",\s*\)/,
+      );
+    } else {
+      assert.match(source, /onNavigateAttempt=\{guard\.requestNavigation\}/);
+      assert.match(
+        source,
+        /guard\.requestNavigation\(nextStepHref, event\.currentTarget\)/,
+      );
+    }
   }
 
   const reviewSource = readProjectFile(

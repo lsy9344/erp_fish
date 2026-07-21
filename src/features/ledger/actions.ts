@@ -840,6 +840,10 @@ export async function saveLedgerSalesPayment(
         where: { id: beforeLedger.id },
         select: ledgerSelect,
       });
+      const inventoryGate = await getInventoryPlanGateForLedgerInTx(
+        tx,
+        afterLedger,
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.sales_payment.updated",
@@ -850,7 +854,10 @@ export async function saveLedgerSalesPayment(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(
+        afterLedger,
+        inventoryGate.complete,
+      );
     });
 
     revalidateLedgerSalesPaths();
@@ -968,6 +975,10 @@ export async function saveLedgerExpenses(
         where: { id: beforeLedger.id },
         select: ledgerSelect,
       });
+      const inventoryGate = await getInventoryPlanGateForLedgerInTx(
+        tx,
+        afterLedger,
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.expenses.saved",
@@ -978,7 +989,9 @@ export async function saveLedgerExpenses(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return actionOk(toStoreManagerLedgerCostStepData(afterLedger));
+      return actionOk(
+        toStoreManagerLedgerCostStepData(afterLedger, inventoryGate.complete),
+      );
     });
 
     if (result.ok) {
@@ -1349,6 +1362,10 @@ export async function saveLedgerPurchases(
         where: { id: beforeLedger.id },
         select: ledgerSelect,
       });
+      const inventoryGate = await getInventoryPlanGateForLedgerInTx(
+        tx,
+        afterLedger,
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.purchases.saved",
@@ -1359,7 +1376,10 @@ export async function saveLedgerPurchases(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(
+        afterLedger,
+        inventoryGate.complete,
+      );
     });
 
     revalidateLedgerSalesPaths();
@@ -1448,6 +1468,10 @@ export async function saveLedgerWorkInfo(
         where: { id: beforeLedger.id },
         select: ledgerSelect,
       });
+      const inventoryGate = await getInventoryPlanGateForLedgerInTx(
+        tx,
+        afterLedger,
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.work_info.saved",
@@ -1458,7 +1482,10 @@ export async function saveLedgerWorkInfo(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(
+        afterLedger,
+        inventoryGate.complete,
+      );
     });
 
     revalidateLedgerSalesPaths();
@@ -1584,6 +1611,10 @@ export async function saveLedgerLaborInfo(
         where: { id: beforeLedger.id },
         select: ledgerSelect,
       });
+      const inventoryGate = await getInventoryPlanGateForLedgerInTx(
+        tx,
+        afterLedger,
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.labor.saved",
@@ -1594,7 +1625,10 @@ export async function saveLedgerLaborInfo(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      return toStoreManagerLedgerCostStepData(afterLedger);
+      return toStoreManagerLedgerCostStepData(
+        afterLedger,
+        inventoryGate.complete,
+      );
     });
 
     revalidateLedgerSalesPaths();

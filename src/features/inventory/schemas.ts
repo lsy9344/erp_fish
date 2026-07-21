@@ -21,10 +21,7 @@ const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합
 const plannedUnitPriceError = "판매계획가는 0원 이상의 정수여야 합니다.";
 const maxStoreInventoryQuantity = 9_999_999_999.99;
 
-function parseStoreInventoryQuantity(
-  value: unknown,
-  context: z.RefinementCtx,
-) {
+function parseStoreInventoryQuantity(value: unknown, context: z.RefinementCtx) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
@@ -156,14 +153,10 @@ const ledgerInventoryItemSchema = z.object({
 const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
   currentQuantity: z
     .unknown()
-    .transform((value, context) =>
-      parseStoreInventoryQuantity(value, context),
-    ),
+    .transform((value, context) => parseStoreInventoryQuantity(value, context)),
   quantity: z
     .unknown()
-    .transform((value, context) =>
-      parseStoreInventoryQuantity(value, context),
-    ),
+    .transform((value, context) => parseStoreInventoryQuantity(value, context)),
   plannedUnitPrice: z
     .unknown()
     .transform((value, context) =>

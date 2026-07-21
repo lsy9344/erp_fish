@@ -217,7 +217,10 @@ test("store manager entry routes and write actions require store-manager ledger 
   for (const route of [storeEntryPage, inventoryPage, lossesPage]) {
     assert.match(route, /requireStoreManagerLedgerEditAccess\(storeId\)/);
     assert.match(route, /getStoreManagerLedgerEditWorkspace\(\)/);
-    assert.doesNotMatch(route, /const\s+\{\s*user,\s*store\s*\}\s*=\s*await\s+requireStoreAccess\(storeId\)/);
+    assert.doesNotMatch(
+      route,
+      /const\s+\{\s*user,\s*store\s*\}\s*=\s*await\s+requireStoreAccess\(storeId\)/,
+    );
   }
 
   for (const source of [ledgerActions, inventoryActions, lossActions]) {
@@ -459,7 +462,13 @@ test("store manager shell preserves selected storeId in tab links", () => {
   assert.match(navigation, /URLSearchParams/);
   assert.match(navigation, /storeId/);
 
-  for (const route of [storeEntryPage, inventoryPage, lossesPage]) {
+  assert.match(storeEntryPage, /storeId=\{store\.id\}/);
+  assert.match(
+    storeEntryPage,
+    /access = \{ user: workspace\.user, store: workspace\.store \}/,
+  );
+
+  for (const route of [inventoryPage, lossesPage]) {
     assert.match(route, /storeId={store\.id}/);
     assert.match(route, /storeId={workspace\.store\.id}/);
   }

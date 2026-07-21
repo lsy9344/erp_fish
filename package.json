@@ -31,7 +31,7 @@
     "test:e2e:core:admin": "node scripts/run-playwright-clean.mjs tests/e2e/permission-profiles.spec.ts tests/e2e/master-data-stores.spec.ts tests/e2e/master-data-purchase-standards.spec.ts tests/e2e/anomaly-thresholds.spec.ts",
     "test:e2e:core:hq": "node scripts/run-playwright-clean.mjs tests/e2e/hq-dashboard.spec.ts tests/e2e/hq-ledger-edit.spec.ts tests/e2e/hq-ledger-corrections.spec.ts tests/e2e/hq-reports.spec.ts",
     "test:e2e:core:imports": "node scripts/run-playwright-clean.mjs tests/e2e/ecount-supply-imports.spec.ts",
-    "test:e2e:core:ledger": "node scripts/run-playwright-clean.mjs tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-purchase.spec.ts tests/e2e/store-ledger-inventory.spec.ts tests/e2e/store-ledger-inventory-adjustment.spec.ts tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-review.spec.ts",
+    "test:e2e:core:ledger": "node scripts/run-playwright-clean.mjs tests/e2e/store-ledger-sales.spec.ts tests/e2e/store-ledger-purchase.spec.ts tests/e2e/store-ledger-inventory.spec.ts tests/e2e/store-ledger-inventory-adjustment.spec.ts tests/e2e/store-ledger-losses.spec.ts tests/e2e/store-ledger-review.spec.ts tests/e2e/inventory-plan-regressions.spec.ts",
     "test:e2e:meeting-0627": "node scripts/run-playwright-clean.mjs tests/e2e/meeting-0627-acceptance.spec.ts",
     "test:e2e:smoke:admin": "node scripts/run-playwright-clean.mjs tests/e2e/permission-profiles.spec.ts --grep \"지점장 입력 화면을 직접 열 수 없다\"",
     "test:e2e:smoke:hq": "node scripts/run-playwright-clean.mjs tests/e2e/hq-dashboard.spec.ts --grep \"활성 지점 전체와 장부 상태\"",

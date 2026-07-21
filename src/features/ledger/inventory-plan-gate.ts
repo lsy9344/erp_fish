@@ -78,7 +78,9 @@ export async function getInventoryPlanGateForLedgerInTx(
 
   const persistedProductIds = inventoryItems.map((item) => item.productId);
   const activityProductIds = [
-    ...purchaseItems.flatMap((item) => (item.productId ? [item.productId] : [])),
+    ...purchaseItems.flatMap((item) =>
+      item.productId ? [item.productId] : [],
+    ),
     ...lossItems.map((item) => item.productId),
   ];
   let carryoverProductIds: string[] = [];

@@ -15,6 +15,7 @@ import {
 } from "~/features/ledger/queries";
 import { isTodayKstDateParam } from "~/features/ledger/date";
 import { getStoreManagerLedgerReviewStepData } from "~/features/ledger/review-queries";
+import { isLedgerEditable } from "~/features/ledger/status-policy";
 import { CorrectionReadonlySummary } from "~/features/corrections/components/correction-readonly-summary";
 import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
 import type { CorrectionRecordListItem } from "~/features/corrections/types";
@@ -185,119 +186,72 @@ export default async function StoreEntryPage({
     redirect("/app/unauthorized");
   }
 
-  if (storeId) {
-    const { user, store } = await requireStoreManagerLedgerEditAccess(storeId);
-    // WO-09: 지점장 화면이므로 비용 항목 표시명에 지점별 alias를 적용한다.
-    const expenseCodeOptions = await getActiveLedgerInputCodeOptions(
-      "EXPENSE_ITEM",
-      store.id,
-    );
-    const [productOptions, employeeOptions] = await Promise.all([
-      getActiveProductOptions(),
-      getActiveEmployeeOptions(),
-    ]);
-    const [initialLedger, reviewData] = await Promise.all([
-      getStoreLedger(store.id, closingDate, user.id),
-      step === "review"
-        ? getStoreManagerLedgerReviewStepData(store.id, closingDate, user.id)
-        : Promise.resolve(null),
-    ]);
-    const correctionRecords =
-      initialLedger.status === "HEADQUARTERS_CLOSED"
-        ? await getStoreReadableCorrectionRecordsForLedger(
-            initialLedger.id,
-            store.id,
-          )
-        : [];
+  let access: Awaited<ReturnType<typeof requireStoreManagerLedgerEditAccess>>;
 
-    if (
-      initialLedger.status === "IN_PROGRESS" &&
-      (step === "cost" ||
-        step === "work" ||
-        step === "sales" ||
-        step === "review") &&
-      initialLedger.stepCompletion.inventory !== true
-    ) {
-      const query = new URLSearchParams({
-        storeId: store.id,
-        date: closingDate,
-        reason: "inventory-plan-incomplete",
-      });
-      redirect(`/app/store-entry/inventory?${query.toString()}`);
+  if (storeId) {
+    access = await requireStoreManagerLedgerEditAccess(storeId);
+  } else {
+    const workspace = await getStoreManagerLedgerEditWorkspace();
+
+    if (workspace.status === "headquarters") {
+      redirect("/app/dashboard");
     }
 
-    return (
-      <StoreManagerShell
-        userName={user.name ?? "지점장"}
-        storeName={store.name}
-        storeId={store.id}
-      >
-        <StoreEntryContent
-          storeName={store.name}
-          initialLedger={initialLedger}
-          reviewData={reviewData}
-          correctionRecords={correctionRecords}
-          step={step}
-          expenseCodeOptions={expenseCodeOptions}
-          productOptions={productOptions}
-          employeeOptions={employeeOptions}
-        />
-      </StoreManagerShell>
-    );
+    if (workspace.status === "no-active-store") {
+      return (
+        <StoreManagerShell userName={workspace.user.name ?? "지점장"}>
+          <NoActiveStoreMessage />
+        </StoreManagerShell>
+      );
+    }
+
+    access = { user: workspace.user, store: workspace.store };
   }
 
-  const workspace = await getStoreManagerLedgerEditWorkspace();
-
-  if (workspace.status === "headquarters") {
-    redirect("/app/dashboard");
-  }
-
-  if (workspace.status === "no-active-store") {
-    return (
-      <StoreManagerShell userName={workspace.user.name ?? "지점장"}>
-        <NoActiveStoreMessage />
-      </StoreManagerShell>
-    );
-  }
+  const { user, store } = access;
 
   // WO-09: 지점장 활성 지점 화면에서도 비용 항목 표시명에 지점별 alias를 적용한다.
-  const expenseCodeOptions = await getActiveLedgerInputCodeOptions(
-    "EXPENSE_ITEM",
-    workspace.store.id,
-  );
-  const [productOptions, employeeOptions] = await Promise.all([
-    getActiveProductOptions(),
-    getActiveEmployeeOptions(),
-  ]);
-  const initialLedger = await getStoreLedger(
-    workspace.store.id,
-    closingDate,
-    workspace.user.id,
-  );
-  const reviewData =
+  const [expenseCodeOptions, productOptions, employeeOptions, initialLedger] =
+    await Promise.all([
+      getActiveLedgerInputCodeOptions("EXPENSE_ITEM", store.id),
+      getActiveProductOptions(),
+      getActiveEmployeeOptions(),
+      getStoreLedger(store.id, closingDate, user.id),
+    ]);
+
+  if (
+    isLedgerEditable(initialLedger.status) &&
+    (step === "cost" ||
+      step === "work" ||
+      step === "sales" ||
+      step === "review") &&
+    initialLedger.stepCompletion.inventory !== true
+  ) {
+    const query = new URLSearchParams({
+      storeId: store.id,
+      date: closingDate,
+      reason: "inventory-plan-incomplete",
+    });
+    redirect(`/app/store-entry/inventory?${query.toString()}`);
+  }
+
+  const [reviewData, correctionRecords] = await Promise.all([
     step === "review"
-      ? await getStoreManagerLedgerReviewStepData(
-          workspace.store.id,
-          closingDate,
-          workspace.user.id,
-        )
-      : null;
-  const correctionRecords =
+      ? getStoreManagerLedgerReviewStepData(store.id, closingDate, user.id)
+      : Promise.resolve(null),
     initialLedger.status === "HEADQUARTERS_CLOSED"
-      ? await getStoreReadableCorrectionRecordsForLedger(
-          initialLedger.id,
-          workspace.store.id,
-        )
-      : [];
+      ? getStoreReadableCorrectionRecordsForLedger(initialLedger.id, store.id)
+      : Promise.resolve([]),
+  ]);
 
   return (
     <StoreManagerShell
-      userName={workspace.user.name ?? "지점장"}
-      storeName={workspace.store.name}
-      storeId={workspace.store.id}
+      userName={user.name ?? "지점장"}
+      storeName={store.name}
+      storeId={store.id}
     >
       <StoreEntryContent
-        storeName={workspace.store.name}
+        storeName={store.name}
         initialLedger={initialLedger}
         reviewData={reviewData}
         correctionRecords={correctionRecords}

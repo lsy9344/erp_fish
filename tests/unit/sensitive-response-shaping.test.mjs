@@ -509,7 +509,7 @@ test("report export source keeps sensitive unauthorised paths out of CSV and aud
   assert.doesNotMatch(exportSource, /clientColumns|requestedColumns/);
 });
 
-test("store manager inventory mapper exposes planned price only on item rows", async () => {
+test("store manager inventory mapper exposes planned price on item rows and manual options", async () => {
   const mapperPath = assertProjectFile(
     "src",
     "features",
@@ -686,11 +686,8 @@ test("store manager inventory mapper exposes planned price only on item rows", a
       businessDate: "2026-06-09",
       unitPrice: 10_000,
     },
+    plannedUnitPrice: 16_000,
   });
-  assert.equal(
-    Object.hasOwn(shaped.manualProductOptions[0], "plannedUnitPrice"),
-    false,
-  );
 });
 
 test("store manager inventory and loss contracts define safe response types", () => {

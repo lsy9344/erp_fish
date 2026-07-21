@@ -13,14 +13,15 @@ export function shapeStoreManagerInventoryStepData(
     status: data.status,
     stepCompletion: data.stepCompletion,
     carryover: data.carryover,
-    // Manual options are rebuilt from an allowlist so item-only fields such as
-    // plannedUnitPrice cannot leak through a stale query result or object spread.
+    // Manual options are rebuilt from an allowlist. Approved purchase history and
+    // the store's existing plan are the only price fields exposed here.
     manualProductOptions: data.manualProductOptions.map((option) => ({
       productId: option.productId,
       productName: option.productName,
       productCategory: option.productCategory,
       productSpec: option.productSpec,
       purchasePrice: option.purchasePrice,
+      plannedUnitPrice: option.plannedUnitPrice,
     })),
     // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
     // 당일·최근 실제 매입단가와 품목별 계획 판매가만 ...item 안의 예외로 유지한다.

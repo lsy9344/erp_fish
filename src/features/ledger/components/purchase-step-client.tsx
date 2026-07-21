@@ -291,7 +291,6 @@ export function PurchaseStepClient({
           quantityRefs.current[index]?.focus();
           return;
         }
-
       }
 
       if (errors.reason?.length) {
@@ -313,7 +312,6 @@ export function PurchaseStepClient({
         : "저장됐습니다.");
     setResultMessage(nextMessage);
     toast.success(nextMessage);
-
   }
 
   function clearRowErrors() {
@@ -452,9 +450,7 @@ export function PurchaseStepClient({
     clearRowErrors();
     setResultMessage(null);
     setPurchaseItems((current) =>
-      current.map((line) =>
-        line.id === lineId ? { ...line, ...next } : line,
-      ),
+      current.map((line) => (line.id === lineId ? { ...line, ...next } : line)),
     );
   }
 
@@ -960,7 +956,6 @@ export function PurchaseStepClient({
                         </FieldError>
                       ) : null}
                     </Field>
-
                   </div>
 
                   <div className="flex items-center justify-between gap-2 px-1 text-sm">

@@ -38,9 +38,9 @@ export function mapInventorySaveErrors(
         ? "reason"
         : match[2] === "plannedUnitPrice"
           ? "plannedUnitPrice"
-        : match[2] === "unitPrice"
-          ? "unitPrice"
-          : "quantity";
+          : match[2] === "unitPrice"
+            ? "unitPrice"
+            : "quantity";
     firstFocusTarget ??= { productId, currentIndex, field };
 
     if (field === "reason") {

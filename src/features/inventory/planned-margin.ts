@@ -17,5 +17,7 @@ export function calculatePlannedMarginRate(
 }
 
 export function formatPlannedMarginRate(rate: number | null) {
-  return rate === null || !Number.isFinite(rate) ? "계산 불가" : `${rate.toFixed(1)}%`;
+  return rate === null || !Number.isFinite(rate)
+    ? "계산 불가"
+    : `${rate.toFixed(1)}%`;
 }

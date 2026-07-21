@@ -947,6 +947,7 @@ async function getManualProductOptions(
       productCategory: product.category,
       productSpec: product.spec,
       purchasePrice: null,
+      plannedUnitPrice: null,
     }));
 }
 
@@ -1096,7 +1097,7 @@ async function attachPurchasePrices(
       where: {
         storeId: ledger.storeId,
         businessDate: ledger.closingDate,
-        productId: { in: itemProductIds },
+        productId: { in: purchaseProductIds },
       },
       select: { productId: true, plannedUnitPrice: true },
     }),
@@ -1123,6 +1124,7 @@ async function attachPurchasePrices(
     manualProductOptions: manualProductOptions.map((option) => ({
       ...option,
       purchasePrice: purchasePrices.get(option.productId) ?? null,
+      plannedUnitPrice: plannedUnitPrices.get(option.productId) ?? null,
     })),
   };
 }

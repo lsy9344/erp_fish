@@ -364,8 +364,8 @@ export function ReviewSummaryClient({
               오늘 많이 팔린 품목
             </h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              추정 매출은 3단계 재고의 판매계획가를 우선 사용합니다.
-              값이 없는 품목은 매입 단가로 대체해 표시합니다(판매가 미반영).
+              추정 매출은 3단계 재고의 판매계획가를 우선 사용합니다. 값이 없는
+              품목은 매입 단가로 대체해 표시합니다(판매가 미반영).
             </p>
             {/* 판매가 미반영 품목은 판매계획가 입력 위치인 3단계 재고로 안내한다. */}
             {currentReviewData.topSoldItems.some(

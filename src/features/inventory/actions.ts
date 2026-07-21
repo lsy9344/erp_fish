@@ -85,7 +85,9 @@ function getInventoryTargetErrors(
     const firstIndex = firstIndexByProductId.get(item.productId);
 
     if (firstIndex !== undefined) {
-      errors[`items.${index}.productId`] = ["같은 품목을 중복 저장할 수 없습니다."];
+      errors[`items.${index}.productId`] = [
+        "같은 품목을 중복 저장할 수 없습니다.",
+      ];
       return;
     }
 
@@ -545,7 +547,7 @@ export async function saveLedgerInventoryItems(
       rowsToPersist.push(...manualRows);
 
       const businessDate = getKstBusinessDate(parsed.data.closingDate);
-      const fifoAmountErrorProductIds =
+      const fifoPreflight =
         await getLedgerInventoryFifoAmountErrorProductIdsInTx(
           tx,
           before.id,
@@ -553,8 +555,8 @@ export async function saveLedgerInventoryItems(
           rowsToPersist,
         );
 
-      if (fifoAmountErrorProductIds.length > 0) {
-        const invalidProductIds = new Set(fifoAmountErrorProductIds);
+      if (fifoPreflight.invalidProductIds.length > 0) {
+        const invalidProductIds = new Set(fifoPreflight.invalidProductIds);
         const fifoAmountErrors = Object.fromEntries(
           inputItems.flatMap((item, index) =>
             invalidProductIds.has(item.productId)
@@ -616,7 +618,11 @@ export async function saveLedgerInventoryItems(
       await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
       // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
-      await refreshLedgerInventoryFifoLots(tx, before.id);
+      await refreshLedgerInventoryFifoLots(
+        tx,
+        before.id,
+        fifoPreflight.snapshotsByProductId,
+      );
 
       await upsertInventorySalesPricePlansInTx(tx, {
         storeId: parsed.data.storeId,

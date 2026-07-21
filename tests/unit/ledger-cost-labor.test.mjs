@@ -674,7 +674,15 @@ test("store manager ledger responses omit sensitive accounting metrics", async (
     responseShapeSource,
     /const\s*\{\s*grossProfit,\s*productivity,\s*payrollTotal,\s*paymentDifferenceAmount,\s*laborItems,\s*purchaseItems,\s*\.\.\.safeLedger\s*\}/s,
   );
-  assert.match(actionSource, /toStoreManagerLedgerCostStepData\(afterLedger\)/);
+  assert.equal(
+    (
+      actionSource.match(
+        /toStoreManagerLedgerCostStepData\(\s*afterLedger,\s*inventoryGate\.complete,?\s*\)/g,
+      ) ?? []
+    ).length,
+    5,
+    "every follow-up save response must preserve the recomputed inventory gate",
+  );
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics/);
   assert.match(expenseClientSource, /showSensitiveAccountingMetrics\s*\?\s*\(/);
   assert.match(workClientSource, /showSensitiveAccountingMetrics/);

@@ -4,7 +4,10 @@ import {
   calculateSystemInventoryQuantity,
 } from "../../server/calculations/inventory.ts";
 import { decimalToNumber } from "../../lib/decimal.ts";
-import { roundToTwoDecimals } from "../../lib/validation.ts";
+import {
+  MAX_VALIDATION_INTEGER,
+  roundToTwoDecimals,
+} from "../../lib/validation.ts";
 
 type InventoryLotSourceValue =
   | "OPENING"
@@ -52,6 +55,16 @@ function amount(quantity: number, unitPrice: number) {
   const result = calculateInventoryAmount(quantity, unitPrice);
 
   if (result === null) {
+    throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+  }
+
+  return result;
+}
+
+function addBoundedAmount(total: number, value: number) {
+  const result = total + value;
+
+  if (!Number.isSafeInteger(result) || result > MAX_VALIDATION_INTEGER) {
     throw new Error("FIFO_AMOUNT_UNAVAILABLE");
   }
 
@@ -157,8 +170,8 @@ export function calculateFifoLotSnapshots({
     quantityToConsume = roundToTwoDecimals(
       quantityToConsume - consumedQuantity,
     );
-    consumedAmount += lotConsumedAmount;
-    remainingAmount += lotRemainingAmount;
+    consumedAmount = addBoundedAmount(consumedAmount, lotConsumedAmount);
+    remainingAmount = addBoundedAmount(remainingAmount, lotRemainingAmount);
 
     return {
       sourceType: lot.sourceType,
@@ -290,6 +303,16 @@ type FifoAmountValidationItem = {
   carryoverLedgerId: string | null;
 };
 
+export type LedgerInventoryFifoSnapshot = {
+  purchasedQuantity: number;
+  fifo: ReturnType<typeof calculateFifoLotSnapshots>;
+};
+
+export type LedgerInventoryFifoPreflight = {
+  invalidProductIds: string[];
+  snapshotsByProductId: Map<string, LedgerInventoryFifoSnapshot>;
+};
+
 // 저장과 같은 원천 lot/매입/손실을 읽고 같은 순수 FIFO 계산을 실행한다. mutation 전
 // Int 금액 경계를 행 오류로 바꾸기 위한 preflight이며 DB에는 아무것도 쓰지 않는다.
 export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
@@ -297,9 +320,9 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
   dailyLedgerId: string,
   businessDate: Date,
   items: FifoAmountValidationItem[],
-) {
+): Promise<LedgerInventoryFifoPreflight> {
   if (items.length === 0) {
-    return [];
+    return { invalidProductIds: [], snapshotsByProductId: new Map() };
   }
 
   const productIds = items.map((item) => item.productId);
@@ -376,12 +399,14 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
     })),
   );
   const invalidProductIds: string[] = [];
+  const snapshotsByProductId = new Map<string, LedgerInventoryFifoSnapshot>();
 
   for (const item of items) {
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
+    const purchasedQuantity = sumQuantity(productPurchases);
     const systemQuantity = calculateSystemInventoryQuantity({
       previousQuantity: item.previousQuantity,
-      purchasedQuantity: sumQuantity(productPurchases),
+      purchasedQuantity,
       lossQuantity: sumQuantity(lossesByProductId.get(item.productId) ?? []),
     });
     const closingQuantity =
@@ -391,7 +416,7 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
       item.previousQuantity;
 
     try {
-      calculateFifoLotSnapshots({
+      const fifo = calculateFifoLotSnapshots({
         previousLots: previousLotsByProductId.get(item.productId) ?? [],
         legacyOpening: {
           unitPrice: item.unitPrice,
@@ -405,8 +430,15 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
         closingQuantity,
         businessDate,
       });
+      snapshotsByProductId.set(item.productId, {
+        purchasedQuantity,
+        fifo,
+      });
     } catch (error) {
-      if (error instanceof Error && error.message === "FIFO_AMOUNT_UNAVAILABLE") {
+      if (
+        error instanceof Error &&
+        error.message === "FIFO_AMOUNT_UNAVAILABLE"
+      ) {
         invalidProductIds.push(item.productId);
         continue;
       }
@@ -415,18 +447,24 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
     }
   }
 
-  return invalidProductIds;
+  return { invalidProductIds, snapshotsByProductId };
 }
 
 export async function refreshLedgerInventoryFifoLots(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,
+  preflightSnapshotsByProductId?: ReadonlyMap<
+    string,
+    LedgerInventoryFifoSnapshot
+  >,
 ) {
   // WO-G(2026-06-22): lot의 영업 기준일은 현재 장부의 closingDate를 사용한다.
-  const currentLedger = await tx.dailyLedger.findUnique({
-    where: { id: dailyLedgerId },
-    select: { closingDate: true },
-  });
+  const currentLedger = preflightSnapshotsByProductId
+    ? null
+    : await tx.dailyLedger.findUnique({
+        where: { id: dailyLedgerId },
+        select: { closingDate: true },
+      });
   const businessDate = currentLedger?.closingDate ?? null;
 
   const items = await tx.ledgerInventoryItem.findMany({
@@ -468,45 +506,47 @@ export async function refreshLedgerInventoryFifoLots(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const [purchases, losses, previousLots] = await Promise.all([
-    tx.ledgerPurchaseItem.findMany({
-      where: { dailyLedgerId, productId: { in: productIds } },
-      select: {
-        id: true,
-        productId: true,
-        unitPrice: true,
-        quantity: true,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-    tx.ledgerLossItem.findMany({
-      where: { dailyLedgerId, productId: { in: productIds } },
-      select: {
-        productId: true,
-        quantity: true,
-      },
-    }),
-    carryoverLedgerIds.length === 0
-      ? Promise.resolve([])
-      : tx.ledgerInventoryFifoLot.findMany({
-          where: {
-            dailyLedgerId: { in: carryoverLedgerIds },
-            productId: { in: productIds },
-            remainingQuantity: { gt: 0 },
-          },
+  const [purchases, losses, previousLots] = preflightSnapshotsByProductId
+    ? ([[], [], []] as const)
+    : await Promise.all([
+        tx.ledgerPurchaseItem.findMany({
+          where: { dailyLedgerId, productId: { in: productIds } },
           select: {
-            dailyLedgerId: true,
+            id: true,
             productId: true,
-            sourceType: true,
-            sourcePurchaseItemId: true,
-            sourceBusinessDate: true,
             unitPrice: true,
-            remainingQuantity: true,
-            sortOrder: true,
+            quantity: true,
           },
-          orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         }),
-  ]);
+        tx.ledgerLossItem.findMany({
+          where: { dailyLedgerId, productId: { in: productIds } },
+          select: {
+            productId: true,
+            quantity: true,
+          },
+        }),
+        carryoverLedgerIds.length === 0
+          ? Promise.resolve([])
+          : tx.ledgerInventoryFifoLot.findMany({
+              where: {
+                dailyLedgerId: { in: carryoverLedgerIds },
+                productId: { in: productIds },
+                remainingQuantity: { gt: 0 },
+              },
+              select: {
+                dailyLedgerId: true,
+                productId: true,
+                sourceType: true,
+                sourcePurchaseItemId: true,
+                sourceBusinessDate: true,
+                unitPrice: true,
+                remainingQuantity: true,
+                sortOrder: true,
+              },
+              orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
+            }),
+      ]);
 
   const purchasesByProductId = groupByProductId(
     purchases.flatMap((purchase) =>
@@ -541,8 +581,17 @@ export async function refreshLedgerInventoryFifoLots(
   const rowsToCreate: Array<Prisma.LedgerInventoryFifoLotCreateManyInput> = [];
 
   for (const item of itemInputs) {
+    const preflightSnapshot = preflightSnapshotsByProductId?.get(
+      item.productId,
+    );
+
+    if (preflightSnapshotsByProductId && !preflightSnapshot) {
+      throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+    }
+
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
-    const purchasedQuantity = sumQuantity(productPurchases);
+    const purchasedQuantity =
+      preflightSnapshot?.purchasedQuantity ?? sumQuantity(productPurchases);
     const lossQuantity = sumQuantity(
       lossesByProductId.get(item.productId) ?? [],
     );
@@ -556,20 +605,22 @@ export async function refreshLedgerInventoryFifoLots(
       item.quantity ??
       systemQuantity ??
       item.previousQuantity;
-    const fifo = calculateFifoLotSnapshots({
-      previousLots: previousLotsByProductId.get(item.productId) ?? [],
-      legacyOpening: {
-        unitPrice: item.unitPrice,
-        quantity: item.previousQuantity,
-      },
-      purchases: productPurchases.map((purchase) => ({
-        id: purchase.id,
-        unitPrice: purchase.unitPrice,
-        quantity: purchase.quantity,
-      })),
-      closingQuantity,
-      businessDate,
-    });
+    const fifo =
+      preflightSnapshot?.fifo ??
+      calculateFifoLotSnapshots({
+        previousLots: previousLotsByProductId.get(item.productId) ?? [],
+        legacyOpening: {
+          unitPrice: item.unitPrice,
+          quantity: item.previousQuantity,
+        },
+        purchases: productPurchases.map((purchase) => ({
+          id: purchase.id,
+          unitPrice: purchase.unitPrice,
+          quantity: purchase.quantity,
+        })),
+        closingQuantity,
+        businessDate,
+      });
 
     await tx.ledgerInventoryItem.update({
       where: { id: item.id },

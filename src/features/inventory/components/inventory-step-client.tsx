@@ -48,6 +48,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
+import { type StoreEntryStep } from "~/features/ledger/step-completion";
 import { inventoryTerms } from "~/features/inventory/terms";
 import {
   getLedgerEditBlockReason,
@@ -220,7 +221,7 @@ function toManualLineState(
     productCategory: option.productCategory,
     productSpec: option.productSpec,
     purchasePrice: option.purchasePrice,
-    plannedUnitPrice: null,
+    plannedUnitPrice: option.plannedUnitPrice,
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
@@ -256,7 +257,10 @@ function toManualLineState(
     adjustment: null,
     currentQuantityInput: "",
     manualUnitPriceInput: "",
-    plannedUnitPriceInput: "",
+    plannedUnitPriceInput:
+      option.plannedUnitPrice === null
+        ? ""
+        : formatKrwInput(String(option.plannedUnitPrice)),
     adjustmentReasonInput: "",
   };
 }
@@ -477,9 +481,9 @@ export function InventoryStepClient({
         ? reasonRefs
         : target.field === "plannedUnitPrice"
           ? plannedUnitPriceRefs
-        : target.field === "unitPrice"
-          ? manualUnitPriceRefs
-          : currentQuantityRefs;
+          : target.field === "unitPrice"
+            ? manualUnitPriceRefs
+            : currentQuantityRefs;
     const input = refs.current[target.productId];
     const activeElement = document.activeElement;
 
@@ -754,16 +758,20 @@ export function InventoryStepClient({
 
     const submittedItems = items.map((item) => {
       const quantityInput = toStockQuantitySaveInput(
-        currentQuantityRefs.current[item.productId]?.value ?? item.currentQuantityInput,
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
         item.currentQuantity,
       );
       const storeQuantityInput = toStoreInventoryQuantitySaveInput(
-        currentQuantityRefs.current[item.productId]?.value ?? item.currentQuantityInput,
+        currentQuantityRefs.current[item.productId]?.value ??
+          item.currentQuantityInput,
       );
 
       return {
         productId: item.productId,
-        currentQuantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
+        currentQuantity: isStoreManagerMode
+          ? storeQuantityInput
+          : quantityInput,
         quantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
         ...(isStoreManagerMode
           ? {
@@ -2263,6 +2271,36 @@ export function InventoryStepClient({
     onSave: saveCurrentDraft,
   });
 
+  async function handleInventoryNavigation(
+    href: string,
+    trigger: HTMLElement,
+    targetStep: StoreEntryStep,
+  ) {
+    if (
+      targetStep === "cost" ||
+      targetStep === "work" ||
+      targetStep === "sales" ||
+      targetStep === "review"
+    ) {
+      if (!isDirty && data.stepCompletion.inventory) {
+        window.location.href = href;
+        return;
+      }
+
+      if (isClosed) {
+        window.location.href = href;
+        return;
+      }
+
+      if (await saveCurrentDraft()) {
+        window.location.href = href;
+      }
+      return;
+    }
+
+    guard.requestNavigation(href, trigger);
+  }
+
   return (
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -2299,7 +2337,7 @@ export function InventoryStepClient({
             closingDate={data.closingDate}
             currentStep="inventory"
             stepCompletion={data.stepCompletion}
-            onNavigateAttempt={guard.requestNavigation}
+            onNavigateAttempt={handleInventoryNavigation}
           />
         ) : null}
 
@@ -2486,7 +2524,11 @@ export function InventoryStepClient({
                 type="button"
                 className="min-h-11 w-full sm:w-auto"
                 onClick={(event) =>
-                  guard.requestNavigation(nextStepHref, event.currentTarget)
+                  void handleInventoryNavigation(
+                    nextStepHref,
+                    event.currentTarget,
+                    "cost",
+                  )
                 }
               >
                 다음 단계로 →
