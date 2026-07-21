@@ -478,6 +478,8 @@ export function InventoryStepClient({
     const refs =
       target.field === "reason"
         ? reasonRefs
+        : target.field === "plannedUnitPrice"
+          ? plannedUnitPriceRefs
         : target.field === "unitPrice"
           ? manualUnitPriceRefs
           : currentQuantityRefs;
@@ -518,6 +520,15 @@ export function InventoryStepClient({
   function focusFirstError(errors: FieldErrors) {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index]!;
+
+      if (errors[`items.${index}.plannedUnitPrice`]?.length) {
+        focusInventoryError({
+          productId: item.productId,
+          currentIndex: index,
+          field: "plannedUnitPrice",
+        });
+        return;
+      }
 
       if (errors[`items.${index}.unitPrice`]?.length) {
         focusInventoryError({
@@ -588,6 +599,37 @@ export function InventoryStepClient({
     return false;
   }
 
+  function validateRequiredPlannedUnitPrices() {
+    if (!isStoreManagerMode) {
+      return true;
+    }
+
+    const nextErrors: FieldErrors = {};
+
+    items.forEach((item, index) => {
+      const raw =
+        plannedUnitPriceRefs.current[item.productId]?.value ??
+        item.plannedUnitPriceInput;
+
+      if (raw.trim() === "") {
+        nextErrors[`items.${index}.plannedUnitPrice`] = [
+          "판매계획가를 입력해 주세요.",
+        ];
+      }
+    });
+
+    if (Object.keys(nextErrors).length === 0) {
+      return true;
+    }
+
+    const message = "모든 품목의 판매계획가를 입력해 주세요.";
+    setFieldErrors(nextErrors);
+    setFormError(message);
+    focusFirstError(nextErrors);
+    toast.error(message);
+    return false;
+  }
+
   function validateInventorySaveAdjustments() {
     const nextErrors: Record<string, string> = {};
     let firstInvalidItem: InventoryLineState | null = null;
@@ -609,6 +651,7 @@ export function InventoryStepClient({
         currentQuantityRefs.current[item.productId]?.value ??
           item.currentQuantityInput,
         item.currentQuantity,
+        isStoreManagerMode,
       );
 
       if (
@@ -652,6 +695,7 @@ export function InventoryStepClient({
       currentQuantityRefs.current[firstInvalidItem.productId]?.value ??
         firstInvalidItem.currentQuantityInput,
       firstInvalidItem.currentQuantity,
+      isStoreManagerMode,
     );
     const firstMessage =
       firstSystemQuantity !== null && firstCurrentQuantity !== null
@@ -697,6 +741,10 @@ export function InventoryStepClient({
       return false;
     }
 
+    if (!validateRequiredPlannedUnitPrices()) {
+      return false;
+    }
+
     if (!validateInventorySaveAdjustments()) {
       return false;
     }
@@ -709,15 +757,25 @@ export function InventoryStepClient({
 
     const submittedItems = items.map((item) => {
       const quantityInput = toStockQuantitySaveInput(
-        currentQuantityRefs.current[item.productId]?.value ??
-          item.currentQuantityInput,
+        currentQuantityRefs.current[item.productId]?.value ?? item.currentQuantityInput,
         item.currentQuantity,
+      );
+      const storeQuantityInput = toStoreInventoryQuantitySaveInput(
+        currentQuantityRefs.current[item.productId]?.value ?? item.currentQuantityInput,
       );
 
       return {
         productId: item.productId,
-        currentQuantity: quantityInput,
-        quantity: quantityInput,
+        currentQuantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
+        quantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
+        ...(isStoreManagerMode
+          ? {
+              plannedUnitPrice: toRawKrwInputValue(
+                plannedUnitPriceRefs.current[item.productId]?.value ??
+                  item.plannedUnitPriceInput,
+              ),
+            }
+          : {}),
         unitPrice: addedManualIds.has(item.productId)
           ? toRawKrwInputValue(
               manualUnitPriceRefs.current[item.productId]?.value ??
@@ -827,6 +885,20 @@ export function InventoryStepClient({
     );
   }
 
+  function updatePlannedUnitPrice(productId: string, value: string) {
+    pendingFocusTargetRef.current = null;
+    pendingFocusOriginRef.current = null;
+    setFieldErrors({});
+    setFormError(null);
+    setItems((current) =>
+      current.map((item) =>
+        item.productId === productId
+          ? { ...item, plannedUnitPriceInput: formatKrwInput(value) }
+          : item,
+      ),
+    );
+  }
+
   const visibleProductIds = new Set(items.map((item) => item.productId));
   const availableManualOptions = data.manualProductOptions.filter(
     (option) => !visibleProductIds.has(option.productId),
@@ -856,6 +928,28 @@ export function InventoryStepClient({
     window.setTimeout(() => {
       currentQuantityRefs.current[option.productId]?.focus();
     }, 0);
+  }
+
+  function handleRemoveManualProduct(productId: string) {
+    if (!addedManualIds.has(productId)) {
+      return;
+    }
+
+    setItems((current) =>
+      current.filter((item) => item.productId !== productId),
+    );
+    setAddedManualIds((current) => {
+      const next = new Set(current);
+      next.delete(productId);
+      return next;
+    });
+    setFieldErrors({});
+    setAdjustmentErrors({});
+    setFormError(null);
+    delete currentQuantityRefs.current[productId];
+    delete manualUnitPriceRefs.current[productId];
+    delete plannedUnitPriceRefs.current[productId];
+    delete reasonRefs.current[productId];
   }
 
   function updateAdjustmentReason(productId: string, value: string) {
@@ -904,6 +998,7 @@ export function InventoryStepClient({
     const actualQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
+      isStoreManagerMode,
     );
 
     return (
@@ -1044,6 +1139,7 @@ export function InventoryStepClient({
     const currentQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
+      isStoreManagerMode,
     );
 
     return (
@@ -1153,6 +1249,7 @@ export function InventoryStepClient({
     const actualQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
+      isStoreManagerMode,
     );
 
     if (systemQuantity === null || actualQuantity === null) {
@@ -1717,6 +1814,7 @@ export function InventoryStepClient({
                           parseQuantityInput(
                             item.currentQuantityInput,
                             item.currentQuantity,
+                            isStoreManagerMode,
                           ) ?? systemQuantity,
                           item.lossQuantity,
                         ),
