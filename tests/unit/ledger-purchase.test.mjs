@@ -320,41 +320,20 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
   });
 });
 
-test("ledger purchase schema treats plannedUnitPrice as optional and blocks same-product conflicts", async () => {
+test("ledger purchase schema ignores stale planned-price fields", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
     "ledger",
     "schemas.ts",
   );
-  const { ledgerPurchaseSchema, toFieldErrors } = await import(
-    pathToFileURL(schemaPath).href
-  );
+  const { ledgerPurchaseSchema } = await import(pathToFileURL(schemaPath).href);
 
-  const base = {
+  const parsed = ledgerPurchaseSchema.parse({
     storeId: "store-gangnam",
     ledgerId: "ledger-1",
     closingDate: "2026-06-25",
     version: 1,
-  };
-
-  // 빈 판매 예정가는 "계획 없음"(null)으로 해석한다(선택값).
-  const emptyPlan = ledgerPurchaseSchema.parse({
-    ...base,
-    purchases: [
-      {
-        productId: "product-1",
-        unitPrice: "12000",
-        quantity: "3",
-        plannedUnitPrice: "",
-      },
-    ],
-  });
-  assert.equal(emptyPlan.purchases[0].plannedUnitPrice, null);
-
-  // 값이 있으면 0 이상의 정수만 허용하고 그대로 보존한다.
-  const withPlan = ledgerPurchaseSchema.parse({
-    ...base,
     purchases: [
       {
         productId: "product-1",
@@ -364,78 +343,8 @@ test("ledger purchase schema treats plannedUnitPrice as optional and blocks same
       },
     ],
   });
-  assert.equal(withPlan.purchases[0].plannedUnitPrice, 15000);
 
-  // plannedUnitPrice를 아예 보내지 않아도(본사 경로) 유효해야 한다.
-  assert.equal(
-    ledgerPurchaseSchema.safeParse({
-      ...base,
-      purchases: [
-        { productId: "product-1", unitPrice: "12000", quantity: "3" },
-      ],
-    }).success,
-    true,
-  );
-
-  // 같은 품목의 여러 행에 같은 값이면 통과한다.
-  assert.equal(
-    ledgerPurchaseSchema.safeParse({
-      ...base,
-      purchases: [
-        {
-          productId: "product-1",
-          unitPrice: "12000",
-          quantity: "1",
-          plannedUnitPrice: "15000",
-        },
-        {
-          productId: "product-1",
-          unitPrice: "12000",
-          quantity: "2",
-          plannedUnitPrice: "15000",
-        },
-      ],
-    }).success,
-    true,
-  );
-
-  // 같은 품목의 여러 행에 서로 다른 값이면 충돌로 막는다.
-  const conflict = ledgerPurchaseSchema.safeParse({
-    ...base,
-    purchases: [
-      {
-        productId: "product-1",
-        unitPrice: "12000",
-        quantity: "1",
-        plannedUnitPrice: "15000",
-      },
-      {
-        productId: "product-1",
-        unitPrice: "12000",
-        quantity: "2",
-        plannedUnitPrice: "16000",
-      },
-    ],
-  });
-  assert.equal(conflict.success, false);
-  const conflictErrors = toFieldErrors(conflict.error);
-  assert.deepEqual(conflictErrors["purchases.1.plannedUnitPrice"], [
-    "같은 품목의 오늘 팔 가격은 하루에 하나만 입력해 주세요.",
-  ]);
-
-  // 음수 판매 예정가는 거부된다.
-  const negative = ledgerPurchaseSchema.safeParse({
-    ...base,
-    purchases: [
-      {
-        productId: "product-1",
-        unitPrice: "12000",
-        quantity: "3",
-        plannedUnitPrice: -1,
-      },
-    ],
-  });
-  assert.equal(negative.success, false);
+  assert.equal(parsed.purchases[0].plannedUnitPrice, undefined);
 });
 
 test("legacy carryover payloads remain harmless while purchase no longer writes plans", async () => {
@@ -475,7 +384,7 @@ test("legacy carryover payloads remain harmless while purchase no longer writes 
     ],
   });
   assert.equal(carry.purchases[0].kind, "carryover");
-  assert.equal(carry.purchases[0].plannedUnitPrice, 5000);
+  assert.equal(carry.purchases[0].plannedUnitPrice, undefined);
 
   // stale clients may still send carryover rows, but they never create purchases or write plans.
   const actionSource = readProjectFile(
@@ -946,7 +855,7 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   // 자유 입력 행에서만 같은 필드를 직접 렌더링하므로 상세/펼치기 UI가 노출되지 않는다.
   assert.match(
     componentSource,
-    /\{!showSalesPricePlan\s*\?\s*\(\s*<details[\s\S]*?\{productSnapshotFields\}[\s\S]*?<\/details>\s*\)\s*:\s*!line\.productId\s*\?\s*\(\s*productSnapshotFields\s*\)\s*:\s*null\}/,
+    /\{hqEditReasonRequired\s*\?\s*\(\s*<details[\s\S]*?\{productSnapshotFields\}[\s\S]*?<\/details>\s*\)\s*:\s*!line\.productId\s*\?\s*\(\s*productSnapshotFields\s*\)\s*:\s*null\}/,
   );
   assert.match(componentSource, /원문명/);
   // WO(2026-06-24): 매입 기준 select 제거 → 헬퍼 문구에서 "매입 기준" 표현이 사라지고
@@ -961,12 +870,11 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);
   assert.match(componentSource, /min-h-11/);
-  // WO(2026-06-25): 매입 행에 "오늘 팔 가격(예상)" 입력과 안내 문구가 있고, 저장 payload에
-  // plannedUnitPrice를 담는다. 본사 탭은 showSalesPricePlan으로 끌 수 있다.
-  assert.match(componentSource, /오늘 팔 가격\(예상\)/);
-  assert.match(componentSource, /7단계 추정 매출에 쓰는 판매 예정가입니다\./);
-  assert.match(componentSource, /showSalesPricePlan/);
-  assert.match(componentSource, /plannedUnitPrice/);
+  // 판매계획가는 재고 단계가 소유한다. 매입 UI와 payload에는 계획 책임이 없다.
+  assert.doesNotMatch(componentSource, /오늘 팔 가격\(예상\)/);
+  assert.doesNotMatch(componentSource, /showSalesPricePlan/);
+  assert.doesNotMatch(componentSource, /plannedUnitPrice/);
+  assert.doesNotMatch(componentSource, /carryover/);
   const authorSectionStart = componentSource.indexOf(
     "{showAuthorDisplayName ? (",
   );
@@ -997,9 +905,5 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*saveAction=\{saveHqLedgerPurchases\}/s,
   );
   assert.doesNotMatch(hqDetailSource, /ecountUploadEnabled/);
-  // WO(2026-06-25): 본사 검토 장부 탭에서는 판매 예정가 입력을 끈다(지점장 전용).
-  assert.match(
-    hqDetailSource,
-    /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*showSalesPricePlan=\{false\}/s,
-  );
+  assert.doesNotMatch(hqDetailSource, /showSalesPricePlan/);
 });

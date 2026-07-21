@@ -184,7 +184,6 @@ test("stored decimal quantity resolution requires matching identity and consumes
   );
   const storedPurchase = {
     id: "purchase-1",
-    kind: "purchase",
     productId: "product-1",
     purchaseStandardId: "standard-1",
     sourceType: "MANUAL",
@@ -193,7 +192,6 @@ test("stored decimal quantity resolution requires matching identity and consumes
     productSpec: "1kg",
     referenceInfo: "거래처 A",
     unitPrice: 10_000,
-    plannedUnitPrice: null,
     quantity: 2.28,
   };
   const storedPurchases = new Map([
