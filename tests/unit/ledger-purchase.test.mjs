@@ -413,7 +413,12 @@ test("legacy carryover payloads remain harmless while purchase no longer writes 
     "queries.ts",
   );
   assert.doesNotMatch(queriesSource, /fillPurchasePlannedUnitPricesInTx/);
+  assert.doesNotMatch(queriesSource, /plannedUnitPrice/);
   assert.doesNotMatch(queriesSource, /kind:\s*"carryover" as const/);
+
+  const typesSource = readProjectFile("src", "features", "ledger", "types.ts");
+  assert.doesNotMatch(typesSource, /plannedUnitPrice/);
+  assert.doesNotMatch(typesSource, /"purchase" \| "carryover"/);
 });
 
 test("store purchase edit policy blocks ECount uploaded rows from store edits", async () => {
