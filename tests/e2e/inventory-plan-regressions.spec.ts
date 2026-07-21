@@ -149,12 +149,38 @@ async function seedCompleteInventoryGate() {
 }
 
 async function cleanupRegressionData() {
-  const ledgerIds = [...createdLedgerIds];
-  const productIds = [...createdProductIds];
+  const ledgers = await prisma.dailyLedger.findMany({
+    where: {
+      OR: [
+        { id: { in: [...createdLedgerIds] } },
+        {
+          storeId: STORE_ID,
+          closingDate: {
+            in: [getTodayKstMidnight(), getPreviousKstMidnight()],
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  const products = await prisma.product.findMany({
+    where: {
+      OR: [
+        { id: { in: [...createdProductIds] } },
+        { name: { startsWith: PRODUCT_PREFIX } },
+      ],
+    },
+    select: { id: true },
+  });
+  const ledgerIds = ledgers.map((ledger) => ledger.id);
+  const productIds = products.map((product) => product.id);
 
   if (ledgerIds.length > 0) {
     await prisma.auditLog.deleteMany({
       where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+    });
+    await prisma.correctionRecord.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
     });
     await prisma.ledgerLaborItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
@@ -194,6 +220,7 @@ async function cleanupRegressionData() {
   createdProductIds.clear();
 }
 
+test.beforeEach(cleanupRegressionData);
 test.afterEach(cleanupRegressionData);
 
 test.afterAll(async () => {
