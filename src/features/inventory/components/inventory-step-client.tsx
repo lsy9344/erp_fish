@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2Icon } from "lucide-react";
+import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -70,6 +70,10 @@ import {
   type InventoryErrorFocusTarget,
 } from "~/features/inventory/inventory-save-errors";
 import {
+  calculatePlannedMarginRate,
+  formatPlannedMarginRate,
+} from "~/features/inventory/planned-margin";
+import {
   type InventoryAdjustmentView,
   type InventoryManualProductOption,
   type InventoryStepData,
@@ -79,6 +83,8 @@ import {
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
 import {
   parseStockQuantityDraft,
+  parseStoreInventoryQuantityDraft,
+  toStoreInventoryQuantitySaveInput,
   toStockQuantitySaveInput,
 } from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
@@ -103,6 +109,7 @@ type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
 type InventoryLineState = InventoryDisplayData["items"][number] & {
   currentQuantityInput: string;
   manualUnitPriceInput: string;
+  plannedUnitPriceInput: string;
   adjustmentReasonInput: string;
 };
 
@@ -143,8 +150,11 @@ function isValidQuantity(value: number) {
 function parseQuantityInput(
   value: string,
   storedQuantity: number | null | undefined = null,
+  allowTwoDecimals = false,
 ) {
-  const parsed = parseStockQuantityDraft(value, storedQuantity);
+  const parsed = allowTwoDecimals
+    ? parseStoreInventoryQuantityDraft(value)
+    : parseStockQuantityDraft(value, storedQuantity);
 
   return parsed !== null && isValidQuantity(parsed)
     ? roundQuantity(parsed)
@@ -188,6 +198,10 @@ function toLineState(data: InventoryDisplayData): InventoryLineState[] {
         ? ""
         : String(item.currentQuantity),
     manualUnitPriceInput: "",
+    plannedUnitPriceInput:
+      item.plannedUnitPrice === null
+        ? ""
+        : formatKrwInput(String(item.plannedUnitPrice)),
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
 }
@@ -206,6 +220,7 @@ function toManualLineState(
     productCategory: option.productCategory,
     productSpec: option.productSpec,
     purchasePrice: option.purchasePrice,
+    plannedUnitPrice: option.plannedUnitPrice,
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
@@ -241,6 +256,10 @@ function toManualLineState(
     adjustment: null,
     currentQuantityInput: "",
     manualUnitPriceInput: "",
+    plannedUnitPriceInput:
+      option.plannedUnitPrice === null
+        ? ""
+        : formatKrwInput(String(option.plannedUnitPrice)),
     adjustmentReasonInput: "",
   };
 }
@@ -268,6 +287,7 @@ function mergeAdjustedLineState(
     return {
       ...item,
       currentQuantityInput: current.currentQuantityInput,
+      plannedUnitPriceInput: current.plannedUnitPriceInput,
       adjustmentReasonInput: current.adjustmentReasonInput,
     };
   });
@@ -300,6 +320,9 @@ export function InventoryStepClient({
     {},
   );
   const manualUnitPriceRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {},
+  );
+  const plannedUnitPriceRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -373,6 +396,7 @@ export function InventoryStepClient({
     step: "cost",
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
+  const isStoreManagerMode = !hqEditReasonRequired;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
   // WO-03(2026-06-28): 미입력 필수 수량은 "사용자가 값을 바꾼 상태(dirty)"가 아니라
   // "저장 전에 막아야 하는 validation 상태"다. 둘을 분리한다. 예전엔 이걸 dirty에 섞어
