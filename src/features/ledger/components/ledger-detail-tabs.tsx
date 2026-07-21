@@ -84,7 +84,10 @@ export function LedgerDetailTabs({
   }
 
   return (
-    <div ref={containerRef} className="scroll-mt-16">
+    // min-h-svh: 짧은 탭(손실/근무/매출·결제)은 콘텐츠가 낮아 탭바 아래로 스크롤할
+    // 여백이 부족해 scrollIntoView가 탭바를 상단까지 못 올린다(긴 탭 매입만 올라감).
+    // 컨테이너 최소 높이를 뷰포트만큼 확보해 어떤 탭이든 탭바가 상단에 오게 한다.
+    <div ref={containerRef} className="scroll-mt-16 min-h-svh">
       <Tabs
         value={activeTab}
         onValueChange={handleValueChange}
