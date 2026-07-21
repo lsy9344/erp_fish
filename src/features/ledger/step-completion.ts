@@ -14,6 +14,8 @@ type StoreEntryStepCompletionInput = {
   workerCount: number | null;
   ledgerExpenses: readonly unknown[];
   ledgerPurchaseItems: readonly unknown[];
+  /** @deprecated Inventory completion must come from InventoryPlanGate. */
+  inventoryItemCount?: number;
   inventoryComplete?: boolean;
   lossItemCount?: number;
   lossReviewedAt?: Date | string | null;

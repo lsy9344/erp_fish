@@ -507,7 +507,7 @@ export async function getLedgerReviewStepData(
     // "지점장 판매가 계획"(StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다.
     // (storeId, businessDate=closingDate, productId)로 당일 판매가 계획을 조회한다.
     const productIdsForPlan = [
-      ...new Set(savedInventoryItems.map((item) => item.productId)),
+      ...new Set(inventory.items.map((item) => item.productId)),
     ];
     const salesPricePlans =
       productIdsForPlan.length > 0
