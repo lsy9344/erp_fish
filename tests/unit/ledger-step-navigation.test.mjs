@@ -33,8 +33,8 @@ test("ledger-backed store entry steps share saved status for every step", () => 
   );
   assert.match(
     querySource,
-    /stepCompletion:\s*getStoreEntryStepCompletion\(\{\s*\.\.\.ledger,\s*inventoryItemCount:\s*ledger\._count\.ledgerInventoryItems,\s*lossItemCount:\s*ledger\._count\.ledgerLossItems,\s*\}\)/s,
-    "ledger step data should include completion state for inventory and losses",
+    /getInventoryPlanGateForLedgerInTx\(tx, ledger\)/,
+    "ledger step data should use the shared inventory/plan gate",
   );
   assert.match(typeSource, /StoreEntryStepCompletion/);
   assert.match(typeSource, /stepCompletion:\s*StoreEntryStepCompletion/);
@@ -52,6 +52,8 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     /aria-current=\{isCurrent \? "step" : undefined\}/,
   );
   assert.match(navigationSource, /onNavigateAttempt/);
+  assert.match(navigationSource, /targetStep:\s*StoreEntryStep/);
+  assert.match(navigationSource, /isBlockedByInventory/);
   assert.match(navigationSource, /저장됨/);
 
   const saveStatusSource = readProjectFile(
