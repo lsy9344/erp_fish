@@ -86,6 +86,6 @@ test("inventory plan save revalidates every consumer path", async () => {
     helper,
     /revalidateStoreEntryPaths\(\["root",\s*"inventory",\s*"losses"\]\)/,
   );
-  assert.match(helper, /revalidateLedgerDetailPath\(ledgerId\)/);
   assert.match(helper, /revalidateDashboardAndReports\(\)/);
+  assert.match(source, /revalidateLedgerDetailPath\(parsed\.data\.ledgerId\)/);
 });

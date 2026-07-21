@@ -329,9 +329,8 @@ async function mapLedgerConflictError(
   });
 }
 
-function revalidateInventoryPaths(ledgerId: string) {
+function revalidateInventoryPaths() {
   revalidateStoreEntryPaths(["root", "inventory", "losses"]);
-  revalidateLedgerDetailPath(ledgerId);
   revalidateDashboardAndReports();
 }
 
@@ -648,7 +647,8 @@ export async function saveLedgerInventoryItems(
       return result;
     }
 
-    revalidateInventoryPaths(parsed.data.ledgerId);
+    revalidateInventoryPaths();
+    revalidateLedgerDetailPath(parsed.data.ledgerId);
 
     return actionOk(toStoreManagerInventoryStepData(result));
   } catch (error: unknown) {
