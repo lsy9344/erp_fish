@@ -240,10 +240,6 @@ function getLedgerPurchaseItems(ledger: {
     quantity: decimalToNumber(item.quantity),
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
-    // 기본은 null. 판매 예정가는 지점장 매입 화면 전용 조회 경로(getStoreLedger)에서만 채운다.
-    plannedUnitPrice: null,
-    kind: "purchase" as const,
-    previousQuantity: 0,
     // WO-12(2026-06-28): 원본 이카운트 단가와 적용 단가 보정 메타(본사 전용).
     // 지점장 응답에서는 toStoreManagerLedgerCostStepData가 제거한다.
     sourceUnitPrice: item.sourceUnitPrice ?? null,
@@ -270,9 +266,6 @@ function getLedgerAuditPurchaseItems(ledger: {
     quantity: decimalToNumber(item.quantity),
     amount: item.amount,
     referenceInfo: item.referenceInfo ?? null,
-    plannedUnitPrice: null,
-    kind: "purchase" as const,
-    previousQuantity: 0,
     sourceUnitPrice: item.sourceUnitPrice ?? null,
     unitPriceOverridden:
       item.sourceUnitPrice !== null &&

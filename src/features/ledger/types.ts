@@ -46,17 +46,6 @@ export type LedgerPurchaseLine = {
   quantity: number;
   amount: number;
   referenceInfo: string | null;
-  // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". StoreSalesPricePlan.plannedUnitPrice를
-  // (storeId, closingDate=businessDate, productId)로 조회해 채운다. 품목이 없는 자유 입력
-  // 행이나 계획이 없는 품목은 null이다. 본사 경로(toLedgerCostStepData)는 채우지 않는다.
-  plannedUnitPrice: number | null;
-  // "purchase" = 오늘 매입한(또는 자유 입력) 행. "carryover" = 어제 이월돼 오늘 팔린 품목으로,
-  // 매입 행이 없어 판매 예정가를 넣을 곳이 없던 품목이다. carryover 행은 판매 예정가만 저장하고
-  // ledgerPurchaseItem으로는 저장하지 않는다(0원 매입 행이 생기지 않게). GET/저장 응답에만 등장하고
-  // 본사 경로(toLedgerCostStepData)는 채우지 않는다.
-  kind: "purchase" | "carryover";
-  // carryover 행 표시용 전일 재고 수량(매입 화면에 "전일재고 N"으로 노출). purchase 행은 0.
-  previousQuantity: number;
   // WO-12(2026-06-28): 본사 매입 수정 화면에서 원본 이카운트 단가와 장부 적용 단가를
   // 나란히 보여주기 위한 본사 전용 필드. 지점장 응답에서는 response-shaping이 제거한다.
   sourceUnitPrice?: number | null;
