@@ -2135,7 +2135,7 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     actionSource,
     /export\s+async\s+function\s+saveLedgerInventoryItems/,
   );
-  assert.match(actionSource, /ledgerInventorySchema\.safeParse/);
+  assert.match(actionSource, /ledgerStoreManagerInventorySchema\.safeParse/);
   assert.match(actionSource, /requireStoreManagerLedgerEditAccess\(/);
   assert.match(actionSource, /db\.\$transaction/);
   assert.match(actionSource, /!isLedgerEditable\(before\.status\)/);
