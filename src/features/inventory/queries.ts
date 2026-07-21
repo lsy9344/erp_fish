@@ -1071,21 +1071,31 @@ async function attachPurchasePrices(
   }
 
   // ponytail: one eligible-history query; use a DB aggregate/window query only if measured history volume makes this slow.
-  const purchaseHistory = await tx.ledgerPurchaseItem.findMany({
-    where: {
-      productId: { in: productIds },
-      dailyLedger: {
-        storeId: ledger.storeId,
-        closingDate: { lte: ledger.closingDate },
+  const [purchaseHistory, salesPlans] = await Promise.all([
+    tx.ledgerPurchaseItem.findMany({
+      where: {
+        productId: { in: productIds },
+        dailyLedger: {
+          storeId: ledger.storeId,
+          closingDate: { lte: ledger.closingDate },
+        },
       },
-    },
-    select: {
-      productId: true,
-      quantity: true,
-      amount: true,
-      dailyLedger: { select: { closingDate: true } },
-    },
-  });
+      select: {
+        productId: true,
+        quantity: true,
+        amount: true,
+        dailyLedger: { select: { closingDate: true } },
+      },
+    }),
+    tx.storeSalesPricePlan.findMany({
+      where: {
+        storeId: ledger.storeId,
+        businessDate: ledger.closingDate,
+        productId: { in: productIds },
+      },
+      select: { productId: true, plannedUnitPrice: true },
+    }),
+  ]);
   const purchasePrices = resolveInventoryPurchasePrices(
     ledger.closingDate.toISOString().slice(0, 10),
     purchaseHistory.map((purchase) => ({
@@ -1095,15 +1105,20 @@ async function attachPurchasePrices(
       amount: purchase.amount,
     })),
   );
+  const plannedUnitPrices = new Map(
+    salesPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+  );
 
   return {
     items: items.map((item) => ({
       ...item,
       purchasePrice: purchasePrices.get(item.productId) ?? null,
+      plannedUnitPrice: plannedUnitPrices.get(item.productId) ?? null,
     })),
     manualProductOptions: manualProductOptions.map((option) => ({
       ...option,
       purchasePrice: purchasePrices.get(option.productId) ?? null,
+      plannedUnitPrice: plannedUnitPrices.get(option.productId) ?? null,
     })),
   };
 }
