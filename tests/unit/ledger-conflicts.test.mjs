@@ -212,10 +212,10 @@ test("unsaved-change guard covers store shell tabs and HQ tab state", () => {
   assert.match(guardSource, /requestNavigation\(link\.href,\s*link\)/);
   assert.match(
     hqPageSource,
-    /<TabsContent value="sales" className="mt-3" forceMount>/,
+    /<TabsContent\s+value="sales"[\s\S]*?forceMount\s*>/,
   );
   assert.match(
     hqPageSource,
-    /<TabsContent value="inventory" className="mt-3" forceMount>/,
+    /<TabsContent\s+value="inventory"[\s\S]*?forceMount\s*>/,
   );
 });

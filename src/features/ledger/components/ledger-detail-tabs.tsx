@@ -43,9 +43,15 @@ export function LedgerDetailTabs({
   const [activeTab, setActiveTab] = useState(value);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  function scrollToTabs() {
+  function scrollToPanel(tab: string) {
     requestAnimationFrame(() => {
-      containerRef.current?.scrollIntoView({
+      const targetPanel = Array.from(
+        containerRef.current?.querySelectorAll<HTMLElement>(
+          "[data-ledger-detail-panel]",
+        ) ?? [],
+      ).find((panel) => panel.dataset.ledgerDetailPanel === tab);
+
+      targetPanel?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -78,13 +84,9 @@ export function LedgerDetailTabs({
       `${window.location.pathname}?${params.toString()}`,
     );
 
-    // 탭바가 요약 섹션들 아래에 있어, 탭만 바꾸면 선택한 항목이 화면에 보이지
-    // 않는다. 클릭한 탭 영역을 화면 상단으로 스크롤해 해당 섹션으로 이동시킨다.
-    // scroll-mt로 모바일 sticky 헤더(h-14) 높이만큼 여백을 둔다.
-    // rAF로 렌더 커밋 후 스크롤한다: 긴 탭(매입) → 짧은 탭(손실) 전환 시 패널
-    // 교체로 문서 높이가 줄어드는데, 동기 호출은 교체 전 높이 기준으로 목표를
-    // 잡아 브라우저가 클램프하면서 섹션이 상단까지 못 올라간다.
-    scrollToTabs();
+    // forceMount된 패널은 모두 세로로 쌓여 있으므로 탭 컨테이너가 아니라
+    // 클릭한 탭에 대응하는 패널 자체를 스크롤 대상으로 삼는다.
+    scrollToPanel(nextTab);
   }
 
   function handleTabClick(event: MouseEvent<HTMLDivElement>) {
@@ -94,19 +96,12 @@ export function LedgerDetailTabs({
     ) {
       // Radix는 이미 선택된 탭을 다시 누르면 onValueChange를 호출하지 않는다.
       // 탭 클릭 자체가 항상 해당 입력 섹션으로 이동하도록 이 경우를 보완한다.
-      scrollToTabs();
+      scrollToPanel(activeTab);
     }
   }
 
   return (
-    // min-h-svh: 짧은 탭(손실/근무/매출·결제)은 콘텐츠가 낮아 탭바 아래로 스크롤할
-    // 여백이 부족해 scrollIntoView가 탭바를 상단까지 못 올린다(긴 탭 매입만 올라감).
-    // 컨테이너 최소 높이를 뷰포트만큼 확보해 어떤 탭이든 탭바가 상단에 오게 한다.
-    <div
-      ref={containerRef}
-      className="min-h-svh scroll-mt-16"
-      onClickCapture={handleTabClick}
-    >
+    <div ref={containerRef} onClickCapture={handleTabClick}>
       <Tabs
         value={activeTab}
         onValueChange={handleValueChange}

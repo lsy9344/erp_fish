@@ -419,7 +419,12 @@ export default async function LedgerDetailPage({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="purchases" className="mt-3" forceMount>
+          <TabsContent
+            value="purchases"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="purchases"
+            forceMount
+          >
             <PurchaseStepClient
               key={`purchases-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
@@ -432,7 +437,12 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="losses" className="mt-3" forceMount>
+          <TabsContent
+            value="losses"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="losses"
+            forceMount
+          >
             <LossStepClient
               key={`losses-${lossData.id}-${lossData.status}`}
               storeName={detail.storeName}
@@ -443,7 +453,12 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="inventory" className="mt-3" forceMount>
+          <TabsContent
+            value="inventory"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="inventory"
+            forceMount
+          >
             <InventoryStepClient
               key={`inventory-${inventoryData.id}-${inventoryData.status}`}
               storeName={detail.storeName}
@@ -455,7 +470,12 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="expenses" className="mt-3" forceMount>
+          <TabsContent
+            value="expenses"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="expenses"
+            forceMount
+          >
             <ExpenseStepClient
               key={`expenses-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
@@ -469,7 +489,12 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="work" className="mt-3" forceMount>
+          <TabsContent
+            value="work"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="work"
+            forceMount
+          >
             <WorkStepClient
               key={`work-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
@@ -484,7 +509,12 @@ export default async function LedgerDetailPage({
               hqEditReasonRequired
             />
           </TabsContent>
-          <TabsContent value="sales" className="mt-3" forceMount>
+          <TabsContent
+            value="sales"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="sales"
+            forceMount
+          >
             <SalesPaymentStepClient
               key={`sales-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}

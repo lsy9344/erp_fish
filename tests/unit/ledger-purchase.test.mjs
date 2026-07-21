@@ -907,7 +907,7 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   );
   assert.match(
     hqDetailSource,
-    /<TabsContent value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*saveAction=\{saveHqLedgerPurchases\}/s,
+    /<TabsContent\s+value="purchases"[\s\S]*<PurchaseStepClient[\s\S]*saveAction=\{saveHqLedgerPurchases\}/s,
   );
   assert.doesNotMatch(hqDetailSource, /ecountUploadEnabled/);
   assert.doesNotMatch(hqDetailSource, /showSalesPricePlan/);
