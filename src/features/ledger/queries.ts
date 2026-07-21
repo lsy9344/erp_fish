@@ -544,95 +544,6 @@ export async function getTodayStoreLedger(
   return getStoreLedger(storeId, getTodayKstMidnight(), actorId);
 }
 
-// 지점장 매입 화면(3단계)에 통합한 판매 예정가를 매입 행에 채운다. 판매 예정가는
-// StoreSalesPricePlan(storeId, businessDate=closingDate, productId)에 하루 1개 값으로
-// 저장되므로 같은 품목의 여러 매입 행에는 같은 값이 채워진다. businessDate는 review-queries와
-// 동일하게 raw Prisma closingDate(Date)를 그대로 쓴다.
-export async function fillPurchasePlannedUnitPricesInTx(
-  tx: Prisma.TransactionClient,
-  data: StoreManagerLedgerCostStepData,
-  storeId: string,
-  businessDate: Date,
-  ledgerId: string,
-): Promise<StoreManagerLedgerCostStepData> {
-  const purchaseProductIds = new Set(
-    data.purchaseItems
-      .map((item) => item.productId)
-      .filter((id): id is string => Boolean(id)),
-  );
-
-  // 전일 이월돼 매입 행이 없는 품목(전일재고>0, 오늘 매입 안 함)을 carryover 행으로 만든다.
-  // 이 품목들은 매입 화면에 행이 없어 판매 예정가를 넣을 곳이 없었고, 그 결과 7단계 추정 매출이
-  // "데이터 부족"이 되던 근본 원인이다. 매입 화면 끝에 별도 행으로 노출해 판매 예정가만 받는다.
-  const carryoverInventoryItems = await tx.ledgerInventoryItem.findMany({
-    where: {
-      dailyLedgerId: ledgerId,
-      previousQuantity: { gt: 0 },
-      productId: { notIn: [...purchaseProductIds] },
-    },
-    select: {
-      productId: true,
-      productName: true,
-      productCategory: true,
-      productSpec: true,
-      previousQuantity: true,
-    },
-    orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
-  });
-
-  const carryoverProductIds = carryoverInventoryItems.map(
-    (item) => item.productId,
-  );
-
-  const planProductIds = [...purchaseProductIds, ...carryoverProductIds];
-
-  const plans =
-    planProductIds.length > 0
-      ? await tx.storeSalesPricePlan.findMany({
-          where: {
-            storeId,
-            businessDate,
-            productId: { in: planProductIds },
-          },
-          select: { productId: true, plannedUnitPrice: true },
-        })
-      : [];
-  const plannedByProductId = new Map(
-    plans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
-  );
-
-  const carryoverItems: StoreManagerLedgerCostStepData["purchaseItems"] =
-    carryoverInventoryItems.map((item) => ({
-      id: `carryover-${item.productId}`,
-      productId: item.productId,
-      purchaseStandardId: null,
-      sourceType: "MANUAL" as const,
-      productName: item.productName,
-      productCategory: item.productCategory,
-      productSpec: item.productSpec,
-      unitPrice: 0,
-      quantity: 0,
-      amount: 0,
-      referenceInfo: null,
-      plannedUnitPrice: plannedByProductId.get(item.productId) ?? null,
-      kind: "carryover" as const,
-      previousQuantity: decimalToNumber(item.previousQuantity),
-    }));
-
-  return {
-    ...data,
-    purchaseItems: [
-      ...data.purchaseItems.map((item) => ({
-        ...item,
-        plannedUnitPrice: item.productId
-          ? (plannedByProductId.get(item.productId) ?? null)
-          : null,
-      })),
-      ...carryoverItems,
-    ],
-  };
-}
-
 export async function getStoreLedger(
   storeId: string,
   closingDate: string | Date,
@@ -647,13 +558,7 @@ export async function getStoreLedger(
     );
     const inventoryGate = await getInventoryPlanGateForLedgerInTx(tx, ledger);
 
-    return fillPurchasePlannedUnitPricesInTx(
-      tx,
-      toStoreManagerLedgerCostStepData(ledger, inventoryGate.complete),
-      ledger.storeId,
-      ledger.closingDate,
-      ledger.id,
-    );
+    return toStoreManagerLedgerCostStepData(ledger, inventoryGate.complete);
   });
 }
 

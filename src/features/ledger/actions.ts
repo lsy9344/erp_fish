@@ -13,7 +13,6 @@ import {
 } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
-import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
@@ -35,7 +34,6 @@ import {
 } from "./conflicts";
 import { assertStoreManagerClosingDateIsToday } from "./date";
 import {
-  fillPurchasePlannedUnitPricesInTx,
   getLedgerCostStepDataByIdInTx,
   ledgerSelect,
   getStoreLedger,
@@ -70,8 +68,29 @@ import {
 import { getLedgerReviewMissingItems } from "./review-validation";
 import { type LedgerSubmitForReviewResult } from "./review-types";
 import { type StoreManagerLedgerCostStepData } from "./types";
+import { getInventoryPlanGateForLedgerInTx } from "./inventory-plan-gate";
 
 type LedgerRecord = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
+
+class InventoryPlanIncompleteError extends Error {}
+
+async function assertInventoryPlanCompleteInTx(
+  tx: Prisma.TransactionClient,
+  ledger: Pick<LedgerRecord, "id" | "storeId" | "closingDate">,
+) {
+  const gate = await getInventoryPlanGateForLedgerInTx(tx, ledger);
+
+  if (!gate.complete) {
+    throw new InventoryPlanIncompleteError();
+  }
+}
+
+function inventoryPlanIncompleteActionError<T>(): ActionResult<T> {
+  return actionError(
+    "INVENTORY_PLAN_INCOMPLETE",
+    "3단계 재고의 수량과 판매계획가를 모두 저장한 뒤 진행해 주세요.",
+  );
+}
 
 function isPrismaUniqueError(error: unknown) {
   return (
@@ -585,100 +604,6 @@ function isExistingSnapshotPurchase(
   );
 }
 
-// WO(2026-06-25): 3단계 매입 화면에 통합한 판매 예정가(StoreSalesPricePlan)를 매입 저장
-// 트랜잭션 안에서 함께 반영한다. sales-plan/actions.ts의 저장 정책(품목당 1행 upsert,
-// 빈 값=계획 삭제)과 동일하되, 대상 범위는 "매입 화면에 나타난 품목"으로 한정한다. 매입
-// 화면에 없는 품목의 그날 계획은 건드리지 않는다(전체 동기화가 아니라 부분 반영).
-async function saveStoreSalesPricePlansForPurchasesInTx(
-  tx: Prisma.TransactionClient,
-  input: {
-    storeId: string;
-    businessDate: Date;
-    purchases: LedgerPurchasesInput["purchases"];
-    actorId: string;
-  },
-): Promise<void> {
-  // 매입 화면에 등장한 품목 행만 계획 반영 대상이다(productId 없는 자유 입력 행은 제외).
-  const plannedByProductId = new Map<string, number>();
-  const productIdsOnScreen = new Set<string>();
-  for (const purchase of input.purchases) {
-    if (!purchase.productId) {
-      continue;
-    }
-
-    productIdsOnScreen.add(purchase.productId);
-
-    // 스키마 superRefine이 같은 품목의 서로 다른 값을 이미 막으므로 첫 값만 채택한다.
-    if (
-      typeof purchase.plannedUnitPrice === "number" &&
-      !plannedByProductId.has(purchase.productId)
-    ) {
-      plannedByProductId.set(purchase.productId, purchase.plannedUnitPrice);
-    }
-  }
-
-  if (productIdsOnScreen.size === 0) {
-    return;
-  }
-
-  // 매입 화면 품목 중 값이 비어 있는 품목(계획 없음)은 그날 기존 계획을 삭제한다.
-  const productIdsToDelete = [...productIdsOnScreen].filter(
-    (productId) => !plannedByProductId.has(productId),
-  );
-
-  if (productIdsToDelete.length > 0) {
-    await tx.storeSalesPricePlan.deleteMany({
-      where: {
-        storeId: input.storeId,
-        businessDate: input.businessDate,
-        productId: { in: productIdsToDelete },
-      },
-    });
-  }
-
-  if (plannedByProductId.size > 0) {
-    // 판매 예정가는 active 품목에만 저장한다(매입 스냅샷 productId가 비활성일 수 있어 방어).
-    const activeProducts = await tx.product.findMany({
-      where: { id: { in: [...plannedByProductId.keys()] }, isActive: true },
-      select: { id: true },
-    });
-
-    for (const { id: productId } of activeProducts) {
-      const plannedUnitPrice = plannedByProductId.get(productId)!;
-
-      await tx.storeSalesPricePlan.upsert({
-        where: {
-          storeId_businessDate_productId: {
-            storeId: input.storeId,
-            businessDate: input.businessDate,
-            productId,
-          },
-        },
-        update: {
-          plannedUnitPrice,
-          updatedById: input.actorId,
-        },
-        create: {
-          storeId: input.storeId,
-          businessDate: input.businessDate,
-          productId,
-          plannedUnitPrice,
-          memo: null,
-          createdById: input.actorId,
-          updatedById: input.actorId,
-        },
-      });
-    }
-  }
-
-  await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
-    storeId: input.storeId,
-    businessDate: input.businessDate,
-    productIds: [...productIdsOnScreen],
-    actorId: input.actorId,
-  });
-}
-
 export async function submitLedgerForReview(
   input: unknown,
 ): Promise<ActionResult<LedgerSubmitForReviewResult>> {
@@ -746,6 +671,8 @@ export async function submitLedgerForReview(
 
           return actionError(reason.code, reason.message);
         }
+
+        await assertInventoryPlanCompleteInTx(tx, beforeLedger);
 
         const validation = await validateLedgerSubmitRequirementsInTx(
           tx,
@@ -818,7 +745,11 @@ export async function submitLedgerForReview(
         return actionOk(toLedgerSubmitResult(afterLedger, "submitted"));
       },
     );
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     return actionError(
       "LEDGER_SUBMIT_FAILED",
       "제출에 실패했습니다. 다시 시도해 주세요.",
@@ -879,6 +810,8 @@ export async function saveLedgerSalesPayment(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       // WO-B(2026-06-22): authorDisplayName은 최초 작성자 표시명이다.
       // 이미 값이 있으면 store-manager 매출 저장에서 덮어쓰지 않고 보존한다.
       // 단계 순서 변경(2026-07-02): 작성자 입력이 1단계 매입으로 옮겨져 매출 저장은
@@ -924,6 +857,10 @@ export async function saveLedgerSalesPayment(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("sales", parsed.data);
     }
@@ -990,6 +927,8 @@ export async function saveLedgerExpenses(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       const expenseCodeValidation = await validateActiveExpenseCodesInTx(
         tx,
         parsed.data.expenses,
@@ -1048,6 +987,10 @@ export async function saveLedgerExpenses(
 
     return result;
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("expenses", parsed.data);
     }
@@ -1383,17 +1326,6 @@ export async function saveLedgerPurchases(
         });
       }
 
-      // WO(2026-06-25): 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)"을 매입 저장과 같은
-      // 트랜잭션에서 StoreSalesPricePlan에 함께 반영한다(부분 저장 방지). 저장 대상은 productId가
-      // 있는 행만이고, 같은 품목은 하루 1개 값으로 정리한다. 같은 품목의 모든 행이 비어 있으면
-      // 그 품목의 기존 계획을 삭제한다. 매입 화면에 없는 품목의 계획은 건드리지 않는다.
-      await saveStoreSalesPricePlansForPurchasesInTx(tx, {
-        storeId: beforeLedger.storeId,
-        businessDate: beforeLedger.closingDate,
-        purchases: parsed.data.purchases,
-        actorId: actor.user.id,
-      });
-
       // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
       // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
       await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
@@ -1427,16 +1359,7 @@ export async function saveLedgerPurchases(
         after: toLedgerAuditPayload(afterLedger),
       });
 
-      // 저장 응답도 GET 경로(getStoreLedger)와 동일하게 매입 행에 판매 예정가를 채운다.
-      // 그러지 않으면 클라이언트가 plannedUnitPrice=null로 덮어써, 저장 직후 dirty 상태가
-      // 남아 "저장하지 않은 변경이 있습니다" 경고가 잘못 뜬다.
-      return fillPurchasePlannedUnitPricesInTx(
-        tx,
-        toStoreManagerLedgerCostStepData(afterLedger),
-        afterLedger.storeId,
-        afterLedger.closingDate,
-        afterLedger.id,
-      );
+      return toStoreManagerLedgerCostStepData(afterLedger);
     });
 
     revalidateLedgerSalesPaths();
@@ -1508,6 +1431,8 @@ export async function saveLedgerWorkInfo(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
@@ -1540,6 +1465,10 @@ export async function saveLedgerWorkInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("work", parsed.data);
     }
@@ -1594,6 +1523,8 @@ export async function saveLedgerLaborInfo(
       if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
+
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
 
       await updateEditableDailyLedgerInTx(
         tx,
@@ -1670,6 +1601,10 @@ export async function saveLedgerLaborInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("labor", parsed.data);
     }

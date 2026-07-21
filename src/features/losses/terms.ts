@@ -17,7 +17,7 @@ export const lossTerms = {
 
   // 도움말/검증 문구
   recoveredAmountHelp:
-    "손실액은 개점 전 판매가 계획에서 떨이로 실제 판매한 금액을 뺀 값으로 자동 계산됩니다.",
+    "손실액은 3단계 재고의 판매계획가에서 떨이로 실제 판매한 금액을 뺀 값으로 자동 계산됩니다.",
   quantityInvalid:
     "박스단위 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
   recoveredAmountInvalid:
