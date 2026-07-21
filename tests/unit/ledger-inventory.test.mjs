@@ -370,6 +370,98 @@ test("inventory schema validates current inventory and quantity separately", asy
   assert.equal(blankProduct.success, false);
 });
 
+test("store inventory schema accepts two decimals and requires planned price without widening HQ", async () => {
+  const schemaPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "schemas.ts",
+  );
+  const { ledgerInventorySchema, ledgerStoreManagerInventorySchema } =
+    await import(pathToFileURL(schemaPath).href);
+  const base = {
+    storeId: "store-gangnam",
+    ledgerId: "ledger-1",
+    closingDate: "2026-07-21",
+    version: 1,
+  };
+
+  for (const quantity of ["0", "1", "1.2", "1.23", "9999999999.99"]) {
+    const parsed = ledgerStoreManagerInventorySchema.parse({
+      ...base,
+      items: [
+        {
+          productId: "product-1",
+          currentQuantity: quantity,
+          quantity,
+          unitPrice: null,
+          plannedUnitPrice: "0",
+          adjustmentReason: null,
+        },
+      ],
+    });
+    assert.equal(parsed.items[0].currentQuantity, Number(quantity));
+    assert.equal(parsed.items[0].plannedUnitPrice, 0);
+  }
+
+  for (const quantity of ["-1", ".5", "1.", "1.234", "1,000", "1e2", "10000000000"]) {
+    assert.equal(
+      ledgerStoreManagerInventorySchema.safeParse({
+        ...base,
+        items: [
+          {
+            productId: "product-1",
+            currentQuantity: quantity,
+            quantity,
+            plannedUnitPrice: "7000",
+          },
+        ],
+      }).success,
+      false,
+    );
+  }
+
+  assert.equal(
+    ledgerStoreManagerInventorySchema.safeParse({
+      ...base,
+      items: [
+        { productId: "product-1", currentQuantity: "1", quantity: "1" },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    ledgerInventorySchema.safeParse({
+      ...base,
+      items: [
+        { productId: "product-1", currentQuantity: "1.23", quantity: "1.23" },
+      ],
+    }).success,
+    false,
+    "shared/HQ schema must keep the one-decimal contract",
+  );
+});
+
+test("planned margin uses purchase price and formats unavailable and negative results", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "planned-margin.ts",
+  );
+  const { calculatePlannedMarginRate, formatPlannedMarginRate } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  assert.equal(
+    formatPlannedMarginRate(calculatePlannedMarginRate(50_000, 71_429)),
+    "30.0%",
+  );
+  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(80, 50)), "-60.0%");
+  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(null, 50)), "계산 불가");
+  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(50, 0)), "계산 불가");
+});
+
 test("inventory adjustment schema requires reason and safe actual quantity", async () => {
   const schemaPath = assertProjectFile(
     "src",
@@ -1331,6 +1423,45 @@ test("inventory save errors follow submitted product identity instead of row ord
       },
     },
   );
+
+  assert.deepEqual(
+    mapInventorySaveErrors(
+      { "items.0.plannedUnitPrice": ["planned price error"] },
+      ["product-2"],
+      ["product-1", "product-2"],
+    ),
+    {
+      fieldErrors: {
+        "items.1.plannedUnitPrice": ["planned price error"],
+      },
+      adjustmentErrors: {},
+      firstFocusTarget: {
+        productId: "product-2",
+        currentIndex: 1,
+        field: "plannedUnitPrice",
+      },
+    },
+  );
+});
+
+test("inventory client owns planned price drafts, margin output, raw payload, and manual removal", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(componentSource, /plannedUnitPriceInput/);
+  assert.match(componentSource, /plannedUnitPriceRefs/);
+  assert.match(componentSource, /validateRequiredPlannedUnitPrices/);
+  assert.match(componentSource, /plannedUnitPrice:\s*toRawKrwInputValue/);
+  assert.match(componentSource, /calculatePlannedMarginRate/);
+  assert.match(componentSource, /<output[\s\S]*계획 마진율|계획 마진율[\s\S]*<output/);
+  assert.match(componentSource, /function handleRemoveManualProduct/);
+  assert.match(componentSource, /추가 행 제거/);
+  assert.match(componentSource, /\["당일재고", "판매계획가", "바꾼 이유"\]/);
 });
 
 test("inventory bulk-save errors preserve drafts and reveal the mapped row before focus", () => {
