@@ -70,8 +70,29 @@ import {
 import { getLedgerReviewMissingItems } from "./review-validation";
 import { type LedgerSubmitForReviewResult } from "./review-types";
 import { type StoreManagerLedgerCostStepData } from "./types";
+import { getInventoryPlanGateForLedgerInTx } from "./inventory-plan-gate";
 
 type LedgerRecord = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
+
+class InventoryPlanIncompleteError extends Error {}
+
+async function assertInventoryPlanCompleteInTx(
+  tx: Prisma.TransactionClient,
+  ledger: Pick<LedgerRecord, "id" | "storeId" | "closingDate">,
+) {
+  const gate = await getInventoryPlanGateForLedgerInTx(tx, ledger);
+
+  if (!gate.complete) {
+    throw new InventoryPlanIncompleteError();
+  }
+}
+
+function inventoryPlanIncompleteActionError<T>(): ActionResult<T> {
+  return actionError(
+    "INVENTORY_PLAN_INCOMPLETE",
+    "3단계 재고의 수량과 판매계획가를 모두 저장한 뒤 진행해 주세요.",
+  );
+}
 
 function isPrismaUniqueError(error: unknown) {
   return (
@@ -747,6 +768,8 @@ export async function submitLedgerForReview(
           return actionError(reason.code, reason.message);
         }
 
+        await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
         const validation = await validateLedgerSubmitRequirementsInTx(
           tx,
           beforeLedger,
@@ -818,7 +841,11 @@ export async function submitLedgerForReview(
         return actionOk(toLedgerSubmitResult(afterLedger, "submitted"));
       },
     );
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     return actionError(
       "LEDGER_SUBMIT_FAILED",
       "제출에 실패했습니다. 다시 시도해 주세요.",
@@ -879,6 +906,8 @@ export async function saveLedgerSalesPayment(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       // WO-B(2026-06-22): authorDisplayName은 최초 작성자 표시명이다.
       // 이미 값이 있으면 store-manager 매출 저장에서 덮어쓰지 않고 보존한다.
       // 단계 순서 변경(2026-07-02): 작성자 입력이 1단계 매입으로 옮겨져 매출 저장은
@@ -924,6 +953,10 @@ export async function saveLedgerSalesPayment(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("sales", parsed.data);
     }
@@ -990,6 +1023,8 @@ export async function saveLedgerExpenses(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       const expenseCodeValidation = await validateActiveExpenseCodesInTx(
         tx,
         parsed.data.expenses,
@@ -1048,6 +1083,10 @@ export async function saveLedgerExpenses(
 
     return result;
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("expenses", parsed.data);
     }
@@ -1508,6 +1547,8 @@ export async function saveLedgerWorkInfo(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
+
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
@@ -1540,6 +1581,10 @@ export async function saveLedgerWorkInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("work", parsed.data);
     }
@@ -1594,6 +1639,8 @@ export async function saveLedgerLaborInfo(
       if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
+
+      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
 
       await updateEditableDailyLedgerInTx(
         tx,
@@ -1670,6 +1717,10 @@ export async function saveLedgerLaborInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
+    if (error instanceof InventoryPlanIncompleteError) {
+      return inventoryPlanIncompleteActionError();
+    }
+
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("labor", parsed.data);
     }
