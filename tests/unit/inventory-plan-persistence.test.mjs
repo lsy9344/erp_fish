@@ -29,6 +29,7 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
   );
   assert.match(transaction, /upsertInventorySalesPricePlansInTx\(/);
   assert.match(transaction, /syncLedgerLossItemsWithSalesPricePlansInTx\(/);
+  assert.match(transaction, /dailyLedgerId:\s*before\.id/);
   assert.match(transaction, /action:\s*"ledger\.inventory\.saved"/);
   assert.ok(
     transaction.indexOf("getInventoryTargetErrors(") <
@@ -71,4 +72,5 @@ test("planned price loss sync updates derived fields without ledger metadata sid
   assert.doesNotMatch(source, /lossReviewedAt:\s*null/);
   assert.doesNotMatch(source, /lossReviewedById:\s*null/);
   assert.doesNotMatch(source, /version:\s*\{\s*increment:/);
+  assert.match(source, /dailyLedgerId:\s*input\.dailyLedgerId/);
 });

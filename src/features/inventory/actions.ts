@@ -329,8 +329,9 @@ async function mapLedgerConflictError(
   });
 }
 
-function revalidateInventoryPaths() {
+function revalidateInventoryPaths(ledgerId: string) {
   revalidateStoreEntryPaths(["root", "inventory", "losses"]);
+  revalidateLedgerDetailPath(ledgerId);
   revalidateDashboardAndReports();
 }
 
@@ -619,6 +620,7 @@ export async function saveLedgerInventoryItems(
       await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
         storeId: parsed.data.storeId,
         businessDate,
+        dailyLedgerId: before.id,
         productIds: inputItems.map((item) => item.productId),
         actorId: actor.user.id,
       });
@@ -646,8 +648,7 @@ export async function saveLedgerInventoryItems(
       return result;
     }
 
-    revalidateInventoryPaths();
-    revalidateLedgerDetailPath(parsed.data.ledgerId);
+    revalidateInventoryPaths(parsed.data.ledgerId);
 
     return actionOk(toStoreManagerInventoryStepData(result));
   } catch (error: unknown) {
