@@ -1179,8 +1179,18 @@ test("390px 모바일에서 재고 행 검증 오류와 터치 가능한 편집 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
     exact: true,
   });
-  await currentQuantityInput.fill("1.25");
   await fillVisiblePlannedUnitPrices(page);
+  const ledger = await prisma.dailyLedger.findUniqueOrThrow({
+    where: {
+      storeId_closingDate: {
+        storeId: STORY_STORE_ID,
+        closingDate: getTodayKstMidnight(),
+      },
+    },
+    select: { id: true },
+  });
+  await markLossStepReviewed(ledger.id, await getHeadquartersUserId());
+  await currentQuantityInput.fill("1.25");
   await page.getByRole("button", { name: "저장", exact: true }).click();
 
   await expect(
