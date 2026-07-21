@@ -99,7 +99,6 @@ export type InventoryManualProductOption = {
   productCategory: string;
   productSpec: string;
   purchasePrice: InventoryPurchasePrice | null;
-  plannedUnitPrice: number | null;
 };
 
 export type InventoryStepData = {
