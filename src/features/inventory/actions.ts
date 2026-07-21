@@ -147,14 +147,13 @@ function getInventoryAmountErrors(
     }
 
     if (before) {
-      const systemQuantity = calculateSystemInventoryQuantity({
-        previousQuantity: before.previousQuantity,
-        purchasedQuantity: before.purchasedQuantity,
-        lossQuantity: before.lossQuantity,
-      });
+      const systemQuantity =
+        before.previousQuantity +
+        before.purchasedQuantity -
+        before.lossQuantity;
 
       if (
-        systemQuantity !== null &&
+        systemQuantity >= 0 &&
         calculateInventoryAmount(systemQuantity, before.unitPrice) === null
       ) {
         errors[`items.${index}.currentQuantity`] = [
