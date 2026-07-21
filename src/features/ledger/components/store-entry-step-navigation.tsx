@@ -12,7 +12,11 @@ type StoreEntryStepNavigationProps = {
   closingDate: string;
   currentStep: StoreEntryStep;
   stepCompletion?: StoreEntryStepCompletion;
-  onNavigateAttempt?: (href: string, trigger: HTMLAnchorElement) => void;
+  onNavigateAttempt?: (
+    href: string,
+    trigger: HTMLAnchorElement,
+    targetStep: StoreEntryStep,
+  ) => void;
 };
 
 const steps: { id: StoreEntryStep; label: string }[] = [
@@ -24,6 +28,13 @@ const steps: { id: StoreEntryStep; label: string }[] = [
   { id: "sales", label: "6단계: 매출/결제" },
   { id: "review", label: "7단계: 검토/제출" },
 ];
+
+const stepsAfterInventory = new Set<StoreEntryStep>([
+  "cost",
+  "work",
+  "sales",
+  "review",
+]);
 
 function stepHref(storeId: string, closingDate: string, step: StoreEntryStep) {
   const params = new URLSearchParams({
@@ -57,19 +68,35 @@ export function StoreEntryStepNavigation({
         {steps.map((step) => {
           const isCurrent = step.id === currentStep;
           const isSaved = stepCompletion[step.id] === true;
+          const isBlockedByInventory =
+            currentStep !== "inventory" &&
+            stepCompletion.inventory !== true &&
+            stepsAfterInventory.has(step.id);
 
           return (
             <li key={step.id}>
               <a
                 aria-current={isCurrent ? "step" : undefined}
+                aria-disabled={isBlockedByInventory || undefined}
+                title={
+                  isBlockedByInventory
+                    ? "3단계 재고의 수량과 판매계획가를 먼저 저장해 주세요."
+                    : undefined
+                }
                 className={cn(
                   "block min-h-11 rounded-md border px-3 py-2 text-sm",
                   isCurrent
                     ? "border-emerald-500/40 bg-emerald-500/5 font-medium text-emerald-700 dark:text-emerald-300"
                     : "text-muted-foreground hover:text-foreground",
+                  isBlockedByInventory && "pointer-events-none opacity-50",
                 )}
                 href={stepHref(storeId, closingDate, step.id)}
                 onClick={(event) => {
+                  if (isBlockedByInventory) {
+                    event.preventDefault();
+                    return;
+                  }
+
                   if (!onNavigateAttempt || isCurrent) {
                     return;
                   }
@@ -78,6 +105,7 @@ export function StoreEntryStepNavigation({
                   onNavigateAttempt(
                     event.currentTarget.href,
                     event.currentTarget,
+                    step.id,
                   );
                 }}
               >

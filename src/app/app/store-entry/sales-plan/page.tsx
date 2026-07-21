@@ -22,8 +22,7 @@ function normalizeBusinessDateParam(value: string | string[] | undefined) {
   }
 }
 
-// WO(2026-06-25): 판매 예정가 입력은 3단계 매입 화면으로 통합됐다. 기존 북마크/링크가
-// 깨지지 않도록 이 route는 매입 단계로 redirect하고, storeId와 date query를 보존한다.
+// 판매계획가 입력은 3단계 재고 화면으로 이동했다. 기존 북마크의 지점/날짜는 보존한다.
 export default async function SalesPlanPage({
   searchParams,
 }: SalesPlanPageProps) {
@@ -31,7 +30,7 @@ export default async function SalesPlanPage({
   const storeId = normalizeStoreIdParam(params.storeId);
   const businessDate = normalizeBusinessDateParam(params.date);
 
-  const query = new URLSearchParams({ step: "purchase" });
+  const query = new URLSearchParams();
   if (storeId) {
     query.set("storeId", storeId);
   }
@@ -39,5 +38,5 @@ export default async function SalesPlanPage({
     query.set("date", businessDate);
   }
 
-  redirect(`/app/store-entry?${query.toString()}`);
+  redirect(`/app/store-entry/inventory?${query.toString()}`);
 }
