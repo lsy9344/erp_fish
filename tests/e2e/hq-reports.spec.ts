@@ -1283,11 +1283,14 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .locator("section")
       .filter({ hasText: "품목별 판매 현황" });
     await expect(
-      section.getByLabel("품목별 판매수량 상위 10개 차트"),
+      section.getByLabel("품목별 판매수량 상위 10개 세로 막대 차트"),
     ).toBeVisible();
     await expect(
       section.locator('[data-testid^="daily-product-sales-bar-"]'),
     ).toHaveCount(10);
+    await expect(
+      section.getByText("검색전용품목01 · 숨은규격01", { exact: true }),
+    ).toBeVisible();
     await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
     for (const summaryLabel of [
       "추정 판매액 합계",

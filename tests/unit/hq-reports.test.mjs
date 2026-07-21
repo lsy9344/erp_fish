@@ -274,8 +274,21 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /<SalesRankingChart items=\{salesRankingChartItems\}/,
   );
-  assert.match(componentSource, /data=\{items\}[\s\S]*?dataKey="soldQuantity"/);
-  assert.match(componentSource, /품목별 판매수량 상위 10개 차트/);
+  assert.match(
+    componentSource,
+    /data=\{chartItems\}[\s\S]*?dataKey="soldQuantity"/,
+  );
+  assert.match(componentSource, /dataKey="productLabel"/);
+  assert.match(componentSource, /position="top"/);
+  assert.match(componentSource, /품목별 판매수량 상위 10개 세로 막대 차트/);
+  assert.match(
+    componentSource,
+    /item\.productName} · \$\{item\.productSpec \|\| "규격 없음"/,
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /function SalesRankingChart[\s\S]*?layout="vertical"/,
+  );
   assert.match(componentSource, /<BarChart[\s\S]*?data=\{data\.items\}/);
   assert.match(componentSource, /data\.items\.map\(\(item\) =>/);
   assert.doesNotMatch(componentSource, /<BarChart[\s\S]*?data=\{rankedItems\}/);

@@ -394,77 +394,89 @@ function SalesRankingChart({
 }: {
   items: ProductProfitabilityReportItem[];
 }) {
-  const chartHeight = Math.max(280, items.length * 44 + 40);
+  const chartItems = items.map((item) => ({
+    ...item,
+    productLabel: formatProductLabel(item),
+  }));
 
   return (
-    <ChartContainer
-      aria-label="품목별 판매수량 상위 10개 차트"
-      className="min-h-72 w-full"
-      config={salesRankingChartConfig}
-      style={{ height: chartHeight }}
-    >
-      <BarChart
-        accessibilityLayer
-        data={items}
-        layout="vertical"
-        margin={{ top: 4, right: 64, left: 8, bottom: 4 }}
+    <div className="overflow-x-auto">
+      <ChartContainer
+        aria-label="품목별 판매수량 상위 10개 세로 막대 차트"
+        className="h-[420px] w-full min-w-[720px]"
+        config={salesRankingChartConfig}
       >
-        <CartesianGrid horizontal={false} />
-        <XAxis
-          axisLine={false}
-          tickFormatter={(value: number) => quantityFormatter.format(value)}
-          tickLine={false}
-          type="number"
-        />
-        <YAxis
-          axisLine={false}
-          dataKey="productName"
-          tickLine={false}
-          type="category"
-          width={110}
-        />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              hideLabel
-              formatter={(_value, _name, item) => {
-                const row = item.payload as ProductProfitabilityReportItem;
-
-                return (
-                  <div className="grid min-w-48 gap-1">
-                    <span className="font-medium">{row.productName}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {row.productSpec || "규격 없음"}
-                    </span>
-                    <span className="font-mono font-medium tabular-nums">
-                      판매수량 {quantityFormatter.format(row.soldQuantity)}
-                    </span>
-                  </div>
-                );
-              }}
-            />
-          }
-        />
-        <Bar dataKey="soldQuantity" fill="var(--color-soldQuantity)" radius={4}>
-          {items.map((item) => (
-            <Cell
-              data-testid={`daily-product-sales-bar-${item.productId}`}
-              fill="var(--color-soldQuantity)"
-              key={item.productId}
-            />
-          ))}
-          <LabelList
-            className="fill-foreground text-xs"
-            dataKey="soldQuantity"
-            formatter={(value) =>
-              quantityFormatter.format(
-                typeof value === "number" ? value : Number(value),
-              )
-            }
-            position="right"
+        <BarChart
+          accessibilityLayer
+          data={chartItems}
+          margin={{ top: 24, right: 12, bottom: 4, left: 8 }}
+        >
+          <CartesianGrid vertical={false} />
+          <XAxis
+            angle={-35}
+            axisLine={false}
+            dataKey="productLabel"
+            height={108}
+            interval={0}
+            textAnchor="end"
+            tickLine={false}
+            type="category"
           />
-        </Bar>
-      </BarChart>
-    </ChartContainer>
+          <YAxis
+            axisLine={false}
+            tickFormatter={(value: number) => quantityFormatter.format(value)}
+            tickLine={false}
+            type="number"
+            width={48}
+          />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(_value, _name, item) => {
+                  const row = item.payload as (typeof chartItems)[number];
+
+                  return (
+                    <div className="grid min-w-52 gap-1">
+                      <span className="font-medium">{row.productLabel}</span>
+                      <span className="font-mono font-medium tabular-nums">
+                        판매수량 {quantityFormatter.format(row.soldQuantity)}
+                      </span>
+                    </div>
+                  );
+                }}
+              />
+            }
+          />
+          <Bar
+            dataKey="soldQuantity"
+            fill="var(--color-soldQuantity)"
+            radius={[4, 4, 0, 0]}
+          >
+            {chartItems.map((item) => (
+              <Cell
+                data-testid={`daily-product-sales-bar-${item.productId}`}
+                fill="var(--color-soldQuantity)"
+                key={item.productId}
+              />
+            ))}
+            <LabelList
+              className="fill-foreground text-xs"
+              dataKey="soldQuantity"
+              formatter={(value) =>
+                quantityFormatter.format(
+                  typeof value === "number" ? value : Number(value),
+                )
+              }
+              position="top"
+            />
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+    </div>
   );
+}
+
+function formatProductLabel(item: ProductProfitabilityReportItem) {
+  return `${item.productName} · ${item.productSpec || "규격 없음"}`;
 }
