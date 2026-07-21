@@ -1,7 +1,4 @@
-import type {
-  InventoryStepData,
-  StoreManagerInventoryStepData,
-} from "./types";
+import type { InventoryStepData, StoreManagerInventoryStepData } from "./types";
 
 export function shapeStoreManagerInventoryStepData(
   data: InventoryStepData,
@@ -46,33 +43,33 @@ export function shapeStoreManagerInventoryStepData(
       previousQuantityDetail: item.previousQuantityDetail,
       isModified: item.isModified,
       fifoLots: item.fifoLots.map(
-            ({
-              unitPrice: _unitPrice,
-              originalAmount,
-              consumedAmount,
-              remainingAmount,
-              ...lot
-            }) => {
-              void _unitPrice;
-              void originalAmount;
-              void consumedAmount;
-              void remainingAmount;
-              return lot;
-            },
-          ),
+        ({
+          unitPrice: _unitPrice,
+          originalAmount,
+          consumedAmount,
+          remainingAmount,
+          ...lot
+        }) => {
+          void _unitPrice;
+          void originalAmount;
+          void consumedAmount;
+          void remainingAmount;
+          return lot;
+        },
+      ),
       adjustment: item.adjustment
-            ? {
-                id: item.adjustment.id,
-                beforeQuantity: item.adjustment.beforeQuantity,
-                afterQuantity: item.adjustment.afterQuantity,
-                differenceQuantity: item.adjustment.differenceQuantity,
-                amountStatus: item.adjustment.amountStatus,
-                reason: item.adjustment.reason,
-                createdByName: item.adjustment.createdByName,
-                createdAt: item.adjustment.createdAt,
-                updatedAt: item.adjustment.updatedAt,
-              }
-            : null,
+        ? {
+            id: item.adjustment.id,
+            beforeQuantity: item.adjustment.beforeQuantity,
+            afterQuantity: item.adjustment.afterQuantity,
+            differenceQuantity: item.adjustment.differenceQuantity,
+            amountStatus: item.adjustment.amountStatus,
+            reason: item.adjustment.reason,
+            createdByName: item.adjustment.createdByName,
+            createdAt: item.adjustment.createdAt,
+            updatedAt: item.adjustment.updatedAt,
+          }
+        : null,
     })),
   };
 }

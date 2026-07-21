@@ -947,7 +947,6 @@ async function getManualProductOptions(
       productCategory: product.category,
       productSpec: product.spec,
       purchasePrice: null,
-      plannedUnitPrice: null,
     }));
 }
 

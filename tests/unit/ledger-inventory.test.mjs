@@ -404,7 +404,15 @@ test("store inventory schema accepts two decimals and requires planned price wit
     assert.equal(parsed.items[0].plannedUnitPrice, 0);
   }
 
-  for (const quantity of ["-1", ".5", "1.", "1.234", "1,000", "1e2", "10000000000"]) {
+  for (const quantity of [
+    "-1",
+    ".5",
+    "1.",
+    "1.234",
+    "1,000",
+    "1e2",
+    "10000000000",
+  ]) {
     assert.equal(
       ledgerStoreManagerInventorySchema.safeParse({
         ...base,
@@ -424,9 +432,7 @@ test("store inventory schema accepts two decimals and requires planned price wit
   assert.equal(
     ledgerStoreManagerInventorySchema.safeParse({
       ...base,
-      items: [
-        { productId: "product-1", currentQuantity: "1", quantity: "1" },
-      ],
+      items: [{ productId: "product-1", currentQuantity: "1", quantity: "1" }],
     }).success,
     false,
   );
@@ -457,9 +463,18 @@ test("planned margin uses purchase price and formats unavailable and negative re
     formatPlannedMarginRate(calculatePlannedMarginRate(50_000, 71_429)),
     "30.0%",
   );
-  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(80, 50)), "-60.0%");
-  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(null, 50)), "계산 불가");
-  assert.equal(formatPlannedMarginRate(calculatePlannedMarginRate(50, 0)), "계산 불가");
+  assert.equal(
+    formatPlannedMarginRate(calculatePlannedMarginRate(80, 50)),
+    "-60.0%",
+  );
+  assert.equal(
+    formatPlannedMarginRate(calculatePlannedMarginRate(null, 50)),
+    "계산 불가",
+  );
+  assert.equal(
+    formatPlannedMarginRate(calculatePlannedMarginRate(50, 0)),
+    "계산 불가",
+  );
 });
 
 test("inventory adjustment schema requires reason and safe actual quantity", async () => {
@@ -1458,7 +1473,10 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /validateRequiredPlannedUnitPrices/);
   assert.match(componentSource, /plannedUnitPrice:\s*toRawKrwInputValue/);
   assert.match(componentSource, /calculatePlannedMarginRate/);
-  assert.match(componentSource, /<output[\s\S]*계획 마진율|계획 마진율[\s\S]*<output/);
+  assert.match(
+    componentSource,
+    /<output[\s\S]*계획 마진율|계획 마진율[\s\S]*<output/,
+  );
   assert.match(componentSource, /function handleRemoveManualProduct/);
   assert.match(componentSource, /추가 행 제거/);
   assert.match(componentSource, /\["당일재고", "판매계획가", "바꾼 이유"\]/);
@@ -2043,16 +2061,13 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     "inventory",
     "queries.ts",
   );
-  const responseShapeSource = readProjectFile(
-    "src",
-    "features",
-    "inventory",
-    "response-shaping.ts",
-  );
   assert.match(querySource, /export\s+async\s+function\s+getInventoryStepData/);
   assert.match(querySource, /getInventoryPlanGateForLedgerInTx\(tx, ledger\)/);
   assert.match(querySource, /inventoryComplete:\s*inventoryGate\.complete/);
-  assert.doesNotMatch(querySource, /inventoryItemCount:\s*existingItems\.length/);
+  assert.doesNotMatch(
+    querySource,
+    /inventoryItemCount:\s*existingItems\.length/,
+  );
   assert.match(
     querySource,
     /InventoryOpeningSnapshot|inventoryOpeningSnapshot/,
@@ -2183,6 +2198,12 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
     "features",
     "inventory",
     "queries.ts",
+  );
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
   );
   const componentSource = readProjectFile(
     "src",
