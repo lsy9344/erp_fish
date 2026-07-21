@@ -19,6 +19,7 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
   );
 
   assert.match(transaction, /getInventoryTargetErrors\(/);
+  assert.match(transaction, /getInventoryAmountErrors\(/);
   assert.match(transaction, /dailyLedger\.updateMany\(/);
   assert.match(transaction, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.equal(
@@ -33,6 +34,11 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
     transaction.indexOf("getInventoryTargetErrors(") <
       transaction.indexOf("dailyLedger.updateMany("),
     "target validation must finish before the CAS mutation",
+  );
+  assert.ok(
+    transaction.indexOf("getInventoryAmountErrors(") <
+      transaction.indexOf("dailyLedger.updateMany("),
+    "amount bounds must be validated before the CAS mutation",
   );
   assert.ok(
     transaction.indexOf("upsertInventorySalesPricePlansInTx(") <
