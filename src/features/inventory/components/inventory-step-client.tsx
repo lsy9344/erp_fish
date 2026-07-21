@@ -1748,6 +1748,19 @@ export function InventoryStepClient({
       const quantityError =
         fieldErrors[`items.${globalIndex}.currentQuantity`]?.[0];
       const unitPriceError = fieldErrors[`items.${globalIndex}.unitPrice`]?.[0];
+      const plannedUnitPriceError =
+        fieldErrors[`items.${globalIndex}.plannedUnitPrice`]?.[0];
+      const plannedUnitPriceRaw = toRawKrwInputValue(
+        item.plannedUnitPriceInput,
+      );
+      const plannedUnitPrice =
+        plannedUnitPriceRaw === "" ? null : Number(plannedUnitPriceRaw);
+      const plannedMargin = formatPlannedMarginRate(
+        calculatePlannedMarginRate(
+          item.purchasePrice?.unitPrice ?? null,
+          plannedUnitPrice,
+        ),
+      );
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
@@ -1834,6 +1847,19 @@ export function InventoryStepClient({
                     : null}
                   {sourceBadges.map(renderBadgeWithTooltip)}
                 </div>
+                {addedManualIds.has(item.productId) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${item.productName} 추가 행 제거`}
+                    onClick={() => handleRemoveManualProduct(item.productId)}
+                    disabled={isSaving || isAdjustmentSavePending}
+                    className="ml-auto h-9 w-9"
+                  >
+                    <Trash2Icon aria-hidden className="size-4" />
+                  </Button>
+                ) : null}
               </div>
 
               <p className="text-muted-foreground text-xs tabular-nums">
@@ -1971,6 +1997,56 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
+                {isStoreManagerMode ? (
+                  <Field
+                    data-invalid={Boolean(plannedUnitPriceError)}
+                    className="w-auto gap-1"
+                  >
+                    <FieldLabel
+                      htmlFor={`inventory-planned-unit-price-${item.productId}`}
+                    >
+                      판매계획가
+                    </FieldLabel>
+                    <Input
+                      id={`inventory-planned-unit-price-${item.productId}`}
+                      ref={(node) => {
+                        plannedUnitPriceRefs.current[item.productId] = node;
+                      }}
+                      aria-label={`${item.productName} 판매계획가`}
+                      aria-invalid={Boolean(plannedUnitPriceError)}
+                      aria-describedby={
+                        plannedUnitPriceError
+                          ? `inventory-planned-unit-price-${item.productId}-error inventory-planned-margin-${item.productId}`
+                          : `inventory-planned-margin-${item.productId}`
+                      }
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={item.plannedUnitPriceInput}
+                      onChange={(event) =>
+                        updatePlannedUnitPrice(
+                          item.productId,
+                          event.currentTarget.value,
+                        )
+                      }
+                      disabled={isSaving || isClosed || isAdjustmentSavePending}
+                      className="h-11 w-32 tabular-nums"
+                    />
+                  </Field>
+                ) : null}
+                {isStoreManagerMode ? (
+                  <div className="flex flex-col gap-1 pb-2.5">
+                    <span className="text-muted-foreground text-xs">
+                      계획 마진율
+                    </span>
+                    <output
+                      id={`inventory-planned-margin-${item.productId}`}
+                      htmlFor={`inventory-planned-unit-price-${item.productId}`}
+                      className="font-medium tabular-nums"
+                    >
+                      {plannedMargin}
+                    </output>
+                  </div>
+                ) : null}
                 <div className="flex flex-col gap-1 pb-2.5">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2016,6 +2092,15 @@ export function InventoryStepClient({
                   className="text-destructive text-xs"
                 >
                   {unitPriceError}
+                </p>
+              ) : null}
+              {plannedUnitPriceError ? (
+                <p
+                  id={`inventory-planned-unit-price-${item.productId}-error`}
+                  role="alert"
+                  className="text-destructive text-xs"
+                >
+                  {plannedUnitPriceError}
                 </p>
               ) : null}
 
@@ -2228,7 +2313,11 @@ export function InventoryStepClient({
           isSaving={isSaving || isAdjustmentSavePending}
           errorMessage={formError}
           successMessage={resultMessage}
-          unsavedFields={["현재 재고", "바꾼 이유"]}
+          unsavedFields={
+            isStoreManagerMode
+              ? ["당일재고", "판매계획가", "바꾼 이유"]
+              : ["현재 재고", "바꾼 이유"]
+          }
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
         />
