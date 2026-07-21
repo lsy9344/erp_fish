@@ -1482,6 +1482,29 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /\["당일재고", "판매계획가", "바꾼 이유"\]/);
 });
 
+test("HQ inventory shows stock and planned unit prices read-only", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(
+    componentSource,
+    /hasSensitiveInventoryAmounts\(item\)[\s\S]*재고 기준단가[\s\S]*formatKrw\(item\.unitPrice\)/,
+  );
+  assert.match(
+    componentSource,
+    /판매계획가[\s\S]*item\.plannedUnitPrice === null[\s\S]*미입력[\s\S]*formatKrw\(item\.plannedUnitPrice\)/,
+  );
+  assert.match(
+    componentSource,
+    /\.\.\.\(isStoreManagerMode[\s\S]*plannedUnitPrice:/,
+  );
+});
+
 test("inventory bulk-save errors preserve drafts and reveal the mapped row before focus", () => {
   const componentSource = readProjectFile(
     "src",

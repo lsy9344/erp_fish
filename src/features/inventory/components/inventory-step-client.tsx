@@ -2038,6 +2038,30 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
+                {!isStoreManagerMode &&
+                hasSensitiveInventoryAmounts(item) &&
+                !addedManualIds.has(item.productId) ? (
+                  <>
+                    <div className="flex flex-col gap-1 pb-2.5">
+                      <span className="text-muted-foreground text-xs">
+                        재고 기준단가
+                      </span>
+                      <output className="font-medium tabular-nums">
+                        {formatKrw(item.unitPrice)}/1박스
+                      </output>
+                    </div>
+                    <div className="flex flex-col gap-1 pb-2.5">
+                      <span className="text-muted-foreground text-xs">
+                        판매계획가
+                      </span>
+                      <output className="font-medium tabular-nums">
+                        {item.plannedUnitPrice === null
+                          ? "미입력"
+                          : `${formatKrw(item.plannedUnitPrice)}/1박스`}
+                      </output>
+                    </div>
+                  </>
+                ) : null}
                 {isStoreManagerMode ? (
                   <div className="flex flex-col gap-1 pb-2.5">
                     <span className="text-muted-foreground text-xs">
