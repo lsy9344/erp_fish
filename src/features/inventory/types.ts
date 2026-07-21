@@ -22,6 +22,7 @@ export type InventoryStepLine = {
   productCategory: string;
   productSpec: string;
   purchasePrice: InventoryPurchasePrice | null;
+  plannedUnitPrice: number | null;
   unitPrice: number;
   previousQuantity: number;
   purchasedQuantity: number;
@@ -98,6 +99,7 @@ export type InventoryManualProductOption = {
   productCategory: string;
   productSpec: string;
   purchasePrice: InventoryPurchasePrice | null;
+  plannedUnitPrice: number | null;
 };
 
 export type InventoryStepData = {
