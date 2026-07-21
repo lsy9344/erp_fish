@@ -4,6 +4,7 @@ import {
   parseOptionalNonNegativeInteger,
   parseOptionalNonNegativeDecimal,
   parseRequiredNonNegativeDecimal,
+  parseRequiredNonNegativeInteger,
   toFieldErrors,
 } from "../../lib/validation.ts";
 
