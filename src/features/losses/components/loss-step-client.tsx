@@ -661,12 +661,12 @@ export function LossStepClient({
                         ? " · 손실액: 판매가 계획 없음 · 미산정"
                         : item.unitPrice !== undefined
                           ? ` · 손실액 산정 기준 단가: ${formatKrw(item.unitPrice)}`
-                          : " · 저장 시 개점 전 판매가 계획으로 손실액 자동 산정"}
+                          : " · 저장 시 3단계 재고의 판매계획가로 손실액 자동 산정"}
                       {item.usedPlannedPrice === false ? (
                         <span className="mt-1 block text-amber-600 dark:text-amber-500">
-                          이 품목은 개점 전 판매가 계획이 없어 손실액이 산정되지
-                          않았습니다(미산정). 희망 판매가 기준 손실액을
-                          반영하려면 판매가 계획을 먼저 입력하세요.
+                          판매계획가는 3단계 재고에서 입력되며 저장 후 손실
+                          금액에 자동 반영됩니다. 현재는 판매계획가가 없어
+                          손실액이 미산정 상태입니다.
                         </span>
                       ) : null}
                     </div>

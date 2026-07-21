@@ -8,7 +8,7 @@ function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
-// 손실 입력 화면에서 개점 전 판매가 계획을 손실액 산정 기준으로 보여준다.
+// 손실 입력 화면에서 3단계 재고의 판매계획가를 손실액 산정 기준으로 보여준다.
 // 실제 판매/회수액을 입력하면 저장 시 계획 판매가와의 차액이 손실액이 된다.
 export function SalesPlanLossContext({ items }: SalesPlanLossContextProps) {
   if (items.length === 0) {
@@ -18,7 +18,7 @@ export function SalesPlanLossContext({ items }: SalesPlanLossContextProps) {
   return (
     <section className="bg-card text-card-foreground rounded-lg border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">개점 전 판매가 계획 (참고)</p>
+        <p className="text-sm font-medium">3단계 재고 판매계획가 (참고)</p>
         <span className="bg-muted text-muted-foreground rounded-md px-2 py-1 text-xs font-medium">
           추정
         </span>
