@@ -12,11 +12,49 @@ const inventoryQuantityError =
   "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const storeInventoryQuantityError =
   "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
+const storeInventoryQuantityError =
+  "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const actualQuantityError =
   "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합니다.";
+const plannedUnitPriceError = "판매계획가는 0원 이상의 정수여야 합니다.";
+const maxStoreInventoryQuantity = 9_999_999_999.99;
+
+function parseStoreInventoryQuantity(
+  value: unknown,
+  context: z.RefinementCtx,
+) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+(?:\.\d{1,2})?$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+  const scaled = parsed * 100;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+
+  if (
+    Number.isFinite(parsed) &&
+    parsed >= 0 &&
+    parsed <= maxStoreInventoryQuantity &&
+    Math.abs(scaled - Math.round(scaled)) <= tolerance
+  ) {
+    return Math.round(scaled) / 100;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: storeInventoryQuantityError,
+  });
+
+  return z.NEVER;
+}
 const plannedUnitPriceError = "판매계획가는 0원 이상의 정수여야 합니다.";
 const maxStoreInventoryQuantity = 9_999_999_999.99;
 
@@ -170,9 +208,34 @@ const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
     ),
 });
 
+const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
+  currentQuantity: z
+    .unknown()
+    .transform((value, context) =>
+      parseStoreInventoryQuantity(value, context),
+    ),
+  quantity: z
+    .unknown()
+    .transform((value, context) =>
+      parseStoreInventoryQuantity(value, context),
+    ),
+  plannedUnitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseRequiredNonNegativeInteger(value, context, plannedUnitPriceError),
+    ),
+});
+
 export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
 });
+
+// 지점장 재고 저장만 두 자리 수량과 필수 판매계획가를 받는다. 본사 조정/HQ 저장은
+// 기존 ledgerInventorySchema의 한 자리 계약을 그대로 사용한다.
+export const ledgerStoreManagerInventorySchema =
+  ledgerMutationContextSchema.extend({
+    items: z.array(ledgerStoreManagerInventoryItemSchema),
+  });
 
 // 지점장 재고 저장만 두 자리 수량과 필수 판매계획가를 받는다. 본사 조정/HQ 저장은
 // 기존 ledgerInventorySchema의 한 자리 계약을 그대로 사용한다.
@@ -199,6 +262,9 @@ export const ledgerInventoryAdjustmentSchema =
   });
 
 export type LedgerInventoryInput = z.infer<typeof ledgerInventorySchema>;
+export type LedgerStoreManagerInventoryInput = z.infer<
+  typeof ledgerStoreManagerInventorySchema
+>;
 export type LedgerStoreManagerInventoryInput = z.infer<
   typeof ledgerStoreManagerInventorySchema
 >;
