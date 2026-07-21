@@ -618,10 +618,6 @@ export function PurchaseStepClient({
         ) : (
           <div className="mb-3 space-y-2">
             {purchaseItems.map((line, index) => {
-              // 이월 품목 행은 아래 전용 섹션에서 렌더한다(여기선 인덱스만 보존).
-              if (line.kind === "carryover") {
-                return null;
-              }
               const productError =
                 fieldErrors[`purchases.${index}.productId`]?.[0];
               const productNameError =
@@ -634,8 +630,6 @@ export function PurchaseStepClient({
                 fieldErrors[`purchases.${index}.unitPrice`]?.[0];
               const quantityError =
                 fieldErrors[`purchases.${index}.quantity`]?.[0];
-              const plannedUnitPriceError =
-                fieldErrors[`purchases.${index}.plannedUnitPrice`]?.[0];
               const helperProduct = line.productName
                 ? {
                     name: line.productName,
@@ -832,7 +826,7 @@ export function PurchaseStepClient({
 
                   {/* 본사 보정 화면에서만 원문 스냅샷을 수정한다. 지점 화면은 품목 선택 시
                       채운 내부 스냅샷을 그대로 저장한다. */}
-                  {!showSalesPricePlan ? (
+                  {hqEditReasonRequired ? (
                     <details
                       className="group rounded-md border"
                       open={
@@ -877,14 +871,7 @@ export function PurchaseStepClient({
                     productSnapshotFields
                   ) : null}
 
-                  {/* 매입 단가 / 수량 / 오늘 팔 가격(예상)을 같은 줄에서 본다.
-                      모바일(<sm)에서는 세로로 쌓여 겹치거나 가로 overflow가 없다. */}
-                  <div
-                    className={cn(
-                      "grid gap-2",
-                      showSalesPricePlan ? "sm:grid-cols-3" : "sm:grid-cols-2",
-                    )}
-                  >
+                  <div className="grid gap-2 sm:grid-cols-2">
                     <Field data-invalid={Boolean(unitPriceError)}>
                       <FieldLabel htmlFor={`purchase-unit-price-${line.id}`}>
                         매입 단가
@@ -974,54 +961,6 @@ export function PurchaseStepClient({
                       ) : null}
                     </Field>
 
-                    {showSalesPricePlan ? (
-                      <Field data-invalid={Boolean(plannedUnitPriceError)}>
-                        <FieldLabel
-                          htmlFor={`purchase-planned-price-${line.id}`}
-                        >
-                          오늘 팔 가격(예상)
-                        </FieldLabel>
-                        <Input
-                          id={`purchase-planned-price-${line.id}`}
-                          ref={(node) => {
-                            plannedUnitPriceRefs.current[index] = node;
-                          }}
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={line.plannedUnitPrice}
-                          // 이카운트 업로드 행이라도 판매 예정가는 지점장 판매 판단값이므로
-                          // 수정할 수 있다. 품목이 없는 자유 입력 행은 저장 대상이 아니라 잠근다.
-                          disabled={
-                            isFormSaving ||
-                            isOriginalEditBlocked ||
-                            !line.productId
-                          }
-                          onChange={(event) =>
-                            updatePurchaseLine(line.id, {
-                              plannedUnitPrice: event.currentTarget.value,
-                            })
-                          }
-                          className="min-h-11 tabular-nums"
-                          aria-invalid={Boolean(plannedUnitPriceError)}
-                          aria-describedby={`purchase-planned-price-${line.id}-help`}
-                        />
-                        <p
-                          id={`purchase-planned-price-${line.id}-help`}
-                          className="text-muted-foreground text-xs"
-                        >
-                          {line.productId
-                            ? "7단계 추정 매출에 쓰는 판매 예정가입니다."
-                            : "품목을 선택하면 입력할 수 있습니다."}
-                        </p>
-                        {plannedUnitPriceError ? (
-                          <FieldError
-                            id={`purchase-planned-price-${line.id}-error`}
-                          >
-                            {plannedUnitPriceError}
-                          </FieldError>
-                        ) : null}
-                      </Field>
-                    ) : null}
                   </div>
 
                   <div className="flex items-center justify-between gap-2 px-1 text-sm">
@@ -1035,102 +974,6 @@ export function PurchaseStepClient({
             })}
           </div>
         )}
-
-        {/* 전일 이월돼 오늘 팔린 품목: 매입은 없고 판매 예정가만 받는다.
-            매입 화면에 행이 없던 근본 원인을 메워 7단계 "데이터 부족"을 없앤다. */}
-        {showSalesPricePlan && carryoverLines.length > 0 ? (
-          <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-            <div className="mb-2">
-              <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-                전일 이월 품목 — 오늘 판매가만 입력하세요
-              </p>
-              <p className="text-muted-foreground mt-1 text-xs">
-                어제 남아 오늘 팔린 품목입니다. 매입은 없으니 팔 가격만
-                넣으세요. 비워두면 7단계 추정 매출이 “데이터 부족”으로
-                표시됩니다.
-              </p>
-            </div>
-            <div className="space-y-2">
-              {purchaseItems.map((line, index) => {
-                if (line.kind !== "carryover") {
-                  return null;
-                }
-                const plannedUnitPriceError =
-                  fieldErrors[`purchases.${index}.plannedUnitPrice`]?.[0];
-                const isBlank = line.plannedUnitPrice.trim() === "";
-
-                return (
-                  <div
-                    key={line.id}
-                    className="bg-background grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-end"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {line.productName}
-                        {line.productSpec ? (
-                          <span className="text-muted-foreground font-normal">
-                            {" "}
-                            / {line.productSpec}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="text-muted-foreground mt-0.5 text-xs">
-                        전일재고 {formatQuantityValue(line.previousQuantity)} ·
-                        오늘 매입 없음
-                      </p>
-                    </div>
-                    <Field
-                      data-invalid={Boolean(plannedUnitPriceError)}
-                      className="sm:w-44"
-                    >
-                      <FieldLabel
-                        htmlFor={`carryover-planned-price-${line.id}`}
-                      >
-                        오늘 팔 가격(예상) · 이월
-                      </FieldLabel>
-                      <Input
-                        id={`carryover-planned-price-${line.id}`}
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={line.plannedUnitPrice}
-                        disabled={isFormSaving || isOriginalEditBlocked}
-                        onChange={(event) =>
-                          updatePurchaseLine(line.id, {
-                            plannedUnitPrice: event.currentTarget.value,
-                          })
-                        }
-                        className={cn(
-                          "min-h-11 tabular-nums",
-                          isBlank
-                            ? "border-amber-500/60 focus-visible:ring-amber-500/40"
-                            : "",
-                        )}
-                        aria-invalid={Boolean(plannedUnitPriceError)}
-                        aria-describedby={`carryover-planned-price-${line.id}-help`}
-                        placeholder="판매가 입력"
-                      />
-                      <p
-                        id={`carryover-planned-price-${line.id}-help`}
-                        className="text-muted-foreground text-xs"
-                      >
-                        {isBlank
-                          ? "← 팔 가격을 입력하세요"
-                          : "7단계 추정 매출에 반영됩니다."}
-                      </p>
-                      {plannedUnitPriceError ? (
-                        <FieldError
-                          id={`carryover-planned-price-${line.id}-error`}
-                        >
-                          {plannedUnitPriceError}
-                        </FieldError>
-                      ) : null}
-                    </Field>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
 
         {productOptions.length === 0 ? (
           <p className="text-muted-foreground mb-3 text-sm">
@@ -1179,18 +1022,6 @@ export function PurchaseStepClient({
             >
               <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
               {resultMessage}
-            </p>
-          </div>
-        ) : null}
-
-        {carryoverWarning ? (
-          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2">
-            <p
-              className="text-sm font-medium text-amber-800 dark:text-amber-200"
-              role="status"
-              aria-live="polite"
-            >
-              {carryoverWarning}
             </p>
           </div>
         ) : null}
