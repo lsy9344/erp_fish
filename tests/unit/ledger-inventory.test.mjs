@@ -2043,6 +2043,12 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     "inventory",
     "queries.ts",
   );
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
+  );
   assert.match(querySource, /export\s+async\s+function\s+getInventoryStepData/);
   assert.match(querySource, /getInventoryPlanGateForLedgerInTx\(tx, ledger\)/);
   assert.match(querySource, /inventoryComplete:\s*inventoryGate\.complete/);
@@ -2185,9 +2191,7 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
     "components",
     "inventory-step-client.tsx",
   );
-  const safeMapperSource = querySource.slice(
-    querySource.indexOf("export function toStoreManagerInventoryStepData"),
-  );
+  const safeMapperSource = responseShapeSource;
 
   assert.match(componentSource, /item\.purchasePrice/);
   assert.match(componentSource, /당일/);
@@ -2201,7 +2205,8 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
     /text-muted-foreground/,
     "purchase-price copy should use the existing muted semantic text",
   );
-  assert.match(safeMapperSource, /\.\.\.item/);
+  assert.match(safeMapperSource, /plannedUnitPrice:\s*item\.plannedUnitPrice/);
+  assert.match(safeMapperSource, /purchasePrice:\s*item\.purchasePrice/);
   assert.doesNotMatch(safeMapperSource, /unitPrice:\s*item\.unitPrice/);
   assert.doesNotMatch(
     safeMapperSource,
@@ -2494,6 +2499,12 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     "inventory",
     "queries.ts",
   );
+  const responseShapeSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
+  );
   assert.match(
     querySource,
     /ledgerInventoryAdjustment\.findMany|ledgerInventoryAdjustments/,
@@ -2506,9 +2517,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     /amountStatus:\s*adjustment\.amountStatus/,
     "queries should expose adjustment amount policy status",
   );
-  const safeMapperSource = querySource.slice(
-    querySource.indexOf("export function toStoreManagerInventoryStepData"),
-  );
+  const safeMapperSource = responseShapeSource;
   assert.doesNotMatch(
     safeMapperSource,
     /beforeAmount:\s*adjustment\.beforeAmount|afterAmount:\s*adjustment\.afterAmount|differenceAmount:\s*adjustment\.differenceAmount/s,
