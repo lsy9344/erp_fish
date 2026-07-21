@@ -1,5 +1,6 @@
 import type { Prisma } from "../../../generated/prisma";
 
+import { editableLedgerStatuses } from "~/features/ledger/status-policy";
 import { decimalToNumber } from "~/lib/decimal";
 import { toPlannedPriceLossSnapshot } from "./amount";
 
@@ -8,6 +9,7 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
   input: {
     storeId: string;
     businessDate: Date;
+    dailyLedgerId?: string;
     productIds: string[];
     actorId: string;
   },
@@ -21,10 +23,12 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
   const [lossItems, salesPricePlans] = await Promise.all([
     tx.ledgerLossItem.findMany({
       where: {
+        dailyLedgerId: input.dailyLedgerId,
         productId: { in: productIds },
         dailyLedger: {
           storeId: input.storeId,
           closingDate: input.businessDate,
+          status: { in: [...editableLedgerStatuses] },
         },
       },
       select: {

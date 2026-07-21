@@ -15,6 +15,7 @@ import {
 import { db } from "~/server/db";
 import {
   revalidateDashboardAndReports,
+  revalidateLedgerDetailPath,
   revalidateStoreEntryPaths,
 } from "~/server/revalidation";
 import {
@@ -256,19 +257,31 @@ function originalInventoryBlockedError(status: string) {
 
 function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
   return Object.fromEntries(
-    data.items.map((item) => [
-      item.productName,
-      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
-    ]),
+    data.items.map((item) => {
+      const plannedUnitPrice = (
+        item as typeof item & { plannedUnitPrice?: number | null }
+      ).plannedUnitPrice;
+
+      return [
+        item.productName,
+        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
+      ];
+    }),
   );
 }
 
 function toInventoryClientValues(input: LedgerInventoryInput) {
   return Object.fromEntries(
-    input.items.map((item) => [
-      item.productId,
-      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"}`,
-    ]),
+    input.items.map((item) => {
+      const plannedUnitPrice = (
+        item as typeof item & { plannedUnitPrice?: number | null }
+      ).plannedUnitPrice;
+
+      return [
+        item.productId,
+        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
+      ];
+    }),
   );
 }
 
@@ -315,8 +328,9 @@ async function mapLedgerConflictError(
   });
 }
 
-function revalidateInventoryPaths() {
-  revalidateStoreEntryPaths(["inventory"]);
+function revalidateInventoryPaths(ledgerId: string) {
+  revalidateStoreEntryPaths(["root", "inventory", "losses"]);
+  revalidateLedgerDetailPath(ledgerId);
   revalidateDashboardAndReports();
 }
 
@@ -605,6 +619,7 @@ export async function saveLedgerInventoryItems(
       await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
         storeId: parsed.data.storeId,
         businessDate,
+        dailyLedgerId: before.id,
         productIds: inputItems.map((item) => item.productId),
         actorId: actor.user.id,
       });
@@ -632,7 +647,7 @@ export async function saveLedgerInventoryItems(
       return result;
     }
 
-    revalidateInventoryPaths();
+    revalidateInventoryPaths(parsed.data.ledgerId);
 
     return actionOk(toStoreManagerInventoryStepData(result));
   } catch (error: unknown) {
