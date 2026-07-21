@@ -260,10 +260,14 @@ function originalInventoryBlockedError(status: string) {
 
 function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
   return Object.fromEntries(
-    data.items.map((item) => [
-      item.productName,
-      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${item.plannedUnitPrice ?? "-"}`,
-    ]),
+    data.items.map((item) => {
+      const { plannedUnitPrice } = item;
+
+      return [
+        item.productName,
+        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
+      ];
+    }),
   );
 }
 
