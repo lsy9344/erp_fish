@@ -74,3 +74,18 @@ test("planned price loss sync updates derived fields without ledger metadata sid
   assert.doesNotMatch(source, /version:\s*\{\s*increment:/);
   assert.match(source, /dailyLedgerId:\s*input\.dailyLedgerId/);
 });
+
+test("inventory plan save revalidates every consumer path", async () => {
+  const source = await readFile(inventoryActionUrl, "utf8");
+  const helper = source.slice(
+    source.indexOf("function revalidateInventoryPaths"),
+    source.indexOf("export async function saveLedgerInventoryItems"),
+  );
+
+  assert.match(
+    helper,
+    /revalidateStoreEntryPaths\(\["root",\s*"inventory",\s*"losses"\]\)/,
+  );
+  assert.match(helper, /revalidateLedgerDetailPath\(ledgerId\)/);
+  assert.match(helper, /revalidateDashboardAndReports\(\)/);
+});
