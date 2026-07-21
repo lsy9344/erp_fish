@@ -20,10 +20,10 @@ import {
 } from "~/server/revalidation";
 import {
   ledgerInventoryStoreAccessSchema,
-  ledgerInventorySchema,
+  ledgerStoreManagerInventorySchema,
   toFieldErrors,
   type LedgerInventoryAdjustmentInput,
-  type LedgerInventoryInput,
+  type LedgerStoreManagerInventoryInput,
   type LedgerInventoryStoreAccessInput,
 } from "./schemas";
 import {
@@ -65,9 +65,8 @@ import {
 } from "~/features/ledger/status-policy";
 import type { Prisma } from "../../../generated/prisma";
 
-type InventoryItemWithPlannedPrice = LedgerInventoryInput["items"][number] & {
-  plannedUnitPrice: number;
-};
+type InventoryItemWithPlannedPrice =
+  LedgerStoreManagerInventoryInput["items"][number];
 
 const invalidInventoryTargetMessage =
   "저장할 재고 품목이 현재 대상과 일치하지 않습니다. 새로고침 후 다시 시도해 주세요.";
@@ -207,8 +206,8 @@ async function upsertInventorySalesPricePlansInTx(
 
 function parseLedgerInventoryInput(
   input: unknown,
-): ActionResult<LedgerInventoryInput> {
-  const parsed = ledgerInventorySchema.safeParse(input);
+): ActionResult<LedgerStoreManagerInventoryInput> {
+  const parsed = ledgerStoreManagerInventorySchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError(
@@ -268,7 +267,7 @@ function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
   );
 }
 
-function toInventoryClientValues(input: LedgerInventoryInput) {
+function toInventoryClientValues(input: LedgerStoreManagerInventoryInput) {
   return Object.fromEntries(
     input.items.map((item) => [
       item.productId,
@@ -289,7 +288,7 @@ function toInventoryAdjustmentClientValues(
 
 async function mapLedgerConflictError(
   section: "inventory" | "inventory-adjustment",
-  input: LedgerInventoryInput | LedgerInventoryAdjustmentInput,
+  input: LedgerStoreManagerInventoryInput | LedgerInventoryAdjustmentInput,
 ): Promise<ActionResult<never>> {
   const snapshot = await db.$transaction(async (tx) => {
     const current = await getInventoryStepDataByLedgerIdInTx(
@@ -311,7 +310,7 @@ async function mapLedgerConflictError(
     clientToken: input.version,
     clientValues:
       section === "inventory"
-        ? toInventoryClientValues(input as LedgerInventoryInput)
+        ? toInventoryClientValues(input as LedgerStoreManagerInventoryInput)
         : toInventoryAdjustmentClientValues(
             input as LedgerInventoryAdjustmentInput,
           ),
@@ -370,9 +369,7 @@ export async function saveLedgerInventoryItems(
         throw originalInventoryBlockedError(before.status);
       }
 
-      // Lane A의 schema가 필수 plannedUnitPrice를 검증한다. 교차 lane 통합 전에도 이
-      // 파일은 독립적으로 typecheck할 수 있도록 좁은 교차 타입으로만 표현한다.
-      const inputItems = parsed.data.items as InventoryItemWithPlannedPrice[];
+      const inputItems = parsed.data.items;
       const inputByProductId = new Map(
         inputItems.map((item) => [item.productId, item]),
       );
