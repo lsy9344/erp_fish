@@ -604,10 +604,6 @@ function isExistingSnapshotPurchase(
   );
 }
 
-// WO(2026-06-25): 3단계 매입 화면에 통합한 판매 예정가(StoreSalesPricePlan)를 매입 저장
-// 트랜잭션 안에서 함께 반영한다. sales-plan/actions.ts의 저장 정책(품목당 1행 upsert,
-// 빈 값=계획 삭제)과 동일하되, 대상 범위는 "매입 화면에 나타난 품목"으로 한정한다. 매입
-// 화면에 없는 품목의 그날 계획은 건드리지 않는다(전체 동기화가 아니라 부분 반영).
 export async function submitLedgerForReview(
   input: unknown,
 ): Promise<ActionResult<LedgerSubmitForReviewResult>> {
