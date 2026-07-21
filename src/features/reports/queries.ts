@@ -520,24 +520,28 @@ export function buildDailySalesAnalysis(
         );
       }
 
+      const deviationAmount =
+        inventoryAmount.value === null
+          ? dailyUnavailable(inventoryAmount.reason ?? "재고 편차액 계산 불가")
+          : salesAmount.value === null
+            ? dailyUnavailable(salesAmount.reason ?? "매출 계산 불가")
+            : available(inventoryAmount.value - salesAmount.value);
+      const deviationRate =
+        deviationAmount.value === null
+          ? dailyUnavailable(deviationAmount.reason ?? "재고 편차율 계산 불가")
+          : salesAmount.value === null
+            ? dailyUnavailable(salesAmount.reason ?? "매출 계산 불가")
+            : salesAmount.value <= 0
+              ? dailyUnavailable("선택일 매출 0원")
+              : available(deviationAmount.value / salesAmount.value);
+
       return {
         storeId,
         storeName,
         inventoryAmount,
         salesAmount,
-        deviationRate:
-          inventoryAmount.value === null
-            ? dailyUnavailable(
-                inventoryAmount.reason ?? "재고 편차율 계산 불가",
-              )
-            : salesAmount.value === null
-              ? dailyUnavailable(salesAmount.reason ?? "매출 계산 불가")
-              : salesAmount.value <= 0
-                ? dailyUnavailable("선택일 매출 0원")
-                : available(
-                    (inventoryAmount.value - salesAmount.value) /
-                      salesAmount.value,
-                  ),
+        deviationAmount,
+        deviationRate,
       };
     },
   );

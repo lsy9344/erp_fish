@@ -43,6 +43,10 @@ const chartConfig = {
   estimatedSalesAmount: { label: "추정 판매액", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
+const salesRankingChartConfig = {
+  soldQuantity: { label: "판매수량", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
   currency: "KRW",
@@ -104,6 +108,10 @@ export function ProductProfitabilityReport({
         : data.items,
     [data.items, tableVariant],
   );
+  const salesRankingChartItems = useMemo(
+    () => rankedItems.slice(0, 10),
+    [rankedItems],
+  );
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalizeSearch(searchQuery);
     return normalizedQuery
@@ -137,7 +145,7 @@ export function ProductProfitabilityReport({
         } as React.CSSProperties
       }
     >
-      {showChart ? (
+      {showChart && tableVariant === "profitability" ? (
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
             <dt className="text-muted-foreground text-xs">추정 판매액 합계</dt>
@@ -168,7 +176,7 @@ export function ProductProfitabilityReport({
         </dl>
       ) : null}
 
-      {showChart ? (
+      {showChart && tableVariant === "profitability" ? (
         <ChartContainer config={chartConfig} className="h-[360px] w-full">
           <BarChart
             accessibilityLayer
@@ -221,6 +229,10 @@ export function ProductProfitabilityReport({
             </Bar>
           </BarChart>
         </ChartContainer>
+      ) : null}
+
+      {showChart && tableVariant === "salesRanking" ? (
+        <SalesRankingChart items={salesRankingChartItems} />
       ) : null}
 
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
@@ -338,7 +350,7 @@ export function ProductProfitabilityReport({
         )}
       </p>
 
-      {showChart ? (
+      {showChart && tableVariant === "profitability" ? (
         <>
           <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
             <span>이익률 색상:</span>
@@ -358,14 +370,15 @@ export function ProductProfitabilityReport({
           </p>
         </>
       ) : null}
-      {data.salesPriceFallbackItemCount > 0 ? (
+      {tableVariant === "profitability" &&
+      data.salesPriceFallbackItemCount > 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-500">
           판매가 계획이 없어 매입단가로 대체한(판매가 미반영) 품목{" "}
           {data.salesPriceFallbackItemCount}개가 있어 추정 매출·이익률이 실제
           의도보다 낮게 보일 수 있습니다.
         </p>
       ) : null}
-      {data.unavailableItemCount > 0 ? (
+      {tableVariant === "profitability" && data.unavailableItemCount > 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-500">
           추정 판매액이 0이라 이익률을 낼 수 없는 품목{" "}
           {data.unavailableItemCount}
@@ -373,5 +386,85 @@ export function ProductProfitabilityReport({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function SalesRankingChart({
+  items,
+}: {
+  items: ProductProfitabilityReportItem[];
+}) {
+  const chartHeight = Math.max(280, items.length * 44 + 40);
+
+  return (
+    <ChartContainer
+      aria-label="품목별 판매수량 상위 10개 차트"
+      className="min-h-72 w-full"
+      config={salesRankingChartConfig}
+      style={{ height: chartHeight }}
+    >
+      <BarChart
+        accessibilityLayer
+        data={items}
+        layout="vertical"
+        margin={{ top: 4, right: 64, left: 8, bottom: 4 }}
+      >
+        <CartesianGrid horizontal={false} />
+        <XAxis
+          axisLine={false}
+          tickFormatter={(value: number) => quantityFormatter.format(value)}
+          tickLine={false}
+          type="number"
+        />
+        <YAxis
+          axisLine={false}
+          dataKey="productName"
+          tickLine={false}
+          type="category"
+          width={110}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              hideLabel
+              formatter={(_value, _name, item) => {
+                const row = item.payload as ProductProfitabilityReportItem;
+
+                return (
+                  <div className="grid min-w-48 gap-1">
+                    <span className="font-medium">{row.productName}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {row.productSpec || "규격 없음"}
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      판매수량 {quantityFormatter.format(row.soldQuantity)}
+                    </span>
+                  </div>
+                );
+              }}
+            />
+          }
+        />
+        <Bar dataKey="soldQuantity" fill="var(--color-soldQuantity)" radius={4}>
+          {items.map((item) => (
+            <Cell
+              data-testid={`daily-product-sales-bar-${item.productId}`}
+              fill="var(--color-soldQuantity)"
+              key={item.productId}
+            />
+          ))}
+          <LabelList
+            className="fill-foreground text-xs"
+            dataKey="soldQuantity"
+            formatter={(value) =>
+              quantityFormatter.format(
+                typeof value === "number" ? value : Number(value),
+              )
+            }
+            position="right"
+          />
+        </Bar>
+      </BarChart>
+    </ChartContainer>
   );
 }

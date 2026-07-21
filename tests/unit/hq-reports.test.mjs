@@ -262,10 +262,20 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     /tableVariant\?: "profitability" \| "salesRanking"/,
   );
   assert.match(componentSource, /tableVariant = "profitability"/);
-  assert.match(componentSource, /\{showChart \? \(\s*<dl/);
+  assert.match(
+    componentSource,
+    /\{showChart && tableVariant === "profitability" \? \(\s*<dl/,
+  );
   assert.match(componentSource, /tableVariant === "salesRanking"/);
   assert.match(componentSource, /b\.soldQuantity - a\.soldQuantity/);
   assert.match(componentSource, /\.slice\(0, 10\)/);
+  assert.match(componentSource, /const salesRankingChartItems = useMemo/);
+  assert.match(
+    componentSource,
+    /<SalesRankingChart items=\{salesRankingChartItems\}/,
+  );
+  assert.match(componentSource, /data=\{items\}[\s\S]*?dataKey="soldQuantity"/);
+  assert.match(componentSource, /품목별 판매수량 상위 10개 차트/);
   assert.match(componentSource, /<BarChart[\s\S]*?data=\{data\.items\}/);
   assert.match(componentSource, /data\.items\.map\(\(item\) =>/);
   assert.doesNotMatch(componentSource, /<BarChart[\s\S]*?data=\{rankedItems\}/);
@@ -293,7 +303,7 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /판매수량 = 전일재고 \+ 당일매입 − 손실수량 − 당일재고/,
   );
-  assert.match(dailyPageSource, /mode="table"/);
+  assert.match(dailyPageSource, /mode="both"/);
   assert.match(dailyPageSource, /tableVariant="salesRanking"/);
   assert.match(dailyPageSource, /품목별 판매 현황/);
   assert.match(
@@ -385,6 +395,9 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.match(salesSource, /ReferenceLine/);
   assert.match(salesSource, /lg:grid-cols-3/);
   assert.match(salesSource, /deviationRate/);
+  assert.match(salesSource, /deviationAmount/);
+  assert.match(salesSource, /formatShareWithAmount/);
+  assert.match(salesSource, /formatPercentWithAmount/);
   assert.match(salesSource, /표시할 매출 분석 데이터가 없습니다\./);
   assert.doesNotMatch(salesSource, /전체 평균 대비/);
   assert.doesNotMatch(salesSource, /\.reduce\(|\/\s*(?:total|previous|sales)/);
@@ -2288,11 +2301,13 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
   );
   assert.equal(inventoryRatio.inventoryAmount.value, 30_000);
   assert.equal(inventoryRatio.salesAmount.value, 120_000);
+  assert.equal(inventoryRatio.deviationAmount.value, -90_000);
   assert.equal(inventoryRatio.deviationRate.value, -0.75);
   const zeroSalesInventory = analysis.inventoryRatios.find(
     (row) => row.storeId === "store-zero",
   );
   assert.equal(zeroSalesInventory.inventoryAmount.value, 10_000);
+  assert.equal(zeroSalesInventory.deviationAmount.value, 10_000);
   assert.equal(zeroSalesInventory.deviationRate.value, null);
   assert.equal(zeroSalesInventory.deviationRate.reason, "선택일 매출 0원");
   for (const storeId of ["store-incomplete", "store-corrected-inventory"]) {
@@ -2300,6 +2315,7 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
       (item) => item.storeId === storeId,
     );
     assert.equal(row.inventoryAmount.value, null);
+    assert.equal(row.deviationAmount.value, null);
     assert.equal(row.deviationRate.value, null);
   }
   assert.equal(
@@ -2430,7 +2446,9 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     },
   ]).inventoryRatios;
   assert.equal(inventoryDeviationEdges[0].deviationRate.value, 0);
+  assert.equal(inventoryDeviationEdges[0].deviationAmount.value, 0);
   assert.equal(inventoryDeviationEdges[1].deviationRate.value, 1.5);
+  assert.equal(inventoryDeviationEdges[1].deviationAmount.value, 150_000);
 
   const attendance = buildDailyAttendanceReport(stores);
   assert.deepEqual(attendance.summary, {

@@ -1015,6 +1015,7 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     .filter({ hasText: "스토리6-1 정정마감점" });
   await expect(inventoryRatioRow).toContainText("₩120,000");
   await expect(inventoryRatioRow).toContainText("+166.7%");
+  await expect(inventoryCard).toContainText("+166.7% (75,000원)");
   await expect(salesChangeCard).toContainText("전일 매출 0원");
   const incompleteInventoryRow = inventoryCard
     .getByRole("table", { name: "지점별 매출 대비 재고 편차 데이터" })
@@ -1031,6 +1032,7 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(positionCard).toContainText("가 동률점");
   await expect(positionCard).toContainText("나 동률점");
   await expect(positionCard).toContainText("스토리6-1 정정마감점");
+  await expect(positionCard).toContainText(/\d+(?:\.\d+)?% \([\d,]+원\)/);
   await expect(positionCard).not.toContainText("전체 평균 대비");
   await expect(positionCard).toContainText(
     "스토리6-1 미입력점: 선택일 장부 미입력",
@@ -1280,7 +1282,12 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     const section = page
       .locator("section")
       .filter({ hasText: "품목별 판매 현황" });
-    await expect(section.locator(".recharts-wrapper")).toHaveCount(0);
+    await expect(
+      section.getByLabel("품목별 판매수량 상위 10개 차트"),
+    ).toBeVisible();
+    await expect(
+      section.locator('[data-testid^="daily-product-sales-bar-"]'),
+    ).toHaveCount(10);
     await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
     for (const summaryLabel of [
       "추정 판매액 합계",

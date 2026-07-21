@@ -55,6 +55,7 @@ type InventoryChartRow = {
   storeName: string;
   deviationRate: number;
   deviationLabel: string;
+  compactLabel: string;
 };
 
 type UnavailableRow = {
@@ -152,7 +153,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
           storeId: row.storeId,
           storeName: row.storeName,
           share: row.share.value,
-          shareLabel: formatShare(row.share),
+          shareLabel: formatShareWithAmount(row.share, row.salesAmount),
           changeLabel: formatChangeWithAmount(row.rate, row.difference),
           color: chartColors[index % chartColors.length]!,
         },
@@ -180,14 +181,26 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
 
   const inventoryRows: InventoryChartRow[] = data.inventoryRatios.flatMap(
     (row) => {
-      if (row.deviationRate.value === null) return [];
+      if (
+        row.deviationRate.value === null ||
+        row.deviationAmount.value === null
+      ) {
+        return [];
+      }
 
       return [
         {
           storeId: row.storeId,
           storeName: row.storeName,
           deviationRate: row.deviationRate.value,
-          deviationLabel: formatPercent(row.deviationRate),
+          deviationLabel: formatPercentWithAmount(
+            row.deviationRate,
+            row.deviationAmount,
+          ),
+          compactLabel: formatCompactPercentWithAmount(
+            row.deviationRate,
+            row.deviationAmount,
+          ),
         },
       ];
     },
@@ -235,7 +248,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
         <CardHeader>
           <CardTitle>매장 매출 포지션</CardTitle>
           <CardDescription>
-            전체 매출에서 각 지점이 차지하는 비중입니다.
+            전체 매출 비중과 선택일 매출액을 함께 표시합니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
@@ -257,14 +270,17 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
         <CardHeader>
           <CardTitle>재고비율</CardTitle>
           <CardDescription>
-            (재고금액 - 매출액) ÷ 매출액 편차를 부호로 표시합니다.
+            (재고금액 - 매출액) ÷ 매출액 편차율과 편차액을 표시합니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
           {inventoryRows.length === 0 ? (
             <EmptyChartMessage message="계산 가능한 재고비율이 없습니다." />
           ) : (
-            <InventoryDeviationChart rows={inventoryRows} />
+            <>
+              <InventoryDeviationChart rows={inventoryRows} />
+              <InventoryDeviationLegend rows={inventoryRows} />
+            </>
           )}
           <InventoryAccessibleTable data={data} />
         </CardContent>
@@ -487,7 +503,7 @@ function SalesChangeLegend({ rows }: { rows: SalesChangeChartRow[] }) {
 
 function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
   const values = rows.map((row) => row.deviationRate);
-  const chartHeight = Math.max(220, rows.length * 48 + 40);
+  const chartHeight = Math.max(220, rows.length * 52 + 40);
 
   return (
     <ChartContainer
@@ -500,7 +516,7 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
         accessibilityLayer
         data={rows}
         layout="vertical"
-        margin={getSignedChartMargin(values, 52)}
+        margin={getSignedChartMargin(values, 104)}
       >
         <CartesianGrid horizontal={false} />
         <XAxis
@@ -555,10 +571,28 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
               key={row.storeId}
             />
           ))}
-          <LabelList content={SignedValueLabel} dataKey="deviationLabel" />
+          <LabelList content={SignedTwoLineLabel} dataKey="compactLabel" />
         </Bar>
       </BarChart>
     </ChartContainer>
+  );
+}
+
+function InventoryDeviationLegend({ rows }: { rows: InventoryChartRow[] }) {
+  return (
+    <ul className="grid gap-2" aria-label="지점별 재고 편차율과 편차액 상세">
+      {rows.map((row) => (
+        <li
+          className="flex min-w-0 items-start justify-between gap-2 text-xs"
+          key={row.storeId}
+        >
+          <span className="truncate font-medium">{row.storeName}</span>
+          <span className="shrink-0 text-right tabular-nums">
+            {row.deviationLabel}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -676,6 +710,7 @@ function InventoryAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
             <th>재고금액</th>
             <th>매출액</th>
             <th>재고 편차율</th>
+            <th>재고 편차액</th>
             <th>계산 상태</th>
           </tr>
         </thead>
@@ -686,6 +721,7 @@ function InventoryAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
               <td>{formatMoney(row.inventoryAmount)}</td>
               <td>{formatMoney(row.salesAmount)}</td>
               <td>{formatPercent(row.deviationRate)}</td>
+              <td>{formatMoney(row.deviationAmount)}</td>
               <td>
                 {row.deviationRate.value === null
                   ? getUnavailableReason(row.deviationRate)
@@ -730,32 +766,6 @@ function SignedTwoLineLabel({ x, y, width, height, value }: LabelProps) {
   );
 }
 
-function SignedValueLabel({ x, y, width, height, value }: LabelProps) {
-  if (
-    typeof x !== "number" ||
-    typeof y !== "number" ||
-    typeof width !== "number" ||
-    typeof height !== "number" ||
-    typeof value !== "string"
-  ) {
-    return null;
-  }
-
-  const isNegative = value.startsWith("-");
-
-  return (
-    <text
-      className="fill-foreground text-[10px]"
-      dominantBaseline="central"
-      textAnchor={isNegative ? "end" : "start"}
-      x={isNegative ? x - 8 : x + width + 8}
-      y={y + height / 2}
-    >
-      {value}
-    </text>
-  );
-}
-
 function getSignedDomain(values: number[]): [number, number] {
   const minimum = Math.min(0, ...values);
   const maximum = Math.max(0, ...values);
@@ -796,6 +806,37 @@ function formatShare(metric: LedgerReviewMetric) {
   return metric.value === null
     ? formatUnavailable(metric)
     : unsignedPercentFormatter.format(metric.value);
+}
+
+function formatShareWithAmount(
+  share: LedgerReviewMetric,
+  salesAmount: LedgerReviewMetric,
+) {
+  if (share.value === null || salesAmount.value === null) {
+    return formatUnavailable(share.value === null ? share : salesAmount);
+  }
+
+  return `${unsignedPercentFormatter.format(share.value)} (${formatSignedWon(salesAmount.value)})`;
+}
+
+function formatPercentWithAmount(
+  rate: LedgerReviewMetric,
+  amount: LedgerReviewMetric,
+) {
+  if (rate.value === null || amount.value === null) {
+    return formatUnavailable(rate.value === null ? rate : amount);
+  }
+
+  return `${percentFormatter.format(rate.value)} (${formatSignedWon(amount.value)})`;
+}
+
+function formatCompactPercentWithAmount(
+  rate: LedgerReviewMetric,
+  amount: LedgerReviewMetric,
+) {
+  if (rate.value === null || amount.value === null) return "계산 불가|";
+
+  return `${percentFormatter.format(rate.value)}|(${formatSignedWon(amount.value)})`;
 }
 
 function formatChangeWithAmount(

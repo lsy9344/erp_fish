@@ -53,6 +53,7 @@ export default function DailyMeetingReportLoading() {
 
       <LoadingSection title="품목별 판매 현황">
         <Skeleton className="h-9 w-56" />
+        <Skeleton className="mt-3 h-96 w-full" />
         <Skeleton className="mt-3 h-48 w-full" />
       </LoadingSection>
 

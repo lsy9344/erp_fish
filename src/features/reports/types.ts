@@ -78,6 +78,7 @@ export type DailyInventoryRatioRow = {
   storeName: string;
   inventoryAmount: LedgerReviewMetric;
   salesAmount: LedgerReviewMetric;
+  deviationAmount: LedgerReviewMetric;
   deviationRate: LedgerReviewMetric;
 };
 

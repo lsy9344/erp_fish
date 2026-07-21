@@ -202,7 +202,7 @@ export default async function DailyMeetingReportPage({
         <div className="mt-3">
           <ProductProfitabilityReport
             data={report.productProfitability}
-            mode="table"
+            mode="both"
             tableVariant="salesRanking"
           />
         </div>
