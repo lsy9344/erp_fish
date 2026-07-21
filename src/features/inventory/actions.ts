@@ -261,31 +261,19 @@ function originalInventoryBlockedError(status: string) {
 
 function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
   return Object.fromEntries(
-    data.items.map((item) => {
-      const plannedUnitPrice = (
-        item as typeof item & { plannedUnitPrice?: number | null }
-      ).plannedUnitPrice;
-
-      return [
-        item.productName,
-        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
-      ];
-    }),
+    data.items.map((item) => [
+      item.productName,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${item.plannedUnitPrice ?? "-"}`,
+    ]),
   );
 }
 
 function toInventoryClientValues(input: LedgerInventoryInput) {
   return Object.fromEntries(
-    input.items.map((item) => {
-      const plannedUnitPrice = (
-        item as typeof item & { plannedUnitPrice?: number | null }
-      ).plannedUnitPrice;
-
-      return [
-        item.productId,
-        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
-      ];
-    }),
+    input.items.map((item) => [
+      item.productId,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${item.plannedUnitPrice}`,
+    ]),
   );
 }
 
