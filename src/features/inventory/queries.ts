@@ -411,6 +411,7 @@ function toInventoryLine(
     productCategory: base.productCategory,
     productSpec: base.productSpec,
     purchasePrice: null,
+    plannedUnitPrice: null,
     unitPrice: base.unitPrice,
     previousQuantity: base.previousQuantity,
     purchasedQuantity,
@@ -467,6 +468,7 @@ function toExistingInventoryLine(
     productCategory: item.productCategory,
     productSpec: item.productSpec,
     purchasePrice: null,
+    plannedUnitPrice: null,
     unitPrice: item.unitPrice,
     previousQuantity,
     purchasedQuantity:
