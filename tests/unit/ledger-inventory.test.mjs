@@ -2161,7 +2161,10 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(actionSource, /action:\s*"ledger\.inventory\.saved"/);
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateInventoryPaths\(\)/);
-  assert.match(actionSource, /revalidateStoreEntryPaths\(\["inventory"\]\)/);
+  assert.match(
+    actionSource,
+    /revalidateStoreEntryPaths\(\["root",\s*"inventory",\s*"losses"\]\)/,
+  );
 });
 
 test("inventory purchase price DTO and UI expose only the approved nested field", () => {

@@ -438,7 +438,7 @@ test("ledger purchase schema treats plannedUnitPrice as optional and blocks same
   assert.equal(negative.success, false);
 });
 
-test("carryover rows: schema discriminates kind; save skips purchase create; GET appends from inventory", async () => {
+test("legacy carryover payloads remain harmless while purchase no longer writes plans", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -477,8 +477,7 @@ test("carryover rows: schema discriminates kind; save skips purchase create; GET
   assert.equal(carry.purchases[0].kind, "carryover");
   assert.equal(carry.purchases[0].plannedUnitPrice, 5000);
 
-  // 저장 액션: carryover 행은 ledgerPurchaseItem 생성에서 제외(realPurchases)하되
-  // 판매 예정가 저장(saveStoreSalesPricePlansForPurchasesInTx)에는 전체 purchases를 넘긴다.
+  // stale clients may still send carryover rows, but they never create purchases or write plans.
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -495,25 +494,17 @@ test("carryover rows: schema discriminates kind; save skips purchase create; GET
       actionSource.indexOf('purchase.kind !== "carryover"'),
     "all incoming existing IDs must be consumed before carryover rows are filtered out",
   );
-  // 계획 저장은 carryover를 포함한 전체 purchases를 받는다(이월 판매가도 저장).
-  assert.match(
-    actionSource,
-    /saveStoreSalesPricePlansForPurchasesInTx\(tx,\s*\{[\s\S]*?purchases:\s*parsed\.data\.purchases/,
-  );
+  assert.doesNotMatch(actionSource, /storeSalesPricePlan/);
 
-  // GET/저장 응답: 전일재고>0 이고 오늘 매입 안 한 품목을 carryover 행으로 붙인다.
+  // GET no longer appends virtual carryover plan-editor rows.
   const queriesSource = readProjectFile(
     "src",
     "features",
     "ledger",
     "queries.ts",
   );
-  assert.match(queriesSource, /previousQuantity:\s*\{\s*gt:\s*0\s*\}/);
-  assert.match(
-    queriesSource,
-    /productId:\s*\{\s*notIn:\s*\[\.\.\.purchaseProductIds\]/,
-  );
-  assert.match(queriesSource, /kind:\s*"carryover" as const/);
+  assert.doesNotMatch(queriesSource, /fillPurchasePlannedUnitPricesInTx/);
+  assert.doesNotMatch(queriesSource, /kind:\s*"carryover" as const/);
 });
 
 test("store purchase edit policy blocks ECount uploaded rows from store edits", async () => {
@@ -743,21 +734,9 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   assert.match(actionSource, /writeAuditLog\(/);
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
 
-  // WO(2026-06-25): 매입 저장 트랜잭션이 "오늘 팔 가격(예상)"을 StoreSalesPricePlan에
-  // 함께 반영한다. 같은 품목은 upsert로 하루 1개 값, 비운 품목은 deleteMany로 계획 삭제.
-  assert.match(actionSource, /saveStoreSalesPricePlansForPurchasesInTx\(/);
-  assert.match(actionSource, /tx\.storeSalesPricePlan\.upsert/);
-  assert.match(actionSource, /tx\.storeSalesPricePlan\.deleteMany/);
-  assert.match(actionSource, /syncLedgerLossItemsWithSalesPricePlansInTx/);
-  // 저장 응답도 매입 행에 판매 예정가를 채워야 한다(없으면 저장 직후 미저장 변경 경고가 잘못 뜸).
-  assert.match(actionSource, /fillPurchasePlannedUnitPricesInTx\(/);
-  // 계획 반영은 매입 행 생성 이후, 같은 트랜잭션에서 일어나야 한다(부분 저장 방지).
-  assert.ok(
-    actionSource.indexOf("tx.ledgerPurchaseItem.createMany") <
-      actionSource.indexOf("await saveStoreSalesPricePlansForPurchasesInTx("),
-    "sales price plan upsert should run after purchase rows are created",
-  );
-  // 판매 예정가와 손실 검토 상태가 함께 바뀌므로 후속 손실/재고 페이지를 갱신한다.
+  // Purchase save is a sales-plan no-op and only refreshes inventory-derived screens.
+  assert.doesNotMatch(actionSource, /storeSalesPricePlan/);
+  assert.doesNotMatch(actionSource, /fillPurchasePlannedUnitPricesInTx/);
   assert.match(
     actionSource,
     /revalidateStoreEntryPaths\(\["losses",\s*"inventory"\]\)/,

@@ -61,9 +61,7 @@ test("sales price plan model, queries, and actions follow expected contracts", (
   assert.match(querySource, /getPlannedUnitPriceLookup/);
 });
 
-test("planned-price sync invalidates loss review and bumps version on real changes only", () => {
-  // P2(2026-06-29 검토): 판매가 계획 저장이 손실 장부를 바꾸면 본사 손실 검토를 무효화하고
-  // 장부 version을 올려야 한다. 또한 값이 그대로면 아무 변경도 하지 않아야 한다(무음 변경 방지).
+test("planned-price sync updates derived losses without owning ledger metadata", () => {
   const syncSource = readProjectFile(
     "src",
     "features",
@@ -77,11 +75,9 @@ test("planned-price sync invalidates loss review and bumps version on real chang
   assert.match(syncSource, /const unchanged =/);
   // 변경된 손실의 장부만 모은다.
   assert.match(syncSource, /affectedLedgerIds/);
-  // 손실 검토 무효화 + 버전 증가를 한 번에 처리한다.
-  assert.match(
-    syncSource,
-    /dailyLedger\.updateMany\([\s\S]*lossReviewedById:\s*null[\s\S]*lossReviewedAt:\s*null[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/s,
-  );
+  assert.doesNotMatch(syncSource, /dailyLedger\.updateMany/);
+  assert.doesNotMatch(syncSource, /lossReviewedAt:\s*null/);
+  assert.match(syncSource, /writer가 소유/);
 });
 
 test("sales plan loss context renders loss calculation basis; old route redirects to inventory", () => {
