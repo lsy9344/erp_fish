@@ -28,8 +28,6 @@ import {
   parseStockQuantityDraft,
   toStockQuantitySaveInput,
 } from "~/lib/decimal";
-import { formatQuantityValue } from "~/lib/format";
-import { cn } from "~/lib/utils";
 
 type ProductOption = {
   id: string;
@@ -55,13 +53,6 @@ type PurchaseLine = {
   quantity: string;
   storedQuantity: number | null;
   referenceInfo: string;
-  // 3단계 매입 화면에 통합한 "오늘 팔 가격(예상)". 빈 문자열은 "계획 없음"이다.
-  // 품목이 없는 자유 입력 행은 저장 대상이 아니라 항상 빈 값으로 둔다.
-  plannedUnitPrice: string;
-  // "carryover" = 전일 이월돼 오늘 팔린 품목. 매입 행이 아니라 판매 예정가만 받는다.
-  kind: "purchase" | "carryover";
-  // carryover 행에 "전일재고 N"으로 표시할 전일 재고 수량.
-  previousQuantity: number;
   // WO-12(2026-06-28): 본사 화면에서 원본 이카운트 단가를 적용 단가와 나란히 표시(읽기 전용).
   sourceUnitPrice: number | null;
   unitPriceOverridden: boolean;
@@ -78,9 +69,6 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
-  // 판매 예정가("오늘 팔 가격") 입력은 지점장 매입 화면 전용이다. 본사 검토 장부 탭에서는
-  // 끈다(본사 저장 경로는 판매가 계획을 쓰지 않는다).
-  showSalesPricePlan?: boolean;
 };
 
 function formatKrw(value: number | null) {
@@ -125,9 +113,6 @@ function createLineState(id: string): PurchaseLine {
     quantity: "",
     storedQuantity: null,
     referenceInfo: "",
-    plannedUnitPrice: "",
-    kind: "purchase",
-    previousQuantity: 0,
     sourceUnitPrice: null,
     unitPriceOverridden: false,
   };
@@ -149,10 +134,6 @@ function toPurchaseLines(
     quantity: String(item.quantity),
     storedQuantity: item.quantity,
     referenceInfo: item.referenceInfo ?? "",
-    plannedUnitPrice:
-      item.plannedUnitPrice === null ? "" : String(item.plannedUnitPrice),
-    kind: item.kind,
-    previousQuantity: item.previousQuantity,
     sourceUnitPrice: item.sourceUnitPrice ?? null,
     unitPriceOverridden: item.unitPriceOverridden ?? false,
   }));
@@ -186,7 +167,6 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
-  showSalesPricePlan = true,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -195,7 +175,6 @@ export function PurchaseStepClient({
   const productSpecRefs = useRef<(HTMLInputElement | null)[]>([]);
   const unitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const plannedUnitPriceRefs = useRef<(HTMLInputElement | null)[]>([]);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const authorDisplayNameInputRef = useRef<HTMLInputElement>(null);
   const nextDraftLineNumberRef = useRef(0);
@@ -219,7 +198,6 @@ export function PurchaseStepClient({
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
-  const [carryoverWarning, setCarryoverWarning] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const saveConflict = useSaveConflictDialog();
@@ -314,10 +292,6 @@ export function PurchaseStepClient({
           return;
         }
 
-        if (errors[`purchases.${index}.plannedUnitPrice`]?.length) {
-          plannedUnitPriceRefs.current[index]?.focus();
-          return;
-        }
       }
 
       if (errors.reason?.length) {
@@ -331,9 +305,7 @@ export function PurchaseStepClient({
     setAuthorDisplayName(next.authorDisplayName ?? "");
     setPurchaseItems(toPurchaseLines(next.purchaseItems));
     notifyLedgerUpdated(next);
-    const savedCount = next.purchaseItems.filter(
-      (item) => item.kind !== "carryover",
-    ).length;
+    const savedCount = next.purchaseItems.length;
     const nextMessage =
       message ??
       (savedCount > 0
@@ -342,15 +314,6 @@ export function PurchaseStepClient({
     setResultMessage(nextMessage);
     toast.success(nextMessage);
 
-    // 저장은 됐지만 이월 품목 판매가가 비어 있으면 경고 배너로 알린다(차단은 안 함).
-    const blankCarryover = next.purchaseItems.filter(
-      (item) => item.kind === "carryover" && item.plannedUnitPrice === null,
-    ).length;
-    setCarryoverWarning(
-      blankCarryover > 0
-        ? `전일 이월 품목 ${blankCarryover}개의 오늘 판매가가 비어 있습니다. 입력하지 않으면 7단계 추정 매출이 “데이터 부족”으로 표시됩니다.`
-        : null,
-    );
   }
 
   function clearRowErrors() {
@@ -369,8 +332,6 @@ export function PurchaseStepClient({
       productSpec: productSpecRefs.current[index]?.value ?? line.productSpec,
       unitPrice: unitPriceRefs.current[index]?.value ?? line.unitPrice,
       quantity: quantityRefs.current[index]?.value ?? line.quantity,
-      plannedUnitPrice:
-        plannedUnitPriceRefs.current[index]?.value ?? line.plannedUnitPrice,
     }));
   }
 
@@ -382,7 +343,6 @@ export function PurchaseStepClient({
 
     setIsSaving(true);
     setResultMessage(null);
-    setCarryoverWarning(null);
     setFormError(null);
     setFieldErrors({});
 
@@ -402,7 +362,6 @@ export function PurchaseStepClient({
           : {}),
         purchases: lines.map((line) => ({
           id: line.id,
-          kind: line.kind,
           sourceType: line.sourceType,
           productId: line.productId,
           purchaseStandardId: line.purchaseStandardId,
@@ -415,10 +374,6 @@ export function PurchaseStepClient({
             line.quantity,
             line.storedQuantity,
           ),
-          // 판매 예정가는 지점장 매입 화면 전용이고 품목 행만 저장 대상이다.
-          ...(showSalesPricePlan
-            ? { plannedUnitPrice: line.productId ? line.plannedUnitPrice : "" }
-            : {}),
         })),
         ...(hqEditReasonRequired
           ? {
@@ -496,24 +451,11 @@ export function PurchaseStepClient({
   function updatePurchaseLine(lineId: string, next: Partial<PurchaseLine>) {
     clearRowErrors();
     setResultMessage(null);
-    setCarryoverWarning(null);
-    setPurchaseItems((current) => {
-      const targetProductId = current.find(
-        (line) => line.id === lineId,
-      )?.productId;
-
-      return current.map((line) => {
-        if (line.id === lineId) {
-          return { ...line, ...next };
-        }
-
-        return next.plannedUnitPrice !== undefined &&
-          targetProductId &&
-          line.productId === targetProductId
-          ? { ...line, plannedUnitPrice: next.plannedUnitPrice }
-          : line;
-      });
-    });
+    setPurchaseItems((current) =>
+      current.map((line) =>
+        line.id === lineId ? { ...line, ...next } : line,
+      ),
+    );
   }
 
   function applyProduct(lineId: string, productId: string) {
@@ -525,17 +467,6 @@ export function PurchaseStepClient({
     clearRowErrors();
     setResultMessage(null);
     setPurchaseItems((current) => {
-      // Task 4: 품목을 바꾸면 직전 품목의 판매 예정가가 따라오지 않게 새 품목 기준으로 다시
-      // 채운다. 같은 품목이 다른 행에 이미 있으면(하루 1개 값) 그 값을 가져와 일관성을 맞춘다.
-      const siblingPlanned = productId
-        ? (current.find(
-            (line) =>
-              line.id !== lineId &&
-              line.productId === productId &&
-              line.plannedUnitPrice !== "",
-          )?.plannedUnitPrice ?? "")
-        : "";
-
       return current.map((line) =>
         line.id === lineId
           ? {
@@ -548,7 +479,6 @@ export function PurchaseStepClient({
               referenceUnitPrice,
               unitPrice:
                 referenceUnitPrice === null ? "" : String(referenceUnitPrice),
-              plannedUnitPrice: siblingPlanned,
             }
           : line,
       );
@@ -557,15 +487,7 @@ export function PurchaseStepClient({
 
   const isFormSaving = isSaving;
   const draftPurchaseTotal = getDraftPurchaseTotal(purchaseItems);
-  // 전일 이월 품목(carryover) 행은 매입 합계에 잡히지 않고(0/0), 매입 항목 목록과 분리해
-  // 별도 섹션에 노출한다. carryover 행은 서버가 항상 일반 매입 행 뒤에 붙여 보내므로
-  // purchaseItems 내 index가 서버의 purchases.${index} 필드 오류 인덱스와 그대로 맞는다.
-  const hasPurchaseRows = purchaseItems.some(
-    (line) => line.kind !== "carryover",
-  );
-  const carryoverLines = purchaseItems.filter(
-    (line) => line.kind === "carryover",
-  );
+  const hasPurchaseRows = purchaseItems.length > 0;
   const hqEditReasonError = fieldErrors.reason?.[0];
   const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
