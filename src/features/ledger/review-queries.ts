@@ -18,6 +18,7 @@ import {
   getLedgerReviewStepHref,
 } from "./review-validation";
 import { getStoreEntryStepCompletion } from "./step-completion";
+import { getInventoryPlanGate } from "./inventory-plan-gate";
 import type {
   LedgerReviewMissingItem,
   LedgerReviewStepId,
@@ -524,6 +525,13 @@ export async function getLedgerReviewStepData(
     );
     const getPlannedUnitPrice = (productId: string): number | null =>
       plannedUnitPriceByProductId.get(productId) ?? null;
+    const inventoryGate = getInventoryPlanGate({
+      targetProductIds: inventory.items.map((item) => item.productId),
+      persistedInventoryProductIds: savedInventoryItems.map(
+        (item) => item.productId,
+      ),
+      plannedProductIds: salesPricePlans.map((plan) => plan.productId),
+    });
     // 손실 수량을 품목별로 합산한다. "오늘 많이 팔린 품목" 판매량 추정에서
     // 기준재고(전일+매입-손실)를 쓰기 위해 필요하다.
     const lossQuantityByProductId = new Map<string, number>();
@@ -585,6 +593,7 @@ export async function getLedgerReviewStepData(
       purchaseCount: ledger.ledgerPurchaseItems.length,
       hasInventoryUnavailable,
       inventoryCount: savedInventoryItems.length,
+      missingInventoryPlanCount: inventoryGate.missingPlanProductIds.length,
       lossCount: losses.lossItems.length,
       workerCount: ledger.workerCount,
     });
@@ -611,7 +620,7 @@ export async function getLedgerReviewStepData(
         workerCount: ledger.workerCount,
         ledgerExpenses: ledger.ledgerExpenses,
         ledgerPurchaseItems: ledger.ledgerPurchaseItems,
-        inventoryItemCount: savedInventoryItems.length,
+        inventoryComplete: inventoryGate.complete,
         lossItemCount: losses.lossItems.length,
         lossReviewedAt: ledger.lossReviewedAt,
       }),

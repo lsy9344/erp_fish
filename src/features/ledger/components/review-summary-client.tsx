@@ -364,11 +364,10 @@ export function ReviewSummaryClient({
               오늘 많이 팔린 품목
             </h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              추정 매출은 1단계 매입의 오늘 팔 가격(예상)을 우선 사용합니다.
+              추정 매출은 3단계 재고의 판매계획가를 우선 사용합니다.
               값이 없는 품목은 매입 단가로 대체해 표시합니다(판매가 미반영).
             </p>
-            {/* WO(2026-06-25): 판매가 미반영 품목이 있으면 입력 위치인 3단계 매입으로
-                바로 이동할 수 있게 안내한다. 현재 지점/영업일을 유지한 채 step=purchase로 간다. */}
+            {/* 판매가 미반영 품목은 판매계획가 입력 위치인 3단계 재고로 안내한다. */}
             {currentReviewData.topSoldItems.some(
               (item) => item.salesBasis === "cost",
             ) ? (
@@ -379,15 +378,14 @@ export function ReviewSummaryClient({
                 className="mt-2 min-h-8"
               >
                 <a
-                  href={`/app/store-entry?${new URLSearchParams({
+                  href={`/app/store-entry/inventory?${new URLSearchParams({
                     storeId: currentReviewData.storeId,
                     date: getKstLedgerDateParam(currentReviewData.closingDate),
-                    step: "purchase",
                   }).toString()}`}
-                  aria-label="1단계 매입에서 오늘 팔 가격 입력"
+                  aria-label="3단계 재고에서 판매계획가 입력"
                 >
                   <ArrowRightIcon aria-hidden="true" />
-                  1단계 매입에서 오늘 팔 가격 입력
+                  3단계 재고에서 판매계획가 입력
                 </a>
               </Button>
             ) : null}

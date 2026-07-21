@@ -35,6 +35,7 @@ export function getLedgerReviewMissingItems({
   purchaseCount,
   hasInventoryUnavailable,
   inventoryCount,
+  missingInventoryPlanCount = 0,
   lossCount,
   workerCount,
 }: {
@@ -46,6 +47,7 @@ export function getLedgerReviewMissingItems({
   purchaseCount: number;
   hasInventoryUnavailable: boolean;
   inventoryCount: number;
+  missingInventoryPlanCount?: number;
   lossCount: number;
   workerCount: number | null;
 }): LedgerReviewMissingItem[] {
@@ -84,6 +86,16 @@ export function getLedgerReviewMissingItems({
         inventoryCount === 0
           ? "재고 항목이 아직 저장되지 않았습니다."
           : "재고 수량 또는 금액 중 계산할 수 없는 항목이 있습니다.",
+    });
+  }
+
+  if (missingInventoryPlanCount > 0) {
+    items.push({
+      id: "inventory-plans",
+      label: "판매계획가",
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
+      status: "missing",
+      detail: `3단계 재고에서 판매계획가가 누락된 품목 ${missingInventoryPlanCount}건을 입력해 주세요.`,
     });
   }
 
