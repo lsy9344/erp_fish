@@ -4,6 +4,7 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
+const FIXTURE_PRODUCT_PREFIX = "장부 비용근무 재고 gate";
 
 // WO-A(2026-06-22): 지점장 저장/제출은 KST 오늘 날짜만 허용하므로 동적 오늘 날짜를 사용한다.
 function getTodayKstMidnight(inputDate = new Date()) {
@@ -169,6 +170,69 @@ async function cleanupStory2TwoLedger() {
       where: { id: { in: ledgerIds } },
     });
   }
+
+  const fixtureProducts = await prisma.product.findMany({
+    where: { name: { startsWith: FIXTURE_PRODUCT_PREFIX } },
+    select: { id: true },
+  });
+  const productIds = fixtureProducts.map((product) => product.id);
+
+  if (productIds.length > 0) {
+    await prisma.storeSalesPricePlan.deleteMany({
+      where: { productId: { in: productIds } },
+    });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+  }
+}
+
+async function seedCompleteInventoryPlanGate() {
+  const actorId = await getManagerUserId();
+  const closingDate = getTodayKstMidnight();
+  const product = await prisma.product.create({
+    data: {
+      name: `${FIXTURE_PRODUCT_PREFIX} ${randomUUID().slice(0, 8)}`,
+      category: "테스트",
+      spec: "1kg",
+      defaultUnitPrice: 1_000,
+      updatedById: actorId,
+    },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      closingDate,
+      status: "IN_PROGRESS",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1_000,
+      previousQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 1_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      businessDate: closingDate,
+      productId: product.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
 }
 
 async function login(page: Page) {
@@ -182,6 +246,7 @@ async function login(page: Page) {
 test.beforeEach(async () => {
   await cleanupStory2TwoLedger();
   await cleanupStory2TwoCodes();
+  await seedCompleteInventoryPlanGate();
 });
 
 test("지점장은 지출 항목을 여러 건 저장하고 재방문 시 유지한다", async ({

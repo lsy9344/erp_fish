@@ -3,6 +3,7 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
+const FIXTURE_PRODUCT_PREFIX = "장부 충돌 재고 gate";
 
 // WO-A(2026-06-22): 지점장 저장/제출은 KST 오늘 날짜만 허용하므로 동적 오늘 날짜를 사용한다.
 function getTodayKstDateParam(inputDate = new Date()) {
@@ -22,6 +23,7 @@ const CONFLICT_DATE = getTodayKstDateParam();
 
 test.beforeEach(async () => {
   await cleanupConflictLedger();
+  await seedCompleteInventoryPlanGate();
 });
 
 test.afterAll(async () => {
@@ -37,30 +39,91 @@ async function cleanupConflictLedger() {
   });
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
-  if (ledgerIds.length === 0) {
-    return;
+  if (ledgerIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+    });
+    await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerInventoryAdjustment.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerPurchaseItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerExpense.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.dailyLedger.deleteMany({
+      where: { id: { in: ledgerIds } },
+    });
   }
 
-  await prisma.auditLog.deleteMany({
-    where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
+  const fixtureProducts = await prisma.product.findMany({
+    where: { name: { startsWith: FIXTURE_PRODUCT_PREFIX } },
+    select: { id: true },
   });
-  await prisma.ledgerLossItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
+  const productIds = fixtureProducts.map((product) => product.id);
+
+  if (productIds.length > 0) {
+    await prisma.storeSalesPricePlan.deleteMany({
+      where: { productId: { in: productIds } },
+    });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+  }
+}
+
+async function seedCompleteInventoryPlanGate() {
+  const actorId = await getManagerUserId();
+  const closingDate = new Date(`${CONFLICT_DATE}T00:00:00.000Z`);
+  const product = await prisma.product.create({
+    data: {
+      name: `${FIXTURE_PRODUCT_PREFIX} ${crypto.randomUUID().slice(0, 8)}`,
+      category: "테스트",
+      spec: "1kg",
+      defaultUnitPrice: 1_000,
+      updatedById: actorId,
+    },
   });
-  await prisma.ledgerInventoryAdjustment.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate,
+      status: "IN_PROGRESS",
+      createdById: actorId,
+      updatedById: actorId,
+    },
   });
-  await prisma.ledgerInventoryItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1_000,
+      previousQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 1_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
   });
-  await prisma.ledgerPurchaseItem.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
-  await prisma.ledgerExpense.deleteMany({
-    where: { dailyLedgerId: { in: ledgerIds } },
-  });
-  await prisma.dailyLedger.deleteMany({
-    where: { id: { in: ledgerIds } },
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: closingDate,
+      productId: product.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
   });
 }
 

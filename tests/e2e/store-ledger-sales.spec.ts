@@ -14,6 +14,7 @@ import {
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
 const EXPENSE_CODE_NAME = "매출 E2E 지출";
+const INVENTORY_GATE_PRODUCT_NAME = "매출 E2E 재고계획 gate";
 
 // WO-A(2026-06-22): 지점장 저장/제출 서버 액션이 KST 오늘 날짜만 허용하므로,
 // 하드코딩 과거 날짜 대신 동적 KST 오늘 날짜를 사용한다.
@@ -62,6 +63,7 @@ test.beforeEach(async () => {
   await prisma.ledgerInputCode.deleteMany({
     where: { group: "EXPENSE_ITEM", name: EXPENSE_CODE_NAME },
   });
+  await seedCompleteInventoryGate();
 });
 
 test.afterAll(async () => {
@@ -74,6 +76,11 @@ test.afterAll(async () => {
 
 async function cleanupSelectedLedger() {
   const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
+  const gateProducts = await prisma.product.findMany({
+    where: { name: INVENTORY_GATE_PRODUCT_NAME },
+    select: { id: true },
+  });
+  const gateProductIds = gateProducts.map((product) => product.id);
   const ledgers = await prisma.dailyLedger.findMany({
     where: { storeId: STORE_ID, closingDate },
     select: { id: true },
@@ -89,8 +96,29 @@ async function cleanupSelectedLedger() {
   await prisma.ledgerExpense.deleteMany({
     where: { dailyLedgerId: { in: ledgerIds } },
   });
+  await prisma.ledgerInventoryAdjustment.deleteMany({
+    where: { dailyLedgerId: { in: ledgerIds } },
+  });
+  await prisma.ledgerInventoryFifoLot.deleteMany({
+    where: { dailyLedgerId: { in: ledgerIds } },
+  });
+  await prisma.ledgerInventoryItem.deleteMany({
+    where: { dailyLedgerId: { in: ledgerIds } },
+  });
+  await prisma.ledgerPurchaseItem.deleteMany({
+    where: { dailyLedgerId: { in: ledgerIds } },
+  });
   await prisma.dailyLedger.deleteMany({
     where: { id: { in: ledgerIds } },
+  });
+  await prisma.storeSalesPricePlan.deleteMany({
+    where: { productId: { in: gateProductIds } },
+  });
+  await prisma.inventoryOpeningSnapshot.deleteMany({
+    where: { productId: { in: gateProductIds } },
+  });
+  await prisma.product.deleteMany({
+    where: { id: { in: gateProductIds } },
   });
   await prisma.ledgerInputCode.deleteMany({
     where: { group: "EXPENSE_ITEM", name: EXPENSE_CODE_NAME },
@@ -303,12 +331,66 @@ async function getManagerUserId() {
   return user!.id;
 }
 
+async function seedCompleteInventoryGate() {
+  const actorId = await getManagerUserId();
+  const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate,
+      status: "IN_PROGRESS",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  const product = await prisma.product.create({
+    data: {
+      name: INVENTORY_GATE_PRODUCT_NAME,
+      category: "냉동",
+      spec: "1kg",
+      defaultUnitPrice: 1_000,
+      updatedById: actorId,
+    },
+  });
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1_000,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 1_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: closingDate,
+      productId: product.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+}
+
 async function seedSelectedLedger(status: DailyLedgerStatus = "IN_PROGRESS") {
   const actorId = await getManagerUserId();
   const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
 
-  return prisma.dailyLedger.create({
-    data: {
+  return prisma.dailyLedger.upsert({
+    where: {
+      storeId_closingDate: { storeId: STORE_ID, closingDate },
+    },
+    create: {
       storeId: STORE_ID,
       closingDate,
       status,
@@ -318,6 +400,15 @@ async function seedSelectedLedger(status: DailyLedgerStatus = "IN_PROGRESS") {
       otherPaymentAmount: 1000,
       workerCount: 2,
       createdById: actorId,
+      updatedById: actorId,
+    },
+    update: {
+      status,
+      totalSalesAmount: 41000,
+      cashAmount: 12000,
+      cardAmount: 28000,
+      otherPaymentAmount: 1000,
+      workerCount: 2,
       updatedById: actorId,
     },
   });

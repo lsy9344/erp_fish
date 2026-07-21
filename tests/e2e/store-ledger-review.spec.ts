@@ -130,6 +130,51 @@ async function seedProduct(name: string, unitPrice: number) {
   return { ...product, defaultUnitPrice: unitPrice };
 }
 
+async function seedSalesPricePlan(
+  productId: string,
+  actorId: string,
+  plannedUnitPrice: number,
+) {
+  return prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      businessDate: getTodayKstMidnight(),
+      productId,
+      plannedUnitPrice,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+}
+
+async function seedInventoryPlanGate(
+  ledgerId: string,
+  currentQuantity: number | null,
+) {
+  const actorId = await getHeadquartersUserId();
+  const suffix = randomUUID().slice(0, 8);
+  const product = await seedProduct(`스토리2-8 재고계획 gate ${suffix}`, 1_000);
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledgerId,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity,
+      quantity: currentQuantity,
+      inventoryAmount: currentQuantity === null ? null : 1_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await seedSalesPricePlan(product.id, actorId, 2_000);
+}
+
 async function seedLedger(data: {
   totalSalesAmount?: number;
   cashAmount?: number;
@@ -169,6 +214,10 @@ async function seedRequiredReviewInputs(ledgerId: string) {
       workerCount: 3,
       updatedById: actorId,
     },
+  });
+  await prisma.ledgerInventoryItem.updateMany({
+    where: { dailyLedgerId: ledgerId, currentQuantity: null },
+    data: { currentQuantity: 0, quantity: 0, inventoryAmount: 0 },
   });
   await prisma.ledgerExpense.create({
     data: {
@@ -210,6 +259,7 @@ async function seedRequiredReviewInputs(ledgerId: string) {
       updatedById: actorId,
     },
   });
+  await seedSalesPricePlan(product.id, actorId, 2_000);
 }
 
 async function getLedgerSubmitAuditCount(ledgerId: string) {
@@ -438,6 +488,7 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
       updatedById: actorId,
     },
   });
+  await seedSalesPricePlan(product.id, actorId, 2_000);
 
   await login(page);
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
@@ -629,6 +680,7 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
       updatedById: actorId,
     },
   });
+  await seedSalesPricePlan(product.id, actorId, 3_000);
 
   await login(page);
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
@@ -715,6 +767,7 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
     otherPaymentAmount: 8_000,
     workerCount: null,
   });
+  await seedInventoryPlanGate(ledger.id, null);
 
   await login(page);
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
