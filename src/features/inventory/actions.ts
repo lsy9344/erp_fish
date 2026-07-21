@@ -68,8 +68,6 @@ type InventoryItemWithPlannedPrice = LedgerInventoryInput["items"][number] & {
 
 const invalidInventoryTargetMessage =
   "저장할 재고 품목이 현재 대상과 일치하지 않습니다. 새로고침 후 다시 시도해 주세요.";
-const invalidInventoryAmountMessage =
-  "재고금액을 계산할 수 없습니다. 수량과 매입단가를 확인해 주세요.";
 
 function getInventoryTargetErrors(
   targetProductIds: ReadonlySet<string>,
@@ -95,16 +93,6 @@ function getInventoryTargetErrors(
     ) {
       errors[`items.${index}.productId`] = ["선택 가능한 품목이 아닙니다."];
     }
-
-    if (
-      !targetProductIds.has(item.productId) &&
-      item.currentQuantity === null &&
-      item.quantity === null
-    ) {
-      errors[`items.${index}.currentQuantity`] = [
-        "직접 추가한 품목의 재고 수량을 입력해 주세요.",
-      ];
-    }
   });
 
   for (const productId of targetProductIds) {
@@ -113,56 +101,6 @@ function getInventoryTargetErrors(
       break;
     }
   }
-
-  return errors;
-}
-
-function getInventoryAmountErrors(
-  beforeItems: Array<{
-    productId: string;
-    unitPrice: number;
-    previousQuantity: number;
-    purchasedQuantity: number;
-    lossQuantity: number;
-    currentQuantity: number | null;
-    quantity: number | null;
-  }>,
-  inputItems: InventoryItemWithPlannedPrice[],
-) {
-  const beforeByProductId = new Map(
-    beforeItems.map((item) => [item.productId, item]),
-  );
-  const errors: Record<string, string[]> = {};
-
-  inputItems.forEach((item, index) => {
-    const before = beforeByProductId.get(item.productId);
-    const quantity = item.quantity ?? item.currentQuantity;
-    const unitPrice = before?.unitPrice ?? item.unitPrice;
-
-    if (
-      quantity !== null &&
-      unitPrice !== null &&
-      calculateInventoryAmount(quantity, unitPrice) === null
-    ) {
-      errors[`items.${index}.quantity`] = [invalidInventoryAmountMessage];
-    }
-
-    if (before) {
-      const systemQuantity =
-        before.previousQuantity +
-        before.purchasedQuantity -
-        before.lossQuantity;
-
-      if (
-        systemQuantity >= 0 &&
-        calculateInventoryAmount(systemQuantity, before.unitPrice) === null
-      ) {
-        errors[`items.${index}.currentQuantity`] = [
-          invalidInventoryAmountMessage,
-        ];
-      }
-    }
-  });
 
   return errors;
 }
@@ -415,16 +353,6 @@ export async function saveLedgerInventoryItems(
         );
       }
 
-      const amountErrors = getInventoryAmountErrors(before.items, inputItems);
-
-      if (Object.keys(amountErrors).length > 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          invalidInventoryAmountMessage,
-          amountErrors,
-        );
-      }
-
       // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
       const requiredEntryErrors = getRequiredCurrentQuantityErrors(
         buildRequiredEntryGuardItems(before.items, inputByProductId),
@@ -618,7 +546,6 @@ export async function saveLedgerInventoryItems(
       await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
         storeId: parsed.data.storeId,
         businessDate,
-        dailyLedgerId: before.id,
         productIds: inputItems.map((item) => item.productId),
         actorId: actor.user.id,
       });

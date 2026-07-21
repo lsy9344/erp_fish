@@ -1,6 +1,5 @@
 import type { Prisma } from "../../../generated/prisma";
 
-import { editableLedgerStatuses } from "~/features/ledger/status-policy";
 import { decimalToNumber } from "~/lib/decimal";
 import { toPlannedPriceLossSnapshot } from "./amount";
 
@@ -28,7 +27,6 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
         dailyLedger: {
           storeId: input.storeId,
           closingDate: input.businessDate,
-          status: { in: [...editableLedgerStatuses] },
         },
       },
       select: {

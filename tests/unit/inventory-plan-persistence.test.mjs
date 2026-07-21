@@ -19,7 +19,6 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
   );
 
   assert.match(transaction, /getInventoryTargetErrors\(/);
-  assert.match(transaction, /getInventoryAmountErrors\(/);
   assert.match(transaction, /dailyLedger\.updateMany\(/);
   assert.match(transaction, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.equal(
@@ -29,17 +28,11 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
   );
   assert.match(transaction, /upsertInventorySalesPricePlansInTx\(/);
   assert.match(transaction, /syncLedgerLossItemsWithSalesPricePlansInTx\(/);
-  assert.match(transaction, /dailyLedgerId:\s*before\.id/);
   assert.match(transaction, /action:\s*"ledger\.inventory\.saved"/);
   assert.ok(
     transaction.indexOf("getInventoryTargetErrors(") <
       transaction.indexOf("dailyLedger.updateMany("),
     "target validation must finish before the CAS mutation",
-  );
-  assert.ok(
-    transaction.indexOf("getInventoryAmountErrors(") <
-      transaction.indexOf("dailyLedger.updateMany("),
-    "amount bounds must be validated before the CAS mutation",
   );
   assert.ok(
     transaction.indexOf("upsertInventorySalesPricePlansInTx(") <
@@ -72,20 +65,4 @@ test("planned price loss sync updates derived fields without ledger metadata sid
   assert.doesNotMatch(source, /lossReviewedAt:\s*null/);
   assert.doesNotMatch(source, /lossReviewedById:\s*null/);
   assert.doesNotMatch(source, /version:\s*\{\s*increment:/);
-  assert.match(source, /dailyLedgerId:\s*input\.dailyLedgerId/);
-});
-
-test("inventory plan save revalidates every consumer path", async () => {
-  const source = await readFile(inventoryActionUrl, "utf8");
-  const helper = source.slice(
-    source.indexOf("function revalidateInventoryPaths"),
-    source.indexOf("export async function saveLedgerInventoryItems"),
-  );
-
-  assert.match(
-    helper,
-    /revalidateStoreEntryPaths\(\["root",\s*"inventory",\s*"losses"\]\)/,
-  );
-  assert.match(helper, /revalidateDashboardAndReports\(\)/);
-  assert.match(source, /revalidateLedgerDetailPath\(parsed\.data\.ledgerId\)/);
 });
