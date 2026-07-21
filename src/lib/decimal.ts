@@ -13,7 +13,9 @@ export function nullableDecimalToNumber(value: DecimalNumber | null) {
 }
 
 const stockQuantityInputPattern = /^\d+(?:\.\d)?$/;
+const storeInventoryQuantityInputPattern = /^\d+(?:\.\d{1,2})?$/;
 const legacyStockQuantityPattern = /^\d+\.\d{2}$/;
+const maxStoreInventoryQuantity = 9_999_999_999.99;
 
 export function parseStockQuantityDraft(
   value: string,
@@ -46,4 +48,22 @@ export function toStockQuantitySaveInput(
     legacyStockQuantityPattern.test(value)
     ? null
     : value;
+}
+
+export function parseStoreInventoryQuantityDraft(value: string) {
+  const trimmed = value.trim();
+
+  if (!storeInventoryQuantityInputPattern.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+
+  return Number.isFinite(parsed) && parsed <= maxStoreInventoryQuantity
+    ? parsed
+    : null;
+}
+
+export function toStoreInventoryQuantitySaveInput(value: string) {
+  return value.trim();
 }
