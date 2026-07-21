@@ -396,6 +396,7 @@ export default async function LedgerDetailPage({
         >
           <TabsList
             variant="line"
+            aria-label="장부 입력 섹션"
             className="min-h-11 w-full flex-wrap justify-start border-b bg-transparent"
           >
             <TabsTrigger value="purchases" className="min-h-9 px-3">
