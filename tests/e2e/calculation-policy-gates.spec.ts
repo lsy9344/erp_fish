@@ -185,6 +185,16 @@ async function seedPolicyGateLedger() {
       updatedById: actorId,
     },
   });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      businessDate: ledger.closingDate,
+      productId: product.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
   await prisma.ledgerInventoryAdjustment.create({
     data: {
       dailyLedgerId: ledger.id,
@@ -280,6 +290,9 @@ async function cleanupStoryThreeFourData() {
   });
 
   if (productIds.length > 0) {
+    await prisma.storeSalesPricePlan.deleteMany({
+      where: { productId: { in: productIds } },
+    });
     await prisma.purchaseStandard.deleteMany({
       where: { productId: { in: productIds } },
     });

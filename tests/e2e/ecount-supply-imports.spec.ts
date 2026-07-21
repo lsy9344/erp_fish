@@ -262,6 +262,9 @@ async function cleanupAutoInventoryProducts() {
   await prisma.inventoryOpeningSnapshot.deleteMany({
     where: { productId: { in: productIds } },
   });
+  await prisma.storeSalesPricePlan.deleteMany({
+    where: { productId: { in: productIds } },
+  });
   await prisma.auditLog.deleteMany({
     where: { targetType: "Product", targetId: { in: productIds } },
   });
@@ -568,6 +571,7 @@ test("재고 업로드는 소수 둘째 자리 수량을 월초 스냅샷과 지
     exact: true,
   });
   await expect(currentQuantity).toHaveValue("0.71");
+  await page.getByLabel(`${productName} 판매계획가`).fill("12000");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
