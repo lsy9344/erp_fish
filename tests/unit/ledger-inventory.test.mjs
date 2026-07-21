@@ -2044,6 +2044,9 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
     "queries.ts",
   );
   assert.match(querySource, /export\s+async\s+function\s+getInventoryStepData/);
+  assert.match(querySource, /getInventoryPlanGateForLedgerInTx\(tx, ledger\)/);
+  assert.match(querySource, /inventoryComplete:\s*inventoryGate\.complete/);
+  assert.doesNotMatch(querySource, /inventoryItemCount:\s*existingItems\.length/);
   assert.match(
     querySource,
     /InventoryOpeningSnapshot|inventoryOpeningSnapshot/,

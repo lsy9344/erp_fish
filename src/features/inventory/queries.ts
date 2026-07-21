@@ -10,6 +10,7 @@ import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-pr
 import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
+import { getInventoryPlanGateForLedgerInTx } from "~/features/ledger/inventory-plan-gate";
 import {
   requireHeadquartersLedgerScope,
   requireReportAccess,
@@ -1151,9 +1152,10 @@ async function getInventoryStepDataForLedgerInTx(
     select: inventoryItemSelect,
     orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
   });
+  const inventoryGate = await getInventoryPlanGateForLedgerInTx(tx, ledger);
   const stepCompletion = getStoreEntryStepCompletion({
     ...ledger,
-    inventoryItemCount: existingItems.length,
+    inventoryComplete: inventoryGate.complete,
     lossItemCount: lossItems.length,
   });
 
