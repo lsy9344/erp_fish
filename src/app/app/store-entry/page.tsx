@@ -210,6 +210,22 @@ export default async function StoreEntryPage({
           )
         : [];
 
+    if (
+      initialLedger.status === "IN_PROGRESS" &&
+      (step === "cost" ||
+        step === "work" ||
+        step === "sales" ||
+        step === "review") &&
+      initialLedger.stepCompletion.inventory !== true
+    ) {
+      const query = new URLSearchParams({
+        storeId: store.id,
+        date: closingDate,
+        reason: "inventory-plan-incomplete",
+      });
+      redirect(`/app/store-entry/inventory?${query.toString()}`);
+    }
+
     return (
       <StoreManagerShell
         userName={user.name ?? "지점장"}
