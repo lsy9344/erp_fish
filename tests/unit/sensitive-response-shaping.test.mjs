@@ -509,6 +509,190 @@ test("report export source keeps sensitive unauthorised paths out of CSV and aud
   assert.doesNotMatch(exportSource, /clientColumns|requestedColumns/);
 });
 
+test("store manager inventory mapper exposes planned price only on item rows", async () => {
+  const mapperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
+  );
+  const { shapeStoreManagerInventoryStepData } = await import(
+    pathToFileURL(mapperPath).href
+  );
+  const shaped = shapeStoreManagerInventoryStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    version: 1,
+    authorDisplayName: "작성자",
+    status: "IN_PROGRESS",
+    stepCompletion: { inventory: false },
+    carryover: { status: "loaded", source: "PREVIOUS", message: "loaded" },
+    marginRate: 0.4,
+    items: [
+      {
+        id: "item-1",
+        productId: "product-1",
+        productName: "광어",
+        productCategory: "회",
+        productSpec: "1kg",
+        purchasePrice: {
+          kind: "TODAY",
+          businessDate: "2026-06-10",
+          unitPrice: 12_000,
+        },
+        plannedUnitPrice: 18_000,
+        unitPrice: 11_000,
+        previousQuantity: 3,
+        purchasedQuantity: 2,
+        purchaseAmount: 24_000,
+        lossQuantity: 1,
+        lossAmount: 11_000,
+        currentQuantity: 2,
+        quantity: 2,
+        inventoryAmount: 22_000,
+        grossMarginRate: 0.4,
+        fifoLots: [
+          {
+            sourceType: "PURCHASE",
+            sourceLedgerId: "ledger-1",
+            sourcePurchaseItemId: "purchase-1",
+            purchaseDate: "2026-06-10T00:00:00.000Z",
+            sourceBusinessDate: "2026-06-10",
+            unitPrice: 12_000,
+            originalQuantity: 2,
+            consumedQuantity: 0,
+            remainingQuantity: 2,
+            originalAmount: 24_000,
+            consumedAmount: 0,
+            remainingAmount: 24_000,
+            sortOrder: 0,
+          },
+        ],
+        carryoverSource: "PREVIOUS",
+        carryoverStatus: "LOADED",
+        carryoverLedgerId: "ledger-0",
+        previousQuantityDetail: { source: "PREVIOUS", history: [] },
+        isModified: false,
+        adjustment: {
+          id: "adjustment-1",
+          beforeQuantity: 1,
+          beforeAmount: 11_000,
+          afterQuantity: 2,
+          afterAmount: 22_000,
+          differenceQuantity: 1,
+          differenceAmount: 11_000,
+          amountStatus: "AVAILABLE",
+          reason: "counted",
+          createdByName: "작성자",
+          createdAt: "2026-06-10T00:00:00.000Z",
+          updatedAt: "2026-06-10T00:00:00.000Z",
+        },
+      },
+    ],
+    manualProductOptions: [
+      {
+        productId: "product-2",
+        productName: "연어",
+        productCategory: "회",
+        productSpec: "1kg",
+        purchasePrice: {
+          kind: "RECENT",
+          businessDate: "2026-06-09",
+          unitPrice: 10_000,
+        },
+        plannedUnitPrice: 16_000,
+        inventoryAmount: 10_000,
+        grossMarginRate: 0.375,
+      },
+    ],
+  });
+
+  assert.deepEqual(Object.keys(shaped).sort(), [
+    "authorDisplayName",
+    "carryover",
+    "closingDate",
+    "id",
+    "items",
+    "manualProductOptions",
+    "status",
+    "stepCompletion",
+    "storeId",
+    "updatedAt",
+    "version",
+  ]);
+  assert.deepEqual(Object.keys(shaped.items[0]).sort(), [
+    "adjustment",
+    "carryoverLedgerId",
+    "carryoverSource",
+    "carryoverStatus",
+    "currentQuantity",
+    "fifoLots",
+    "id",
+    "isModified",
+    "lossQuantity",
+    "plannedUnitPrice",
+    "previousQuantity",
+    "previousQuantityDetail",
+    "productCategory",
+    "productId",
+    "productName",
+    "productSpec",
+    "purchasePrice",
+    "purchasedQuantity",
+    "quantity",
+  ]);
+  assert.equal(shaped.items[0].plannedUnitPrice, 18_000);
+  assert.equal(shaped.items[0].purchasePrice.unitPrice, 12_000);
+  for (const blockedKey of [
+    "unitPrice",
+    "purchaseAmount",
+    "lossAmount",
+    "inventoryAmount",
+    "grossMarginRate",
+  ]) {
+    assert.equal(Object.hasOwn(shaped.items[0], blockedKey), false);
+  }
+  assert.deepEqual(Object.keys(shaped.items[0].fifoLots[0]).sort(), [
+    "consumedQuantity",
+    "originalQuantity",
+    "purchaseDate",
+    "remainingQuantity",
+    "sortOrder",
+    "sourceBusinessDate",
+    "sourceLedgerId",
+    "sourcePurchaseItemId",
+    "sourceType",
+  ]);
+  assert.deepEqual(Object.keys(shaped.items[0].adjustment).sort(), [
+    "afterQuantity",
+    "amountStatus",
+    "beforeQuantity",
+    "createdAt",
+    "createdByName",
+    "differenceQuantity",
+    "id",
+    "reason",
+    "updatedAt",
+  ]);
+  assert.deepEqual(shaped.manualProductOptions[0], {
+    productId: "product-2",
+    productName: "연어",
+    productCategory: "회",
+    productSpec: "1kg",
+    purchasePrice: {
+      kind: "RECENT",
+      businessDate: "2026-06-09",
+      unitPrice: 10_000,
+    },
+  });
+  assert.equal(
+    Object.hasOwn(shaped.manualProductOptions[0], "plannedUnitPrice"),
+    false,
+  );
+});
+
 test("store manager inventory and loss contracts define safe response types", () => {
   const inventoryTypes = readProjectFile(
     "src",
