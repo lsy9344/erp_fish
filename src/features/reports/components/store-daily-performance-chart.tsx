@@ -34,6 +34,7 @@ type StoreChartRow = {
   salesAmount: number;
   grossMarginRate: number | null;
   expectedGrossMarginRate: number | null;
+  reportMarginGapThresholdBps: number;
   label: string;
 };
 
@@ -59,6 +60,10 @@ const expectedPercentFormatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 2,
 });
 
+const percentagePointFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 2,
+});
+
 const koreanCollator = new Intl.Collator("ko-KR");
 
 function formatActualMargin(value: number | null) {
@@ -71,10 +76,18 @@ function formatExpectedMargin(value: number | null) {
     : expectedPercentFormatter.format(value);
 }
 
-function formatMarginWarning(actual: number | null, expected: number | null) {
+function formatMarginThreshold(thresholdBps: number) {
+  return `${percentagePointFormatter.format(thresholdBps / 100)}%p`;
+}
+
+function formatMarginWarning(
+  actual: number | null,
+  expected: number | null,
+  thresholdBps: number,
+) {
   if (actual === null || expected === null) return "판정 불가";
-  return hasSignificantGrossMarginGap(actual, expected)
-    ? "1.5%p 이상"
+  return hasSignificantGrossMarginGap(actual, expected, thresholdBps)
+    ? `${formatMarginThreshold(thresholdBps)} 이상`
     : "기준 이내";
 }
 
@@ -96,8 +109,11 @@ function formatChartLabel(row: Omit<StoreChartRow, "label">) {
   const warning = hasSignificantGrossMarginGap(
     row.grossMarginRate,
     row.expectedGrossMarginRate,
+    row.reportMarginGapThresholdBps,
   )
-    ? " · 마진 차이 1.5%p 이상"
+    ? ` · 마진 차이 ${formatMarginThreshold(
+        row.reportMarginGapThresholdBps,
+      )} 이상`
     : "";
 
   return `${krwFormatter.format(row.salesAmount)} · ${formatMarginComparison(
@@ -158,6 +174,7 @@ export function StoreDailyPerformanceChart({
             salesAmount: row.salesAmount.value!,
             grossMarginRate: row.grossMarginRate.value,
             expectedGrossMarginRate: row.expectedGrossMarginRate.value,
+            reportMarginGapThresholdBps: row.reportMarginGapThresholdBps,
           };
 
           return { ...chartRow, label: formatChartLabel(chartRow) };
@@ -216,7 +233,7 @@ export function StoreDailyPerformanceChart({
             <BarChart
               accessibilityLayer
               title="지점별 장부 입력 매출·마진율"
-              desc="막대는 장부 입력 매출이며 실제 마진, 예상 마진과 1.5%p 이상 차이 경고를 함께 표시합니다."
+              desc="막대는 장부 입력 매출이며 실제 마진, 예상 마진과 지점별 설정값 이상 차이 경고를 함께 표시합니다."
               data={chartData}
               layout="vertical"
               maxBarSize={36}
@@ -254,6 +271,7 @@ export function StoreDailyPerformanceChart({
                       hasSignificantGrossMarginGap(
                         row.grossMarginRate,
                         row.expectedGrossMarginRate,
+                        row.reportMarginGapThresholdBps,
                       )
                         ? "var(--destructive)"
                         : "var(--chart-1)"
@@ -289,6 +307,7 @@ export function StoreDailyPerformanceChart({
                 {formatMarginWarning(
                   row.grossMarginRate,
                   row.expectedGrossMarginRate,
+                  row.reportMarginGapThresholdBps,
                 )}
               </td>
             </tr>

@@ -19,29 +19,28 @@ export function DailyAttendanceReport({
   attendance: DailyAttendanceReportData;
 }) {
   const summaryItems = [
-    ["총 근무자", attendance.summary.totalWorkers],
+    ["이상 근태 인원", attendance.summary.exceptionWorkers],
     ["지각", attendance.summary.late],
     ["조퇴", attendance.summary.earlyLeave],
     ["특이사항", attendance.summary.special],
-    ["명단 부족", attendance.summary.missingRoster],
   ] as const;
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {summaryItems.map(([label, value]) => (
           <MetricCard
             key={label}
             label={label}
             value={value.toLocaleString("ko-KR")}
-            variant={value > 0 && label !== "총 근무자" ? "warning" : "default"}
+            variant={value > 0 ? "warning" : "default"}
           />
         ))}
       </div>
 
       {attendance.rows.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          선택일에 입력된 직원 근태가 없습니다.
+          선택일에 지각·조퇴·특이사항이 없습니다.
         </p>
       ) : (
         <>
@@ -113,13 +112,7 @@ function StatusBadges({ statuses }: { statuses: DailyAttendanceStatus[] }) {
       {statuses.map((status) => (
         <Badge
           key={status}
-          variant={
-            status === "정상"
-              ? "outline"
-              : status === "근태 미입력"
-                ? "secondary"
-                : "destructive"
-          }
+          variant={status === "직원 미연결" ? "secondary" : "destructive"}
         >
           {status}
         </Badge>

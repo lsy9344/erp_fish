@@ -188,6 +188,13 @@ export default async function DailyMeetingReportPage({
       </section>
 
       <section className="rounded-lg border p-4">
+        <h2 className="text-base font-semibold">직원 근태 현황</h2>
+        <div className="mt-3">
+          <DailyAttendanceReport attendance={report.attendance} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border p-4">
         <h2 className="text-base font-semibold">품목별 판매 현황</h2>
         <p className="text-muted-foreground mt-1 text-xs">
           재고 흐름으로 계산한 판매수량 기준 상위 품목입니다.
@@ -198,13 +205,6 @@ export default async function DailyMeetingReportPage({
             mode="table"
             tableVariant="salesRanking"
           />
-        </div>
-      </section>
-
-      <section className="rounded-lg border p-4">
-        <h2 className="text-base font-semibold">직원 근태 현황</h2>
-        <div className="mt-3">
-          <DailyAttendanceReport attendance={report.attendance} />
         </div>
       </section>
 

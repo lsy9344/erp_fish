@@ -20,6 +20,15 @@ export type AnomalyThresholdSettingsView = {
   };
 };
 
+export type StoreReportMarginGapThresholdView = {
+  storeId: string;
+  storeName: string;
+  reportMarginGapThresholdBps: number;
+  formValues: {
+    marginGapRate: string;
+  };
+};
+
 type AnomalyThresholdRecord = {
   id: string;
   scope: string;
@@ -46,6 +55,12 @@ const anomalyThresholdSelect = {
   },
 } as const;
 
+type StoreReportMarginGapThresholdRecord = {
+  id: string;
+  name: string;
+  reportMarginGapThresholdBps: number;
+};
+
 export function toAnomalyThresholdSettingsView(
   setting: AnomalyThresholdRecord,
 ): AnomalyThresholdSettingsView {
@@ -65,6 +80,19 @@ export function toAnomalyThresholdSettingsView(
   };
 }
 
+export function toStoreReportMarginGapThresholdView(
+  store: StoreReportMarginGapThresholdRecord,
+): StoreReportMarginGapThresholdView {
+  return {
+    storeId: store.id,
+    storeName: store.name,
+    reportMarginGapThresholdBps: store.reportMarginGapThresholdBps,
+    formValues: {
+      marginGapRate: formatBpsAsPercent(store.reportMarginGapThresholdBps),
+    },
+  };
+}
+
 export async function getAnomalyThresholdSettingsForHeadquarters() {
   await requireSettingsAccess();
 
@@ -74,6 +102,22 @@ export async function getAnomalyThresholdSettingsForHeadquarters() {
   });
 
   return setting ? toAnomalyThresholdSettingsView(setting) : null;
+}
+
+export async function getStoreReportMarginGapThresholdsForHeadquarters() {
+  await requireSettingsAccess();
+
+  const stores = await db.store.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      reportMarginGapThresholdBps: true,
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+
+  return stores.map(toStoreReportMarginGapThresholdView);
 }
 
 export async function getAnomalyThresholdSettingsForSignals() {

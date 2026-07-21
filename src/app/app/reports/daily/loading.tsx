@@ -25,7 +25,7 @@ export default function DailyMeetingReportLoading() {
 
       <LoadingSection title="매출 분석">
         <div className="grid gap-3 lg:grid-cols-3">
-          {["증감", "재고", "포지션"].map((item) => (
+          {["증감", "포지션", "재고"].map((item) => (
             <div key={item} className="rounded-md border p-3">
               <Skeleton className="h-4 w-36" />
               <Skeleton className="mt-3 h-32 w-full" />
@@ -34,14 +34,9 @@ export default function DailyMeetingReportLoading() {
         </div>
       </LoadingSection>
 
-      <LoadingSection title="품목별 판매 현황">
-        <Skeleton className="h-9 w-56" />
-        <Skeleton className="mt-3 h-48 w-full" />
-      </LoadingSection>
-
       <LoadingSection title="직원 근태 현황">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {fiveItems.map((item) => (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {fiveItems.slice(0, 4).map((item) => (
             <Skeleton key={`attendance-${item}`} className="h-24 w-full" />
           ))}
         </div>
@@ -54,6 +49,11 @@ export default function DailyMeetingReportLoading() {
             />
           ))}
         </div>
+      </LoadingSection>
+
+      <LoadingSection title="품목별 판매 현황">
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="mt-3 h-48 w-full" />
       </LoadingSection>
 
       <LoadingSection title="마감·이상 신호 현황" bordered={false}>

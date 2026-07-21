@@ -65,6 +65,7 @@ import type {
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
 } from "./types.ts";
+import { DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS } from "./store-daily-performance.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 const DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -145,7 +146,14 @@ type ReportLedgerRecord = {
   }[];
 };
 
-type ReportRowWithoutPriority = Omit<DailyMeetingReportRow, "priority">;
+type ReportRowWithoutPriority = Omit<
+  DailyMeetingReportRow,
+  "priority" | "reportMarginGapThresholdBps"
+>;
+type DailyMeetingReportRowWithoutMarginThreshold = Omit<
+  DailyMeetingReportRow,
+  "reportMarginGapThresholdBps"
+>;
 
 type InventoryQuantityFields = {
   previousQuantity: DecimalNumber;
@@ -517,24 +525,41 @@ export function buildDailySalesAnalysis(
         storeName,
         inventoryAmount,
         salesAmount,
-        ratio:
+        deviationRate:
           inventoryAmount.value === null
-            ? dailyUnavailable(inventoryAmount.reason ?? "재고비율 계산 불가")
+            ? dailyUnavailable(
+                inventoryAmount.reason ?? "재고 편차율 계산 불가",
+              )
             : salesAmount.value === null
               ? dailyUnavailable(salesAmount.reason ?? "매출 계산 불가")
               : salesAmount.value <= 0
                 ? dailyUnavailable("선택일 매출 0원")
-                : available(inventoryAmount.value / salesAmount.value),
+                : available(
+                    (inventoryAmount.value - salesAmount.value) /
+                      salesAmount.value,
+                  ),
       };
     },
   );
 
+  const salesChangeByStoreId = new Map(
+    salesChanges.map((row) => [row.storeId, row]),
+  );
   const positionCandidates = stores
-    .map(({ storeId, storeName, current }) => ({
-      storeId,
-      storeName,
-      salesAmount: getUsableSales(current, "선택일"),
-    }))
+    .map(({ storeId, storeName }) => {
+      const salesChange = salesChangeByStoreId.get(storeId);
+
+      return {
+        storeId,
+        storeName,
+        salesAmount:
+          salesChange?.currentSales ??
+          dailyUnavailable("선택일 매출 계산 불가"),
+        difference:
+          salesChange?.difference ?? dailyUnavailable("증감액 계산 불가"),
+        rate: salesChange?.rate ?? dailyUnavailable("증감률 계산 불가"),
+      };
+    })
     .filter((row) => row.salesAmount.value !== null)
     .sort(
       (a, b) =>
@@ -545,8 +570,6 @@ export function buildDailySalesAnalysis(
     (sum, row) => sum + (row.salesAmount.value ?? 0),
     0,
   );
-  const averageSales =
-    positionCandidates.length > 0 ? totalSales / positionCandidates.length : 0;
   const positions = positionCandidates.map((row, index) => ({
     rank: index + 1,
     ...row,
@@ -554,12 +577,6 @@ export function buildDailySalesAnalysis(
       totalSales > 0
         ? available((row.salesAmount.value ?? 0) / totalSales)
         : dailyUnavailable("순위 대상 매출 합계 0원"),
-    averageComparison:
-      averageSales > 0
-        ? available(
-            ((row.salesAmount.value ?? 0) - averageSales) / averageSales,
-          )
-        : dailyUnavailable("순위 대상 평균 매출 0원"),
   }));
   const includedStoreIds = new Set(positions.map((row) => row.storeId));
   const excludedPositions = stores
@@ -577,41 +594,25 @@ export function buildDailyAttendanceReport(
   stores: DailyReportAnalysisStore[],
 ): DailyAttendanceReport {
   const summary = {
-    totalWorkers: 0,
+    exceptionWorkers: 0,
     late: 0,
     earlyLeave: 0,
     special: 0,
-    missingRoster: 0,
   };
   const rows: DailyAttendanceReport["rows"] = [];
 
   for (const { storeId, storeName, current } of stores) {
-    if (!current) {
-      rows.push({
-        storeId,
-        storeName,
-        workerName: "근태 미입력",
-        statuses: ["근태 미입력"],
-        lateMemo: null,
-        earlyLeaveMemo: null,
-        specialMemo: null,
-      });
-      continue;
-    }
+    if (!current) continue;
     const laborItems = current.ledgerLaborItems;
-    const workerCount = current.workerCount ?? laborItems.length;
-    const missingRoster = Math.max(workerCount - laborItems.length, 0);
-    summary.totalWorkers += workerCount;
-    summary.missingRoster += missingRoster;
 
     for (const item of laborItems) {
       const statuses: DailyAttendanceStatus[] = [];
       const hasLateMemo = Boolean(item.lateMemo?.trim());
       const hasEarlyLeaveMemo = Boolean(item.earlyLeaveMemo?.trim());
       const hasSpecialMemo = Boolean(item.specialMemo?.trim());
-      if (!hasLateMemo && !hasEarlyLeaveMemo && !hasSpecialMemo) {
-        statuses.push("정상");
-      }
+      if (!hasLateMemo && !hasEarlyLeaveMemo && !hasSpecialMemo) continue;
+
+      summary.exceptionWorkers += 1;
       if (hasLateMemo) {
         statuses.push("지각");
         summary.late += 1;
@@ -633,28 +634,6 @@ export function buildDailyAttendanceReport(
         lateMemo: item.lateMemo,
         earlyLeaveMemo: item.earlyLeaveMemo,
         specialMemo: item.specialMemo,
-      });
-    }
-
-    if (missingRoster > 0) {
-      rows.push({
-        storeId,
-        storeName,
-        workerName: `명단 미입력 ${missingRoster.toLocaleString("ko-KR")}명`,
-        statuses: ["명단 부족"],
-        lateMemo: null,
-        earlyLeaveMemo: null,
-        specialMemo: null,
-      });
-    } else if (laborItems.length === 0 && current.workerCount === null) {
-      rows.push({
-        storeId,
-        storeName,
-        workerName: "근태 미입력",
-        statuses: ["근태 미입력"],
-        lateMemo: null,
-        earlyLeaveMemo: null,
-        specialMemo: null,
       });
     }
   }
@@ -1159,6 +1138,22 @@ export async function getHqDailyMeetingReport({
             },
           },
         });
+  const reportMarginGapThresholdRows =
+    storeIds.length === 0
+      ? []
+      : await db.store.findMany({
+          where: { id: { in: storeIds } },
+          select: {
+            id: true,
+            reportMarginGapThresholdBps: true,
+          },
+        });
+  const reportMarginGapThresholdByStoreId = new Map(
+    reportMarginGapThresholdRows.map((store) => [
+      store.id,
+      store.reportMarginGapThresholdBps,
+    ]),
+  );
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const currentLedgers = ledgers.filter(
     (ledger) => ledger.closingDate.getTime() === closingDate.getTime(),
@@ -1212,18 +1207,23 @@ export async function getHqDailyMeetingReport({
   const rows = stores.map((store) => {
     const ledger = ledgerByStoreId.get(store.id) ?? null;
 
-    return toDailyMeetingReportRow({
-      store,
-      ledger,
-      closingDate,
-      thresholdSettings,
-      evaluateRevenueAnomalySignals,
-      evaluateInventoryLossAnomalySignals,
-      corrections: correctionValuesByLedgerId.get(ledger?.id ?? ""),
-      plannedSalesItems: ledger
-        ? plannedSalesItemsByLedgerId.get(ledger.id)
-        : undefined,
-    });
+    return {
+      ...toDailyMeetingReportRow({
+        store,
+        ledger,
+        closingDate,
+        thresholdSettings,
+        evaluateRevenueAnomalySignals,
+        evaluateInventoryLossAnomalySignals,
+        corrections: correctionValuesByLedgerId.get(ledger?.id ?? ""),
+        plannedSalesItems: ledger
+          ? plannedSalesItemsByLedgerId.get(ledger.id)
+          : undefined,
+      }),
+      reportMarginGapThresholdBps:
+        reportMarginGapThresholdByStoreId.get(store.id) ??
+        DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS,
+    };
   });
   const analysisStores = stores.map((store) => ({
     storeId: store.id,
@@ -3967,7 +3967,7 @@ function toDailyMeetingReportRow({
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
   corrections?: Map<string, CorrectionAppliedValue>;
   plannedSalesItems?: LedgerReviewPlannedSalesInput[];
-}): DailyMeetingReportRow {
+}): DailyMeetingReportRowWithoutMarginThreshold {
   const baseRow =
     ledger === null
       ? toEmptyReportRow({

@@ -119,6 +119,7 @@ const auditSummaryFieldLabels: Record<string, string> = {
   name: "이름",
   productName: "품목명",
   quantity: "수량",
+  reportMarginGapThresholdBps: "리포트 마진 차이 기준(bp)",
   role: "권한",
   scope: "범위",
   storeName: "지점명",

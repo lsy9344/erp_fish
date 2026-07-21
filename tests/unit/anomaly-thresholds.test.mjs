@@ -31,7 +31,9 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
         .map((entry) => entry.name)
     : [];
   const storyMigration = migrationNames
-    .filter((name) => name > "20260531194000_add_daily_ledger_submission_fields")
+    .filter(
+      (name) => name > "20260531194000_add_daily_ledger_submission_fields",
+    )
     .find((name) => {
       const migrationPath = path.join(migrationsRoot, name, "migration.sql");
 
@@ -75,6 +77,10 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
     schema,
     /model\s+User\s*{[^}]*updatedAnomalyThresholdSettings\s+AnomalyThresholdSetting\[\]\s+@relation\("AnomalyThresholdSettingUpdatedBy"\)[^}]*}/s,
   );
+  assert.match(
+    schema,
+    /model\s+Store\s*{[^}]*reportMarginGapThresholdBps\s+Int\s+@default\(150\)[^}]*}/s,
+  );
   assert.ok(
     storyMigration,
     "Story 5.5 reuses the existing AnomalyThresholdSetting creation migration",
@@ -108,6 +114,27 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
   assert.ok(
     activeMigration,
     "Story 5.5 must add isActive in a new migration without editing the existing creation migration",
+  );
+
+  const storeReportMarginGapMigration = migrationNames.find((name) => {
+    const migrationPath = path.join(migrationsRoot, name, "migration.sql");
+
+    return (
+      existsSync(migrationPath) &&
+      /ADD COLUMN "reportMarginGapThresholdBps" INTEGER NOT NULL DEFAULT 150/.test(
+        readFileSync(migrationPath, "utf8"),
+      )
+    );
+  });
+
+  assert.ok(storeReportMarginGapMigration);
+  const storeReportMarginGapMigrationSql = readFileSync(
+    path.join(migrationsRoot, storeReportMarginGapMigration, "migration.sql"),
+    "utf8",
+  );
+  assert.match(
+    storeReportMarginGapMigrationSql,
+    /CHECK\s*\([\s\S]*"reportMarginGapThresholdBps" >= 1[\s\S]*"reportMarginGapThresholdBps" <= 10000[\s\S]*\)/,
   );
 });
 
@@ -149,7 +176,9 @@ test("anomaly threshold schema parses display input, active state, and required 
   const {
     ANOMALY_THRESHOLD_SCOPE,
     anomalyThresholdFormSchema,
+    storeReportMarginGapThresholdFormSchema,
     toAnomalyThresholdFieldErrors,
+    toStoreReportMarginGapThresholdFieldErrors,
   } = await import(pathToFileURL(schemaPath).href);
 
   assert.equal(ANOMALY_THRESHOLD_SCOPE, "GLOBAL");
@@ -193,6 +222,61 @@ test("anomaly threshold schema parses display input, active state, and required 
     "활성 상태는 활성 또는 비활성 중 하나여야 합니다.",
   ]);
   assert.deepEqual(errors.reason, ["변경 사유를 입력해 주세요."]);
+
+  assert.deepEqual(
+    storeReportMarginGapThresholdFormSchema.parse({
+      stores: [
+        { storeId: "store-min", marginGapRate: "0.01" },
+        { storeId: "store-default", marginGapRate: "1.5" },
+        { storeId: "store-max", marginGapRate: "100.00" },
+      ],
+      reason: "지점별 경보 기준 정비",
+    }),
+    {
+      stores: [
+        { storeId: "store-min", reportMarginGapThresholdBps: 1 },
+        { storeId: "store-default", reportMarginGapThresholdBps: 150 },
+        { storeId: "store-max", reportMarginGapThresholdBps: 10000 },
+      ],
+      reason: "지점별 경보 기준 정비",
+    },
+  );
+
+  const invalidStoreThresholds =
+    storeReportMarginGapThresholdFormSchema.safeParse({
+      stores: [
+        { storeId: "too-small", marginGapRate: "0" },
+        { storeId: "too-large", marginGapRate: "100.01" },
+      ],
+      reason: " ",
+    });
+  assert.equal(invalidStoreThresholds.success, false);
+  const storeErrors = toStoreReportMarginGapThresholdFieldErrors(
+    invalidStoreThresholds.error,
+  );
+  assert.deepEqual(storeErrors["stores.0.marginGapRate"], [
+    "마진 차이 기준은 0.01%p 이상 100.00%p 이하로 입력해 주세요.",
+  ]);
+  assert.deepEqual(storeErrors["stores.1.marginGapRate"], [
+    "마진 차이 기준은 0.01%p 이상 100.00%p 이하로 입력해 주세요.",
+  ]);
+  assert.deepEqual(storeErrors.reason, ["변경 사유를 입력해 주세요."]);
+
+  const duplicateStoreThresholds =
+    storeReportMarginGapThresholdFormSchema.safeParse({
+      stores: [
+        { storeId: "duplicate", marginGapRate: "1.5" },
+        { storeId: "duplicate", marginGapRate: "2.5" },
+      ],
+      reason: "중복 확인",
+    });
+  assert.equal(duplicateStoreThresholds.success, false);
+  assert.deepEqual(
+    toStoreReportMarginGapThresholdFieldErrors(duplicateStoreThresholds.error)[
+      "stores.1.storeId"
+    ],
+    ["같은 지점의 기준값을 중복 입력할 수 없습니다."],
+  );
 });
 
 test("anomaly calculation helper normalizes only active saved threshold settings for signal consumers", async () => {
@@ -253,6 +337,13 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
     "components",
     "anomaly-threshold-settings-client.tsx",
   );
+  assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "store-report-margin-gap-threshold-settings-client.tsx",
+  );
 
   const actionSource = readProjectFile(
     "src",
@@ -280,6 +371,13 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
     "dashboard",
     "components",
     "anomaly-threshold-settings-client.tsx",
+  );
+  const storeThresholdClientSource = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "components",
+    "store-report-margin-gap-threshold-settings-client.tsx",
   );
   const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
   const auditFormatSource = readProjectFile(
@@ -319,13 +417,24 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.doesNotMatch(actionSource, /grossMarginDropBps/);
   assert.doesNotMatch(actionSource, /salesDifferenceAmount/);
   assert.doesNotMatch(actionSource, /lossAmount/);
-  assert.match(actionSource, /revalidateMasterDataPaths\("anomaly-thresholds"\)/);
+  assert.match(
+    actionSource,
+    /revalidateMasterDataPaths\("anomaly-thresholds"\)/,
+  );
   assert.match(actionSource, /ActionResult/);
   assert.match(
     actionSource,
     /existing\s*&&\s*isSameAnomalyThreshold[\s\S]*status:\s*"unchanged"/,
     "no-op saves should not create audit rows",
   );
+  assert.match(actionSource, /updateStoreReportMarginGapThresholdSettings/);
+  assert.match(actionSource, /storeReportMarginGapThresholdFormSchema/);
+  assert.match(actionSource, /reportMarginGapThresholdBps/);
+  assert.match(actionSource, /isActive:\s*true/);
+  assert.match(actionSource, /targetType:\s*"Store"/);
+  assert.match(actionSource, /action:\s*"threshold\.updated"/);
+  assert.match(actionSource, /reason:\s*parsed\.data\.reason/);
+  assert.match(actionSource, /STORE_SCOPE_CHANGED/);
 
   assert.match(querySource, /getAnomalyThresholdSettingsForHeadquarters/);
   assert.match(querySource, /getAnomalyThresholdSettingsForSignals/);
@@ -338,13 +447,23 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(querySource, /scope:\s*ANOMALY_THRESHOLD_SCOPE/);
   assert.match(querySource, /marginRateBps:\s*true/);
   assert.match(querySource, /scopeLabel:\s*"전체 지점"/);
-  assert.match(querySource, /statusLabel:\s*setting\.isActive\s*\?\s*"활성"\s*:\s*"비활성"/);
+  assert.match(
+    querySource,
+    /statusLabel:\s*setting\.isActive\s*\?\s*"활성"\s*:\s*"비활성"/,
+  );
+  assert.match(querySource, /getStoreReportMarginGapThresholdsForHeadquarters/);
+  assert.match(querySource, /store\.findMany/);
+  assert.match(querySource, /where:\s*\{ isActive:\s*true \}/);
+  assert.match(querySource, /reportMarginGapThresholdBps:\s*true/);
+  assert.match(querySource, /marginGapRate:\s*formatBpsAsPercent/);
 
   assert.match(pageSource, /requireSettingsAccess/);
   assert.match(pageSource, /HeadquartersShell/);
   assert.match(pageSource, /PageHeader/);
   assert.match(pageSource, /getAnomalyThresholdSettingsForHeadquarters/);
+  assert.match(pageSource, /getStoreReportMarginGapThresholdsForHeadquarters/);
   assert.match(pageSource, /AnomalyThresholdSettingsClient/);
+  assert.match(pageSource, /StoreReportMarginGapThresholdSettingsClient/);
 
   assert.match(clientSource, /"use client"/);
   assert.match(clientSource, /FieldGroup/);
@@ -372,12 +491,32 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(clientSource, /기준 유형/);
   assert.match(clientSource, /현재 장부 마진률이 기준보다 낮으면/);
   assert.doesNotMatch(clientSource, /전일 또는 기준일 대비/);
-  assert.match(clientSource, /function setFieldValue[\s\S]*setFormError\(null\)/);
+  assert.match(
+    clientSource,
+    /function setFieldValue[\s\S]*setFormError\(null\)/,
+  );
 
-  assert.match(sidebarSource, /이상 신호 기준값/);
+  assert.match(storeThresholdClientSource, /"use client"/);
+  assert.match(storeThresholdClientSource, /FieldGroup/);
+  assert.match(storeThresholdClientSource, /FieldContent/);
+  assert.match(storeThresholdClientSource, /aria-invalid/);
+  assert.match(storeThresholdClientSource, /inputMode="decimal"/);
+  assert.match(storeThresholdClientSource, /지점별 리포트 마진 차이 기준/);
+  assert.match(storeThresholdClientSource, /신규 지점의 기본값은/);
+  assert.match(storeThresholdClientSource, /1\.50%p/);
+  assert.match(storeThresholdClientSource, /지점별 기준 변경 사유/);
+  assert.match(storeThresholdClientSource, /지점별 기준 저장/);
+  assert.match(
+    storeThresholdClientSource,
+    /updateStoreReportMarginGapThresholdSettings/,
+  );
+
+  assert.match(sidebarSource, /label:\s*"이상 신호"/);
+  assert.doesNotMatch(sidebarSource, /label:\s*"이상 신호 기준값"/);
   assert.match(sidebarSource, /\/app\/master-data\/anomaly-thresholds/);
   assert.match(auditFormatSource, /"AnomalyThresholdSetting"/);
   assert.match(auditFormatSource, /threshold\.updated/);
+  assert.match(auditFormatSource, /reportMarginGapThresholdBps/);
   assert.match(auditQuerySource, /AnomalyThresholdSetting/);
   assert.match(auditQuerySource, /이상 신호 기준값/);
   assert.match(dashboardQuerySource, /getAnomalyThresholdSettingsForSignals/);

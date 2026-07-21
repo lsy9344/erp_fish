@@ -3,12 +3,8 @@ import { PageHeader } from "~/components/page-header";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 
-const fields = [
-  "margin-rate",
-  "inventory-difference",
-  "active-status",
-  "change-reason",
-];
+const fields = ["margin-rate", "active-status", "change-reason"];
+const storeFields = ["store-1", "store-2", "store-3"];
 
 export default function AnomalyThresholdSettingsLoading() {
   return (
@@ -17,6 +13,26 @@ export default function AnomalyThresholdSettingsLoading() {
         title="이상 신호 기준값"
         description="기준값 설정을 불러오는 중입니다."
       />
+      <Card className="w-full max-w-4xl">
+        <CardHeader>
+          <Skeleton className="h-5 w-52" />
+          <Skeleton className="h-4 w-full max-w-lg" />
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            {storeFields.map((field) => (
+              <div key={field} className="flex items-center gap-3">
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-8 w-40" />
+              </div>
+            ))}
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       <div className="bg-background w-full max-w-2xl rounded-lg border p-4">
         <div className="flex flex-col gap-3">
           <Skeleton className="h-4 w-24" />

@@ -60,6 +60,7 @@ export type DailyMeetingReportMetricEvidenceInput = {
 
 export type DailyMeetingReportRow = HqDashboardRow & {
   expectedGrossMarginRate: LedgerReviewMetric;
+  reportMarginGapThresholdBps: number;
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
 };
 
@@ -77,7 +78,7 @@ export type DailyInventoryRatioRow = {
   storeName: string;
   inventoryAmount: LedgerReviewMetric;
   salesAmount: LedgerReviewMetric;
-  ratio: LedgerReviewMetric;
+  deviationRate: LedgerReviewMetric;
 };
 
 export type DailySalesPositionRow = {
@@ -86,7 +87,8 @@ export type DailySalesPositionRow = {
   storeName: string;
   salesAmount: LedgerReviewMetric;
   share: LedgerReviewMetric;
-  averageComparison: LedgerReviewMetric;
+  difference: LedgerReviewMetric;
+  rate: LedgerReviewMetric;
 };
 
 export type DailySalesPositionExclusion = {
@@ -103,13 +105,10 @@ export type DailySalesAnalysis = {
 };
 
 export type DailyAttendanceStatus =
-  | "정상"
   | "지각"
   | "조퇴"
   | "특이사항"
-  | "직원 미연결"
-  | "명단 부족"
-  | "근태 미입력";
+  | "직원 미연결";
 
 export type DailyAttendanceRow = {
   storeId: string;
@@ -123,11 +122,10 @@ export type DailyAttendanceRow = {
 
 export type DailyAttendanceReport = {
   summary: {
-    totalWorkers: number;
+    exceptionWorkers: number;
     late: number;
     earlyLeave: number;
     special: number;
-    missingRoster: number;
   };
   rows: DailyAttendanceRow[];
 };

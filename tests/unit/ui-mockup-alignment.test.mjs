@@ -50,7 +50,7 @@ test("HQ shell and sidebar preserve menu labels while adding mockup active navig
     "기준정보",
     "품목 마스터",
     "매입 기준",
-    "이상 신호 기준값",
+    "이상 신호",
     "코드 관리",
     "사용자/권한",
     "변경 이력",

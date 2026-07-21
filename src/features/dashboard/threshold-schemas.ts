@@ -4,14 +4,19 @@ export const ANOMALY_THRESHOLD_SCOPE = "GLOBAL";
 
 const percentError = {
   marginRate: "마진률은 0.0% 이상 100.0% 이하로 입력해 주세요.",
+  reportMarginGap:
+    "마진 차이 기준은 0.01%p 이상 100.00%p 이하로 입력해 주세요.",
 } as const;
 const activeStatusError = "활성 상태는 활성 또는 비활성 중 하나여야 합니다.";
 const reasonError = "변경 사유를 입력해 주세요.";
+const storeRequiredError = "활성 지점을 한 곳 이상 입력해 주세요.";
+const duplicateStoreError = "같은 지점의 기준값을 중복 입력할 수 없습니다.";
 
 function parsePercentBps(
   value: unknown,
   context: z.RefinementCtx,
   message: string,
+  minimumBps = 0,
 ) {
   const normalized =
     typeof value === "number"
@@ -27,12 +32,14 @@ function parsePercentBps(
 
   const parsed = Number(normalized);
 
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+  const parsedBps = Math.round(parsed * 100);
+
+  if (!Number.isFinite(parsed) || parsedBps < minimumBps || parsedBps > 10000) {
     context.addIssue({ code: z.ZodIssueCode.custom, message });
     return z.NEVER;
   }
 
-  return Math.round(parsed * 100);
+  return parsedBps;
 }
 
 function parseActiveStatus(value: unknown, context: z.RefinementCtx) {
@@ -93,8 +100,63 @@ export type AnomalyThresholdFormInput = z.infer<
   typeof anomalyThresholdFormSchema
 >;
 
+const storeReportMarginGapThresholdSchema = z
+  .object({
+    storeId: z.string().trim().min(1, storeRequiredError),
+    marginGapRate: z
+      .unknown()
+      .transform((value, context) =>
+        parsePercentBps(value, context, percentError.reportMarginGap, 1),
+      ),
+  })
+  .transform((value) => ({
+    storeId: value.storeId,
+    reportMarginGapThresholdBps: value.marginGapRate,
+  }));
+
+export const storeReportMarginGapThresholdFormSchema = z
+  .object({
+    stores: z.array(storeReportMarginGapThresholdSchema).min(1, {
+      message: storeRequiredError,
+    }),
+    reason: z
+      .unknown()
+      .transform((value, context) => parseReason(value, context)),
+  })
+  .superRefine((value, context) => {
+    const seenStoreIds = new Set<string>();
+
+    value.stores.forEach((store, index) => {
+      if (seenStoreIds.has(store.storeId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: duplicateStoreError,
+          path: ["stores", index, "storeId"],
+        });
+        return;
+      }
+
+      seenStoreIds.add(store.storeId);
+    });
+  });
+
+export type StoreReportMarginGapThresholdFormInput = z.infer<
+  typeof storeReportMarginGapThresholdFormSchema
+>;
+
 export function toAnomalyThresholdFieldErrors(error: z.ZodError) {
   return error.flatten().fieldErrors as Record<string, string[]>;
+}
+
+export function toStoreReportMarginGapThresholdFieldErrors(error: z.ZodError) {
+  const fieldErrors: Record<string, string[]> = {};
+
+  for (const issue of error.issues) {
+    const key = issue.path.map(String).join(".") || "stores";
+    fieldErrors[key] = [...(fieldErrors[key] ?? []), issue.message];
+  }
+
+  return fieldErrors;
 }
 
 export function formatBpsAsPercent(value: number) {

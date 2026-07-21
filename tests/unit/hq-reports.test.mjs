@@ -149,6 +149,7 @@ test("HQ daily meeting rows carry the raw expected gross-margin metric", () => {
   );
 
   assert.match(typeSource, /expectedGrossMarginRate:\s*LedgerReviewMetric/);
+  assert.match(typeSource, /reportMarginGapThresholdBps:\s*number/);
   assert.match(
     querySource,
     /expectedGrossMarginRate:\s*reviewSummary\.plannedGrossMarginRate/,
@@ -161,6 +162,8 @@ test("HQ daily meeting rows carry the raw expected gross-margin metric", () => {
     querySource,
     /expectedGrossMarginRate:[\s\S]{0,120}(?:parseFloat|parseInt|Number)\s*\(.*analysisMarginDisplay/,
   );
+  assert.match(querySource, /reportMarginGapThresholdBps:\s*true/);
+  assert.match(querySource, /DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS/);
 });
 
 test("gross-margin gap threshold includes the exact 1.5%p boundary", async () => {
@@ -183,6 +186,8 @@ test("gross-margin gap threshold includes the exact 1.5%p boundary", async () =>
   assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0149), false);
   assert.equal(hasSignificantGrossMarginGap(null, 0.195), false);
   assert.equal(hasSignificantGrossMarginGap(0.21, null), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 200), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 100), true);
 });
 
 test("HQ daily chart always uses sales bars and raw actual/expected margin rates", () => {
@@ -212,7 +217,8 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
   );
   assert.match(chartSource, /실제 데이터 부족/);
   assert.match(chartSource, /예상 데이터 부족/);
-  assert.match(chartSource, /마진 차이 1\.5%p 이상/);
+  assert.match(chartSource, /reportMarginGapThresholdBps/);
+  assert.match(chartSource, /formatMarginThreshold/);
   assert.match(chartSource, /title="지점별 장부 입력 매출·마진율"/);
   assert.match(chartSource, /desc="막대는 장부 입력 매출/);
   assert.match(chartSource, /<table className="sr-only"/);
@@ -369,27 +375,25 @@ test("daily sales analysis and attendance components are display-only responsive
     "재고비율",
     "매장 매출 포지션",
     "계산 불가",
-    "순위",
-    "지점",
-    "매출액",
-    "전체 비중",
-    "전체 평균 대비",
     "제외 지점",
   ]) {
     assert.match(salesSource, new RegExp(label));
   }
-  assert.match(salesSource, /from "~\/components\/ui\/table"/);
+  assert.match(salesSource, /from "~\/components\/ui\/card"/);
+  assert.match(salesSource, /BarChart/);
+  assert.match(salesSource, /PieChart/);
+  assert.match(salesSource, /ReferenceLine/);
+  assert.match(salesSource, /lg:grid-cols-3/);
+  assert.match(salesSource, /deviationRate/);
   assert.match(salesSource, /표시할 매출 분석 데이터가 없습니다\./);
-  assert.doesNotMatch(salesSource, /recharts|BarChart|LineChart/);
-  assert.doesNotMatch(salesSource, /<(?:table|thead|tbody|tr|th|td)\b/);
+  assert.doesNotMatch(salesSource, /전체 평균 대비/);
   assert.doesNotMatch(salesSource, /\.reduce\(|\/\s*(?:total|previous|sales)/);
 
   for (const label of [
-    "총 근무자",
+    "이상 근태 인원",
     "지각",
     "조퇴",
     "특이사항",
-    "명단 부족",
     "지점",
     "직원",
     "상태",
@@ -401,15 +405,15 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.match(attendanceSource, /attendance\.rows\.map/);
   assert.match(attendanceSource, /md:block/);
   assert.match(attendanceSource, /md:hidden/);
-  assert.match(attendanceSource, /선택일에 입력된 직원 근태가 없습니다\./);
+  assert.match(attendanceSource, /선택일에 지각·조퇴·특이사항이 없습니다\./);
   assert.doesNotMatch(attendanceSource, /급여|인건비|amount|employeeId/);
   assert.doesNotMatch(attendanceSource, /<(?:table|thead|tbody|tr|th|td)\b/);
 
   const pageHeadings = [
     "지점별 매출·이익률",
     "매출 분석",
-    "품목별 판매 현황",
     "직원 근태 현황",
+    "품목별 판매 현황",
     "마감·이상 신호 현황",
   ];
   let previousIndex = -1;
@@ -2284,29 +2288,29 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
   );
   assert.equal(inventoryRatio.inventoryAmount.value, 30_000);
   assert.equal(inventoryRatio.salesAmount.value, 120_000);
-  assert.equal(inventoryRatio.ratio.value, 0.25);
+  assert.equal(inventoryRatio.deviationRate.value, -0.75);
   const zeroSalesInventory = analysis.inventoryRatios.find(
     (row) => row.storeId === "store-zero",
   );
   assert.equal(zeroSalesInventory.inventoryAmount.value, 10_000);
-  assert.equal(zeroSalesInventory.ratio.value, null);
-  assert.equal(zeroSalesInventory.ratio.reason, "선택일 매출 0원");
+  assert.equal(zeroSalesInventory.deviationRate.value, null);
+  assert.equal(zeroSalesInventory.deviationRate.reason, "선택일 매출 0원");
   for (const storeId of ["store-incomplete", "store-corrected-inventory"]) {
     const row = analysis.inventoryRatios.find(
       (item) => item.storeId === storeId,
     );
     assert.equal(row.inventoryAmount.value, null);
-    assert.equal(row.ratio.value, null);
+    assert.equal(row.deviationRate.value, null);
   }
   assert.equal(
     analysis.inventoryRatios.find((row) => row.storeId === "store-incomplete")
-      .ratio.reason,
+      .deviationRate.reason,
     "저장 FIFO 재고금액 누락",
   );
   assert.equal(
     analysis.inventoryRatios.find(
       (row) => row.storeId === "store-corrected-inventory",
-    ).ratio.reason,
+    ).deviationRate.reason,
     "재고 수량 정정으로 FIFO 금액을 확정할 수 없음",
   );
 
@@ -2344,10 +2348,8 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     ],
   );
   assert.equal(analysis.positions[0].share.value, 120_000 / 460_000);
-  assert.equal(
-    analysis.positions[0].averageComparison.value,
-    (120_000 - 92_000) / 92_000,
-  );
+  assert.equal(analysis.positions[0].difference.value, 40_000);
+  assert.equal(analysis.positions[0].rate.value, 0.5);
   assert.deepEqual(
     analysis.excludedPositions.map((row) => [row.storeName, row.reason]),
     [
@@ -2379,8 +2381,8 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     [0.5, 0.5],
   );
   assert.deepEqual(
-    tieAnalysis.positions.map((row) => row.averageComparison.value),
-    [0, 0],
+    tieAnalysis.positions.map((row) => row.rate.reason),
+    ["전일 장부 미입력", "전일 장부 미입력"],
   );
 
   const positionAnalysis = buildDailySalesAnalysis([
@@ -2398,35 +2400,54 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     },
   ]).positions;
   assert.deepEqual(
-    positionAnalysis.map((row) => [
-      row.rank,
-      row.share.value,
-      row.averageComparison.value,
-    ]),
+    positionAnalysis.map((row) => [row.rank, row.share.value]),
     [
-      [1, 0.75, 0.5],
-      [2, 0.25, -0.5],
+      [1, 0.75],
+      [2, 0.25],
     ],
   );
 
+  const inventoryDeviationEdges = buildDailySalesAnalysis([
+    {
+      storeId: "inventory-equal",
+      storeName: "동일점",
+      current: ledger({
+        id: "inventory-equal-current",
+        sales: 100_000,
+        inventory: [{ inventoryAmount: 100_000 }],
+      }),
+      previous: null,
+    },
+    {
+      storeId: "inventory-above",
+      storeName: "초과점",
+      current: ledger({
+        id: "inventory-above-current",
+        sales: 100_000,
+        inventory: [{ inventoryAmount: 250_000 }],
+      }),
+      previous: null,
+    },
+  ]).inventoryRatios;
+  assert.equal(inventoryDeviationEdges[0].deviationRate.value, 0);
+  assert.equal(inventoryDeviationEdges[1].deviationRate.value, 1.5);
+
   const attendance = buildDailyAttendanceReport(stores);
   assert.deepEqual(attendance.summary, {
-    totalWorkers: 3,
+    exceptionWorkers: 1,
     late: 1,
     earlyLeave: 1,
     special: 1,
-    missingRoster: 1,
   });
-  assert.deepEqual(attendance.rows[0].statuses, ["정상"]);
-  assert.deepEqual(attendance.rows[1].statuses, [
+  assert.equal(attendance.rows.length, 1);
+  assert.equal(attendance.rows[0].workerName, "복합 직원");
+  assert.deepEqual(attendance.rows[0].statuses, [
     "지각",
     "조퇴",
     "특이사항",
     "직원 미연결",
   ]);
-  assert.equal(attendance.rows[1].lateMemo, "10분 지각");
-  assert.equal(attendance.rows[2].workerName, "명단 미입력 1명");
-  assert.deepEqual(attendance.rows[2].statuses, ["명단 부족"]);
+  assert.equal(attendance.rows[0].lateMemo, "10분 지각");
   const attendanceEdges = buildDailyAttendanceReport([
     {
       storeId: "missing-ledger",
@@ -2454,9 +2475,7 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
       previous: null,
     },
   ]);
-  assert.equal(attendanceEdges.rows[0].workerName, "근태 미입력");
-  assert.deepEqual(attendanceEdges.rows[0].statuses, ["근태 미입력"]);
-  assert.deepEqual(attendanceEdges.rows[1].statuses, ["정상", "직원 미연결"]);
+  assert.deepEqual(attendanceEdges.rows, []);
   const serializedAttendance = JSON.stringify(attendance);
   assert.doesNotMatch(serializedAttendance, /amount|employeeId/);
   assert.doesNotMatch(serializedAttendance, /employee-1/);

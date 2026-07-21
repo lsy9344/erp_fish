@@ -64,7 +64,7 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.SETTINGS_MANAGE,
   },
   {
-    label: "이상 신호 기준값",
+    label: "이상 신호",
     href: "/app/master-data/anomaly-thresholds",
     icon: "master-data",
     requiredAction: PermissionAction.SETTINGS_MANAGE,

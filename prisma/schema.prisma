@@ -108,12 +108,13 @@ model Post {
 }
 
 model Store {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  updatedById String?
+  id                          String   @id @default(cuid())
+  name                        String   @unique
+  isActive                    Boolean  @default(true)
+  reportMarginGapThresholdBps Int      @default(150)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  updatedById                 String?
 
   assignments               UserStoreAssignment[]
   updatedBy                 User?                       @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
