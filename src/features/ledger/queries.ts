@@ -16,6 +16,7 @@ import {
 import { db } from "~/server/db";
 import { toStoreManagerLedgerCostStepData as shapeStoreManagerLedgerCostStepData } from "./response-shaping";
 import { getStoreEntryStepCompletion } from "./step-completion";
+import { getInventoryPlanGateForLedgerInTx } from "./inventory-plan-gate";
 import {
   type LedgerCostStepData,
   type LedgerSalesStepData,
@@ -299,6 +300,7 @@ function getLedgerLaborItems(ledger: {
 
 export function toLedgerCostStepData(
   ledger: DailyLedgerPayload,
+  inventoryComplete = false,
 ): LedgerCostStepData {
   const expenseItems = getLedgerExpenseItems(ledger);
   const expenseTotal = calculateExpenseTotal(
@@ -330,7 +332,7 @@ export function toLedgerCostStepData(
     ),
     stepCompletion: getStoreEntryStepCompletion({
       ...ledger,
-      inventoryItemCount: ledger._count.ledgerInventoryItems,
+      inventoryComplete,
       lossItemCount: ledger._count.ledgerLossItems,
     }),
   };
@@ -338,8 +340,11 @@ export function toLedgerCostStepData(
 
 export function toStoreManagerLedgerCostStepData(
   ledger: DailyLedgerPayload,
+  inventoryComplete = false,
 ): StoreManagerLedgerCostStepData {
-  return shapeStoreManagerLedgerCostStepData(toLedgerCostStepData(ledger));
+  return shapeStoreManagerLedgerCostStepData(
+    toLedgerCostStepData(ledger, inventoryComplete),
+  );
 }
 
 export function toLedgerPurchaseStepData(
@@ -640,10 +645,11 @@ export async function getStoreLedger(
       closingDate,
       actorId,
     );
+    const inventoryGate = await getInventoryPlanGateForLedgerInTx(tx, ledger);
 
     return fillPurchasePlannedUnitPricesInTx(
       tx,
-      toStoreManagerLedgerCostStepData(ledger),
+      toStoreManagerLedgerCostStepData(ledger, inventoryGate.complete),
       ledger.storeId,
       ledger.closingDate,
       ledger.id,
