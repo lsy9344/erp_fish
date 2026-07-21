@@ -220,7 +220,7 @@ function toManualLineState(
     productCategory: option.productCategory,
     productSpec: option.productSpec,
     purchasePrice: option.purchasePrice,
-    plannedUnitPrice: option.plannedUnitPrice,
+    plannedUnitPrice: null,
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
@@ -256,10 +256,7 @@ function toManualLineState(
     adjustment: null,
     currentQuantityInput: "",
     manualUnitPriceInput: "",
-    plannedUnitPriceInput:
-      option.plannedUnitPrice === null
-        ? ""
-        : formatKrwInput(String(option.plannedUnitPrice)),
+    plannedUnitPriceInput: "",
     adjustmentReasonInput: "",
   };
 }

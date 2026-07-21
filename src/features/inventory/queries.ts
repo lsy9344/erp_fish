@@ -28,6 +28,7 @@ import {
   nullableDecimalToNumber,
   type DecimalNumber,
 } from "~/lib/decimal";
+import { shapeStoreManagerInventoryStepData } from "./response-shaping";
 
 export const inventoryCarryoverDetailSelect = {
   source: true,
@@ -1063,14 +1064,15 @@ async function attachPurchasePrices(
   items: InventoryStepLine[],
   manualProductOptions: InventoryManualProductOption[],
 ) {
-  const productIds = [
+  const itemProductIds = [...new Set(items.map((item) => item.productId))];
+  const purchaseProductIds = [
     ...new Set([
-      ...items.map((item) => item.productId),
+      ...itemProductIds,
       ...manualProductOptions.map((option) => option.productId),
     ]),
   ];
 
-  if (productIds.length === 0) {
+  if (purchaseProductIds.length === 0) {
     return { items, manualProductOptions };
   }
 
@@ -1078,7 +1080,7 @@ async function attachPurchasePrices(
   const [purchaseHistory, salesPlans] = await Promise.all([
     tx.ledgerPurchaseItem.findMany({
       where: {
-        productId: { in: productIds },
+        productId: { in: purchaseProductIds },
         dailyLedger: {
           storeId: ledger.storeId,
           closingDate: { lte: ledger.closingDate },
@@ -1095,7 +1097,7 @@ async function attachPurchasePrices(
       where: {
         storeId: ledger.storeId,
         businessDate: ledger.closingDate,
-        productId: { in: productIds },
+        productId: { in: itemProductIds },
       },
       select: { productId: true, plannedUnitPrice: true },
     }),
@@ -1122,7 +1124,6 @@ async function attachPurchasePrices(
     manualProductOptions: manualProductOptions.map((option) => ({
       ...option,
       purchasePrice: purchasePrices.get(option.productId) ?? null,
-      plannedUnitPrice: plannedUnitPrices.get(option.productId) ?? null,
     })),
   };
 }
@@ -1317,57 +1318,5 @@ export async function getInventoryStepDataByLedgerId(
 export function toStoreManagerInventoryStepData(
   data: InventoryStepData,
 ): StoreManagerInventoryStepData {
-  return {
-    ...data,
-    // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
-    // 당일·최근 실제 매입단가만 ...item 안의 중첩 purchasePrice 예외로 유지한다.
-    items: data.items.map(
-      ({
-        unitPrice,
-        purchaseAmount,
-        lossAmount,
-        inventoryAmount,
-        fifoLots,
-        adjustment,
-        ...item
-      }) => {
-        void unitPrice;
-        void purchaseAmount;
-        void lossAmount;
-        void inventoryAmount;
-
-        return {
-          ...item,
-          fifoLots: fifoLots.map(
-            ({
-              unitPrice: _unitPrice,
-              originalAmount,
-              consumedAmount,
-              remainingAmount,
-              ...lot
-            }) => {
-              void _unitPrice;
-              void originalAmount;
-              void consumedAmount;
-              void remainingAmount;
-              return lot;
-            },
-          ),
-          adjustment: adjustment
-            ? {
-                id: adjustment.id,
-                beforeQuantity: adjustment.beforeQuantity,
-                afterQuantity: adjustment.afterQuantity,
-                differenceQuantity: adjustment.differenceQuantity,
-                amountStatus: adjustment.amountStatus,
-                reason: adjustment.reason,
-                createdByName: adjustment.createdByName,
-                createdAt: adjustment.createdAt,
-                updatedAt: adjustment.updatedAt,
-              }
-            : null,
-        };
-      },
-    ),
-  };
+  return shapeStoreManagerInventoryStepData(data);
 }
