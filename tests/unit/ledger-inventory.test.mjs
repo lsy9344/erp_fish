@@ -1482,7 +1482,7 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /\["당일재고", "판매계획가", "바꾼 이유"\]/);
 });
 
-test("HQ inventory shows stock and planned unit prices read-only", () => {
+test("HQ inventory shows opening stock price fallback and planned unit price read-only", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1493,7 +1493,7 @@ test("HQ inventory shows stock and planned unit prices read-only", () => {
 
   assert.match(
     componentSource,
-    /hasSensitiveInventoryAmounts\(item\)[\s\S]*재고 기준단가[\s\S]*formatKrw\(item\.unitPrice\)/,
+    /item\.purchasePrice[\s\S]*hasSensitiveInventoryAmounts\(item\)[\s\S]*OPENING_SNAPSHOT[\s\S]*월초 재고단가[\s\S]*sourceYearMonth[\s\S]*formatKrw\(item\.unitPrice\)/,
   );
   assert.match(
     componentSource,

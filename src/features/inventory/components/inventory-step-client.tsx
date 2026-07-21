@@ -1766,6 +1766,12 @@ export function InventoryStepClient({
           plannedUnitPrice,
         ),
       );
+      const unitPriceSummary = item.purchasePrice
+        ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+        : hasSensitiveInventoryAmounts(item) &&
+            item.previousQuantityDetail.source === "OPENING_SNAPSHOT"
+          ? `월초 재고단가 · ${item.previousQuantityDetail.sourceYearMonth ?? data.closingDate.slice(0, 7)} · ${formatKrw(item.unitPrice)}/1박스`
+          : "매입 이력 없음";
       const modified = isLineModified(item) || item.isModified;
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
@@ -1868,9 +1874,7 @@ export function InventoryStepClient({
               </div>
 
               <p className="text-muted-foreground text-xs tabular-nums">
-                {item.purchasePrice
-                  ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-                  : "매입 이력 없음"}
+                {unitPriceSummary}
               </p>
 
               {/* 2줄: 전일→기준 흐름 요약 (한 줄, 행 높이 고정) */}
@@ -2041,26 +2045,16 @@ export function InventoryStepClient({
                 {!isStoreManagerMode &&
                 hasSensitiveInventoryAmounts(item) &&
                 !addedManualIds.has(item.productId) ? (
-                  <>
-                    <div className="flex flex-col gap-1 pb-2.5">
-                      <span className="text-muted-foreground text-xs">
-                        재고 기준단가
-                      </span>
-                      <output className="font-medium tabular-nums">
-                        {formatKrw(item.unitPrice)}/1박스
-                      </output>
-                    </div>
-                    <div className="flex flex-col gap-1 pb-2.5">
-                      <span className="text-muted-foreground text-xs">
-                        판매계획가
-                      </span>
-                      <output className="font-medium tabular-nums">
-                        {item.plannedUnitPrice === null
-                          ? "미입력"
-                          : `${formatKrw(item.plannedUnitPrice)}/1박스`}
-                      </output>
-                    </div>
-                  </>
+                  <div className="flex flex-col gap-1 pb-2.5">
+                    <span className="text-muted-foreground text-xs">
+                      판매계획가
+                    </span>
+                    <output className="font-medium tabular-nums">
+                      {item.plannedUnitPrice === null
+                        ? "미입력"
+                        : `${formatKrw(item.plannedUnitPrice)}/1박스`}
+                    </output>
+                  </div>
                 ) : null}
                 {isStoreManagerMode ? (
                   <div className="flex flex-col gap-1 pb-2.5">
