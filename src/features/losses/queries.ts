@@ -12,6 +12,7 @@ import {
 import { db } from "~/server/db";
 import { getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
+import { getInventoryPlanGateForLedgerInTx } from "~/features/ledger/inventory-plan-gate";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 import { decimalToNumber } from "~/lib/decimal";
 
@@ -68,7 +69,7 @@ async function getLossStepDataForLedgerInTx(
   ledger: LossLedgerPayload,
   thresholds: LossSignalThresholds = defaultLossSignalThresholds,
 ): Promise<LossStepData> {
-  const [productOptions, lossTypeOptions, lossItems, inventoryItemCount] =
+  const [productOptions, lossTypeOptions, lossItems, inventoryGate] =
     await Promise.all([
       tx.product.findMany({
         where: { isActive: true },
@@ -95,9 +96,7 @@ async function getLossStepDataForLedgerInTx(
         select: lossItemSelect,
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
-      tx.ledgerInventoryItem.count({
-        where: { dailyLedgerId: ledger.id },
-      }),
+      getInventoryPlanGateForLedgerInTx(tx, ledger),
     ]);
   // 미팅 결정(2026-06-21): 코드 표시명은 지점별 덮어쓰기(alias)가 있으면
   // 해당 지점 화면에서 우선 적용한다. 코드 자체는 본사 등록값을 유지한다.
@@ -134,7 +133,7 @@ async function getLossStepDataForLedgerInTx(
     status: ledger.status,
     stepCompletion: getStoreEntryStepCompletion({
       ...ledger,
-      inventoryItemCount,
+      inventoryComplete: inventoryGate.complete,
       lossItemCount: mappedLossItems.length,
     }),
     productOptions,
