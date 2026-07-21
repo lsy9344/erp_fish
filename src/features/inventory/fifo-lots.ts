@@ -281,6 +281,143 @@ function sumQuantity(items: Array<{ quantity: number }>) {
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
+type FifoAmountValidationItem = {
+  productId: string;
+  unitPrice: number;
+  previousQuantity: number;
+  currentQuantity: number | null;
+  quantity: number | null;
+  carryoverLedgerId: string | null;
+};
+
+// 저장과 같은 원천 lot/매입/손실을 읽고 같은 순수 FIFO 계산을 실행한다. mutation 전
+// Int 금액 경계를 행 오류로 바꾸기 위한 preflight이며 DB에는 아무것도 쓰지 않는다.
+export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+  businessDate: Date,
+  items: FifoAmountValidationItem[],
+) {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const productIds = items.map((item) => item.productId);
+  const carryoverLedgerIds = [
+    ...new Set(
+      items
+        .map((item) => item.carryoverLedgerId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const [purchases, losses, previousLots] = await Promise.all([
+    tx.ledgerPurchaseItem.findMany({
+      where: { dailyLedgerId, productId: { in: productIds } },
+      select: {
+        id: true,
+        productId: true,
+        unitPrice: true,
+        quantity: true,
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+    tx.ledgerLossItem.findMany({
+      where: { dailyLedgerId, productId: { in: productIds } },
+      select: { productId: true, quantity: true },
+    }),
+    carryoverLedgerIds.length === 0
+      ? Promise.resolve([])
+      : tx.ledgerInventoryFifoLot.findMany({
+          where: {
+            dailyLedgerId: { in: carryoverLedgerIds },
+            productId: { in: productIds },
+            remainingQuantity: { gt: 0 },
+          },
+          select: {
+            dailyLedgerId: true,
+            productId: true,
+            sourceType: true,
+            sourcePurchaseItemId: true,
+            sourceBusinessDate: true,
+            unitPrice: true,
+            remainingQuantity: true,
+          },
+          orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
+        }),
+  ]);
+  const purchasesByProductId = groupByProductId(
+    purchases.flatMap((purchase) =>
+      purchase.productId
+        ? [
+            {
+              ...purchase,
+              productId: purchase.productId,
+              quantity: decimalToNumber(purchase.quantity),
+            },
+          ]
+        : [],
+    ),
+  );
+  const lossesByProductId = groupByProductId(
+    losses.map((loss) => ({
+      ...loss,
+      quantity: decimalToNumber(loss.quantity),
+    })),
+  );
+  const previousLotsByProductId = groupByProductId(
+    previousLots.map((lot) => ({
+      productId: lot.productId,
+      sourceType: lot.sourceType as FifoPreviousLotInput["sourceType"],
+      sourceLedgerId: lot.dailyLedgerId,
+      sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceBusinessDate: lot.sourceBusinessDate,
+      unitPrice: lot.unitPrice,
+      remainingQuantity: decimalToNumber(lot.remainingQuantity),
+    })),
+  );
+  const invalidProductIds: string[] = [];
+
+  for (const item of items) {
+    const productPurchases = purchasesByProductId.get(item.productId) ?? [];
+    const systemQuantity = calculateSystemInventoryQuantity({
+      previousQuantity: item.previousQuantity,
+      purchasedQuantity: sumQuantity(productPurchases),
+      lossQuantity: sumQuantity(lossesByProductId.get(item.productId) ?? []),
+    });
+    const closingQuantity =
+      item.currentQuantity ??
+      item.quantity ??
+      systemQuantity ??
+      item.previousQuantity;
+
+    try {
+      calculateFifoLotSnapshots({
+        previousLots: previousLotsByProductId.get(item.productId) ?? [],
+        legacyOpening: {
+          unitPrice: item.unitPrice,
+          quantity: item.previousQuantity,
+        },
+        purchases: productPurchases.map((purchase) => ({
+          id: purchase.id,
+          unitPrice: purchase.unitPrice,
+          quantity: purchase.quantity,
+        })),
+        closingQuantity,
+        businessDate,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "FIFO_AMOUNT_UNAVAILABLE") {
+        invalidProductIds.push(item.productId);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return invalidProductIds;
+}
+
 export async function refreshLedgerInventoryFifoLots(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,

@@ -30,7 +30,10 @@ import {
   applyInventoryAdjustmentReasonsInTx,
   reconcileLedgerInventoryAdjustments,
 } from "./adjustment-reconciliation";
-import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
+import {
+  getLedgerInventoryFifoAmountErrorProductIdsInTx,
+  refreshLedgerInventoryFifoLots,
+} from "./fifo-lots";
 import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
@@ -500,26 +503,8 @@ export async function saveLedgerInventoryItems(
         );
       }
 
-      const editableLedger = await tx.dailyLedger.updateMany({
-        where: {
-          id: before.id,
-          version: parsed.data.version,
-          status: { in: [...editableLedgerStatuses] },
-        },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
-      });
-
-      if (editableLedger.count !== 1) {
-        throw new Error("LEDGER_CONFLICT");
-      }
-
-      await tx.ledgerInventoryItem.deleteMany({
-        where: { dailyLedgerId: before.id },
-      });
-
-      // 미입력(빈칸) 행은 currentQuantity/quantity가 null로 직렬화되는데, 무조건
-      // 재기록하면 기존 저장값을 null로 덮어써 다음 날 전일재고 이월이 0이 된다.
-      // 본사 경로와 동일하게 shouldPersistInventoryLine 가드로 변경/기존 행만 기록한다.
+      // CAS 전에 최종 저장 행을 확정한다. 이후 validation이 실패해도 version/재고/계획/
+      // 손실/audit 중 어느 것도 변경되지 않는다.
       const rowsToPersist = before.items.flatMap((item) => {
         const inputItem = inputByProductId.get(item.productId);
         const currentQuantity =
@@ -536,11 +521,6 @@ export async function saveLedgerInventoryItems(
           return [];
         }
 
-        const inventoryAmount = calculateInventoryAmount(
-          quantity,
-          item.unitPrice,
-        );
-
         return [
           {
             dailyLedgerId: before.id,
@@ -553,7 +533,7 @@ export async function saveLedgerInventoryItems(
             purchasedQuantity: item.purchasedQuantity,
             currentQuantity,
             quantity,
-            inventoryAmount,
+            inventoryAmount: calculateInventoryAmount(quantity, item.unitPrice),
             isModified:
               (currentQuantity !== null &&
                 currentQuantity !== item.previousQuantity) ||
@@ -566,17 +546,57 @@ export async function saveLedgerInventoryItems(
           },
         ];
       });
-
-      // "품목 추가"로 넣은(before.items에 없는) 입력 행도 값이 있으면 저장한다.
       const manualRows = await buildManualInventoryRows(
         tx,
         before.id,
         existingProductIds,
-        parsed.data.items,
+        inputItems,
         actor.user.id,
       );
-
       rowsToPersist.push(...manualRows);
+
+      const businessDate = getKstBusinessDate(parsed.data.closingDate);
+      const fifoAmountErrorProductIds =
+        await getLedgerInventoryFifoAmountErrorProductIdsInTx(
+          tx,
+          before.id,
+          businessDate,
+          rowsToPersist,
+        );
+
+      if (fifoAmountErrorProductIds.length > 0) {
+        const invalidProductIds = new Set(fifoAmountErrorProductIds);
+        const fifoAmountErrors = Object.fromEntries(
+          inputItems.flatMap((item, index) =>
+            invalidProductIds.has(item.productId)
+              ? [[`items.${index}.quantity`, [invalidInventoryAmountMessage]]]
+              : [],
+          ),
+        );
+
+        return actionError<StoreManagerInventoryStepData>(
+          "VALIDATION_ERROR",
+          invalidInventoryAmountMessage,
+          fifoAmountErrors,
+        );
+      }
+
+      const editableLedger = await tx.dailyLedger.updateMany({
+        where: {
+          id: before.id,
+          version: parsed.data.version,
+          status: { in: [...editableLedgerStatuses] },
+        },
+        data: { updatedById: actor.user.id, version: { increment: 1 } },
+      });
+
+      if (editableLedger.count !== 1) {
+        throw new Error("LEDGER_CONFLICT");
+      }
+
+      await tx.ledgerInventoryItem.deleteMany({
+        where: { dailyLedgerId: before.id },
+      });
 
       if (rowsToPersist.length > 0) {
         await tx.ledgerInventoryItem.createMany({
@@ -609,7 +629,6 @@ export async function saveLedgerInventoryItems(
       // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
       await refreshLedgerInventoryFifoLots(tx, before.id);
 
-      const businessDate = getKstBusinessDate(parsed.data.closingDate);
       await upsertInventorySalesPricePlansInTx(tx, {
         storeId: parsed.data.storeId,
         businessDate,

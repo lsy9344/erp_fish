@@ -20,6 +20,10 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
 
   assert.match(transaction, /getInventoryTargetErrors\(/);
   assert.match(transaction, /getInventoryAmountErrors\(/);
+  assert.match(
+    transaction,
+    /getLedgerInventoryFifoAmountErrorProductIdsInTx\(/,
+  );
   assert.match(transaction, /dailyLedger\.updateMany\(/);
   assert.match(transaction, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.equal(
@@ -42,10 +46,24 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
     "amount bounds must be validated before the CAS mutation",
   );
   assert.ok(
+    transaction.indexOf("getLedgerInventoryFifoAmountErrorProductIdsInTx(") <
+      transaction.indexOf("dailyLedger.updateMany("),
+    "FIFO amount bounds must be validated before the CAS mutation",
+  );
+  assert.ok(
     transaction.indexOf("upsertInventorySalesPricePlansInTx(") <
       transaction.indexOf("syncLedgerLossItemsWithSalesPricePlansInTx("),
     "loss snapshots must read the newly upserted planned prices",
   );
+});
+
+test("store inventory action uses the manager-only validated schema", async () => {
+  const source = await readFile(inventoryActionUrl, "utf8");
+
+  assert.match(source, /ledgerStoreManagerInventorySchema\.safeParse\(input\)/);
+  assert.match(source, /LedgerStoreManagerInventoryInput/);
+  assert.doesNotMatch(source, /as InventoryItemWithPlannedPrice\[\]/);
+  assert.match(source, /판매계획가 \$\{item\.plannedUnitPrice/);
 });
 
 test("inventory plan persistence is patch-only and preserves plan metadata", async () => {
