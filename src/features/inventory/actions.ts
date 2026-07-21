@@ -1,7 +1,11 @@
 "use server";
 
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import { assertStoreManagerClosingDateIsToday } from "~/features/ledger/date";
+import {
+  assertStoreManagerClosingDateIsToday,
+  getKstBusinessDate,
+} from "~/features/ledger/date";
+import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
@@ -52,6 +56,84 @@ import {
   getLedgerEditBlockReason,
   isLedgerEditable,
 } from "~/features/ledger/status-policy";
+import type { Prisma } from "../../../generated/prisma";
+
+type InventoryItemWithPlannedPrice = LedgerInventoryInput["items"][number] & {
+  plannedUnitPrice: number;
+};
+
+const invalidInventoryTargetMessage =
+  "저장할 재고 품목이 현재 대상과 일치하지 않습니다. 새로고침 후 다시 시도해 주세요.";
+
+function getInventoryTargetErrors(
+  targetProductIds: ReadonlySet<string>,
+  inputItems: InventoryItemWithPlannedPrice[],
+  activeManualProductIds: ReadonlySet<string>,
+) {
+  const errors: Record<string, string[]> = {};
+  const firstIndexByProductId = new Map<string, number>();
+
+  inputItems.forEach((item, index) => {
+    const firstIndex = firstIndexByProductId.get(item.productId);
+
+    if (firstIndex !== undefined) {
+      errors[`items.${index}.productId`] = ["같은 품목을 중복 저장할 수 없습니다."];
+      return;
+    }
+
+    firstIndexByProductId.set(item.productId, index);
+
+    if (
+      !targetProductIds.has(item.productId) &&
+      !activeManualProductIds.has(item.productId)
+    ) {
+      errors[`items.${index}.productId`] = ["선택 가능한 품목이 아닙니다."];
+    }
+  });
+
+  for (const productId of targetProductIds) {
+    if (!firstIndexByProductId.has(productId)) {
+      errors.items = [invalidInventoryTargetMessage];
+      break;
+    }
+  }
+
+  return errors;
+}
+
+async function upsertInventorySalesPricePlansInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    storeId: string;
+    businessDate: Date;
+    items: InventoryItemWithPlannedPrice[];
+    actorId: string;
+  },
+) {
+  for (const item of input.items) {
+    await tx.storeSalesPricePlan.upsert({
+      where: {
+        storeId_businessDate_productId: {
+          storeId: input.storeId,
+          businessDate: input.businessDate,
+          productId: item.productId,
+        },
+      },
+      update: {
+        plannedUnitPrice: item.plannedUnitPrice,
+        updatedById: input.actorId,
+      },
+      create: {
+        storeId: input.storeId,
+        businessDate: input.businessDate,
+        productId: item.productId,
+        plannedUnitPrice: item.plannedUnitPrice,
+        createdById: input.actorId,
+        updatedById: input.actorId,
+      },
+    });
+  }
+}
 
 function parseLedgerInventoryInput(
   input: unknown,
@@ -218,12 +300,42 @@ export async function saveLedgerInventoryItems(
         throw originalInventoryBlockedError(before.status);
       }
 
+      // Lane A의 schema가 필수 plannedUnitPrice를 검증한다. 교차 lane 통합 전에도 이
+      // 파일은 독립적으로 typecheck할 수 있도록 좁은 교차 타입으로만 표현한다.
+      const inputItems = parsed.data.items as InventoryItemWithPlannedPrice[];
       const inputByProductId = new Map(
-        parsed.data.items.map((item) => [item.productId, item]),
+        inputItems.map((item) => [item.productId, item]),
       );
       const existingProductIds = new Set(
         before.items.map((item) => item.productId),
       );
+      const manualProductIds = [
+        ...new Set(
+          inputItems
+            .filter((item) => !existingProductIds.has(item.productId))
+            .map((item) => item.productId),
+        ),
+      ];
+      const activeManualProducts =
+        manualProductIds.length === 0
+          ? []
+          : await tx.product.findMany({
+              where: { id: { in: manualProductIds }, isActive: true },
+              select: { id: true },
+            });
+      const targetErrors = getInventoryTargetErrors(
+        existingProductIds,
+        inputItems,
+        new Set(activeManualProducts.map((product) => product.id)),
+      );
+
+      if (Object.keys(targetErrors).length > 0) {
+        return actionError<StoreManagerInventoryStepData>(
+          "VALIDATION_ERROR",
+          invalidInventoryTargetMessage,
+          targetErrors,
+        );
+      }
 
       // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
       const requiredEntryErrors = getRequiredCurrentQuantityErrors(
@@ -407,6 +519,20 @@ export async function saveLedgerInventoryItems(
 
       // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
       await refreshLedgerInventoryFifoLots(tx, before.id);
+
+      const businessDate = getKstBusinessDate(parsed.data.closingDate);
+      await upsertInventorySalesPricePlansInTx(tx, {
+        storeId: parsed.data.storeId,
+        businessDate,
+        items: inputItems,
+        actorId: actor.user.id,
+      });
+      await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
+        storeId: parsed.data.storeId,
+        businessDate,
+        productIds: inputItems.map((item) => item.productId),
+        actorId: actor.user.id,
+      });
 
       const after = await getInventoryStepDataInTx(
         tx,

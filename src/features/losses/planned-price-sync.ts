@@ -1,6 +1,5 @@
 import type { Prisma } from "../../../generated/prisma";
 
-import { editableLedgerStatuses } from "~/features/ledger/status-policy";
 import { decimalToNumber } from "~/lib/decimal";
 import { toPlannedPriceLossSnapshot } from "./amount";
 
@@ -26,7 +25,6 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
         dailyLedger: {
           storeId: input.storeId,
           closingDate: input.businessDate,
-          status: { in: [...editableLedgerStatuses] },
         },
       },
       select: {
@@ -61,7 +59,8 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
     salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
   );
 
-  // 실제로 값이 바뀐 손실 항목만 업데이트하고, 영향받은 장부 id를 모은다.
+  // 이 helper는 손실 파생값만 갱신한다. 장부 version과 검토 metadata는 이 helper를
+  // 호출한 writer가 소유해야 한 저장에서 CAS/version 증가가 두 번 일어나지 않는다.
   const affectedLedgerIds = new Set<string>();
 
   await Promise.all(
@@ -73,7 +72,7 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
         recoveredAmount: loss.recoveredAmount,
       });
 
-      // 값이 그대로면 손실 검토 무효화/버전 증가를 일으키지 않는다(무음 변경 방지).
+      // 값이 그대로면 update조차 실행하지 않는다(무음 변경 방지).
       const unchanged =
         snapshot.unitPrice === loss.unitPrice &&
         snapshot.amount === loss.amount &&
@@ -96,21 +95,6 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
       ];
     }),
   );
-
-  // 손실 금액이 바뀌면 해당 장부의 손실 검토를 무효화하고 버전을 올린다. 그래야 본사가
-  // 이미 검토한 손실이 판매가 계획 저장으로 조용히 바뀌어 검토/낙관적 동시성이 어긋나지 않는다.
-  // (LedgerPurchase 저장 경로와 동일한 처리: lossReviewed* 초기화 + version 증가.)
-  if (affectedLedgerIds.size > 0) {
-    await tx.dailyLedger.updateMany({
-      where: { id: { in: [...affectedLedgerIds] } },
-      data: {
-        lossReviewedById: null,
-        lossReviewedAt: null,
-        updatedById: input.actorId,
-        version: { increment: 1 },
-      },
-    });
-  }
 
   return { affectedLedgerIds: [...affectedLedgerIds] };
 }
