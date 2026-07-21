@@ -928,14 +928,13 @@ test("store manager review exposes estimated top sold items derived from invento
   // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 판매가 미반영(cost 폴백)을 구분 표시한다.
   assert.match(clientSource, /오늘 많이 팔린 품목/);
   assert.match(clientSource, /추정 매출/);
-  // 단계 순서 변경(2026-07-02): 매입이 1단계로 이동해 안내 문구도 1단계 매입으로 맞춘다.
+  // 판매계획가 책임과 수정 링크는 3단계 재고를 가리킨다.
   assert.match(
     clientSource,
-    /추정 매출은 1단계 매입의 오늘 팔 가격\(예상\)을 우선 사용합니다\./,
+    /추정 매출은 3단계 재고의 판매계획가를 우선 사용합니다\./,
   );
-  // 판매가 미반영 품목이 있으면 1단계 매입(step=purchase)으로 이동하는 안내 링크를 제공한다.
-  assert.match(clientSource, /1단계 매입에서 오늘 팔 가격 입력/);
-  assert.match(clientSource, /step:\s*"purchase"/);
+  assert.match(clientSource, /3단계 재고에서 판매계획가 입력/);
+  assert.match(clientSource, /\/app\/store-entry\/inventory/);
   assert.match(clientSource, /판매가 미반영/);
   assert.match(clientSource, /item\.salesBasis === "cost"/);
   assert.match(clientSource, /topSoldItems/);

@@ -163,7 +163,7 @@ test("P2 loss step surfaces the saved price basis instead of rechecking current 
   );
   // UI는 판매가 미반영 폴백을 경고로 안내한다.
   assert.match(lossClient, /usedPlannedPrice === false/);
-  assert.match(lossClient, /판매가 계획이 없어/);
+  assert.match(lossClient, /판매계획가가 없어/);
 });
 
 // P2: 이카운트 공급 리포트가 판매 예정가 기반 기대 매출/이익 합계를 산출한다.
