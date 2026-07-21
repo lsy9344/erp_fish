@@ -61,13 +61,9 @@ test("sales price plan model, queries, and actions follow expected contracts", (
   assert.match(querySource, /getPlannedUnitPriceLookup/);
 });
 
-<<<<<<< HEAD
-test("planned-price sync updates derived losses without owning ledger metadata", () => {
-=======
 test("planned-price sync updates derived loss fields without owning ledger metadata", () => {
   // 재고 저장 action이 한 번의 CAS/version 증가를 소유하므로 이 helper는 손실 파생값만
   // 갱신하고 검토 metadata와 장부 version은 건드리지 않는다.
->>>>>>> ede054a (omx(team): auto-checkpoint worker-2 [2])
   const syncSource = readProjectFile(
     "src",
     "features",
@@ -81,16 +77,10 @@ test("planned-price sync updates derived loss fields without owning ledger metad
   assert.match(syncSource, /const unchanged =/);
   // 변경된 손실의 장부만 모은다.
   assert.match(syncSource, /affectedLedgerIds/);
-<<<<<<< HEAD
-  assert.doesNotMatch(syncSource, /dailyLedger\.updateMany/);
-  assert.doesNotMatch(syncSource, /lossReviewedAt:\s*null/);
-  assert.match(syncSource, /writer가 소유/);
-=======
   assert.doesNotMatch(syncSource, /dailyLedger\.(?:update|updateMany)\(/);
   assert.doesNotMatch(syncSource, /lossReviewedById:\s*null/);
   assert.doesNotMatch(syncSource, /lossReviewedAt:\s*null/);
   assert.doesNotMatch(syncSource, /version:\s*\{\s*increment:\s*1/);
->>>>>>> ede054a (omx(team): auto-checkpoint worker-2 [2])
 });
 
 test("sales plan loss context renders loss calculation basis; old route redirects to inventory", () => {
