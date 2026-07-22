@@ -67,7 +67,7 @@ export function DailyMeetingReportTable({
               <TableHead>장부 상태</TableHead>
               <TableHead className="text-right">최신 반영</TableHead>
               <TableHead className="min-w-[220px]">상태 메시지</TableHead>
-              <TableHead className="text-right">매출</TableHead>
+              <TableHead className="text-right">매출 구성</TableHead>
               <TableHead className="text-right">이익률</TableHead>
               <TableHead className="text-right">매출 차이</TableHead>
               <TableHead>손실</TableHead>
@@ -163,7 +163,7 @@ export function DailyMeetingReportTable({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">매출</dt>
+                <dt className="text-muted-foreground">매출 구성</dt>
                 <dd className="font-medium tabular-nums">
                   <DailyReportSalesCell row={row} align="left" />
                 </dd>
@@ -251,15 +251,31 @@ function DailyReportSalesCell({
   const analysisLabel = formatAnalysisSalesMetric(row.analysisSalesAmount);
 
   return (
-    <MetricValueWithEvidence
-      value={formatKrw(row.salesAmount.value)}
-      evidence={row.metricEvidence.salesAmount}
-      align={align}
+    <div
+      className={cn(
+        "grid gap-0.5",
+        align === "right" ? "text-right" : "text-left",
+      )}
     >
-      <span className="text-muted-foreground text-xs font-normal break-words">
-        분석 {analysisLabel}
+      <span className="text-xs">
+        장부 마감 {formatKrwMetric(row.closingSalesAmount)}
       </span>
-    </MetricValueWithEvidence>
+      <span className="text-xs">
+        이월 {formatKrwMetric(row.carryoverSalesAmount)}
+      </span>
+      <div>
+        <span className="text-xs">영업 합계</span>
+        <MetricValueWithEvidence
+          value={formatKrwMetric(row.operatingSalesAmount)}
+          evidence={row.metricEvidence.salesAmount}
+          align={align}
+        >
+          <span className="text-muted-foreground text-xs font-normal break-words">
+            분석 {analysisLabel}
+          </span>
+        </MetricValueWithEvidence>
+      </div>
+    </div>
   );
 }
 
@@ -336,10 +352,6 @@ function MetricValueWithEvidence({
       </details>
     </div>
   );
-}
-
-function formatKrw(value: number | null) {
-  return value === null ? "계산 불가" : krwFormatter.format(value);
 }
 
 function formatKrwMetric(metric: DailyMeetingReportRow["salesDifference"]) {

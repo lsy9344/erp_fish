@@ -6,7 +6,7 @@ import { BookOpenIcon, PackageIcon, TriangleAlertIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 
-// WO(2026-06-25): 판매 예정가 입력은 3단계 매입 화면으로 통합돼 별도 "판매가 계획" 메뉴를
+// WO(2026-06-25): 판매한 가격 입력은 3단계 매입 화면으로 통합돼 별도 "판매한 가격" 메뉴를
 // 기본 네비게이션에서 제거했다. 기존 /app/store-entry/sales-plan 링크는 매입 단계로 redirect한다.
 const storeNavItems = [
   {

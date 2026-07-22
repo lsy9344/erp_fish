@@ -32,6 +32,8 @@ type StoreChartRow = {
   storeId: string;
   storeName: string;
   salesAmount: number;
+  closingSalesAmount: number | null;
+  carryoverSalesAmount: number | null;
   grossMarginRate: number | null;
   expectedGrossMarginRate: number | null;
   reportMarginGapThresholdBps: number;
@@ -39,7 +41,7 @@ type StoreChartRow = {
 };
 
 const chartConfig = {
-  salesAmount: { label: "매출액", color: "var(--chart-1)" },
+  salesAmount: { label: "영업 매출 합계", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
@@ -111,15 +113,16 @@ function formatChartLabel(row: Omit<StoreChartRow, "label">) {
     row.expectedGrossMarginRate,
     row.reportMarginGapThresholdBps,
   )
-    ? ` · 마진 차이 ${formatMarginThreshold(
-        row.reportMarginGapThresholdBps,
-      )} 이상`
+    ? `마진 차이 ${formatMarginThreshold(row.reportMarginGapThresholdBps)} 이상`
     : "";
 
-  return `${krwFormatter.format(row.salesAmount)} · ${formatMarginComparison(
-    row.grossMarginRate,
-    row.expectedGrossMarginRate,
-  )}${warning}`;
+  return [
+    `영업 합계 ${krwFormatter.format(row.salesAmount)} (장부 마감 ${krwFormatter.format(row.closingSalesAmount ?? 0)} + 이월 ${krwFormatter.format(row.carryoverSalesAmount ?? 0)})`,
+    formatMarginComparison(row.grossMarginRate, row.expectedGrossMarginRate),
+    warning,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function compareNullableDescending(a: number | null, b: number | null) {
@@ -139,8 +142,8 @@ function StorePerformanceLabel({ x, y, width, height, value }: LabelProps) {
     return null;
   }
 
-  const [comparison, warning] = value.split(" · 마진 차이 ");
-  const labelY = warning ? y + height / 2 - 7 : y + height / 2;
+  const lines = value.split("\n");
+  const labelY = y + height / 2 - ((lines.length - 1) * 14) / 2;
 
   return (
     <text
@@ -149,12 +152,11 @@ function StorePerformanceLabel({ x, y, width, height, value }: LabelProps) {
       dominantBaseline="central"
       className="fill-foreground text-xs"
     >
-      <tspan>{comparison}</tspan>
-      {warning ? (
-        <tspan x={x + width + 8} dy="1.2em">
-          마진 차이 {warning}
+      {lines.map((line, index) => (
+        <tspan key={line} x={x + width + 8} dy={index === 0 ? 0 : "1.2em"}>
+          {line}
         </tspan>
-      ) : null}
+      ))}
     </text>
   );
 }
@@ -172,6 +174,8 @@ export function StoreDailyPerformanceChart({
             storeId: row.storeId,
             storeName: row.storeName,
             salesAmount: row.salesAmount.value!,
+            closingSalesAmount: row.closingSalesAmount.value,
+            carryoverSalesAmount: row.carryoverSalesAmount.value,
             grossMarginRate: row.grossMarginRate.value,
             expectedGrossMarginRate: row.expectedGrossMarginRate.value,
             reportMarginGapThresholdBps: row.reportMarginGapThresholdBps,
@@ -227,17 +231,17 @@ export function StoreDailyPerformanceChart({
         >
           <ChartContainer
             config={chartConfig}
-            className="min-w-[560px]"
+            className="min-w-[760px]"
             style={{ height: chartHeight }}
           >
             <BarChart
               accessibilityLayer
-              title="지점별 장부 입력 매출·마진율"
-              desc="막대는 장부 입력 매출이며 실제 마진, 예상 마진과 지점별 설정값 이상 차이 경고를 함께 표시합니다."
+              title="지점별 영업 매출 합계·마진율"
+              desc="막대는 장부 마감 매출과 이월 매출을 더한 영업 매출 합계이며 실제 마진, 예상 마진과 지점별 설정값 이상 차이 경고를 함께 표시합니다."
               data={chartData}
               layout="vertical"
               maxBarSize={36}
-              margin={{ top: 4, right: 190, left: 4, bottom: 4 }}
+              margin={{ top: 4, right: 390, left: 4, bottom: 4 }}
             >
               <CartesianGrid horizontal={false} />
               <XAxis
@@ -286,11 +290,13 @@ export function StoreDailyPerformanceChart({
       )}
 
       <table className="sr-only" style={{ tableLayout: "fixed" }}>
-        <caption>지점별 매출과 마진 데이터</caption>
+        <caption>지점별 매출 구성과 마진 데이터</caption>
         <thead>
           <tr>
             <th>지점</th>
-            <th>매출액</th>
+            <th>장부 마감 매출</th>
+            <th>이월 매출</th>
+            <th>영업 매출 합계</th>
             <th>실제 마진</th>
             <th>예상 마진</th>
             <th>마진 차이 경고</th>
@@ -300,6 +306,8 @@ export function StoreDailyPerformanceChart({
           {chartData.map((row) => (
             <tr key={row.storeId}>
               <td>{row.storeName}</td>
+              <td>{krwFormatter.format(row.closingSalesAmount ?? 0)}</td>
+              <td>{krwFormatter.format(row.carryoverSalesAmount ?? 0)}</td>
               <td>{krwFormatter.format(row.salesAmount)}</td>
               <td>{formatActualMargin(row.grossMarginRate)}</td>
               <td>{formatExpectedMargin(row.expectedGrossMarginRate)}</td>
@@ -316,12 +324,13 @@ export function StoreDailyPerformanceChart({
       </table>
 
       <p className="text-muted-foreground text-xs">
-        막대는 지점장이 입력한 총매출이며, 실제 마진율은 매출과 매출원가로, 예상
-        마진율은 재고 흐름과 계획 판매가로 계산합니다.
+        막대는 영업 매출 합계(장부 마감 매출 + 이월 매출)입니다. 실제 마진율은
+        영업 매출 합계와 매출원가로, 예상 마진율은 재고 흐름과 판매한 가격으로
+        계산합니다.
       </p>
       {omittedCount > 0 ? (
         <p className="text-muted-foreground text-xs">
-          매출 미입력 {omittedCount}개 지점은 차트에서 제외했습니다.
+          영업 매출 합계 미입력 {omittedCount}개 지점은 차트에서 제외했습니다.
         </p>
       ) : null}
     </div>

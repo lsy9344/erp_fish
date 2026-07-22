@@ -38,6 +38,13 @@ export function calculatePaymentDifference(
   );
 }
 
+export function calculateOperatingSalesAmount(
+  totalSalesAmount: number,
+  carryoverSalesAmount: number,
+) {
+  return totalSalesAmount + carryoverSalesAmount;
+}
+
 export function calculatePaymentTotal(
   cashAmount: number,
   cardAmount: number,
@@ -75,19 +82,19 @@ export function calculateGrossProfit(
 }
 
 export function calculateProductivity(
-  grossProfit: number,
+  operatingSalesAmount: number,
   workerCount: number | null,
 ) {
   if (
     workerCount == null ||
     !Number.isFinite(workerCount) ||
-    !Number.isFinite(grossProfit) ||
+    !Number.isFinite(operatingSalesAmount) ||
     workerCount <= 0
   ) {
     return null;
   }
 
-  return grossProfit / workerCount;
+  return operatingSalesAmount / workerCount;
 }
 
 export type LedgerReviewMetric = CalculationMetric & {
@@ -132,9 +139,9 @@ export type LedgerReviewInventoryAdjustmentInput = {
 };
 
 // point_summary 검토 후속(2026-06-24): 지점장 "아침에 정한 판매가 vs 저녁 실제 결과"
-// 비교를 위한 계획 판매가 입력. 품목별 판매수량(전일+매입-당일) × 계획 판매가로 계획 매출을
-// 산출한다. 판매가 계획이 한 품목이라도 빠지면 비교 자체가 왜곡되므로, 비교 지표는 모든
-// 판매 품목에 계획 판매가가 있을 때만 "ok"로 노출하고, 일부라도 빠지면 기준 확인 필요로
+// 비교를 위한 판매한 가격 입력. 품목별 판매수량(전일+매입-당일) × 판매한 가격으로 계획 매출을
+// 산출한다. 판매한 가격이 한 품목이라도 빠지면 비교 자체가 왜곡되므로, 비교 지표는 모든
+// 판매 품목에 판매한 가격이 있을 때만 "ok"로 노출하고, 일부라도 빠지면 기준 확인 필요로
 // 내린다(매입단가로 조용히 메우지 않는다).
 export type LedgerReviewPlannedSalesInput = {
   productId?: string;
@@ -145,12 +152,13 @@ export type LedgerReviewPlannedSalesInput = {
   lossQuantity?: number;
   currentQuantity: number | null;
   quantity: number | null;
-  // 지점장 판매가 계획(StoreSalesPricePlan.plannedUnitPrice). 없으면 null.
+  // 지점장 판매한 가격(StoreSalesPricePlan.plannedUnitPrice). 없으면 null.
   plannedUnitPrice: number | null;
 };
 
 export type LedgerReviewSummaryInput = {
   totalSalesAmount: number;
+  carryoverSalesAmount?: number;
   cashAmount: number;
   cardAmount: number;
   otherPaymentAmount: number;
@@ -159,7 +167,7 @@ export type LedgerReviewSummaryInput = {
   inventoryItems: LedgerReviewInventoryInput[];
   inventoryAdjustments?: LedgerReviewInventoryAdjustmentInput[];
   lossItems?: Pick<LedgerReviewLossInput, "amount">[];
-  // 계획 판매가 기반 비교 입력. 미제공 시 비교 지표는 "기준 확인 필요"로 노출한다.
+  // 판매한 가격 기반 비교 입력. 미제공 시 비교 지표는 "기준 확인 필요"로 노출한다.
   plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 };
 
@@ -193,7 +201,11 @@ export type LedgerReviewCorrectionOverlayResult = {
 };
 
 export type LedgerReviewSummary = {
+  /** @deprecated Use operatingSales for business calculations and display. */
   totalSales: LedgerReviewMetric;
+  closingTotalSales: LedgerReviewMetric;
+  carryoverSales: LedgerReviewMetric;
+  operatingSales: LedgerReviewMetric;
   paymentTotal: LedgerReviewMetric;
   expenseTotal: LedgerReviewMetric;
   workerCount: LedgerReviewMetric;
@@ -205,8 +217,8 @@ export type LedgerReviewSummary = {
   inventoryAmount: LedgerReviewMetric;
   paymentDifference: LedgerReviewMetric;
   salesDifference: LedgerReviewMetric;
-  // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
-  // plannedSalesTotal: Σ(판매수량 × 계획 판매가)
+  // point_summary 검토 후속(2026-06-24): 판매한 가격 대비 실제 비교 지표.
+  // plannedSalesTotal: Σ(판매수량 × 판매한 가격)
   // plannedGrossProfit: plannedSalesTotal - 매출원가(COGS)
   // plannedGrossMarginRate: plannedGrossProfit / plannedSalesTotal
   // plannedVsActualSalesDifference: 실제 총매출 - plannedSalesTotal (양수=계획 초과 달성)
@@ -548,8 +560,8 @@ function getPlannedSalesSoldQuantity(item: LedgerReviewPlannedSalesInput) {
   return Number.isFinite(soldQuantity) ? soldQuantity : null;
 }
 
-// point_summary 검토 후속(2026-06-24): 계획 판매가 기준 계획 매출 합계.
-// 판매 수량이 양수인 품목만 합산한다. 판매 품목 중 계획 판매가가 하나라도 빠지면
+// point_summary 검토 후속(2026-06-24): 판매한 가격 기준 계획 매출 합계.
+// 판매 수량이 양수인 품목만 합산한다. 판매 품목 중 판매한 가격이 하나라도 빠지면
 // 비교가 왜곡되므로 missingPlanCount로 알리고, 합계는 빠진 품목을 제외하고 계산한다.
 function calculatePlannedSalesTotal(items: LedgerReviewPlannedSalesInput[]) {
   let total = 0;
@@ -581,6 +593,7 @@ function calculatePlannedSalesTotal(items: LedgerReviewPlannedSalesInput[]) {
 
 export function calculateLedgerReviewSummary({
   totalSalesAmount,
+  carryoverSalesAmount = 0,
   cashAmount,
   cardAmount,
   otherPaymentAmount,
@@ -601,12 +614,18 @@ export function calculateLedgerReviewSummary({
     costOfGoodsSoldResult.kind === "ok" ? costOfGoodsSoldResult.value : null;
   const inventoryAmount =
     inventoryAmountResult.kind === "ok" ? inventoryAmountResult.value : null;
-  const totalSales = asKrwMetric("totalSales", totalSalesAmount);
+  const operatingSalesAmount = calculateOperatingSalesAmount(
+    totalSalesAmount,
+    carryoverSalesAmount,
+  );
+  const closingTotalSales = asKrwMetric("closingTotalSales", totalSalesAmount);
+  const carryoverSales = asKrwMetric("carryoverSales", carryoverSalesAmount);
+  const operatingSales = asKrwMetric("operatingSales", operatingSalesAmount);
   const paymentTotal = cashAmount + cardAmount + otherPaymentAmount;
   const paymentTotalMetric = asKrwMetric("paymentTotal", paymentTotal);
   const expenseTotalMetric = asKrwMetric("expenseTotal", expenseTotal);
   const paymentDifference =
-    totalSales.status !== "ok" ||
+    closingTotalSales.status !== "ok" ||
     paymentTotalMetric.status !== "ok" ||
     expenseTotalMetric.status !== "ok"
       ? calculationUnavailable({
@@ -645,7 +664,7 @@ export function calculateLedgerReviewSummary({
         ? ({ kind: "ok", value: null } as const)
         : safelyCalculateNumber("salesDifference", () =>
             calculateSalesDifference({
-              totalSalesAmount,
+              totalSalesAmount: operatingSalesAmount,
               costOfGoodsSold,
               inventoryAdjustments,
               lossItems,
@@ -654,30 +673,27 @@ export function calculateLedgerReviewSummary({
   const salesDifference =
     salesDifferenceResult.kind === "ok" ? salesDifferenceResult.value : null;
   const grossProfit =
-    costOfGoodsSold === null ? null : totalSalesAmount - costOfGoodsSold;
+    costOfGoodsSold === null ? null : operatingSalesAmount - costOfGoodsSold;
   const grossMarginRate =
-    grossProfit === null || totalSalesAmount <= 0
+    grossProfit === null || operatingSalesAmount <= 0
       ? null
-      : grossProfit / totalSalesAmount;
+      : grossProfit / operatingSalesAmount;
   const operatingProfit =
     grossProfit === null ? null : grossProfit - expenseTotal;
-  const productivity =
-    workerCount === null || !Number.isFinite(workerCount) || workerCount <= 0
-      ? null
-      : totalSalesAmount / workerCount;
+  const productivity = calculateProductivity(operatingSalesAmount, workerCount);
 
   const inventoryUnavailableReason =
     inventoryItems.length === 0
       ? "재고 입력이 없어 계산할 수 없습니다."
       : "재고 수량 또는 단가 입력이 부족합니다.";
 
-  // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
-  // 계획 판매가 입력이 없으면(plannedSalesItems === undefined) "기준 확인 필요"로 노출한다.
+  // point_summary 검토 후속(2026-06-24): 판매한 가격 대비 실제 비교 지표.
+  // 판매한 가격 입력이 없으면(plannedSalesItems === undefined) "기준 확인 필요"로 노출한다.
   const plannedSalesResult = plannedSalesItems
     ? calculatePlannedSalesTotal(plannedSalesItems)
     : null;
   const plannedSalesMissingReason =
-    "판매가 계획이 입력되지 않아 계획 대비 비교를 계산할 수 없습니다.";
+    "판매한 가격이 입력되지 않아 계획 대비 비교를 계산할 수 없습니다.";
   // 일부 품목 판매가 미입력은 정책(OQ) 게이트가 아니라 입력 부족이다. status는
   // policy-unconfirmed("기준 확인 필요") 대신 data-insufficient로 노출하고, 값은
   // 그대로 계산해 "과소 추정"임을 알린다. (3단계 매입 화면에 없던 전일 이월 품목 등)
@@ -728,10 +744,13 @@ export function calculateLedgerReviewSummary({
   const plannedVsActualSalesDifferenceValue =
     plannedSalesResult === null
       ? null
-      : totalSalesAmount - plannedSalesResult.total;
+      : operatingSalesAmount - plannedSalesResult.total;
 
   return {
-    totalSales,
+    totalSales: operatingSales,
+    closingTotalSales,
+    carryoverSales,
+    operatingSales,
     paymentTotal: paymentTotalMetric,
     expenseTotal: expenseTotalMetric,
     workerCount: asCountMetric("workerCount", workerCount),
@@ -848,11 +867,11 @@ export function calculateLedgerReviewSummary({
         ? plannedSalesNotEnteredMetric
         : costOfGoodsSoldResult.kind === "error"
           ? dependentCalculationUnavailable(
-              "매출원가 계산 오류로 계획 마진율을 계산할 수 없습니다.",
+              "매출원가 계산 오류로 판매가 기준 마진율을 계산할 수 없습니다.",
             )
           : plannedGrossMarginRateValue === null
             ? dataInsufficient(
-                "계획 매출 또는 매출이익이 부족해 계획 마진율을 계산할 수 없습니다.",
+                "계획 매출 또는 매출이익이 부족해 판매가 기준 마진율을 계산할 수 없습니다.",
               )
             : plannedSalesResult.missingPlanCount > 0
               ? dataInsufficient(plannedSalesPartialReason)
@@ -1080,6 +1099,9 @@ function applyPaymentCorrection(
   switch (correction.fieldKey) {
     case "totalSalesAmount":
       reviewInput.totalSalesAmount = value;
+      return "applied";
+    case "carryoverSalesAmount":
+      reviewInput.carryoverSalesAmount = value;
       return "applied";
     case "cashAmount":
       reviewInput.cashAmount = value;

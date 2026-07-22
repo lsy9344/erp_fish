@@ -14,13 +14,19 @@ const overviewPath = path.join(
 );
 
 function ledger(overrides = {}) {
+  const totalSales = "totalSales" in overrides ? overrides.totalSales : 100_000;
+
   return {
     ledgerId: "ledger-1",
     storeId: "store-1",
     closingDate: new Date("2026-06-01T00:00:00.000Z"),
     status: "HEADQUARTERS_CLOSED",
     workerCount: 1,
-    totalSales: 100_000,
+    closingSales:
+      "closingSales" in overrides ? overrides.closingSales : totalSales,
+    carryoverSales:
+      "carryoverSales" in overrides ? overrides.carryoverSales : 0,
+    totalSales,
     grossProfit: 30_000,
     grossMarginRate: 0.3,
     grossMarginReason: null,
@@ -532,6 +538,9 @@ test("overview keeps store filters but uses an empty calculation scope for an un
 
   assert.equal(report.stores.length, 2);
   assert.deepEqual(report.summary, {
+    closingSalesAmount: null,
+    carryoverSalesAmount: null,
+    operatingSalesAmount: null,
     salesAmount: null,
     grossProfit: null,
     netAmount: null,
@@ -777,7 +786,7 @@ test("overview sorts all four rankings and excludes incomplete values instead of
       ),
     ),
   );
-  assert.match(report.rankings.loss.summary, /판매가 계획 기준/);
+  assert.match(report.rankings.loss.summary, /판매한 가격 기준/);
 });
 
 test("overview waterfall includes company-wide costs as a separate step", async () => {
@@ -1076,7 +1085,11 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   const sales = functionSource(source, "SalesTrendChart");
   assert.equal((sales.match(/connectNulls=\{false\}/g) ?? []).length, 2);
   assert.match(sales, /ChartTooltipContent/);
-  assert.match(sales, /정정 반영 실제 총매출 기준/);
+  assert.match(sales, /정정 반영 영업 매출 합계 기준/);
+  const summary = functionSource(source, "OverviewSummary");
+  assert.match(summary, /장부 마감 매출/);
+  assert.match(summary, /이월 매출/);
+  assert.match(summary, /영업 매출 합계/);
 
   const loss = functionSource(source, "LossDonutChart");
   const lossLegend = functionSource(source, "LossBreakdownLegend");
@@ -1097,14 +1110,14 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   assert.match(lossLegend, /item\.name/);
   assert.match(lossLegend, /formatKrw\(item\.amount\)/);
   assert.match(lossLegend, /percentFormatter\.format\(item\.ratio\)/);
-  assert.match(loss, /판매가 계획 기준 계산 가능/);
+  assert.match(loss, /판매한 가격 기준 계산 가능/);
   assert.match(
     lossEmptyStateMessage,
     /lossBreakdown\.computableCount\s*>\s*0[\s\S]*?계산 가능한 손실 금액이 0원입니다/,
   );
   assert.match(
     lossEmptyStateMessage,
-    /:\s*"판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다\. 손실 입력의 가격 기준을 확인해 주세요\."/,
+    /:\s*"판매한 가격 기준으로 계산 가능한 손실 유형이 없습니다\. 손실 입력의 가격 기준을 확인해 주세요\."/,
   );
   assert.match(
     loss,
@@ -1156,6 +1169,35 @@ test("overview UI keeps each chart accessible and protects its chart contract", 
   assert.match(closingLegend, /item\.label/);
   assert.match(closingLegend, /percentFormatter\.format\(item\.ratio\)/);
   assert.match(closingLegend, /item\.count/);
+});
+
+test("overview summary separates closing, carryover, and operating sales", async () => {
+  const { buildHqReportOverviewForTest } = await import(
+    pathToFileURL(overviewPath).href
+  );
+  const report = buildHqReportOverviewForTest({
+    monthRange: monthRange(),
+    stores: [{ id: "store-1", name: "강남점" }],
+    selectedStoreId: null,
+    companyWideCostsIncluded: false,
+    currentLedgers: [
+      ledger({
+        closingSales: 100_000,
+        carryoverSales: 25_000,
+        totalSales: 125_000,
+      }),
+    ],
+    previousLedgers: [],
+    statusRows: [status("store-1", "2026-06-01", "HEADQUARTERS_CLOSED")],
+    pnlRows: [],
+    todayRows: [],
+    errorMessages: [],
+  });
+
+  assert.equal(report.summary.closingSalesAmount, 100_000);
+  assert.equal(report.summary.carryoverSalesAmount, 25_000);
+  assert.equal(report.summary.operatingSalesAmount, 125_000);
+  assert.equal(report.summary.salesAmount, 125_000);
 });
 
 test("overview UI keeps five table alternatives and today's action list", () => {
@@ -1212,7 +1254,7 @@ test("overview UI preserves waterfall signs and separates missing closing days",
   assert.match(axisLabel, /waterfallAxisLabels\[key\]/);
 
   for (const [key, label] of [
-    ["sales", "매출"],
+    ["sales", "영업매출"],
     ["cogs", "원가"],
     ["grossProfit", "매출이익"],
     ["labor", "인건비"],

@@ -117,7 +117,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
       paymentDifference: { value: 0 },
       paymentTotal: { value: 100_000 },
       expenseTotal: { value: 10_000 },
-      // WO(2026-06-26): 계획 판매가 비교 지표는 본사 전용이라 지점장 요약에서 제외된다.
+      // WO(2026-06-26): 판매한 가격 비교 지표는 본사 전용이라 지점장 요약에서 제외된다.
       plannedSalesTotal: { value: 130_000, status: "ok" },
       plannedGrossProfit: { value: 100_000, status: "ok" },
       plannedGrossMarginRate: { value: 0.769, status: "ok" },
@@ -205,7 +205,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
   // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 응답에서 제거한다.
   // 보완(2026-06-22 WO-01): 결제차액은 제거, 근무인원 수 추가.
   // 매출원가·매출이익·영업이익·인당생산성·매출차이·FIFO·lot 근거는 계속 차단한다.
-  // WO(2026-06-26): 계획 판매가 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
+  // WO(2026-06-26): 판매한 가격 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
   // 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)도 본사 전용으로
   // 확정되어 지점장 요약/단계 응답에서 제거된다.
   const stillBlockedSummaryKeys = [
@@ -233,8 +233,12 @@ test("store manager response shaping recursively removes sensitive ledger metric
     );
   }
 
-  // 정책 반전(2026-06-28): 지점장 요약은 총매출·근무인원만 남는다(마진율·재고금액 제거).
+  // 지점장 요약은 직접 입력·확인하는 매출 구성과 근무인원만 남긴다.
+  // 마진율·재고금액 등 내부 성과/원가 지표는 계속 제거한다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
+    "carryoverSales",
+    "closingTotalSales",
+    "operatingSales",
     "totalSales",
     "workerCount",
   ]);
@@ -282,7 +286,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
   );
 
   // WO-04(2026-06-22): 오늘 많이 팔린 품목 카드는 품목명/판매수량/추정매출만 노출한다.
-  // point_summary 검토 후속(2026-06-24): 추정 매출이 판매가 계획 기준인지(salesBasis)도 함께 노출한다.
+  // point_summary 검토 후속(2026-06-24): 추정 매출이 판매한 가격 기준인지(salesBasis)도 함께 노출한다.
   assert.deepEqual(safeReview.topSoldItems, [
     {
       productId: "product-1",

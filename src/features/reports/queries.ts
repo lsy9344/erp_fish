@@ -86,6 +86,7 @@ type ReportLedgerRecord = {
   closingDate: Date;
   status: DailyLedgerStatus;
   totalSalesAmount: number;
+  carryoverSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
   otherPaymentAmount: number;
@@ -769,7 +770,7 @@ export function getMonthlyClosingAnomalyReportPath({
 // FIFO lot이 없으면 (판매수량 * 단가)로 추정한다(점포 COGS 폴백과 동일 규칙).
 //
 // point_summary 재검토(2026-06-24): 추정 "매출"은 매입/적용 단가가 아니라 회의 결정대로
-// 지점장 판매가 계획(plannedUnitPrice) 기준으로 계산한다. 판매가 계획이 없는 품목은
+// 지점장 판매한 가격(plannedUnitPrice) 기준으로 계산한다. 판매한 가격이 없는 품목은
 // 매입 단가(unitPrice)로 폴백하되 fallbackItemCount로 집계해 "판매가 미반영분"을 알린다.
 // COGS는 여전히 원가(FIFO 소진금액 또는 매입단가)로 계산한다(매출-원가 정의 일관성).
 type CategoryPerformanceItem = {
@@ -784,7 +785,7 @@ type CategoryPerformanceItem = {
   // 하므로 손실을 판매로 잘못 잡지 않도록 차감한다. 없으면 0.
   lossQuantity?: number;
   unitPrice: number;
-  // 지점장 판매가 계획. 없으면 null(매입단가로 폴백).
+  // 지점장 판매한 가격. 없으면 null(매입단가로 폴백).
   plannedUnitPrice?: number | null;
   fifoLots?: Array<{ consumedAmount: number }>;
 };
@@ -825,7 +826,7 @@ function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
   return Math.round(soldQuantity * item.unitPrice);
 }
 
-// 추정 매출 단가: 판매가 계획이 있으면 그 값, 없으면 매입단가로 폴백.
+// 추정 매출 단가: 판매한 가격이 있으면 그 값, 없으면 매입단가로 폴백.
 function getItemSalesUnitPrice(item: CategoryPerformanceItem): {
   unitPrice: number;
   usedPlannedPrice: boolean;
@@ -1066,6 +1067,7 @@ export async function getHqDailyMeetingReport({
             closingDate: true,
             status: true,
             totalSalesAmount: true,
+            carryoverSalesAmount: true,
             cashAmount: true,
             cardAmount: true,
             otherPaymentAmount: true,
@@ -1168,8 +1170,8 @@ export async function getHqDailyMeetingReport({
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
-  // point_summary 검토 후속(2026-06-24): 카테고리별 추정 매출을 판매가 계획 기준으로 내기 위해
-  // 각 마감 (storeId, closingDate)의 판매가 계획을 일괄 조회한다.
+  // point_summary 검토 후속(2026-06-24): 카테고리별 추정 매출을 판매한 가격 기준으로 내기 위해
+  // 각 마감 (storeId, closingDate)의 판매한 가격을 일괄 조회한다.
   const { getPlannedUnitPriceLookup } =
     await import("../sales-plan/queries.ts");
   const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
@@ -1548,6 +1550,7 @@ export async function getHqStoreComparisonReport({
             closingDate: true,
             status: true,
             totalSalesAmount: true,
+            carryoverSalesAmount: true,
             cashAmount: true,
             cardAmount: true,
             otherPaymentAmount: true,
@@ -1702,6 +1705,7 @@ export async function getStoreProfitSummariesForRange({
       closingDate: true,
       status: true,
       totalSalesAmount: true,
+      carryoverSalesAmount: true,
       cashAmount: true,
       cardAmount: true,
       otherPaymentAmount: true,
@@ -1838,6 +1842,8 @@ export type LedgerProfitSummary = {
   closingDate: Date;
   status: DailyLedgerStatus;
   workerCount: number | null;
+  closingSales: number | null;
+  carryoverSales: number | null;
   totalSales: number | null;
   grossProfit: number | null;
   grossMarginRate: number | null;
@@ -1883,6 +1889,7 @@ export async function getLedgerProfitSummariesForRange({
       closingDate: true,
       status: true,
       totalSalesAmount: true,
+      carryoverSalesAmount: true,
       cashAmount: true,
       cardAmount: true,
       otherPaymentAmount: true,
@@ -1959,6 +1966,8 @@ export async function getLedgerProfitSummariesForRange({
       closingDate: ledger.closingDate,
       status: ledger.status,
       workerCount: summary.workerCount,
+      closingSales: applied.closingTotalSales.value,
+      carryoverSales: applied.carryoverSales.value,
       totalSales: applied.totalSales.value,
       grossProfit: applied.grossProfit.value,
       grossMarginRate: applied.grossMarginRate.value,
@@ -2038,6 +2047,7 @@ export async function getHqMonthlyClosingAnomalyReport({
       closingDate: true,
       status: true,
       totalSalesAmount: true,
+      carryoverSalesAmount: true,
       cashAmount: true,
       cardAmount: true,
       otherPaymentAmount: true,
@@ -2107,7 +2117,7 @@ export async function getHqMonthlyClosingAnomalyReport({
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
-  // point_summary 검토 후속(2026-06-24): 월간 추정 매출/랭킹/카테고리 매출도 판매가 계획
+  // point_summary 검토 후속(2026-06-24): 월간 추정 매출/랭킹/카테고리 매출도 판매한 가격
   // 기준으로 산출한다. 단일 점포·여러 마감일이므로 (storeId, closingDate)별 계획을 일괄 조회한다.
   const { getPlannedUnitPriceLookup: getMonthlyPlannedUnitPriceLookup } =
     await import("../sales-plan/queries.ts");
@@ -2168,7 +2178,7 @@ export async function getHqMonthlyClosingAnomalyReport({
       originalLossItems: calculationSummary.originalLossItems,
       lossItems: calculationSummary.lossItems,
       originalInventoryItems: calculationSummary.originalInventoryItems,
-      // 랭킹용 추정 매출 단가를 위해 품목별 판매가 계획을 붙인다.
+      // 랭킹용 추정 매출 단가를 위해 품목별 판매한 가격을 붙인다.
       // 판매량 추정(전일+매입-손실-당일)을 위해 품목별 손실 합계도 붙인다.
       inventoryItems: (() => {
         const lossQuantityByProductId = aggregateLossQuantityByProductId(
@@ -2233,6 +2243,8 @@ type MonthlyClosingAnomalyLedgerSummaryForTest = {
 type ReportAggregateMetrics = Pick<
   ReturnType<typeof calculateLedgerReviewSummary>,
   | "totalSales"
+  | "closingTotalSales"
+  | "carryoverSales"
   | "grossProfit"
   | "grossMarginRate"
   | "operatingProfit"
@@ -2263,7 +2275,7 @@ type MonthlyReportLossItem = {
 };
 
 type MonthlyReportInventoryItem = LedgerReviewInventoryInput & {
-  // point_summary 검토 후속(2026-06-24): 랭킹 추정 매출을 판매가 계획 기준으로 내기 위한 단가.
+  // point_summary 검토 후속(2026-06-24): 랭킹 추정 매출을 판매한 가격 기준으로 내기 위한 단가.
   plannedUnitPrice?: number | null;
   // 판매량 추정(전일+매입-손실-당일)을 위한 품목별 손실 합계 수량.
   lossQuantity?: number;
@@ -2444,6 +2456,9 @@ function buildMonthlyKpis(
 
   return {
     salesAmount: appliedAggregates.salesAmount,
+    closingSalesAmount: appliedAggregates.closingSalesAmount,
+    carryoverSalesAmount: appliedAggregates.carryoverSalesAmount,
+    operatingSalesAmount: appliedAggregates.operatingSalesAmount,
     grossProfit: appliedAggregates.grossProfit,
     grossMarginRate: appliedAggregates.grossMarginRate,
     operatingProfit: appliedAggregates.operatingProfit,
@@ -2454,7 +2469,7 @@ function buildMonthlyKpis(
     appliedCorrectionCount,
     metricEvidence: {
       salesAmount: buildStoreComparisonMetricEvidence({
-        label: "매출",
+        label: "영업 매출 합계",
         kind: "money",
         original: originalAggregates.salesAmount,
         applied: appliedAggregates.salesAmount,
@@ -2825,10 +2840,10 @@ function buildMonthlyProfitAndLossReadiness(): MonthlyProfitAndLossReadiness {
   }[] = [
     {
       key: "sales",
-      label: "매출",
+      label: "영업 매출 합계",
       availability: "actual",
-      source: "일일 장부 총매출",
-      note: "지점 일일 장부의 총매출 합계로 실측 집계합니다.",
+      source: "일일 장부 영업 매출 합계",
+      note: "지점 일일 장부의 장부 마감 매출과 이월 매출 합계로 집계합니다.",
     },
     {
       key: "purchaseCost",
@@ -2903,14 +2918,14 @@ const revenueRankingSize = 5;
 // 판매량(전일재고+매입-당일재고) × 단가를 '추정 매출'로 보고 순위를 매긴다.
 //
 // point_summary 검토 후속(2026-06-24): 단가는 매입/적용 단가가 아니라 회의 결정대로
-// 지점장 판매가 계획(plannedUnitPrice)을 우선 쓴다. 계획이 없는 날/품목은 매입단가로
+// 지점장 판매한 가격(plannedUnitPrice)을 우선 쓴다. 계획이 없는 날/품목은 매입단가로
 // 폴백하고 그 품목은 salesBasis="cost"로 표시한다.
 function buildMonthlyRevenueRanking(
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[],
 ): MonthlyRevenueRankingSummary {
-  const basisLabel = "판매량 × 판매가 계획 추정";
+  const basisLabel = "판매량 × 판매한 가격 추정";
   const note =
-    "품목별 매출액 데이터가 없어 판매량(전일재고+매입-당일재고)에 지점 판매가 계획을 곱한 추정 매출로 순위를 산출합니다. 판매가 계획이 없는 품목은 매입 단가로 대체(판매가 미반영)합니다.";
+    "품목별 매출액 데이터가 없어 판매량(전일재고+매입-당일재고)에 지점 판매한 가격을 곱한 추정 매출로 순위를 산출합니다. 판매한 가격이 없는 품목은 매입 단가로 대체(판매가 미반영)합니다.";
   const aggregates = new Map<
     string,
     {
@@ -3372,6 +3387,7 @@ function toReportLedgerCalculationSummary(
 ) {
   const originalReviewInput = {
     totalSalesAmount: ledger.totalSalesAmount,
+    carryoverSalesAmount: ledger.carryoverSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,
     otherPaymentAmount: ledger.otherPaymentAmount,
@@ -3519,6 +3535,9 @@ export function buildStoreComparisonReportRowForTest({
     storeName: store.name,
     statusCounts,
     salesAmount: appliedAggregates.salesAmount,
+    closingSalesAmount: appliedAggregates.closingSalesAmount,
+    carryoverSalesAmount: appliedAggregates.carryoverSalesAmount,
+    operatingSalesAmount: appliedAggregates.operatingSalesAmount,
     grossProfit: appliedAggregates.grossProfit,
     grossMarginRate: appliedAggregates.grossMarginRate,
     operatingProfit: appliedAggregates.operatingProfit,
@@ -3530,7 +3549,7 @@ export function buildStoreComparisonReportRowForTest({
     hasUnappliedCorrections,
     metricEvidence: {
       salesAmount: buildStoreComparisonMetricEvidence({
-        label: "매출",
+        label: "영업 매출 합계",
         kind: "money",
         original: originalAggregates.salesAmount,
         applied: appliedAggregates.salesAmount,
@@ -3672,6 +3691,7 @@ const purchaseCorrectionMatchers = [
 
 const totalSalesCorrectionMatchers = [
   { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+  { targetType: "PAYMENT_FIELD", fieldKey: "carryoverSalesAmount" },
 ] satisfies ComparisonMetricCorrectionMatcher[];
 
 const comparisonMetricCorrectionMatchers = {
@@ -3788,6 +3808,13 @@ function aggregateStoreComparisonMetrics(
   source: "original" | "applied",
 ) {
   const salesMetrics = getMetrics(ledgerSummaries, source, "totalSales");
+  const closingSalesMetrics = ledgerSummaries.map(
+    (summary) =>
+      summary[source].closingTotalSales ?? summary[source].totalSales,
+  );
+  const carryoverSalesMetrics = ledgerSummaries.map(
+    (summary) => summary[source].carryoverSales ?? available(0),
+  );
   const grossProfitMetrics = getMetrics(ledgerSummaries, source, "grossProfit");
   const operatingProfitMetrics = getMetrics(
     ledgerSummaries,
@@ -3819,6 +3846,9 @@ function aggregateStoreComparisonMetrics(
 
   return {
     salesAmount,
+    closingSalesAmount: sumMetric(closingSalesMetrics),
+    carryoverSalesAmount: sumMetric(carryoverSalesMetrics),
+    operatingSalesAmount: salesAmount,
     grossProfit,
     grossMarginRate:
       salesAmount.value !== null &&
@@ -4032,6 +4062,11 @@ function toEmptyReportRow({
     businessStatus: mapDashboardBusinessStatus(null),
     ledgerStatus: mapDashboardLedgerStatus(null),
     salesAmount: metrics.totalSales,
+    closingSalesAmount: metrics.totalSales,
+    carryoverSalesAmount: dataInsufficient(
+      "장부 입력 전이라 이월 매출 데이터가 없습니다.",
+    ),
+    operatingSalesAmount: metrics.totalSales,
     analysisSalesAmount: dataInsufficient(
       "장부 입력 전이라 분석 매출 데이터가 없습니다.",
     ),
@@ -4174,6 +4209,9 @@ function toLedgerReportRow({
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
+    closingSalesAmount: reviewSummary.closingTotalSales,
+    carryoverSalesAmount: reviewSummary.carryoverSales,
+    operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
     expectedGrossMarginRate: reviewSummary.plannedGrossMarginRate,
@@ -4280,9 +4318,11 @@ function buildDailyMeetingReportMetricEvidenceMap({
 }): DailyMeetingReportMetricEvidenceMap {
   const salesAmountCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+    { targetType: "PAYMENT_FIELD", fieldKey: "carryoverSalesAmount" },
   ]);
   const grossMarginRateCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+    { targetType: "PAYMENT_FIELD", fieldKey: "carryoverSalesAmount" },
     ...purchaseCorrectionMatchers,
     { targetType: "INVENTORY_ROW", fieldKey: "currentQuantity" },
     { targetType: "INVENTORY_ROW", fieldKey: "quantity" },
@@ -4290,6 +4330,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
   ]);
   const salesDifferenceCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "PAYMENT_FIELD", fieldKey: "totalSalesAmount" },
+    { targetType: "PAYMENT_FIELD", fieldKey: "carryoverSalesAmount" },
     ...purchaseCorrectionMatchers,
     { targetType: "INVENTORY_ROW", fieldKey: "currentQuantity" },
     { targetType: "INVENTORY_ROW", fieldKey: "quantity" },
@@ -4305,7 +4346,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
 
   return {
     salesAmount: buildDailyMeetingReportMetricEvidence({
-      label: "매출",
+      label: "영업 매출 합계",
       kind: "money",
       ledgerId,
       ledgerStatus,

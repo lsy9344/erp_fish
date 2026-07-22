@@ -76,6 +76,7 @@ export const hqLedgerClosePreflightLedgerSelect = {
   updatedAt: true,
   status: true,
   totalSalesAmount: true,
+  carryoverSalesAmount: true,
   cashAmount: true,
   cardAmount: true,
   otherPaymentAmount: true,
@@ -272,6 +273,7 @@ function buildHqLedgerClosePreflightItems(
     ledgerId: ledger.id,
     reviewInput: {
       totalSalesAmount: ledger.totalSalesAmount,
+      carryoverSalesAmount: ledger.carryoverSalesAmount,
       cashAmount: ledger.cashAmount,
       cardAmount: ledger.cardAmount,
       otherPaymentAmount: ledger.otherPaymentAmount,
@@ -306,6 +308,7 @@ function buildHqLedgerClosePreflightItems(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
+    carryoverSalesAmount: correctionOverlay.reviewInput.carryoverSalesAmount,
     paymentTotal: calculatePaymentTotal(
       correctionOverlay.reviewInput.cashAmount,
       correctionOverlay.reviewInput.cardAmount,
@@ -694,7 +697,10 @@ function dedupeItems(items: HqLedgerClosePreflightItem[]) {
 }
 
 const calculationMetricLabels: Record<string, string> = {
-  totalSales: "총매출",
+  totalSales: "영업 매출 합계",
+  closingTotalSales: "장부 마감 매출",
+  carryoverSales: "이월 매출",
+  operatingSales: "영업 매출 합계",
   paymentTotal: "현금·카드·기타 합계",
   expenseTotal: "4단계 지출 합계",
   workerCount: "근무인원",

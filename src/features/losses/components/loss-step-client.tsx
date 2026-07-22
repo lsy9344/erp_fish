@@ -55,7 +55,7 @@ type LossLineState = {
   recoveredAmount: string;
   amount?: string;
   reason: string;
-  // 저장된 손실 라인이 판매가 계획 기준으로 산정됐는지(false면 판매가 미반영 폴백).
+  // 저장된 손실 라인이 판매한 가격 기준으로 산정됐는지(false면 판매가 미반영 폴백).
   // 새 라인은 아직 저장 전이라 undefined.
   usedPlannedPrice?: boolean;
 };
@@ -658,14 +658,14 @@ export function LossStepClient({
                       {item.productCategory || "-"} · 규격:{" "}
                       {item.productSpec || "-"}
                       {item.usedPlannedPrice === false
-                        ? " · 손실액: 판매가 계획 없음 · 미산정"
+                        ? " · 판매한 가격 없음 · 손실액 미산정"
                         : item.unitPrice !== undefined
-                          ? ` · 손실액 산정 기준 단가: ${formatKrw(item.unitPrice)}`
-                          : " · 저장 시 3단계 재고의 판매계획가로 손실액 자동 산정"}
+                          ? ` · 손실액 산정 기준 판매한 가격 ${formatKrw(item.unitPrice)}`
+                          : " · 저장 시 3단계 재고의 판매한 가격으로 손실액 자동 산정"}
                       {item.usedPlannedPrice === false ? (
                         <span className="mt-1 block text-amber-600 dark:text-amber-500">
-                          판매계획가는 3단계 재고에서 입력되며 저장 후 손실
-                          금액에 자동 반영됩니다. 현재는 판매계획가가 없어
+                          판매한 가격은 3단계 재고에서 입력되며 저장 후 손실
+                          금액에 자동 반영됩니다. 현재는 판매한 가격이 없어
                           손실액이 미산정 상태입니다.
                         </span>
                       ) : null}

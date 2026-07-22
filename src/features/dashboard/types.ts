@@ -76,13 +76,16 @@ export type HqDashboardRow = {
   businessStatus: DashboardBusinessStatus;
   ledgerStatus: DashboardLedgerStatus;
   salesAmount: LedgerReviewMetric;
-  // WO-14 part2(2026-06-29): 분석 매출(판매가 계획 기준 추정 매출, 장부 AE4). 관제판 매출 셀의
+  closingSalesAmount: LedgerReviewMetric;
+  carryoverSalesAmount: LedgerReviewMetric;
+  operatingSalesAmount: LedgerReviewMetric;
+  // WO-14 part2(2026-06-29): 분석 매출(판매한 가격 기준 추정 매출, 장부 AE4). 관제판 매출 셀의
   // 장부 매출 바로 아래에 함께 보여준다. 계획 미입력 등으로 계산 불가면 status로 구분한다.
   analysisSalesAmount: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
   // 장부 이익률(C17 기준). marginDisplay는 장부 원값 라벨을 담는다.
   marginDisplay: DashboardMarginDisplay;
-  // WO-14 part3(2026-06-29): 분석 이익률(판매가 계획 기준 추정 이익률, 장부 AE5). 관제판 마진
+  // WO-14 part3(2026-06-29): 분석 이익률(판매한 가격 기준 추정 이익률, 장부 AE5). 관제판 마진
   // 셀의 장부 이익률 바로 아래에 함께 보여준다.
   analysisMarginDisplay: DashboardMarginDisplay;
   salesDifference: LedgerReviewMetric;

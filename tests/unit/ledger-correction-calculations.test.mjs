@@ -31,6 +31,7 @@ test("ledger review correction overlay applies latest payment, inventory, and lo
   } = await import(pathToFileURL(ledgerPath).href);
   const reviewInput = {
     totalSalesAmount: 100000,
+    carryoverSalesAmount: 20000,
     cashAmount: 40000,
     cardAmount: 50000,
     otherPaymentAmount: 10000,
@@ -71,6 +72,12 @@ test("ledger review correction overlay applies latest payment, inventory, and lo
         latestAppliedValue: money(120000),
       },
       {
+        targetType: "PAYMENT_FIELD",
+        targetId: "ledger-1",
+        fieldKey: "carryoverSalesAmount",
+        latestAppliedValue: money(30000),
+      },
+      {
         targetType: "INVENTORY_ROW",
         targetId: "inventory-1",
         fieldKey: "currentQuantity",
@@ -89,12 +96,13 @@ test("ledger review correction overlay applies latest payment, inventory, and lo
   assert.equal(reviewInput.inventoryItems[0].currentQuantity, 8);
   assert.equal(lossItems[0].amount, 10000);
   assert.equal(result.reviewInput.totalSalesAmount, 120000);
+  assert.equal(result.reviewInput.carryoverSalesAmount, 30000);
   assert.equal(result.reviewInput.inventoryItems[0].currentQuantity, 6);
   assert.equal(result.lossItems[0].amount, 60000);
   assert.deepEqual([...result.appliedInventoryItemIds], ["inventory-1"]);
   assert.deepEqual([...result.appliedLossProductIds], []);
   assert.deepEqual(result.correctionState, {
-    appliedCorrectionCount: 3,
+    appliedCorrectionCount: 4,
     hasAppliedCorrections: true,
     hasUnappliedCorrections: false,
   });
@@ -105,9 +113,12 @@ test("ledger review correction overlay applies latest payment, inventory, and lo
     lossItems: result.lossItems,
   });
 
-  assert.equal(summary.totalSales.value, 120000);
+  assert.equal(summary.totalSales.value, 150000);
+  assert.equal(summary.closingTotalSales.value, 120000);
+  assert.equal(summary.carryoverSales.value, 30000);
+  assert.equal(summary.paymentDifference.value, 20000);
   assert.equal(summary.costOfGoodsSold.value, 9000);
-  assert.equal(summary.grossProfit.value, 111000);
+  assert.equal(summary.grossProfit.value, 141000);
 });
 
 test("ledger review correction overlay exposes loss quantity product ids for adjustment recalculation", async () => {
@@ -241,9 +252,10 @@ test("ledger review correction overlay keeps purchase row corrections unapplied 
 
   assert.equal(result.reviewInput.inventoryItems[0].purchasedQuantity, 5);
   assert.deepEqual([...result.appliedCorrectionKeys], []);
-  assert.deepEqual([...result.unappliedCorrectionKeys], [
-    "ledger-1:PURCHASE_ROW:purchase-1:quantity",
-  ]);
+  assert.deepEqual(
+    [...result.unappliedCorrectionKeys],
+    ["ledger-1:PURCHASE_ROW:purchase-1:quantity"],
+  );
   assert.deepEqual(result.correctionState, {
     appliedCorrectionCount: 0,
     hasAppliedCorrections: false,

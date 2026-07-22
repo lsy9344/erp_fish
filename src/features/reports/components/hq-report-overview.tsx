@@ -84,7 +84,7 @@ const closingConfig = {
 } satisfies ChartConfig;
 
 const waterfallAxisLabels: Record<string, string> = {
-  sales: "매출",
+  sales: "영업매출",
   cogs: "원가",
   grossProfit: "매출이익",
   labor: "인건비",
@@ -98,7 +98,7 @@ const rankingMetrics: Array<{
   key: ReportOverviewMetricKey;
   label: string;
 }> = [
-  { key: "sales", label: "매출" },
+  { key: "sales", label: "영업 매출 합계" },
   { key: "grossProfit", label: "매출이익" },
   { key: "grossMarginRate", label: "이익률" },
   { key: "loss", label: "손실" },
@@ -123,7 +123,7 @@ function getLossEmptyStateMessage(
 ) {
   return lossBreakdown.computableCount > 0
     ? "계산 가능한 손실 금액이 0원입니다."
-    : "판매가 계획 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요.";
+    : "판매한 가격 기준으로 계산 가능한 손실 유형이 없습니다. 손실 입력의 가격 기준을 확인해 주세요.";
 }
 
 function formatWaterfallAxisLabel(value: unknown) {
@@ -178,7 +178,18 @@ export function HqReportOverview({ report }: { report: HqReportOverviewData }) {
 
 function OverviewSummary({ report }: { report: HqReportOverviewData }) {
   const metrics = [
-    { label: "매출", value: formatNullableKrw(report.summary.salesAmount) },
+    {
+      label: "장부 마감 매출",
+      value: formatNullableKrw(report.summary.closingSalesAmount),
+    },
+    {
+      label: "이월 매출",
+      value: formatNullableKrw(report.summary.carryoverSalesAmount),
+    },
+    {
+      label: "영업 매출 합계",
+      value: formatNullableKrw(report.summary.operatingSalesAmount),
+    },
     {
       label: "매출이익",
       value: formatNullableKrw(report.summary.grossProfit),
@@ -193,11 +204,12 @@ function OverviewSummary({ report }: { report: HqReportOverviewData }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">월간 핵심 현황</CardTitle>
         <CardDescription>
-          정정 반영 실제 총매출과 계산 가능한 손익을 함께 표시합니다.
+          정정 반영 장부 마감 매출, 이월 매출, 영업 매출 합계와 계산 가능한
+          손익을 함께 표시합니다.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4 xl:grid-cols-7">
           {metrics.map((metric) => (
             <div className="min-w-0" key={metric.label}>
               <dt className="text-muted-foreground text-xs">{metric.label}</dt>
@@ -282,13 +294,13 @@ function SalesTrendChart({ report }: { report: HqReportOverviewData }) {
       <CardContent className="min-w-0">
         {report.salesTrend.length === 0 ? (
           <EmptyChartState
-            message="선택 월에 표시할 실제 총매출이 없습니다. 일별 장부 입력과 마감 상태를 확인해 주세요."
+            message="선택 월에 표시할 영업 매출 합계가 없습니다. 일별 장부 입력과 마감 상태를 확인해 주세요."
             href="/app/reports/daily"
           />
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
             <ChartContainer
-              aria-label="현재 월과 전월 같은 날의 실제 총매출 선 차트"
+              aria-label="현재 월과 전월 같은 날의 영업 매출 합계 선 차트"
               className="h-72 w-full min-w-0"
               config={salesConfig}
             >
@@ -325,7 +337,7 @@ function SalesTrendChart({ report }: { report: HqReportOverviewData }) {
                               {point.previousStatusLabel}
                             </span>
                             <span className="text-muted-foreground font-normal">
-                              정정 반영 실제 총매출 기준
+                              정정 반영 영업 매출 합계 기준
                             </span>
                           </div>
                         ) : null;
@@ -400,7 +412,7 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
           <div className="flex min-w-0 flex-col gap-3">
             <div className="min-w-0">
               <ChartContainer
-                aria-label="판매가 계획 기준 손실 유형 도넛 차트"
+                aria-label="판매한 가격 기준 손실 유형 도넛 차트"
                 className="mx-auto h-64 w-full min-w-0"
                 config={lossConfig}
               >
@@ -487,7 +499,7 @@ function LossDonutChart({ report }: { report: HqReportOverviewData }) {
               </ChartContainer>
             </div>
             <p className="text-muted-foreground text-xs">
-              판매가 계획 기준 계산 가능 {report.lossBreakdown.computableCount}/
+              판매한 가격 기준 계산 가능 {report.lossBreakdown.computableCount}/
               {report.lossBreakdown.totalCount}건
               {report.lossBreakdown.uncomputableCount > 0
                 ? ` · 기준 없음 ${report.lossBreakdown.uncomputableCount}건`
@@ -943,7 +955,9 @@ function SalesTrendTable({ report }: { report: HqReportOverviewData }) {
           ))}
           {report.salesTrend.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6}>표시할 실제 총매출이 없습니다.</TableCell>
+              <TableCell colSpan={6}>
+                표시할 영업 매출 합계가 없습니다.
+              </TableCell>
             </TableRow>
           ) : null}
         </TableBody>
@@ -959,7 +973,7 @@ function LossBreakdownTable({ report }: { report: HqReportOverviewData }) {
         <TableHeader>
           <TableRow>
             <TableHead>손실 유형</TableHead>
-            <TableHead>판매가 계획 기준 금액</TableHead>
+            <TableHead>판매한 가격 기준 금액</TableHead>
             <TableHead>비율</TableHead>
             <TableHead>근거</TableHead>
           </TableRow>

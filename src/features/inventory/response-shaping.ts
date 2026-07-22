@@ -14,7 +14,7 @@ export function shapeStoreManagerInventoryStepData(
     stepCompletion: data.stepCompletion,
     carryover: data.carryover,
     // Manual options are rebuilt from an allowlist. Approved purchase history and
-    // the store's existing plan are the only price fields exposed here.
+    // the store's existing sales price are the only price fields exposed here.
     manualProductOptions: data.manualProductOptions.map((option) => ({
       productId: option.productId,
       productName: option.productName,
@@ -24,7 +24,7 @@ export function shapeStoreManagerInventoryStepData(
       plannedUnitPrice: option.plannedUnitPrice,
     })),
     // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
-    // 당일·최근 실제 매입단가와 품목별 계획 판매가만 ...item 안의 예외로 유지한다.
+    // 당일·최근 실제 매입단가, 월초 표시 단가와 품목별 판매한 가격만 ...item 안의 예외로 유지한다.
     items: data.items.map((item) => ({
       id: item.id,
       productId: item.productId,

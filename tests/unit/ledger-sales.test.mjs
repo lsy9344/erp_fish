@@ -27,7 +27,7 @@ test("ledger schema includes DailyLedger model, enum, and relations", () => {
   );
   assert.match(
     schema,
-    /model\s+DailyLedger\s*{[^}]*id\s+String\s+@id[^}]*storeId\s+String[^}]*closingDate\s+DateTime[^}]*status\s+DailyLedgerStatus\s+@default\(IN_PROGRESS\)[^}]*version\s+Int\s+@default\(1\)[^}]*totalSalesAmount\s+Int[^}]*cashAmount\s+Int[^}]*cardAmount\s+Int[^}]*otherPaymentAmount\s+Int[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*createdAt\s+DateTime[^}]*updatedAt\s+DateTime[^}]*\n[^}]*@@unique\(\[storeId,\s*closingDate\],\s*map:\s*"dailyLedger_storeId_closingDate_key"\)[^}]*\n[^}]*@@index\(\[status\]\)/s,
+    /model\s+DailyLedger\s*{[^}]*id\s+String\s+@id[^}]*storeId\s+String[^}]*closingDate\s+DateTime[^}]*status\s+DailyLedgerStatus\s+@default\(IN_PROGRESS\)[^}]*version\s+Int\s+@default\(1\)[^}]*totalSalesAmount\s+Int[^}]*carryoverSalesAmount\s+Int\s+@default\(0\)[^}]*cashAmount\s+Int[^}]*cardAmount\s+Int[^}]*otherPaymentAmount\s+Int[^}]*createdById\s+String[^}]*updatedById\s+String[^}]*createdAt\s+DateTime[^}]*updatedAt\s+DateTime[^}]*\n[^}]*@@unique\(\[storeId,\s*closingDate\],\s*map:\s*"dailyLedger_storeId_closingDate_key"\)[^}]*\n[^}]*@@index\(\[status\]\)/s,
   );
   assert.match(
     schema,
@@ -106,6 +106,19 @@ test("ledger migrations create DailyLedger, unique constraint, and version token
       'ADD COLUMN "authorDisplayName" TEXT',
     ),
     "Story 2.2 migration should add DailyLedger.authorDisplayName",
+  );
+
+  const carryoverSalesMigrationSql = migrationNames
+    .map((name) => path.join(migrationRoot, name, "migration.sql"))
+    .filter((migrationPath) => existsSync(migrationPath))
+    .map((migrationPath) => readFileSync(migrationPath, "utf8"))
+    .find((migration) => migration.includes('"carryoverSalesAmount"'));
+
+  assert.ok(
+    carryoverSalesMigrationSql?.includes(
+      'ADD COLUMN "carryoverSalesAmount" INTEGER NOT NULL DEFAULT 0',
+    ),
+    "carryover sales migration should backfill existing ledgers with zero",
   );
 });
 
@@ -187,6 +200,9 @@ test("ledger query settlement difference includes saved expenses", () => {
   const salesStepSource = querySource.match(
     /export function toLedgerSalesStepData[\s\S]*?\r?\n}\r?\n\r?\nfunction getLedgerExpenseItems/,
   )?.[0];
+  const costStepSource = querySource.match(
+    /export function toLedgerCostStepData[\s\S]*?\r?\n}\r?\n\r?\nexport function toStoreManagerLedgerCostStepData/,
+  )?.[0];
   const auditSource = querySource.match(
     /export function toLedgerAuditPayload[\s\S]*?\r?\n}\r?\n\r?\nexport async function getOrCreateStoreLedgerInTx/,
   )?.[0];
@@ -196,10 +212,21 @@ test("ledger query settlement difference includes saved expenses", () => {
     salesStepSource,
     /const expenseTotal = calculateExpenseTotal\([\s\S]*calculatePaymentDifference\([\s\S]*ledger\.otherPaymentAmount,\s*expenseTotal,/,
   );
+  assert.ok(costStepSource);
+  assert.match(
+    costStepSource,
+    /productivity:\s*calculateProductivity\(\s*operatingSalesAmount,\s*ledger\.workerCount/,
+    "cost-step productivity must use operating sales, not gross profit",
+  );
   assert.ok(auditSource);
   assert.match(
     auditSource,
     /calculatePaymentDifference\([\s\S]*otherPaymentAmount,\s*expenseTotal,\s*\)/,
+  );
+  assert.match(
+    auditSource,
+    /productivity:\s*calculateProductivity\(\s*operatingSalesAmount,\s*ledger\.workerCount/,
+    "audit productivity must use operating sales, not gross profit",
   );
 });
 
@@ -249,6 +276,7 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
     version: 1,
     authorDisplayName: " 김지점장 ",
     totalSalesAmount: 0,
+    carryoverSalesAmount: 0,
     cashAmount: 0,
     cardAmount: 0,
     otherPaymentAmount: 0,
@@ -271,6 +299,16 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   assert.deepEqual(negativeAmount.error.flatten().fieldErrors.cashAmount, [
     "현금은 0원 이상의 정수여야 합니다.",
   ]);
+
+  const negativeCarryover = ledgerSalesPaymentSchema.safeParse({
+    ...basePayload,
+    carryoverSalesAmount: -1,
+  });
+  assert.equal(negativeCarryover.success, false);
+  assert.deepEqual(
+    negativeCarryover.error.flatten().fieldErrors.carryoverSalesAmount,
+    ["이월 매출은 0원 이상의 정수여야 합니다."],
+  );
 
   const decimalAmount = ledgerSalesPaymentSchema.safeParse({
     ...basePayload,
@@ -299,6 +337,17 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   assert.deepEqual(overflow.error.flatten().fieldErrors.totalSalesAmount, [
     "총매출은 0원 이상의 정수여야 합니다.",
   ]);
+
+  const carryoverOverflow = ledgerSalesPaymentSchema.safeParse({
+    ...basePayload,
+    totalSalesAmount: 2_147_483_647,
+    carryoverSalesAmount: 1,
+  });
+  assert.equal(carryoverOverflow.success, false);
+  assert.deepEqual(
+    carryoverOverflow.error.flatten().fieldErrors.carryoverSalesAmount,
+    ["영업 매출 합계는 저장 가능한 범위 이하여야 합니다."],
+  );
 
   const normalizedAuthor = ledgerSalesPaymentSchema.parse(basePayload);
   assert.equal(normalizedAuthor.authorDisplayName, "김지점장");
@@ -409,6 +458,16 @@ test("ledger save action enforces transaction, authorization, version guard, and
     /authorDisplayName:\s*authorDisplayNameToPersist/,
     "sales save should persist the preserved author display name",
   );
+  assert.match(
+    actionSource,
+    /carryoverSalesAmount:\s*parsed\.data\.carryoverSalesAmount/,
+    "sales save should persist carryover sales",
+  );
+  assert.match(
+    actionSource,
+    /"이월 매출":\s*(?:data|sales)\.carryoverSalesAmount/,
+    "sales conflicts should compare carryover sales",
+  );
   assert.match(actionSource, /revalidateLedgerSalesPaths\(\)/);
   assert.match(actionSource, /revalidateDashboardAndReports\(\)/);
   assert.ok(actionSource.includes('action: "ledger.sales_payment.updated",'));
@@ -434,6 +493,15 @@ test("ledger save action enforces transaction, authorization, version guard, and
   assert.match(
     querySource,
     /authorDisplayName:\s*ledger\.authorDisplayName\s*\?\?\s*null/,
+  );
+  assert.match(
+    querySource,
+    /calculateOperatingSalesAmount\(\s*ledger\.totalSalesAmount,\s*ledger\.carryoverSalesAmount/s,
+  );
+  assert.match(
+    querySource,
+    /calculatePaymentDifference\(\s*ledger\.totalSalesAmount,\s*ledger\.cashAmount/s,
+    "payment difference must remain based on closing sales only",
   );
 });
 
@@ -525,4 +593,40 @@ test("store-entry UI passes selected date and ledger version through save and na
   assert.match(headerSource, /type="date"/);
   assert.match(headerSource, /name="storeId"/);
   assert.match(headerSource, /name="date"/);
+});
+
+test("sales UI edits carryover sales and shows the read-only operating total", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "sales-payment-step-client.tsx",
+  );
+  const hqActionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const auditFormatSource = readProjectFile(
+    "src",
+    "features",
+    "audit",
+    "audit-format.ts",
+  );
+
+  assert.match(source, /name="carryoverSalesAmount"/);
+  assert.match(source, /carryoverSalesInputRef\.current\?\.focus\(\)/);
+  assert.match(source, /id="operating-sales-amount"[\s\S]*readOnly/);
+  assert.match(
+    source,
+    /totalSalesAmountValue\s*\+\s*carryoverSalesAmountValue/,
+  );
+  assert.match(source, /당일 현금·카드·기타 결제/);
+  assert.match(
+    hqActionSource,
+    /carryoverSalesAmount:\s*parsed\.data\.carryoverSalesAmount/,
+  );
+  assert.match(auditFormatSource, /carryoverSalesAmount:\s*"이월 매출"/);
 });

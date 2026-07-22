@@ -219,8 +219,22 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
   assert.match(chartSource, /예상 데이터 부족/);
   assert.match(chartSource, /reportMarginGapThresholdBps/);
   assert.match(chartSource, /formatMarginThreshold/);
-  assert.match(chartSource, /title="지점별 장부 입력 매출·마진율"/);
-  assert.match(chartSource, /desc="막대는 장부 입력 매출/);
+  assert.match(chartSource, /title="지점별 영업 매출 합계·마진율"/);
+  assert.match(
+    chartSource,
+    /desc="막대는 장부 마감 매출과 이월 매출을 더한 영업 매출 합계/,
+  );
+  assert.match(
+    chartSource,
+    /closingSalesAmount:\s*row\.closingSalesAmount\.value/,
+  );
+  assert.match(
+    chartSource,
+    /carryoverSalesAmount:\s*row\.carryoverSalesAmount\.value/,
+  );
+  assert.match(chartSource, /장부 마감 매출/);
+  assert.match(chartSource, /이월 매출/);
+  assert.match(chartSource, /영업 매출 합계/);
   assert.match(chartSource, /<table className="sr-only"/);
   assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
   assert.match(
@@ -436,7 +450,7 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.doesNotMatch(attendanceSource, /<(?:table|thead|tbody|tr|th|td)\b/);
 
   const pageHeadings = [
-    "지점별 매출·이익률",
+    "지점별 영업 매출·이익률",
     "매출 분석",
     "직원 근태 현황",
     "품목별 판매 현황",
@@ -488,8 +502,8 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
     {
       ledgerInventoryItems: [
         {
-          // 냉동: 판매 10+5-3 = 12개, 판매가 계획 1,500 → 추정 매출 18,000원
-          // (매입단가 1,000이 아니라 판매가 계획 기준으로 매출을 산출한다)
+          // 냉동: 판매 10+5-3 = 12개, 판매한 가격 1,500 → 추정 매출 18,000원
+          // (매입단가 1,000이 아니라 판매한 가격 기준으로 매출을 산출한다)
           // FIFO 소진금액 9,000(원가) → 추정 이익률 (18,000-9,000)/18,000 = 0.5
           productCategory: "냉동",
           previousQuantity: 10,
@@ -500,7 +514,7 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
           fifoLots: [{ consumedAmount: 6_000 }, { consumedAmount: 3_000 }],
         },
         {
-          // 생물: 판매 8+0-3 = 5개, 판매가 계획 없음 → 매입단가 2,000으로 폴백
+          // 생물: 판매 8+0-3 = 5개, 판매한 가격 없음 → 매입단가 2,000으로 폴백
           // → 추정 매출 10,000원, FIFO lot 없어 COGS 폴백 10,000 → 이익률 0
           productCategory: "생물",
           previousQuantity: 8,
@@ -530,7 +544,7 @@ test("HQ reports build frozen/live category performance with 추정 이익률 fr
     },
   ]);
 
-  // 냉동은 판매가 계획 기준이라 폴백 0건, 생물은 판매가 계획 없어 폴백 1건.
+  // 냉동은 판매한 가격 기준이라 폴백 0건, 생물은 판매한 가격 없어 폴백 1건.
   assert.deepEqual(performance, [
     {
       category: "냉동",
@@ -613,7 +627,7 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
     {
       ledgerInventoryItems: [
         {
-          // 같은 갈치를 다른 지점에서 4개 더 판매(판매가 계획 1,500 → 6,000원,
+          // 같은 갈치를 다른 지점에서 4개 더 판매(판매한 가격 1,500 → 6,000원,
           // FIFO 소진 3,000). 첫 지점과 합산되어야 한다.
           productId: "p-gal",
           productName: "갈치",
@@ -711,7 +725,7 @@ test("buildProductProfitability flags zero-sales items as 계산 불가", async 
     pathToFileURL(queryPath).href
   );
 
-  // 판매가 계획·매입단가 모두 0이면 추정 매출 0 → 이익률 계산 불가.
+  // 판매한 가격·매입단가 모두 0이면 추정 매출 0 → 이익률 계산 불가.
   const summary = buildProductProfitability([
     {
       ledgerInventoryItems: [
@@ -781,6 +795,9 @@ test("HQ report pages omit the category margin chart while preserving category c
     assert.doesNotMatch(source, /ProductCategoryMarginChart/);
     assert.doesNotMatch(source, /냉동\/생물 매출 \(추정\)/);
   }
+  assert.match(monthlyComponentSource, /장부 마감 매출/);
+  assert.match(monthlyComponentSource, /이월 매출/);
+  assert.match(monthlyComponentSource, /영업 매출 합계/);
   assert.equal(
     existsSync(
       path.join(
@@ -812,7 +829,7 @@ test("HQ report pages omit the category margin chart while preserving category c
   assert.doesNotMatch(policyDocSource, /`grossMarginRate`는 `null`/);
 
   // 쿼리는 두 리포트 모두에 categoryPerformance를 채운다.
-  // point_summary 검토 후속(2026-06-24): 판매가 계획을 붙인 ledgersWithPlannedPrice를 넘긴다.
+  // point_summary 검토 후속(2026-06-24): 판매한 가격을 붙인 ledgersWithPlannedPrice를 넘긴다.
   assert.match(
     querySource,
     /categoryPerformance:\s*buildProductCategoryPerformance\(\s*ledgersWithPlannedPrice,?\s*\)/,
@@ -886,6 +903,9 @@ test("HQ store comparison report source files follow story 6.2 boundaries", () =
   assert.match(loadingSource, /md:block/);
   assert.match(loadingSource, /md:hidden/);
   assert.match(tableSource, /매출이익/);
+  assert.match(tableSource, /장부 마감/);
+  assert.match(tableSource, /이월/);
+  assert.match(tableSource, /영업 합계/);
   assert.match(tableSource, /인당생산성/);
   assert.match(tableSource, /평균재고/);
   assert.match(tableSource, /평균매출/);
@@ -3310,6 +3330,9 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
         businessStatus: { label: "영업" },
         latestReflectedAt: "2026-06-12T01:00:00.000Z",
         statusMessage: "회의 반영 완료",
+        closingSalesAmount: { value: 40000, status: "ok" },
+        carryoverSalesAmount: { value: 5000, status: "ok" },
+        operatingSalesAmount: { value: 45000, status: "ok" },
         salesAmount: { value: 45000 },
         grossMarginRate: {
           value: null,
@@ -3368,6 +3391,9 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
   assert.match(csv, /"'=강남 ""본점"""/);
   assert.match(csv, /정정 반영/);
   assert.match(csv, /25%/);
+  assert.match(csv, /장부 마감 매출/);
+  assert.match(csv, /이월 매출/);
+  assert.match(csv, /영업 매출 합계/);
   assert.doesNotMatch(csv, /0\.25/);
   assert.doesNotMatch(csv, /300000/);
   assert.deepEqual(exportData.scopedStoreIds, ["store-1"]);
@@ -3421,6 +3447,9 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
           reviewCount: 1,
           missingDayCount: 2,
         },
+        closingSalesAmount: { value: 110000, status: "ok" },
+        carryoverSalesAmount: { value: 10000, status: "ok" },
+        operatingSalesAmount: { value: 120000, status: "ok" },
         metricEvidence: {
           salesAmount: metric({
             label: "매출",
@@ -3471,6 +3500,9 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
     selectedStoreId: "store-2",
     selectedStoreName: "서초점",
     monthlyKpis: {
+      closingSalesAmount: { value: 450000, status: "ok" },
+      carryoverSalesAmount: { value: 50000, status: "ok" },
+      operatingSalesAmount: { value: 500000, status: "ok" },
       metricEvidence: {
         salesAmount: metric({ label: "월간 매출", value: 500000 }),
         grossProfit: metric({
@@ -3603,12 +3635,12 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
         metricEvidence: {},
         hasUnappliedCorrections: false,
         inventoryItems: [
-          // 1위: 판매가 계획 2000이 있으므로 매입단가가 아닌 계획가 기준(70 × 2000 = 140,000).
+          // 1위: 판매한 가격 2000이 있으므로 매입단가가 아닌 계획가 기준(70 × 2000 = 140,000).
           {
             ...soldItem("p1", "1위품목", 70),
             plannedUnitPrice: 2000,
           },
-          // 나머지는 판매가 계획이 없어 매입단가(1000)로 폴백.
+          // 나머지는 판매한 가격이 없어 매입단가(1000)로 폴백.
           soldItem("p2", "2위품목", 60),
           soldItem("p3", "3위품목", 50),
           soldItem("p4", "4위품목", 40),
@@ -3631,11 +3663,11 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
   const ranking = report.revenueRanking;
 
   assert.equal(ranking.status, "available");
-  assert.match(ranking.basisLabel, /판매량.*판매가 계획.*추정/);
-  // 판매가 계획이 없어 폴백한 품목 수(p2~p7 = 6건).
+  assert.match(ranking.basisLabel, /판매량.*판매한 가격.*추정/);
+  // 판매한 가격이 없어 폴백한 품목 수(p2~p7 = 6건).
   assert.equal(ranking.salesPriceFallbackItemCount, 6);
 
-  // 상위 5는 추정매출 내림차순. 1위는 판매가 계획(2000) 기준이라 140,000.
+  // 상위 5는 추정매출 내림차순. 1위는 판매한 가격(2000) 기준이라 140,000.
   assert.deepEqual(
     ranking.top.map((item) => [
       item.productName,

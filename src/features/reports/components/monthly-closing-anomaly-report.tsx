@@ -165,7 +165,23 @@ function MonthlyKpiSummary({
           data-testid="hq-report-monthly-kpi-sales"
           className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
         >
-          <p className="text-muted-foreground text-sm break-words">월간 매출</p>
+          <p className="text-muted-foreground text-sm break-words">
+            장부 마감 매출
+          </p>
+          <p className="mt-2 font-medium break-words tabular-nums">
+            {formatKrwMetric(kpis.closingSalesAmount)}
+          </p>
+        </div>
+        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm break-words">이월 매출</p>
+          <p className="mt-2 font-medium break-words tabular-nums">
+            {formatKrwMetric(kpis.carryoverSalesAmount)}
+          </p>
+        </div>
+        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
+          <p className="text-muted-foreground text-sm break-words">
+            영업 매출 합계
+          </p>
           <div className="mt-2 tabular-nums">
             <MetricValueWithEvidence
               evidence={kpis.metricEvidence.salesAmount}
@@ -376,7 +392,7 @@ function RevenueRankingSummary({
           </p>
           {ranking.salesPriceFallbackItemCount > 0 ? (
             <p className="mt-1 text-xs break-words text-amber-600 dark:text-amber-500">
-              판매가 계획이 없어 매입 단가로 대체한 품목{" "}
+              판매한 가격이 없어 매입 단가로 대체한 품목{" "}
               {ranking.salesPriceFallbackItemCount.toLocaleString("ko-KR")}건이
               포함되어 있습니다(판매가 미반영).
             </p>
@@ -648,7 +664,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
               <TableHead className="w-[96px]">날짜</TableHead>
               <TableHead>마감 상태</TableHead>
               <TableHead>이상 신호</TableHead>
-              <TableHead className="text-right">매출</TableHead>
+              <TableHead className="text-right">영업 매출 합계</TableHead>
               <TableHead className="text-right">이익률</TableHead>
               <TableHead className="text-right">매출 차이</TableHead>
               <TableHead>손실</TableHead>
@@ -712,7 +728,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               <MobileMetric
-                label="매출"
+                label="영업 매출 합계"
                 evidence={day.metricEvidence.salesAmount}
               />
               <MobileMetric
@@ -902,6 +918,16 @@ function MetricValueWithEvidence({
       </details>
     </div>
   );
+}
+
+function formatKrwMetric(metric: {
+  value: number | null;
+  label?: string;
+  unavailableReason?: string;
+}) {
+  return metric.value === null
+    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
+    : krwFormatter.format(metric.value);
 }
 
 function DetailLink({

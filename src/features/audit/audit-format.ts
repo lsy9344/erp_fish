@@ -129,6 +129,7 @@ const auditSummaryFieldLabels: Record<string, string> = {
   unitPrice: "장부 적용 단가",
   // WO-05(2026-06-28): 장부 관련 대표 필드를 한글로 매핑해 raw key 의존을 줄인다.
   totalSalesAmount: "총매출",
+  carryoverSalesAmount: "이월 매출",
   cashAmount: "현금",
   cardAmount: "카드",
   otherPaymentAmount: "기타 결제수단",

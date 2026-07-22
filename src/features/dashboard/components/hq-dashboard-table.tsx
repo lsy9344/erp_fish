@@ -68,10 +68,10 @@ const dashboardColumnWidthConfig = [
   },
   {
     id: "salesAmount",
-    label: "매출",
-    defaultWidth: 130,
-    minWidth: 120,
-    maxWidth: 220,
+    label: "매출 구성",
+    defaultWidth: 180,
+    minWidth: 170,
+    maxWidth: 280,
     className: "text-right tabular-nums",
   },
   {
@@ -519,7 +519,7 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
 
                 <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                   <div>
-                    <dt className="text-muted-foreground">매출</dt>
+                    <dt className="text-muted-foreground">매출 구성</dt>
                     <dd className="font-medium tabular-nums">
                       <SalesCell row={row} />
                     </dd>
@@ -749,8 +749,8 @@ function LossCell({
   );
 }
 
-// WO-14 part2(2026-06-29): 매출 셀은 장부 매출(위)과 분석 매출(아래, 판매가 계획 기준 추정)을
-// 함께 보여준다. 분석 매출이 계산 불가(판매가 미입력 등)면 사유 라벨로 구분한다.
+// 장부 마감 매출, 이월 매출, 영업 매출 합계를 구분하고 판매한 가격 기준
+// 분석 매출도 함께 보여준다.
 function SalesCell({ row }: { row: HqDashboardRow }) {
   const analysis = row.analysisSalesAmount;
   const analysisLabel =
@@ -760,7 +760,13 @@ function SalesCell({ row }: { row: HqDashboardRow }) {
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
-      <span>{formatKrw(row.salesAmount.value)}</span>
+      <span className="text-xs">
+        장부 마감 {formatKrwMetric(row.closingSalesAmount)}
+      </span>
+      <span className="text-xs">
+        이월 {formatKrwMetric(row.carryoverSalesAmount)}
+      </span>
+      <span>영업 합계 {formatKrwMetric(row.operatingSalesAmount)}</span>
       <span className="text-muted-foreground text-xs font-normal">
         분석 {analysisLabel}
       </span>
@@ -870,6 +876,12 @@ function getRowClassName(row: HqDashboardRow) {
 
 function formatKrw(value: number | null) {
   return value === null ? "-" : krwFormatter.format(value);
+}
+
+function formatKrwMetric(metric: HqDashboardRow["salesAmount"]) {
+  return metric.value === null
+    ? (metric.label ?? metric.unavailableReason ?? "-")
+    : formatKrw(metric.value);
 }
 
 function formatLoss(row: HqDashboardRow) {

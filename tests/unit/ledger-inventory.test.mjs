@@ -830,7 +830,6 @@ test("inventory loss badges describe loss amount without sale amount ambiguity",
     "components",
     "inventory-step-client.tsx",
   );
-
   assert.match(componentSource, /손실액 \$\{formatKrw\(item\.lossAmount\)\}/);
 });
 
@@ -1113,7 +1112,7 @@ test("FIFO lot calculation consumes oldest lots first and marks legacy opening l
 //
 // 작업지시서 권장 시나리오:
 //   전일 이월 30개 @ 900원, 당일 본사 출고 70개 @ 1,000원
-//   판매 예정가 1,300원, 마감 재고 15개
+//   판매한 가격 1,300원, 마감 재고 15개
 // 단가가 다른 이월 lot과 당일 출고 lot이 있을 때 FIFO가 오래된 lot부터 차감하는지 검증한다.
 test("OQ-17 reverse-calc consumes oldest lots first from morning HQ shipment", async () => {
   const fifoPath = assertProjectFile(
@@ -1150,7 +1149,7 @@ test("OQ-17 reverse-calc consumes oldest lots first from morning HQ shipment", a
   // ponytail: 현 엔진은 판매/손실을 한 묶음(소비량)으로 차감한다. 작업지시서 예시의
   //   "판매 80 + 폐기 5" 분리(COGS 77,000 / 폐기 5,000)는 손실 수량을 별도 차감하는
   //   후속 FIFO 구현 story 범위다(작업지시서 "제외" 항목). 여기서는 오래된 lot 우선 차감과
-  //   판매 예정가 비의존성만 고정한다.
+  //   판매한 가격 비의존성만 고정한다.
   assert.equal(result.consumedAmount, 82_000);
   assert.equal(result.remainingAmount, 15_000);
   assert.equal(result.containsLegacyOpening, false);
@@ -1177,9 +1176,9 @@ test("OQ-17 reverse-calc consumes oldest lots first from morning HQ shipment", a
     ],
   );
 
-  // 작업지시서 완료 기준: 판매 예정가를 바꿔도 FIFO 원가와 재고금액은 바뀌지 않는다.
-  // calculateFifoLotSnapshots는 판매 예정가를 입력으로 받지 않으므로(FIFO 원가는 출고/이월
-  // 단가로만 계산), 어떤 판매 예정가에도 같은 결과를 낸다. 같은 입력 재계산으로 이를 고정한다.
+  // 작업지시서 완료 기준: 판매한 가격을 바꿔도 FIFO 원가와 재고금액은 바뀌지 않는다.
+  // calculateFifoLotSnapshots는 판매한 가격을 입력으로 받지 않으므로(FIFO 원가는 출고/이월
+  // 단가로만 계산), 어떤 판매한 가격에도 같은 결과를 낸다. 같은 입력 재계산으로 이를 고정한다.
   const recomputed = calculateFifoLotSnapshots(scenario);
   assert.equal(recomputed.consumedAmount, result.consumedAmount);
   assert.equal(recomputed.remainingAmount, result.remainingAmount);
@@ -1475,14 +1474,14 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /calculatePlannedMarginRate/);
   assert.match(
     componentSource,
-    /<output[\s\S]*계획 마진율|계획 마진율[\s\S]*<output/,
+    /<output[\s\S]*판매가 기준 마진율|판매가 기준 마진율[\s\S]*<output/,
   );
   assert.match(componentSource, /function handleRemoveManualProduct/);
   assert.match(componentSource, /추가 행 제거/);
-  assert.match(componentSource, /\["당일재고", "판매계획가", "바꾼 이유"\]/);
+  assert.match(componentSource, /\["당일재고", "판매한 가격", "바꾼 이유"\]/);
 });
 
-test("HQ inventory shows opening stock price fallback and planned unit price read-only", () => {
+test("inventory uses the approved display price DTO for opening price and keeps planned unit price read-only", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1493,15 +1492,121 @@ test("HQ inventory shows opening stock price fallback and planned unit price rea
 
   assert.match(
     componentSource,
-    /item\.purchasePrice[\s\S]*hasSensitiveInventoryAmounts\(item\)[\s\S]*OPENING_SNAPSHOT[\s\S]*월초 재고단가[\s\S]*sourceYearMonth[\s\S]*formatKrw\(item\.unitPrice\)/,
+    /item\.purchasePrice\.kind === "OPENING"[\s\S]*월초 재고단가[\s\S]*item\.purchasePrice\.yearMonth[\s\S]*formatKrw\(item\.purchasePrice\.unitPrice\)/,
   );
   assert.match(
     componentSource,
-    /판매계획가[\s\S]*item\.plannedUnitPrice === null[\s\S]*미입력[\s\S]*formatKrw\(item\.plannedUnitPrice\)/,
+    /판매한 가격[\s\S]*item\.plannedUnitPrice === null[\s\S]*미입력[\s\S]*formatKrw\(item\.plannedUnitPrice\)/,
   );
   assert.match(
     componentSource,
     /\.\.\.\(isStoreManagerMode[\s\S]*plannedUnitPrice:/,
+  );
+});
+
+test("inventory save receipt reports changed rows and Enter targets only the next quantity", async () => {
+  const receiptPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-save-receipt.ts",
+  );
+  const focusPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "inventory-enter-navigation.ts",
+  );
+  const { buildInventorySaveReceipt } = await import(
+    pathToFileURL(receiptPath).href
+  );
+  const { getNextInventoryQuantityTarget } = await import(
+    pathToFileURL(focusPath).href
+  );
+
+  const receipt = buildInventorySaveReceipt({
+    baselineItems: [
+      {
+        productId: "a",
+        productName: "광어",
+        currentQuantity: 3,
+        plannedUnitPrice: 10_000,
+        adjustmentReason: "",
+      },
+      {
+        productId: "b",
+        productName: "연어",
+        currentQuantity: 2,
+        plannedUnitPrice: 20_000,
+        adjustmentReason: "",
+      },
+    ],
+    submittedItems: [
+      {
+        productId: "a",
+        currentQuantity: "2.5",
+        plannedUnitPrice: "10000",
+        adjustmentReason: "",
+      },
+      {
+        productId: "b",
+        currentQuantity: "2",
+        plannedUnitPrice: "21000",
+        adjustmentReason: "가격 변경",
+      },
+    ],
+    addedProductIds: new Set(),
+  });
+
+  assert.deepEqual(
+    receipt.entries.map((entry) => entry.productId),
+    ["a", "b"],
+  );
+  assert.equal(receipt.entries[0].quantityBefore, 3);
+  assert.equal(receipt.entries[0].quantityAfter, 2.5);
+  assert.equal(receipt.entries[1].plannedUnitPriceChanged, true);
+  assert.equal(receipt.entries[1].reasonChanged, true);
+
+  assert.deepEqual(getNextInventoryQuantityTarget(["a", "b", "c"], "a", 50), {
+    productId: "b",
+    page: 1,
+  });
+  assert.deepEqual(getNextInventoryQuantityTarget(["a", "b", "c"], "b", 2), {
+    productId: "c",
+    page: 2,
+  });
+  assert.equal(getNextInventoryQuantityTarget(["a", "b", "c"], "c", 2), null);
+
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const saveStatusSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "ledger-save-status.tsx",
+  );
+  assert.match(componentSource, /onKeyDown=.*handleQuantityKeyDown/s);
+  assert.match(componentSource, /event\.nativeEvent\.isComposing/);
+  assert.match(componentSource, /event\.preventDefault\(\)/);
+  assert.match(componentSource, /마지막 재고 항목입니다\./);
+  assert.match(componentSource, /방금 저장됨/);
+  assert.match(componentSource, /수정 중/);
+  assert.match(
+    componentSource,
+    /저장됐습니다\. 방금 저장한 재고 \$\{pendingReceipt\.entries\.length\}건/,
+  );
+  assert.match(componentSource, /saveReceipt !== null && !isDirty/);
+  assert.doesNotMatch(saveStatusSource, /announcedSuccessMessage/);
+  assert.match(
+    componentSource,
+    /resultMessage \? \([\s\S]*role=\{!isSaving && !formError \? "status" : undefined\}[\s\S]*<details/,
+    "the receipt announces success only after saving and remains accessible",
   );
 });
 
@@ -2241,7 +2346,7 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
   assert.match(componentSource, /당일/);
   assert.match(componentSource, /최근/);
   assert.match(componentSource, /매입단가 ·/);
-  assert.match(componentSource, /매입 이력 없음/);
+  assert.match(componentSource, /단가 근거 없음/);
   assert.match(componentSource, /formatKrw\(item\.purchasePrice\.unitPrice\)/);
   assert.match(componentSource, /purchasePrice:\s*option\.purchasePrice/);
   assert.match(
@@ -2251,6 +2356,10 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
   );
   assert.match(safeMapperSource, /plannedUnitPrice:\s*item\.plannedUnitPrice/);
   assert.match(safeMapperSource, /purchasePrice:\s*item\.purchasePrice/);
+  assert.match(
+    querySource,
+    /previousQuantityDetail\.source === "OPENING_SNAPSHOT"[\s\S]*kind: "OPENING"[\s\S]*yearMonth:[\s\S]*unitPrice: item\.unitPrice/,
+  );
   assert.doesNotMatch(safeMapperSource, /unitPrice:\s*item\.unitPrice/);
   assert.doesNotMatch(
     safeMapperSource,

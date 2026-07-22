@@ -185,7 +185,7 @@ function normalizeLossItem({
     productCategory: product.category,
     productSpec: product.spec,
     // 가격 정책 전환(2026-06-24): 품목 마스터 단가를 손실 단가로 쓰지 않는다.
-    // 실제 단가/금액은 판매가 계획이 있을 때만 아래에서 채운다(없으면 0·미산정).
+    // 실제 단가/금액은 판매한 가격이 있을 때만 아래에서 채운다(없으면 0·미산정).
     unitPrice: 0,
     lossTypeName: lossType.name,
     quantity: loss.quantity,
@@ -353,9 +353,9 @@ export async function saveLedgerLosses(
           );
         }
 
-        // 가격 정책 전환(2026-06-24): 판매가 계획이 있을 때만 손실액을 산정한다.
+        // 가격 정책 전환(2026-06-24): 판매한 가격이 있을 때만 손실액을 산정한다.
         // 계획이 없으면 품목 마스터 단가로 폴백하지 않고 단가/금액을 미산정(0)으로 둔다.
-        // (UI에서 "판매가 계획 없음 · 미산정"으로 표시, usedPlannedPrice=false)
+        // (UI에서 "판매한 가격 없음 · 미산정"으로 표시, usedPlannedPrice=false)
         const usedPlannedPrice = plannedUnitPriceByProductId.has(
           normalized.productId,
         );

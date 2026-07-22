@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -70,6 +76,11 @@ import {
   mapInventorySaveErrors,
   type InventoryErrorFocusTarget,
 } from "~/features/inventory/inventory-save-errors";
+import { getNextInventoryQuantityTarget } from "~/features/inventory/inventory-enter-navigation";
+import {
+  buildInventorySaveReceipt,
+  type InventorySaveReceiptEntry,
+} from "~/features/inventory/inventory-save-receipt";
 import {
   calculatePlannedMarginRate,
   formatPlannedMarginRate,
@@ -329,6 +340,7 @@ export function InventoryStepClient({
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const pendingFocusTargetRef = useRef<InventoryErrorFocusTarget | null>(null);
   const pendingFocusOriginRef = useRef<Element | null>(null);
+  const pendingNextQuantityProductIdRef = useRef<string | null>(null);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [data, setData] = useState(initialData);
@@ -354,6 +366,18 @@ export function InventoryStepClient({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [saveReceipt, setSaveReceipt] = useState<
+    InventorySaveReceiptEntry[] | null
+  >(null);
+  const [recentlySavedProductIds, setRecentlySavedProductIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [editingAfterSaveProductIds, setEditingAfterSaveProductIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [quantityNavigationMessage, setQuantityNavigationMessage] = useState<
+    string | null
+  >(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [adjustmentErrors, setAdjustmentErrors] = useState<
@@ -518,6 +542,17 @@ export function InventoryStepClient({
     }, 250);
   }, [activeCategory, adjustmentErrors, fieldErrors, isSaving, pageByCategory]);
 
+  useEffect(() => {
+    const productId = pendingNextQuantityProductIdRef.current;
+    if (!productId) return;
+
+    const input = currentQuantityRefs.current[productId];
+    if (input && !input.disabled) {
+      input.focus();
+      pendingNextQuantityProductIdRef.current = null;
+    }
+  }, [activeCategory, pageByCategory]);
+
   function focusFirstError(errors: FieldErrors) {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index]!;
@@ -614,7 +649,7 @@ export function InventoryStepClient({
 
       if (raw.trim() === "") {
         nextErrors[`items.${index}.plannedUnitPrice`] = [
-          "판매계획가를 입력해 주세요.",
+          "판매한 가격을 입력해 주세요.",
         ];
       }
     });
@@ -623,7 +658,7 @@ export function InventoryStepClient({
       return true;
     }
 
-    const message = "모든 품목의 판매계획가를 입력해 주세요.";
+    const message = "모든 품목의 판매한 가격을 입력해 주세요.";
     setFieldErrors(nextErrors);
     setFormError(message);
     focusFirstError(nextErrors);
@@ -723,7 +758,6 @@ export function InventoryStepClient({
 
   async function saveCurrentDraft() {
     if (isClosed) {
-      setResultMessage(null);
       setFormError(originalEditBlockedMessage);
       setAdjustmentErrors({});
       toast.error(originalEditBlockedMessage);
@@ -732,7 +766,6 @@ export function InventoryStepClient({
 
     if (isAdjustmentSavePending) {
       const message = "재고를 고친 이유 저장이 끝난 뒤 다시 저장해 주세요.";
-      setResultMessage(null);
       setFormError(message);
       toast.error(message);
       return false;
@@ -751,7 +784,6 @@ export function InventoryStepClient({
     }
 
     setIsSaving(true);
-    setResultMessage(null);
     setFormError(null);
     setFieldErrors({});
     setAdjustmentErrors({});
@@ -791,6 +823,24 @@ export function InventoryStepClient({
           reasonRefs.current[item.productId]?.value ??
           item.adjustmentReasonInput,
       };
+    });
+    const pendingReceipt = buildInventorySaveReceipt({
+      baselineItems: data.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        currentQuantity: item.currentQuantity,
+        plannedUnitPrice: item.plannedUnitPrice,
+        adjustmentReason: item.adjustment?.reason ?? "",
+      })),
+      submittedItems: submittedItems.map((submittedItem, index) => ({
+        ...submittedItem,
+        productName: items[index]?.productName,
+        currentQuantity:
+          currentQuantityRefs.current[submittedItem.productId]?.value ??
+          items[index]?.currentQuantityInput ??
+          submittedItem.currentQuantity,
+      })),
+      addedProductIds: addedManualIds,
     });
     const submittedProductIds = submittedItems.map((item) => item.productId);
 
@@ -836,7 +886,16 @@ export function InventoryStepClient({
       pendingFocusOriginRef.current = null;
       notifyLedgerUpdated(result.data);
       setAdjustmentErrors({});
-      setResultMessage("저장됐습니다.");
+      setSaveReceipt(pendingReceipt.entries);
+      setRecentlySavedProductIds(
+        new Set(pendingReceipt.entries.map((entry) => entry.productId)),
+      );
+      setEditingAfterSaveProductIds(new Set());
+      setResultMessage(
+        pendingReceipt.entries.length > 0
+          ? `저장됐습니다. 방금 저장한 재고 ${pendingReceipt.entries.length}건`
+          : "저장됐습니다. 변경된 재고가 없습니다.",
+      );
       toast.success("재고 정보를 저장했습니다.");
       return true;
     } catch {
@@ -866,6 +925,7 @@ export function InventoryStepClient({
     setFieldErrors({});
     setFormError(null);
     setAdjustmentErrors({});
+    clearRecentlySavedProduct(productId);
     const normalized = normalizeNumericInput(value);
     setItems((current) =>
       current.map((item) =>
@@ -881,6 +941,7 @@ export function InventoryStepClient({
     pendingFocusOriginRef.current = null;
     setFieldErrors({});
     setFormError(null);
+    clearRecentlySavedProduct(productId);
     setItems((current) =>
       current.map((item) =>
         item.productId === productId
@@ -895,6 +956,7 @@ export function InventoryStepClient({
     pendingFocusOriginRef.current = null;
     setFieldErrors({});
     setFormError(null);
+    clearRecentlySavedProduct(productId);
     setItems((current) =>
       current.map((item) =>
         item.productId === productId
@@ -916,7 +978,6 @@ export function InventoryStepClient({
     );
 
     if (!option) {
-      setResultMessage(null);
       setFormError("추가할 품목을 선택해 주세요.");
       return;
     }
@@ -929,7 +990,6 @@ export function InventoryStepClient({
       manualProductSelectRef.current.value = "";
     }
     setActiveCategory(normalizeCategory(option.productCategory));
-    setResultMessage(null);
     window.setTimeout(() => {
       currentQuantityRefs.current[option.productId]?.focus();
     }, 0);
@@ -960,6 +1020,7 @@ export function InventoryStepClient({
   function updateAdjustmentReason(productId: string, value: string) {
     pendingFocusTargetRef.current = null;
     pendingFocusOriginRef.current = null;
+    clearRecentlySavedProduct(productId);
     setAdjustmentErrors((current) => {
       const next = { ...current };
       delete next[productId];
@@ -972,6 +1033,50 @@ export function InventoryStepClient({
           : item,
       ),
     );
+  }
+
+  function clearRecentlySavedProduct(productId: string) {
+    if (!recentlySavedProductIds.has(productId)) return;
+
+    setRecentlySavedProductIds((current) => {
+      const next = new Set(current);
+      next.delete(productId);
+      return next;
+    });
+    setEditingAfterSaveProductIds((current) => new Set(current).add(productId));
+  }
+
+  function handleQuantityKeyDown(
+    event: KeyboardEvent<HTMLInputElement>,
+    productId: string,
+  ) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+
+    event.preventDefault();
+    const orderedProductIds = getCategoryItems(activeCategory).map(
+      (item) => item.productId,
+    );
+    const target = getNextInventoryQuantityTarget(
+      orderedProductIds,
+      productId,
+      ROW_PAGE_SIZE,
+    );
+
+    if (!target) {
+      setQuantityNavigationMessage("마지막 재고 항목입니다.");
+      return;
+    }
+
+    setQuantityNavigationMessage(null);
+    pendingNextQuantityProductIdRef.current = target.productId;
+    setCategoryPage(activeCategory, target.page);
+    window.setTimeout(() => {
+      const input = currentQuantityRefs.current[target.productId];
+      if (input && !input.disabled) {
+        input.focus();
+        pendingNextQuantityProductIdRef.current = null;
+      }
+    }, 0);
   }
 
   function getSystemQuantity(item: InventoryLineState) {
@@ -1020,7 +1125,6 @@ export function InventoryStepClient({
       ? hqEditReason.trim()
       : item.adjustmentReasonInput.trim();
 
-    setResultMessage(null);
     setFormError(null);
     setFieldErrors({});
     setAdjustmentErrors((current) => {
@@ -1767,12 +1871,13 @@ export function InventoryStepClient({
         ),
       );
       const unitPriceSummary = item.purchasePrice
-        ? `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-        : hasSensitiveInventoryAmounts(item) &&
-            item.previousQuantityDetail.source === "OPENING_SNAPSHOT"
-          ? `월초 재고단가 · ${item.previousQuantityDetail.sourceYearMonth ?? data.closingDate.slice(0, 7)} · ${formatKrw(item.unitPrice)}/1박스`
-          : "매입 이력 없음";
+        ? item.purchasePrice.kind === "OPENING"
+          ? `월초 재고단가 · ${item.purchasePrice.yearMonth} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+          : `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+        : "단가 근거 없음";
       const modified = isLineModified(item) || item.isModified;
+      const recentlySaved = recentlySavedProductIds.has(item.productId);
+      const editingAfterSave = editingAfterSaveProductIds.has(item.productId);
       const adjusted = Boolean(item.adjustment);
       const adjustmentNeeded = !adjusted && isAdjustmentNeeded(item);
       const systemQuantity = getSystemQuantity(item);
@@ -1792,7 +1897,7 @@ export function InventoryStepClient({
       return (
         <TableRow
           key={item.productId}
-          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${adjusted ? ", 고침 완료" : ""}`}
+          aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${recentlySaved ? ", 방금 저장됨" : ""}${editingAfterSave ? ", 수정 중" : ""}${adjusted ? ", 고침 완료" : ""}`}
           data-focused={focusedProductId === item.productId || undefined}
           className={cn(
             "transition-colors",
@@ -1828,6 +1933,22 @@ export function InventoryStepClient({
                       className="border-primary text-primary text-[10px]"
                     >
                       수정됨
+                    </Badge>
+                  ) : null}
+                  {recentlySaved ? (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300"
+                    >
+                      방금 저장됨
+                    </Badge>
+                  ) : null}
+                  {editingAfterSave ? (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300"
+                    >
+                      수정 중
                     </Badge>
                   ) : null}
                   {adjustmentNeeded && systemQuantity !== null
@@ -1966,6 +2087,9 @@ export function InventoryStepClient({
                         event.currentTarget.value,
                       )
                     }
+                    onKeyDown={(event) =>
+                      handleQuantityKeyDown(event, item.productId)
+                    }
                     disabled={isSaving || isClosed || isAdjustmentSavePending}
                     className="h-11 w-24 tabular-nums"
                   />
@@ -2014,14 +2138,14 @@ export function InventoryStepClient({
                     <FieldLabel
                       htmlFor={`inventory-planned-unit-price-${item.productId}`}
                     >
-                      판매계획가
+                      판매한 가격
                     </FieldLabel>
                     <Input
                       id={`inventory-planned-unit-price-${item.productId}`}
                       ref={(node) => {
                         plannedUnitPriceRefs.current[item.productId] = node;
                       }}
-                      aria-label={`${item.productName} 판매계획가`}
+                      aria-label={`${item.productName} 판매한 가격`}
                       aria-invalid={Boolean(plannedUnitPriceError)}
                       aria-describedby={
                         plannedUnitPriceError
@@ -2047,7 +2171,7 @@ export function InventoryStepClient({
                 !addedManualIds.has(item.productId) ? (
                   <div className="flex flex-col gap-1 pb-2.5">
                     <span className="text-muted-foreground text-xs">
-                      판매계획가
+                      판매한 가격
                     </span>
                     <output className="font-medium tabular-nums">
                       {item.plannedUnitPrice === null
@@ -2059,7 +2183,7 @@ export function InventoryStepClient({
                 {isStoreManagerMode ? (
                   <div className="flex flex-col gap-1 pb-2.5">
                     <span className="text-muted-foreground text-xs">
-                      계획 마진율
+                      판매가 기준 마진율
                     </span>
                     <output
                       id={`inventory-planned-margin-${item.productId}`}
@@ -2365,10 +2489,9 @@ export function InventoryStepClient({
           updatedAt={data.updatedAt}
           isSaving={isSaving || isAdjustmentSavePending}
           errorMessage={formError}
-          successMessage={resultMessage}
           unsavedFields={
             isStoreManagerMode
-              ? ["당일재고", "판매계획가", "바꾼 이유"]
+              ? ["당일재고", "판매한 가격", "바꾼 이유"]
               : ["현재 재고", "바꾼 이유"]
           }
           onRetry={() => formRef.current?.requestSubmit()}
@@ -2418,7 +2541,6 @@ export function InventoryStepClient({
               inputRef={hqEditReasonInputRef}
               onChange={(value) => {
                 setHqEditReason(value);
-                setResultMessage(null);
               }}
             />
           </section>
@@ -2507,16 +2629,61 @@ export function InventoryStepClient({
             ))}
           </Tabs>
 
+          {quantityNavigationMessage ? (
+            <p className="sr-only" role="status" aria-live="polite">
+              {quantityNavigationMessage}
+            </p>
+          ) : null}
+
           {resultMessage ? (
-            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+            <div className="grid gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
               <p
                 className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-                role="status"
-                aria-live="polite"
+                role={!isSaving && !formError ? "status" : undefined}
+                aria-live={!isSaving && !formError ? "polite" : undefined}
               >
                 <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
                 {resultMessage}
               </p>
+              {saveReceipt && saveReceipt.length > 0 ? (
+                <div className="text-muted-foreground text-xs">
+                  <ul className="grid gap-1">
+                    {saveReceipt.slice(0, 3).map((entry) => (
+                      <li key={entry.productId}>
+                        {entry.productName}
+                        {entry.quantityChanged
+                          ? ` ${entry.quantityBefore === null ? "-" : formatQuantityValue(entry.quantityBefore)} → ${entry.quantityAfter === null ? "-" : formatQuantityValue(entry.quantityAfter)}`
+                          : entry.plannedUnitPriceChanged
+                            ? " 판매한 가격 저장"
+                            : entry.reasonChanged
+                              ? " 바꾼 이유 저장"
+                              : " 저장"}
+                      </li>
+                    ))}
+                  </ul>
+                  {saveReceipt.length > 3 ? (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer font-medium">
+                        외 {saveReceipt.length - 3}건 전체 보기
+                      </summary>
+                      <ul className="mt-1 grid gap-1 pl-3">
+                        {saveReceipt.slice(3).map((entry) => (
+                          <li key={entry.productId}>
+                            {entry.productName}
+                            {entry.quantityChanged
+                              ? ` ${entry.quantityBefore === null ? "-" : formatQuantityValue(entry.quantityBefore)} → ${entry.quantityAfter === null ? "-" : formatQuantityValue(entry.quantityAfter)}`
+                              : entry.plannedUnitPriceChanged
+                                ? " 판매한 가격 저장"
+                                : entry.reasonChanged
+                                  ? " 바꾼 이유 저장"
+                                  : " 저장"}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -2529,15 +2696,13 @@ export function InventoryStepClient({
           <div className="bg-background/95 sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
             <Button
               type="submit"
-              variant={
-                resultMessage === "저장됐습니다." ? "outline" : "default"
-              }
+              variant={saveReceipt !== null && !isDirty ? "outline" : "default"}
               className="min-h-11 w-full sm:w-auto"
               disabled={isSaving || isClosed || isAdjustmentSavePending}
             >
               {isSaving ? "저장 중..." : "저장"}
             </Button>
-            {resultMessage === "저장됐습니다." ? (
+            {saveReceipt !== null && !isDirty ? (
               <Button
                 type="button"
                 className="min-h-11 w-full sm:w-auto"

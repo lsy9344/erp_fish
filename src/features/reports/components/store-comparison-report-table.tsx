@@ -55,7 +55,7 @@ export function StoreComparisonReportTable({
             <TableRow>
               <TableHead className="w-[180px]">지점</TableHead>
               <TableHead>상태</TableHead>
-              <TableHead className="text-right">매출</TableHead>
+              <TableHead className="text-right">매출 구성</TableHead>
               <TableHead className="text-right">매출이익</TableHead>
               <TableHead className="text-right">이익률</TableHead>
               <TableHead className="text-right">영업이익</TableHead>
@@ -76,10 +76,7 @@ export function StoreComparisonReportTable({
                 <TableCell>
                   <StatusSummary row={row} />
                 </TableCell>
-                <MetricCell
-                  value={formatKrwMetric(row.salesAmount)}
-                  evidence={row.metricEvidence.salesAmount}
-                />
+                <SalesCompositionCell row={row} />
                 <MetricCell
                   value={formatKrwMetric(row.grossProfit)}
                   evidence={row.metricEvidence.grossProfit}
@@ -141,11 +138,12 @@ export function StoreComparisonReportTable({
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-              <MobileMetric
-                label="매출"
-                value={formatKrwMetric(row.salesAmount)}
-                evidence={row.metricEvidence.salesAmount}
-              />
+              <div className="col-span-2 min-w-0">
+                <dt className="text-muted-foreground">매출 구성</dt>
+                <dd className="font-medium tabular-nums">
+                  <SalesComposition row={row} align="left" />
+                </dd>
+              </div>
               <MobileMetric
                 label="이익률"
                 value={formatPercentMetric(row.grossMarginRate)}
@@ -208,6 +206,46 @@ function MetricCell({
     <TableCell className="text-right tabular-nums">
       <MetricValueWithEvidence value={value} evidence={evidence} />
     </TableCell>
+  );
+}
+
+function SalesCompositionCell({ row }: { row: StoreComparisonReportRow }) {
+  return (
+    <TableCell className="text-right tabular-nums">
+      <SalesComposition row={row} />
+    </TableCell>
+  );
+}
+
+function SalesComposition({
+  row,
+  align = "right",
+}: {
+  row: StoreComparisonReportRow;
+  align?: "left" | "right";
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-0.5",
+        align === "right" ? "text-right" : "text-left",
+      )}
+    >
+      <span className="text-xs">
+        장부 마감 {formatKrwMetric(row.closingSalesAmount)}
+      </span>
+      <span className="text-xs">
+        이월 {formatKrwMetric(row.carryoverSalesAmount)}
+      </span>
+      <div>
+        <span className="text-xs">영업 합계</span>
+        <MetricValueWithEvidence
+          value={formatKrwMetric(row.operatingSalesAmount)}
+          evidence={row.metricEvidence.salesAmount}
+          align={align}
+        />
+      </div>
+    </div>
   );
 }
 

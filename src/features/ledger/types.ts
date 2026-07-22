@@ -6,6 +6,7 @@ import { type StoreEntryStepCompletion } from "./step-completion";
 
 type PaymentAmounts = {
   totalSalesAmount: number;
+  carryoverSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
   otherPaymentAmount: number;
@@ -23,6 +24,7 @@ export type LedgerSalesStepData = PaymentAmounts & {
   submittedAt: string | null;
   closedById: string | null;
   closedAt: string | null;
+  operatingSalesAmount: number;
   paymentDifferenceAmount: number;
 };
 

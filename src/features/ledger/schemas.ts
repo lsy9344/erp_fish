@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  MAX_VALIDATION_INTEGER,
   isNonNegativeDecimalInRange,
   isNonNegativeIntegerInRange,
   parseRequiredNonNegativeDecimal,
@@ -10,6 +11,9 @@ import {
 } from "../../lib/validation.ts";
 
 const totalSalesAmountError = "총매출은 0원 이상의 정수여야 합니다.";
+const carryoverSalesAmountError = "이월 매출은 0원 이상의 정수여야 합니다.";
+const operatingSalesAmountError =
+  "영업 매출 합계는 저장 가능한 범위 이하여야 합니다.";
 const cashAmountError = "현금은 0원 이상의 정수여야 합니다.";
 const cardAmountError = "카드는 0원 이상의 정수여야 합니다.";
 const otherPaymentAmountError = "기타 결제수단은 0원 이상의 정수여야 합니다.";
@@ -181,31 +185,49 @@ export const ledgerOptionalAuthorDisplayNameSchema = z
     return z.NEVER;
   });
 
-export const ledgerSalesPaymentSchema = ledgerMutationContextSchema.extend({
-  // 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입으로 옮겨졌다. 매출 저장은
-  // 더 이상 작성자를 UI에서 받지 않으므로 선택값으로 둔다(최초 작성자 보존 정책은 서버에서 유지).
-  authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
-  totalSalesAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredKrwAmount(value, context, totalSalesAmountError),
-    ),
-  cashAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredKrwAmount(value, context, cashAmountError),
-    ),
-  cardAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredKrwAmount(value, context, cardAmountError),
-    ),
-  otherPaymentAmount: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredKrwAmount(value, context, otherPaymentAmountError),
-    ),
-});
+export const ledgerSalesPaymentSchema = ledgerMutationContextSchema
+  .extend({
+    // 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입으로 옮겨졌다. 매출 저장은
+    // 더 이상 작성자를 UI에서 받지 않으므로 선택값으로 둔다(최초 작성자 보존 정책은 서버에서 유지).
+    authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
+    totalSalesAmount: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredKrwAmount(value, context, totalSalesAmountError),
+      ),
+    carryoverSalesAmount: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredKrwAmount(value, context, carryoverSalesAmountError),
+      ),
+    cashAmount: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredKrwAmount(value, context, cashAmountError),
+      ),
+    cardAmount: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredKrwAmount(value, context, cardAmountError),
+      ),
+    otherPaymentAmount: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredKrwAmount(value, context, otherPaymentAmountError),
+      ),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.totalSalesAmount + value.carryoverSalesAmount >
+      MAX_VALIDATION_INTEGER
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["carryoverSalesAmount"],
+        message: operatingSalesAmountError,
+      });
+    }
+  });
 
 export type LedgerSalesPaymentInput = z.infer<typeof ledgerSalesPaymentSchema>;
 

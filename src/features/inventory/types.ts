@@ -9,11 +9,17 @@ import { type InventoryFifoLotView } from "~/features/inventory/fifo-lots";
 
 export type { InventoryFifoLotView };
 
-export type InventoryPurchasePrice = {
-  kind: "TODAY" | "RECENT";
-  businessDate: string;
-  unitPrice: number;
-};
+export type InventoryPurchasePrice =
+  | {
+      kind: "TODAY" | "RECENT";
+      businessDate: string;
+      unitPrice: number;
+    }
+  | {
+      kind: "OPENING";
+      yearMonth: string;
+      unitPrice: number;
+    };
 
 export type InventoryStepLine = {
   id: string;
@@ -130,7 +136,7 @@ export type StoreManagerInventoryFifoLotView = Omit<
 >;
 
 // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
-// 당일·최근 실제 매입단가만 중첩 purchasePrice 예외로 노출한다.
+// 당일·최근 실제 매입단가와 승인된 월초 표시 단가만 중첩 purchasePrice 예외로 노출한다.
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
   | "unitPrice"

@@ -7,6 +7,7 @@ import type {
   StoreComparisonReportData,
 } from "./types";
 import type { InventoryPositionReportData } from "./inventory-position-types";
+import type { LedgerReviewMetric } from "../../server/calculations/ledger";
 
 export type ReportExportType = "daily" | "comparison" | "monthly" | "inventory";
 // WO-15(2026-06-28): xlsx 다운로드 추가. CSV는 보조로 유지한다.
@@ -51,7 +52,9 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "businessStatus", label: "영업 상태" },
     { key: "latestReflectedAt", label: "최신 반영" },
     { key: "statusMessage", label: "상태 메시지" },
-    { key: "salesAmount", label: "매출" },
+    { key: "closingSalesAmount", label: "장부 마감 매출" },
+    { key: "carryoverSalesAmount", label: "이월 매출" },
+    { key: "salesAmount", label: "영업 매출 합계" },
     { key: "salesAmountStatus", label: "매출 상태" },
     { key: "grossMarginRate", label: "이익률" },
     { key: "grossMarginRateStatus", label: "이익률 상태" },
@@ -65,7 +68,9 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "closedCount", label: "본사 마감 일수" },
     { key: "unfinishedCount", label: "미마감 일수" },
     { key: "missingDayCount", label: "미입력 일수" },
-    { key: "salesAmount", label: "매출" },
+    { key: "closingSalesAmount", label: "장부 마감 매출" },
+    { key: "carryoverSalesAmount", label: "이월 매출" },
+    { key: "salesAmount", label: "영업 매출 합계" },
     { key: "salesAmountStatus", label: "매출 상태" },
     { key: "grossProfit", label: "매출이익" },
     { key: "grossProfitStatus", label: "매출이익 상태" },
@@ -120,6 +125,8 @@ export function buildDailyMeetingReportExport(
         "statusMessage" in row && typeof row.statusMessage === "string"
           ? row.statusMessage
           : row.businessStatus.label,
+      closingSalesAmount: formatReviewMetric(row.closingSalesAmount),
+      carryoverSalesAmount: formatReviewMetric(row.carryoverSalesAmount),
       salesAmount: formatMetricEvidence(row.metricEvidence.salesAmount),
       salesAmountStatus: formatMetricStatus(row.metricEvidence.salesAmount),
       grossMarginRate: formatMetricEvidence(row.metricEvidence.grossMarginRate),
@@ -155,6 +162,8 @@ export function buildStoreComparisonReportExport(
       unfinishedCount:
         row.statusCounts.inProgressCount + row.statusCounts.reviewCount,
       missingDayCount: row.statusCounts.missingDayCount,
+      closingSalesAmount: formatReviewMetric(row.closingSalesAmount),
+      carryoverSalesAmount: formatReviewMetric(row.carryoverSalesAmount),
       salesAmount: formatMetricEvidence(row.metricEvidence.salesAmount),
       salesAmountStatus: formatMetricStatus(row.metricEvidence.salesAmount),
       grossProfit: formatMetricEvidence(row.metricEvidence.grossProfit),
@@ -189,6 +198,24 @@ export function buildMonthlyClosingAnomalyReportExport(
   >,
 ): ReportExportData {
   const rows: ReportExportRow[] = [
+    rawMetricRow({
+      section: "월간 핵심 성과",
+      item: "장부 마감 매출",
+      storeName: report.selectedStoreName,
+      metric: report.monthlyKpis.closingSalesAmount,
+    }),
+    rawMetricRow({
+      section: "월간 핵심 성과",
+      item: "이월 매출",
+      storeName: report.selectedStoreName,
+      metric: report.monthlyKpis.carryoverSalesAmount,
+    }),
+    rawMetricRow({
+      section: "월간 핵심 성과",
+      item: "영업 매출 합계",
+      storeName: report.selectedStoreName,
+      metric: report.monthlyKpis.operatingSalesAmount,
+    }),
     metricRow({
       section: "월간 핵심 성과",
       item: "월간 매출",
@@ -409,7 +436,7 @@ export function buildMonthlyProfitLossSheet(data: {
   const columns: ReportExportColumn[] = [
     { key: "monthInput", label: "기준월" },
     { key: "storeName", label: "지점" },
-    { key: "salesAmount", label: "매출" },
+    { key: "salesAmount", label: "영업 매출 합계" },
     { key: "cogsAmount", label: "매입원가" },
     { key: "grossProfit", label: "매출이익" },
     { key: "grossMarginRate", label: "이익률" },
@@ -502,7 +529,7 @@ export function buildProductSalesSheet(
     lossAmount: item.lossAmount,
     currentQuantity: item.currentQuantity ?? "계산 불가",
     salesBasis:
-      item.salesBasis === "planned" ? "판매가 계획" : "매입단가(폴백)",
+      item.salesBasis === "planned" ? "판매한 가격" : "매입단가(폴백)",
     statusLabel: item.statusLabel,
   }));
 
@@ -605,6 +632,36 @@ function formatMetricEvidence(evidence: DailyMeetingReportMetricEvidence) {
   }
 
   return evidence.applied.value;
+}
+
+function formatReviewMetric(metric: LedgerReviewMetric | undefined) {
+  if (metric?.value == null) {
+    return metric?.reason ?? metric?.unavailableReason ?? "";
+  }
+
+  return metric.value;
+}
+
+function rawMetricRow({
+  section,
+  item,
+  storeName,
+  metric,
+}: {
+  section: string;
+  item: string;
+  storeName: string | null;
+  metric: LedgerReviewMetric | undefined;
+}): ReportExportRow {
+  return {
+    section,
+    item,
+    date: "",
+    storeName: storeName ?? "",
+    value: formatReviewMetric(metric),
+    status: metric?.status ?? "",
+    reason: metric?.reason ?? metric?.unavailableReason ?? "",
+  };
 }
 
 function formatPercentValue(value: number) {

@@ -69,6 +69,7 @@ test("validation helper preserves dotted field paths for nested step errors", as
     ...context,
     authorDisplayName: "작성자",
     totalSalesAmount: Number.NaN,
+    carryoverSalesAmount: 0,
     cashAmount: 0,
     cardAmount: 0,
     otherPaymentAmount: 0,

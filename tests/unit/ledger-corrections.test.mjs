@@ -101,6 +101,14 @@ test("correction feature validates input and writes append-only records with aud
     "queries.ts",
   );
   const types = readProjectFile("src", "features", "corrections", "types.ts");
+  const ledgerDetailPage = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
 
   assert.match(schemas, /correctionRecordSchema/);
   assert.match(schemas, /정정 사유를 입력해 주세요/);
@@ -124,6 +132,10 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /\$executeRaw`SELECT pg_advisory_xact_lock/);
   assert.doesNotMatch(actions, /\$queryRaw`SELECT pg_advisory_xact_lock/);
   assert.match(actions, /paymentFieldKinds/);
+  assert.match(
+    ledgerDetailPage,
+    /fieldKey:\s*"carryoverSalesAmount"[\s\S]*label:\s*"이월 매출"/,
+  );
   assert.match(actions, /ledgerFieldKinds/);
   assert.match(actions, /calculatedMetricKinds/);
   assert.match(
@@ -132,6 +144,21 @@ test("correction feature validates input and writes append-only records with aud
   );
   assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.findFirst/);
   assert.match(actions, /normalizeCorrectedValueForTarget/);
+  assert.match(actions, /PAYMENT_FIELD:OPERATING_SALES/);
+  assert.match(actions, /validateOperatingSalesCorrectionInTx/);
+  assert.match(actions, /latestTotalSales[\s\S]*latestCarryoverSales/);
+  const operatingSalesLockIndex = actions.indexOf(
+    "await lockOperatingSalesCorrectionsInTx(tx, ledgerId)",
+  );
+  const ledgerReadAfterLockIndex = actions.indexOf(
+    "const ledger = await tx.dailyLedger.findUnique",
+    operatingSalesLockIndex,
+  );
+  assert.ok(operatingSalesLockIndex >= 0);
+  assert.ok(
+    ledgerReadAfterLockIndex > operatingSalesLockIndex,
+    "the shared operating-sales lock must be acquired before the first transaction read",
+  );
   assert.match(actions, /correctedValue\.kind !== originalValue\.kind/);
   assert.match(actions, /withServerLabel/);
   assert.match(actions, /label:\s*originalValue\.label/);
@@ -160,6 +187,26 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(
     queries,
     /orderBy:\s*\[\s*\{\s*createdAt:\s*"desc"\s*\},\s*\{\s*id:\s*"desc"\s*\}\s*\]/s,
+  );
+});
+
+test("operating-sales correction cap rejects serial counterpart overflow", async () => {
+  const actionPath = assertProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "operating-sales-validation.ts",
+  );
+  const { isOperatingSalesTotalInRange } = await import(
+    pathToFileURL(actionPath).href
+  );
+
+  assert.equal(isOperatingSalesTotalInRange(2_147_483_646, 1), true);
+  assert.equal(isOperatingSalesTotalInRange(2_147_483_647, 0), true);
+  assert.equal(
+    isOperatingSalesTotalInRange(2_147_483_647, 1),
+    false,
+    "a later correction must be rejected after the counterpart reaches the cap",
   );
 });
 

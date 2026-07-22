@@ -3,6 +3,7 @@ import type { Prisma } from "../../../generated/prisma";
 import {
   calculateExpenseTotal,
   calculateGrossProfit,
+  calculateOperatingSalesAmount,
   calculatePaymentDifference,
   calculatePurchaseTotal,
   calculatePayrollTotal,
@@ -77,6 +78,7 @@ export const ledgerSelect = {
   authorDisplayName: true,
   status: true,
   totalSalesAmount: true,
+  carryoverSalesAmount: true,
   cashAmount: true,
   cardAmount: true,
   otherPaymentAmount: true,
@@ -136,6 +138,7 @@ type LedgerAuditPayload = {
   version: number;
   authorDisplayName: string | null;
   totalSalesAmount: number;
+  carryoverSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
   otherPaymentAmount: number;
@@ -162,6 +165,7 @@ type LedgerAuditInput = Pick<
   | "version"
   | "authorDisplayName"
   | "totalSalesAmount"
+  | "carryoverSalesAmount"
   | "cashAmount"
   | "cardAmount"
   | "otherPaymentAmount"
@@ -200,6 +204,11 @@ export function toLedgerSalesStepData(
     closedById: ledger.closedById ?? null,
     closedAt: ledger.closedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
+    carryoverSalesAmount: ledger.carryoverSalesAmount,
+    operatingSalesAmount: calculateOperatingSalesAmount(
+      ledger.totalSalesAmount,
+      ledger.carryoverSalesAmount,
+    ),
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,
     otherPaymentAmount: ledger.otherPaymentAmount,
@@ -301,10 +310,11 @@ export function toLedgerCostStepData(
   );
   const purchaseItems = getLedgerPurchaseItems(ledger);
   const laborItems = getLedgerLaborItems(ledger);
-  const grossProfit = calculateGrossProfit(
+  const operatingSalesAmount = calculateOperatingSalesAmount(
     ledger.totalSalesAmount,
-    expenseTotal,
+    ledger.carryoverSalesAmount,
   );
+  const grossProfit = calculateGrossProfit(operatingSalesAmount, expenseTotal);
 
   return {
     ...toLedgerSalesStepData(ledger),
@@ -320,7 +330,7 @@ export function toLedgerCostStepData(
     payrollTotal: calculatePayrollTotal(laborItems.map((item) => item.amount)),
     grossProfit,
     productivity: calculateProductivity(
-      grossProfit,
+      operatingSalesAmount,
       ledger.workerCount ?? null,
     ),
     stepCompletion: getStoreEntryStepCompletion({
@@ -363,10 +373,11 @@ export function toLedgerAuditPayload(
   const payrollTotal = calculatePayrollTotal(
     laborItems.map((item) => item.amount),
   );
-  const grossProfit = calculateGrossProfit(
+  const operatingSalesAmount = calculateOperatingSalesAmount(
     ledger.totalSalesAmount,
-    expenseTotal,
+    ledger.carryoverSalesAmount,
   );
+  const grossProfit = calculateGrossProfit(operatingSalesAmount, expenseTotal);
 
   return {
     status: ledger.status,
@@ -377,6 +388,7 @@ export function toLedgerAuditPayload(
     closedById: ledger.closedById ?? null,
     closedAt: ledger.closedAt?.toISOString() ?? null,
     totalSalesAmount: ledger.totalSalesAmount,
+    carryoverSalesAmount: ledger.carryoverSalesAmount,
     cashAmount: ledger.cashAmount,
     cardAmount: ledger.cardAmount,
     otherPaymentAmount: ledger.otherPaymentAmount,
@@ -390,7 +402,7 @@ export function toLedgerAuditPayload(
     payrollTotal,
     grossProfit,
     productivity: calculateProductivity(
-      grossProfit,
+      operatingSalesAmount,
       ledger.workerCount ?? null,
     ),
     paymentDifferenceAmount: calculatePaymentDifference(
