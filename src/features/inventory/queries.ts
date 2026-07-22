@@ -849,8 +849,7 @@ async function getCarryoverBases(
       );
     }
 
-    const isCrossMonth =
-      previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER";
+    const isCrossMonth = previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER";
 
     return {
       status:

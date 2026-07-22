@@ -362,7 +362,7 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
 
   await expect(
     page.getByLabel("품목").nth(0).locator("option:checked"),
-  ).toHaveText(first.name);
+  ).toHaveText(`${first.name} / ${first.spec}`);
   await expect(
     page.getByLabel("처리 유형").nth(0).locator("option:checked"),
   ).toHaveText(disposal.name);
@@ -1069,9 +1069,7 @@ test("재고 소진·비활성 기존 손실 행은 수량·사유 수정과 삭
   await page.getByRole("button", { name: "삭제" }).click();
   await lossSaveButton(page).click();
   await expect(
-    page
-      .getByRole("status")
-      .filter({ hasText: "손실/폐기 항목 0건을 저장했습니다." }),
+    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
   ).toBeVisible();
 
   expect(

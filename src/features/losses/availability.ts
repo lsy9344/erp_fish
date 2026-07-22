@@ -100,7 +100,5 @@ export function canSelectLossProduct({
   existingProductId: string | null | undefined;
   availableProductIds: ReadonlySet<string>;
 }) {
-  return (
-    existingProductId === productId || availableProductIds.has(productId)
-  );
+  return existingProductId === productId || availableProductIds.has(productId);
 }

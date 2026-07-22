@@ -27,7 +27,10 @@ import {
 } from "./schemas";
 import { getLossStepDataInTx, toStoreManagerLossStepData } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
-import { getAvailableLossProductIds, canSelectLossProduct } from "./availability";
+import {
+  getAvailableLossProductIds,
+  canSelectLossProduct,
+} from "./availability";
 import { lossTerms } from "./terms";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 import {
@@ -541,14 +544,12 @@ export async function saveLedgerLosses(
         parsed.data.closingDate,
         actor.user.id,
       );
-      const afterAvailabilityLines = await getLossInventoryAvailabilityLinesInTx(
-        tx,
-        {
+      const afterAvailabilityLines =
+        await getLossInventoryAvailabilityLinesInTx(tx, {
           id: after.id,
           storeId: after.storeId,
           closingDate: after.closingDate,
-        },
-      );
+        });
 
       await writeAuditLog(tx, {
         action: "ledger.losses.saved",

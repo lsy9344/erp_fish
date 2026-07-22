@@ -129,7 +129,8 @@ export function applySalesPriceCarryoverFallback<
   return rows.map((row) => {
     const resolved = resolvePlannedUnitPriceDisplay({
       currentPlannedUnitPrice: row.plannedUnitPrice,
-      carryoverPlannedUnitPrice: carryoverByProductId.get(row.productId) ?? null,
+      carryoverPlannedUnitPrice:
+        carryoverByProductId.get(row.productId) ?? null,
     });
 
     return {
