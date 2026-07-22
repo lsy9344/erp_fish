@@ -831,7 +831,7 @@ test("지점장 direct URL은 본사 ClosePreflight 상세 없이 차단된다",
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "본사 마감" })).toHaveCount(0);
   await expect(page.getByText("ClosePreflight")).toHaveCount(0);
-  await expect(page.getByText("총매출/결제")).toHaveCount(0);
+  await expect(page.getByText("영업 매출/결제")).toHaveCount(0);
   await expect(page.getByText("마감 확정")).toHaveCount(0);
 });
 
@@ -1169,7 +1169,7 @@ test("ClosePreflight 사유 필요 항목은 사유 입력 후 개별 마감을 
   ).toBeVisible();
   const salesRow = page
     .getByRole("row")
-    .filter({ hasText: "총매출/결제" })
+    .filter({ hasText: "영업 매출/결제" })
     .filter({ hasText: "기존 입력 단계에서 보완" })
     .first();
   await expect(salesRow).toBeVisible();
