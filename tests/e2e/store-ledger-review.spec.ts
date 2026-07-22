@@ -688,7 +688,7 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     .locator("section")
     .filter({ hasText: "입력 확인 항목" });
 
-  await expect(missingSection).toContainText("총매출/결제");
+  await expect(missingSection).toContainText("영업 매출/결제");
   await expect(missingSection).toContainText("지출");
   await expect(missingSection).toContainText("매입");
   await expect(missingSection).toContainText("재고");
@@ -706,7 +706,7 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     new RegExp(`/app/store-entry/inventory\\?storeId=${STORY_STORE_ID}.*date=`),
   );
   await expect(
-    missingSection.getByRole("link", { name: "총매출/결제 단계로 이동" }),
+    missingSection.getByRole("link", { name: "영업 매출/결제 단계로 이동" }),
   ).toHaveAttribute(
     "href",
     new RegExp(`storeId=${STORY_STORE_ID}.*step=sales`),
