@@ -45,7 +45,7 @@ export default async function HeadquartersLaborReportPage({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="인건비 현황"
-          description="지점장이 입력한 근무자별 인건비와 지점 합계를 읽기 전용으로 확인합니다."
+          description="지점장이 입력한 근무인원·근무자·메모와 장부에 저장된 인건비 현황을 지점별로 확인합니다."
         />
         <form
           action="/app/reports/labor"

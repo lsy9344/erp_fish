@@ -24,7 +24,10 @@ import {
 } from "./queries";
 import type { CorrectionValue, CreateCorrectionRecordResult } from "./types";
 import { nullableDecimalToNumber } from "~/lib/decimal";
-import { isNonNegativeDecimalInRange } from "~/lib/validation";
+import {
+  isNonNegativeDecimalInRange,
+  isNonNegativeTwoDecimalInRange,
+} from "~/lib/validation";
 import { isOperatingSalesTotalInRange } from "./operating-sales-validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
@@ -212,15 +215,18 @@ function normalizeCorrectedValueForTarget(
   }
 
   if (correctedValue.kind === "quantity") {
-    const allowsDecimalQuantity =
-      (target.targetType === "INVENTORY_ROW" &&
-        (target.fieldKey === "currentQuantity" ||
-          target.fieldKey === "quantity")) ||
-      (target.targetType === "LOSS_ROW" && target.fieldKey === "quantity");
-    const isValidQuantity = allowsDecimalQuantity
-      ? typeof correctedValue.value === "number" &&
-        isNonNegativeDecimalInRange(correctedValue.value)
-      : isValidCorrectionInteger(correctedValue.value);
+    const isInventoryQuantity =
+      target.targetType === "INVENTORY_ROW" &&
+      (target.fieldKey === "currentQuantity" || target.fieldKey === "quantity");
+    const isLossQuantity =
+      target.targetType === "LOSS_ROW" && target.fieldKey === "quantity";
+    const isValidQuantity =
+      typeof correctedValue.value === "number" &&
+      (isInventoryQuantity
+        ? isNonNegativeDecimalInRange(correctedValue.value)
+        : isLossQuantity
+          ? isNonNegativeTwoDecimalInRange(correctedValue.value)
+          : isValidCorrectionInteger(correctedValue.value));
 
     if (!isValidQuantity) {
       return correctionValueShapeError();

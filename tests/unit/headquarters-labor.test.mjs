@@ -29,6 +29,7 @@ test("headquarters labor report keeps free-entry workers and calculates summarie
       { id: "store-a", name: "강남" },
       { id: "store-b", name: "잠실" },
     ],
+    targetStoreIds: ["store-a", "store-b"],
     ledgers: [
       {
         id: "ledger-a1",
@@ -79,7 +80,7 @@ test("headquarters labor report keeps free-entry workers and calculates summarie
   });
 
   assert.equal(report.totalLaborAmount, 350_000);
-  assert.equal(report.storeCount, 1);
+  assert.equal(report.storeCount, 2);
   assert.equal(report.laborRecordCount, 3);
   assert.deepEqual(report.storeSummaries, [
     {
@@ -89,9 +90,52 @@ test("headquarters labor report keeps free-entry workers and calculates summarie
       workerCount: 4,
       laborAmount: 350_000,
     },
+    {
+      storeId: "store-b",
+      storeName: "잠실",
+      workdayCount: 0,
+      workerCount: 0,
+      laborAmount: 0,
+    },
   ]);
   assert.equal(report.details[0].workerName, "자유 입력 근무자");
   assert.equal(report.details[0].status, "IN_PROGRESS");
+});
+
+test("headquarters labor report includes worker-count-only ledger days", () => {
+  const report = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    selectedStoreId: "store-a",
+    selectedStatus: "ALL",
+    stores: [
+      { id: "store-a", name: "강남" },
+      { id: "store-b", name: "잠실" },
+    ],
+    targetStoreIds: ["store-a"],
+    ledgers: [
+      {
+        id: "ledger-worker-count-only",
+        closingDate: new Date("2026-07-04T00:00:00.000Z"),
+        status: "IN_REVIEW",
+        workerCount: 5,
+        store: { id: "store-a", name: "강남" },
+        ledgerLaborItems: [],
+      },
+    ],
+  });
+
+  assert.equal(report.storeCount, 1);
+  assert.equal(report.laborRecordCount, 0);
+  assert.deepEqual(report.details, []);
+  assert.deepEqual(report.storeSummaries, [
+    {
+      storeId: "store-a",
+      storeName: "강남",
+      workdayCount: 1,
+      workerCount: 5,
+      laborAmount: 0,
+    },
+  ]);
 });
 
 test("headquarters labor month and status filters reject malformed input", () => {
@@ -165,7 +209,27 @@ test("unauthorized store filter produces an empty labor report instead of expand
       { id: "store-a", name: "강남" },
       { id: "store-b", name: "잠실" },
     ],
-    ledgers: [],
+    targetStoreIds: filter.targetStoreIds,
+    ledgers: [
+      {
+        id: "ledger-must-not-leak",
+        closingDate: new Date("2026-07-05T00:00:00.000Z"),
+        status: "IN_PROGRESS",
+        workerCount: 1,
+        store: { id: "store-a", name: "강남" },
+        ledgerLaborItems: [
+          {
+            id: "labor-must-not-leak",
+            employeeId: null,
+            workerName: "노출 금지",
+            amount: 90_000,
+            lateMemo: null,
+            earlyLeaveMemo: null,
+            specialMemo: null,
+          },
+        ],
+      },
+    ],
     errorMessages: filter.errorMessages,
   });
 
@@ -173,6 +237,7 @@ test("unauthorized store filter produces an empty labor report instead of expand
   assert.equal(report.totalLaborAmount, 0);
   assert.equal(report.storeCount, 0);
   assert.equal(report.laborRecordCount, 0);
+  assert.deepEqual(report.storeSummaries, []);
   assert.deepEqual(report.details, []);
   assert.deepEqual(report.errorMessages, [
     "조회 지점이 권한 범위에 없거나 비활성입니다. 권한 있는 지점을 선택해 주세요.",
@@ -185,13 +250,13 @@ test("headquarters labor query is permission and store-scope guarded", () => {
   assert.match(source, /await requireReportAccess\(\)/);
   assert.match(source, /await getHeadquartersStoreScope\(\)/);
   assert.match(source, /resolveHeadquartersLaborStoreFilter\(/);
-  assert.match(source, /storeId:\s*\{\s*in:\s*storeFilter\.targetStoreIds\s*\}/);
+  assert.match(
+    source,
+    /storeId:\s*\{\s*in:\s*storeFilter\.targetStoreIds\s*\}/,
+  );
   assert.match(source, /HEADQUARTERS_LABOR_STATUSES/);
   assert.doesNotMatch(source, /HOLIDAY/);
-  assert.doesNotMatch(
-    source,
-    /권한 범위 전체로 조회했습니다/,
-  );
+  assert.doesNotMatch(source, /권한 범위 전체로 조회했습니다/);
   assert.match(source, /employeeId:\s*true/);
 });
 
@@ -215,9 +280,30 @@ test("headquarters labor route and both navigation entries are present", () => {
     ),
     "utf8",
   );
+  const reportView = readFileSync(
+    path.join(
+      root,
+      "src",
+      "features",
+      "labor",
+      "components",
+      "headquarters-labor-report.tsx",
+    ),
+    "utf8",
+  );
 
   assert.match(page, /requireReportAccess\(\)/);
   assert.match(page, /ReportsNav active="labor"/);
+  assert.match(
+    page,
+    /지점장이 입력한 근무인원·근무자·메모와 장부에 저장된 인건비 현황/,
+  );
+  assert.doesNotMatch(page, /지점장이 입력한 근무자별 인건비/);
+  assert.ok(
+    reportView.indexOf('aria-labelledby="labor-store-summary"') <
+      reportView.indexOf("report.details.length === 0"),
+    "store summary must render before the empty-detail branch",
+  );
   assert.match(
     sidebar,
     /label:\s*"인건비 현황"[\s\S]*href:\s*"\/app\/reports\/labor"[\s\S]*PermissionAction\.REPORT_VIEW/,

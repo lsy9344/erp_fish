@@ -124,6 +124,7 @@ export function buildHeadquartersLaborReport({
   selectedStoreId,
   selectedStatus,
   stores,
+  targetStoreIds,
   ledgers,
   errorMessages = [],
 }: {
@@ -131,10 +132,15 @@ export function buildHeadquartersLaborReport({
   selectedStoreId: string | null;
   selectedStatus: HeadquartersLaborStatusFilter;
   stores: HeadquartersLaborStoreOption[];
+  targetStoreIds: readonly string[];
   ledgers: HeadquartersLaborLedgerRecord[];
   errorMessages?: string[];
 }): HeadquartersLaborReport {
-  const details: HeadquartersLaborDetail[] = ledgers.flatMap((ledger) =>
+  const targetStoreIdSet = new Set(targetStoreIds);
+  const targetLedgers = ledgers.filter((ledger) =>
+    targetStoreIdSet.has(ledger.store.id),
+  );
+  const details: HeadquartersLaborDetail[] = targetLedgers.flatMap((ledger) =>
     ledger.ledgerLaborItems.map((item) => ({
       id: item.id,
       ledgerId: ledger.id,
@@ -160,8 +166,20 @@ export function buildHeadquartersLaborReport({
     }
   >();
 
-  for (const ledger of ledgers) {
-    if (ledger.ledgerLaborItems.length === 0) {
+  for (const store of stores) {
+    if (targetStoreIdSet.has(store.id)) {
+      summaryByStore.set(store.id, {
+        storeId: store.id,
+        storeName: store.name,
+        workdays: new Set<string>(),
+        workerCount: 0,
+        laborAmount: 0,
+      });
+    }
+  }
+
+  for (const ledger of targetLedgers) {
+    if (ledger.workerCount === null && ledger.ledgerLaborItems.length === 0) {
       continue;
     }
 
@@ -258,6 +276,7 @@ export async function getHeadquartersLaborReport({
     selectedStoreId: storeFilter.selectedStoreId,
     selectedStatus,
     stores: scope.stores.map((store) => ({ id: store.id, name: store.name })),
+    targetStoreIds: storeFilter.targetStoreIds,
     ledgers,
     errorMessages: storeFilter.errorMessages,
   });

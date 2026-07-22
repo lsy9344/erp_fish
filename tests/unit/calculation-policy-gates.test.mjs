@@ -272,7 +272,7 @@ test("one-decimal inventory corrections discard stale FIFO amounts and recalcula
   assert.deepEqual(summary.inventoryAmount, { value: 450, status: "ok" });
 });
 
-test("one-decimal loss corrections apply while finer precision remains unapplied", async () => {
+test("two-decimal loss corrections apply while finer precision remains unapplied", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -310,12 +310,12 @@ test("one-decimal loss corrections apply while finer precision remains unapplied
         targetType: "LOSS_ROW",
         targetId: "loss-1",
         fieldKey: "quantity",
-        latestAppliedValue: { kind: "quantity", value: 1.5 },
+        latestAppliedValue: { kind: "quantity", value: 1.25 },
       },
     ],
   });
 
-  assert.equal(accepted.lossItems[0].quantity, 1.5);
+  assert.equal(accepted.lossItems[0].quantity, 1.25);
   assert.equal(accepted.correctionState.appliedCorrectionCount, 1);
 
   const rejected = applyCorrectionValuesToLedgerReviewInput({
@@ -327,7 +327,7 @@ test("one-decimal loss corrections apply while finer precision remains unapplied
         targetType: "LOSS_ROW",
         targetId: "loss-1",
         fieldKey: "quantity",
-        latestAppliedValue: { kind: "quantity", value: 1.25 },
+        latestAppliedValue: { kind: "quantity", value: 1.255 },
       },
     ],
   });
@@ -335,6 +335,52 @@ test("one-decimal loss corrections apply while finer precision remains unapplied
   assert.equal(rejected.lossItems[0].quantity, 1);
   assert.equal(rejected.correctionState.appliedCorrectionCount, 0);
   assert.equal(rejected.correctionState.hasUnappliedCorrections, true);
+});
+
+test("inventory correction quantities remain limited to one decimal", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(calcPath).href
+  );
+  const overlay = applyCorrectionValuesToLedgerReviewInput({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100_000,
+      cashAmount: 40_000,
+      cardAmount: 50_000,
+      otherPaymentAmount: 10_000,
+      workerCount: 4,
+      expenseTotal: 0,
+      inventoryItems: [
+        {
+          id: "inventory-1",
+          previousQuantity: 2,
+          purchasedQuantity: 0,
+          currentQuantity: 2,
+          quantity: 2,
+          unitPrice: 100,
+          inventoryAmount: 200,
+        },
+      ],
+    },
+    corrections: [
+      {
+        targetType: "INVENTORY_ROW",
+        targetId: "inventory-1",
+        fieldKey: "currentQuantity",
+        latestAppliedValue: { kind: "quantity", value: 1.25 },
+      },
+    ],
+  });
+
+  assert.equal(overlay.reviewInput.inventoryItems[0].currentQuantity, 2);
+  assert.equal(overlay.correctionState.appliedCorrectionCount, 0);
+  assert.equal(overlay.correctionState.hasUnappliedCorrections, true);
 });
 
 test("fractional worker-count and money corrections remain unapplied", async () => {

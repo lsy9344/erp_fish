@@ -303,28 +303,41 @@ test("correction schema accepts one-decimal inventory quantities and rejects fin
   });
 });
 
-test("correction schema accepts one-decimal loss quantities", async () => {
+test("correction schema accepts two-decimal loss quantities and rejects finer precision", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
     "corrections",
     "schemas.ts",
   );
-  const { correctionRecordSchema } = await import(
+  const { correctionRecordSchema, toFieldErrors } = await import(
     pathToFileURL(schemaPath).href
   );
 
-  const result = correctionRecordSchema.safeParse({
+  const input = {
     ledgerId: "ledger-1",
     targetType: "LOSS_ROW",
     targetId: "loss-1",
     fieldKey: "quantity",
-    correctedValue: { kind: "quantity", value: "1.5" },
+    correctedValue: { kind: "quantity", value: "1.25" },
     reason: "손실 수량 확인",
+  };
+  const accepted = correctionRecordSchema.safeParse(input);
+
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.data.correctedValue.value, 1.25);
+
+  const rejected = correctionRecordSchema.safeParse({
+    ...input,
+    correctedValue: { kind: "quantity", value: "1.255" },
   });
 
-  assert.equal(result.success, true);
-  assert.equal(result.data.correctedValue.value, 1.5);
+  assert.equal(rejected.success, false);
+  assert.deepEqual(toFieldErrors(rejected.error), {
+    "correctedValue.value": [
+      "정정 수량은 0 이상이고 소수점 둘째 자리까지 입력해 주세요.",
+    ],
+  });
 });
 
 test("correction schema keeps worker count and money integer-only", async () => {
@@ -407,6 +420,7 @@ test("correction action and panel keep decimal quantities target-aware", () => {
   );
 
   assert.match(actions, /isNonNegativeDecimalInRange/);
+  assert.match(actions, /isNonNegativeTwoDecimalInRange/);
   assert.match(
     actions,
     /normalizeCorrectedValueForTarget\(\s*target: Pick<CorrectionRecordInput, "targetType" \| "fieldKey">/,
