@@ -1231,3 +1231,46 @@ test("ClosePreflight 사유 필요 항목은 사유 입력 후 개별 마감을 
     },
   });
 });
+
+test("본사 손실 수정은 1.25에서 1.26으로 Decimal 저장한다", async ({
+  page,
+}) => {
+  const { actorId, ledger, product } = await seedEditableStoryData();
+  const lossItem = await prisma.ledgerLossItem.findFirstOrThrow({
+    where: { dailyLedgerId: ledger.id, productId: product.id },
+  });
+
+  await prisma.ledgerLossItem.update({
+    where: { id: lossItem.id },
+    data: { quantity: 1.25 },
+  });
+
+  await loginAsHq(page);
+  await page.goto(
+    `/app/ledgers/${ledger.id}?date=today&sort=priority&filter=all&tab=losses`,
+  );
+
+  const lossPanel = page.getByRole("tabpanel").filter({ hasText: "손실 항목" });
+  await expect(lossPanel).toBeVisible();
+  await replaceControlValue(lossPanel.getByLabel("박스단위 수량"), "1.26");
+  await fillHqEditReason(lossPanel, "손실 수량 소수 보정");
+  await lossPanel.getByRole("button", { name: "저장" }).click();
+
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerLossItem.findUnique({
+        where: { id: lossItem.id },
+        select: { quantity: true },
+      });
+
+      return current?.quantity.toString();
+    })
+    .toBe("1.26");
+
+  const saved = await prisma.ledgerLossItem.findUniqueOrThrow({
+    where: { id: lossItem.id },
+    select: { quantity: true, updatedById: true },
+  });
+  expect(saved.quantity.toNumber()).toBe(1.26);
+  expect(saved.updatedById).toBe(actorId);
+});

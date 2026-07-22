@@ -31,7 +31,8 @@ import { db } from "~/server/db";
 import {
   consumeStoredLossQuantity,
   getLossQuantityIdentity,
-  parseRequiredNonNegativeDecimal,
+  isNonNegativeTwoDecimalInRange,
+  parseRequiredNonNegativeTwoDecimal,
 } from "~/lib/validation";
 import {
   revalidateDashboardAndReports,
@@ -124,7 +125,7 @@ const hqLedgerLossItemSchema = z.object({
     .transform((value, context) =>
       value === null
         ? null
-        : parseRequiredNonNegativeDecimal(
+        : parseRequiredNonNegativeTwoDecimal(
             value,
             context,
             lossTerms.quantityInvalid,
@@ -172,7 +173,7 @@ const hqLedgerLossesSchema = z
       if (
         typeof loss.quantity !== "number" ||
         typeof loss.recoveredAmount !== "number" ||
-        !isValidInteger(loss.quantity) ||
+        !isNonNegativeTwoDecimalInRange(loss.quantity) ||
         !isValidInteger(loss.recoveredAmount)
       ) {
         return;

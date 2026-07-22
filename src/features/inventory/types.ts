@@ -6,8 +6,9 @@ import {
 } from "../../../generated/prisma";
 import { type StoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { type InventoryFifoLotView } from "~/features/inventory/fifo-lots";
+import { type PlannedUnitPriceSource } from "~/features/inventory/sales-price-carryover.ts";
 
-export type { InventoryFifoLotView };
+export type { InventoryFifoLotView, PlannedUnitPriceSource };
 
 export type InventoryPurchasePrice =
   | {
@@ -108,6 +109,11 @@ export type InventoryManualProductOption = {
   plannedUnitPrice: number | null;
 };
 
+export type StoreManagerInventoryManualProductOption =
+  InventoryManualProductOption & {
+    plannedUnitPriceSource: PlannedUnitPriceSource | null;
+  };
+
 export type InventoryStepData = {
   id: string;
   storeId: string;
@@ -146,10 +152,15 @@ export type StoreManagerInventoryStepLine = Omit<
   | "fifoLots"
   | "adjustment"
 > & {
+  plannedUnitPriceSource: PlannedUnitPriceSource | null;
   fifoLots: StoreManagerInventoryFifoLotView[];
   adjustment: StoreManagerInventoryAdjustmentView | null;
 };
 
-export type StoreManagerInventoryStepData = Omit<InventoryStepData, "items"> & {
+export type StoreManagerInventoryStepData = Omit<
+  InventoryStepData,
+  "items" | "manualProductOptions"
+> & {
   items: StoreManagerInventoryStepLine[];
+  manualProductOptions: StoreManagerInventoryManualProductOption[];
 };

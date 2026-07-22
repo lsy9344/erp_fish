@@ -13,8 +13,10 @@ import { db } from "~/server/db";
 import { getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { getInventoryPlanGateForLedgerInTx } from "~/features/ledger/inventory-plan-gate";
+import { getLossInventoryAvailabilityLinesInTx } from "~/features/inventory/queries";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 import { decimalToNumber } from "~/lib/decimal";
+import { getAvailableLossProductIds } from "./availability";
 
 const lossItemSelect = {
   id: true,
@@ -182,11 +184,21 @@ export async function getLossStepData(
   closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerLossStepData> {
-  const data = await db.$transaction((tx) =>
-    getLossStepDataInTx(tx, storeId, closingDate, actorId),
-  );
+  const { data, availableProductIds } = await db.$transaction(async (tx) => {
+    const data = await getLossStepDataInTx(tx, storeId, closingDate, actorId);
+    const availabilityLines = await getLossInventoryAvailabilityLinesInTx(tx, {
+      id: data.id,
+      storeId: data.storeId,
+      closingDate: data.closingDate,
+    });
 
-  return toStoreManagerLossStepData(data);
+    return {
+      data,
+      availableProductIds: getAvailableLossProductIds(availabilityLines),
+    };
+  });
+
+  return toStoreManagerLossStepData(data, availableProductIds);
 }
 
 export async function getLossStepDataByLedgerId(
@@ -200,16 +212,21 @@ export async function getLossStepDataByLedgerId(
 
 export function toStoreManagerLossStepData(
   data: LossStepData,
+  availableProductIds?: ReadonlySet<string>,
 ): StoreManagerLossStepData {
   return {
     ...data,
-    productOptions: data.productOptions.map(
-      ({ defaultUnitPrice, ...option }) => {
+    productOptions: data.productOptions
+      .filter(
+        (option) =>
+          availableProductIds === undefined ||
+          availableProductIds.has(option.id),
+      )
+      .map(({ defaultUnitPrice, ...option }) => {
         void defaultUnitPrice;
 
         return option;
-      },
-    ),
+      }),
     lossItems: data.lossItems.map(({ unitPrice, amount, ...item }) => {
       void unitPrice;
       void amount;

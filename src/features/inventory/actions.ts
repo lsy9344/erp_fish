@@ -51,8 +51,9 @@ import { persistLedgerInventoryCarryoverDetails } from "./carryover-detail-persi
 import {
   getInventoryStepDataByLedgerIdInTx,
   getInventoryStepDataInTx,
-  toStoreManagerInventoryStepData,
+  toStoreManagerInventoryStepDataInTx,
 } from "./queries";
+import { buildInventoryConflictServerValues } from "./sales-price-carryover.ts";
 import { type StoreManagerInventoryStepData } from "./types";
 import {
   getLedgerConflictMetaInTx,
@@ -261,16 +262,7 @@ function originalInventoryBlockedError(status: string) {
 }
 
 function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
-  return Object.fromEntries(
-    data.items.map((item) => {
-      const { plannedUnitPrice } = item;
-
-      return [
-        item.productName,
-        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매한 가격 ${plannedUnitPrice ?? "-"}`,
-      ];
-    }),
-  );
+  return buildInventoryConflictServerValues(data.items);
 }
 
 function toInventoryClientValues(input: LedgerStoreManagerInventoryInput) {
@@ -304,7 +296,9 @@ async function mapLedgerConflictError(
     const meta = await getLedgerConflictMetaInTx(tx, input.ledgerId);
 
     return {
-      data: current ? toStoreManagerInventoryStepData(current) : null,
+      data: current
+        ? await toStoreManagerInventoryStepDataInTx(tx, current)
+        : null,
       meta,
     };
   });
@@ -654,7 +648,9 @@ export async function saveLedgerInventoryItems(
         after,
       });
 
-      return after;
+      // Audit keeps exact-date values. Store-manager response may still need
+      // carryover for products that were not persisted on the current date.
+      return toStoreManagerInventoryStepDataInTx(tx, after);
     });
 
     if ("ok" in result) {
@@ -664,7 +660,7 @@ export async function saveLedgerInventoryItems(
     revalidateInventoryPaths();
     revalidateLedgerDetailPath(parsed.data.ledgerId);
 
-    return actionOk(toStoreManagerInventoryStepData(result));
+    return actionOk(result);
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("inventory", parsed.data);

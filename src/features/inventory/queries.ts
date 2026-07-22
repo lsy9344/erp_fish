@@ -7,6 +7,8 @@ import type { Prisma } from "../../../generated/prisma";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
 import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-price";
+import { SALES_PRICE_CARRYOVER_LEDGER_STATUSES } from "~/features/inventory/sales-price-carryover.ts";
+import { resolveInventoryPreviousQuantitySource } from "~/features/inventory/inventory-previous-quantity-source.ts";
 import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
@@ -28,6 +30,10 @@ import {
   nullableDecimalToNumber,
   type DecimalNumber,
 } from "~/lib/decimal";
+import {
+  buildLossInventoryAvailabilityLines,
+  type LossInventoryAvailabilityLine,
+} from "~/features/losses/availability";
 import { shapeStoreManagerInventoryStepData } from "./response-shaping";
 
 export const inventoryCarryoverDetailSelect = {
@@ -510,7 +516,9 @@ function isPreviousCalendarDate(closingDate: Date, priorDate: Date) {
   );
 }
 
-function toPreviousQuantity(item: ExistingCarryoverBasis) {
+function toPreviousQuantity(
+  item: Pick<ExistingCarryoverBasis, "currentQuantity" | "quantity">,
+) {
   return (
     nullableDecimalToNumber(item.currentQuantity) ??
     nullableDecimalToNumber(item.quantity) ??
@@ -768,7 +776,53 @@ async function getCarryoverBases(
     },
   });
 
-  if (priorLedger && getYearMonth(priorLedger.closingDate) === yearMonth) {
+  const priorLedgerClosingYearMonth = priorLedger
+    ? getYearMonth(priorLedger.closingDate)
+    : null;
+  const sameMonthPrior =
+    priorLedgerClosingYearMonth != null &&
+    priorLedgerClosingYearMonth === yearMonth;
+
+  const snapshots = sameMonthPrior
+    ? []
+    : await tx.inventoryOpeningSnapshot.findMany({
+        where: {
+          storeId,
+          yearMonth,
+        },
+        orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
+        select: {
+          id: true,
+          yearMonth: true,
+          productId: true,
+          productName: true,
+          productCategory: true,
+          productSpec: true,
+          unitPrice: true,
+          quantity: true,
+        },
+      });
+
+  const previousQuantitySource = resolveInventoryPreviousQuantitySource({
+    closingYearMonth: yearMonth,
+    priorLedgerClosingYearMonth,
+    hasOpeningSnapshots: snapshots.length > 0,
+  });
+
+  if (
+    previousQuantitySource === "SAME_MONTH_PRIOR_LEDGER" ||
+    previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER"
+  ) {
+    if (!priorLedger) {
+      return {
+        status: "manual" as const,
+        source: InventoryCarryoverSource.MANUAL,
+        message:
+          "전일 장부나 월초 스냅샷이 없습니다. 오늘 매입·손실·저장 품목만 표시합니다. 추가 재고는 품목 추가로 입력해 주세요.",
+        bases: [],
+      };
+    }
+
     const isDirectPrevious = isPreviousCalendarDate(
       closingDate,
       priorLedger.closingDate,
@@ -777,11 +831,14 @@ async function getCarryoverBases(
     const source = isHeadquartersClosed
       ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
       : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
-    const status = isDirectPrevious
-      ? isHeadquartersClosed
-        ? InventoryCarryoverStatus.PREVIOUS_CARRYOVER
-        : InventoryCarryoverStatus.REVIEW_REQUIRED
-      : InventoryCarryoverStatus.CARRYOVER_EMPTY;
+    const status =
+      previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER"
+        ? InventoryCarryoverStatus.CARRYOVER_EMPTY
+        : isDirectPrevious
+          ? isHeadquartersClosed
+            ? InventoryCarryoverStatus.PREVIOUS_CARRYOVER
+            : InventoryCarryoverStatus.REVIEW_REQUIRED
+          : InventoryCarryoverStatus.CARRYOVER_EMPTY;
     const lossQuantityByProductId = new Map<string, number>();
 
     for (const lossItem of priorLedger.ledgerLossItems) {
@@ -792,17 +849,22 @@ async function getCarryoverBases(
       );
     }
 
+    const isCrossMonth =
+      previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER";
+
     return {
       status:
         status === InventoryCarryoverStatus.CARRYOVER_EMPTY
           ? ("manual" as const)
           : ("loaded" as const),
       source,
-      message: isDirectPrevious
-        ? isHeadquartersClosed
-          ? "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요."
-          : "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요."
-        : "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요.",
+      message: isCrossMonth
+        ? "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요."
+        : isDirectPrevious
+          ? isHeadquartersClosed
+            ? "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요."
+            : "직전 저장 장부의 당일재고 후보입니다. 본사 마감 전 값이므로 검토 필요 상태로 확인해 주세요."
+          : "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요.",
       bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
         (item) => ({
           productId: item.productId,
@@ -826,25 +888,7 @@ async function getCarryoverBases(
     };
   }
 
-  const snapshots = await tx.inventoryOpeningSnapshot.findMany({
-    where: {
-      storeId,
-      yearMonth,
-    },
-    orderBy: [{ productCategory: "asc" }, { productName: "asc" }],
-    select: {
-      id: true,
-      yearMonth: true,
-      productId: true,
-      productName: true,
-      productCategory: true,
-      productSpec: true,
-      unitPrice: true,
-      quantity: true,
-    },
-  });
-
-  if (snapshots.length > 0) {
+  if (previousQuantitySource === "OPENING_SNAPSHOT") {
     return {
       status: "loaded" as const,
       source: InventoryCarryoverSource.OPENING_SNAPSHOT,
@@ -862,50 +906,6 @@ async function getCarryoverBases(
         carryoverLedgerId: null,
         previousQuantityDetail: buildSnapshotCarryoverDetail({ snapshot }),
       })),
-    };
-  }
-
-  if (priorLedger) {
-    const isHeadquartersClosed = priorLedger.status === "HEADQUARTERS_CLOSED";
-    const source = isHeadquartersClosed
-      ? InventoryCarryoverSource.PREVIOUS_CLOSED_LEDGER
-      : InventoryCarryoverSource.PREVIOUS_SAVED_LEDGER;
-    const status = InventoryCarryoverStatus.CARRYOVER_EMPTY;
-    const lossQuantityByProductId = new Map<string, number>();
-
-    for (const lossItem of priorLedger.ledgerLossItems) {
-      lossQuantityByProductId.set(
-        lossItem.productId,
-        (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
-          decimalToNumber(lossItem.quantity),
-      );
-    }
-
-    return {
-      status: "manual" as const,
-      source,
-      message:
-        "전날 재고를 자동으로 가져오지 못했습니다. 화면에 보이는 재고를 확인해 실제 수량으로 입력해 주세요.",
-      bases: priorLedger.ledgerInventoryItems.map<ProductInventoryBase>(
-        (item) => ({
-          productId: item.productId,
-          productName: item.productName,
-          productCategory: item.productCategory,
-          productSpec: item.productSpec,
-          unitPrice: item.unitPrice,
-          previousQuantity: toPreviousQuantity(item),
-          carryoverSource: source,
-          carryoverStatus: status,
-          carryoverLedgerId: priorLedger.id,
-          previousQuantityDetail: buildLedgerCarryoverDetail({
-            source,
-            status,
-            ledger: priorLedger,
-            item,
-            lossQuantity: lossQuantityByProductId.get(item.productId) ?? null,
-          }),
-        }),
-      ),
     };
   }
 
@@ -1076,8 +1076,10 @@ async function attachPurchasePrices(
     return { items, manualProductOptions };
   }
 
+  // Exact-date plans only. Carryover fallback is applied at the store-manager
+  // response boundary so HQ screens and audit snapshots keep persisted values.
   // ponytail: one eligible-history query; use a DB aggregate/window query only if measured history volume makes this slow.
-  const [purchaseHistory, salesPlans] = await Promise.all([
+  const [purchaseHistory, currentSalesPlans] = await Promise.all([
     tx.ledgerPurchaseItem.findMany({
       where: {
         productId: { in: purchaseProductIds },
@@ -1112,7 +1114,7 @@ async function attachPurchasePrices(
     })),
   );
   const plannedUnitPrices = new Map(
-    salesPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+    currentSalesPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
   );
 
   return {
@@ -1136,6 +1138,43 @@ async function attachPurchasePrices(
       plannedUnitPrice: plannedUnitPrices.get(option.productId) ?? null,
     })),
   };
+}
+
+async function loadSalesPriceCarryoverByProductId(
+  tx: Prisma.TransactionClient,
+  ledger: Pick<InventoryLedgerPayload, "storeId" | "closingDate">,
+  productIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (productIds.length === 0) {
+    return new Map();
+  }
+
+  const priorSubmittedLedger = await tx.dailyLedger.findFirst({
+    where: {
+      storeId: ledger.storeId,
+      closingDate: { lt: ledger.closingDate },
+      status: { in: [...SALES_PRICE_CARRYOVER_LEDGER_STATUSES] },
+    },
+    orderBy: { closingDate: "desc" },
+    select: { closingDate: true },
+  });
+
+  if (!priorSubmittedLedger) {
+    return new Map();
+  }
+
+  const fallbackSalesPlans = await tx.storeSalesPricePlan.findMany({
+    where: {
+      storeId: ledger.storeId,
+      businessDate: priorSubmittedLedger.closingDate,
+      productId: { in: [...productIds] },
+    },
+    select: { productId: true, plannedUnitPrice: true },
+  });
+
+  return new Map(
+    fallbackSalesPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+  );
 }
 
 async function getInventoryStepDataForLedgerInTx(
@@ -1275,6 +1314,156 @@ async function getInventoryStepDataForLedgerInTx(
   };
 }
 
+export async function getLossInventoryAvailabilityLinesInTx(
+  tx: Prisma.TransactionClient,
+  ledger: {
+    id: string;
+    storeId: string;
+    closingDate: string | Date;
+  },
+): Promise<LossInventoryAvailabilityLine[]> {
+  const closingDate =
+    ledger.closingDate instanceof Date
+      ? ledger.closingDate
+      : new Date(ledger.closingDate);
+
+  const [purchaseRows, lossRows, existingItems] = await Promise.all([
+    tx.ledgerPurchaseItem.findMany({
+      where: { dailyLedgerId: ledger.id, productId: { not: null } },
+      select: { productId: true, quantity: true },
+    }),
+    tx.ledgerLossItem.findMany({
+      where: { dailyLedgerId: ledger.id },
+      select: { productId: true, quantity: true },
+    }),
+    tx.ledgerInventoryItem.findMany({
+      where: { dailyLedgerId: ledger.id },
+      select: {
+        productId: true,
+        previousQuantity: true,
+        purchasedQuantity: true,
+      },
+    }),
+  ]);
+
+  const purchaseQuantities = aggregateQuantityByProductId(purchaseRows);
+  const lossQuantities = aggregateQuantityByProductId(lossRows);
+
+  if (existingItems.length > 0) {
+    return buildLossInventoryAvailabilityLines({
+      existingItems: existingItems.map((item) => ({
+        productId: item.productId,
+        previousQuantity: decimalToNumber(item.previousQuantity),
+        purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      })),
+      purchaseQuantities,
+      lossQuantities,
+    });
+  }
+
+  const previousQuantities = await loadLossAvailabilityPreviousQuantitiesInTx(
+    tx,
+    ledger.storeId,
+    closingDate,
+  );
+
+  return buildLossInventoryAvailabilityLines({
+    existingItems: [],
+    purchaseQuantities,
+    lossQuantities,
+    previousQuantities,
+  });
+}
+
+function aggregateQuantityByProductId(
+  rows: readonly { productId: string | null; quantity: DecimalNumber }[],
+) {
+  const quantities = new Map<string, number>();
+
+  for (const row of rows) {
+    if (!row.productId) {
+      continue;
+    }
+
+    quantities.set(
+      row.productId,
+      (quantities.get(row.productId) ?? 0) + decimalToNumber(row.quantity),
+    );
+  }
+
+  return quantities;
+}
+
+async function loadLossAvailabilityPreviousQuantitiesInTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  closingDate: Date,
+) {
+  const yearMonth = getYearMonth(closingDate);
+  const priorLedger = await tx.dailyLedger.findFirst({
+    where: {
+      storeId,
+      closingDate: { lt: closingDate },
+      status: { not: "HOLIDAY" },
+      ledgerInventoryItems: { some: {} },
+    },
+    orderBy: { closingDate: "desc" },
+    select: {
+      closingDate: true,
+      ledgerInventoryItems: {
+        select: {
+          productId: true,
+          currentQuantity: true,
+          quantity: true,
+        },
+      },
+    },
+  });
+
+  const priorLedgerClosingYearMonth = priorLedger
+    ? getYearMonth(priorLedger.closingDate)
+    : null;
+  const sameMonthPrior =
+    priorLedgerClosingYearMonth != null &&
+    priorLedgerClosingYearMonth === yearMonth;
+
+  const snapshots = sameMonthPrior
+    ? []
+    : await tx.inventoryOpeningSnapshot.findMany({
+        where: { storeId, yearMonth },
+        select: { productId: true, quantity: true },
+      });
+
+  const previousQuantitySource = resolveInventoryPreviousQuantitySource({
+    closingYearMonth: yearMonth,
+    priorLedgerClosingYearMonth,
+    hasOpeningSnapshots: snapshots.length > 0,
+  });
+
+  if (
+    previousQuantitySource === "SAME_MONTH_PRIOR_LEDGER" ||
+    previousQuantitySource === "CROSS_MONTH_PRIOR_LEDGER"
+  ) {
+    return new Map(
+      (priorLedger?.ledgerInventoryItems ?? []).map((item) => [
+        item.productId,
+        toPreviousQuantity(item),
+      ]),
+    );
+  }
+
+  if (previousQuantitySource === "OPENING_SNAPSHOT") {
+    return new Map(
+      snapshots.map((snapshot) => [
+        snapshot.productId,
+        decimalToNumber(snapshot.quantity),
+      ]),
+    );
+  }
+
+  return new Map<string, number>();
+}
+
 export async function getInventoryStepDataInTx(
   tx: Prisma.TransactionClient,
   storeId: string,
@@ -1307,11 +1496,16 @@ export async function getInventoryStepData(
   closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerInventoryStepData> {
-  const data = await db.$transaction((tx) =>
-    getInventoryStepDataInTx(tx, storeId, closingDate, actorId),
-  );
+  return db.$transaction(async (tx) => {
+    const data = await getInventoryStepDataInTx(
+      tx,
+      storeId,
+      closingDate,
+      actorId,
+    );
 
-  return toStoreManagerInventoryStepData(data);
+    return toStoreManagerInventoryStepDataInTx(tx, data);
+  });
 }
 
 export async function getInventoryStepDataByLedgerId(
@@ -1325,8 +1519,40 @@ export async function getInventoryStepDataByLedgerId(
   );
 }
 
+export async function toStoreManagerInventoryStepDataInTx(
+  tx: Prisma.TransactionClient,
+  data: InventoryStepData,
+): Promise<StoreManagerInventoryStepData> {
+  const productIds = [
+    ...new Set([
+      ...data.items.map((item) => item.productId),
+      ...data.manualProductOptions.map((option) => option.productId),
+    ]),
+  ];
+  const missingProductIds = productIds.filter((productId) => {
+    const item = data.items.find((row) => row.productId === productId);
+    const option = data.manualProductOptions.find(
+      (row) => row.productId === productId,
+    );
+    const current = item?.plannedUnitPrice ?? option?.plannedUnitPrice ?? null;
+
+    return current === null;
+  });
+  const carryoverByProductId = await loadSalesPriceCarryoverByProductId(
+    tx,
+    {
+      storeId: data.storeId,
+      closingDate: new Date(data.closingDate),
+    },
+    missingProductIds,
+  );
+
+  return toStoreManagerInventoryStepData(data, carryoverByProductId);
+}
+
 export function toStoreManagerInventoryStepData(
   data: InventoryStepData,
+  carryoverByProductId: ReadonlyMap<string, number> = new Map(),
 ): StoreManagerInventoryStepData {
-  return shapeStoreManagerInventoryStepData(data);
+  return shapeStoreManagerInventoryStepData(data, carryoverByProductId);
 }

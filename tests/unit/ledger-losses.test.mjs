@@ -124,9 +124,15 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   assert.equal(ledgerLossesSchema.safeParse(payload).success, true);
   const decimalQuantity = ledgerLossesSchema.parse({
     ...payload,
-    losses: [{ ...payload.losses[0], quantity: "1.5" }],
+    losses: [{ ...payload.losses[0], quantity: "1.25" }],
   });
-  assert.equal(decimalQuantity.losses[0].quantity, 1.5);
+  assert.equal(decimalQuantity.losses[0].quantity, 1.25);
+
+  const minimumQuantity = ledgerLossesSchema.parse({
+    ...payload,
+    losses: [{ ...payload.losses[0], quantity: "0.01" }],
+  });
+  assert.equal(minimumQuantity.losses[0].quantity, 0.01);
 
   const unchangedLegacyQuantity = ledgerLossesSchema.parse({
     ...payload,
@@ -142,6 +148,33 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
     false,
   );
 
+  for (const quantity of [
+    "-1",
+    ".5",
+    "1.",
+    "1.234",
+    "1,000",
+    "1e2",
+    " ",
+    "9999999999.991",
+    "10000000000",
+  ]) {
+    assert.equal(
+      ledgerLossesSchema.safeParse({
+        ...payload,
+        losses: [{ ...payload.losses[0], quantity }],
+      }).success,
+      false,
+      `${quantity} must not be accepted as a loss quantity`,
+    );
+  }
+
+  const maximumQuantity = ledgerLossesSchema.parse({
+    ...payload,
+    losses: [{ ...payload.losses[0], quantity: "9999999999.99" }],
+  });
+  assert.equal(maximumQuantity.losses[0].quantity, 9_999_999_999.99);
+
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
@@ -152,7 +185,7 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   assert.equal(
     ledgerLossesSchema.safeParse({
       ...payload,
-      losses: [{ ...payload.losses[0], quantity: "1.55" }],
+      losses: [{ ...payload.losses[0], quantity: "1.234" }],
     }).success,
     false,
   );
@@ -178,12 +211,12 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
 
   const invalidQuantity = ledgerLossesSchema.safeParse({
     ...payload,
-    losses: [{ ...payload.losses[0], quantity: "1.55" }],
+    losses: [{ ...payload.losses[0], quantity: "1.234" }],
   });
   assert.equal(invalidQuantity.success, false);
   assert.equal(
     invalidQuantity.error.issues[0].message,
-    "박스단위 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+    "박스단위 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
   );
 
   const invalidRecoveredAmount = ledgerLossesSchema.safeParse({
@@ -196,6 +229,14 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
     "떨이로 실제 판매한 금액은 0원 이상의 정수여야 합니다.",
   );
 
+  assert.equal(
+    ledgerLossesSchema.safeParse({
+      ...payload,
+      losses: [{ ...payload.losses[0], recoveredAmount: "1.25" }],
+    }).success,
+    false,
+  );
+
   const emptyLoss = ledgerLossesSchema.safeParse({
     ...payload,
     losses: [{ ...payload.losses[0], quantity: "0", recoveredAmount: "0" }],
@@ -204,6 +245,202 @@ test("ledger loss schema validates recovered sales rows and requires Korean reas
   assert.equal(
     emptyLoss.error.issues[0].message,
     "박스단위 수량 또는 떨이로 실제 판매한 금액 중 하나는 0보다 커야 합니다.",
+  );
+});
+
+test("loss quantity draft parser accepts only two-decimal DB-safe input", async () => {
+  const decimalPath = assertProjectFile("src", "lib", "decimal.ts");
+  const { parseLossQuantityDraft, toLossQuantitySaveInput } = await import(
+    pathToFileURL(decimalPath).href
+  );
+
+  for (const [input, expected] of [
+    ["0", 0],
+    ["1", 1],
+    ["1.2", 1.2],
+    ["1.25", 1.25],
+    ["0.01", 0.01],
+    ["9999999999.99", 9_999_999_999.99],
+  ]) {
+    assert.equal(parseLossQuantityDraft(input), expected);
+  }
+
+  for (const input of [
+    "-1",
+    ".5",
+    "1.",
+    "1.234",
+    "1,000",
+    "1e2",
+    " ",
+    "9999999999.991",
+    "10000000000",
+  ]) {
+    assert.equal(parseLossQuantityDraft(input), null);
+  }
+
+  assert.equal(toLossQuantitySaveInput("1.25"), "1.25");
+  assert.equal(toLossQuantitySaveInput("1.26"), "1.26");
+  assert.equal(toLossQuantitySaveInput(" 1.25 "), "1.25");
+});
+
+test("headquarters and store loss quantity validators accept 1.25 then 1.26", async () => {
+  const validationPath = assertProjectFile("src", "lib", "validation.ts");
+  const {
+    isNonNegativeTwoDecimalInRange,
+    parseRequiredNonNegativeTwoDecimal,
+  } = await import(pathToFileURL(validationPath).href);
+
+  assert.equal(isNonNegativeTwoDecimalInRange(1.25), true);
+  assert.equal(isNonNegativeTwoDecimalInRange(1.26), true);
+
+  const issues = [];
+  const context = {
+    addIssue(issue) {
+      issues.push(issue);
+    },
+  };
+
+  assert.equal(
+    parseRequiredNonNegativeTwoDecimal("1.25", context, "invalid"),
+    1.25,
+  );
+  assert.equal(
+    parseRequiredNonNegativeTwoDecimal("1.26", context, "invalid"),
+    1.26,
+  );
+  assert.equal(issues.length, 0);
+
+  const hqActionSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+  assert.match(hqActionSource, /parseRequiredNonNegativeTwoDecimal/);
+  assert.match(
+    hqActionSource,
+    /isNonNegativeTwoDecimalInRange\(loss\.quantity\)/,
+  );
+});
+
+test("existing loss rows remain editable when availability excludes exhausted products", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "availability.ts",
+  );
+  const { getAvailableLossProductIds, canSelectLossProduct } = await import(
+    pathToFileURL(helperPath).href
+  );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "actions.ts",
+  );
+  const available = getAvailableLossProductIds([
+    {
+      productId: "still-available",
+      previousQuantity: 2,
+      purchasedQuantity: 0,
+      lossQuantity: 0.5,
+    },
+    {
+      productId: "exhausted-existing",
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      lossQuantity: 1,
+    },
+  ]);
+
+  assert.deepEqual([...available], ["still-available"]);
+  assert.equal(
+    canSelectLossProduct({
+      productId: "exhausted-existing",
+      existingProductId: "exhausted-existing",
+      availableProductIds: available,
+    }),
+    true,
+  );
+  assert.equal(
+    canSelectLossProduct({
+      productId: "exhausted-existing",
+      existingProductId: undefined,
+      availableProductIds: available,
+    }),
+    false,
+  );
+  assert.equal(
+    canSelectLossProduct({
+      productId: "still-available",
+      existingProductId: undefined,
+      availableProductIds: available,
+    }),
+    true,
+  );
+  assert.equal(
+    canSelectLossProduct({
+      productId: "inactive-other",
+      existingProductId: "exhausted-existing",
+      availableProductIds: available,
+    }),
+    false,
+  );
+  assert.match(actionSource, /canSelectLossProduct\(/);
+});
+
+test("loss availability lines assemble from quantity maps without full inventory rows", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "availability.ts",
+  );
+  const { buildLossInventoryAvailabilityLines, getAvailableLossProductIds } =
+    await import(pathToFileURL(helperPath).href);
+
+  const withExisting = buildLossInventoryAvailabilityLines({
+    existingItems: [
+      {
+        productId: "persisted",
+        previousQuantity: 2,
+        purchasedQuantity: 1,
+      },
+    ],
+    purchaseQuantities: new Map([
+      ["persisted", 3],
+      ["purchase-only", 0.5],
+    ]),
+    lossQuantities: new Map([["persisted", 1]]),
+  });
+
+  assert.deepEqual(withExisting, [
+    {
+      productId: "persisted",
+      previousQuantity: 2,
+      purchasedQuantity: 3,
+      lossQuantity: 1,
+    },
+    {
+      productId: "purchase-only",
+      previousQuantity: 0,
+      purchasedQuantity: 0.5,
+      lossQuantity: 0,
+    },
+  ]);
+
+  const withoutExisting = buildLossInventoryAvailabilityLines({
+    existingItems: [],
+    purchaseQuantities: new Map([["purchase-only", 1]]),
+    lossQuantities: new Map(),
+    previousQuantities: new Map([["carryover", 2]]),
+  });
+
+  assert.deepEqual(
+    getAvailableLossProductIds(withoutExisting),
+    new Set(["purchase-only", "carryover"]),
   );
 });
 
@@ -365,6 +602,47 @@ test("ledger loss quantity errors explain product and inventory flow", async () 
   );
 });
 
+test("ledger loss availability includes only products with positive stock after stored losses", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "losses",
+    "availability.ts",
+  );
+  const { getAvailableLossProductIds } = await import(
+    pathToFileURL(helperPath).href
+  );
+
+  const ids = getAvailableLossProductIds([
+    {
+      productId: "carryover",
+      previousQuantity: 2,
+      purchasedQuantity: 0,
+      lossQuantity: 1.25,
+    },
+    {
+      productId: "purchase",
+      previousQuantity: 0,
+      purchasedQuantity: 0.01,
+      lossQuantity: 0,
+    },
+    {
+      productId: "exhausted",
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      lossQuantity: 1,
+    },
+    {
+      productId: "invalid",
+      previousQuantity: 0,
+      purchasedQuantity: 0,
+      lossQuantity: 1,
+    },
+  ]);
+
+  assert.deepEqual([...ids], ["carryover", "purchase"]);
+});
+
 test("ledger loss query action and UI contracts are wired", () => {
   const querySource = readProjectFile(
     "src",
@@ -378,6 +656,10 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(querySource, /ledgerLossItem/);
   assert.match(querySource, /summarizeLossItems/);
   assert.match(querySource, /getLossSignalCandidates/);
+  assert.match(querySource, /getAvailableLossProductIds/);
+  assert.match(querySource, /getLossInventoryAvailabilityLinesInTx/);
+  assert.match(querySource, /availableProductIds\.has\(option\.id\)/);
+  assert.doesNotMatch(querySource, /getInventoryStepDataInTx/);
   assert.match(
     querySource,
     /const lossLedgerSelect = \{[\s\S]*carryoverSalesAmount:\s*true,[\s\S]*cashAmount:\s*true,[\s\S]*cardAmount:\s*true,[\s\S]*otherPaymentAmount:\s*true,/,
@@ -408,6 +690,10 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(actionSource, /calculatePlannedPriceLossAmount/);
   assert.match(actionSource, /consumeStoredLossQuantity/);
   assert.match(actionSource, /getLossQuantityIdentity/);
+  assert.match(actionSource, /canSelectLossProduct\(/);
+  assert.match(actionSource, /getLossInventoryAvailabilityLinesInTx/);
+  assert.doesNotMatch(actionSource, /getInventoryStepDataInTx/);
+  assert.match(actionSource, /현재 보유 재고가 있는 품목을 선택해 주세요/);
   assert.match(actionSource, /storeSalesPricePlan\.findMany/);
   assert.match(actionSource, /recoveredAmount:\s*loss\.recoveredAmount/);
   assert.match(
@@ -442,8 +728,17 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(componentSource, /손실\/폐기\/떨이 입력/);
   assert.match(componentSource, /saveLedgerLosses/);
   assert.match(componentSource, /inputMode="decimal"/);
-  assert.match(componentSource, /parseStockQuantityDraft/);
-  assert.match(componentSource, /toStockQuantitySaveInput/);
+  assert.match(componentSource, /parseLossQuantityDraft/);
+  assert.match(componentSource, /toLossQuantitySaveInput/);
+  assert.match(
+    componentSource,
+    /parseLossQuantityDraft\(quantityValue\)\s*===\s*null/,
+  );
+  assert.match(componentSource, /setFieldErrors\(quantityErrors\)/);
+  assert.match(
+    componentSource,
+    /\{item\.productName \|\| item\.productId\} \/\{" "\}[\s\S]*\{item\.productSpec \|\| "-"\}/,
+  );
   assert.match(componentSource, /min-h-11/);
   assert.match(componentSource, /기준 초과/);
   // WO-09: 사용자 화면 라벨/문구는 lossTerms 사전을 통해 렌더링한다.
@@ -462,7 +757,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(lossTermsSource, /quantity:\s*"박스단위 수량"/);
   assert.match(
     lossTermsSource,
-    /quantityHelp:\s*"한 박스 100마리 중 10마리를 폐기하면 0\.1, 한 박스 10바구니 중 2바구니를 폐기하면 0\.2로 입력하세요\."/,
+    /quantityHelp:\s*"한 박스 100마리 중 10마리를 폐기하면 0\.1, 한 박스 10바구니 중 2바구니를 폐기하면 0\.2로 입력하세요\. 소수점 둘째 자리까지 입력할 수 있습니다\."/,
   );
   assert.match(lossTermsSource, /totalLossQuantity:\s*"총 박스단위 손실 수량"/);
   assert.match(lossTermsSource, /totalLossAmount:\s*"총 손실액"/);
@@ -485,6 +780,16 @@ test("ledger loss query action and UI contracts are wired", () => {
   );
   assert.match(hqActionSource, /consumeStoredLossQuantity/);
   assert.match(hqActionSource, /getLossQuantityIdentity/);
+  assert.match(hqActionSource, /parseRequiredNonNegativeTwoDecimal/);
+  assert.match(
+    hqActionSource,
+    /recoveredAmount:[\s\S]*parseRequiredInteger\(value, context, recoveredAmountError\)/,
+  );
+  assert.match(
+    hqActionSource,
+    /isNonNegativeTwoDecimalInRange\(loss\.quantity\)/,
+  );
+  assert.match(hqActionSource, /isValidInteger\(loss\.recoveredAmount\)/);
 
   const pageSource = readProjectFile(
     "src",

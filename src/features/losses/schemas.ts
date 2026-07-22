@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 import {
-  isNonNegativeDecimalInRange,
   isNonNegativeIntegerInRange,
-  parseRequiredNonNegativeDecimal,
+  isNonNegativeTwoDecimalInRange,
   parseRequiredNonNegativeInteger,
+  parseRequiredNonNegativeTwoDecimal,
   toFieldErrors,
 } from "../../lib/validation.ts";
 import { recoveredAmountError } from "./amount.ts";
@@ -34,7 +34,7 @@ function parseRequiredQuantity(
     return null;
   }
 
-  return parseRequiredNonNegativeDecimal(value, context, errorMessage);
+  return parseRequiredNonNegativeTwoDecimal(value, context, errorMessage);
 }
 
 const requiredIdSchema = (message: string) =>
@@ -134,7 +134,7 @@ export const ledgerLossesSchema = ledgerLossesContextSchema
       if (
         typeof loss.quantity !== "number" ||
         typeof loss.recoveredAmount !== "number" ||
-        !isNonNegativeDecimalInRange(loss.quantity) ||
+        !isNonNegativeTwoDecimalInRange(loss.quantity) ||
         !isNonNegativeIntegerInRange(loss.recoveredAmount)
       ) {
         return;

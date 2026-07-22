@@ -4,7 +4,7 @@ import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { calculatePlannedPriceLossAmount } from "~/features/losses/amount";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
-import { getInventoryStepDataInTx } from "~/features/inventory/queries";
+import { getLossInventoryAvailabilityLinesInTx } from "~/features/inventory/queries";
 import { assertStoreManagerClosingDateIsToday } from "~/features/ledger/date";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
@@ -27,6 +27,7 @@ import {
 } from "./schemas";
 import { getLossStepDataInTx, toStoreManagerLossStepData } from "./queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
+import { getAvailableLossProductIds, canSelectLossProduct } from "./availability";
 import { lossTerms } from "./terms";
 import { type LossStepData, type StoreManagerLossStepData } from "./types";
 import {
@@ -258,36 +259,42 @@ export async function saveLedgerLosses(
       const lossTypeIds = [
         ...new Set(parsed.data.losses.map((loss) => loss.ledgerInputCodeId)),
       ];
-      const [products, lossTypes, salesPricePlans] = await Promise.all([
-        tx.product.findMany({
-          where: { id: { in: productIds }, isActive: true },
-          select: {
-            id: true,
-            name: true,
-            category: true,
-            spec: true,
-          },
-        }),
-        tx.ledgerInputCode.findMany({
-          where: {
-            id: { in: lossTypeIds },
-            group: "LOSS_TYPE",
-            isActive: true,
-          },
-          select: { id: true, name: true },
-        }),
-        tx.storeSalesPricePlan.findMany({
-          where: {
+      const [products, lossTypes, salesPricePlans, availabilityLines] =
+        await Promise.all([
+          tx.product.findMany({
+            where: { id: { in: productIds }, isActive: true },
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              spec: true,
+            },
+          }),
+          tx.ledgerInputCode.findMany({
+            where: {
+              id: { in: lossTypeIds },
+              group: "LOSS_TYPE",
+              isActive: true,
+            },
+            select: { id: true, name: true },
+          }),
+          tx.storeSalesPricePlan.findMany({
+            where: {
+              storeId: before.storeId,
+              businessDate: new Date(before.closingDate),
+              productId: { in: productIds },
+            },
+            select: {
+              productId: true,
+              plannedUnitPrice: true,
+            },
+          }),
+          getLossInventoryAvailabilityLinesInTx(tx, {
+            id: before.id,
             storeId: before.storeId,
-            businessDate: new Date(before.closingDate),
-            productId: { in: productIds },
-          },
-          select: {
-            productId: true,
-            plannedUnitPrice: true,
-          },
-        }),
-      ]);
+            closingDate: before.closingDate,
+          }),
+        ]);
       const productsById = new Map(
         products.map((product) => [product.id, product]),
       );
@@ -300,6 +307,7 @@ export async function saveLedgerLosses(
       const existingById = new Map(
         before.lossItems.map((lossItem) => [lossItem.id, lossItem]),
       );
+      const availableProductIds = getAvailableLossProductIds(availabilityLines);
       const storedQuantityById = new Map(
         before.lossItems.map((lossItem) => [
           lossItem.id,
@@ -315,6 +323,24 @@ export async function saveLedgerLosses(
       for (let index = 0; index < parsed.data.losses.length; index += 1) {
         const loss = parsed.data.losses[index]!;
         const existing = existingById.get(loss.id);
+
+        if (
+          !canSelectLossProduct({
+            productId: loss.productId,
+            existingProductId: existing?.productId,
+            availableProductIds,
+          })
+        ) {
+          return actionError<StoreManagerLossStepData>(
+            "VALIDATION_ERROR",
+            "입력값을 확인해 주세요.",
+            {
+              [`losses.${index}.productId`]: [
+                "현재 보유 재고가 있는 품목을 선택해 주세요.",
+              ],
+            },
+          );
+        }
         const quantity = consumeStoredLossQuantity(
           loss.id,
           loss.quantity,
@@ -380,14 +406,8 @@ export async function saveLedgerLosses(
         normalizedLosses.push(normalized);
       }
 
-      const inventoryData = await getInventoryStepDataInTx(
-        tx,
-        parsed.data.storeId,
-        parsed.data.closingDate,
-        actor.user.id,
-      );
       const inventoryLineByProductId = new Map(
-        inventoryData.items.map((item) => [item.productId, item]),
+        availabilityLines.map((item) => [item.productId, item]),
       );
       const lossQuantityByProductId = new Map<string, number>();
 
@@ -521,6 +541,14 @@ export async function saveLedgerLosses(
         parsed.data.closingDate,
         actor.user.id,
       );
+      const afterAvailabilityLines = await getLossInventoryAvailabilityLinesInTx(
+        tx,
+        {
+          id: after.id,
+          storeId: after.storeId,
+          closingDate: after.closingDate,
+        },
+      );
 
       await writeAuditLog(tx, {
         action: "ledger.losses.saved",
@@ -531,7 +559,12 @@ export async function saveLedgerLosses(
         after,
       });
 
-      return actionOk(toStoreManagerLossStepData(after));
+      return actionOk(
+        toStoreManagerLossStepData(
+          after,
+          getAvailableLossProductIds(afterAvailabilityLines),
+        ),
+      );
     });
 
     if (!result.ok) {

@@ -17,6 +17,20 @@ const storeInventoryQuantityInputPattern = /^\d+(?:\.\d{1,2})?$/;
 const legacyStockQuantityPattern = /^\d+\.\d{2}$/;
 const maxStoreInventoryQuantity = 9_999_999_999.99;
 
+function parseTwoDecimalQuantityDraft(value: string) {
+  const trimmed = value.trim();
+
+  if (!storeInventoryQuantityInputPattern.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+
+  return Number.isFinite(parsed) && parsed <= maxStoreInventoryQuantity
+    ? parsed
+    : null;
+}
+
 export function parseStockQuantityDraft(
   value: string,
   storedQuantity: number | null | undefined,
@@ -50,18 +64,16 @@ export function toStockQuantitySaveInput(
     : value;
 }
 
+export function parseLossQuantityDraft(value: string) {
+  return parseTwoDecimalQuantityDraft(value);
+}
+
+export function toLossQuantitySaveInput(value: string) {
+  return value.trim();
+}
+
 export function parseStoreInventoryQuantityDraft(value: string) {
-  const trimmed = value.trim();
-
-  if (!storeInventoryQuantityInputPattern.test(trimmed)) {
-    return null;
-  }
-
-  const parsed = Number(trimmed);
-
-  return Number.isFinite(parsed) && parsed <= maxStoreInventoryQuantity
-    ? parsed
-    : null;
+  return parseTwoDecimalQuantityDraft(value);
 }
 
 export function toStoreInventoryQuantitySaveInput(value: string) {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const MAX_VALIDATION_INTEGER = 2_147_483_647;
 export const MAX_VALIDATION_DECIMAL = 9_999_999_999.9;
+export const MAX_VALIDATION_TWO_DECIMAL = 9_999_999_999.99;
 
 export function isNonNegativeIntegerInRange(
   value: number,
@@ -145,6 +146,20 @@ export function isNonNegativeDecimalInRange(
   return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }
 
+export function isNonNegativeTwoDecimalInRange(
+  value: number,
+  max = MAX_VALIDATION_TWO_DECIMAL,
+) {
+  if (!Number.isFinite(value) || value < 0 || value > max) {
+    return false;
+  }
+
+  const scaled = value * 100;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+
+  return Math.abs(scaled - Math.round(scaled)) <= tolerance;
+}
+
 export function parseRequiredNonNegativeInteger(
   value: unknown,
   context: z.RefinementCtx,
@@ -193,6 +208,36 @@ export function parseRequiredNonNegativeDecimal(
 
       if (isNonNegativeDecimalInRange(parsed, max)) {
         return roundToOneDecimal(parsed);
+      }
+    }
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: errorMessage,
+  });
+
+  return z.NEVER;
+}
+
+export function parseRequiredNonNegativeTwoDecimal(
+  value: unknown,
+  context: z.RefinementCtx,
+  errorMessage: string,
+  max = MAX_VALIDATION_TWO_DECIMAL,
+) {
+  if (typeof value === "number" && isNonNegativeTwoDecimalInRange(value, max)) {
+    return roundToTwoDecimals(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+
+      if (isNonNegativeTwoDecimalInRange(parsed, max)) {
+        return roundToTwoDecimals(parsed);
       }
     }
   }

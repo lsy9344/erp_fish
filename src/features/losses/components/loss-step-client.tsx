@@ -34,10 +34,7 @@ import {
   type StoreManagerLossStepData,
 } from "~/features/losses/types";
 import { type ActionResult, type FieldErrors } from "~/lib/action-result";
-import {
-  parseStockQuantityDraft,
-  toStockQuantitySaveInput,
-} from "~/lib/decimal";
+import { parseLossQuantityDraft, toLossQuantitySaveInput } from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
 
 type LossLineState = {
@@ -126,11 +123,8 @@ function parseNumber(value: string) {
   return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
-function parseQuantity(
-  value: string,
-  storedQuantity: number | null | undefined,
-) {
-  return parseStockQuantityDraft(value, storedQuantity) ?? 0;
+function parseQuantity(value: string) {
+  return parseLossQuantityDraft(value) ?? 0;
 }
 
 function areLossLinesEqual(left: LossLineState[], right: LossLineState[]) {
@@ -279,10 +273,32 @@ export function LossStepClient({
   }
 
   async function saveCurrentDraft() {
-    setIsSaving(true);
     setResultMessage(null);
     setFormError(null);
     setFieldErrors({});
+
+    const quantityErrors = Object.fromEntries(
+      items.flatMap((item, index) => {
+        const quantityValue =
+          quantityRefs.current[index]?.value ?? item.quantity;
+
+        return parseLossQuantityDraft(quantityValue) === null
+          ? [[`losses.${index}.quantity`, [lossTerms.quantityInvalid]]]
+          : [];
+      }),
+    );
+
+    if (Object.keys(quantityErrors).length > 0) {
+      const message = "입력값을 확인해 주세요.";
+
+      setFieldErrors(quantityErrors);
+      setFormError(message);
+      focusFirstError(quantityErrors);
+      toast.error(message);
+      return false;
+    }
+
+    setIsSaving(true);
 
     try {
       const result = await saveAction({
@@ -296,9 +312,8 @@ export function LossStepClient({
           productId: productRefs.current[index]?.value ?? item.productId,
           ledgerInputCodeId:
             lossTypeRefs.current[index]?.value ?? item.ledgerInputCodeId,
-          quantity: toStockQuantitySaveInput(
+          quantity: toLossQuantitySaveInput(
             quantityRefs.current[index]?.value ?? item.quantity,
-            item.storedQuantity,
           ),
           recoveredAmount:
             recoveredAmountRefs.current[index]?.value ?? item.recoveredAmount,
@@ -357,7 +372,7 @@ export function LossStepClient({
   }
 
   const draftTotalQuantity = items.reduce(
-    (sum, item) => sum + parseQuantity(item.quantity, item.storedQuantity),
+    (sum, item) => sum + parseQuantity(item.quantity),
     0,
   );
   const draftTotalAmount = items.reduce(
@@ -590,7 +605,8 @@ export function LossStepClient({
                           <option value="">품목 선택</option>
                           {!productActive && item.productId ? (
                             <option value={item.productId}>
-                              {item.productName || item.productId}
+                              {item.productName || item.productId} /{" "}
+                              {item.productSpec || "-"}
                             </option>
                           ) : null}
                           {data.productOptions.map((option) => (

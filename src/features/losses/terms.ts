@@ -7,7 +7,7 @@ export const lossTerms = {
   lossType: "처리 유형",
   quantity: "박스단위 수량",
   quantityHelp:
-    "한 박스 100마리 중 10마리를 폐기하면 0.1, 한 박스 10바구니 중 2바구니를 폐기하면 0.2로 입력하세요.",
+    "한 박스 100마리 중 10마리를 폐기하면 0.1, 한 박스 10바구니 중 2바구니를 폐기하면 0.2로 입력하세요. 소수점 둘째 자리까지 입력할 수 있습니다.",
   recoveredAmount: "떨이로 실제 판매한 금액",
   reason: "사유/특이사항",
 
@@ -19,7 +19,7 @@ export const lossTerms = {
   recoveredAmountHelp:
     "손실 수량과 떨이 판매액을 먼저 저장하세요. 3단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다.",
   quantityInvalid:
-    "박스단위 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+    "박스단위 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
   recoveredAmountInvalid:
     "떨이로 실제 판매한 금액은 0원 이상의 정수여야 합니다.",
   positiveValueRequired:

@@ -274,7 +274,7 @@ test("ledger purchase schema allows raw manual input and decimal quantities", as
 
   const tooManyDecimalPlaces = ledgerPurchaseSchema.safeParse({
     ...basePayload,
-    purchases: [{ ...basePayload.purchases[0], quantity: "2.28" }],
+    purchases: [{ ...basePayload.purchases[0], quantity: "1.25" }],
   });
   assert.equal(tooManyDecimalPlaces.success, false);
   assert.deepEqual(tooManyDecimalPlaces.error.flatten().fieldErrors.purchases, [

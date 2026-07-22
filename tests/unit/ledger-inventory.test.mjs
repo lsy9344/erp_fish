@@ -2215,7 +2215,12 @@ test("inventory queries and actions implement carryover, purchase aggregation, a
   assert.match(querySource, /isPreviousCalendarDate/);
   assert.match(
     querySource,
-    /getYearMonth\(priorLedger\.closingDate\) === yearMonth/,
+    /resolveInventoryPreviousQuantitySource/,
+    "same-month prior ledgers should be used before month opening snapshots",
+  );
+  assert.match(
+    querySource,
+    /priorLedgerClosingYearMonth === yearMonth|SAME_MONTH_PRIOR_LEDGER/,
     "same-month prior ledgers should be used before month opening snapshots",
   );
   assert.match(

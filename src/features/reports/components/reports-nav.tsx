@@ -7,6 +7,7 @@ export type ReportKey =
   | "overview"
   | "comparison"
   | "monthly"
+  | "labor"
   | "inventory"
   | "ecount-supply"
   | "product-review"
@@ -32,6 +33,7 @@ const REPORT_GROUPS: ReportGroup[] = [
         href: "/app/reports/comparison",
       },
       { key: "monthly", label: "월간", href: "/app/reports/monthly" },
+      { key: "labor", label: "인건비", href: "/app/reports/labor" },
     ],
   },
   {

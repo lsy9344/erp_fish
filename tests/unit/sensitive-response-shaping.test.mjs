@@ -637,6 +637,7 @@ test("store manager inventory mapper exposes planned price on item rows and manu
     "isModified",
     "lossQuantity",
     "plannedUnitPrice",
+    "plannedUnitPriceSource",
     "previousQuantity",
     "previousQuantityDetail",
     "productCategory",
@@ -648,6 +649,7 @@ test("store manager inventory mapper exposes planned price on item rows and manu
     "quantity",
   ]);
   assert.equal(shaped.items[0].plannedUnitPrice, 18_000);
+  assert.equal(shaped.items[0].plannedUnitPriceSource, "CURRENT");
   assert.equal(shaped.items[0].purchasePrice.unitPrice, 12_000);
   for (const blockedKey of [
     "unitPrice",
@@ -691,7 +693,110 @@ test("store manager inventory mapper exposes planned price on item rows and manu
       unitPrice: 10_000,
     },
     plannedUnitPrice: 16_000,
+    plannedUnitPriceSource: "CURRENT",
   });
+});
+
+test("store manager inventory shaping applies carryover only when current price is missing", async () => {
+  const mapperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
+  );
+  const { shapeStoreManagerInventoryStepData } = await import(
+    pathToFileURL(mapperPath).href
+  );
+  const shaped = shapeStoreManagerInventoryStepData(
+    {
+      id: "ledger-1",
+      storeId: "store-1",
+      closingDate: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:00:00.000Z",
+      version: 1,
+      authorDisplayName: "작성자",
+      status: "IN_PROGRESS",
+      stepCompletion: { inventory: false },
+      carryover: { status: "loaded", source: "PREVIOUS", message: "loaded" },
+      items: [
+        {
+          id: "item-current",
+          productId: "product-current",
+          productName: "광어",
+          productCategory: "회",
+          productSpec: "1kg",
+          purchasePrice: null,
+          plannedUnitPrice: 3_000,
+          unitPrice: 1_000,
+          previousQuantity: 1,
+          purchasedQuantity: 0,
+          purchaseAmount: 0,
+          lossQuantity: 0,
+          lossAmount: 0,
+          currentQuantity: 1,
+          quantity: 1,
+          inventoryAmount: 1_000,
+          fifoLots: [],
+          carryoverSource: "PREVIOUS",
+          carryoverStatus: "LOADED",
+          carryoverLedgerId: null,
+          previousQuantityDetail: { source: "PREVIOUS", history: [] },
+          isModified: false,
+          adjustment: null,
+        },
+        {
+          id: "item-carryover",
+          productId: "product-carryover",
+          productName: "연어",
+          productCategory: "회",
+          productSpec: "1kg",
+          purchasePrice: null,
+          plannedUnitPrice: null,
+          unitPrice: 1_000,
+          previousQuantity: 1,
+          purchasedQuantity: 0,
+          purchaseAmount: 0,
+          lossQuantity: 0,
+          lossAmount: 0,
+          currentQuantity: 1,
+          quantity: 1,
+          inventoryAmount: 1_000,
+          fifoLots: [],
+          carryoverSource: "PREVIOUS",
+          carryoverStatus: "LOADED",
+          carryoverLedgerId: null,
+          previousQuantityDetail: { source: "PREVIOUS", history: [] },
+          isModified: false,
+          adjustment: null,
+        },
+      ],
+      manualProductOptions: [
+        {
+          productId: "product-new",
+          productName: "새우",
+          productCategory: "회",
+          productSpec: "1kg",
+          purchasePrice: null,
+          plannedUnitPrice: null,
+        },
+      ],
+    },
+    new Map([
+      ["product-current", 1_000],
+      ["product-carryover", 2_000],
+      ["product-new", 4_000],
+    ]),
+  );
+
+  assert.equal(shaped.items[0].plannedUnitPrice, 3_000);
+  assert.equal(shaped.items[0].plannedUnitPriceSource, "CURRENT");
+  assert.equal(shaped.items[1].plannedUnitPrice, 2_000);
+  assert.equal(shaped.items[1].plannedUnitPriceSource, "CARRYOVER");
+  assert.equal(shaped.manualProductOptions[0].plannedUnitPrice, 4_000);
+  assert.equal(
+    shaped.manualProductOptions[0].plannedUnitPriceSource,
+    "CARRYOVER",
+  );
 });
 
 test("store manager inventory and loss contracts define safe response types", () => {

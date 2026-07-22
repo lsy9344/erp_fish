@@ -369,6 +369,278 @@ test("화면 밖 수동 추가 품목은 기존 판매한 가격을 복원한다
   ).toHaveValue("");
 });
 
+test("최근 제출 장부의 판매한 가격은 조회만 이월되고 저장 시 당일 값으로 분리된다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct(1_000);
+  const previousDate = getPreviousKstMidnight();
+  const previousLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate: previousDate,
+      status: "IN_REVIEW",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  createdLedgerIds.add(previousLedger.id);
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: previousLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 1_000,
+      previousQuantity: 3,
+      purchasedQuantity: 0,
+      currentQuantity: 3,
+      quantity: 3,
+      inventoryAmount: 3_000,
+      carryoverSource: "MANUAL",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: previousDate,
+      productId: product.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  const currentLedger = await createTodayLedger(actorId);
+  await markLossesReviewed(currentLedger.id, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  const plannedPrice = page.getByLabel(`${product.name} 판매한 가격`);
+  await expect(plannedPrice).toHaveValue("2,000");
+  expect(
+    await prisma.storeSalesPricePlan.count({
+      where: {
+        storeId: STORE_ID,
+        businessDate: getTodayKstMidnight(),
+        productId: product.id,
+      },
+    }),
+  ).toBe(0);
+
+  await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("3");
+  await plannedPrice.fill("2500");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
+  ).toBeVisible();
+
+  const [previousPlan, currentPlan] = await Promise.all([
+    prisma.storeSalesPricePlan.findUniqueOrThrow({
+      where: {
+        storeId_businessDate_productId: {
+          storeId: STORE_ID,
+          businessDate: previousDate,
+          productId: product.id,
+        },
+      },
+    }),
+    prisma.storeSalesPricePlan.findUniqueOrThrow({
+      where: {
+        storeId_businessDate_productId: {
+          storeId: STORE_ID,
+          businessDate: getTodayKstMidnight(),
+          productId: product.id,
+        },
+      },
+    }),
+  ]);
+  expect(previousPlan.plannedUnitPrice).toBe(2_000);
+  expect(currentPlan.plannedUnitPrice).toBe(2_500);
+
+  await page.reload();
+  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
+    "2,500",
+  );
+});
+
+test("IN_PROGRESS와 HOLIDAY 장부의 판매한 가격은 이월하지 않는다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct(1_000);
+  const inProgressDate = getPreviousKstMidnight();
+  const holidayDate = new Date(inProgressDate);
+  holidayDate.setUTCDate(holidayDate.getUTCDate() - 1);
+
+  for (const [status, closingDate] of [
+    ["IN_PROGRESS", inProgressDate],
+    ["HOLIDAY", holidayDate],
+  ] as const) {
+    const previousLedger = await prisma.dailyLedger.create({
+      data: {
+        storeId: STORE_ID,
+        closingDate,
+        status,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    });
+    createdLedgerIds.add(previousLedger.id);
+    await prisma.storeSalesPricePlan.create({
+      data: {
+        storeId: STORE_ID,
+        businessDate: closingDate,
+        productId: product.id,
+        plannedUnitPrice: 9_999,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    });
+  }
+
+  const currentLedger = await createTodayLedger(actorId);
+  await seedPurchase(currentLedger.id, product, actorId);
+  await markLossesReviewed(currentLedger.id, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue("");
+});
+
+test("전월 제출 장부의 판매한 가격도 월 경계를 넘어 이월된다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct(1_000);
+  const today = getTodayKstMidnight();
+  const previousMonthDate = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0),
+  );
+
+  const previousLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate: previousMonthDate,
+      status: "IN_REVIEW",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  createdLedgerIds.add(previousLedger.id);
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: previousMonthDate,
+      productId: product.id,
+      plannedUnitPrice: 3_300,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  const currentLedger = await createTodayLedger(actorId);
+  await seedPurchase(currentLedger.id, product, actorId);
+  await markLossesReviewed(currentLedger.id, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
+    "3,300",
+  );
+  expect(
+    await prisma.storeSalesPricePlan.count({
+      where: {
+        storeId: STORE_ID,
+        businessDate: today,
+        productId: product.id,
+      },
+    }),
+  ).toBe(0);
+});
+
+test("stale version 재고 충돌은 당일·이월 판매가격 출처를 serverValues에 남긴다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const currentProduct = await seedProduct(1_000);
+  const carryoverProduct = await seedProduct(1_200);
+  const previousDate = getPreviousKstMidnight();
+  const today = getTodayKstMidnight();
+
+  const previousLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate: previousDate,
+      status: "IN_REVIEW",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  createdLedgerIds.add(previousLedger.id);
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: previousDate,
+      productId: carryoverProduct.id,
+      plannedUnitPrice: 2_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: today,
+      productId: currentProduct.id,
+      plannedUnitPrice: 2_500,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  const currentLedger = await createTodayLedger(actorId);
+  await seedPurchase(currentLedger.id, currentProduct, actorId);
+  await seedPurchase(currentLedger.id, carryoverProduct, actorId);
+  await markLossesReviewed(currentLedger.id, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await expect(
+    page.getByLabel(`${currentProduct.name} 판매한 가격`),
+  ).toHaveValue("2,500");
+  await expect(
+    page.getByLabel(`${carryoverProduct.name} 판매한 가격`),
+  ).toHaveValue("2,000");
+
+  await page
+    .getByLabel(`${currentProduct.name} 당일재고`, { exact: true })
+    .fill("1");
+  await page
+    .getByLabel(`${carryoverProduct.name} 당일재고`, { exact: true })
+    .fill("1");
+
+  await prisma.dailyLedger.update({
+    where: { id: currentLedger.id },
+    data: {
+      workMemo: "재고 충돌용 version bump",
+      updatedById: actorId,
+      version: { increment: 1 },
+    },
+  });
+
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText(/2500\(당일\)/)).toBeVisible();
+  await expect(conflictDialog.getByText(/2000\(이월\)/)).toBeVisible();
+});
+
 test("재고 계획 완료 상태는 매출을 연속 저장한 응답에서도 유지된다", async ({
   page,
 }) => {

@@ -33,6 +33,12 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.REPORT_VIEW,
   },
   {
+    label: "인건비 현황",
+    href: "/app/reports/labor",
+    icon: "reports",
+    requiredAction: PermissionAction.REPORT_VIEW,
+  },
+  {
     label: "본사 지출",
     href: "/app/headquarters-expenses",
     icon: "expenses",
