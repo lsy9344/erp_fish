@@ -77,6 +77,9 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(pageSource, /datePreset/);
   assert.doesNotMatch(pageSource, /overviewItems/);
   assert.match(tableSource, /본사 마감/);
+  assert.match(tableSource, /장부 마감/);
+  assert.match(tableSource, /이월/);
+  assert.match(tableSource, /영업 합계/);
   assert.match(tableSource, /overflow-x-auto/);
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
   assert.doesNotMatch(tableSource, /disabled[\s\S]*상세 준비 중/);
@@ -1203,10 +1206,10 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
   );
   // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 요약에서 제거된다.
-  // 지점장 요약은 총매출·근무인원만 남는다.
+  // 지점장 요약은 매출 구성·영업 매출 합계·근무인원만 남는다.
   assert.match(
     ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"totalSales"\s*\|\s*"workerCount"/s,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"closingTotalSales"[\s\S]*"carryoverSales"[\s\S]*"operatingSales"[\s\S]*"workerCount"/s,
   );
   assert.doesNotMatch(
     ledgerReviewTypesSource,
@@ -1273,7 +1276,7 @@ function makeDashboardRow(overrides = {}) {
   };
 }
 
-// WO-14 part2(2026-06-29): 본사 관제판 매출 셀에 분석 매출(판매가 계획 기준)을 함께 보여준다.
+// WO-14 part2(2026-06-29): 본사 관제판 매출 셀에 분석 매출(판매한 가격 기준)을 함께 보여준다.
 test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTotal", () => {
   const queries = readProjectFile("src", "features", "dashboard", "queries.ts");
   const types = readProjectFile("src", "features", "dashboard", "types.ts");
@@ -1287,7 +1290,7 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
 
   // 타입에 분석 매출 필드가 있다.
   assert.match(types, /analysisSalesAmount:\s*LedgerReviewMetric/);
-  // 쿼리는 판매가 계획을 일괄 조회해 plannedSalesItems로 plannedSalesTotal을 계산하고
+  // 쿼리는 판매한 가격을 일괄 조회해 plannedSalesItems로 plannedSalesTotal을 계산하고
   // 그 값을 analysisSalesAmount로 노출한다.
   assert.match(queries, /buildDashboardPlannedSalesItems/);
   assert.match(queries, /getPlannedUnitPriceLookup/);
@@ -1301,7 +1304,7 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
   assert.match(table, /분석/);
 });
 
-// WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매가 계획 기준)을 함께 보여준다.
+// WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매한 가격 기준)을 함께 보여준다.
 test("WO-14 part3: dashboard row carries analysisMarginDisplay from plannedGrossMarginRate", () => {
   const queries = readProjectFile("src", "features", "dashboard", "queries.ts");
   const types = readProjectFile("src", "features", "dashboard", "types.ts");

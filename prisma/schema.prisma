@@ -425,6 +425,7 @@ model DailyLedger {
   version                    Int                         @default(1)
   authorDisplayName          String?
   totalSalesAmount           Int                         @default(0)
+  carryoverSalesAmount       Int                         @default(0)
   cashAmount                 Int                         @default(0)
   cardAmount                 Int                         @default(0)
   otherPaymentAmount         Int                         @default(0)

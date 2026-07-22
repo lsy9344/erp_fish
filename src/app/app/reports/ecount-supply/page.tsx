@@ -82,7 +82,7 @@ export default async function EcountSupplyReportPage({
       variant: "default" as const,
     },
     {
-      label: "판매가 계획 없음",
+      label: "판매한 가격 없음",
       value: report.summary.unmappedSalesPlanCount.toLocaleString("ko-KR"),
       variant: "muted" as const,
     },
@@ -261,13 +261,13 @@ export default async function EcountSupplyReportPage({
       </section>
 
       <p className="text-muted-foreground text-xs">
-        기대 매출/이익은 판매 예정가(지점 판매가 계획)가 매핑된{" "}
+        기대 매출/이익은 판매한 가격(지점 판매한 가격)가 매핑된{" "}
         {report.summary.plannedRowCount.toLocaleString("ko-KR")}개 라인만으로
-        산출한 추정값입니다. 기대 매출 = Σ(수량 × 판매 예정가), 기대 이익 = 기대
+        산출한 추정값입니다. 기대 매출 = Σ(수량 × 판매한 가격), 기대 이익 = 기대
         매출 − 해당 라인 공급가액(
         {krwFormatter.format(report.summary.matchedSupplyAmount)}).
         {report.summary.unmappedSalesPlanCount > 0
-          ? ` 판매가 계획이 없는 ${report.summary.unmappedSalesPlanCount.toLocaleString(
+          ? ` 판매한 가격이 없는 ${report.summary.unmappedSalesPlanCount.toLocaleString(
               "ko-KR",
             )}개 라인은 기대 매출/이익에서 제외됩니다.`
           : ""}
@@ -287,7 +287,7 @@ export default async function EcountSupplyReportPage({
               <TableHead className="text-right">공급가액</TableHead>
               <TableHead>장부 상태</TableHead>
               <TableHead>재고/FIFO</TableHead>
-              <TableHead className="text-right">판매 예정가(추정)</TableHead>
+              <TableHead className="text-right">판매한 가격(추정)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -332,7 +332,7 @@ export default async function EcountSupplyReportPage({
                   <TableCell>{row.fifoLinked ? "연결됨" : "미연결"}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {row.plannedUnitPrice === null
-                      ? "판매가 계획 없음"
+                      ? "판매한 가격 없음"
                       : `${formatKrw(row.plannedUnitPrice)} (추정)`}
                   </TableCell>
                 </TableRow>

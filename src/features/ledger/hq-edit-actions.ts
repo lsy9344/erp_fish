@@ -211,6 +211,7 @@ function toHqLedgerServerConflictValues(
       // 변경하지 않으므로 충돌 후보로 노출하지 않는다.
       return {
         총매출: data.totalSalesAmount,
+        "이월 매출": data.carryoverSalesAmount,
         현금: data.cashAmount,
         카드: data.cardAmount,
         "기타 결제수단": data.otherPaymentAmount,
@@ -255,6 +256,7 @@ function toHqLedgerClientConflictValues(
       // 변경하지 않으므로 충돌 후보로 노출하지 않는다.
       return {
         총매출: sales.totalSalesAmount,
+        "이월 매출": sales.carryoverSalesAmount,
         현금: sales.cashAmount,
         카드: sales.cardAmount,
         "기타 결제수단": sales.otherPaymentAmount,
@@ -429,6 +431,7 @@ export async function saveHqLedgerSalesPayment(
           expectedUpdatedAt,
           {
             totalSalesAmount: parsed.data.totalSalesAmount,
+            carryoverSalesAmount: parsed.data.carryoverSalesAmount,
             cashAmount: parsed.data.cashAmount,
             cardAmount: parsed.data.cardAmount,
             otherPaymentAmount: parsed.data.otherPaymentAmount,

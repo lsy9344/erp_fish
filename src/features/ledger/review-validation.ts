@@ -1,5 +1,6 @@
 import { getKstLedgerDateParam } from "./date.ts";
 import type { LedgerReviewMissingItem } from "./review-types";
+import { calculateOperatingSalesAmount } from "../../server/calculations/ledger.ts";
 
 export function getLedgerReviewStepHref(
   storeId: string,
@@ -30,6 +31,7 @@ export function getLedgerReviewMissingItems({
   storeId,
   closingDate,
   totalSalesAmount,
+  carryoverSalesAmount = 0,
   paymentTotal,
   expenseCount,
   purchaseCount,
@@ -42,6 +44,7 @@ export function getLedgerReviewMissingItems({
   storeId: string;
   closingDate: string;
   totalSalesAmount: number;
+  carryoverSalesAmount?: number;
   paymentTotal: number;
   expenseCount: number;
   purchaseCount: number;
@@ -92,10 +95,10 @@ export function getLedgerReviewMissingItems({
   if (missingInventoryPlanCount > 0) {
     items.push({
       id: "inventory-plans",
-      label: "판매계획가",
+      label: "판매한 가격",
       href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
       status: "missing",
-      detail: `3단계 재고에서 판매계획가가 누락된 품목 ${missingInventoryPlanCount}건을 입력해 주세요.`,
+      detail: `3단계 재고에서 판매한 가격이 누락된 품목 ${missingInventoryPlanCount}건을 입력해 주세요.`,
     });
   }
 
@@ -122,13 +125,17 @@ export function getLedgerReviewMissingItems({
     });
   }
 
-  if (totalSalesAmount === 0 && paymentTotal === 0) {
+  if (
+    calculateOperatingSalesAmount(totalSalesAmount, carryoverSalesAmount) ===
+      0 &&
+    paymentTotal === 0
+  ) {
     items.push({
       id: "sales",
-      label: "총매출/결제",
+      label: "영업 매출/결제",
       href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
       status: "missing",
-      detail: "총매출과 결제 금액이 아직 입력되지 않았습니다.",
+      detail: "영업 매출 합계와 결제 금액이 아직 입력되지 않았습니다.",
     });
   }
 

@@ -80,7 +80,7 @@ export function StoreEntryStepNavigation({
                 aria-disabled={isBlockedByInventory || undefined}
                 title={
                   isBlockedByInventory
-                    ? "3단계 재고의 수량과 판매계획가를 먼저 저장해 주세요."
+                    ? "3단계 재고의 수량과 판매한 가격을 먼저 저장해 주세요."
                     : undefined
                 }
                 className={cn(

@@ -558,6 +558,17 @@ function getCorrectionTargetOptions({
     {
       targetType: "PAYMENT_FIELD",
       targetId: ledger.id,
+      fieldKey: "carryoverSalesAmount",
+      label: "이월 매출",
+      originalValue: {
+        kind: "money",
+        value: ledger.carryoverSalesAmount,
+        label: "이월 매출",
+      },
+    },
+    {
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
       fieldKey: "cashAmount",
       label: "현금",
       originalValue: { kind: "money", value: ledger.cashAmount, label: "현금" },

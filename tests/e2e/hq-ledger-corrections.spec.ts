@@ -340,6 +340,75 @@ test("정정 기록 폼은 한국어 검증 오류와 첫 오류 포커스를 �
   await expect(reasonInput).toBeFocused();
 });
 
+test("총매출과 이월 매출 동시 정정은 영업 매출 상한을 직렬화해 한 건만 저장한다", async ({
+  page,
+}) => {
+  const { ledger } = await seedClosedLedger();
+
+  await loginAsHq(page);
+  const carryoverPage = await page.context().newPage();
+  await Promise.all([
+    page.goto(`/app/ledgers/${ledger.id}`),
+    carryoverPage.goto(`/app/ledgers/${ledger.id}`),
+  ]);
+
+  const totalPanel = page
+    .getByRole("region")
+    .filter({ has: page.getByRole("heading", { name: "정정 기록" }) });
+  const carryoverPanel = carryoverPage.getByRole("region").filter({
+    has: carryoverPage.getByRole("heading", { name: "정정 기록" }),
+  });
+
+  await carryoverPanel
+    .getByLabel("정정 대상")
+    .selectOption({ label: "이월 매출" });
+  await replaceControlValue(totalPanel.getByLabel("정정값"), "2147483647");
+  await replaceControlValue(
+    totalPanel.getByLabel("정정 사유"),
+    "동시 총매출 상한 검증",
+  );
+  await replaceControlValue(carryoverPanel.getByLabel("정정값"), "1");
+  await replaceControlValue(
+    carryoverPanel.getByLabel("정정 사유"),
+    "동시 이월 매출 상한 검증",
+  );
+
+  await Promise.all([
+    totalPanel.getByRole("button", { name: "정정 기록 저장" }).click(),
+    carryoverPanel.getByRole("button", { name: "정정 기록 저장" }).click(),
+  ]);
+
+  await expect
+    .poll(() =>
+      prisma.correctionRecord.count({ where: { dailyLedgerId: ledger.id } }),
+    )
+    .toBe(1);
+
+  const records = await prisma.correctionRecord.findMany({
+    where: { dailyLedgerId: ledger.id },
+    select: { id: true, fieldKey: true, correctedValue: true },
+  });
+  const appliedTotal =
+    records[0]?.fieldKey === "totalSalesAmount" ? 2_147_483_647 : 10_000;
+  const appliedCarryover =
+    records[0]?.fieldKey === "carryoverSalesAmount" ? 1 : 0;
+
+  expect(appliedTotal + appliedCarryover).toBeLessThanOrEqual(2_147_483_647);
+  await expect
+    .poll(() =>
+      prisma.auditLog.count({
+        where: {
+          targetType: "CorrectionRecord",
+          targetId: { in: records.map((record) => record.id) },
+          action: "correction.created",
+        },
+      }),
+    )
+    .toBe(1);
+
+  await carryoverPage.close();
+});
+
 test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산에 반영한다", async ({
   page,
 }) => {

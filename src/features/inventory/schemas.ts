@@ -18,7 +18,7 @@ const actualQuantityError =
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합니다.";
-const plannedUnitPriceError = "판매계획가는 0원 이상의 정수여야 합니다.";
+const plannedUnitPriceError = "판매한 가격은 0원 이상의 정수여야 합니다.";
 const maxStoreInventoryQuantity = 9_999_999_999.99;
 
 function parseStoreInventoryQuantity(value: unknown, context: z.RefinementCtx) {
@@ -168,7 +168,7 @@ export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
 });
 
-// 지점장 재고 저장만 두 자리 수량과 필수 판매계획가를 받는다. 본사 조정/HQ 저장은
+// 지점장 재고 저장만 두 자리 수량과 필수 판매한 가격을 받는다. 본사 조정/HQ 저장은
 // 기존 ledgerInventorySchema의 한 자리 계약을 그대로 사용한다.
 export const ledgerStoreManagerInventorySchema =
   ledgerMutationContextSchema.extend({

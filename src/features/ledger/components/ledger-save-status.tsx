@@ -49,7 +49,6 @@ export function LedgerSaveStatus({
     : errorMessage
       ? AlertCircleIcon
       : CheckCircle2Icon;
-
   return (
     <section
       aria-label="장부 저장 상태"

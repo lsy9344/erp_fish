@@ -25,6 +25,7 @@ import {
 import type { CorrectionValue, CreateCorrectionRecordResult } from "./types";
 import { nullableDecimalToNumber } from "~/lib/decimal";
 import { isNonNegativeDecimalInRange } from "~/lib/validation";
+import { isOperatingSalesTotalInRange } from "./operating-sales-validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 
@@ -35,6 +36,7 @@ const ledgerFieldKinds: Record<string, CorrectionValue["kind"]> = {
 
 const paymentFieldKinds: Record<string, CorrectionValue["kind"]> = {
   totalSalesAmount: "money",
+  carryoverSalesAmount: "money",
   cashAmount: "money",
   cardAmount: "money",
   otherPaymentAmount: "money",
@@ -69,6 +71,7 @@ const ledgerFieldLabels: Record<string, string> = {
 
 const paymentFieldLabels: Record<string, string> = {
   totalSalesAmount: "총매출",
+  carryoverSalesAmount: "이월 매출",
   cashAmount: "현금",
   cardAmount: "카드",
   otherPaymentAmount: "기타 결제수단",
@@ -152,6 +155,18 @@ function correctionValueShapeError(): ActionResult<never> {
   });
 }
 
+function operatingSalesRangeError(): ActionResult<never> {
+  return actionError(
+    "VALIDATION_ERROR",
+    "장부 마감 매출과 이월 매출 합계를 확인해 주세요.",
+    {
+      "correctedValue.value": [
+        "장부 마감 매출과 이월 매출 합계는 2,147,483,647원을 넘을 수 없습니다.",
+      ],
+    },
+  );
+}
+
 function ledgerNotFoundError(): ActionResult<never> {
   return actionError("LEDGER_NOT_FOUND", "장부를 찾을 수 없습니다.");
 }
@@ -170,7 +185,7 @@ function mapCorrectionActionError(): ActionResult<never> {
   );
 }
 
-function isValidCorrectionInteger(value: unknown) {
+function isValidCorrectionInteger(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
@@ -245,6 +260,81 @@ async function lockCorrectionTargetInTx(
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 }
 
+function isOperatingSalesCorrectionTarget(
+  input: Pick<CorrectionRecordInput, "targetType" | "fieldKey">,
+) {
+  return (
+    input.targetType === "PAYMENT_FIELD" &&
+    (input.fieldKey === "totalSalesAmount" ||
+      input.fieldKey === "carryoverSalesAmount")
+  );
+}
+
+async function lockOperatingSalesCorrectionsInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+) {
+  const lockKey = `${ledgerId}:PAYMENT_FIELD:OPERATING_SALES`;
+
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+}
+
+function getAppliedCorrectionInteger(value: Prisma.JsonValue | undefined) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return isValidCorrectionInteger(value.value) ? value.value : null;
+}
+
+async function validateOperatingSalesCorrectionInTx(
+  tx: Prisma.TransactionClient,
+  input: Pick<
+    CorrectionRecordInput,
+    "ledgerId" | "targetType" | "targetId" | "fieldKey"
+  >,
+  ledgerSales: {
+    totalSalesAmount: number;
+    carryoverSalesAmount: number;
+  },
+  correctedValue: CorrectionValue,
+): Promise<ActionResult<null>> {
+  if (!isOperatingSalesCorrectionTarget(input)) {
+    return actionOk(null);
+  }
+
+  const [latestTotalSales, latestCarryoverSales] = await Promise.all([
+    getLatestCorrectionByTargetInTx(tx, {
+      dailyLedgerId: input.ledgerId,
+      targetType: "PAYMENT_FIELD",
+      targetId: input.targetId,
+      fieldKey: "totalSalesAmount",
+    }),
+    getLatestCorrectionByTargetInTx(tx, {
+      dailyLedgerId: input.ledgerId,
+      targetType: "PAYMENT_FIELD",
+      targetId: input.targetId,
+      fieldKey: "carryoverSalesAmount",
+    }),
+  ]);
+  let totalSalesAmount =
+    getAppliedCorrectionInteger(latestTotalSales?.correctedValue) ??
+    ledgerSales.totalSalesAmount;
+  let carryoverSalesAmount =
+    getAppliedCorrectionInteger(latestCarryoverSales?.correctedValue) ??
+    ledgerSales.carryoverSalesAmount;
+
+  if (input.fieldKey === "totalSalesAmount") {
+    totalSalesAmount = correctedValue.value as number;
+  } else {
+    carryoverSalesAmount = correctedValue.value as number;
+  }
+
+  return isOperatingSalesTotalInRange(totalSalesAmount, carryoverSalesAmount)
+    ? actionOk(null)
+    : operatingSalesRangeError();
+}
+
 function revalidateCorrectionPaths(ledgerId: string) {
   revalidateLedgerDetailPath(ledgerId);
   revalidateDashboardAndReports();
@@ -308,6 +398,7 @@ async function resolveOriginalCorrectionValue(
       where: { id: input.ledgerId },
       select: {
         totalSalesAmount: true,
+        carryoverSalesAmount: true,
         cashAmount: true,
         cardAmount: true,
         otherPaymentAmount: true,
@@ -488,9 +579,21 @@ export async function createCorrectionRecord(
       ActionResult<CreateCorrectionRecordResult>
     >(
       async (tx) => {
+        if (isOperatingSalesCorrectionTarget(parsed.data)) {
+          // Both sales fields share one ledger-scoped lock. Acquire it before
+          // the first read so concurrent corrections see the latest committed
+          // counterpart value instead of validating two stale snapshots.
+          await lockOperatingSalesCorrectionsInTx(tx, ledgerId);
+        }
+
         const ledger = await tx.dailyLedger.findUnique({
           where: { id: ledgerId, status: "HEADQUARTERS_CLOSED" },
-          select: { id: true, status: true },
+          select: {
+            id: true,
+            status: true,
+            totalSalesAmount: true,
+            carryoverSalesAmount: true,
+          },
         });
 
         if (!ledger) {
@@ -519,6 +622,18 @@ export async function createCorrectionRecord(
 
         if (!correctedValue.ok) {
           return correctedValue;
+        }
+
+        const operatingSalesValidation =
+          await validateOperatingSalesCorrectionInTx(
+            tx,
+            parsed.data,
+            ledger,
+            correctedValue.data,
+          );
+
+        if (!operatingSalesValidation.ok) {
+          return operatingSalesValidation;
         }
 
         await lockCorrectionTargetInTx(tx, {

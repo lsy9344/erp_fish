@@ -378,6 +378,11 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(querySource, /ledgerLossItem/);
   assert.match(querySource, /summarizeLossItems/);
   assert.match(querySource, /getLossSignalCandidates/);
+  assert.match(
+    querySource,
+    /const lossLedgerSelect = \{[\s\S]*carryoverSalesAmount:\s*true,[\s\S]*cashAmount:\s*true,[\s\S]*cardAmount:\s*true,[\s\S]*otherPaymentAmount:\s*true,/,
+    "loss-step completion must receive carryover and every payment field",
+  );
 
   const actionSource = readProjectFile(
     "src",
@@ -464,7 +469,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(lossTermsSource, /recoveredAmount:\s*"떨이로 실제 판매한 금액"/);
   assert.match(
     lossTermsSource,
-    /recoveredAmountHelp:\s*"손실액은 3단계 재고의 판매계획가에서 떨이로 실제 판매한 금액을 뺀 값으로 자동 계산됩니다\."/,
+    /recoveredAmountHelp:\s*"손실 수량과 떨이 판매액을 먼저 저장하세요\. 3단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다\."/,
   );
   assert.match(componentSource, /clientKey/);
   assert.match(componentSource, /id:\s*""/);

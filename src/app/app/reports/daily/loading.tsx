@@ -19,7 +19,7 @@ export default function DailyMeetingReportLoading() {
         </div>
       </div>
 
-      <LoadingSection title="지점별 매출·이익률">
+      <LoadingSection title="지점별 영업 매출·이익률">
         <Skeleton className="h-56 w-full" />
       </LoadingSection>
 

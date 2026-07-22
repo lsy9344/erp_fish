@@ -64,6 +64,9 @@ export function toStoreManagerLedgerCostStepData(
 // 새 지표를 단계 요약에 추가할 때는 반드시 위 민감 차단 정책과 충돌하지 않는지 먼저 확인한다.
 const storeManagerReviewMetricIds = new Set([
   "totalSales",
+  "closingTotalSales",
+  "carryoverSales",
+  "operatingSales",
   "paymentTotal",
   "expenseCount",
   "purchaseCount",
@@ -129,9 +132,12 @@ export function toStoreManagerLedgerReviewStepData(
     signals,
     warnings,
     stepSummaries,
-    // 2026-06-28: 마진율·재고금액은 본사 전용. 지점장 상단 요약은 총매출·근무인원만 남긴다.
+    // 마진율·재고금액은 본사 전용. 지점장 상단 요약에는 매출 구성과 근무인원만 남긴다.
     summary: {
       totalSales: data.summary.totalSales,
+      closingTotalSales: data.summary.closingTotalSales,
+      carryoverSales: data.summary.carryoverSales,
+      operatingSales: data.summary.operatingSales,
       workerCount: data.summary.workerCount,
     },
   };

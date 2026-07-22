@@ -370,7 +370,7 @@ test("legacy carryover payloads remain harmless while purchase no longer writes 
   });
   assert.equal(defaulted.purchases[0].kind, "purchase");
 
-  // carryover 행은 수량/단가 0이어도 통과하고 kind를 보존한다(판매 예정가만 받는 행).
+  // carryover 행은 수량/단가 0이어도 통과하고 kind를 보존한다(판매한 가격만 받는 행).
   const carry = ledgerPurchaseSchema.parse({
     ...base,
     purchases: [
@@ -666,7 +666,7 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // HQ 매입 저장 경로는 getStoreEcountPurchaseEditErrors를 호출하지 않는다.
   // 해당 차단 검증은 지점장 저장 경로(actions.ts)에만 남는다.
   assert.doesNotMatch(hqActionSource, /getStoreEcountPurchaseEditErrors/);
-  // WO(2026-06-25): 판매가 계획(StoreSalesPricePlan)은 지점장 매입 화면 전용이므로
+  // WO(2026-06-25): 판매한 가격(StoreSalesPricePlan)은 지점장 매입 화면 전용이므로
   // 본사 매입 저장 경로는 계획을 쓰지 않는다.
   assert.doesNotMatch(hqActionSource, /storeSalesPricePlan/i);
   // WO(2026-06-24) 검토 #2: 본사 보정은 "적용 단가(unitPrice)"만 바꿀 수 있고,
@@ -875,7 +875,7 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   assert.match(componentSource, /저장됐습니다\./);
   assert.match(componentSource, /매입 합계/);
   assert.match(componentSource, /min-h-11/);
-  // 판매계획가는 재고 단계가 소유한다. 매입 UI와 payload에는 계획 책임이 없다.
+  // 판매한 가격은 재고 단계가 소유한다. 매입 UI와 payload에는 계획 책임이 없다.
   assert.doesNotMatch(componentSource, /오늘 팔 가격\(예상\)/);
   assert.doesNotMatch(componentSource, /showSalesPricePlan/);
   assert.doesNotMatch(componentSource, /plannedUnitPrice/);

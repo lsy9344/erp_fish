@@ -16,19 +16,19 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
-// 판매계획가 입력은 3단계 재고 화면으로 통합됐다. 별도 "판매가 계획"
+// 판매한 가격 입력은 3단계 재고 화면으로 통합됐다. 별도 "판매한 가격"
 // 메뉴는 기본 지점장 네비게이션에서 제거되고, 기존 route는 재고 단계로 redirect한다.
-test("판매가 계획 메뉴가 기본 지점장 네비게이션에서 보이지 않는다", async ({
+test("판매한 가격 메뉴가 기본 지점장 네비게이션에서 보이지 않는다", async ({
   page,
 }) => {
   await login(page);
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=purchase`);
 
-  await expect(page.getByRole("link", { name: "판매가 계획" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "판매한 가격" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "항목 추가" })).toBeVisible();
 });
 
-test("기존 판매가 계획 route는 storeId를 보존한 채 3단계 재고로 redirect한다", async ({
+test("기존 판매한 가격 route는 storeId를 보존한 채 3단계 재고로 redirect한다", async ({
   page,
 }) => {
   await login(page);

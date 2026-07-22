@@ -364,7 +364,7 @@ export function ProductProfitabilityReport({
           </div>
 
           <p className="text-muted-foreground text-xs">
-            막대 길이는 추정 판매액(판매량 × 판매가 계획, 없으면 매입단가 폴백),
+            막대 길이는 추정 판매액(판매량 × 판매한 가격, 없으면 매입단가 폴백),
             색·라벨은 추정 이익률(추정 판매액과 FIFO 소진금액 기반 추정
             원가)입니다. 확정 POS 매출·원가가 아닙니다.
           </p>
@@ -373,7 +373,7 @@ export function ProductProfitabilityReport({
       {tableVariant === "profitability" &&
       data.salesPriceFallbackItemCount > 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-500">
-          판매가 계획이 없어 매입단가로 대체한(판매가 미반영) 품목{" "}
+          판매한 가격이 없어 매입단가로 대체한(판매가 미반영) 품목{" "}
           {data.salesPriceFallbackItemCount}개가 있어 추정 매출·이익률이 실제
           의도보다 낮게 보일 수 있습니다.
         </p>

@@ -378,7 +378,13 @@ export function buildLedgerReviewStepSummaries({
       }),
       href: getLedgerReviewStepHref(storeId, closingDate, "sales"),
       metrics: [
-        moneyMetric("totalSales", "총매출", summary.totalSales),
+        moneyMetric(
+          "closingTotalSales",
+          "장부 마감 매출",
+          summary.closingTotalSales,
+        ),
+        moneyMetric("carryoverSales", "이월 매출", summary.carryoverSales),
+        moneyMetric("operatingSales", "영업 매출 합계", summary.operatingSales),
         moneyMetric(
           "paymentTotal",
           "현금·카드·기타 합계",
@@ -392,10 +398,10 @@ export function buildLedgerReviewStepSummaries({
           "signed-krw",
         ),
         ratioMetric("grossMarginRate", "마진율", summary.grossMarginRate),
-        // point_summary 검토 후속(2026-06-24): 아침 판매가 계획 vs 저녁 실제 비교.
+        // point_summary 검토 후속(2026-06-24): 아침 판매한 가격 vs 저녁 실제 비교.
         moneyMetric(
           "plannedSalesTotal",
-          "계획 판매가 기준 추정 매출",
+          "판매한 가격 기준 추정 매출",
           summary.plannedSalesTotal,
         ),
         moneyMetric(
@@ -406,7 +412,7 @@ export function buildLedgerReviewStepSummaries({
         ),
         ratioMetric(
           "plannedGrossMarginRate",
-          "계획 판매가 기준 마진율",
+          "판매한 가격 기준 마진율",
           summary.plannedGrossMarginRate,
         ),
       ],
@@ -418,8 +424,8 @@ export function buildLedgerReviewStepSummaries({
 // 판매 수량은 재고 흐름(전일+매입-당일)으로만 추정하고, 추정 매출만 노출한다.
 // 단가/FIFO/차액 같은 민감값은 이 카드 데이터에 담지 않는다.
 //
-// point_summary 검토 후속(2026-06-24): 회의 결정대로 추정 매출은 "지점장 판매가 계획"
-// (plannedUnitPrice) 기준으로 산출한다. 매입/적용 단가(unitPrice)는 판매가 계획이 없을 때만
+// point_summary 검토 후속(2026-06-24): 회의 결정대로 추정 매출은 "지점장 판매한 가격"
+// (plannedUnitPrice) 기준으로 산출한다. 매입/적용 단가(unitPrice)는 판매한 가격이 없을 때만
 // 폴백으로 쓰고, 그 경우 salesBasis="cost"로 표시한다.
 function buildStoreManagerTopSoldItems(
   items: Array<{
@@ -504,8 +510,8 @@ export async function getLedgerReviewStepData(
       quantity: nullableDecimalToNumber(item.quantity),
     }));
     // point_summary 검토 후속(2026-06-24): 추정 매출/계획 대비 비교는 회의 결정대로
-    // "지점장 판매가 계획"(StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다.
-    // (storeId, businessDate=closingDate, productId)로 당일 판매가 계획을 조회한다.
+    // "지점장 판매한 가격"(StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다.
+    // (storeId, businessDate=closingDate, productId)로 당일 판매한 가격을 조회한다.
     const productIdsForPlan = [
       ...new Set(inventory.items.map((item) => item.productId)),
     ];
@@ -550,6 +556,7 @@ export async function getLedgerReviewStepData(
     );
     const summary = calculateLedgerReviewSummary({
       totalSalesAmount: ledger.totalSalesAmount,
+      carryoverSalesAmount: ledger.carryoverSalesAmount,
       cashAmount: ledger.cashAmount,
       cardAmount: ledger.cardAmount,
       otherPaymentAmount: ledger.otherPaymentAmount,
@@ -587,6 +594,7 @@ export async function getLedgerReviewStepData(
       storeId,
       closingDate: closingDateParam,
       totalSalesAmount: ledger.totalSalesAmount,
+      carryoverSalesAmount: ledger.carryoverSalesAmount,
       paymentTotal:
         ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
       expenseCount: ledger.ledgerExpenses.length,
@@ -617,6 +625,10 @@ export async function getLedgerReviewStepData(
       }),
       stepCompletion: getStoreEntryStepCompletion({
         totalSalesAmount: ledger.totalSalesAmount,
+        carryoverSalesAmount: ledger.carryoverSalesAmount,
+        cashAmount: ledger.cashAmount,
+        cardAmount: ledger.cardAmount,
+        otherPaymentAmount: ledger.otherPaymentAmount,
         workerCount: ledger.workerCount,
         ledgerExpenses: ledger.ledgerExpenses,
         ledgerPurchaseItems: ledger.ledgerPurchaseItems,

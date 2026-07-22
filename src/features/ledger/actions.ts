@@ -88,7 +88,7 @@ async function assertInventoryPlanCompleteInTx(
 function inventoryPlanIncompleteActionError<T>(): ActionResult<T> {
   return actionError(
     "INVENTORY_PLAN_INCOMPLETE",
-    "3단계 재고의 수량과 판매계획가를 모두 저장한 뒤 진행해 주세요.",
+    "3단계 재고의 수량과 판매한 가격을 모두 저장한 뒤 진행해 주세요.",
   );
 }
 
@@ -317,6 +317,7 @@ function toStoreLedgerConflictValues(
       // 매출 저장에서 덮어쓰지 않으므로 충돌 후보로 노출하지 않는다.
       return {
         총매출: data.totalSalesAmount,
+        "이월 매출": data.carryoverSalesAmount,
         현금: data.cashAmount,
         카드: data.cardAmount,
         "기타 결제수단": data.otherPaymentAmount,
@@ -369,6 +370,7 @@ function toStoreLedgerClientValues(
       // 매출 저장에서 덮어쓰지 않으므로 충돌 후보로 노출하지 않는다.
       return {
         총매출: sales.totalSalesAmount,
+        "이월 매출": sales.carryoverSalesAmount,
         현금: sales.cashAmount,
         카드: sales.cardAmount,
         "기타 결제수단": sales.otherPaymentAmount,
@@ -565,6 +567,7 @@ async function validateLedgerSubmitRequirementsInTx(
     storeId: ledger.storeId,
     closingDate: ledger.closingDate.toISOString(),
     totalSalesAmount: ledger.totalSalesAmount,
+    carryoverSalesAmount: ledger.carryoverSalesAmount,
     paymentTotal:
       ledger.cashAmount + ledger.cardAmount + ledger.otherPaymentAmount,
     expenseCount: ledger.ledgerExpenses.length,
@@ -829,6 +832,7 @@ export async function saveLedgerSalesPayment(
         {
           authorDisplayName: authorDisplayNameToPersist,
           totalSalesAmount: parsed.data.totalSalesAmount,
+          carryoverSalesAmount: parsed.data.carryoverSalesAmount,
           cashAmount: parsed.data.cashAmount,
           cardAmount: parsed.data.cardAmount,
           otherPaymentAmount: parsed.data.otherPaymentAmount,

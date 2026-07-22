@@ -53,7 +53,7 @@ const SEOUL_TIME_ZONE = "Asia/Seoul";
 type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
 
 // WO-14 part2(2026-06-29): 분석 매출 계산용 planned-sales 입력. calculateLedgerReviewSummary가
-// 이 입력으로 plannedSalesTotal(판매가 계획 기준 추정 매출 = 장부 AE4)을 산출한다.
+// 이 입력으로 plannedSalesTotal(판매한 가격 기준 추정 매출 = 장부 AE4)을 산출한다.
 type DashboardPlannedSalesItem = {
   productId?: string;
   previousQuantity: number;
@@ -150,6 +150,7 @@ type DashboardLedgerRecord = {
   closingDate: Date;
   status: DailyLedgerStatus;
   totalSalesAmount: number;
+  carryoverSalesAmount: number;
   cashAmount: number;
   cardAmount: number;
   otherPaymentAmount: number;
@@ -386,6 +387,7 @@ export async function getHqDashboardRows({
             closingDate: true,
             status: true,
             totalSalesAmount: true,
+            carryoverSalesAmount: true,
             cashAmount: true,
             cardAmount: true,
             otherPaymentAmount: true,
@@ -462,8 +464,8 @@ export async function getHqDashboardRows({
   const ledgerByStoreId = new Map<string, DashboardLedgerRecord>(
     ledgers.map((ledger) => [ledger.storeId, ledger]),
   );
-  // WO-14 part2(2026-06-29): 분석 매출(판매가 계획 기준 추정 매출)을 매출 셀에 함께 보여주기 위해
-  // 각 마감의 판매가 계획을 일괄 조회해 ledger별 planned-sales 입력을 만든다.
+  // WO-14 part2(2026-06-29): 분석 매출(판매한 가격 기준 추정 매출)을 매출 셀에 함께 보여주기 위해
+  // 각 마감의 판매한 가격을 일괄 조회해 ledger별 planned-sales 입력을 만든다.
   const plannedSalesItemsByLedgerId =
     await buildDashboardPlannedSalesItems(ledgers);
   const baseRows = stores.map((store) => {
@@ -632,6 +634,11 @@ function toDashboardRow(
       businessStatus: mapDashboardBusinessStatus(null),
       ledgerStatus: mapDashboardLedgerStatus(null),
       salesAmount: metrics.totalSales,
+      closingSalesAmount: metrics.totalSales,
+      carryoverSalesAmount: dataInsufficient(
+        "장부 입력 전이라 이월 매출 데이터가 없습니다.",
+      ),
+      operatingSalesAmount: metrics.totalSales,
       analysisSalesAmount: dataInsufficient(
         "장부 입력 전이라 분석 매출 데이터가 없습니다.",
       ),
@@ -662,6 +669,7 @@ function toDashboardRow(
     ledgerId: ledger.id,
     reviewInput: {
       totalSalesAmount: ledger.totalSalesAmount,
+      carryoverSalesAmount: ledger.carryoverSalesAmount,
       cashAmount: ledger.cashAmount,
       cardAmount: ledger.cardAmount,
       otherPaymentAmount: ledger.otherPaymentAmount,
@@ -691,6 +699,7 @@ function toDashboardRow(
     storeId: store.id,
     closingDate: ledger.closingDate.toISOString(),
     totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
+    carryoverSalesAmount: correctionOverlay.reviewInput.carryoverSalesAmount,
     paymentTotal: calculatePaymentTotal(
       correctionOverlay.reviewInput.cashAmount,
       correctionOverlay.reviewInput.cardAmount,
@@ -736,6 +745,9 @@ function toDashboardRow(
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: reviewSummary.totalSales,
+    closingSalesAmount: reviewSummary.closingTotalSales,
+    carryoverSalesAmount: reviewSummary.carryoverSales,
+    operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
@@ -781,6 +793,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
         closingDate: true,
         status: true,
         totalSalesAmount: true,
+        carryoverSalesAmount: true,
         cashAmount: true,
         cardAmount: true,
         otherPaymentAmount: true,
@@ -877,6 +890,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     ledgerId: ledger.id,
     reviewInput: {
       totalSalesAmount: ledger.totalSalesAmount,
+      carryoverSalesAmount: ledger.carryoverSalesAmount,
       cashAmount: ledger.cashAmount,
       cardAmount: ledger.cardAmount,
       otherPaymentAmount: ledger.otherPaymentAmount,
@@ -904,6 +918,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     storeId: ledger.store.id,
     closingDate: ledger.closingDate.toISOString(),
     totalSalesAmount: correctionOverlay.reviewInput.totalSalesAmount,
+    carryoverSalesAmount: correctionOverlay.reviewInput.carryoverSalesAmount,
     paymentTotal: calculatePaymentTotal(
       correctionOverlay.reviewInput.cashAmount,
       correctionOverlay.reviewInput.cardAmount,
@@ -949,6 +964,9 @@ export async function getHqLedgerDetail(ledgerId: string) {
     businessStatus: mapDashboardBusinessStatus(ledger.status),
     ledgerStatus: mapDashboardLedgerStatus(ledger.status),
     salesAmount: correctedReviewSummary.totalSales,
+    closingSalesAmount: correctedReviewSummary.closingTotalSales,
+    carryoverSalesAmount: correctedReviewSummary.carryoverSales,
+    operatingSalesAmount: correctedReviewSummary.operatingSales,
     analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(

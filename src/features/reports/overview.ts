@@ -30,6 +30,10 @@ export type HqReportOverviewData = {
   selectedStoreId: string | null;
   selectedStoreName: string | null;
   summary: {
+    closingSalesAmount: number | null;
+    carryoverSalesAmount: number | null;
+    operatingSalesAmount: number | null;
+    /** @deprecated Use operatingSalesAmount. */
     salesAmount: number | null;
     grossProfit: number | null;
     netAmount: number | null;
@@ -567,7 +571,7 @@ function buildRankings(input: {
         (allLosses.length > 0 && usableLosses.length === 0)
         ? null
         : usableLosses.reduce((sum, item) => sum + item.amount, 0),
-      "판매가 계획 기준이 없습니다.",
+      "판매한 가격 기준이 없습니다.",
       input.startDateInput,
       input.endDateInput,
     );
@@ -588,10 +592,10 @@ function buildRankings(input: {
     const leader = ranking.rows[0];
     ranking.summary = leader
       ? `${leader.storeName}이(가) 1위이며 ${ranking.excluded.length}개 지점이 제외되었습니다.${
-          metric === "loss" ? " 판매가 계획 기준입니다." : ""
+          metric === "loss" ? " 판매한 가격 기준입니다." : ""
         }`
       : `계산 가능한 지점이 없습니다. ${ranking.excluded.length}개 지점이 제외되었습니다.${
-          metric === "loss" ? " 판매가 계획 기준입니다." : ""
+          metric === "loss" ? " 판매한 가격 기준입니다." : ""
         }`;
   }
 
@@ -674,7 +678,7 @@ function aggregateCompleteMetric(input: {
   dateInputs: string[];
   statusRows: ReportOverviewStatusRow[];
   ledgers: LedgerProfitSummary[];
-  key: "totalSales" | "grossProfit";
+  key: "totalSales" | "closingSales" | "carryoverSales" | "grossProfit";
 }) {
   const statuses = statusMap(input.statusRows);
   const ledgers = ledgersByStoreAndDate(input.ledgers);
@@ -686,7 +690,16 @@ function aggregateCompleteMetric(input: {
       const status = statuses.get(statusKey(store.id, dateInput));
       if (status === "HOLIDAY") continue;
       businessCount += 1;
-      const value = ledgers.get(statusKey(store.id, dateInput))?.[input.key];
+      const ledger = ledgers.get(statusKey(store.id, dateInput));
+      const selectedValue = ledger?.[input.key];
+      const value =
+        selectedValue !== undefined
+          ? selectedValue
+          : input.key === "closingSales"
+            ? ledger?.totalSales
+            : input.key === "carryoverSales" && ledger
+              ? 0
+              : undefined;
       if (!status || !includedStatuses.has(status) || value === null) {
         return null;
       }
@@ -842,6 +855,27 @@ export function buildHqReportOverviewForTest(input: {
   const netAmount = profitAndLoss.available
     ? pnlRows.reduce((sum, row) => sum + row.netAmount, 0)
     : null;
+  const closingSalesAmount = aggregateCompleteMetric({
+    stores: scopedStores,
+    dateInputs,
+    statusRows: input.statusRows,
+    ledgers: currentLedgers,
+    key: "closingSales",
+  });
+  const carryoverSalesAmount = aggregateCompleteMetric({
+    stores: scopedStores,
+    dateInputs,
+    statusRows: input.statusRows,
+    ledgers: currentLedgers,
+    key: "carryoverSales",
+  });
+  const operatingSalesAmount = aggregateCompleteMetric({
+    stores: scopedStores,
+    dateInputs,
+    statusRows: input.statusRows,
+    ledgers: currentLedgers,
+    key: "totalSales",
+  });
 
   return {
     monthRange: input.monthRange,
@@ -851,13 +885,10 @@ export function buildHqReportOverviewForTest(input: {
       input.stores.find((store) => store.id === input.selectedStoreId)?.name ??
       null,
     summary: {
-      salesAmount: aggregateCompleteMetric({
-        stores: scopedStores,
-        dateInputs,
-        statusRows: input.statusRows,
-        ledgers: currentLedgers,
-        key: "totalSales",
-      }),
+      closingSalesAmount,
+      carryoverSalesAmount,
+      operatingSalesAmount,
+      salesAmount: operatingSalesAmount,
       grossProfit: aggregateCompleteMetric({
         stores: scopedStores,
         dateInputs,
@@ -880,8 +911,8 @@ export function buildHqReportOverviewForTest(input: {
       lossBreakdown: !coverageComplete
         ? `월 범위 미완전으로 일부 장부 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건만 계산했습니다.`
         : topLoss
-          ? `${topLoss.name} 손실이 가장 크며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`
-          : `손실 금액이 없으며 판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`,
+          ? `${topLoss.name} 손실이 가장 크며 판매한 가격 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`
+          : `손실 금액이 없으며 판매한 가격 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건을 계산했습니다.`,
       profitAndLoss:
         profitAndLoss.available && netAmount !== null
           ? `순이익은 ${netAmount}원입니다.${
@@ -902,7 +933,7 @@ export function buildHqReportOverviewForTest(input: {
     dataQuality: {
       missingCount,
       lossBasisLabel: coverageComplete
-        ? `판매가 계획 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`
+        ? `판매한 가격 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`
         : `월 범위 미완전 · 일부 장부 기준 ${lossBreakdown.computableCount}/${lossBreakdown.totalCount}건`,
       profitAndLossLabel: profitAndLoss.available
         ? `FIFO 손익 계산 완료${

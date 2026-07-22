@@ -46,6 +46,10 @@ const lossLedgerSelect = {
   authorDisplayName: true,
   status: true,
   totalSalesAmount: true,
+  carryoverSalesAmount: true,
+  cashAmount: true,
+  cardAmount: true,
+  otherPaymentAmount: true,
   workerCount: true,
   lossReviewedAt: true,
   ledgerExpenses: {

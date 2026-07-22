@@ -30,7 +30,13 @@ test("legacy sales price plan editor and writer are removed", () => {
   for (const segments of [
     ["src", "features", "sales-plan", "actions.ts"],
     ["src", "features", "sales-plan", "schemas.ts"],
-    ["src", "features", "sales-plan", "components", "sales-price-plan-client.tsx"],
+    [
+      "src",
+      "features",
+      "sales-plan",
+      "components",
+      "sales-price-plan-client.tsx",
+    ],
   ]) {
     assert.equal(existsSync(path.join(root, ...segments)), false);
   }
@@ -109,14 +115,14 @@ test("sales plan loss context renders loss calculation basis; old route redirect
   assert.match(lossPageSource, /getSalesPlanLossContext/);
   assert.match(lossPageSource, /SalesPlanLossContext/);
 
-  // WO(2026-06-25): 판매 예정가 입력이 3단계 매입으로 통합돼 별도 "판매가 계획" 메뉴가
+  // WO(2026-06-25): 판매한 가격 입력이 3단계 매입으로 통합돼 별도 "판매한 가격" 메뉴가
   // 기본 네비게이션에서 사라졌다. 메뉴는 장부/재고/손실 3개로 줄고 하단 그리드는 3열이다.
   const navSource = readProjectFile(
     "src",
     "components",
     "store-manager-navigation.tsx",
   );
-  assert.doesNotMatch(navSource, /label:\s*"판매가 계획"/);
+  assert.doesNotMatch(navSource, /label:\s*"판매한 가격"/);
   assert.match(navSource, /grid-cols-3/);
 
   // 기존 /app/store-entry/sales-plan route는 삭제하지 않고 재고 단계로

@@ -219,7 +219,7 @@ test("지점장은 매입 항목을 여러 건 저장하고 재방문 시 목록
   expect(savedFirstPurchase?.amount).toBe(30000);
 });
 
-test("매입 화면은 판매계획가를 다루지 않고 기존 계획을 보존한다", async ({
+test("매입 화면은 판매한 가격을 다루지 않고 기존 계획을 보존한다", async ({
   page,
 }) => {
   await login(page);

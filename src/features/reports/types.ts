@@ -184,6 +184,9 @@ export type StoreComparisonReportRow = {
   storeName: string;
   statusCounts: StoreComparisonStatusCounts;
   salesAmount: LedgerReviewMetric;
+  closingSalesAmount: LedgerReviewMetric;
+  carryoverSalesAmount: LedgerReviewMetric;
+  operatingSalesAmount: LedgerReviewMetric;
   grossProfit: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
   operatingProfit: LedgerReviewMetric;
@@ -264,6 +267,9 @@ export type MonthlyClosingKpiMetricEvidenceMap = {
 
 export type MonthlyClosingKpiSummary = {
   salesAmount: LedgerReviewMetric;
+  closingSalesAmount: LedgerReviewMetric;
+  carryoverSalesAmount: LedgerReviewMetric;
+  operatingSalesAmount: LedgerReviewMetric;
   grossProfit: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
   operatingProfit: LedgerReviewMetric;
@@ -327,7 +333,7 @@ export type MonthlyTopRevenueItemSummary = {
 // 일단위 총액으로만 기록한다. 따라서 판매량(전일재고+매입-당일재고) × 단가로
 // '추정 매출'을 산출해 순위를 매긴다. 추정치임을 basisLabel/note로 명시한다.
 //
-// point_summary 검토 후속(2026-06-24): 단가는 회의 결정대로 지점장 판매가 계획
+// point_summary 검토 후속(2026-06-24): 단가는 회의 결정대로 지점장 판매한 가격
 // (plannedUnitPrice)을 우선 사용하고, 없으면 매입단가로 폴백한다. 폴백한 품목은
 // salesBasis="cost"로 표시한다.
 export type MonthlyRevenueRankingItem = {
@@ -345,7 +351,7 @@ export type MonthlyRevenueRankingSummary = {
   note: string;
   top: MonthlyRevenueRankingItem[];
   bottom: MonthlyRevenueRankingItem[];
-  // 판매가 계획이 없어 매입단가로 폴백한 품목 수.
+  // 판매한 가격이 없어 매입단가로 폴백한 품목 수.
   salesPriceFallbackItemCount: number;
 };
 
@@ -419,14 +425,14 @@ export type ProductCategoryPerformance = {
   salesAmount: number;
   grossMarginRate: number | null;
   statusLabel: "확정" | "추정" | "계산 불가";
-  // point_summary 검토 후속(2026-06-24): 추정 매출은 지점장 판매가 계획 기준.
-  // 판매가 계획이 없어 매입단가로 폴백한 판매 품목 수. 0보다 크면 "판매가 일부 미반영"
+  // point_summary 검토 후속(2026-06-24): 추정 매출은 지점장 판매한 가격 기준.
+  // 판매한 가격이 없어 매입단가로 폴백한 판매 품목 수. 0보다 크면 "판매가 일부 미반영"
   // 안내를 화면에 띄운다.
   salesPriceFallbackItemCount: number;
 };
 
 // WO(2026-06-25): 당일 품목별 추정 이익률. 카테고리 차트와 같은 계산 기준
-// (판매량=전일+매입−당일, 판매가 계획 우선·없으면 매입단가 폴백, 원가는 FIFO 우선)을
+// (판매량=전일+매입−당일, 판매한 가격 우선·없으면 매입단가 폴백, 원가는 FIFO 우선)을
 // 품목 단위로 그대로 펼친 추정값이다. 확정 POS 매출/원가가 아니다.
 export type ProductProfitabilityReportItem = {
   productId: string;
@@ -439,7 +445,7 @@ export type ProductProfitabilityReportItem = {
   estimatedCogsAmount: number;
   estimatedGrossProfit: number;
   estimatedGrossMarginRate: number | null;
-  // 판매가 계획을 썼으면 "planned", 매입단가로 폴백했으면 "cost".
+  // 판매한 가격을 썼으면 "planned", 매입단가로 폴백했으면 "cost".
   salesBasis: "planned" | "cost";
   // 추정/판매가 미반영(폴백)/계산 불가(매출 0) 상태.
   statusLabel: "추정" | "판매가 미반영" | "계산 불가";
@@ -453,7 +459,7 @@ export type ProductProfitabilitySummary = {
   totalCogsAmount: number;
   totalGrossProfit: number;
   totalGrossMarginRate: number | null;
-  // 판매가 계획이 없어 매입단가로 폴백한 품목 수.
+  // 판매한 가격이 없어 매입단가로 폴백한 품목 수.
   salesPriceFallbackItemCount: number;
   // 추정 매출이 0이라 이익률을 못 내는 품목 수.
   unavailableItemCount: number;

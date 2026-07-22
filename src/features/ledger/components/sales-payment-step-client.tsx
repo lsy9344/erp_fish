@@ -76,6 +76,7 @@ export function SalesPaymentStepClient({
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const totalSalesInputRef = useRef<HTMLInputElement>(null);
+  const carryoverSalesInputRef = useRef<HTMLInputElement>(null);
   const cashAmountInputRef = useRef<HTMLInputElement>(null);
   const cardAmountInputRef = useRef<HTMLInputElement>(null);
   const otherPaymentInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +85,9 @@ export function SalesPaymentStepClient({
   const [ledger, setLedger] = useState(initialLedger);
   const [totalSalesAmount, setTotalSalesAmount] = useState(
     formatKrwInput(String(initialLedger.totalSalesAmount)),
+  );
+  const [carryoverSalesAmount, setCarryoverSalesAmount] = useState(
+    formatKrwInput(String(initialLedger.carryoverSalesAmount)),
   );
   const [cashAmount, setCashAmount] = useState(
     formatKrwInput(String(initialLedger.cashAmount)),
@@ -120,6 +124,9 @@ export function SalesPaymentStepClient({
   }, []);
 
   const totalSalesAmountValue = parseKrwInputValue(totalSalesAmount);
+  const carryoverSalesAmountValue = parseKrwInputValue(carryoverSalesAmount);
+  const operatingSalesAmountValue =
+    totalSalesAmountValue + carryoverSalesAmountValue;
   const cashAmountValue = parseKrwInputValue(cashAmount);
   const cardAmountValue = parseKrwInputValue(cardAmount);
   const otherPaymentAmountValue = parseKrwInputValue(otherPaymentAmount);
@@ -127,6 +134,7 @@ export function SalesPaymentStepClient({
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
     totalSalesAmountValue !== ledger.totalSalesAmount ||
+    carryoverSalesAmountValue !== ledger.carryoverSalesAmount ||
     cashAmountValue !== ledger.cashAmount ||
     cardAmountValue !== ledger.cardAmount ||
     otherPaymentAmountValue !== ledger.otherPaymentAmount;
@@ -134,6 +142,7 @@ export function SalesPaymentStepClient({
   function fillLedger(data: StoreManagerLedgerCostStepData) {
     setLedger(data);
     setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
+    setCarryoverSalesAmount(formatKrwInput(String(data.carryoverSalesAmount)));
     setCashAmount(formatKrwInput(String(data.cashAmount)));
     setCardAmount(formatKrwInput(String(data.cardAmount)));
     setOtherPaymentAmount(formatKrwInput(String(data.otherPaymentAmount)));
@@ -143,6 +152,11 @@ export function SalesPaymentStepClient({
     window.setTimeout(() => {
       if (errors.totalSalesAmount?.length) {
         totalSalesInputRef.current?.focus();
+        return;
+      }
+
+      if (errors.carryoverSalesAmount?.length) {
+        carryoverSalesInputRef.current?.focus();
         return;
       }
 
@@ -182,6 +196,9 @@ export function SalesPaymentStepClient({
         ledgerUpdatedAt: ledger.updatedAt,
         totalSalesAmount: toRawKrwInputValue(
           totalSalesInputRef.current?.value ?? totalSalesAmount,
+        ),
+        carryoverSalesAmount: toRawKrwInputValue(
+          carryoverSalesInputRef.current?.value ?? carryoverSalesAmount,
         ),
         cashAmount: toRawKrwInputValue(
           cashAmountInputRef.current?.value ?? cashAmount,
@@ -247,6 +264,7 @@ export function SalesPaymentStepClient({
   }
 
   const totalSalesError = fieldErrors.totalSalesAmount?.[0];
+  const carryoverSalesError = fieldErrors.carryoverSalesAmount?.[0];
   const cashAmountError = fieldErrors.cashAmount?.[0];
   const cardAmountError = fieldErrors.cardAmount?.[0];
   const otherPaymentAmountError = fieldErrors.otherPaymentAmount?.[0];
@@ -297,7 +315,7 @@ export function SalesPaymentStepClient({
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["총매출", "현금", "카드", "기타 결제수단"]}
+        unsavedFields={["총매출", "이월 매출", "현금", "카드", "기타 결제수단"]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
       />
@@ -342,6 +360,63 @@ export function SalesPaymentStepClient({
                 {totalSalesError}
               </FieldError>
             ) : null}
+          </Field>
+
+          <Field data-invalid={Boolean(carryoverSalesError)}>
+            <FieldLabel htmlFor="carryover-sales-amount">이월 매출</FieldLabel>
+            <Input
+              ref={carryoverSalesInputRef}
+              id="carryover-sales-amount"
+              name="carryoverSalesAmount"
+              inputMode="numeric"
+              autoComplete="off"
+              value={carryoverSalesAmount}
+              disabled={!isHydrated || isOriginalEditBlocked}
+              onChange={(event) =>
+                setCarryoverSalesAmount(
+                  formatKrwInput(event.currentTarget.value),
+                )
+              }
+              className="min-h-11 tabular-nums"
+              aria-invalid={Boolean(carryoverSalesError)}
+              aria-describedby={
+                carryoverSalesError
+                  ? "carryover-sales-amount-help carryover-sales-amount-error"
+                  : "carryover-sales-amount-preview carryover-sales-amount-help"
+              }
+            />
+            <p
+              id="carryover-sales-amount-preview"
+              className="text-muted-foreground mt-1 text-xs tabular-nums"
+            >
+              표시: {formatKrw(carryoverSalesAmountValue)}
+            </p>
+            <FieldDescription id="carryover-sales-amount-help">
+              장부 마감 뒤 추가로 발생한 매출입니다. 당일 현금·카드·기타 결제
+              정산에는 포함하지 않습니다.
+            </FieldDescription>
+            {carryoverSalesError ? (
+              <FieldError id="carryover-sales-amount-error">
+                {carryoverSalesError}
+              </FieldError>
+            ) : null}
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="operating-sales-amount">
+              영업 매출 합계
+            </FieldLabel>
+            <Input
+              id="operating-sales-amount"
+              value={formatKrw(operatingSalesAmountValue)}
+              readOnly
+              aria-readonly="true"
+              aria-describedby="operating-sales-amount-help"
+              className="min-h-11 tabular-nums"
+            />
+            <FieldDescription id="operating-sales-amount-help">
+              총매출과 이월 매출을 합한 영업 성과 기준 금액입니다.
+            </FieldDescription>
           </Field>
 
           <Field data-invalid={Boolean(cashAmountError)}>

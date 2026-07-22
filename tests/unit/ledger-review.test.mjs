@@ -89,7 +89,38 @@ test("ledger review summary helper calculates PRD metrics and unavailable states
   assert.deepEqual(summary.salesDifference, ok(91_000));
 });
 
-// point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+test("ledger review uses closing plus carryover for operations but reconciles payments to closing sales", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary, calculateOperatingSalesAmount } =
+    await import(pathToFileURL(calcPath).href);
+
+  assert.equal(calculateOperatingSalesAmount(100_000, 25_000), 125_000);
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    carryoverSalesAmount: 25_000,
+    cashAmount: 60_000,
+    cardAmount: 30_000,
+    otherPaymentAmount: 10_000,
+    workerCount: 5,
+    expenseTotal: 0,
+    inventoryItems: [],
+  });
+
+  assert.deepEqual(summary.closingTotalSales, ok(100_000));
+  assert.deepEqual(summary.carryoverSales, ok(25_000));
+  assert.deepEqual(summary.operatingSales, ok(125_000));
+  assert.deepEqual(summary.totalSales, ok(125_000));
+  assert.deepEqual(summary.paymentDifference, ok(0));
+  assert.deepEqual(summary.productivity, ok(25_000));
+});
+
+// point_summary 검토 후속(2026-06-24): 판매한 가격 대비 실제 비교 지표.
 test("ledger review summary computes planned-sales metrics from planned unit price", async () => {
   const calcPath = assertProjectFile(
     "src",
@@ -101,10 +132,10 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
     pathToFileURL(calcPath).href
   );
 
-  // 품목 A: 판매 10+5-8=7개, 매입단가 1,000, 계획 판매가 1,500.
-  // 품목 B: 판매 3+2-4=1개, 매입단가 2,000, 계획 판매가 3,000.
+  // 품목 A: 판매 10+5-8=7개, 매입단가 1,000, 판매한 가격 1,500.
+  // 품목 B: 판매 3+2-4=1개, 매입단가 2,000, 판매한 가격 3,000.
   // 계획 매출 = 7×1,500 + 1×3,000 = 13,500. COGS = 7×1,000 + 1×2,000 = 9,000.
-  // 계획 매출이익 = 13,500-9,000 = 4,500. 계획 마진율 = 4,500/13,500 = 0.333...
+  // 계획 매출이익 = 13,500-9,000 = 4,500. 판매가 기준 마진율 = 4,500/13,500 = 0.333...
   // 실제 총매출 100,000 → 계획 대비 차이 = 100,000-13,500 = 86,500.
   const baseInput = {
     totalSalesAmount: 100_000,
@@ -144,7 +175,7 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
     ...overrides,
   });
 
-  // 1) 모든 판매 품목에 판매가 계획이 있으면 ok 값으로 노출.
+  // 1) 모든 판매 품목에 판매한 가격이 있으면 ok 값으로 노출.
   const fullPlan = calculateLedgerReviewSummary({
     ...baseInput,
     plannedSalesItems: [
@@ -171,7 +202,7 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
   assert.ok(Math.abs(fullPlan.plannedGrossMarginRate.value - 1 / 3) < 1e-9);
   assert.deepEqual(fullPlan.plannedVsActualSalesDifference, ok(86_500));
 
-  // 2) 일부 품목만 판매가 계획이 있으면 과소 추정이다. 이는 정책(OQ) 게이트가 아니라
+  // 2) 일부 품목만 판매한 가격이 있으면 과소 추정이다. 이는 정책(OQ) 게이트가 아니라
   //    입력 부족이므로 data-insufficient로 내리고 값은 숨긴다(과소 추정 값 노출 방지).
   const partialPlan = calculateLedgerReviewSummary({
     ...baseInput,
@@ -206,7 +237,7 @@ test("ledger review summary computes planned-sales metrics from planned unit pri
     "data-insufficient",
   );
 
-  // 3) 판매가 계획 입력 자체가 없으면(plannedSalesItems 미제공) 데이터 부족으로 노출.
+  // 3) 판매한 가격 입력 자체가 없으면(plannedSalesItems 미제공) 데이터 부족으로 노출.
   const noPlan = calculateLedgerReviewSummary(baseInput);
 
   assert.equal(noPlan.plannedSalesTotal.value, null);
@@ -436,6 +467,12 @@ test("ledger review route/query contracts use existing server flows", () => {
     "ledger",
     "review-validation.ts",
   );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
 
   assert.match(querySource, /getStoreLedgerInTx\(/);
   assert.match(querySource, /getKstBusinessDateParam/);
@@ -443,6 +480,11 @@ test("ledger review route/query contracts use existing server flows", () => {
   assert.match(
     validationSource,
     /export\s+function\s+getLedgerReviewMissingItems/,
+  );
+  assert.match(
+    actionSource,
+    /getLedgerReviewMissingItems\(\{[\s\S]*carryoverSalesAmount:\s*ledger\.carryoverSalesAmount/,
+    "submit validation must include carryover sales",
   );
   assert.match(querySource, /getInventoryStepDataInTx\(/);
   assert.match(querySource, /getLossStepDataInTx\(/);
@@ -504,6 +546,25 @@ test("ledger review missing item helper preserves KST links and separates review
   assert.equal(
     missingItems.find((item) => item.id === "work")?.detail,
     "근무인원은 1명 이상이어야 제출할 수 있습니다.",
+  );
+
+  const carryoverOnlyItems = getLedgerReviewMissingItems({
+    storeId: "store-1",
+    closingDate: "2026-06-11T00:00:00.000Z",
+    totalSalesAmount: 0,
+    carryoverSalesAmount: 10_000,
+    paymentTotal: 0,
+    expenseCount: 1,
+    purchaseCount: 1,
+    hasInventoryUnavailable: false,
+    inventoryCount: 1,
+    lossCount: 0,
+    workerCount: 1,
+  });
+  assert.equal(
+    carryoverOnlyItems.some((item) => item.id === "sales"),
+    false,
+    "a carryover-only ledger satisfies the sales submission requirement",
   );
 });
 
@@ -661,7 +722,15 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
   );
   assert.match(
     querySource,
-    /moneyMetric\("totalSales",\s*"총매출",\s*summary\.totalSales\)/,
+    /moneyMetric\(\s*"closingTotalSales",\s*"장부 마감 매출",\s*summary\.closingTotalSales,?\s*\)/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\("carryoverSales",\s*"이월 매출",\s*summary\.carryoverSales\)/,
+  );
+  assert.match(
+    querySource,
+    /moneyMetric\(\s*"operatingSales",\s*"영업 매출 합계",\s*summary\.operatingSales,?\s*\)/,
   );
   assert.match(
     querySource,
@@ -781,7 +850,7 @@ test("store manager ledger review response omits sensitive accounting metrics", 
       paymentDifference: ok(0),
       paymentTotal: ok(100_000),
       expenseTotal: ok(10_000),
-      // point_summary 검토 후속(2026-06-24): 계획 판매가 대비 실제 비교 지표.
+      // point_summary 검토 후속(2026-06-24): 판매한 가격 대비 실제 비교 지표.
       plannedSalesTotal: ok(130_000),
       plannedGrossProfit: ok(100_000),
       plannedGrossMarginRate: ok(0.769),
@@ -833,8 +902,11 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용. 지점장 요약은 총매출·근무인원만 남는다.
+  // 마진율·재고금액은 본사 전용. 지점장 요약에는 안전한 매출 구성과 근무인원만 남는다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
+    "carryoverSales",
+    "closingTotalSales",
+    "operatingSales",
     "totalSales",
     "workerCount",
   ]);
@@ -910,7 +982,7 @@ test("store manager review exposes estimated top sold items derived from invento
     querySource,
     /item\.previousQuantity\s*\+\s*item\.purchasedQuantity\s*-\s*item\.lossQuantity\s*-\s*item\.currentQuantity/,
   );
-  // point_summary 검토 후속(2026-06-24): 추정 매출은 판매가 계획(plannedUnitPrice) 기준이고,
+  // point_summary 검토 후속(2026-06-24): 추정 매출은 판매한 가격(plannedUnitPrice) 기준이고,
   // 계획이 없으면 매입단가(unitPrice)로 폴백해 salesBasis="cost"로 표시한다.
   assert.match(
     querySource,
@@ -928,12 +1000,12 @@ test("store manager review exposes estimated top sold items derived from invento
   // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 판매가 미반영(cost 폴백)을 구분 표시한다.
   assert.match(clientSource, /오늘 많이 팔린 품목/);
   assert.match(clientSource, /추정 매출/);
-  // 판매계획가 책임과 수정 링크는 3단계 재고를 가리킨다.
+  // 판매한 가격 책임과 수정 링크는 3단계 재고를 가리킨다.
   assert.match(
     clientSource,
-    /추정 매출은 3단계 재고의 판매계획가를 우선 사용합니다\./,
+    /추정 매출은 3단계 재고의 판매한 가격을 우선 사용합니다\./,
   );
-  assert.match(clientSource, /3단계 재고에서 판매계획가 입력/);
+  assert.match(clientSource, /3단계 재고에서 판매한 가격 입력/);
   assert.match(clientSource, /\/app\/store-entry\/inventory/);
   assert.match(clientSource, /판매가 미반영/);
   assert.match(clientSource, /item\.salesBasis === "cost"/);

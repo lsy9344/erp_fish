@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 // point_summary 재검토(2026-06-24): 추정 매출/랭킹/카테고리 매출·손실액·공급 리포트가
-// 매입/적용 단가가 아니라 "지점장 판매가 계획"(StoreSalesPricePlan.plannedUnitPrice)을
+// 매입/적용 단가가 아니라 "지점장 판매한 가격"(StoreSalesPricePlan.plannedUnitPrice)을
 // 기준으로 산출되는지에 대한 소스/계약 + 계산 회귀 테스트. DB가 필요한 흐름은 e2e에서 다룬다.
 
 const root = process.cwd();
@@ -22,7 +22,7 @@ function readProjectFile(...segments) {
   return readFileSync(assertProjectFile(...segments), "utf8");
 }
 
-// P1: 지점장 "오늘 많이 팔린 품목" 추정 매출이 판매가 계획 기준이고, 없으면 cost 폴백.
+// P1: 지점장 "오늘 많이 팔린 품목" 추정 매출이 판매한 가격 기준이고, 없으면 cost 폴백.
 test("P1 store-manager top-sold estimated sales uses planned unit price with cost fallback", () => {
   const querySource = readProjectFile(
     "src",
@@ -31,7 +31,7 @@ test("P1 store-manager top-sold estimated sales uses planned unit price with cos
     "review-queries.ts",
   );
 
-  // 판매가 계획을 일괄 조회해 품목별로 붙인다.
+  // 판매한 가격을 일괄 조회해 품목별로 붙인다.
   assert.match(querySource, /storeSalesPricePlan\.findMany/);
   assert.match(querySource, /getPlannedUnitPrice/);
   // 추정 매출 단가는 계획가 우선, 없으면 매입단가 폴백.
@@ -42,7 +42,7 @@ test("P1 store-manager top-sold estimated sales uses planned unit price with cos
   );
 });
 
-// P1: 계획 판매가 대비 실제 비교 지표가 summary 계산과 호출부에 연결됐다.
+// P1: 판매한 가격 대비 실제 비교 지표가 summary 계산과 호출부에 연결됐다.
 test("P1 ledger review summary wires planned-vs-actual comparison from sales plan", () => {
   const calcSource = readProjectFile(
     "src",
@@ -66,12 +66,12 @@ test("P1 ledger review summary wires planned-vs-actual comparison from sales pla
   ]) {
     assert.match(calcSource, new RegExp(`${field}:\\s*LedgerReviewMetric`));
   }
-  // 호출부가 plannedSalesItems를 넘긴다(판매가 계획 기준 비교 입력).
+  // 호출부가 plannedSalesItems를 넘긴다(판매한 가격 기준 비교 입력).
   assert.match(querySource, /plannedSalesItems:/);
   assert.match(querySource, /plannedUnitPrice:\s*getPlannedUnitPrice/);
 });
 
-// P1: 계획 판매가 비교 지표는 본사 원본 summary에만 두고 지점장 요약에서는 차단한다.
+// P1: 판매한 가격 비교 지표는 본사 원본 summary에만 두고 지점장 요약에서는 차단한다.
 test("P1 planned sales comparison stays headquarters-only while store-manager graph remains", () => {
   const querySource = readProjectFile(
     "src",
@@ -91,7 +91,7 @@ test("P1 planned sales comparison stays headquarters-only while store-manager gr
   assert.match(querySource, /"plannedVsActualSalesDifference"/);
   assert.match(querySource, /"plannedGrossMarginRate"/);
 
-  // 지점장 shaping은 계획 판매가 비교 지표를 summary로 내려보내지 않는다.
+  // 지점장 shaping은 판매한 가격 비교 지표를 summary로 내려보내지 않는다.
   assert.doesNotMatch(shapeSource, /plannedSalesTotal:\s*data\.summary/);
   assert.doesNotMatch(
     shapeSource,
@@ -106,7 +106,7 @@ test("P1 planned sales comparison stays headquarters-only while store-manager gr
   assert.match(shapeSource, /\.\.\.data/);
 });
 
-// P1: 월간 랭킹/카테고리 매출도 판매가 계획 기준 + 폴백 카운트.
+// P1: 월간 랭킹/카테고리 매출도 판매한 가격 기준 + 폴백 카운트.
 test("P1 monthly ranking and category sales use planned price with fallback count", () => {
   const querySource = readProjectFile(
     "src",
@@ -117,12 +117,12 @@ test("P1 monthly ranking and category sales use planned price with fallback coun
 
   assert.match(querySource, /getPlannedUnitPriceLookup/);
   assert.match(querySource, /ledgersWithPlannedPrice/);
-  // 랭킹은 판매가 계획 기준 라벨과 폴백 카운트를 노출한다.
-  assert.match(querySource, /판매량 × 판매가 계획 추정/);
+  // 랭킹은 판매한 가격 기준 라벨과 폴백 카운트를 노출한다.
+  assert.match(querySource, /판매량 × 판매한 가격 추정/);
   assert.match(querySource, /salesPriceFallbackItemCount/);
 });
 
-// P2: 손실액이 판매가 계획 기준인지(usedPlannedPrice)는 저장 시점 스냅샷으로 표시한다.
+// P2: 손실액이 판매한 가격 기준인지(usedPlannedPrice)는 저장 시점 스냅샷으로 표시한다.
 test("P2 loss step surfaces the saved price basis instead of rechecking current sales plans", () => {
   const lossQueries = readProjectFile(
     "src",
@@ -146,7 +146,7 @@ test("P2 loss step surfaces the saved price basis instead of rechecking current 
   );
   const schemaSource = readProjectFile("prisma", "schema.prisma");
 
-  // 판매가 계획은 저장 시점에만 판단하고, 손실 행에 기준을 스냅샷으로 보존한다.
+  // 판매한 가격은 저장 시점에만 판단하고, 손실 행에 기준을 스냅샷으로 보존한다.
   assert.match(schemaSource, /usedPlannedPrice\s+Boolean\s+@default\(false\)/);
   assert.match(
     lossActions,
@@ -163,10 +163,10 @@ test("P2 loss step surfaces the saved price basis instead of rechecking current 
   );
   // UI는 판매가 미반영 폴백을 경고로 안내한다.
   assert.match(lossClient, /usedPlannedPrice === false/);
-  assert.match(lossClient, /판매계획가가 없어/);
+  assert.match(lossClient, /판매한 가격이 없어/);
 });
 
-// P2: 이카운트 공급 리포트가 판매 예정가 기반 기대 매출/이익 합계를 산출한다.
+// P2: 이카운트 공급 리포트가 판매한 가격 기반 기대 매출/이익 합계를 산출한다.
 test("P2 ecount supply report summary derives expected sales and profit from planned price", async () => {
   const reportSource = readProjectFile(
     "src",
@@ -184,7 +184,7 @@ test("P2 ecount supply report summary derives expected sales and profit from pla
   ]) {
     assert.match(reportSource, new RegExp(`${field}:\\s*number`));
   }
-  // 기대 매출 = Σ(수량 × 판매 예정가), 예정가 매핑 행만 합산.
+  // 기대 매출 = Σ(수량 × 판매한 가격), 예정가 매핑 행만 합산.
   assert.match(
     reportSource,
     /row\.quantity\s*\*\s*\(row\.plannedUnitPrice\s*\?\?\s*0\)/,

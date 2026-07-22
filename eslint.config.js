@@ -9,6 +9,7 @@ export default tseslint.config(
   {
     ignores: [
       ".claude",
+      ".omx",
       ".next",
       ".tmp",
       "generated",

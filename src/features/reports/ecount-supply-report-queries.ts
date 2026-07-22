@@ -38,7 +38,7 @@ export type EcountSupplyReportRow = {
   ledgerStatus: string;
   /** 재고/FIFO lot 연결 여부 */
   fifoLinked: boolean;
-  /** 판매 예정가(추정). 없으면 null = "판매가 계획 없음" */
+  /** 판매한 가격(추정). 없으면 null = "판매한 가격 없음" */
   plannedUnitPrice: number | null;
   batchId: string | null;
   fileName: string | null;
@@ -49,9 +49,9 @@ export type EcountSupplyReportSummary = {
   totalQuantity: number;
   totalSupplyAmount: number;
   unmappedSalesPlanCount: number;
-  // point_summary 검토 후속(2026-06-24): 판매 예정가(plannedUnitPrice) 기반 기대 매출/이익 합계.
-  // 기대 매출 = Σ(수량 × 판매 예정가), 기대 이익 = 기대 매출 − 공급금액(원가).
-  // 판매 예정가가 매핑된 행만 합산하며, 그 행들의 공급금액 합계(matchedSupplyAmount)와 함께
+  // point_summary 검토 후속(2026-06-24): 판매한 가격(plannedUnitPrice) 기반 기대 매출/이익 합계.
+  // 기대 매출 = Σ(수량 × 판매한 가격), 기대 이익 = 기대 매출 − 공급금액(원가).
+  // 판매한 가격이 매핑된 행만 합산하며, 그 행들의 공급금액 합계(matchedSupplyAmount)와 함께
   // 노출해 어느 범위에서 산출됐는지 알 수 있게 한다.
   estimatedSalesAmount: number;
   estimatedGrossProfit: number;
@@ -167,7 +167,7 @@ export async function getHeadquartersSupplyReport(
     },
   });
 
-  // 판매 예정가(추정) 매핑. (storeId, closingDate, productId) → plannedUnitPrice.
+  // 판매한 가격(추정) 매핑. (storeId, closingDate, productId) → plannedUnitPrice.
   const planKeys = items
     .filter((item) => item.productId)
     .map((item) => ({
@@ -262,7 +262,7 @@ export async function getHeadquartersSupplyReport(
       spec: item.productSpec,
     }));
 
-  // 판매 예정가가 매핑된 행만 기대 매출/이익에 합산한다(예정가 없는 행은 제외 + 카운트).
+  // 판매한 가격이 매핑된 행만 기대 매출/이익에 합산한다(예정가 없는 행은 제외 + 카운트).
   const plannedRows = rows.filter((row) => row.plannedUnitPrice !== null);
   const estimatedSalesAmount = plannedRows.reduce(
     (sum, row) => sum + Math.round(row.quantity * (row.plannedUnitPrice ?? 0)),

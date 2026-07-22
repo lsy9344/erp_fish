@@ -65,8 +65,8 @@ export type LedgerReviewStepSummary = {
 // WO-04(2026-06-22): 지점장 당일 검토 화면의 "오늘 많이 팔린 품목" 카드용 안전 데이터.
 // 재고 흐름에서 추정한 판매 수량과 추정 매출만 노출하고, 단가/FIFO/차액 등 민감값은 담지 않는다.
 //
-// point_summary 검토 후속(2026-06-24): 추정 매출은 회의 결정대로 "지점장 판매가 계획"
-// (StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다. 판매가 계획이 없는 품목은
+// point_summary 검토 후속(2026-06-24): 추정 매출은 회의 결정대로 "지점장 판매한 가격"
+// (StoreSalesPricePlan.plannedUnitPrice) 기준으로 계산한다. 판매한 가격이 없는 품목은
 // 매입/적용 단가로 폴백하되, salesBasis="cost"로 표시해 화면에서 '판매가 미반영(추정)'을
 // 명확히 구분할 수 있게 한다.
 export type StoreManagerTopSoldItem = {
@@ -74,7 +74,7 @@ export type StoreManagerTopSoldItem = {
   productName: string;
   soldQuantity: number;
   estimatedSalesAmount: number;
-  // "planned": 판매가 계획 기준, "cost": 판매가 계획이 없어 매입/적용 단가로 폴백.
+  // "planned": 판매한 가격 기준, "cost": 판매한 가격이 없어 매입/적용 단가로 폴백.
   salesBasis: "planned" | "cost";
 };
 
@@ -101,10 +101,14 @@ export type LedgerReviewStepData = {
 
 // 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)은 본사 전용으로
 // 확정. 지점장 요약은 총매출·근무인원만 유지하고, 7단계 그래프용 topSoldItems는 별도 안전
-// 타입(StoreManagerTopSoldItem)으로 계속 노출한다. 계획 판매가 비교 지표도 본사 전용이다.
+// 타입(StoreManagerTopSoldItem)으로 계속 노출한다. 판매한 가격 비교 지표도 본사 전용이다.
 export type StoreManagerLedgerReviewSummary = Pick<
   LedgerReviewSummary,
-  "totalSales" | "workerCount"
+  | "totalSales"
+  | "closingTotalSales"
+  | "carryoverSales"
+  | "operatingSales"
+  | "workerCount"
 >;
 
 export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;

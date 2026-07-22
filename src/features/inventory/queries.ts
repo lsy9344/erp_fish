@@ -1118,7 +1118,16 @@ async function attachPurchasePrices(
   return {
     items: items.map((item) => ({
       ...item,
-      purchasePrice: purchasePrices.get(item.productId) ?? null,
+      purchasePrice:
+        purchasePrices.get(item.productId) ??
+        (item.previousQuantityDetail.source === "OPENING_SNAPSHOT" &&
+        item.previousQuantityDetail.sourceYearMonth
+          ? {
+              kind: "OPENING" as const,
+              yearMonth: item.previousQuantityDetail.sourceYearMonth,
+              unitPrice: item.unitPrice,
+            }
+          : null),
       plannedUnitPrice: plannedUnitPrices.get(item.productId) ?? null,
     })),
     manualProductOptions: manualProductOptions.map((option) => ({

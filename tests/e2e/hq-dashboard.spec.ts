@@ -578,7 +578,7 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   ).toHaveAttribute("href", new RegExp(`/app/ledgers/.+[?&]tab=losses\\b`));
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩200,000");
-  // WO-14 part2(2026-06-29): 매출 셀에 장부 매출 아래로 분석 매출(판매가 계획 기준)이 함께 보인다.
+  // WO-14 part2(2026-06-29): 매출 셀에 장부 매출 아래로 분석 매출(판매한 가격 기준)이 함께 보인다.
   await expect(reviewRow).toContainText("분석");
   await expect(reviewRow).toContainText(
     formatDashboardDateTime(reviewLedger.updatedAt),

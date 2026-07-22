@@ -22,7 +22,7 @@ function normalizeBusinessDateParam(value: string | string[] | undefined) {
   }
 }
 
-// 판매계획가 입력은 3단계 재고 화면으로 이동했다. 기존 북마크의 지점/날짜는 보존한다.
+// 판매한 가격 입력은 3단계 재고 화면으로 이동했다. 기존 북마크의 지점/날짜는 보존한다.
 export default async function SalesPlanPage({
   searchParams,
 }: SalesPlanPageProps) {

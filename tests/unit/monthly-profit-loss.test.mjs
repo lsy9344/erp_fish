@@ -47,7 +47,7 @@ test("buildMonthlyProfitLossSheet emits the confirmed P&L columns", async () => 
   const labels = sheet.columns.map((c) => c.label);
   // 확정 조정 항목이 모두 컬럼으로 있다.
   for (const label of [
-    "매출",
+    "영업 매출 합계",
     "매입원가",
     "매출이익",
     "이익률",

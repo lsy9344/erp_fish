@@ -36,7 +36,9 @@ const DAILY_HEADER = [
   "영업 상태",
   "최신 반영",
   "상태 메시지",
-  "매출",
+  "장부 마감 매출",
+  "이월 매출",
+  "영업 매출 합계",
   "매출 상태",
   "이익률",
   "이익률 상태",
@@ -51,7 +53,9 @@ const COMPARISON_HEADER = [
   "본사 마감 일수",
   "미마감 일수",
   "미입력 일수",
-  "매출",
+  "장부 마감 매출",
+  "이월 매출",
+  "영업 매출 합계",
   "매출 상태",
   "매출이익",
   "매출이익 상태",
@@ -442,7 +446,7 @@ test.describe("Report export API", () => {
     const header = pnl?.getRow(1).values as unknown[];
     const headerLabels = header.filter((v) => typeof v === "string");
     for (const label of [
-      "매출",
+      "영업 매출 합계",
       "매입원가",
       "인건비",
       "본사조정",

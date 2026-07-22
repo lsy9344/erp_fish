@@ -267,7 +267,7 @@ function toInventoryConflictValues(data: StoreManagerInventoryStepData) {
 
       return [
         item.productName,
-        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${plannedUnitPrice ?? "-"}`,
+        `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매한 가격 ${plannedUnitPrice ?? "-"}`,
       ];
     }),
   );
@@ -277,7 +277,7 @@ function toInventoryClientValues(input: LedgerStoreManagerInventoryInput) {
   return Object.fromEntries(
     input.items.map((item) => [
       item.productId,
-      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매계획가 ${item.plannedUnitPrice}`,
+      `당일재고 ${item.currentQuantity ?? "-"} / 표시재고 ${item.quantity ?? "-"} / 판매한 가격 ${item.plannedUnitPrice}`,
     ]),
   );
 }
