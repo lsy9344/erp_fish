@@ -75,7 +75,7 @@ test("회의 0627 본사 화면은 이중 매출, 검토 페이지, Excel export
     page.getByRole("heading", { name: "매출 검토 (추정)" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "지점별 장부 입력 매출·마진율" }),
+    page.getByRole("heading", { name: "지점별 영업 매출 합계·마진율" }),
   ).toBeVisible();
 });
 
