@@ -1355,9 +1355,6 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await expect(
       section.getByLabel("품목별 판매수량 상위 10개 세로 막대 차트"),
     ).toHaveCount(0);
-    await expect(
-      section.getByText("검색전용품목01 · 숨은규격01", { exact: true }),
-    ).toBeVisible();
     await expect(section.getByText("판매수량 상위 10개")).toBeVisible();
     for (const summaryLabel of [
       "추정 판매액 합계",
@@ -1390,7 +1387,13 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
 
     const rows = section.locator("tbody tr");
     await expect(rows).toHaveCount(10);
-    await expect(rows.first()).toContainText("검색전용품목01");
+    // WO-25(2026-07-25) #5: 차트가 렌더링했던 "이름 · 규격" 합침 라벨은 사라졌다.
+    // 표는 품목명과 규격을 별도 셀로 내려주므로 셀 단위로 확인한다.
+    await expect(rows.first().locator("td")).toHaveText([
+      "검색전용품목01",
+      "숨은규격01",
+      /\d/,
+    ]);
     await expect(rows.last()).toContainText("검색전용품목10");
     await expect(section.getByText("검색전용품목11")).toHaveCount(0);
 
