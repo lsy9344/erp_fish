@@ -170,9 +170,7 @@ async function hqInventoryConflictError<T = never>(
     getInventoryStepDataByLedgerIdInTx(tx, input.ledgerId),
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
-  const formCurrent = current
-    ? applyInventoryFormDisplayPolicy(current)
-    : null;
+  const formCurrent = current ? applyInventoryFormDisplayPolicy(current) : null;
 
   return ledgerConflictErrorFromMeta<T>({
     meta,

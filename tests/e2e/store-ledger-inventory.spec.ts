@@ -1364,7 +1364,9 @@ test("전일·매입·손실·당일재고가 모두 0인 품목은 목록에서
   ).toHaveCount(1);
 
   const manualProductSelect = page.getByLabel("추가할 품목 선택");
-  await expect(manualProductSelect.locator("option", { hasText: zeroProduct.name })).toHaveCount(1);
+  await expect(
+    manualProductSelect.locator("option", { hasText: zeroProduct.name }),
+  ).toHaveCount(1);
   await manualProductSelect.selectOption(zeroProduct.id);
   await page.getByRole("button", { name: "추가" }).click();
 

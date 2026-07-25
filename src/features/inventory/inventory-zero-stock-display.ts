@@ -73,9 +73,7 @@ export function applyInventoryFormDisplayPolicy(
     }
   }
 
-  const visibleProductIds = new Set(
-    visibleItems.map((item) => item.productId),
-  );
+  const visibleProductIds = new Set(visibleItems.map((item) => item.productId));
   const optionByProductId = new Map<string, InventoryManualProductOption>();
 
   for (const option of data.manualProductOptions) {
