@@ -405,6 +405,13 @@ export async function saveLedgerInventoryItems(
     return actionError(dateGuard.code, dateGuard.message);
   }
 
+  // 저장 체감 시간은 배포 환경에 따라 자릿수가 다르다. 프로덕션 함수는 iad1, Neon은
+  // us-east-1로 같은 리전이라 쿼리당 수 ms지만, 한국에서 띄운 로컬 dev 서버는 원격 DB에
+  // 쿼리당 약 200~400ms를 낸다(= 이 저장 경로 65쿼리로 20초대). 어느 쪽이 사용자 체감인지
+  // 로그 없이는 알 수 없어 단계 시간을 남긴다. Vercel 런타임 로그에서 확인한다.
+  const startedAt = Date.now();
+  let beforeReadMs = 0;
+
   try {
     const result = await db.$transaction(
       async (tx) => {
@@ -414,6 +421,7 @@ export async function saveLedgerInventoryItems(
           parsed.data.closingDate,
           actor.user.id,
         );
+        beforeReadMs = Date.now() - startedAt;
 
         if (
           before.id !== parsed.data.ledgerId ||
@@ -755,6 +763,10 @@ export async function saveLedgerInventoryItems(
     if ("ok" in result) {
       return result;
     }
+
+    console.info(
+      `[inventory.save] ledger=${parsed.data.ledgerId} items=${parsed.data.items.length} beforeRead=${beforeReadMs}ms total=${Date.now() - startedAt}ms`,
+    );
 
     revalidateInventoryPaths();
     revalidateLedgerDetailPath(parsed.data.ledgerId);
