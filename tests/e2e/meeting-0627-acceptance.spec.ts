@@ -161,9 +161,11 @@ test("회의 0627 본사 전용 관리와 월간 xlsx 5시트 export를 검증�
 }) => {
   await login(page, "hq@example.com");
 
+  // 정책 8.1 승인(2026-07-25, WO-25 CAP-1)으로 직원 관리가 본사에 공개됐다.
+  // 승인 전에는 이 경로가 404였고 롤업도 없어야 했다.
   await page.goto("/app/labor/employees");
-  await expect(page.locator("body")).toContainText(/404|찾을 수|not found/i);
-  await expect(page.getByText("직원별 월간 급여 롤업")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "직원 관리" })).toBeVisible();
+  await expect(page.getByText("직원별 월간 급여 롤업")).toBeVisible();
 
   await page.goto("/app/master-data/long-stock-thresholds");
   await expect(
@@ -220,6 +222,9 @@ test("회의 0627 본사 전용 페이지는 지점장에게 막힌다", async (
     "/app/reports/product-review?date=today",
     "/app/reports/sales-review?date=today",
     "/app/master-data/long-stock-thresholds",
+    // 정책 8.1 승인(2026-07-25, WO-25 CAP-1) 이후 직원 관리는 404가 아니라
+    // 다른 본사 전용 경로와 같은 권한 차단을 받는다.
+    "/app/labor/employees",
   ]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/app\/unauthorized/);
@@ -227,9 +232,6 @@ test("회의 0627 본사 전용 페이지는 지점장에게 막힌다", async (
       page.getByRole("heading", { name: "접근 권한이 없습니다." }),
     ).toBeVisible();
   }
-
-  await page.goto("/app/labor/employees");
-  await expect(page.locator("body")).toContainText(/404|찾을 수|not found/i);
 });
 
 async function login(page: Page, email: string) {
