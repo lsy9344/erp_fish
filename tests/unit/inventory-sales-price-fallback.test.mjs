@@ -16,13 +16,7 @@ const {
   SALES_PRICE_CARRYOVER_LEDGER_STATUSES,
 } = await import(
   pathToFileURL(
-    path.join(
-      root,
-      "src",
-      "features",
-      "inventory",
-      "sales-price-carryover.ts",
-    ),
+    path.join(root, "src", "features", "inventory", "sales-price-carryover.ts"),
   ).href
 );
 
@@ -113,10 +107,10 @@ test("carryover fallback keeps current rows and fills only missing products", ()
 });
 
 test("sales price carryover source statuses exclude in-progress and holiday drafts", () => {
-  assert.deepEqual([...SALES_PRICE_CARRYOVER_LEDGER_STATUSES], [
-    "IN_REVIEW",
-    "HEADQUARTERS_CLOSED",
-  ]);
+  assert.deepEqual(
+    [...SALES_PRICE_CARRYOVER_LEDGER_STATUSES],
+    ["IN_REVIEW", "HEADQUARTERS_CLOSED"],
+  );
   assert.equal(isSalesPriceCarryoverLedgerStatus("IN_REVIEW"), true);
   assert.equal(isSalesPriceCarryoverLedgerStatus("HEADQUARTERS_CLOSED"), true);
   assert.equal(isSalesPriceCarryoverLedgerStatus("IN_PROGRESS"), false);
@@ -126,7 +120,10 @@ test("sales price carryover source statuses exclude in-progress and holiday draf
 test("carryover source date skips in-progress and holiday and allows month boundary", () => {
   const current = new Date("2026-07-01T00:00:00.000Z");
   const selected = selectSalesPriceCarryoverSourceDate(current, [
-    { closingDate: new Date("2026-06-30T00:00:00.000Z"), status: "IN_PROGRESS" },
+    {
+      closingDate: new Date("2026-06-30T00:00:00.000Z"),
+      status: "IN_PROGRESS",
+    },
     { closingDate: new Date("2026-06-29T00:00:00.000Z"), status: "HOLIDAY" },
     {
       closingDate: new Date("2026-06-28T00:00:00.000Z"),
@@ -316,10 +313,7 @@ test("carryover lookup stays outside attachPurchasePrices and only store-manager
   assert.notEqual(attachStart, -1);
   assert.notEqual(attachEnd, -1);
   assert.doesNotMatch(attachBody, /priorSubmittedLedger|fallbackSalesPlans/);
-  assert.match(
-    attachBody,
-    /businessDate:\s*ledger\.closingDate/,
-  );
+  assert.match(attachBody, /businessDate:\s*ledger\.closingDate/);
   assert.match(
     querySource,
     /status:\s*\{\s*in:\s*\[\.\.\.SALES_PRICE_CARRYOVER_LEDGER_STATUSES\]\s*\}/,
@@ -330,7 +324,7 @@ test("carryover lookup stays outside attachPurchasePrices and only store-manager
   );
   assert.match(
     querySource,
-    /toStoreManagerInventoryStepDataInTx\(tx,\s*data\)/,
+    /toStoreManagerInventoryStepDataInTx\(\s*tx,\s*applyInventoryFormDisplayPolicy\(data\),\s*\)/,
   );
   assert.match(
     querySource,
@@ -350,6 +344,7 @@ test("carryover lookup stays outside attachPurchasePrices and only store-manager
     hqLookupBody,
     /getInventoryStepDataByLedgerIdInTx\(tx,\s*ledgerId\)/,
   );
+  assert.match(hqLookupBody, /applyInventoryFormDisplayPolicy\(data\)/);
   assert.doesNotMatch(
     hqLookupBody,
     /toStoreManagerInventoryStepDataInTx|carryoverByProductId|loadSalesPriceCarryoverByProductId/,
