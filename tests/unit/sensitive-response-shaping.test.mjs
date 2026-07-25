@@ -607,6 +607,7 @@ test("store manager inventory mapper exposes planned price on item rows and manu
           unitPrice: 10_000,
         },
         plannedUnitPrice: 16_000,
+        source: "UNGROUNDED",
         inventoryAmount: 10_000,
         grossMarginRate: 0.375,
       },
@@ -694,6 +695,7 @@ test("store manager inventory mapper exposes planned price on item rows and manu
     },
     plannedUnitPrice: 16_000,
     plannedUnitPriceSource: "CURRENT",
+    source: "UNGROUNDED",
   });
 });
 
@@ -778,6 +780,7 @@ test("store manager inventory shaping applies carryover only when current price 
           productSpec: "1kg",
           purchasePrice: null,
           plannedUnitPrice: null,
+          source: "UNGROUNDED",
         },
       ],
     },

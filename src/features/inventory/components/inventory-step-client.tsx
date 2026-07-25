@@ -87,7 +87,6 @@ import {
 } from "~/features/inventory/planned-margin";
 import {
   type InventoryAdjustmentView,
-  type InventoryManualProductOption,
   type InventoryStepData,
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
@@ -223,7 +222,7 @@ function toLineState(data: InventoryDisplayData): InventoryLineState[] {
 // 정책(shouldPersistInventoryLine)이 미입력 행을 건너뛰게 한다. 저장 액션은
 // before.items에 없는 이 행을 입력값이 있을 때만 별도로 기록한다.
 function toManualLineState(
-  option: InventoryManualProductOption,
+  option: InventoryDisplayData["manualProductOptions"][number],
 ): InventoryLineState {
   return {
     id: option.productId,
@@ -273,6 +272,26 @@ function toManualLineState(
         ? ""
         : formatKrwInput(String(option.plannedUnitPrice)),
     adjustmentReasonInput: "",
+  };
+}
+
+// 표시 정책으로 숨겼던 0재고 행을 다시 표에 올릴 때 서버 스냅샷을 그대로 복원한다.
+// addedManualIds에 넣지 않아 신규 수동 행의 단가 입력/조정 면제와 섞이지 않게 한다.
+function toRestoredHiddenZeroStockLineState(
+  item: InventoryDisplayData["items"][number],
+): InventoryLineState {
+  return {
+    ...item,
+    currentQuantityInput:
+      item.currentQuantity === null || requiresCurrentQuantityEntry(item)
+        ? ""
+        : String(item.currentQuantity),
+    manualUnitPriceInput: "",
+    plannedUnitPriceInput:
+      item.plannedUnitPrice === null
+        ? ""
+        : formatKrwInput(String(item.plannedUnitPrice)),
+    adjustmentReasonInput: item.adjustment?.reason ?? "",
   };
 }
 
@@ -982,10 +1001,15 @@ export function InventoryStepClient({
       return;
     }
 
-    const line = toManualLineState(option);
+    if (option.source === "HIDDEN_ZERO_STOCK" && option.restoredItem) {
+      const line = toRestoredHiddenZeroStockLineState(option.restoredItem);
+      setItems((current) => [...current, line]);
+    } else {
+      const line = toManualLineState(option);
+      setItems((current) => [...current, line]);
+      setAddedManualIds((current) => new Set(current).add(option.productId));
+    }
 
-    setItems((current) => [...current, line]);
-    setAddedManualIds((current) => new Set(current).add(option.productId));
     if (manualProductSelectRef.current) {
       manualProductSelectRef.current.value = "";
     }

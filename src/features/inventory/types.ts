@@ -99,7 +99,11 @@ export type InventoryCarryoverState = {
 };
 
 // 근거(저장행/당일 매입/당일 손실/이월) 없이 기본 표에 자동으로 펼치지 않는 활성
-// 품목. 사용자가 "품목 추가"에서 골라야만 표에 행이 생긴다.
+// 품목, 또는 0재고로 표에서 숨긴 품목. 사용자가 "품목 추가"에서 골라야만 표에 행이 생긴다.
+export type InventoryManualProductOptionSource =
+  | "UNGROUNDED"
+  | "HIDDEN_ZERO_STOCK";
+
 export type InventoryManualProductOption = {
   productId: string;
   productName: string;
@@ -107,12 +111,22 @@ export type InventoryManualProductOption = {
   productSpec: string;
   purchasePrice: InventoryPurchasePrice | null;
   plannedUnitPrice: number | null;
+  /** UNGROUNDED=근거 없는 활성 품목, HIDDEN_ZERO_STOCK=표시 정책으로 숨긴 0재고 행 */
+  source: InventoryManualProductOptionSource;
+  /**
+   * HIDDEN_ZERO_STOCK일 때만 채운다. 품목 추가 시 기존 행의 id/이월/조정 정책을
+   * 그대로 복원해 신규 수동 행(buildManualInventoryRows)으로 오인하지 않게 한다.
+   */
+  restoredItem?: InventoryStepLine;
 };
 
-export type StoreManagerInventoryManualProductOption =
-  InventoryManualProductOption & {
-    plannedUnitPriceSource: PlannedUnitPriceSource | null;
-  };
+export type StoreManagerInventoryManualProductOption = Omit<
+  InventoryManualProductOption,
+  "restoredItem"
+> & {
+  plannedUnitPriceSource: PlannedUnitPriceSource | null;
+  restoredItem?: StoreManagerInventoryStepLine;
+};
 
 export type InventoryStepData = {
   id: string;

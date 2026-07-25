@@ -1,69 +1,96 @@
-import type { InventoryStepData, StoreManagerInventoryStepData } from "./types";
+import type {
+  InventoryStepData,
+  InventoryStepLine,
+  StoreManagerInventoryManualProductOption,
+  StoreManagerInventoryStepData,
+  StoreManagerInventoryStepLine,
+} from "./types";
 import { applySalesPriceCarryoverFallback } from "./sales-price-carryover.ts";
+
+function shapeStoreManagerInventoryLine(
+  item: InventoryStepLine,
+): Omit<StoreManagerInventoryStepLine, "plannedUnitPriceSource"> {
+  return {
+    id: item.id,
+    productId: item.productId,
+    productName: item.productName,
+    productCategory: item.productCategory,
+    productSpec: item.productSpec,
+    purchasePrice: item.purchasePrice,
+    plannedUnitPrice: item.plannedUnitPrice,
+    previousQuantity: item.previousQuantity,
+    purchasedQuantity: item.purchasedQuantity,
+    lossQuantity: item.lossQuantity,
+    currentQuantity: item.currentQuantity,
+    quantity: item.quantity,
+    carryoverSource: item.carryoverSource,
+    carryoverStatus: item.carryoverStatus,
+    carryoverLedgerId: item.carryoverLedgerId,
+    previousQuantityDetail: item.previousQuantityDetail,
+    isModified: item.isModified,
+    fifoLots: item.fifoLots.map(
+      ({
+        unitPrice: _unitPrice,
+        originalAmount,
+        consumedAmount,
+        remainingAmount,
+        ...lot
+      }) => {
+        void _unitPrice;
+        void originalAmount;
+        void consumedAmount;
+        void remainingAmount;
+        return lot;
+      },
+    ),
+    adjustment: item.adjustment
+      ? {
+          id: item.adjustment.id,
+          beforeQuantity: item.adjustment.beforeQuantity,
+          afterQuantity: item.adjustment.afterQuantity,
+          differenceQuantity: item.adjustment.differenceQuantity,
+          amountStatus: item.adjustment.amountStatus,
+          reason: item.adjustment.reason,
+          createdByName: item.adjustment.createdByName,
+          createdAt: item.adjustment.createdAt,
+          updatedAt: item.adjustment.updatedAt,
+        }
+      : null,
+  };
+}
 
 export function shapeStoreManagerInventoryStepData(
   data: InventoryStepData,
   carryoverByProductId: ReadonlyMap<string, number> = new Map(),
 ): StoreManagerInventoryStepData {
   const items = applySalesPriceCarryoverFallback(
-    data.items.map((item) => ({
-      id: item.id,
-      productId: item.productId,
-      productName: item.productName,
-      productCategory: item.productCategory,
-      productSpec: item.productSpec,
-      purchasePrice: item.purchasePrice,
-      plannedUnitPrice: item.plannedUnitPrice,
-      previousQuantity: item.previousQuantity,
-      purchasedQuantity: item.purchasedQuantity,
-      lossQuantity: item.lossQuantity,
-      currentQuantity: item.currentQuantity,
-      quantity: item.quantity,
-      carryoverSource: item.carryoverSource,
-      carryoverStatus: item.carryoverStatus,
-      carryoverLedgerId: item.carryoverLedgerId,
-      previousQuantityDetail: item.previousQuantityDetail,
-      isModified: item.isModified,
-      fifoLots: item.fifoLots.map(
-        ({
-          unitPrice: _unitPrice,
-          originalAmount,
-          consumedAmount,
-          remainingAmount,
-          ...lot
-        }) => {
-          void _unitPrice;
-          void originalAmount;
-          void consumedAmount;
-          void remainingAmount;
-          return lot;
-        },
-      ),
-      adjustment: item.adjustment
-        ? {
-            id: item.adjustment.id,
-            beforeQuantity: item.adjustment.beforeQuantity,
-            afterQuantity: item.adjustment.afterQuantity,
-            differenceQuantity: item.adjustment.differenceQuantity,
-            amountStatus: item.adjustment.amountStatus,
-            reason: item.adjustment.reason,
-            createdByName: item.adjustment.createdByName,
-            createdAt: item.adjustment.createdAt,
-            updatedAt: item.adjustment.updatedAt,
-          }
-        : null,
-    })),
+    data.items.map(shapeStoreManagerInventoryLine),
     carryoverByProductId,
   );
   const manualProductOptions = applySalesPriceCarryoverFallback(
-    data.manualProductOptions.map((option) => ({
-      productId: option.productId,
-      productName: option.productName,
-      productCategory: option.productCategory,
-      productSpec: option.productSpec,
-      purchasePrice: option.purchasePrice,
-      plannedUnitPrice: option.plannedUnitPrice,
-    })),
+    data.manualProductOptions.map((option) => {
+      const restoredItem = option.restoredItem
+        ? applySalesPriceCarryoverFallback(
+            [shapeStoreManagerInventoryLine(option.restoredItem)],
+            carryoverByProductId,
+          )[0]
+        : undefined;
+      const shaped: Omit<
+        StoreManagerInventoryManualProductOption,
+        "plannedUnitPriceSource"
+      > = {
+        productId: option.productId,
+        productName: option.productName,
+        productCategory: option.productCategory,
+        productSpec: option.productSpec,
+        purchasePrice: option.purchasePrice,
+        plannedUnitPrice: option.plannedUnitPrice,
+        source: option.source,
+        ...(restoredItem ? { restoredItem } : {}),
+      };
+
+      return shaped;
+    }),
     carryoverByProductId,
   );
 

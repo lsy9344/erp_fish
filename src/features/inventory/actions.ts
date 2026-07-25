@@ -40,14 +40,17 @@ import {
 } from "./manual-inventory-rows";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
-  buildRequiredEntryGuardItems,
   getInventorySaveAdjustmentErrors,
-  getRequiredCurrentQuantityErrors,
+  getInventorySaveRequiredEntryErrors,
   missingLossReviewMessage,
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
 import { persistLedgerInventoryCarryoverDetails } from "./carryover-detail-persistence";
+import {
+  applyInventoryFormDisplayPolicy,
+  isHiddenZeroStockInventoryItem,
+} from "./inventory-zero-stock-display.ts";
 import {
   getInventoryStepDataByLedgerIdInTx,
   getInventoryStepDataInTx,
@@ -78,6 +81,8 @@ function getInventoryTargetErrors(
   targetProductIds: ReadonlySet<string>,
   inputItems: InventoryItemWithPlannedPrice[],
   activeManualProductIds: ReadonlySet<string>,
+  // 표시 정책으로 숨긴 0재고 품목은 폼에 없어 미제출이 정상이다.
+  omittableProductIds: ReadonlySet<string> = new Set(),
 ) {
   const errors: Record<string, string[]> = {};
   const firstIndexByProductId = new Map<string, number>();
@@ -113,7 +118,10 @@ function getInventoryTargetErrors(
   });
 
   for (const productId of targetProductIds) {
-    if (!firstIndexByProductId.has(productId)) {
+    if (
+      !firstIndexByProductId.has(productId) &&
+      !omittableProductIds.has(productId)
+    ) {
       errors.items = [invalidInventoryTargetMessage];
       break;
     }
@@ -297,7 +305,10 @@ async function mapLedgerConflictError(
 
     return {
       data: current
-        ? await toStoreManagerInventoryStepDataInTx(tx, current)
+        ? await toStoreManagerInventoryStepDataInTx(
+            tx,
+            applyInventoryFormDisplayPolicy(current),
+          )
         : null,
       meta,
     };
@@ -394,6 +405,11 @@ export async function saveLedgerInventoryItems(
         existingProductIds,
         inputItems,
         new Set(activeManualProducts.map((product) => product.id)),
+        new Set(
+          before.items
+            .filter(isHiddenZeroStockInventoryItem)
+            .map((item) => item.productId),
+        ),
       );
 
       if (Object.keys(targetErrors).length > 0) {
@@ -415,8 +431,10 @@ export async function saveLedgerInventoryItems(
       }
 
       // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
-      const requiredEntryErrors = getRequiredCurrentQuantityErrors(
-        buildRequiredEntryGuardItems(before.items, inputByProductId),
+      // 오류 인덱스는 제출 품목 순서에 맞추고, 미제출 필수 품목도 차단한다.
+      const requiredEntryErrors = getInventorySaveRequiredEntryErrors(
+        before.items,
+        inputItems,
       );
 
       if (Object.keys(requiredEntryErrors).length > 0) {
@@ -439,19 +457,38 @@ export async function saveLedgerInventoryItems(
         );
       }
 
+      const beforeByProductId = new Map(
+        before.items.map((item) => [item.productId, item]),
+      );
       const adjustmentErrors = getInventorySaveAdjustmentErrors(
-        before.items.map((item) => ({
-          productId: item.productId,
-          previousQuantity: item.previousQuantity,
-          purchasedQuantity: item.purchasedQuantity,
-          lossQuantity: item.lossQuantity,
-          carryoverSource: item.carryoverSource,
-          carryoverStatus: item.carryoverStatus,
-          carryoverLedgerId: item.carryoverLedgerId,
-          currentQuantity:
-            inputByProductId.get(item.productId)?.currentQuantity ??
-            item.currentQuantity,
-        })),
+        inputItems.map((inputItem) => {
+          const beforeItem = beforeByProductId.get(inputItem.productId);
+
+          if (!beforeItem) {
+            return {
+              productId: inputItem.productId,
+              previousQuantity: 0,
+              purchasedQuantity: 0,
+              lossQuantity: 0,
+              carryoverSource: "MANUAL",
+              carryoverStatus: "CARRYOVER_EMPTY",
+              carryoverLedgerId: null,
+              currentQuantity: inputItem.currentQuantity,
+            };
+          }
+
+          return {
+            productId: beforeItem.productId,
+            previousQuantity: beforeItem.previousQuantity,
+            purchasedQuantity: beforeItem.purchasedQuantity,
+            lossQuantity: beforeItem.lossQuantity,
+            carryoverSource: beforeItem.carryoverSource,
+            carryoverStatus: beforeItem.carryoverStatus,
+            carryoverLedgerId: beforeItem.carryoverLedgerId,
+            currentQuantity:
+              inputItem.currentQuantity ?? beforeItem.currentQuantity,
+          };
+        }),
         before.items
           .filter((item) => item.adjustment !== null)
           .map((item) => ({
@@ -648,9 +685,12 @@ export async function saveLedgerInventoryItems(
         after,
       });
 
-      // Audit keeps exact-date values. Store-manager response may still need
-      // carryover for products that were not persisted on the current date.
-      return toStoreManagerInventoryStepDataInTx(tx, after);
+      // Audit keeps exact-date values. Store-manager form response applies the
+      // zero-stock display policy so hidden rows do not reappear after save.
+      return toStoreManagerInventoryStepDataInTx(
+        tx,
+        applyInventoryFormDisplayPolicy(after),
+      );
     });
 
     if ("ok" in result) {

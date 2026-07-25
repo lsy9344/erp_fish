@@ -30,9 +30,8 @@ import {
   isLedgerEditable,
 } from "~/features/ledger/status-policy";
 import {
-  buildRequiredEntryGuardItems,
   getInventorySaveAdjustmentErrors,
-  getRequiredCurrentQuantityErrors,
+  getInventorySaveRequiredEntryErrors,
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
@@ -46,6 +45,7 @@ import {
   getInventoryQuantityRelation,
   shouldPersistInventoryLine,
 } from "./inventory-persist-policy";
+import { applyInventoryFormDisplayPolicy } from "./inventory-zero-stock-display.ts";
 import {
   persistLedgerInventoryCarryoverDetail,
   persistLedgerInventoryCarryoverDetails,
@@ -170,6 +170,9 @@ async function hqInventoryConflictError<T = never>(
     getInventoryStepDataByLedgerIdInTx(tx, input.ledgerId),
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
+  const formCurrent = current
+    ? applyInventoryFormDisplayPolicy(current)
+    : null;
 
   return ledgerConflictErrorFromMeta<T>({
     meta,
@@ -177,10 +180,10 @@ async function hqInventoryConflictError<T = never>(
     section,
     clientToken: input.ledgerUpdatedAt,
     serverToken:
-      current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+      formCurrent?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
     clientValues: toInventoryClientValues(input),
-    serverValues: current ? toInventoryConflictValues(current) : {},
-    lastModifiedAt: current?.updatedAt,
+    serverValues: formCurrent ? toInventoryConflictValues(formCurrent) : {},
+    lastModifiedAt: formCurrent?.updatedAt,
     reloadRequired: true,
     hqEditing: true,
   });
@@ -282,8 +285,10 @@ export async function saveHqLedgerInventoryItems(
         );
 
         // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(버전 증가 전 검증).
-        const requiredEntryErrors = getRequiredCurrentQuantityErrors(
-          buildRequiredEntryGuardItems(before.items, inputByProductId),
+        // 오류 인덱스는 제출 품목 순서에 맞추고, 미제출 필수 품목도 차단한다.
+        const requiredEntryErrors = getInventorySaveRequiredEntryErrors(
+          before.items,
+          parsed.data.items,
         );
 
         if (Object.keys(requiredEntryErrors).length > 0) {
@@ -298,19 +303,38 @@ export async function saveHqLedgerInventoryItems(
         // 직접 추가 첫 입력) 밖의 기준재고 차이는 매칭 조정 레코드 없이 저장되면 막는다.
         // 버전 증가(markEditableLedgerInTx) 전에 검증해, 차단 시 빈 저장으로 버전만
         // 올라가지 않게 한다.
+        const beforeByProductId = new Map(
+          before.items.map((item) => [item.productId, item]),
+        );
         const adjustmentErrors = getInventorySaveAdjustmentErrors(
-          before.items.map((item) => ({
-            productId: item.productId,
-            previousQuantity: item.previousQuantity,
-            purchasedQuantity: item.purchasedQuantity,
-            lossQuantity: item.lossQuantity,
-            carryoverSource: item.carryoverSource,
-            carryoverStatus: item.carryoverStatus,
-            carryoverLedgerId: item.carryoverLedgerId,
-            currentQuantity:
-              inputByProductId.get(item.productId)?.currentQuantity ??
-              item.currentQuantity,
-          })),
+          parsed.data.items.map((inputItem) => {
+            const beforeItem = beforeByProductId.get(inputItem.productId);
+
+            if (!beforeItem) {
+              return {
+                productId: inputItem.productId,
+                previousQuantity: 0,
+                purchasedQuantity: 0,
+                lossQuantity: 0,
+                carryoverSource: "MANUAL",
+                carryoverStatus: "CARRYOVER_EMPTY",
+                carryoverLedgerId: null,
+                currentQuantity: inputItem.currentQuantity,
+              };
+            }
+
+            return {
+              productId: beforeItem.productId,
+              previousQuantity: beforeItem.previousQuantity,
+              purchasedQuantity: beforeItem.purchasedQuantity,
+              lossQuantity: beforeItem.lossQuantity,
+              carryoverSource: beforeItem.carryoverSource,
+              carryoverStatus: beforeItem.carryoverStatus,
+              carryoverLedgerId: beforeItem.carryoverLedgerId,
+              currentQuantity:
+                inputItem.currentQuantity ?? beforeItem.currentQuantity,
+            };
+          }),
           before.items
             .filter((item) => item.adjustment !== null)
             .map((item) => ({
@@ -450,7 +474,7 @@ export async function saveHqLedgerInventoryItems(
           reason: parsed.data.reason,
         });
 
-        return actionOk(after);
+        return actionOk(applyInventoryFormDisplayPolicy(after));
       },
     );
 
@@ -703,7 +727,7 @@ export async function saveHqLedgerInventoryAdjustment(
           reason: parsed.data.reason,
         });
 
-        return actionOk(after);
+        return actionOk(applyInventoryFormDisplayPolicy(after));
       },
     );
 

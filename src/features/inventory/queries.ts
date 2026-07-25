@@ -34,6 +34,7 @@ import {
   buildLossInventoryAvailabilityLines,
   type LossInventoryAvailabilityLine,
 } from "~/features/losses/availability";
+import { applyInventoryFormDisplayPolicy } from "./inventory-zero-stock-display.ts";
 import { shapeStoreManagerInventoryStepData } from "./response-shaping";
 
 export const inventoryCarryoverDetailSelect = {
@@ -947,6 +948,7 @@ async function getManualProductOptions(
       productSpec: product.spec,
       purchasePrice: null,
       plannedUnitPrice: null,
+      source: "UNGROUNDED" as const,
     }));
 }
 
@@ -1503,7 +1505,11 @@ export async function getInventoryStepData(
       actorId,
     );
 
-    return toStoreManagerInventoryStepDataInTx(tx, data);
+    // 폼 응답만 0재고 표시 정책을 적용한다. 저장/감사 before는 InTx 원본을 쓴다.
+    return toStoreManagerInventoryStepDataInTx(
+      tx,
+      applyInventoryFormDisplayPolicy(data),
+    );
   });
 }
 
@@ -1513,9 +1519,11 @@ export async function getInventoryStepDataByLedgerId(
   await requireReportAccess();
   await requireHeadquartersLedgerScope(ledgerId);
 
-  return db.$transaction((tx) =>
-    getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
-  );
+  return db.$transaction(async (tx) => {
+    const data = await getInventoryStepDataByLedgerIdInTx(tx, ledgerId);
+
+    return data ? applyInventoryFormDisplayPolicy(data) : null;
+  });
 }
 
 export async function toStoreManagerInventoryStepDataInTx(

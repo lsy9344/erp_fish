@@ -1888,16 +1888,16 @@ test("buildRequiredEntryGuardItems passes blank/missing input as null (no seed f
   );
 });
 
-test("inventory save actions feed the required-entry guard via the no-fallback builder", () => {
-  // 두 저장 경로 모두 buildRequiredEntryGuardItems로 가드 입력을 만들어야 한다.
-  // (인라인 ?? seed 폴백을 다시 쓰면 위 behavioral 테스트가 잡는 미입력 우회가 생긴다.)
+test("inventory save actions feed the required-entry guard via submitted-order helper", () => {
+  // 두 저장 경로 모두 getInventorySaveRequiredEntryErrors로 제출 순서 인덱스를 만들고
+  // 미제출 필수 품목도 차단해야 한다. (인라인 ?? seed 폴백을 다시 쓰면 미입력 우회가 생긴다.)
   for (const file of ["actions.ts", "hq-edit-actions.ts"]) {
     const source = readProjectFile("src", "features", "inventory", file);
 
     assert.match(
       source,
-      /getRequiredCurrentQuantityErrors\(\s*buildRequiredEntryGuardItems\(/,
-      `${file} should feed the required-entry guard via buildRequiredEntryGuardItems`,
+      /getInventorySaveRequiredEntryErrors\(/,
+      `${file} should feed the required-entry guard via getInventorySaveRequiredEntryErrors`,
     );
     assert.match(
       source,
@@ -1917,7 +1917,7 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
 
   assert.match(
     hqSource,
-    /getRequiredCurrentQuantityErrors\(/,
+    /getInventorySaveRequiredEntryErrors\(/,
     "HQ inventory save should enforce required current-quantity entry server-side",
   );
   assert.match(
@@ -1930,7 +1930,7 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
     "before.updatedAt !== expectedUpdatedAt.toISOString()",
   );
   const requiredEntryGuardIndex = hqSource.indexOf(
-    "getRequiredCurrentQuantityErrors(",
+    "getInventorySaveRequiredEntryErrors(",
   );
   assert.ok(staleConflictIndex > 0, "HQ should detect stale inventory drafts");
   assert.ok(

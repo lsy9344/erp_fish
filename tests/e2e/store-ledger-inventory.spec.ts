@@ -1277,3 +1277,196 @@ test("stale version 재고 저장은 conflict dialog를 보여주고 입력값�
   });
   expect(savedInventoryCount).toBe(0);
 });
+
+test("전일·매입·손실·당일재고가 모두 0인 품목은 목록에서 숨기고 품목 추가로 복원한다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  await markLossStepReviewed(ledger.id, actorId);
+
+  const zeroProduct = await seedProduct("스토리2-5 0재고 숨김", "냉동", 8000);
+  const purchaseProduct = await seedProduct(
+    "스토리2-5 0재고 매입유지",
+    "냉동",
+    9000,
+  );
+  const visibleProduct = await seedProduct(
+    "스토리2-5 0재고 표시유지",
+    "냉동",
+    10000,
+  );
+
+  await prisma.ledgerInventoryItem.createMany({
+    data: [
+      {
+        dailyLedgerId: ledger.id,
+        productId: zeroProduct.id,
+        productName: zeroProduct.name,
+        productCategory: zeroProduct.category,
+        productSpec: zeroProduct.spec,
+        unitPrice: zeroProduct.defaultUnitPrice,
+        previousQuantity: 0,
+        purchasedQuantity: 0,
+        currentQuantity: 0,
+        quantity: 0,
+        inventoryAmount: 0,
+        isModified: false,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        productId: purchaseProduct.id,
+        productName: purchaseProduct.name,
+        productCategory: purchaseProduct.category,
+        productSpec: purchaseProduct.spec,
+        unitPrice: purchaseProduct.defaultUnitPrice,
+        previousQuantity: 0,
+        purchasedQuantity: 2,
+        currentQuantity: 0,
+        quantity: 0,
+        inventoryAmount: 0,
+        isModified: true,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        productId: visibleProduct.id,
+        productName: visibleProduct.name,
+        productCategory: visibleProduct.category,
+        productSpec: visibleProduct.spec,
+        unitPrice: visibleProduct.defaultUnitPrice,
+        previousQuantity: 3,
+        purchasedQuantity: 0,
+        currentQuantity: 1,
+        quantity: 1,
+        inventoryAmount: 10000,
+        isModified: true,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    ],
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  await expect(
+    page.locator("tr").filter({ hasText: zeroProduct.name }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("tr").filter({ hasText: purchaseProduct.name }),
+  ).toHaveCount(1);
+  await expect(
+    page.locator("tr").filter({ hasText: visibleProduct.name }),
+  ).toHaveCount(1);
+
+  const manualProductSelect = page.getByLabel("추가할 품목 선택");
+  await expect(manualProductSelect.locator("option", { hasText: zeroProduct.name })).toHaveCount(1);
+  await manualProductSelect.selectOption(zeroProduct.id);
+  await page.getByRole("button", { name: "추가" }).click();
+
+  const restoredInput = page.getByLabel(`${zeroProduct.name} 당일재고`, {
+    exact: true,
+  });
+  await expect(restoredInput).toHaveValue("0");
+  await restoredInput.fill("2");
+  await page
+    .getByLabel(`${zeroProduct.name} 재고 조정 이유`)
+    .fill("숨긴 0재고 복원 입력");
+  await fillVisiblePlannedUnitPrices(page);
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expectInventorySaveSucceeded(page);
+
+  await expect(
+    page.getByLabel(`${zeroProduct.name} 당일재고`, { exact: true }),
+  ).toHaveValue("2");
+});
+
+test("다른 재고를 저장해도 숨긴 기존 0재고 DB 행은 삭제되지 않는다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  await markLossStepReviewed(ledger.id, actorId);
+
+  const zeroProduct = await seedProduct("스토리2-5 0재고 보존", "냉동", 8000);
+  const editProduct = await seedProduct("스토리2-5 0재고 편집", "냉동", 9000);
+
+  await prisma.ledgerInventoryItem.createMany({
+    data: [
+      {
+        dailyLedgerId: ledger.id,
+        productId: zeroProduct.id,
+        productName: zeroProduct.name,
+        productCategory: zeroProduct.category,
+        productSpec: zeroProduct.spec,
+        unitPrice: zeroProduct.defaultUnitPrice,
+        previousQuantity: 0,
+        purchasedQuantity: 0,
+        currentQuantity: 0,
+        quantity: 0,
+        inventoryAmount: 0,
+        isModified: false,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        productId: editProduct.id,
+        productName: editProduct.name,
+        productCategory: editProduct.category,
+        productSpec: editProduct.spec,
+        unitPrice: editProduct.defaultUnitPrice,
+        previousQuantity: 4,
+        purchasedQuantity: 0,
+        currentQuantity: 4,
+        quantity: 4,
+        inventoryAmount: 36000,
+        isModified: false,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    ],
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  await expect(
+    page.locator("tr").filter({ hasText: zeroProduct.name }),
+  ).toHaveCount(0);
+
+  await page
+    .getByLabel(`${editProduct.name} 당일재고`, { exact: true })
+    .fill("3");
+  await fillVisiblePlannedUnitPrices(page);
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expectInventorySaveSucceeded(page);
+
+  const preservedZeroRow = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: zeroProduct.id,
+      },
+    },
+    select: {
+      previousQuantity: true,
+      purchasedQuantity: true,
+      currentQuantity: true,
+      quantity: true,
+    },
+  });
+  expect(preservedZeroRow).toBeTruthy();
+  expect(preservedZeroRow?.previousQuantity.toString()).toBe("0");
+  expect(preservedZeroRow?.purchasedQuantity.toString()).toBe("0");
+  expect(preservedZeroRow?.currentQuantity?.toString()).toBe("0");
+  expect(preservedZeroRow?.quantity?.toString()).toBe("0");
+
+  await expect(
+    page.locator("tr").filter({ hasText: zeroProduct.name }),
+  ).toHaveCount(0);
+});

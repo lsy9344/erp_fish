@@ -96,6 +96,68 @@ export function getRequiredCurrentQuantityErrors(
   return errors;
 }
 
+/**
+ * 저장 검증용 필수 당일재고 오류.
+ * - 오류 인덱스는 제출(submitted) 품목 순서에 맞춘다.
+ * - before에 있는 필수 seed 품목이 제출에 없으면 별도로 차단한다.
+ */
+export function getInventorySaveRequiredEntryErrors(
+  beforeItems: Array<{
+    id: string;
+    productId: string;
+    purchasedQuantity: number;
+    lossQuantity: number;
+  }>,
+  submittedItems: Array<{
+    productId: string;
+    currentQuantity: number | null;
+  }>,
+) {
+  const inputByProductId = new Map(
+    submittedItems.map((item) => [item.productId, item]),
+  );
+  const beforeByProductId = new Map(
+    beforeItems.map((item) => [item.productId, item]),
+  );
+
+  for (const item of beforeItems) {
+    const requiresEntry =
+      item.id === item.productId &&
+      (item.purchasedQuantity > 0 || item.lossQuantity > 0);
+
+    if (requiresEntry && !inputByProductId.has(item.productId)) {
+      return {
+        items: [missingRequiredCurrentQuantityMessage],
+      };
+    }
+  }
+
+  const submittedGuardItems: InventoryRequiredEntryGuardItem[] =
+    submittedItems.map((submitted) => {
+      const before = beforeByProductId.get(submitted.productId);
+
+      if (!before) {
+        return {
+          id: submitted.productId,
+          productId: submitted.productId,
+          purchasedQuantity: 0,
+          lossQuantity: 0,
+          currentQuantity: submitted.currentQuantity,
+        };
+      }
+
+      return {
+        id: before.id,
+        productId: before.productId,
+        purchasedQuantity: before.purchasedQuantity,
+        lossQuantity: before.lossQuantity,
+        currentQuantity: submitted.currentQuantity,
+      };
+    });
+
+  return getRequiredCurrentQuantityErrors(submittedGuardItems);
+}
+
 export type InventorySaveAdjustmentGuardItem = {
   productId: string;
   previousQuantity: number;
