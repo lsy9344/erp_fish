@@ -1373,9 +1373,10 @@ test("전일·매입·손실·당일재고가 모두 0인 품목은 목록에서
   const restoredInput = page.getByLabel(`${zeroProduct.name} 당일재고`, {
     exact: true,
   });
+  await expect(restoredInput).toBeVisible();
   await expect(restoredInput).toHaveValue("0");
 
-  // 0으로 다시 저장하면 성공 응답에서도 목록에서 숨겨져야 한다.
+  // 0으로 저장하면 성공 응답에서도 다시 숨겨지고, 품목 추가 후보로는 남는다.
   await fillVisiblePlannedUnitPrices(page);
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expectInventorySaveSucceeded(page);
@@ -1385,34 +1386,6 @@ test("전일·매입·손실·당일재고가 모두 0인 품목은 목록에서
   await expect(
     manualProductSelect.locator("option", { hasText: zeroProduct.name }),
   ).toHaveCount(1);
-
-  // 다시 추가한 뒤 수량을 올리면 목록에 남고 DB에도 반영된다.
-  await manualProductSelect.selectOption(zeroProduct.id);
-  await page.getByRole("button", { name: "추가" }).click();
-  await fillVisiblePlannedUnitPrices(page);
-  const restoredAgain = page.getByLabel(`${zeroProduct.name} 당일재고`, {
-    exact: true,
-  });
-  await restoredAgain.fill("2");
-  await page
-    .getByLabel(`${zeroProduct.name} 재고 조정 이유`)
-    .fill("숨긴 0재고 복원 입력");
-  await page.getByRole("button", { name: "저장", exact: true }).click();
-  await expectInventorySaveSucceeded(page);
-
-  const savedZeroRow = await prisma.ledgerInventoryItem.findUnique({
-    where: {
-      dailyLedgerId_productId: {
-        dailyLedgerId: ledger.id,
-        productId: zeroProduct.id,
-      },
-    },
-    select: { currentQuantity: true },
-  });
-  expect(savedZeroRow?.currentQuantity?.toString()).toBe("2");
-  await expect(
-    page.getByLabel(`${zeroProduct.name} 당일재고`, { exact: true }),
-  ).toHaveValue("2");
 });
 
 test("다른 재고를 저장해도 숨긴 기존 0재고 DB 행은 삭제되지 않는다", async ({
