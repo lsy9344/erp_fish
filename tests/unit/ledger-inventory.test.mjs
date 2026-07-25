@@ -2995,3 +2995,87 @@ test("ledger loss save reconciles inventory adjustments affected by loss totals"
     "loss changes should refresh adjustment before and difference values",
   );
 });
+
+// 원격 DB(Neon) 왕복이 품목 수만큼 곱해지면 재고 저장 트랜잭션이 30s 타임아웃(P2028)으로
+// 롤백되고, 지점장 3단계는 "저장 중"에서 멈춘 채 "다음 단계로"가 나타나지 않는다.
+// 품목별 update/upsert를 다시 순차 await로 되돌리면 이 테스트가 깨진다.
+test("FIFO lot refresh issues item updates in one batch, not one round trip per item", async () => {
+  const fifoPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const { refreshLedgerInventoryFifoLots } = await import(
+    pathToFileURL(fifoPath).href
+  );
+
+  const itemCount = 20;
+  const items = Array.from({ length: itemCount }, (_, index) => ({
+    id: `item-${index}`,
+    productId: `product-${index}`,
+    unitPrice: 100,
+    previousQuantity: 10,
+    currentQuantity: 4,
+    quantity: null,
+    carryoverLedgerId: null,
+  }));
+  let pendingUpdates = 0;
+  let maxPendingUpdates = 0;
+  const tx = {
+    ledgerInventoryItem: {
+      findMany: async () => items,
+      update: async () => {
+        pendingUpdates += 1;
+        maxPendingUpdates = Math.max(maxPendingUpdates, pendingUpdates);
+        await new Promise((resolve) => setImmediate(resolve));
+        pendingUpdates -= 1;
+      },
+    },
+    ledgerInventoryFifoLot: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+  };
+  const snapshots = new Map(
+    items.map((item) => [
+      item.productId,
+      {
+        purchasedQuantity: 0,
+        fifo: { remainingAmount: 400, lots: [] },
+      },
+    ]),
+  );
+
+  await refreshLedgerInventoryFifoLots(tx, "ledger-1", snapshots);
+
+  assert.equal(
+    maxPendingUpdates,
+    itemCount,
+    "every item update should be in flight together so the transaction costs one round trip, not one per item",
+  );
+});
+
+test("inventory sales price plan upsert is batched, not awaited per item", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  const helper = actionSource.slice(
+    actionSource.indexOf("async function upsertInventorySalesPricePlansInTx"),
+    actionSource.indexOf("function parseLedgerInventoryInput"),
+  );
+
+  assert.match(
+    helper,
+    /await Promise\.all\(\s*input\.items\.map\(/,
+    "plan upserts should be sent as one batch to stay inside the transaction timeout",
+  );
+  assert.doesNotMatch(
+    helper,
+    /for \(const item of input\.items\)/,
+    "a per-item await loop multiplies DB round trips by item count",
+  );
+});

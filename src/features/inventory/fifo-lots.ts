@@ -579,6 +579,10 @@ export async function refreshLedgerInventoryFifoLots(
     })),
   );
   const rowsToCreate: Array<Prisma.LedgerInventoryFifoLotCreateManyInput> = [];
+  // 품목별 update를 루프 안에서 순차 await하면 DB 왕복이 품목 수만큼 곱해진다. 원격
+  // DB(Neon)에서는 41품목 = 41왕복 = 약 10초로, 저장 트랜잭션이 30s 타임아웃(P2028)을
+  // 넘기는 주원인이었다. 행별로 독립적인 update이므로 루프는 계산만 하고 한 배치로 보낸다.
+  const itemUpdates: Array<Prisma.LedgerInventoryItemUpdateArgs> = [];
 
   for (const item of itemInputs) {
     const preflightSnapshot = preflightSnapshotsByProductId?.get(
@@ -622,7 +626,7 @@ export async function refreshLedgerInventoryFifoLots(
         businessDate,
       });
 
-    await tx.ledgerInventoryItem.update({
+    itemUpdates.push({
       where: { id: item.id },
       data: {
         purchasedQuantity,
@@ -650,6 +654,10 @@ export async function refreshLedgerInventoryFifoLots(
       })),
     );
   }
+
+  await Promise.all(
+    itemUpdates.map((args) => tx.ledgerInventoryItem.update(args)),
+  );
 
   if (rowsToCreate.length > 0) {
     await tx.ledgerInventoryFifoLot.createMany({

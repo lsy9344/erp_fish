@@ -190,29 +190,34 @@ async function upsertInventorySalesPricePlansInTx(
     actorId: string;
   },
 ) {
-  for (const item of input.items) {
-    await tx.storeSalesPricePlan.upsert({
-      where: {
-        storeId_businessDate_productId: {
+  // 품목별 upsert를 순차 await하면 DB 왕복이 품목 수만큼 곱해진다. 원격 DB(Neon)에서는
+  // 41품목 = 41왕복 = 약 10초로, 저장 트랜잭션이 30s 타임아웃(P2028)을 넘기는 주원인이었다.
+  // 대상 키(storeId+businessDate+productId)가 서로 달라 순서 의존이 없으므로 한 배치로 보낸다.
+  await Promise.all(
+    input.items.map((item) =>
+      tx.storeSalesPricePlan.upsert({
+        where: {
+          storeId_businessDate_productId: {
+            storeId: input.storeId,
+            businessDate: input.businessDate,
+            productId: item.productId,
+          },
+        },
+        update: {
+          plannedUnitPrice: item.plannedUnitPrice,
+          updatedById: input.actorId,
+        },
+        create: {
           storeId: input.storeId,
           businessDate: input.businessDate,
           productId: item.productId,
+          plannedUnitPrice: item.plannedUnitPrice,
+          createdById: input.actorId,
+          updatedById: input.actorId,
         },
-      },
-      update: {
-        plannedUnitPrice: item.plannedUnitPrice,
-        updatedById: input.actorId,
-      },
-      create: {
-        storeId: input.storeId,
-        businessDate: input.businessDate,
-        productId: item.productId,
-        plannedUnitPrice: item.plannedUnitPrice,
-        createdById: input.actorId,
-        updatedById: input.actorId,
-      },
-    });
-  }
+      }),
+    ),
+  );
 }
 
 function parseLedgerInventoryInput(
