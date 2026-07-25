@@ -952,6 +952,12 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // WO-25(2026-07-25) #6/#8: 등록 시 상세 설정. 하루 인건비와 월 희망 수령액(4대보험/현금)
+  // 분해. 기존 직원은 미입력 상태(null)로 남아 값이 있는 직원만 화면에 표시된다.
+  dailyWage              Int?
+  desiredInsuranceAmount Int?
+  desiredCashAmount      Int?
+
   laborItems LedgerLaborItem[]
 
   @@index([isActive])

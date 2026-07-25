@@ -13,6 +13,7 @@ type HeadquartersLaborReportPageProps = {
     month?: string | string[];
     storeId?: string | string[];
     status?: string | string[];
+    workerName?: string | string[];
   }>;
 };
 
@@ -31,6 +32,7 @@ export default async function HeadquartersLaborReportPage({
       month: firstParam(params.month),
       storeId: firstParam(params.storeId),
       status: firstParam(params.status),
+      workerName: firstParam(params.workerName),
     }),
   ]);
 
@@ -80,6 +82,22 @@ export default async function HeadquartersLaborReportPage({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="grid gap-1">
+            <label
+              className="text-muted-foreground text-xs"
+              htmlFor="workerName"
+            >
+              직원명
+            </label>
+            <Input
+              id="workerName"
+              name="workerName"
+              type="text"
+              placeholder="직원명 검색"
+              defaultValue={report.selectedWorkerName ?? ""}
+              className="h-9 w-32"
+            />
           </div>
           <div className="grid gap-1">
             <label className="text-muted-foreground text-xs" htmlFor="status">

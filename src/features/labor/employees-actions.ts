@@ -47,6 +47,9 @@ export async function createEmployee(
       name: parsed.data.name,
       hireDate: new Date(parsed.data.hireDate + "T00:00:00.000Z"),
       isActive: parsed.data.isActive,
+      dailyWage: parsed.data.dailyWage,
+      desiredInsuranceAmount: parsed.data.desiredInsuranceAmount,
+      desiredCashAmount: parsed.data.desiredCashAmount,
     },
     select: { id: true, name: true },
   });
@@ -80,6 +83,9 @@ export async function updateEmployee(
       name: parsed.data.name,
       hireDate: new Date(parsed.data.hireDate + "T00:00:00.000Z"),
       isActive: parsed.data.isActive,
+      dailyWage: parsed.data.dailyWage,
+      desiredInsuranceAmount: parsed.data.desiredInsuranceAmount,
+      desiredCashAmount: parsed.data.desiredCashAmount,
     },
     select: { id: true, name: true },
   });

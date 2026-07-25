@@ -20,6 +20,13 @@ export type InventoryPurchasePrice =
       kind: "OPENING";
       yearMonth: string;
       unitPrice: number;
+    }
+  | {
+      // WO-25(2026-07-25) #1: 당일/최근 매입행이 없을 때, 전일 장부에서 이월된 단가(=FIFO
+      // 롯트 단가와 동일 값)를 표시하기 위한 fallback. businessDate는 이월 원천 장부의 영업일.
+      kind: "CARRYOVER";
+      businessDate: string;
+      unitPrice: number;
     };
 
 export type InventoryStepLine = {

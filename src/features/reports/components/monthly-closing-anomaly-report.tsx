@@ -200,6 +200,15 @@ function MonthlyKpiSummary({
             </div>
           </div>
         ))}
+        <div
+          data-testid="hq-report-monthly-kpi-labor"
+          className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
+        >
+          <p className="text-muted-foreground text-sm break-words">인건비</p>
+          <p className="mt-2 font-medium break-words tabular-nums">
+            {krwFormatter.format(kpis.laborAmount)}
+          </p>
+        </div>
       </div>
     </section>
   );

@@ -40,6 +40,11 @@ function formatMemo(value: string | null) {
   return trimmed === undefined || trimmed === "" ? "-" : trimmed;
 }
 
+// WO-25(2026-07-25) #8: 직원이 미등록이거나 상세를 입력하지 않은 경우 "-"로 표시한다.
+function formatOptionalKrw(value: number | null) {
+  return value === null ? "-" : krwFormatter.format(value);
+}
+
 export function HeadquartersLaborReportView({
   report,
 }: {
@@ -119,7 +124,7 @@ export function HeadquartersLaborReportView({
             근무자별 상세
           </h2>
           <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-            <Table className="min-w-[1100px]">
+            <Table className="min-w-[1300px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>영업일</TableHead>
@@ -127,6 +132,8 @@ export function HeadquartersLaborReportView({
                   <TableHead>장부 상태</TableHead>
                   <TableHead>근무자명</TableHead>
                   <TableHead className="text-right">인건비</TableHead>
+                  <TableHead className="text-right">희망 4대보험</TableHead>
+                  <TableHead className="text-right">희망 현금</TableHead>
                   <TableHead>지각</TableHead>
                   <TableHead>조퇴</TableHead>
                   <TableHead>특이사항</TableHead>
@@ -147,6 +154,12 @@ export function HeadquartersLaborReportView({
                     <TableCell>{detail.workerName}</TableCell>
                     <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
                       {krwFormatter.format(detail.amount)}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">
+                      {formatOptionalKrw(detail.desiredInsuranceAmount)}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">
+                      {formatOptionalKrw(detail.desiredCashAmount)}
                     </TableCell>
                     <TableCell>{formatMemo(detail.lateMemo)}</TableCell>
                     <TableCell>{formatMemo(detail.earlyLeaveMemo)}</TableCell>

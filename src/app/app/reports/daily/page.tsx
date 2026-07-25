@@ -171,9 +171,9 @@ export default async function DailyMeetingReportPage({
       <section className="rounded-lg border p-4">
         <h2 className="text-base font-semibold">지점별 영업 매출·이익률</h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          막대는 정정 반영 영업 매출 합계(장부 마감 매출 + 이월 매출)이며, 실제
-          이익률은 영업 매출 합계와 매출원가로, 예상 이익률은 재고 흐름과 판매한
-          가격으로 계산합니다. 버튼은 정렬 기준만 변경합니다.
+          막대는 정정 반영 영업 매출 합계이며, 실제 이익률은 영업 매출 합계와
+          매출원가로, 예상 이익률은 재고 흐름과 판매한 가격으로 계산합니다.
+          버튼은 정렬 기준만 변경합니다.
         </p>
         <div className="mt-3">
           <StoreDailyPerformanceChart rows={report.rows} />
@@ -202,7 +202,7 @@ export default async function DailyMeetingReportPage({
         <div className="mt-3">
           <ProductProfitabilityReport
             data={report.productProfitability}
-            mode="both"
+            mode="table"
             tableVariant="salesRanking"
           />
         </div>

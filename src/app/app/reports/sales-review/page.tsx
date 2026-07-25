@@ -72,9 +72,9 @@ export default async function SalesReviewPage({
           지점별 영업 매출 합계·마진율
         </h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          막대는 영업 매출 합계(장부 마감 매출 + 이월 매출)이며, 실제 마진율은
-          영업 매출 합계와 매출원가로, 예상 마진율은 재고 흐름과 판매한 가격으로
-          계산합니다. 버튼은 정렬 기준만 바꿉니다.
+          막대는 영업 매출 합계이며, 실제 마진율은 영업 매출 합계와 매출원가로,
+          예상 마진율은 재고 흐름과 판매한 가격으로 계산합니다. 버튼은 정렬
+          기준만 바꿉니다.
         </p>
         <div className="mt-3">
           <ReviewViewToggle

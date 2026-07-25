@@ -1254,7 +1254,7 @@ test("overview UI preserves waterfall signs and separates missing closing days",
   assert.match(axisLabel, /waterfallAxisLabels\[key\]/);
 
   for (const [key, label] of [
-    ["sales", "영업매출"],
+    ["sales", "매출"],
     ["cogs", "원가"],
     ["grossProfit", "매출이익"],
     ["labor", "인건비"],

@@ -28,6 +28,10 @@ export type HeadquartersLaborDetail = {
   lateMemo: string | null;
   earlyLeaveMemo: string | null;
   specialMemo: string | null;
+  // WO-25(2026-07-25) #8: 등록된 직원의 월 희망 수령액 분해(4대보험/현금). 직원과
+  // 연결되지 않은 자유 입력 근무자는 null로 남는다.
+  desiredInsuranceAmount: number | null;
+  desiredCashAmount: number | null;
 };
 
 export type HeadquartersLaborStoreSummary = {
@@ -42,6 +46,7 @@ export type HeadquartersLaborReport = {
   monthInput: string;
   selectedStoreId: string | null;
   selectedStatus: HeadquartersLaborStatusFilter;
+  selectedWorkerName: string | null;
   stores: HeadquartersLaborStoreOption[];
   totalLaborAmount: number;
   storeCount: number;

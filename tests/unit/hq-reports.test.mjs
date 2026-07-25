@@ -283,25 +283,14 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
   assert.match(componentSource, /tableVariant === "salesRanking"/);
   assert.match(componentSource, /b\.soldQuantity - a\.soldQuantity/);
   assert.match(componentSource, /\.slice\(0, 10\)/);
-  assert.match(componentSource, /const salesRankingChartItems = useMemo/);
+  // WO-25(2026-07-25) #5: 판매수량 상위 10개 차트는 삭제하고 표만 남긴다.
+  assert.doesNotMatch(componentSource, /function SalesRankingChart/);
+  assert.doesNotMatch(componentSource, /salesRankingChartItems/);
+  assert.doesNotMatch(componentSource, /품목별 판매수량 상위 10개 세로 막대 차트/);
+  // 표의 품목/규격 칸은 긴 이름이 옆으로 넘치지 않도록 줄바꿈한다(가로 스크롤 방지).
   assert.match(
     componentSource,
-    /<SalesRankingChart items=\{salesRankingChartItems\}/,
-  );
-  assert.match(
-    componentSource,
-    /data=\{chartItems\}[\s\S]*?dataKey="soldQuantity"/,
-  );
-  assert.match(componentSource, /dataKey="productLabel"/);
-  assert.match(componentSource, /position="top"/);
-  assert.match(componentSource, /품목별 판매수량 상위 10개 세로 막대 차트/);
-  assert.match(
-    componentSource,
-    /item\.productName} · \$\{item\.productSpec \|\| "규격 없음"/,
-  );
-  assert.doesNotMatch(
-    componentSource,
-    /function SalesRankingChart[\s\S]*?layout="vertical"/,
+    /max-w-48 font-medium break-words whitespace-normal/,
   );
   assert.match(componentSource, /<BarChart[\s\S]*?data=\{data\.items\}/);
   assert.match(componentSource, /data\.items\.map\(\(item\) =>/);
@@ -330,7 +319,7 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /판매수량 = 전일재고 \+ 당일매입 − 손실수량 − 당일재고/,
   );
-  assert.match(dailyPageSource, /mode="both"/);
+  assert.match(dailyPageSource, /mode="table"/);
   assert.match(dailyPageSource, /tableVariant="salesRanking"/);
   assert.match(dailyPageSource, /품목별 판매 현황/);
   assert.match(

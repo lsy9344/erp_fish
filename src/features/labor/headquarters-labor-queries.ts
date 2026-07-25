@@ -32,6 +32,13 @@ const headquartersLaborLedgerSelect = {
       lateMemo: true,
       earlyLeaveMemo: true,
       specialMemo: true,
+      // WO-25(2026-07-25) #8: 직원의 월 희망 수령액 분해(4대보험/현금)를 함께 노출.
+      employee: {
+        select: {
+          desiredInsuranceAmount: true,
+          desiredCashAmount: true,
+        },
+      },
     },
   },
 } satisfies Prisma.DailyLedgerSelect;
@@ -123,6 +130,7 @@ export function buildHeadquartersLaborReport({
   monthInput,
   selectedStoreId,
   selectedStatus,
+  selectedWorkerName = null,
   stores,
   targetStoreIds,
   ledgers,
@@ -131,15 +139,31 @@ export function buildHeadquartersLaborReport({
   monthInput: string;
   selectedStoreId: string | null;
   selectedStatus: HeadquartersLaborStatusFilter;
+  selectedWorkerName?: string | null;
   stores: HeadquartersLaborStoreOption[];
   targetStoreIds: readonly string[];
   ledgers: HeadquartersLaborLedgerRecord[];
   errorMessages?: string[];
 }): HeadquartersLaborReport {
   const targetStoreIdSet = new Set(targetStoreIds);
-  const targetLedgers = ledgers.filter((ledger) =>
-    targetStoreIdSet.has(ledger.store.id),
-  );
+  // WO-25(2026-07-25) #9: 직원명 필터. 부분 일치(대소문자 무시)로 근무자별 상세·지점 요약을 함께 좁힌다.
+  const trimmedWorkerName = selectedWorkerName?.trim();
+  const workerNameFilter =
+    trimmedWorkerName && trimmedWorkerName.length > 0
+      ? trimmedWorkerName.toLowerCase()
+      : null;
+  const targetLedgers = ledgers
+    .filter((ledger) => targetStoreIdSet.has(ledger.store.id))
+    .map((ledger) =>
+      workerNameFilter
+        ? {
+            ...ledger,
+            ledgerLaborItems: ledger.ledgerLaborItems.filter((item) =>
+              item.workerName.toLowerCase().includes(workerNameFilter),
+            ),
+          }
+        : ledger,
+    );
   const details: HeadquartersLaborDetail[] = targetLedgers.flatMap((ledger) =>
     ledger.ledgerLaborItems.map((item) => ({
       id: item.id,
@@ -153,6 +177,8 @@ export function buildHeadquartersLaborReport({
       lateMemo: item.lateMemo,
       earlyLeaveMemo: item.earlyLeaveMemo,
       specialMemo: item.specialMemo,
+      desiredInsuranceAmount: item.employee?.desiredInsuranceAmount ?? null,
+      desiredCashAmount: item.employee?.desiredCashAmount ?? null,
     })),
   );
   const summaryByStore = new Map<
@@ -179,7 +205,10 @@ export function buildHeadquartersLaborReport({
   }
 
   for (const ledger of targetLedgers) {
-    if (ledger.workerCount === null && ledger.ledgerLaborItems.length === 0) {
+    const hasNoRecordableData =
+      ledger.ledgerLaborItems.length === 0 &&
+      (workerNameFilter !== null || ledger.workerCount === null);
+    if (hasNoRecordableData) {
       continue;
     }
 
@@ -191,7 +220,9 @@ export function buildHeadquartersLaborReport({
       laborAmount: 0,
     };
     summary.workdays.add(toDateInput(ledger.closingDate));
-    summary.workerCount += ledger.workerCount ?? ledger.ledgerLaborItems.length;
+    summary.workerCount += workerNameFilter
+      ? ledger.ledgerLaborItems.length
+      : (ledger.workerCount ?? ledger.ledgerLaborItems.length);
     summary.laborAmount += ledger.ledgerLaborItems.reduce(
       (sum, item) => sum + item.amount,
       0,
@@ -217,6 +248,7 @@ export function buildHeadquartersLaborReport({
     monthInput,
     selectedStoreId,
     selectedStatus,
+    selectedWorkerName,
     stores,
     totalLaborAmount: details.reduce((sum, item) => sum + item.amount, 0),
     storeCount: storeSummaries.length,
@@ -231,10 +263,12 @@ export async function getHeadquartersLaborReport({
   month,
   storeId,
   status,
+  workerName,
 }: {
   month?: unknown;
   storeId?: unknown;
   status?: unknown;
+  workerName?: unknown;
 } = {}): Promise<HeadquartersLaborReport> {
   const { getHeadquartersStoreScope, requireReportAccess } =
     await import("../../server/authz.ts");
@@ -243,6 +277,10 @@ export async function getHeadquartersLaborReport({
   const scope = await getHeadquartersStoreScope();
   const monthRange = getHeadquartersLaborMonthRange(month);
   const selectedStatus = normalizeHeadquartersLaborStatus(status);
+  const selectedWorkerName =
+    typeof workerName === "string" && workerName.trim().length > 0
+      ? workerName.trim()
+      : null;
   const storeFilter = resolveHeadquartersLaborStoreFilter({
     storeId,
     allowedStoreIds: scope.storeIds,
@@ -275,6 +313,7 @@ export async function getHeadquartersLaborReport({
     monthInput: monthRange.monthInput,
     selectedStoreId: storeFilter.selectedStoreId,
     selectedStatus,
+    selectedWorkerName,
     stores: scope.stores.map((store) => ({ id: store.id, name: store.name })),
     targetStoreIds: storeFilter.targetStoreIds,
     ledgers,

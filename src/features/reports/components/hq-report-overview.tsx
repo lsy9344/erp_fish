@@ -84,7 +84,7 @@ const closingConfig = {
 } satisfies ChartConfig;
 
 const waterfallAxisLabels: Record<string, string> = {
-  sales: "영업매출",
+  sales: "매출",
   cogs: "원가",
   grossProfit: "매출이익",
   labor: "인건비",

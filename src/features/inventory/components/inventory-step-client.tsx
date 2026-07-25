@@ -132,6 +132,15 @@ const carryoverLoadedMessage =
   "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
 const carryoverManualMessage =
   "전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
+const fifoLotSourceLabels: Record<
+  InventoryStepLine["fifoLots"][number]["sourceType"],
+  string
+> = {
+  OPENING: "기초 재고",
+  PREVIOUS_CARRYOVER: "전일 이월",
+  PURCHASE: "매입",
+  LEGACY_OPENING: "기존 재고",
+};
 
 function formatKrw(value: number | null) {
   if (value === null) {
@@ -375,6 +384,9 @@ export function InventoryStepClient({
     생물: 1,
   });
   const [selectedCarryoverItem, setSelectedCarryoverItem] =
+    useState<InventoryLineState | null>(null);
+  // WO-25(2026-07-25) #2: 남아있는 재고 클릭 → FIFO 매입 이력 팝업.
+  const [selectedFifoLotItem, setSelectedFifoLotItem] =
     useState<InventoryLineState | null>(null);
   // WO-11(2026-06-28): 상단 "전날 재고 보기" 전체 목록 모달.
   const [isPreviousStockOpen, setIsPreviousStockOpen] = useState(false);
@@ -1849,6 +1861,122 @@ export function InventoryStepClient({
     );
   }
 
+  // WO-25(2026-07-25) #2: 남아있는 재고(기준재고) 클릭 → FIFO 매입 이력 팝업.
+  // 권한 현행 유지(2026-06-28 결정): 본사는 입고일+단가+금액, 지점장은 입고일+잔량만.
+  function renderFifoLotHistoryDialog() {
+    if (!selectedFifoLotItem) {
+      return null;
+    }
+
+    const item = selectedFifoLotItem;
+
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedFifoLotItem(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{inventoryTerms.fifoLotHistoryTitle}</DialogTitle>
+            <DialogDescription>
+              {item.productName} · {inventoryTerms.fifoLotHistoryDescription}
+            </DialogDescription>
+          </DialogHeader>
+          {item.fifoLots.length === 0 ? (
+            <p className="text-muted-foreground py-8 text-center text-sm">
+              {inventoryTerms.fifoLotEmpty}
+            </p>
+          ) : (
+            <div className="max-h-[28rem] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{inventoryTerms.fifoLotSource}</TableHead>
+                    <TableHead>{inventoryTerms.fifoLotPurchaseDate}</TableHead>
+                    {hasSensitiveInventoryAmounts(item) ? (
+                      <TableHead className="text-right">
+                        {inventoryTerms.fifoLotUnitPrice}
+                      </TableHead>
+                    ) : null}
+                    <TableHead className="text-right">
+                      {inventoryTerms.fifoLotOriginalQuantity}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {inventoryTerms.fifoLotConsumedQuantity}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {inventoryTerms.fifoLotRemainingQuantity}
+                    </TableHead>
+                    {hasSensitiveInventoryAmounts(item) ? (
+                      <TableHead className="text-right">
+                        {inventoryTerms.fifoLotRemainingAmount}
+                      </TableHead>
+                    ) : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {hasSensitiveInventoryAmounts(item)
+                    ? item.fifoLots.map((lot) => (
+                        <TableRow key={`${lot.sortOrder}-${lot.sourceType}`}>
+                          <TableCell>
+                            {fifoLotSourceLabels[lot.sourceType]}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {formatDate(
+                              lot.sourceBusinessDate ?? lot.purchaseDate,
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatKrw(lot.unitPrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.originalQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.consumedQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatQuantity(lot.remainingQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatKrw(lot.remainingAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    : item.fifoLots.map((lot) => (
+                        <TableRow key={`${lot.sortOrder}-${lot.sourceType}`}>
+                          <TableCell>
+                            {fifoLotSourceLabels[lot.sourceType]}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {formatDate(
+                              lot.sourceBusinessDate ?? lot.purchaseDate,
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.originalQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatQuantity(lot.consumedQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatQuantity(lot.remainingQuantity)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function renderRows(category: string) {
     const visibleItems = getCategoryItems(category);
     const normalizedCategory = normalizeCategory(category);
@@ -1897,7 +2025,9 @@ export function InventoryStepClient({
       const unitPriceSummary = item.purchasePrice
         ? item.purchasePrice.kind === "OPENING"
           ? `월초 재고단가 · ${item.purchasePrice.yearMonth} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-          : `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+          : item.purchasePrice.kind === "CARRYOVER"
+            ? `이월 재고단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+            : `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
         : "단가 근거 없음";
       const modified = isLineModified(item) || item.isModified;
       const recentlySaved = recentlySavedProductIds.has(item.productId);
@@ -2055,9 +2185,16 @@ export function InventoryStepClient({
                 <span aria-hidden>→</span>
                 <span>
                   {inventoryTerms.baselineStock}{" "}
-                  <span className="text-foreground font-medium">
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    aria-label={`${item.productName} FIFO 매입 이력 보기`}
+                    onClick={() => setSelectedFifoLotItem(item)}
+                    className="text-foreground h-auto p-0 align-baseline font-medium tabular-nums"
+                  >
                     {formatQuantity(systemQuantity)}
-                  </span>
+                  </Button>
                 </span>
               </div>
 
@@ -2472,6 +2609,7 @@ export function InventoryStepClient({
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderCarryoverDetailDialog()}
         {renderPreviousStockDialog()}
+        {renderFifoLotHistoryDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
           isSaving={isSaving}

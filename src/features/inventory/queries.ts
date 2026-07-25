@@ -22,6 +22,7 @@ import {
   type InventoryCarryoverDetailView,
   type InventoryCarryoverHistoryRow,
   type InventoryManualProductOption,
+  type InventoryPurchasePrice,
   type InventoryStepLine,
   type StoreManagerInventoryStepData,
 } from "./types";
@@ -1059,6 +1060,40 @@ async function attachFifoLots(
   }));
 }
 
+// WO-25(2026-07-25) #1: 당일/최근 매입행이 없을 때(예: 다음날 조회) 이월된 단가를 fallback으로
+// 표시한다. 월초 스냅샷(OPENING)뿐 아니라 전일 장부 이월(PREVIOUS_*_LEDGER)도 포함한다 —
+// item.unitPrice는 두 경우 모두 원천(엑셀 단가/FIFO 롯트 단가)에서 그대로 이월된 값이다.
+// MANUAL(근거 없음)은 신뢰할 수 있는 이월 단가가 아니므로 제외한다.
+function resolveCarryoverPurchasePriceFallback(
+  item: Pick<InventoryStepLine, "unitPrice" | "previousQuantityDetail">,
+): InventoryPurchasePrice | null {
+  if (
+    item.previousQuantityDetail.source === "OPENING_SNAPSHOT" &&
+    item.previousQuantityDetail.sourceYearMonth
+  ) {
+    return {
+      kind: "OPENING",
+      yearMonth: item.previousQuantityDetail.sourceYearMonth,
+      unitPrice: item.unitPrice,
+    };
+  }
+
+  const { source, sourceLedgerClosingDate } = item.previousQuantityDetail;
+  if (
+    (source === "PREVIOUS_CLOSED_LEDGER" ||
+      source === "PREVIOUS_SAVED_LEDGER") &&
+    sourceLedgerClosingDate
+  ) {
+    return {
+      kind: "CARRYOVER",
+      businessDate: sourceLedgerClosingDate.slice(0, 10),
+      unitPrice: item.unitPrice,
+    };
+  }
+
+  return null;
+}
+
 async function attachPurchasePrices(
   tx: Prisma.TransactionClient,
   ledger: InventoryLedgerPayload,
@@ -1123,14 +1158,7 @@ async function attachPurchasePrices(
       ...item,
       purchasePrice:
         purchasePrices.get(item.productId) ??
-        (item.previousQuantityDetail.source === "OPENING_SNAPSHOT" &&
-        item.previousQuantityDetail.sourceYearMonth
-          ? {
-              kind: "OPENING" as const,
-              yearMonth: item.previousQuantityDetail.sourceYearMonth,
-              unitPrice: item.unitPrice,
-            }
-          : null),
+        resolveCarryoverPurchasePriceFallback(item),
       plannedUnitPrice: plannedUnitPrices.get(item.productId) ?? null,
     })),
     manualProductOptions: manualProductOptions.map((option) => ({

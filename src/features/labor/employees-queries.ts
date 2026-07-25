@@ -7,6 +7,10 @@ export type EmployeeListItem = {
   name: string;
   hireDate: string;
   isActive: boolean;
+  // WO-25(2026-07-25) #6/#8: 등록 상세 — 하루 인건비 · 월 희망 수령액(4대보험/현금).
+  dailyWage: number | null;
+  desiredInsuranceAmount: number | null;
+  desiredCashAmount: number | null;
 };
 
 export type EmployeeMonthlyPayrollRow = {
@@ -87,6 +91,9 @@ export async function getEmployeeList(): Promise<EmployeeListItem[]> {
       name: true,
       hireDate: true,
       isActive: true,
+      dailyWage: true,
+      desiredInsuranceAmount: true,
+      desiredCashAmount: true,
     },
   });
 
@@ -95,6 +102,9 @@ export async function getEmployeeList(): Promise<EmployeeListItem[]> {
     name: emp.name,
     hireDate: emp.hireDate.toISOString().slice(0, 10),
     isActive: emp.isActive,
+    dailyWage: emp.dailyWage,
+    desiredInsuranceAmount: emp.desiredInsuranceAmount,
+    desiredCashAmount: emp.desiredCashAmount,
   }));
 }
 

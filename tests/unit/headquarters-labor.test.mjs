@@ -102,6 +102,84 @@ test("headquarters labor report keeps free-entry workers and calculates summarie
   assert.equal(report.details[0].status, "IN_PROGRESS");
 });
 
+test("headquarters labor report filters by worker name (case-insensitive, partial match)", () => {
+  const ledgers = [
+    {
+      id: "ledger-b1",
+      closingDate: new Date("2026-07-05T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 2,
+      store: { id: "store-a", name: "강남" },
+      ledgerLaborItems: [
+        {
+          id: "labor-hong",
+          employeeId: "employee-1",
+          workerName: "홍길동",
+          amount: 100_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+        },
+        {
+          id: "labor-kim",
+          employeeId: "employee-2",
+          workerName: "김철수",
+          amount: 90_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+        },
+      ],
+    },
+    {
+      id: "ledger-b2",
+      closingDate: new Date("2026-07-06T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-a", name: "강남" },
+      ledgerLaborItems: [
+        {
+          id: "labor-kim-2",
+          employeeId: "employee-2",
+          workerName: "김철수",
+          amount: 95_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+        },
+      ],
+    },
+  ];
+
+  const report = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    selectedStoreId: "store-a",
+    selectedStatus: "ALL",
+    selectedWorkerName: "홍",
+    stores: [{ id: "store-a", name: "강남" }],
+    targetStoreIds: ["store-a"],
+    ledgers,
+  });
+
+  assert.equal(report.selectedWorkerName, "홍");
+  assert.equal(report.laborRecordCount, 1);
+  assert.equal(report.totalLaborAmount, 100_000);
+  assert.deepEqual(
+    report.details.map((detail) => detail.workerName),
+    ["홍길동"],
+  );
+  // 필터에 맞는 근무자가 없는 날(ledger-b2)은 근무일 수에서 제외된다.
+  assert.deepEqual(report.storeSummaries, [
+    {
+      storeId: "store-a",
+      storeName: "강남",
+      workdayCount: 1,
+      workerCount: 1,
+      laborAmount: 100_000,
+    },
+  ]);
+});
+
 test("headquarters labor report includes worker-count-only ledger days", () => {
   const report = buildHeadquartersLaborReport({
     monthInput: "2026-07",

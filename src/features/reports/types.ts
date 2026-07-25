@@ -278,6 +278,8 @@ export type MonthlyClosingKpiSummary = {
   averageSales: LedgerReviewMetric;
   inventoryToSalesRatio: LedgerReviewMetric;
   appliedCorrectionCount: number;
+  // WO-25(2026-07-25) #7: 인건비 KPI 카드. 정정 시스템 대상이 아니라 evidence 없이 단순 합계.
+  laborAmount: number;
   metricEvidence: MonthlyClosingKpiMetricEvidenceMap;
 };
 

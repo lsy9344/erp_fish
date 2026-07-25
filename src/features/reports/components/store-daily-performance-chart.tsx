@@ -324,9 +324,8 @@ export function StoreDailyPerformanceChart({
       </table>
 
       <p className="text-muted-foreground text-xs">
-        막대는 영업 매출 합계(장부 마감 매출 + 이월 매출)입니다. 실제 마진율은
-        영업 매출 합계와 매출원가로, 예상 마진율은 재고 흐름과 판매한 가격으로
-        계산합니다.
+        막대는 영업 매출 합계입니다. 실제 마진율은 영업 매출 합계와 매출원가로,
+        예상 마진율은 재고 흐름과 판매한 가격으로 계산합니다.
       </p>
       {omittedCount > 0 ? (
         <p className="text-muted-foreground text-xs">

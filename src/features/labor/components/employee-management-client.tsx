@@ -22,9 +22,28 @@ type EmployeeManagementClientProps = {
 type FormState = {
   name: string;
   hireDate: string;
+  dailyWage: string;
+  desiredInsuranceAmount: string;
+  desiredCashAmount: string;
 };
 
-const emptyForm: FormState = { name: "", hireDate: "" };
+const emptyForm: FormState = {
+  name: "",
+  hireDate: "",
+  dailyWage: "",
+  desiredInsuranceAmount: "",
+  desiredCashAmount: "",
+};
+
+const krwFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+});
+
+function formatOptionalKrw(value: number | null) {
+  return value === null ? "-" : krwFormatter.format(value);
+}
 
 export function EmployeeManagementClient({
   initialEmployees,
@@ -39,7 +58,19 @@ export function EmployeeManagementClient({
 
   function handleEdit(employee: EmployeeListItem) {
     setEditingId(employee.id);
-    setForm({ name: employee.name, hireDate: employee.hireDate });
+    setForm({
+      name: employee.name,
+      hireDate: employee.hireDate,
+      dailyWage: employee.dailyWage === null ? "" : String(employee.dailyWage),
+      desiredInsuranceAmount:
+        employee.desiredInsuranceAmount === null
+          ? ""
+          : String(employee.desiredInsuranceAmount),
+      desiredCashAmount:
+        employee.desiredCashAmount === null
+          ? ""
+          : String(employee.desiredCashAmount),
+    });
     setFieldErrors({});
   }
 
@@ -47,6 +78,10 @@ export function EmployeeManagementClient({
     setEditingId(null);
     setForm(emptyForm);
     setFieldErrors({});
+  }
+
+  function parseOptionalAmount(value: string): number | null {
+    return value === "" ? null : Number(value);
   }
 
   async function handleSave() {
@@ -65,11 +100,22 @@ export function EmployeeManagementClient({
       return;
     }
 
+    const detailFields = {
+      dailyWage: parseOptionalAmount(form.dailyWage),
+      desiredInsuranceAmount: parseOptionalAmount(form.desiredInsuranceAmount),
+      desiredCashAmount: parseOptionalAmount(form.desiredCashAmount),
+    };
+
     if (editingId) {
       setEmployees((prev) =>
         prev.map((emp) =>
           emp.id === editingId
-            ? { ...emp, name: form.name, hireDate: form.hireDate }
+            ? {
+                ...emp,
+                name: form.name,
+                hireDate: form.hireDate,
+                ...detailFields,
+              }
             : emp,
         ),
       );
@@ -81,6 +127,7 @@ export function EmployeeManagementClient({
           name: result.data.name,
           hireDate: form.hireDate,
           isActive: true,
+          ...detailFields,
         },
       ]);
     }
@@ -113,36 +160,54 @@ export function EmployeeManagementClient({
           직원 정보는 조회만 가능합니다. 추가/수정/비활성화는 설정 관리
           권한(SETTINGS_MANAGE)이 필요합니다.
         </p>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-muted-foreground border-b text-left">
-              <th className="pr-3 pb-2 font-normal">이름</th>
-              <th className="pr-3 pb-2 font-normal">입사일</th>
-              <th className="pr-3 pb-2 font-normal">상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((emp) => (
-              <tr key={emp.id} className="border-b last:border-0">
-                <td className="py-2 pr-3">{emp.name}</td>
-                <td className="text-muted-foreground py-2 pr-3">
-                  {emp.hireDate}
-                </td>
-                <td className="py-2 pr-3">
-                  <span
-                    className={
-                      emp.isActive
-                        ? "text-green-600 dark:text-green-400"
-                        : "text-muted-foreground"
-                    }
-                  >
-                    {emp.isActive ? "활성" : "비활성"}
-                  </span>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="text-muted-foreground border-b text-left">
+                <th className="pr-3 pb-2 font-normal">이름</th>
+                <th className="pr-3 pb-2 font-normal">입사일</th>
+                <th className="pr-3 pb-2 text-right font-normal">
+                  하루 인건비
+                </th>
+                <th className="pr-3 pb-2 text-right font-normal">
+                  희망 4대보험
+                </th>
+                <th className="pr-3 pb-2 text-right font-normal">희망 현금</th>
+                <th className="pr-3 pb-2 font-normal">상태</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {employees.map((emp) => (
+                <tr key={emp.id} className="border-b last:border-0">
+                  <td className="py-2 pr-3">{emp.name}</td>
+                  <td className="text-muted-foreground py-2 pr-3">
+                    {emp.hireDate}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatOptionalKrw(emp.dailyWage)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatOptionalKrw(emp.desiredInsuranceAmount)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatOptionalKrw(emp.desiredCashAmount)}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span
+                      className={
+                        emp.isActive
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {emp.isActive ? "활성" : "비활성"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -184,6 +249,80 @@ export function EmployeeManagementClient({
               errors={fieldErrors.hireDate?.map((msg) => ({ message: msg }))}
             />
           </Field>
+        </div>
+        {/* WO-25(2026-07-25) #6/#8: 등록 상세 — 하루 인건비 · 월 희망 수령액(4대보험/현금). */}
+        <div className="flex gap-3">
+          <Field className="flex-1">
+            <FieldLabel htmlFor="employee-daily-wage">하루 인건비</FieldLabel>
+            <Input
+              id="employee-daily-wage"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={form.dailyWage}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, dailyWage: e.target.value }))
+              }
+              placeholder="원"
+              disabled={isSaving}
+            />
+            <FieldError
+              errors={fieldErrors.dailyWage?.map((msg) => ({ message: msg }))}
+            />
+          </Field>
+          <Field className="flex-1">
+            <FieldLabel htmlFor="employee-insurance-amount">
+              희망 4대보험 금액
+            </FieldLabel>
+            <Input
+              id="employee-insurance-amount"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={form.desiredInsuranceAmount}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  desiredInsuranceAmount: e.target.value,
+                }))
+              }
+              placeholder="원"
+              disabled={isSaving}
+            />
+            <FieldError
+              errors={fieldErrors.desiredInsuranceAmount?.map((msg) => ({
+                message: msg,
+              }))}
+            />
+          </Field>
+          <Field className="flex-1">
+            <FieldLabel htmlFor="employee-cash-amount">
+              희망 현금 금액
+            </FieldLabel>
+            <Input
+              id="employee-cash-amount"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={form.desiredCashAmount}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  desiredCashAmount: e.target.value,
+                }))
+              }
+              placeholder="원"
+              disabled={isSaving}
+            />
+            <FieldError
+              errors={fieldErrors.desiredCashAmount?.map((msg) => ({
+                message: msg,
+              }))}
+            />
+          </Field>
           <div className="flex items-end gap-2">
             <Button
               type="button"
@@ -208,59 +347,73 @@ export function EmployeeManagementClient({
         </div>
       </div>
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-muted-foreground border-b text-left">
-            <th className="pr-3 pb-2 font-normal">이름</th>
-            <th className="pr-3 pb-2 font-normal">입사일</th>
-            <th className="pr-3 pb-2 font-normal">상태</th>
-            <th className="pb-2 font-normal"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {employees.map((emp) => (
-            <tr key={emp.id} className="border-b last:border-0">
-              <td className="py-2 pr-3">{emp.name}</td>
-              <td className="text-muted-foreground py-2 pr-3">
-                {emp.hireDate}
-              </td>
-              <td className="py-2 pr-3">
-                <span
-                  className={
-                    emp.isActive
-                      ? "text-green-600 dark:text-green-400"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {emp.isActive ? "활성" : "비활성"}
-                </span>
-              </td>
-              <td className="py-2">
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleEdit(emp)}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr className="text-muted-foreground border-b text-left">
+              <th className="pr-3 pb-2 font-normal">이름</th>
+              <th className="pr-3 pb-2 font-normal">입사일</th>
+              <th className="pr-3 pb-2 text-right font-normal">하루 인건비</th>
+              <th className="pr-3 pb-2 text-right font-normal">희망 4대보험</th>
+              <th className="pr-3 pb-2 text-right font-normal">희망 현금</th>
+              <th className="pr-3 pb-2 font-normal">상태</th>
+              <th className="pb-2 font-normal"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((emp) => (
+              <tr key={emp.id} className="border-b last:border-0">
+                <td className="py-2 pr-3">{emp.name}</td>
+                <td className="text-muted-foreground py-2 pr-3">
+                  {emp.hireDate}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {formatOptionalKrw(emp.dailyWage)}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {formatOptionalKrw(emp.desiredInsuranceAmount)}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {formatOptionalKrw(emp.desiredCashAmount)}
+                </td>
+                <td className="py-2 pr-3">
+                  <span
+                    className={
+                      emp.isActive
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-muted-foreground"
+                    }
                   >
-                    수정
-                  </Button>
-                  {emp.isActive && (
+                    {emp.isActive ? "활성" : "비활성"}
+                  </span>
+                </td>
+                <td className="py-2">
+                  <div className="flex gap-1">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeactivate(emp.id)}
+                      onClick={() => handleEdit(emp)}
                     >
-                      비활성화
+                      수정
                     </Button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                    {emp.isActive && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeactivate(emp.id)}
+                      >
+                        비활성화
+                      </Button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

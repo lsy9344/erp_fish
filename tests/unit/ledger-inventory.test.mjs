@@ -2365,6 +2365,13 @@ test("inventory purchase price DTO and UI expose only the approved nested field"
     querySource,
     /previousQuantityDetail\.source === "OPENING_SNAPSHOT"[\s\S]*kind: "OPENING"[\s\S]*yearMonth:[\s\S]*unitPrice: item\.unitPrice/,
   );
+  // WO-25(2026-07-25) #1: 매입행이 없어도 전일 이월(PREVIOUS_*_LEDGER)이면 이월 단가를 fallback으로 노출.
+  assert.match(
+    querySource,
+    /source === "PREVIOUS_CLOSED_LEDGER"[\s\S]*source === "PREVIOUS_SAVED_LEDGER"[\s\S]*sourceLedgerClosingDate[\s\S]*kind: "CARRYOVER"[\s\S]*unitPrice: item\.unitPrice/,
+  );
+  assert.match(componentSource, /kind === "CARRYOVER"/);
+  assert.match(componentSource, /이월 재고단가/);
   assert.doesNotMatch(safeMapperSource, /unitPrice:\s*item\.unitPrice/);
   assert.doesNotMatch(
     safeMapperSource,
@@ -2850,6 +2857,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /월초 스냅샷 수량/);
   assert.match(componentSource, /getCarryoverQuantityTimeline/);
   assert.match(componentSource, /이전 날짜 재고 이력/);
+  // WO-25(2026-07-25) #2: 남아있는 재고(기준재고) 클릭 → FIFO 매입 이력 팝업.
+  assert.match(componentSource, /setSelectedFifoLotItem\(item\)/);
+  assert.match(componentSource, /FIFO 매입 이력 보기/);
+  assert.match(componentSource, /inventoryTerms\.fifoLotHistoryTitle/);
+  assert.match(componentSource, /inventoryTerms\.fifoLotEmpty/);
+  // 본사(hasSensitiveInventoryAmounts)만 단가/잔량금액 컬럼을 본다. 지점장은 입고일+잔량만.
+  assert.match(componentSource, /inventoryTerms\.fifoLotUnitPrice/);
+  assert.match(componentSource, /inventoryTerms\.fifoLotRemainingAmount/);
+  assert.match(componentSource, /formatKrw\(lot\.unitPrice\)/);
+  assert.match(componentSource, /formatKrw\(lot\.remainingAmount\)/);
   assert.match(componentSource, /h-\[min\(90vh,42rem\)\]/);
   assert.match(componentSource, /grid-rows-\[auto_minmax\(0,1fr\)\]/);
   assert.match(componentSource, /overflow-hidden/);

@@ -56,8 +56,12 @@ Use this checklist before production deployment.
   bulk closing, monthly fixed-cost profit/loss, HR/payroll, external
   notifications, AI analysis, or operations-contract automation are included as
   completed product scope before policy approval.
-- Do not approve release if `ENABLE_HR_PREVIEW=true` is enabled without the
-  employee/payroll policy approval record.
+- The `ENABLE_HR_PREVIEW` flag was removed 2026-07-25 after policy 8.1 was
+  approved for its CAP-1 minimal scope (employee master + daily wage/desired
+  insurance-cash split reference fields). Do not approve release if employee
+  management scope expands beyond that approval (CAP-9 per-employee work
+  selection, payroll export, or actual payment confirmation) without a new
+  policy approval record.
 
 ## Go/No-Go
 

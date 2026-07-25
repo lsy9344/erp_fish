@@ -202,11 +202,14 @@ test("employees page passes write-permission flag to management client", () => {
   assert.match(clientSource, /if\s*\(!canManage\)/);
 });
 
-test("headquarters sidebar keeps employee management out of release navigation until policy approval", () => {
+// WO-25(2026-07-25) #6: 정책 8.1이 CAP-1 최소 구현 범위로 승인되어(PM 겸 본사 운영자 권한,
+// 2026-07-25) 직원 관리가 인건비 메뉴 영역에 노출된다. CAP-9(근무 선택/집계)와 실제 지급
+// 확정은 여전히 별도 승인 전까지 차단 상태로 남는다.
+test("headquarters sidebar exposes employee management after 2026-07-25 policy approval", () => {
   const sidebarSource = readProjectFile("src", "components", "app-sidebar.tsx");
 
-  assert.doesNotMatch(sidebarSource, /label:\s*"직원 관리"/);
-  assert.doesNotMatch(sidebarSource, /href:\s*"\/app\/labor\/employees"/);
+  assert.match(sidebarSource, /label:\s*"직원 관리"/);
+  assert.match(sidebarSource, /href:\s*"\/app\/labor\/employees"/);
 
   const policySource = readProjectFile(
     "_bmad-output",
@@ -214,10 +217,12 @@ test("headquarters sidebar keeps employee management out of release navigation u
     "policy-decisions",
     "8-1-직원-근무-급여-참고-범위와-개인정보-기준.md",
   );
-  assert.match(policySource, /승인 상태 \| 승인 대기/);
+  assert.match(policySource, /승인 상태 \| 승인 완료/);
+  // CAP-9(신규 근무 선택 모델)과 지급 확정은 이번 승격 범위 밖임을 문서가 계속 명시해야 한다.
+  assert.match(policySource, /CAP-9\(직원별 근무 선택\/집계\)와 실제 지급 확정은 여전히 별도 승인/);
 });
 
-test("employees page is hidden behind an explicit HR preview flag", () => {
+test("employees page is available without a preview flag after policy approval", () => {
   const pageSource = readProjectFile(
     "src",
     "app",
@@ -227,8 +232,8 @@ test("employees page is hidden behind an explicit HR preview flag", () => {
     "page.tsx",
   );
 
-  assert.match(pageSource, /notFound/);
-  assert.match(pageSource, /ENABLE_HR_PREVIEW/);
+  assert.doesNotMatch(pageSource, /notFound/);
+  assert.doesNotMatch(pageSource, /ENABLE_HR_PREVIEW/);
   assert.match(pageSource, /EmployeeManagementClient/);
 });
 

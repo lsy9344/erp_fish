@@ -2032,6 +2032,23 @@ export async function getHqMonthlyClosingAnomalyReport({
     });
   }
 
+  // WO-25(2026-07-25) #7: 인건비 KPI 카드용 합계. 월별손익(monthly-profit-loss.ts)과
+  // 동일한 마감 상태 필터(IN_REVIEW/HEADQUARTERS_CLOSED)로 일관성 유지.
+  const laborAggregate = await db.ledgerLaborItem.aggregate({
+    where: {
+      dailyLedger: {
+        storeId: selectedStore.id,
+        closingDate: {
+          gte: monthRange.startDate,
+          lte: monthRange.endDate,
+        },
+        status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+      },
+    },
+    _sum: { amount: true },
+  });
+  const laborAmount = laborAggregate._sum.amount ?? 0;
+
   const rawLedgers = await db.dailyLedger.findMany({
     where: {
       storeId: selectedStore.id,
@@ -2215,6 +2232,7 @@ export async function getHqMonthlyClosingAnomalyReport({
     categoryPerformance: buildProductCategoryPerformance(
       ledgersWithPlannedPrice,
     ),
+    laborAmount,
   });
 }
 
@@ -2295,6 +2313,7 @@ export function buildMonthlyClosingAnomalyReportForTest({
   ledgerSummaries,
   errorMessages = [],
   categoryPerformance = [],
+  laborAmount = 0,
 }: {
   store: ReportStoreRecord;
   stores?: ReportStoreRecord[];
@@ -2304,6 +2323,7 @@ export function buildMonthlyClosingAnomalyReportForTest({
   ledgerSummaries: MonthlyClosingAnomalyLedgerSummaryForTest[];
   errorMessages?: string[];
   categoryPerformance?: ProductCategoryPerformance[];
+  laborAmount?: number;
 }): MonthlyClosingAnomalyReportData {
   const ledgerSummaryByDateInput = new Map(
     ledgerSummaries.map((summary) => [summary.dateInput, summary]),
@@ -2347,7 +2367,7 @@ export function buildMonthlyClosingAnomalyReportForTest({
     statusCounts,
     unfinishedDayCount,
     hasUnfinishedDays: unfinishedDayCount > 0,
-    monthlyKpis: buildMonthlyKpis(ledgerSummaries),
+    monthlyKpis: { ...buildMonthlyKpis(ledgerSummaries), laborAmount },
     monthlyLossSummary: buildMonthlyLossSummary(ledgerSummaries),
     monthlyInventoryFlow: buildMonthlyInventoryFlow(ledgerSummaries),
     topRevenueItem: buildMonthlyTopRevenueItemSummary(),
@@ -2384,7 +2404,7 @@ function buildEmptyMonthlyClosingAnomalyReport({
     },
     unfinishedDayCount: 0,
     hasUnfinishedDays: false,
-    monthlyKpis: buildMonthlyKpis([]),
+    monthlyKpis: { ...buildMonthlyKpis([]), laborAmount: 0 },
     monthlyLossSummary: buildMonthlyLossSummary([]),
     monthlyInventoryFlow: buildMonthlyInventoryFlow([]),
     topRevenueItem: buildMonthlyTopRevenueItemSummary(),
