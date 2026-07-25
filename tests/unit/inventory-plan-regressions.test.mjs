@@ -137,6 +137,11 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
     },
     ledgerPurchaseItem: { findMany: unexpectedRead },
     ledgerLossItem: { findMany: unexpectedRead },
+    // 품목 금액은 왕복 수를 품목 수와 분리하려고 벌크 UPDATE 한 번으로 쓴다.
+    $executeRawUnsafe: async (sql, ...params) => {
+      inventoryUpdates.push({ sql, params });
+      return 1;
+    },
   };
   const fifo = {
     lots: [
@@ -166,12 +171,9 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
     new Map([["product-1", { purchasedQuantity: 0, fifo }]]),
   );
 
-  assert.deepEqual(inventoryUpdates, [
-    {
-      where: { id: "inventory-item" },
-      data: { purchasedQuantity: 0, inventoryAmount: 100 },
-    },
-  ]);
+  assert.equal(inventoryUpdates.length, 1);
+  assert.match(inventoryUpdates[0].sql, /UPDATE "LedgerInventoryItem"/);
+  assert.deepEqual(inventoryUpdates[0].params, ["inventory-item", "0", 100]);
   assert.equal(createdLots.length, 1);
   assert.equal(createdLots[0].ledgerInventoryItemId, "inventory-item");
   assert.equal(createdLots[0].remainingAmount, 100);

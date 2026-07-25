@@ -2996,10 +2996,12 @@ test("ledger loss save reconciles inventory adjustments affected by loss totals"
   );
 });
 
-// 원격 DB(Neon) 왕복이 품목 수만큼 곱해지면 재고 저장 트랜잭션이 30s 타임아웃(P2028)으로
+// 원격 DB(Neon) 왕복이 품목 수만큼 늘어나면 재고 저장 트랜잭션이 30s 타임아웃(P2028)으로
 // 롤백되고, 지점장 3단계는 "저장 중"에서 멈춘 채 "다음 단계로"가 나타나지 않는다.
-// 품목별 update/upsert를 다시 순차 await로 되돌리면 이 테스트가 깨진다.
-test("FIFO lot refresh issues item updates in one batch, not one round trip per item", async () => {
+// Prisma는 인터랙티브 트랜잭션 안의 동시 요청을 한 왕복으로 묶지 않으므로 Promise.all로는
+// 부족하다(프로덕션 측정: 41행 순차 9.1s / Promise.all 8.3s / 단일 statement 0.8s).
+// 품목별 update로 되돌리면 이 테스트가 깨진다.
+test("FIFO lot refresh writes item amounts in one bulk statement, not one query per item", async () => {
   const fifoPath = assertProjectFile(
     "src",
     "features",
@@ -3020,21 +3022,22 @@ test("FIFO lot refresh issues item updates in one batch, not one round trip per 
     quantity: null,
     carryoverLedgerId: null,
   }));
-  let pendingUpdates = 0;
-  let maxPendingUpdates = 0;
+  let perItemUpdateCount = 0;
+  const rawCalls = [];
   const tx = {
     ledgerInventoryItem: {
       findMany: async () => items,
       update: async () => {
-        pendingUpdates += 1;
-        maxPendingUpdates = Math.max(maxPendingUpdates, pendingUpdates);
-        await new Promise((resolve) => setImmediate(resolve));
-        pendingUpdates -= 1;
+        perItemUpdateCount += 1;
       },
     },
     ledgerInventoryFifoLot: {
       deleteMany: async () => ({ count: 0 }),
       createMany: async () => ({ count: 0 }),
+    },
+    $executeRawUnsafe: async (sql, ...params) => {
+      rawCalls.push({ sql, params });
+      return itemCount;
     },
   };
   const snapshots = new Map(
@@ -3050,13 +3053,30 @@ test("FIFO lot refresh issues item updates in one batch, not one round trip per 
   await refreshLedgerInventoryFifoLots(tx, "ledger-1", snapshots);
 
   assert.equal(
-    maxPendingUpdates,
-    itemCount,
-    "every item update should be in flight together so the transaction costs one round trip, not one per item",
+    perItemUpdateCount,
+    0,
+    "per-item update calls cost one round trip each",
   );
+  assert.equal(
+    rawCalls.length,
+    1,
+    "all item amounts should land in a single bulk statement regardless of item count",
+  );
+  assert.match(rawCalls[0].sql, /UPDATE "LedgerInventoryItem"/);
+  assert.match(
+    rawCalls[0].sql,
+    /"updatedAt" = now\(\)/,
+    "raw SQL bypasses Prisma @updatedAt, so updatedAt must be set explicitly",
+  );
+  assert.equal(
+    rawCalls[0].params.length,
+    itemCount * 3,
+    "every value must travel as a bound parameter, never interpolated into SQL",
+  );
+  assert.equal(rawCalls[0].params[0], "item-0");
 });
 
-test("inventory sales price plan upsert is batched, not awaited per item", () => {
+test("inventory sales price plan upsert avoids one query per item", () => {
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -3070,8 +3090,18 @@ test("inventory sales price plan upsert is batched, not awaited per item", () =>
 
   assert.match(
     helper,
-    /await Promise\.all\(\s*input\.items\.map\(/,
-    "plan upserts should be sent as one batch to stay inside the transaction timeout",
+    /UPDATE "StoreSalesPricePlan"/,
+    "existing plans should be patched by one bulk statement",
+  );
+  assert.match(
+    helper,
+    /storeSalesPricePlan\.createMany\(/,
+    "new plans should be inserted by one createMany, which also keeps cuid defaults",
+  );
+  assert.doesNotMatch(
+    helper,
+    /storeSalesPricePlan\.upsert\(/,
+    "per-item upsert costs one round trip each, even inside Promise.all",
   );
   assert.doesNotMatch(
     helper,

@@ -190,34 +190,74 @@ async function upsertInventorySalesPricePlansInTx(
     actorId: string;
   },
 ) {
-  // 품목별 upsert를 순차 await하면 DB 왕복이 품목 수만큼 곱해진다. 원격 DB(Neon)에서는
-  // 41품목 = 41왕복 = 약 10초로, 저장 트랜잭션이 30s 타임아웃(P2028)을 넘기는 주원인이었다.
-  // 대상 키(storeId+businessDate+productId)가 서로 달라 순서 의존이 없으므로 한 배치로 보낸다.
-  await Promise.all(
-    input.items.map((item) =>
-      tx.storeSalesPricePlan.upsert({
-        where: {
-          storeId_businessDate_productId: {
-            storeId: input.storeId,
-            businessDate: input.businessDate,
-            productId: item.productId,
-          },
-        },
-        update: {
-          plannedUnitPrice: item.plannedUnitPrice,
-          updatedById: input.actorId,
-        },
-        create: {
-          storeId: input.storeId,
-          businessDate: input.businessDate,
-          productId: item.productId,
-          plannedUnitPrice: item.plannedUnitPrice,
-          createdById: input.actorId,
-          updatedById: input.actorId,
-        },
-      }),
-    ),
+  if (input.items.length === 0) {
+    return;
+  }
+
+  // 품목별 upsert를 개별 호출하면 DB 왕복이 품목 수만큼 늘어난다. Prisma는 인터랙티브
+  // 트랜잭션 안의 동시 요청을 한 왕복으로 묶어주지 않으므로 Promise.all도 소용없다
+  // (프로덕션 Neon 측정: 41건 순차 9.1s / Promise.all 8.3s / 단일 statement 0.8s).
+  // 저장 트랜잭션이 30s 타임아웃(P2028)을 넘기는 주원인이었다. 조회 1회 + 벌크 UPDATE
+  // 1회 + createMany 1회로 품목 수와 무관하게 왕복 3회로 고정한다.
+  const existingPlans = await tx.storeSalesPricePlan.findMany({
+    where: {
+      storeId: input.storeId,
+      businessDate: input.businessDate,
+      productId: { in: input.items.map((item) => item.productId) },
+    },
+    select: { productId: true },
+  });
+  const existingProductIds = new Set(
+    existingPlans.map((plan) => plan.productId),
   );
+  const plansToUpdate = input.items.filter((item) =>
+    existingProductIds.has(item.productId),
+  );
+  const plansToCreate = input.items.filter(
+    (item) => !existingProductIds.has(item.productId),
+  );
+
+  if (plansToUpdate.length > 0) {
+    // 자리표시자는 배열 길이로만 만들고 값은 전부 바인딩 파라미터다(입력값이 SQL에
+    // 섞이지 않는다). SET 목록을 plannedUnitPrice/updatedById/updatedAt으로 한정해
+    // memo·createdAt·createdById를 건드리지 않는 기존 patch-only 계약을 유지한다.
+    const rowValues = plansToUpdate
+      .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2}::int)`)
+      .join(", ");
+    const tailIndex = plansToUpdate.length * 2;
+
+    await tx.$executeRawUnsafe(
+      `UPDATE "StoreSalesPricePlan" AS plan
+          SET "plannedUnitPrice" = source."plannedUnitPrice",
+              "updatedById" = $${tailIndex + 1},
+              "updatedAt" = now()
+         FROM (VALUES ${rowValues})
+           AS source("productId", "plannedUnitPrice")
+        WHERE plan."storeId" = $${tailIndex + 2}
+          AND plan."businessDate" = $${tailIndex + 3}
+          AND plan."productId" = source."productId"`,
+      ...plansToUpdate.flatMap((item) => [
+        item.productId,
+        item.plannedUnitPrice,
+      ]),
+      input.actorId,
+      input.storeId,
+      input.businessDate,
+    );
+  }
+
+  if (plansToCreate.length > 0) {
+    await tx.storeSalesPricePlan.createMany({
+      data: plansToCreate.map((item) => ({
+        storeId: input.storeId,
+        businessDate: input.businessDate,
+        productId: item.productId,
+        plannedUnitPrice: item.plannedUnitPrice,
+        createdById: input.actorId,
+        updatedById: input.actorId,
+      })),
+    });
+  }
 }
 
 function parseLedgerInventoryInput(
@@ -366,337 +406,351 @@ export async function saveLedgerInventoryItems(
   }
 
   try {
-    const result = await db.$transaction(async (tx) => {
-      const before = await getInventoryStepDataInTx(
-        tx,
-        parsed.data.storeId,
-        parsed.data.closingDate,
-        actor.user.id,
-      );
-
-      if (
-        before.id !== parsed.data.ledgerId ||
-        before.version !== parsed.data.version
-      ) {
-        throw new Error("LEDGER_CONFLICT");
-      }
-
-      if (!isLedgerEditable(before.status)) {
-        throw originalInventoryBlockedError(before.status);
-      }
-
-      const inputItems = parsed.data.items;
-      const inputByProductId = new Map(
-        inputItems.map((item) => [item.productId, item]),
-      );
-      const existingProductIds = new Set(
-        before.items.map((item) => item.productId),
-      );
-      const manualProductIds = [
-        ...new Set(
-          inputItems
-            .filter((item) => !existingProductIds.has(item.productId))
-            .map((item) => item.productId),
-        ),
-      ];
-      const activeManualProducts =
-        manualProductIds.length === 0
-          ? []
-          : await tx.product.findMany({
-              where: { id: { in: manualProductIds }, isActive: true },
-              select: { id: true },
-            });
-      const targetErrors = getInventoryTargetErrors(
-        existingProductIds,
-        inputItems,
-        new Set(activeManualProducts.map((product) => product.id)),
-        new Set(
-          before.items
-            .filter(isHiddenZeroStockInventoryItem)
-            .map((item) => item.productId),
-        ),
-      );
-
-      if (Object.keys(targetErrors).length > 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          invalidInventoryTargetMessage,
-          targetErrors,
+    const result = await db.$transaction(
+      async (tx) => {
+        const before = await getInventoryStepDataInTx(
+          tx,
+          parsed.data.storeId,
+          parsed.data.closingDate,
+          actor.user.id,
         );
-      }
-
-      const amountErrors = getInventoryAmountErrors(before.items, inputItems);
-
-      if (Object.keys(amountErrors).length > 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          invalidInventoryAmountMessage,
-          amountErrors,
-        );
-      }
-
-      // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
-      // 오류 인덱스는 제출 품목 순서에 맞추고, 미제출 필수 품목도 차단한다.
-      const requiredEntryErrors = getInventorySaveRequiredEntryErrors(
-        before.items,
-        inputItems,
-      );
-
-      if (Object.keys(requiredEntryErrors).length > 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          missingRequiredCurrentQuantityMessage,
-          requiredEntryErrors,
-        );
-      }
-
-      const lossReview = await tx.dailyLedger.findUnique({
-        where: { id: before.id },
-        select: { lossReviewedAt: true },
-      });
-
-      if (!lossReview?.lossReviewedAt) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          missingLossReviewMessage,
-        );
-      }
-
-      const beforeByProductId = new Map(
-        before.items.map((item) => [item.productId, item]),
-      );
-      const adjustmentErrors = getInventorySaveAdjustmentErrors(
-        inputItems.map((inputItem) => {
-          const beforeItem = beforeByProductId.get(inputItem.productId);
-
-          if (!beforeItem) {
-            return {
-              productId: inputItem.productId,
-              previousQuantity: 0,
-              purchasedQuantity: 0,
-              lossQuantity: 0,
-              carryoverSource: "MANUAL",
-              carryoverStatus: "CARRYOVER_EMPTY",
-              carryoverLedgerId: null,
-              currentQuantity: inputItem.currentQuantity,
-            };
-          }
-
-          return {
-            productId: beforeItem.productId,
-            previousQuantity: beforeItem.previousQuantity,
-            purchasedQuantity: beforeItem.purchasedQuantity,
-            lossQuantity: beforeItem.lossQuantity,
-            carryoverSource: beforeItem.carryoverSource,
-            carryoverStatus: beforeItem.carryoverStatus,
-            carryoverLedgerId: beforeItem.carryoverLedgerId,
-            currentQuantity:
-              inputItem.currentQuantity ?? beforeItem.currentQuantity,
-          };
-        }),
-        before.items
-          .filter((item) => item.adjustment !== null)
-          .map((item) => ({
-            productId: item.productId,
-            afterQuantity: item.adjustment!.afterQuantity,
-          })),
-        new Map(
-          parsed.data.items.map((item) => [
-            item.productId,
-            item.adjustmentReason,
-          ]),
-        ),
-      );
-
-      if (Object.keys(adjustmentErrors).length > 0) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          missingAdjustmentReasonMessage,
-          adjustmentErrors,
-        );
-      }
-
-      const manualUnitPriceErrors = getManualInventoryUnitPriceErrors(
-        existingProductIds,
-        parsed.data.items,
-      );
-      const manualUnitPriceError = Object.values(manualUnitPriceErrors)[0]?.[0];
-
-      if (manualUnitPriceError) {
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          manualUnitPriceError,
-          manualUnitPriceErrors,
-        );
-      }
-
-      // CAS 전에 최종 저장 행을 확정한다. 이후 validation이 실패해도 version/재고/계획/
-      // 손실/audit 중 어느 것도 변경되지 않는다.
-      const rowsToPersist = before.items.flatMap((item) => {
-        const inputItem = inputByProductId.get(item.productId);
-        const currentQuantity =
-          inputItem?.currentQuantity ?? item.currentQuantity;
-        const quantity = inputItem?.quantity ?? item.quantity;
 
         if (
-          !shouldPersistInventoryLine(item, currentQuantity, quantity, {
-            hasExplicitCurrentQuantityInput:
-              inputItem?.currentQuantity !== null &&
-              inputItem?.currentQuantity !== undefined,
-          })
+          before.id !== parsed.data.ledgerId ||
+          before.version !== parsed.data.version
         ) {
-          return [];
+          throw new Error("LEDGER_CONFLICT");
         }
 
-        return [
-          {
-            dailyLedgerId: before.id,
-            productId: item.productId,
-            productName: item.productName,
-            productCategory: item.productCategory,
-            productSpec: item.productSpec,
-            unitPrice: item.unitPrice,
-            previousQuantity: item.previousQuantity,
-            purchasedQuantity: item.purchasedQuantity,
-            currentQuantity,
-            quantity,
-            inventoryAmount: calculateInventoryAmount(quantity, item.unitPrice),
-            isModified:
-              (currentQuantity !== null &&
-                currentQuantity !== item.previousQuantity) ||
-              (quantity !== null && quantity !== item.previousQuantity),
-            carryoverSource: item.carryoverSource,
-            carryoverStatus: item.carryoverStatus,
-            carryoverLedgerId: item.carryoverLedgerId,
-            createdById: actor.user.id,
-            updatedById: actor.user.id,
-          },
+        if (!isLedgerEditable(before.status)) {
+          throw originalInventoryBlockedError(before.status);
+        }
+
+        const inputItems = parsed.data.items;
+        const inputByProductId = new Map(
+          inputItems.map((item) => [item.productId, item]),
+        );
+        const existingProductIds = new Set(
+          before.items.map((item) => item.productId),
+        );
+        const manualProductIds = [
+          ...new Set(
+            inputItems
+              .filter((item) => !existingProductIds.has(item.productId))
+              .map((item) => item.productId),
+          ),
         ];
-      });
-      const manualRows = await buildManualInventoryRows(
-        tx,
-        before.id,
-        existingProductIds,
-        inputItems,
-        actor.user.id,
-      );
-      rowsToPersist.push(...manualRows);
-
-      const businessDate = getKstBusinessDate(parsed.data.closingDate);
-      const fifoPreflight =
-        await getLedgerInventoryFifoAmountErrorProductIdsInTx(
-          tx,
-          before.id,
-          businessDate,
-          rowsToPersist,
-        );
-
-      if (fifoPreflight.invalidProductIds.length > 0) {
-        const invalidProductIds = new Set(fifoPreflight.invalidProductIds);
-        const fifoAmountErrors = Object.fromEntries(
-          inputItems.flatMap((item, index) =>
-            invalidProductIds.has(item.productId)
-              ? [[`items.${index}.quantity`, [invalidInventoryAmountMessage]]]
-              : [],
+        const activeManualProducts =
+          manualProductIds.length === 0
+            ? []
+            : await tx.product.findMany({
+                where: { id: { in: manualProductIds }, isActive: true },
+                select: { id: true },
+              });
+        const targetErrors = getInventoryTargetErrors(
+          existingProductIds,
+          inputItems,
+          new Set(activeManualProducts.map((product) => product.id)),
+          new Set(
+            before.items
+              .filter(isHiddenZeroStockInventoryItem)
+              .map((item) => item.productId),
           ),
         );
 
-        return actionError<StoreManagerInventoryStepData>(
-          "VALIDATION_ERROR",
-          invalidInventoryAmountMessage,
-          fifoAmountErrors,
+        if (Object.keys(targetErrors).length > 0) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            invalidInventoryTargetMessage,
+            targetErrors,
+          );
+        }
+
+        const amountErrors = getInventoryAmountErrors(before.items, inputItems);
+
+        if (Object.keys(amountErrors).length > 0) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            invalidInventoryAmountMessage,
+            amountErrors,
+          );
+        }
+
+        // 매입·손실 품목의 당일재고 미입력을 서버에서도 막는다(UI 우회·직접 호출 방어).
+        // 오류 인덱스는 제출 품목 순서에 맞추고, 미제출 필수 품목도 차단한다.
+        const requiredEntryErrors = getInventorySaveRequiredEntryErrors(
+          before.items,
+          inputItems,
         );
-      }
 
-      const editableLedger = await tx.dailyLedger.updateMany({
-        where: {
-          id: before.id,
-          version: parsed.data.version,
-          status: { in: [...editableLedgerStatuses] },
-        },
-        data: { updatedById: actor.user.id, version: { increment: 1 } },
-      });
+        if (Object.keys(requiredEntryErrors).length > 0) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            missingRequiredCurrentQuantityMessage,
+            requiredEntryErrors,
+          );
+        }
 
-      if (editableLedger.count !== 1) {
-        throw new Error("LEDGER_CONFLICT");
-      }
-
-      await tx.ledgerInventoryItem.deleteMany({
-        where: { dailyLedgerId: before.id },
-      });
-
-      if (rowsToPersist.length > 0) {
-        await tx.ledgerInventoryItem.createMany({
-          data: rowsToPersist,
+        const lossReview = await tx.dailyLedger.findUnique({
+          where: { id: before.id },
+          select: { lossReviewedAt: true },
         });
-        await persistLedgerInventoryCarryoverDetails(
-          tx,
-          before.id,
-          before.items.filter((item) =>
-            rowsToPersist.some((row) => row.productId === item.productId),
+
+        if (!lossReview?.lossReviewedAt) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            missingLossReviewMessage,
+          );
+        }
+
+        const beforeByProductId = new Map(
+          before.items.map((item) => [item.productId, item]),
+        );
+        const adjustmentErrors = getInventorySaveAdjustmentErrors(
+          inputItems.map((inputItem) => {
+            const beforeItem = beforeByProductId.get(inputItem.productId);
+
+            if (!beforeItem) {
+              return {
+                productId: inputItem.productId,
+                previousQuantity: 0,
+                purchasedQuantity: 0,
+                lossQuantity: 0,
+                carryoverSource: "MANUAL",
+                carryoverStatus: "CARRYOVER_EMPTY",
+                carryoverLedgerId: null,
+                currentQuantity: inputItem.currentQuantity,
+              };
+            }
+
+            return {
+              productId: beforeItem.productId,
+              previousQuantity: beforeItem.previousQuantity,
+              purchasedQuantity: beforeItem.purchasedQuantity,
+              lossQuantity: beforeItem.lossQuantity,
+              carryoverSource: beforeItem.carryoverSource,
+              carryoverStatus: beforeItem.carryoverStatus,
+              carryoverLedgerId: beforeItem.carryoverLedgerId,
+              currentQuantity:
+                inputItem.currentQuantity ?? beforeItem.currentQuantity,
+            };
+          }),
+          before.items
+            .filter((item) => item.adjustment !== null)
+            .map((item) => ({
+              productId: item.productId,
+              afterQuantity: item.adjustment!.afterQuantity,
+            })),
+          new Map(
+            parsed.data.items.map((item) => [
+              item.productId,
+              item.adjustmentReason,
+            ]),
           ),
         );
-      }
 
-      // 지점장이 일반 저장과 함께 보낸 "고친 이유"로 조정 레코드를 만든다(차이 행 한정).
-      await applyInventoryAdjustmentReasonsInTx(
-        tx,
-        before.id,
-        new Map(
-          parsed.data.items.map((item) => [
-            item.productId,
-            item.adjustmentReason,
-          ]),
-        ),
-        actor.user.id,
-      );
+        if (Object.keys(adjustmentErrors).length > 0) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            missingAdjustmentReasonMessage,
+            adjustmentErrors,
+          );
+        }
 
-      await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
+        const manualUnitPriceErrors = getManualInventoryUnitPriceErrors(
+          existingProductIds,
+          parsed.data.items,
+        );
+        const manualUnitPriceError = Object.values(
+          manualUnitPriceErrors,
+        )[0]?.[0];
 
-      // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
-      await refreshLedgerInventoryFifoLots(
-        tx,
-        before.id,
-        fifoPreflight.snapshotsByProductId,
-      );
+        if (manualUnitPriceError) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            manualUnitPriceError,
+            manualUnitPriceErrors,
+          );
+        }
 
-      await upsertInventorySalesPricePlansInTx(tx, {
-        storeId: parsed.data.storeId,
-        businessDate,
-        items: inputItems,
-        actorId: actor.user.id,
-      });
-      await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
-        storeId: parsed.data.storeId,
-        businessDate,
-        dailyLedgerId: before.id,
-        productIds: inputItems.map((item) => item.productId),
-        actorId: actor.user.id,
-      });
+        // CAS 전에 최종 저장 행을 확정한다. 이후 validation이 실패해도 version/재고/계획/
+        // 손실/audit 중 어느 것도 변경되지 않는다.
+        const rowsToPersist = before.items.flatMap((item) => {
+          const inputItem = inputByProductId.get(item.productId);
+          const currentQuantity =
+            inputItem?.currentQuantity ?? item.currentQuantity;
+          const quantity = inputItem?.quantity ?? item.quantity;
 
-      const after = await getInventoryStepDataInTx(
-        tx,
-        parsed.data.storeId,
-        parsed.data.closingDate,
-        actor.user.id,
-      );
+          if (
+            !shouldPersistInventoryLine(item, currentQuantity, quantity, {
+              hasExplicitCurrentQuantityInput:
+                inputItem?.currentQuantity !== null &&
+                inputItem?.currentQuantity !== undefined,
+            })
+          ) {
+            return [];
+          }
 
-      await writeAuditLog(tx, {
-        action: "ledger.inventory.saved",
-        targetType: "DailyLedger",
-        targetId: before.id,
-        actorId: actor.user.id,
-        before,
-        after,
-      });
+          return [
+            {
+              dailyLedgerId: before.id,
+              productId: item.productId,
+              productName: item.productName,
+              productCategory: item.productCategory,
+              productSpec: item.productSpec,
+              unitPrice: item.unitPrice,
+              previousQuantity: item.previousQuantity,
+              purchasedQuantity: item.purchasedQuantity,
+              currentQuantity,
+              quantity,
+              inventoryAmount: calculateInventoryAmount(
+                quantity,
+                item.unitPrice,
+              ),
+              isModified:
+                (currentQuantity !== null &&
+                  currentQuantity !== item.previousQuantity) ||
+                (quantity !== null && quantity !== item.previousQuantity),
+              carryoverSource: item.carryoverSource,
+              carryoverStatus: item.carryoverStatus,
+              carryoverLedgerId: item.carryoverLedgerId,
+              createdById: actor.user.id,
+              updatedById: actor.user.id,
+            },
+          ];
+        });
+        const manualRows = await buildManualInventoryRows(
+          tx,
+          before.id,
+          existingProductIds,
+          inputItems,
+          actor.user.id,
+        );
+        rowsToPersist.push(...manualRows);
 
-      // Audit keeps exact-date values. Store-manager form response applies the
-      // zero-stock display policy so hidden rows do not reappear after save.
-      return toStoreManagerInventoryStepDataInTx(
-        tx,
-        applyInventoryFormDisplayPolicy(after),
-      );
-    });
+        const businessDate = getKstBusinessDate(parsed.data.closingDate);
+        const fifoPreflight =
+          await getLedgerInventoryFifoAmountErrorProductIdsInTx(
+            tx,
+            before.id,
+            businessDate,
+            rowsToPersist,
+          );
+
+        if (fifoPreflight.invalidProductIds.length > 0) {
+          const invalidProductIds = new Set(fifoPreflight.invalidProductIds);
+          const fifoAmountErrors = Object.fromEntries(
+            inputItems.flatMap((item, index) =>
+              invalidProductIds.has(item.productId)
+                ? [[`items.${index}.quantity`, [invalidInventoryAmountMessage]]]
+                : [],
+            ),
+          );
+
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            invalidInventoryAmountMessage,
+            fifoAmountErrors,
+          );
+        }
+
+        const editableLedger = await tx.dailyLedger.updateMany({
+          where: {
+            id: before.id,
+            version: parsed.data.version,
+            status: { in: [...editableLedgerStatuses] },
+          },
+          data: { updatedById: actor.user.id, version: { increment: 1 } },
+        });
+
+        if (editableLedger.count !== 1) {
+          throw new Error("LEDGER_CONFLICT");
+        }
+
+        await tx.ledgerInventoryItem.deleteMany({
+          where: { dailyLedgerId: before.id },
+        });
+
+        if (rowsToPersist.length > 0) {
+          await tx.ledgerInventoryItem.createMany({
+            data: rowsToPersist,
+          });
+          await persistLedgerInventoryCarryoverDetails(
+            tx,
+            before.id,
+            before.items.filter((item) =>
+              rowsToPersist.some((row) => row.productId === item.productId),
+            ),
+          );
+        }
+
+        // 지점장이 일반 저장과 함께 보낸 "고친 이유"로 조정 레코드를 만든다(차이 행 한정).
+        await applyInventoryAdjustmentReasonsInTx(
+          tx,
+          before.id,
+          new Map(
+            parsed.data.items.map((item) => [
+              item.productId,
+              item.adjustmentReason,
+            ]),
+          ),
+          actor.user.id,
+        );
+
+        await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
+
+        // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(
+          tx,
+          before.id,
+          fifoPreflight.snapshotsByProductId,
+        );
+
+        await upsertInventorySalesPricePlansInTx(tx, {
+          storeId: parsed.data.storeId,
+          businessDate,
+          items: inputItems,
+          actorId: actor.user.id,
+        });
+        await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
+          storeId: parsed.data.storeId,
+          businessDate,
+          dailyLedgerId: before.id,
+          productIds: inputItems.map((item) => item.productId),
+          actorId: actor.user.id,
+        });
+
+        const after = await getInventoryStepDataInTx(
+          tx,
+          parsed.data.storeId,
+          parsed.data.closingDate,
+          actor.user.id,
+        );
+
+        await writeAuditLog(tx, {
+          action: "ledger.inventory.saved",
+          targetType: "DailyLedger",
+          targetId: before.id,
+          actorId: actor.user.id,
+          before,
+          after,
+        });
+
+        // Audit keeps exact-date values. Store-manager form response applies the
+        // zero-stock display policy so hidden rows do not reappear after save.
+        return toStoreManagerInventoryStepDataInTx(
+          tx,
+          applyInventoryFormDisplayPolicy(after),
+        );
+      },
+      // 벌크 쓰기로 왕복을 120→65회로 줄인 뒤에도 41품목 장부 실측이 24.5초다(원격
+      // Neon, 왕복 약 190ms). 전역 기본값 30s와 5.5초 차이라 품목이 조금만 늘어도 다시
+      // P2028로 죽는다. db.ts 주석의 안내대로 이 호출만 넉넉히 올려 실패 모드를 없앤다.
+      // ponytail: 남은 24.5초 중 14.9초가 before/after 재조회 두 번(44쿼리)이다. 근본
+      // 개선은 queries.ts의 매입이력 스캔(비활성 품목 303개까지 344 productId를 하한
+      // 날짜 없이 조회)을 좁히고, after 재조회+감사 로그를 트랜잭션 밖으로 빼는 것.
+      { timeout: 60_000 },
+    );
 
     if ("ok" in result) {
       return result;

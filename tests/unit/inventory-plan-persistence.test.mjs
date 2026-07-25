@@ -72,12 +72,24 @@ test("inventory plan persistence is patch-only and preserves plan metadata", asy
     source.indexOf("function parseLedgerInventoryInput"),
   );
 
-  assert.match(helper, /storeSalesPricePlan\.upsert\(/);
   assert.doesNotMatch(helper, /storeSalesPricePlan\.delete/);
-  assert.match(helper, /update:\s*\{\s*plannedUnitPrice:/);
-  assert.doesNotMatch(helper, /update:\s*\{[^}]*memo:/s);
-  assert.doesNotMatch(helper, /update:\s*\{[^}]*createdById:/s);
-  assert.doesNotMatch(helper, /update:\s*\{[^}]*createdAt:/s);
+
+  // 왕복 수를 품목 수와 분리하려고 per-item upsert를 벌크 UPDATE로 바꿨다. patch-only
+  // 계약은 SET 목록으로 지켜진다 — plannedUnitPrice/updatedById/updatedAt만 건드린다.
+  const setClause = helper.slice(
+    helper.indexOf('UPDATE "StoreSalesPricePlan"'),
+    helper.indexOf("WHERE plan."),
+  );
+
+  assert.match(
+    setClause,
+    /SET "plannedUnitPrice" = source\."plannedUnitPrice"/,
+  );
+  assert.match(setClause, /"updatedById" =/);
+  assert.match(setClause, /"updatedAt" = now\(\)/);
+  assert.doesNotMatch(setClause, /"memo"/);
+  assert.doesNotMatch(setClause, /"createdById"/);
+  assert.doesNotMatch(setClause, /"createdAt"/);
 });
 
 test("planned price loss sync updates derived fields without ledger metadata side effects", async () => {

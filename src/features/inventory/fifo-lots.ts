@@ -579,10 +579,16 @@ export async function refreshLedgerInventoryFifoLots(
     })),
   );
   const rowsToCreate: Array<Prisma.LedgerInventoryFifoLotCreateManyInput> = [];
-  // 품목별 update를 루프 안에서 순차 await하면 DB 왕복이 품목 수만큼 곱해진다. 원격
-  // DB(Neon)에서는 41품목 = 41왕복 = 약 10초로, 저장 트랜잭션이 30s 타임아웃(P2028)을
-  // 넘기는 주원인이었다. 행별로 독립적인 update이므로 루프는 계산만 하고 한 배치로 보낸다.
-  const itemUpdates: Array<Prisma.LedgerInventoryItemUpdateArgs> = [];
+  // 품목별 update를 개별 호출하면 DB 왕복이 품목 수만큼 늘어난다. Prisma는 인터랙티브
+  // 트랜잭션 안의 동시 요청을 한 왕복으로 묶어주지 않으므로 Promise.all도 소용없다
+  // (프로덕션 Neon 측정: 41행 순차 9.1s / Promise.all 8.3s / 단일 statement 0.8s).
+  // 저장 트랜잭션이 30s 타임아웃(P2028)을 넘기는 주원인이었다. 루프는 계산만 하고
+  // 아래에서 벌크 UPDATE 한 번으로 보낸다.
+  const itemUpdates: Array<{
+    id: string;
+    purchasedQuantity: number;
+    inventoryAmount: number;
+  }> = [];
 
   for (const item of itemInputs) {
     const preflightSnapshot = preflightSnapshotsByProductId?.get(
@@ -627,11 +633,9 @@ export async function refreshLedgerInventoryFifoLots(
       });
 
     itemUpdates.push({
-      where: { id: item.id },
-      data: {
-        purchasedQuantity,
-        inventoryAmount: fifo.remainingAmount,
-      },
+      id: item.id,
+      purchasedQuantity,
+      inventoryAmount: fifo.remainingAmount,
     });
 
     rowsToCreate.push(
@@ -655,9 +659,34 @@ export async function refreshLedgerInventoryFifoLots(
     );
   }
 
-  await Promise.all(
-    itemUpdates.map((args) => tx.ledgerInventoryItem.update(args)),
-  );
+  if (itemUpdates.length > 0) {
+    // 자리표시자는 배열 길이로만 만들고 값은 전부 바인딩 파라미터다(입력값이 SQL에
+    // 섞이지 않는다). purchasedQuantity는 Decimal(12,2)이므로 부동소수 왕복을 피해
+    // 문자열로 넘겨 numeric으로 캐스팅한다. raw는 @updatedAt을 트리거하지 않아
+    // Prisma update와 같게 updatedAt을 직접 갱신한다.
+    const rowValues = itemUpdates
+      .map((_, index) => {
+        const base = index * 3;
+
+        return `($${base + 1}, $${base + 2}::numeric, $${base + 3}::int)`;
+      })
+      .join(", ");
+
+    await tx.$executeRawUnsafe(
+      `UPDATE "LedgerInventoryItem" AS item
+          SET "purchasedQuantity" = source."purchasedQuantity",
+              "inventoryAmount" = source."inventoryAmount",
+              "updatedAt" = now()
+         FROM (VALUES ${rowValues})
+           AS source(id, "purchasedQuantity", "inventoryAmount")
+        WHERE item.id = source.id`,
+      ...itemUpdates.flatMap((update) => [
+        update.id,
+        String(update.purchasedQuantity),
+        update.inventoryAmount,
+      ]),
+    );
+  }
 
   if (rowsToCreate.length > 0) {
     await tx.ledgerInventoryFifoLot.createMany({
