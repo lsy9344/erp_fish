@@ -268,12 +268,20 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
   await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await expect(page).toHaveURL(/\/app\/store-entry\/inventory/);
+  // 이동이 막힌 이유와 대상 품목을 경고 모달로 알린다.
+  const priceBlockDialog = page.getByRole("dialog", {
+    name: "판매한 가격이 비어 있습니다",
+  });
+  await expect(priceBlockDialog).toBeVisible();
+  await expect(priceBlockDialog).toContainText(product.name);
   await expect(
     page
       .getByRole("alert")
       .filter({ hasText: "모든 품목의 판매한 가격을 입력해 주세요." })
       .first(),
   ).toBeVisible();
+  await priceBlockDialog.getByRole("button", { name: "닫기" }).click();
+  await expect(priceBlockDialog).toHaveCount(0);
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toHaveCount(0);

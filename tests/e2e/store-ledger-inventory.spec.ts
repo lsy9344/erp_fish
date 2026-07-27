@@ -862,14 +862,24 @@ test("매입 품목은 당일재고를 빈칸으로 시작하고 손실 검토 �
   });
   await expect(currentQuantityInput).toHaveValue("");
 
-  // 미입력 상태로 저장하면 차단되고 안내가 뜬다.
+  // 미입력 상태로 저장하면 차단되고 경고 모달이 어느 품목인지 알려준다.
   await fillVisiblePlannedUnitPrices(page);
   await page.getByRole("button", { name: "저장", exact: true }).click();
+  const quantityBlockDialog = page.getByRole("dialog", {
+    name: "당일재고가 비어 있습니다",
+  });
+  await expect(quantityBlockDialog).toBeVisible();
+  await expect(quantityBlockDialog).toContainText(product.name);
   await expect(
     page
       .getByText(/당일재고를 입력하지 않은 매입·손실 품목이 있습니다/)
       .first(),
   ).toBeVisible();
+  // "입력하러 가기"로 닫으면 해당 입력칸으로 이동한다.
+  await quantityBlockDialog
+    .getByRole("button", { name: "입력하러 가기" })
+    .click();
+  await expect(quantityBlockDialog).toHaveCount(0);
   await expect(quantityError).toBeVisible();
   await expect(currentQuantityInput).toBeFocused();
   await expect(currentQuantityInput).toHaveAttribute("aria-invalid", "true");

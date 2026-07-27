@@ -78,6 +78,10 @@ import {
 } from "~/features/inventory/inventory-save-errors";
 import { getNextInventoryQuantityTarget } from "~/features/inventory/inventory-enter-navigation";
 import {
+  buildInventoryEntryBlock,
+  type InventoryEntryBlock,
+} from "~/features/inventory/inventory-entry-block";
+import {
   buildInventorySaveReceipt,
   type InventorySaveReceiptEntry,
 } from "~/features/inventory/inventory-save-receipt";
@@ -123,6 +127,8 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
   plannedUnitPriceInput: string;
   adjustmentReasonInput: string;
 };
+
+type BlockedEntryItem = InventoryLineState & { index: number };
 
 const categories = ["전체", "냉동", "생물"] as const;
 const MAX_INVENTORY_QUANTITY = 9_999_999_999.99;
@@ -410,6 +416,9 @@ export function InventoryStepClient({
     string | null
   >(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [entryBlock, setEntryBlock] = useState<InventoryEntryBlock | null>(
+    null,
+  );
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [adjustmentErrors, setAdjustmentErrors] = useState<
     Record<string, string>
@@ -571,7 +580,16 @@ export function InventoryStepClient({
         pendingFocusOriginRef.current = null;
       }
     }, 250);
-  }, [activeCategory, adjustmentErrors, fieldErrors, isSaving, pageByCategory]);
+    // entryBlock: 경고 모달을 닫는 순간 재실행돼야 대상 입력칸으로 포커스가 간다.
+    // 이미 그 탭·페이지에 있으면 activeCategory/pageByCategory가 안 바뀌기 때문이다.
+  }, [
+    activeCategory,
+    adjustmentErrors,
+    entryBlock,
+    fieldErrors,
+    isSaving,
+    pageByCategory,
+  ]);
 
   useEffect(() => {
     const productId = pendingNextQuantityProductIdRef.current;
@@ -631,7 +649,7 @@ export function InventoryStepClient({
   // 저장/다음단계로 넘어가기 전에 막는다.
   function validateRequiredCurrentQuantities() {
     const nextErrors: FieldErrors = {};
-    let firstInvalidItem: InventoryLineState | null = null;
+    const blockedItems: BlockedEntryItem[] = [];
 
     items.forEach((item, index) => {
       if (!requiresCurrentQuantityEntry(item)) {
@@ -649,19 +667,20 @@ export function InventoryStepClient({
       nextErrors[`items.${index}.currentQuantity`] = [
         "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
       ];
-      firstInvalidItem ??= item;
+      blockedItems.push({ ...item, index });
     });
 
-    if (!firstInvalidItem) {
+    const block = buildInventoryEntryBlock("currentQuantity", blockedItems);
+
+    if (!block) {
       return true;
     }
 
-    const message =
-      "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.";
     setFieldErrors(nextErrors);
-    setFormError(message);
-    focusFirstError(nextErrors);
-    toast.error(message);
+    setFormError(
+      "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.",
+    );
+    setEntryBlock(block);
 
     return false;
   }
@@ -672,6 +691,7 @@ export function InventoryStepClient({
     }
 
     const nextErrors: FieldErrors = {};
+    const blockedItems: BlockedEntryItem[] = [];
 
     items.forEach((item, index) => {
       const raw =
@@ -682,18 +702,19 @@ export function InventoryStepClient({
         nextErrors[`items.${index}.plannedUnitPrice`] = [
           "판매한 가격을 입력해 주세요.",
         ];
+        blockedItems.push({ ...item, index });
       }
     });
 
-    if (Object.keys(nextErrors).length === 0) {
+    const block = buildInventoryEntryBlock("plannedUnitPrice", blockedItems);
+
+    if (!block) {
       return true;
     }
 
-    const message = "모든 품목의 판매한 가격을 입력해 주세요.";
     setFieldErrors(nextErrors);
-    setFormError(message);
-    focusFirstError(nextErrors);
-    toast.error(message);
+    setFormError("모든 품목의 판매한 가격을 입력해 주세요.");
+    setEntryBlock(block);
     return false;
   }
 
@@ -1686,6 +1707,68 @@ export function InventoryStepClient({
     );
   }
 
+  function renderEntryBlockDialog() {
+    if (!entryBlock) {
+      return null;
+    }
+
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setEntryBlock(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md"
+          onCloseAutoFocus={(event) => {
+            // "입력하러 가기"로 닫으면 대상 입력칸으로 포커스가 가야 한다. Radix가
+            // 저장 버튼으로 포커스를 되돌리면 pending 포커스 가드(activeElement 비교)에
+            // 걸려 이동이 취소되므로, 대기 중인 대상이 있을 때만 복원을 막는다.
+            if (pendingFocusTargetRef.current) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{entryBlock.title}</DialogTitle>
+            <DialogDescription>{entryBlock.description}</DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-64 overflow-y-auto text-sm">
+            {/* 같은 품목명·규격이 서로 다른 productId로 존재할 수 있어 라벨은 key로 못 쓴다. */}
+            {entryBlock.itemLabels.map((label, index) => (
+              <li key={index} className="border-b py-1.5 last:border-0">
+                {label}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              onClick={() => setEntryBlock(null)}
+            >
+              닫기
+            </Button>
+            <Button
+              type="button"
+              className="min-h-11"
+              onClick={() => {
+                focusInventoryError(entryBlock.focus);
+                setEntryBlock(null);
+              }}
+            >
+              입력하러 가기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function renderCarryoverDetailDialog() {
     if (!selectedCarryoverItem) {
       return null;
@@ -2607,6 +2690,7 @@ export function InventoryStepClient({
   return (
     <TooltipProvider>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+        {renderEntryBlockDialog()}
         {renderCarryoverDetailDialog()}
         {renderPreviousStockDialog()}
         {renderFifoLotHistoryDialog()}
