@@ -274,14 +274,16 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
   });
   await expect(priceBlockDialog).toBeVisible();
   await expect(priceBlockDialog).toContainText(product.name);
+  await priceBlockDialog.getByRole("button", { name: "닫기" }).click();
+  await expect(priceBlockDialog).toHaveCount(0);
+  // 모달이 열려 있는 동안 바깥은 aria-hidden이라 role=alert 조회에 안 잡힌다.
+  // 닫은 뒤에도 폼 오류는 남아 있어야 값을 채우는 동안 이유가 보인다.
   await expect(
     page
       .getByRole("alert")
       .filter({ hasText: "모든 품목의 판매한 가격을 입력해 주세요." })
       .first(),
   ).toBeVisible();
-  await priceBlockDialog.getByRole("button", { name: "닫기" }).click();
-  await expect(priceBlockDialog).toHaveCount(0);
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toHaveCount(0);
@@ -474,18 +476,22 @@ test("최근 제출 장부의 판매한 가격은 조회만 이월되고 저장 
   );
 });
 
-test("IN_PROGRESS와 HOLIDAY 장부의 판매한 가격은 이월하지 않는다", async ({
+// 2026-07-27 정책 변경: 제출 전(IN_PROGRESS) 장부의 판매한 가격도 이월한다.
+// 제출만 인정하던 규칙은 장부가 하루라도 미제출로 남으면 그날 입력분을 통째로
+// 버려서, 지점이 매일 재입력하거나 임의 숫자로 통과시키게 만들었다.
+test("IN_PROGRESS 장부의 판매한 가격은 이월하고 HOLIDAY만 건너뛴다", async ({
   page,
 }) => {
   const actorId = await getActorId();
   const product = await seedProduct(1_000);
-  const inProgressDate = getPreviousKstMidnight();
-  const holidayDate = new Date(inProgressDate);
-  holidayDate.setUTCDate(holidayDate.getUTCDate() - 1);
+  const holidayDate = getPreviousKstMidnight();
+  const inProgressDate = new Date(holidayDate);
+  inProgressDate.setUTCDate(inProgressDate.getUTCDate() - 1);
 
-  for (const [status, closingDate] of [
-    ["IN_PROGRESS", inProgressDate],
-    ["HOLIDAY", holidayDate],
+  // 휴무 장부가 더 최근이지만 계획이 없다. 그 아래 IN_PROGRESS 장부까지 내려가야 한다.
+  for (const [status, closingDate, plannedUnitPrice] of [
+    ["HOLIDAY", holidayDate, null],
+    ["IN_PROGRESS", inProgressDate, 9_999],
   ] as const) {
     const previousLedger = await prisma.dailyLedger.create({
       data: {
@@ -497,17 +503,61 @@ test("IN_PROGRESS와 HOLIDAY 장부의 판매한 가격은 이월하지 않는�
       },
     });
     createdLedgerIds.add(previousLedger.id);
+
+    if (plannedUnitPrice === null) {
+      continue;
+    }
+
     await prisma.storeSalesPricePlan.create({
       data: {
         storeId: STORE_ID,
         businessDate: closingDate,
         productId: product.id,
-        plannedUnitPrice: 9_999,
+        plannedUnitPrice,
         createdById: actorId,
         updatedById: actorId,
       },
     });
   }
+
+  const currentLedger = await createTodayLedger(actorId);
+  await seedPurchase(currentLedger.id, product, actorId);
+  await markLossesReviewed(currentLedger.id, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
+    "9,999",
+  );
+});
+
+test("HOLIDAY 장부만 있으면 판매한 가격을 이월하지 않는다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct(1_000);
+  const holidayDate = getPreviousKstMidnight();
+
+  const previousLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_ID,
+      closingDate: holidayDate,
+      status: "HOLIDAY",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  createdLedgerIds.add(previousLedger.id);
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: STORE_ID,
+      businessDate: holidayDate,
+      productId: product.id,
+      plannedUnitPrice: 9_999,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
 
   const currentLedger = await createTodayLedger(actorId);
   await seedPurchase(currentLedger.id, product, actorId);
