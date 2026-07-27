@@ -38,6 +38,18 @@ const { getInventoryPlanGate } = await import(
   ).href
 );
 
+const { isHiddenZeroStockInventoryItem } = await import(
+  pathToFileURL(
+    path.join(
+      root,
+      "src",
+      "features",
+      "inventory",
+      "inventory-zero-stock-display.ts",
+    ),
+  ).href
+);
+
 test("planned unit price prefers current persisted value over carryover", () => {
   assert.deepEqual(
     resolvePlannedUnitPriceDisplay({
@@ -106,18 +118,19 @@ test("carryover fallback keeps current rows and fills only missing products", ()
   ]);
 });
 
-test("sales price carryover source statuses exclude in-progress and holiday drafts", () => {
+// 2026-07-27 정책 변경: 제출 안 된 날의 가격도 이월한다. HOLIDAY만 제외.
+test("sales price carryover source statuses accept unsubmitted drafts and exclude holidays", () => {
   assert.deepEqual(
     [...SALES_PRICE_CARRYOVER_LEDGER_STATUSES],
-    ["IN_REVIEW", "HEADQUARTERS_CLOSED"],
+    ["IN_PROGRESS", "IN_REVIEW", "HEADQUARTERS_CLOSED"],
   );
+  assert.equal(isSalesPriceCarryoverLedgerStatus("IN_PROGRESS"), true);
   assert.equal(isSalesPriceCarryoverLedgerStatus("IN_REVIEW"), true);
   assert.equal(isSalesPriceCarryoverLedgerStatus("HEADQUARTERS_CLOSED"), true);
-  assert.equal(isSalesPriceCarryoverLedgerStatus("IN_PROGRESS"), false);
   assert.equal(isSalesPriceCarryoverLedgerStatus("HOLIDAY"), false);
 });
 
-test("carryover source date skips in-progress and holiday and allows month boundary", () => {
+test("carryover source date takes the latest non-holiday day and allows month boundary", () => {
   const current = new Date("2026-07-01T00:00:00.000Z");
   const selected = selectSalesPriceCarryoverSourceDate(current, [
     {
@@ -130,26 +143,29 @@ test("carryover source date skips in-progress and holiday and allows month bound
       status: "IN_REVIEW",
     },
     {
-      closingDate: new Date("2026-05-31T00:00:00.000Z"),
-      status: "HEADQUARTERS_CLOSED",
-    },
-    {
       closingDate: new Date("2026-07-01T00:00:00.000Z"),
       status: "IN_REVIEW",
     },
   ]);
 
-  assert.deepEqual(selected, new Date("2026-06-28T00:00:00.000Z"));
+  // 제출 전 06-30이 원천이 된다(예전에는 06-28로 건너뛰어 06-30 입력분이 증발했다).
+  assert.deepEqual(selected, new Date("2026-06-30T00:00:00.000Z"));
+
+  // 휴무일은 건너뛰고 그 아래 영업일을 쓴다. 전월 장부도 허용한다.
+  assert.deepEqual(
+    selectSalesPriceCarryoverSourceDate(current, [
+      { closingDate: new Date("2026-06-30T00:00:00.000Z"), status: "HOLIDAY" },
+      {
+        closingDate: new Date("2026-05-31T00:00:00.000Z"),
+        status: "HEADQUARTERS_CLOSED",
+      },
+    ]),
+    new Date("2026-05-31T00:00:00.000Z"),
+  );
+
   assert.equal(
     selectSalesPriceCarryoverSourceDate(current, [
-      {
-        closingDate: new Date("2026-06-30T00:00:00.000Z"),
-        status: "IN_PROGRESS",
-      },
-      {
-        closingDate: new Date("2026-06-29T00:00:00.000Z"),
-        status: "HOLIDAY",
-      },
+      { closingDate: new Date("2026-06-30T00:00:00.000Z"), status: "HOLIDAY" },
     ]),
     null,
   );
@@ -286,6 +302,42 @@ test("inventory completion gate ignores carryover-only prices and requires curre
   assert.equal(complete.complete, true);
   assert.equal(newProductBlank.complete, false);
   assert.deepEqual(newProductBlank.missingPlanProductIds, ["new-product"]);
+});
+
+// 2026-07-25 "hide exact zero-stock rows" 이후 회귀: 폼이 숨긴 0재고 행은 판매한 가격을
+// 넣을 화면이 없는데 게이트가 계획을 요구해 3단계가 영원히 미완료로 남았고,
+// /app/store-entry?step=cost 진입이 재고 화면으로 계속 되돌아갔다.
+test("inventory completion gate exempts form-hidden zero-stock rows from the plan requirement", () => {
+  const hidden = { previousQuantity: 0, purchasedQuantity: 0, lossQuantity: 0 };
+  assert.equal(
+    isHiddenZeroStockInventoryItem({ ...hidden, currentQuantity: 0 }),
+    true,
+  );
+  assert.equal(
+    isHiddenZeroStockInventoryItem({ ...hidden, currentQuantity: null }),
+    false,
+  );
+
+  const gate = getInventoryPlanGate({
+    targetProductIds: ["visible", "hidden-zero"],
+    persistedInventoryProductIds: ["visible", "hidden-zero"],
+    plannedProductIds: ["visible"],
+    planExemptProductIds: ["hidden-zero"],
+  });
+
+  assert.deepEqual(gate.missingPlanProductIds, []);
+  assert.equal(gate.complete, true);
+
+  // 면제는 판매한 가격에만 적용된다. 재고 행 자체가 없으면 여전히 미완료다.
+  assert.equal(
+    getInventoryPlanGate({
+      targetProductIds: ["visible", "hidden-zero"],
+      persistedInventoryProductIds: ["visible"],
+      plannedProductIds: ["visible"],
+      planExemptProductIds: ["hidden-zero"],
+    }).complete,
+    false,
+  );
 });
 
 test("carryover lookup stays outside attachPurchasePrices and only store-manager shaping applies it", async () => {

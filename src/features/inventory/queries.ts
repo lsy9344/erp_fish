@@ -1178,7 +1178,7 @@ async function loadSalesPriceCarryoverByProductId(
     return new Map();
   }
 
-  const priorSubmittedLedger = await tx.dailyLedger.findFirst({
+  const priorLedger = await tx.dailyLedger.findFirst({
     where: {
       storeId: ledger.storeId,
       closingDate: { lt: ledger.closingDate },
@@ -1188,14 +1188,14 @@ async function loadSalesPriceCarryoverByProductId(
     select: { closingDate: true },
   });
 
-  if (!priorSubmittedLedger) {
+  if (!priorLedger) {
     return new Map();
   }
 
   const fallbackSalesPlans = await tx.storeSalesPricePlan.findMany({
     where: {
       storeId: ledger.storeId,
-      businessDate: priorSubmittedLedger.closingDate,
+      businessDate: priorLedger.closingDate,
       productId: { in: [...productIds] },
     },
     select: { productId: true, plannedUnitPrice: true },

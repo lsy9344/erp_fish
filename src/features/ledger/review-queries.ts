@@ -8,6 +8,7 @@ import {
 // OQ-gated calculation policy is centralized in ~/server/calculations/policy-gates.
 import { db } from "~/server/db";
 import { getInventoryStepDataInTx } from "~/features/inventory/queries";
+import { isHiddenZeroStockInventoryItem } from "~/features/inventory/inventory-zero-stock-display.ts";
 import { getLossStepDataInTx } from "~/features/losses/queries";
 import { decimalToNumber, nullableDecimalToNumber } from "~/lib/decimal";
 import { getStoreLedgerInTx, getKstBusinessDateParam } from "./queries";
@@ -537,6 +538,10 @@ export async function getLedgerReviewStepData(
         (item) => item.productId,
       ),
       plannedProductIds: salesPricePlans.map((plan) => plan.productId),
+      // 폼이 숨기는 0재고 행은 판매한 가격을 입력할 화면이 없다(같은 정책을 공유한다).
+      planExemptProductIds: inventory.items
+        .filter(isHiddenZeroStockInventoryItem)
+        .map((item) => item.productId),
     });
     // 손실 수량을 품목별로 합산한다. "오늘 많이 팔린 품목" 판매량 추정에서
     // 기준재고(전일+매입-손실)를 쓰기 위해 필요하다.
