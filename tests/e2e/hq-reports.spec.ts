@@ -1439,6 +1439,10 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       "규격",
       "판매수량",
     ]);
+    const salesRankingTable = section.getByRole("table");
+    expect(
+      (await salesRankingTable.boundingBox())?.width ?? Number.POSITIVE_INFINITY,
+    ).toBeLessThanOrEqual(672);
     for (const removedHeader of [
       "분류",
       "추정 판매액",
@@ -1487,6 +1491,16 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
 
     await expect(section).toContainText(
       "판매수량 = 전일재고 + 당일매입 − 손실수량 − 당일재고. POS 실제 판매 데이터가 아닌 재고 흐름 기반 추정값입니다.",
+    );
+
+    await search.fill("");
+    await page.setViewportSize({ width: 390, height: 844 });
+    const viewportWidths = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
+      viewportWidths.clientWidth + 1,
     );
   });
 });
@@ -2313,6 +2327,26 @@ test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "표 보기" }).first(),
+  ).toBeVisible();
+
+  const storeSection = page
+    .locator("section")
+    .filter({ hasText: "지점별 영업 매출 합계·마진율" });
+  await expect(
+    storeSection.getByTestId("store-performance-chart-scroll"),
+  ).toBeVisible();
+  await expect(
+    storeSection.getByRole("radio", {
+      name: /매출액순|마진율순/,
+    }),
+  ).toHaveCount(0);
+  await storeSection.getByRole("button", { name: "표 보기" }).click();
+  await expect(
+    storeSection.locator('[data-testid^="hq-report-row-"]').first(),
+  ).toBeVisible();
+  await storeSection.getByRole("button", { name: "차트 보기" }).click();
+  await expect(
+    storeSection.getByTestId("store-performance-chart-scroll"),
   ).toBeVisible();
 
   const profitabilitySection = page

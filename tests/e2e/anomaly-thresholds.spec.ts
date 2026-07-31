@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
+const DEFAULT_THRESHOLD_STORE_ID = "store-report-margin-default-e2e";
 
 test.beforeEach(async () => {
   await cleanupAnomalyThresholdData();
@@ -24,6 +25,9 @@ async function tableExists(tableName: string) {
 async function cleanupAnomalyThresholdData() {
   const hasThresholds = await tableExists("AnomalyThresholdSetting");
 
+  await prisma.store.deleteMany({
+    where: { id: DEFAULT_THRESHOLD_STORE_ID },
+  });
   await prisma.auditLog.deleteMany({
     where: { targetType: "AnomalyThresholdSetting" },
   });
@@ -59,6 +63,41 @@ async function login(page: Page, email: string) {
 function historyRow(page: Page, text: string) {
   return page.locator("tbody tr").filter({ hasText: text });
 }
+
+test("신규 지점은 500bp 기본값을 사용하고 기존 지점 값은 유지한다", async ({
+  page,
+}) => {
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const existingStore = await prisma.store.findFirstOrThrow({
+    where: { isActive: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: { reportMarginGapThresholdBps: true },
+  });
+  expect(existingStore.reportMarginGapThresholdBps).toBe(150);
+
+  const newStore = await prisma.store.create({
+    data: {
+      id: DEFAULT_THRESHOLD_STORE_ID,
+      name: "신규 기본값 검증점",
+      isActive: true,
+      updatedById: actor.id,
+    },
+    select: { name: true, reportMarginGapThresholdBps: true },
+  });
+  expect(newStore.reportMarginGapThresholdBps).toBe(500);
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/master-data/anomaly-thresholds");
+  await expect(
+    page.getByText("신규 지점의 기본값은 5.00%p입니다."),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel(`${newStore.name} 마진 차이 기준`, { exact: true }),
+  ).toHaveValue("5");
+});
 
 test("본사는 이상 신호 기준값을 저장하고 감사 이력을 남긴다", async ({
   page,
