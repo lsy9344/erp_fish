@@ -225,7 +225,7 @@ export function ProductProfitabilityReport({
 
       {/* WO-04(2026-06-28): 차트와 같은 data source의 표. 본사 전용 리포트라 원가·마진을 노출한다. */}
       {showTable && tableVariant === "salesRanking" ? (
-        <div className="flex flex-col gap-3">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <h3 className="text-sm font-medium">판매수량 상위 10개</h3>
             <Field className="w-full sm:max-w-xs">
@@ -239,13 +239,13 @@ export function ProductProfitabilityReport({
               />
             </Field>
           </div>
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="w-full overflow-x-auto">
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>품목</TableHead>
-                  <TableHead>규격</TableHead>
-                  <TableHead className="text-right">판매수량</TableHead>
+                  <TableHead className="w-1/2">품목</TableHead>
+                  <TableHead className="w-[30%]">규격</TableHead>
+                  <TableHead className="w-1/5 text-right">판매수량</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

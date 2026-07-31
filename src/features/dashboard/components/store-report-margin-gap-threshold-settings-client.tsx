@@ -189,7 +189,7 @@ export function StoreReportMarginGapThresholdSettingsClient({
         </CardTitle>
         <CardDescription>
           아침 회의 리포트에서 실제 마진률과 예상 마진률의 차이가 지점 기준
-          이상이면 빨간색으로 표시합니다. 신규 지점의 기본값은 1.50%p입니다.
+          이상이면 빨간색으로 표시합니다. 신규 지점의 기본값은 5.00%p입니다.
         </CardDescription>
       </CardHeader>
 

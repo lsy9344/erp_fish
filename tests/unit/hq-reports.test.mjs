@@ -166,31 +166,36 @@ test("HQ daily meeting rows carry the raw expected gross-margin metric", () => {
   assert.match(querySource, /DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS/);
 });
 
-test("gross-margin gap threshold includes the exact 1.5%p boundary", async () => {
+test("gross-margin gap defaults to 5.00%p, preserves its sign, and includes the boundary", async () => {
   const helperPath = assertProjectFile(
     "src",
     "features",
     "reports",
     "store-daily-performance.ts",
   );
-  const { hasSignificantGrossMarginGap } = await import(
-    pathToFileURL(helperPath).href
-  );
+  const {
+    DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS,
+    getGrossMarginGap,
+    hasSignificantGrossMarginGap,
+  } = await import(pathToFileURL(helperPath).href);
 
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.1851), false);
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.18505), false);
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.185), true);
-  assert.equal(hasSignificantGrossMarginGap(0.21, 0.195), true);
-  assert.equal(hasSignificantGrossMarginGap(-1000, -1000.015), true);
-  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.015), true);
-  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0149), false);
-  assert.equal(hasSignificantGrossMarginGap(null, 0.195), false);
-  assert.equal(hasSignificantGrossMarginGap(0.21, null), false);
+  assert.equal(DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS, 500);
+  assert.ok(Math.abs(getGrossMarginGap(0.2, 0.25) + 0.05) < 1e-12);
+  assert.ok(Math.abs(getGrossMarginGap(0.3, 0.25) - 0.05) < 1e-12);
+  assert.equal(getGrossMarginGap(null, 0.25), null);
+  assert.equal(getGrossMarginGap(0.3, null), null);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.2499), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.25), true);
+  assert.equal(hasSignificantGrossMarginGap(0.3, 0.25), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.05), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0499), false);
+  assert.equal(hasSignificantGrossMarginGap(null, 0.25), false);
+  assert.equal(hasSignificantGrossMarginGap(0.3, null), false);
   assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 200), false);
   assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 100), true);
 });
 
-test("HQ daily chart always uses sales bars and raw actual/expected margin rates", () => {
+test("HQ daily chart has distinct sales and gross-margin views with shared warning rules", () => {
   const chartSource = readProjectFile(
     "src",
     "features",
@@ -198,31 +203,60 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
     "components",
     "store-daily-performance-chart.tsx",
   );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const salesReviewPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "sales-review",
+    "page.tsx",
+  );
 
   assert.match(
     chartSource,
-    /type SortMode = "salesAmount" \| "grossMarginRate"/,
+    /type ViewMode = "salesAmount" \| "grossMarginRate"/,
   );
-  assert.match(chartSource, /<Bar dataKey="salesAmount"/);
-  assert.match(chartSource, /<Cell/);
-  assert.match(chartSource, /hasSignificantGrossMarginGap/);
-  assert.match(chartSource, /expectedGrossMarginRate\.value/);
   assert.match(
     chartSource,
-    /\.filter\(\(row\) => row\.salesAmount\.value !== null\)/,
+    /variant: "daily" \| "salesReview"/,
   );
+  assert.match(
+    chartSource,
+    /variant === "daily"[\s\S]*?<DailyPerformanceViews rows=\{rows\} \/>[\s\S]*?<SalesReviewPerformanceChart rows=\{rows\} \/>/,
+  );
+  assert.match(chartSource, /<ToggleGroup/);
+  assert.match(chartSource, /type="single"/);
+  assert.match(chartSource, /aria-label="보기 방식"/);
+  assert.match(chartSource, /<SalesAmountView rows=\{salesRows\}/);
+  assert.match(chartSource, /<GrossMarginView rows=\{marginRows\}/);
+  assert.match(chartSource, /<Bar dataKey="salesAmount"/);
+  assert.match(chartSource, /maxBarSize=\{20\}/);
+  assert.match(chartSource, /<Cell/);
+  assert.match(chartSource, /hasSignificantGrossMarginGap/);
+  assert.match(chartSource, /getGrossMarginGap/);
+  assert.match(chartSource, /expectedGrossMarginRate\.value/);
+  assert.match(chartSource, /row\.salesAmount !== null/);
   assert.match(
     chartSource,
     /function compareNullableDescending[\s\S]*?if \(a === null\) return b === null \? 0 : 1;[\s\S]*?if \(b === null\) return -1;/,
   );
-  assert.match(chartSource, /실제 데이터 부족/);
-  assert.match(chartSource, /예상 데이터 부족/);
+  assert.match(chartSource, /signDisplay:\s*"always"/);
+  assert.match(chartSource, /minimumFractionDigits:\s*1/);
+  assert.match(chartSource, /판정 불가/);
   assert.match(chartSource, /reportMarginGapThresholdBps/);
   assert.match(chartSource, /formatMarginThreshold/);
-  assert.match(chartSource, /title="지점별 영업 매출 합계·마진율"/);
+  assert.match(chartSource, /title="지점별 영업 매출 합계"/);
   assert.match(
     chartSource,
-    /desc="막대는 장부 마감 매출과 이월 매출을 더한 영업 매출 합계/,
+    /desc="매출액순 막대와 실제 마진, 예상 마진, 부호 있는 차이/,
   );
   assert.match(
     chartSource,
@@ -235,17 +269,35 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
   assert.match(chartSource, /장부 마감 매출/);
   assert.match(chartSource, /이월 매출/);
   assert.match(chartSource, /영업 매출 합계/);
+  assert.match(chartSource, /지점 설정값/);
   assert.match(chartSource, /<table className="sr-only"/);
+  assert.match(
+    chartSource,
+    /<table className="hidden w-full table-fixed text-sm sm:table"/,
+  );
+  assert.match(chartSource, /data-testid=\{`store-margin-card-\$\{row\.storeId\}`\}/);
+  assert.match(chartSource, /formatMarginUnavailableReason/);
+  assert.match(chartSource, /expectedGrossMarginRate\.reason \?\? null/);
+  assert.match(chartSource, /useLayoutEffect/);
+  assert.match(chartSource, /getBoundingClientRect\(\)\.width/);
+  assert.doesNotMatch(chartSource, /right:\s*420/);
   assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
   assert.match(
     chartSource,
-    /actual === null \|\| expected === null[\s\S]*?"판정 불가"/,
+    /const gap = getGrossMarginGap\(actual, expected\);[\s\S]*?gap === null[\s\S]*?"판정 불가"/,
   );
   assert.match(
     chartSource,
-    /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as StoreChartRow[\s\S]*?\.label/,
+    /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as SalesChartRow[\s\S]*?\.label/,
   );
-  assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|sortMode)\}/);
+  assert.match(
+    dailyPageSource,
+    /<StoreDailyPerformanceChart rows=\{report\.rows\} variant="daily" \/>/,
+  );
+  assert.match(salesReviewPageSource, /variant="salesReview"/);
+  assert.match(chartSource, /aria-label="정렬 기준"/);
+  assert.match(chartSource, /aria-pressed=\{sortMode === "salesAmount"\}/);
+  assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|viewMode)\}/);
   assert.doesNotMatch(chartSource, /추정 매출액|추정 이익률/);
 });
 
@@ -286,7 +338,10 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
   // WO-25(2026-07-25) #5: 판매수량 상위 10개 차트는 삭제하고 표만 남긴다.
   assert.doesNotMatch(componentSource, /function SalesRankingChart/);
   assert.doesNotMatch(componentSource, /salesRankingChartItems/);
-  assert.doesNotMatch(componentSource, /품목별 판매수량 상위 10개 세로 막대 차트/);
+  assert.doesNotMatch(
+    componentSource,
+    /품목별 판매수량 상위 10개 세로 막대 차트/,
+  );
   // 표의 품목/규격 칸은 긴 이름이 옆으로 넘치지 않도록 줄바꿈한다(가로 스크롤 방지).
   assert.match(
     componentSource,
@@ -307,6 +362,11 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /<h3 className="text-sm font-medium">판매수량 상위 10개<\/h3>/,
   );
+  assert.match(componentSource, /mx-auto flex w-full max-w-2xl flex-col gap-3/);
+  assert.match(componentSource, /<Table className="table-fixed">/);
+  assert.match(componentSource, /<TableHead className="w-1\/2">품목/);
+  assert.match(componentSource, /<TableHead className="w-\[30%\]">규격/);
+  assert.match(componentSource, /className="w-1\/5 text-right"/);
   assert.match(componentSource, /colSpan=\{3\}/);
   assert.match(componentSource, /검색 결과가 없습니다\./);
   assert.match(componentSource, /추정 판매 수량/);
@@ -409,11 +469,36 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.match(salesSource, /BarChart/);
   assert.match(salesSource, /PieChart/);
   assert.match(salesSource, /ReferenceLine/);
+  assert.match(
+    salesSource,
+    /const SIGNED_CHART_CATEGORY_AXIS_WIDTH = 72;/,
+    "signed charts should define a dedicated category-axis lane",
+  );
+  assert.equal(
+    salesSource.match(/tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g)
+      ?.length,
+    1,
+    "the signed sales-change chart should separate category ticks from negative labels",
+  );
+  assert.match(
+    salesSource,
+    /values\.some\(\(value\) => value < 0\)\s+\? SIGNED_CHART_CATEGORY_AXIS_WIDTH\s+: 8/,
+    "category labels should move into the reserved left margin only when negative labels need the axis lane",
+  );
   assert.match(salesSource, /lg:grid-cols-3/);
-  assert.match(salesSource, /deviationRate/);
-  assert.match(salesSource, /deviationAmount/);
+  assert.match(salesSource, /inventoryRatio/);
+  assert.match(salesSource, /재고금액 ÷ 매출액 비율/);
+  assert.match(
+    salesSource,
+    /const inventoryRatioFormatter = new Intl\.NumberFormat\("ko-KR", \{\s+style: "percent",\s+minimumFractionDigits: 1,\s+maximumFractionDigits: 1,/,
+  );
+  assert.match(salesSource, /formatInventoryRatio\(row\.inventoryRatio\)/);
+  assert.match(salesSource, /<ReferenceLine x=\{1\} \/>/);
+  assert.match(salesSource, /dataKey="inventoryRatio" maxBarSize=\{20\}/);
+  assert.doesNotMatch(salesSource, /deviationRate/);
+  assert.doesNotMatch(salesSource, /deviationAmount/);
+  assert.doesNotMatch(salesSource, /재고 편차/);
   assert.match(salesSource, /formatShareWithAmount/);
-  assert.match(salesSource, /formatPercentWithAmount/);
   assert.match(salesSource, /표시할 매출 분석 데이터가 없습니다\./);
   assert.doesNotMatch(salesSource, /전체 평균 대비/);
   assert.doesNotMatch(salesSource, /\.reduce\(|\/\s*(?:total|previous|sales)/);
@@ -2323,32 +2408,29 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
   );
   assert.equal(inventoryRatio.inventoryAmount.value, 30_000);
   assert.equal(inventoryRatio.salesAmount.value, 120_000);
-  assert.equal(inventoryRatio.deviationAmount.value, -90_000);
-  assert.equal(inventoryRatio.deviationRate.value, -0.75);
+  assert.equal(inventoryRatio.inventoryRatio.value, 0.25);
   const zeroSalesInventory = analysis.inventoryRatios.find(
     (row) => row.storeId === "store-zero",
   );
   assert.equal(zeroSalesInventory.inventoryAmount.value, 10_000);
-  assert.equal(zeroSalesInventory.deviationAmount.value, 10_000);
-  assert.equal(zeroSalesInventory.deviationRate.value, null);
-  assert.equal(zeroSalesInventory.deviationRate.reason, "선택일 매출 0원");
+  assert.equal(zeroSalesInventory.inventoryRatio.value, null);
+  assert.equal(zeroSalesInventory.inventoryRatio.reason, "선택일 매출 0원");
   for (const storeId of ["store-incomplete", "store-corrected-inventory"]) {
     const row = analysis.inventoryRatios.find(
       (item) => item.storeId === storeId,
     );
     assert.equal(row.inventoryAmount.value, null);
-    assert.equal(row.deviationAmount.value, null);
-    assert.equal(row.deviationRate.value, null);
+    assert.equal(row.inventoryRatio.value, null);
   }
   assert.equal(
     analysis.inventoryRatios.find((row) => row.storeId === "store-incomplete")
-      .deviationRate.reason,
+      .inventoryRatio.reason,
     "저장 FIFO 재고금액 누락",
   );
   assert.equal(
     analysis.inventoryRatios.find(
       (row) => row.storeId === "store-corrected-inventory",
-    ).deviationRate.reason,
+    ).inventoryRatio.reason,
     "재고 수량 정정으로 FIFO 금액을 확정할 수 없음",
   );
 
@@ -2466,11 +2548,20 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
       }),
       previous: null,
     },
+    {
+      storeId: "inventory-empty",
+      storeName: "재고없음점",
+      current: ledger({
+        id: "inventory-empty-current",
+        sales: 100_000,
+        inventory: [{ inventoryAmount: 0 }],
+      }),
+      previous: null,
+    },
   ]).inventoryRatios;
-  assert.equal(inventoryDeviationEdges[0].deviationRate.value, 0);
-  assert.equal(inventoryDeviationEdges[0].deviationAmount.value, 0);
-  assert.equal(inventoryDeviationEdges[1].deviationRate.value, 1.5);
-  assert.equal(inventoryDeviationEdges[1].deviationAmount.value, 150_000);
+  assert.equal(inventoryDeviationEdges[0].inventoryRatio.value, 1);
+  assert.equal(inventoryDeviationEdges[1].inventoryRatio.value, 2.5);
+  assert.equal(inventoryDeviationEdges[2].inventoryRatio.value, 0);
 
   const attendance = buildDailyAttendanceReport(stores);
   assert.deepEqual(attendance.summary, {

@@ -78,7 +78,12 @@ export default async function SalesReviewPage({
         </p>
         <div className="mt-3">
           <ReviewViewToggle
-            chart={<StoreDailyPerformanceChart rows={report.rows} />}
+            chart={
+              <StoreDailyPerformanceChart
+                rows={report.rows}
+                variant="salesReview"
+              />
+            }
             table={<DailyMeetingReportTable report={report} />}
           />
         </div>

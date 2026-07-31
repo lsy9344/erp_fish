@@ -79,7 +79,7 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
   );
   assert.match(
     schema,
-    /model\s+Store\s*{[^}]*reportMarginGapThresholdBps\s+Int\s+@default\(150\)[^}]*}/s,
+    /model\s+Store\s*{[^}]*reportMarginGapThresholdBps\s+Int\s+@default\(500\)[^}]*}/s,
   );
   assert.ok(
     storyMigration,
@@ -136,6 +136,28 @@ test("Prisma schema adds Story 5.5 global anomaly threshold settings", () => {
     storeReportMarginGapMigrationSql,
     /CHECK\s*\([\s\S]*"reportMarginGapThresholdBps" >= 1[\s\S]*"reportMarginGapThresholdBps" <= 10000[\s\S]*\)/,
   );
+
+  const defaultChangeMigration = migrationNames.find((name) => {
+    const migrationPath = path.join(migrationsRoot, name, "migration.sql");
+
+    return (
+      existsSync(migrationPath) &&
+      /ALTER COLUMN "reportMarginGapThresholdBps" SET DEFAULT 500/.test(
+        readFileSync(migrationPath, "utf8"),
+      )
+    );
+  });
+
+  assert.ok(
+    defaultChangeMigration,
+    "a later migration must change only the new-store default to 500bp",
+  );
+  const defaultChangeMigrationSql = readFileSync(
+    path.join(migrationsRoot, defaultChangeMigration, "migration.sql"),
+    "utf8",
+  );
+  assert.doesNotMatch(defaultChangeMigrationSql, /UPDATE\s+"Store"/);
+  assert.doesNotMatch(defaultChangeMigrationSql, /DROP\s+CONSTRAINT/);
 });
 
 test("anomaly threshold simplification migration preserves the previous margin threshold", () => {
@@ -227,7 +249,7 @@ test("anomaly threshold schema parses display input, active state, and required 
     storeReportMarginGapThresholdFormSchema.parse({
       stores: [
         { storeId: "store-min", marginGapRate: "0.01" },
-        { storeId: "store-default", marginGapRate: "1.5" },
+        { storeId: "store-default", marginGapRate: "5.00" },
         { storeId: "store-max", marginGapRate: "100.00" },
       ],
       reason: "지점별 경보 기준 정비",
@@ -235,7 +257,7 @@ test("anomaly threshold schema parses display input, active state, and required 
     {
       stores: [
         { storeId: "store-min", reportMarginGapThresholdBps: 1 },
-        { storeId: "store-default", reportMarginGapThresholdBps: 150 },
+        { storeId: "store-default", reportMarginGapThresholdBps: 500 },
         { storeId: "store-max", reportMarginGapThresholdBps: 10000 },
       ],
       reason: "지점별 경보 기준 정비",
@@ -503,7 +525,7 @@ test("anomaly threshold actions, queries, page, sidebar, and audit wiring follow
   assert.match(storeThresholdClientSource, /inputMode="decimal"/);
   assert.match(storeThresholdClientSource, /지점별 리포트 마진 차이 기준/);
   assert.match(storeThresholdClientSource, /신규 지점의 기본값은/);
-  assert.match(storeThresholdClientSource, /1\.50%p/);
+  assert.match(storeThresholdClientSource, /5\.00%p/);
   assert.match(storeThresholdClientSource, /지점별 기준 변경 사유/);
   assert.match(storeThresholdClientSource, /지점별 기준 저장/);
   assert.match(
