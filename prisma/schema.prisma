@@ -111,7 +111,7 @@ model Store {
   id                          String   @id @default(cuid())
   name                        String   @unique
   isActive                    Boolean  @default(true)
-  reportMarginGapThresholdBps Int      @default(150)
+  reportMarginGapThresholdBps Int      @default(500)
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
   updatedById                 String?
