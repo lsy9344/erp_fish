@@ -15,6 +15,7 @@ const STORE_IDS = {
   tieGa: "store-story-6-1-tie-ga",
   tieNa: "store-story-6-1-tie-na",
   zeroSales: "store-story-6-1-zero-sales",
+  inventoryEqual: "store-story-6-1-inventory-equal",
   marginDefault: "store-report-margin-default",
   marginDestructive: "store-report-margin-destructive",
   marginMissing: "store-report-margin-missing",
@@ -513,7 +514,7 @@ async function seedDailyChartAndRankingFixtures() {
         id: STORE_IDS.marginDefault,
         name: "경계 기본점",
         isActive: true,
-        reportMarginGapThresholdBps: 100,
+        reportMarginGapThresholdBps: 500,
         updatedById: actorId,
       },
       {
@@ -540,12 +541,12 @@ async function seedDailyChartAndRankingFixtures() {
   await seedMarginFixture({
     actorId,
     storeId: STORE_IDS.marginDefault,
-    plannedUnitPrice: 979158,
+    plannedUnitPrice: 933457,
   });
   await seedMarginFixture({
     actorId,
     storeId: STORE_IDS.marginDestructive,
-    plannedUnitPrice: 979020,
+    plannedUnitPrice: 933333,
   });
   await seedMarginFixture({
     actorId,

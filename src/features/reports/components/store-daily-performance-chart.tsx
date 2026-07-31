@@ -399,9 +399,22 @@ export function StoreDailyPerformanceChart({
             }
           }}
           aria-label="보기 방식"
+          role="radiogroup"
         >
-          <ToggleGroupItem value="salesAmount">매출액순</ToggleGroupItem>
-          <ToggleGroupItem value="grossMarginRate">마진율순</ToggleGroupItem>
+          <ToggleGroupItem
+            aria-checked={viewMode === "salesAmount"}
+            role="radio"
+            value="salesAmount"
+          >
+            매출액순
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            aria-checked={viewMode === "grossMarginRate"}
+            role="radio"
+            value="grossMarginRate"
+          >
+            마진율순
+          </ToggleGroupItem>
         </ToggleGroup>
       ) : null}
 
