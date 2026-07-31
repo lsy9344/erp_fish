@@ -203,10 +203,32 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
     "components",
     "store-daily-performance-chart.tsx",
   );
+  const dailyPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "daily",
+    "page.tsx",
+  );
+  const salesReviewPageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "reports",
+    "sales-review",
+    "page.tsx",
+  );
 
   assert.match(
     chartSource,
     /type ViewMode = "salesAmount" \| "grossMarginRate"/,
+  );
+  assert.match(chartSource, /enableViewModes\?: boolean/);
+  assert.match(chartSource, /enableViewModes = false/);
+  assert.match(
+    chartSource,
+    /const effectiveViewMode = enableViewModes \? viewMode : "salesAmount"/,
   );
   assert.match(chartSource, /<ToggleGroup/);
   assert.match(chartSource, /type="single"/);
@@ -255,8 +277,13 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
   );
   assert.match(
     chartSource,
-    /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as StoreChartRow[\s\S]*?\.label/,
+    /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as SalesChartRow[\s\S]*?\.label/,
   );
+  assert.match(
+    dailyPageSource,
+    /<StoreDailyPerformanceChart rows=\{report\.rows\} enableViewModes \/>/,
+  );
+  assert.doesNotMatch(salesReviewPageSource, /enableViewModes/);
   assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|viewMode)\}/);
   assert.doesNotMatch(chartSource, /추정 매출액|추정 이익률/);
 });

@@ -28,6 +28,7 @@ import { cn } from "~/lib/utils";
 
 type StoreDailyPerformanceChartProps = {
   rows: DailyMeetingReportRow[];
+  enableViewModes?: boolean;
 };
 
 type ViewMode = "salesAmount" | "grossMarginRate";
@@ -331,6 +332,7 @@ function GrossMarginView({ rows }: { rows: StoreChartRow[] }) {
 
 export function StoreDailyPerformanceChart({
   rows,
+  enableViewModes = false,
 }: StoreDailyPerformanceChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("salesAmount");
   const storeRows = useMemo<StoreChartRow[]>(
@@ -380,30 +382,47 @@ export function StoreDailyPerformanceChart({
       }),
     [storeRows],
   );
-  const visibleRows = viewMode === "salesAmount" ? salesRows : marginRows;
+  const effectiveViewMode = enableViewModes ? viewMode : "salesAmount";
+  const visibleRows =
+    effectiveViewMode === "salesAmount" ? salesRows : marginRows;
   const omittedCount = rows.length - salesRows.length;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
-      <ToggleGroup
-        type="single"
-        value={viewMode}
-        onValueChange={(value) => {
-          if (value === "salesAmount" || value === "grossMarginRate") {
-            setViewMode(value);
-          }
-        }}
-        aria-label="보기 방식"
-      >
-        <ToggleGroupItem value="salesAmount">매출액순</ToggleGroupItem>
-        <ToggleGroupItem value="grossMarginRate">마진율순</ToggleGroupItem>
-      </ToggleGroup>
+      {enableViewModes ? (
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(value) => {
+            if (value === "salesAmount" || value === "grossMarginRate") {
+              setViewMode(value);
+            }
+          }}
+          aria-label="보기 방식"
+          role="radiogroup"
+        >
+          <ToggleGroupItem
+            aria-checked={viewMode === "salesAmount"}
+            role="radio"
+            value="salesAmount"
+          >
+            매출액순
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            aria-checked={viewMode === "grossMarginRate"}
+            role="radio"
+            value="grossMarginRate"
+          >
+            마진율순
+          </ToggleGroupItem>
+        </ToggleGroup>
+      ) : null}
 
       {visibleRows.length === 0 ? (
         <div className="text-muted-foreground flex h-40 items-center justify-center text-sm">
           표시할 지점 데이터 없음
         </div>
-      ) : viewMode === "salesAmount" ? (
+      ) : effectiveViewMode === "salesAmount" ? (
         <SalesAmountView rows={salesRows} />
       ) : (
         <GrossMarginView rows={marginRows} />
@@ -414,7 +433,7 @@ export function StoreDailyPerformanceChart({
         판매한 가격으로 계산합니다. 경고는 지점 설정값 이상인 차이에만
         표시합니다.
       </p>
-      {viewMode === "salesAmount" && omittedCount > 0 ? (
+      {effectiveViewMode === "salesAmount" && omittedCount > 0 ? (
         <p className="text-muted-foreground text-xs">
           영업 매출 합계 미입력 {omittedCount}개 지점은 매출액 보기에서
           제외했습니다.
