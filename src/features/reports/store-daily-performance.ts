@@ -13,14 +13,14 @@ export function hasSignificantGrossMarginGap(
   expected: number | null,
   thresholdBps = DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS,
 ) {
-  const gap = getGrossMarginGap(actual, expected);
-  if (gap === null) return false;
+  if (actual === null || expected === null) return false;
+  const gap = actual - expected;
 
   const threshold = thresholdBps / 10_000;
 
   const tolerance =
     Number.EPSILON *
-    Math.max(1, Math.abs(actual!), Math.abs(expected!), Math.abs(threshold)) *
+    Math.max(1, Math.abs(actual), Math.abs(expected), Math.abs(threshold)) *
     FLOATING_COMPARISON_SAFETY_FACTOR;
 
   return Math.abs(gap) + tolerance >= threshold;

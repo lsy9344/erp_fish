@@ -13,7 +13,7 @@ function ToggleGroup({
     <ToggleGroupPrimitive.Root
       data-slot="toggle-group"
       className={cn(
-        "inline-flex w-fit items-center rounded-md border bg-card p-0.5",
+        "bg-card inline-flex w-fit items-center rounded-md border p-0.5",
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ function ToggleGroupItem({
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"
       className={cn(
-        "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/35 inline-flex h-7 items-center justify-center rounded-sm px-2.5 text-[0.8rem] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground",
+        "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/35 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground inline-flex h-7 items-center justify-center rounded-sm px-2.5 text-[0.8rem] font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
       {...props}

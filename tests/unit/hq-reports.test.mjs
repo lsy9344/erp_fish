@@ -166,31 +166,36 @@ test("HQ daily meeting rows carry the raw expected gross-margin metric", () => {
   assert.match(querySource, /DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS/);
 });
 
-test("gross-margin gap threshold includes the exact 1.5%p boundary", async () => {
+test("gross-margin gap defaults to 5.00%p, preserves its sign, and includes the boundary", async () => {
   const helperPath = assertProjectFile(
     "src",
     "features",
     "reports",
     "store-daily-performance.ts",
   );
-  const { hasSignificantGrossMarginGap } = await import(
-    pathToFileURL(helperPath).href
-  );
+  const {
+    DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS,
+    getGrossMarginGap,
+    hasSignificantGrossMarginGap,
+  } = await import(pathToFileURL(helperPath).href);
 
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.1851), false);
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.18505), false);
-  assert.equal(hasSignificantGrossMarginGap(0.2, 0.185), true);
-  assert.equal(hasSignificantGrossMarginGap(0.21, 0.195), true);
-  assert.equal(hasSignificantGrossMarginGap(-1000, -1000.015), true);
-  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.015), true);
-  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0149), false);
-  assert.equal(hasSignificantGrossMarginGap(null, 0.195), false);
-  assert.equal(hasSignificantGrossMarginGap(0.21, null), false);
+  assert.equal(DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS, 500);
+  assert.equal(getGrossMarginGap(0.2, 0.25), -0.05);
+  assert.equal(getGrossMarginGap(0.3, 0.25), 0.04999999999999999);
+  assert.equal(getGrossMarginGap(null, 0.25), null);
+  assert.equal(getGrossMarginGap(0.3, null), null);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.2499), false);
+  assert.equal(hasSignificantGrossMarginGap(0.2, 0.25), true);
+  assert.equal(hasSignificantGrossMarginGap(0.3, 0.25), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.05), true);
+  assert.equal(hasSignificantGrossMarginGap(-100000, -100000.0499), false);
+  assert.equal(hasSignificantGrossMarginGap(null, 0.25), false);
+  assert.equal(hasSignificantGrossMarginGap(0.3, null), false);
   assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 200), false);
   assert.equal(hasSignificantGrossMarginGap(0.2, 0.185, 100), true);
 });
 
-test("HQ daily chart always uses sales bars and raw actual/expected margin rates", () => {
+test("HQ daily chart has distinct sales and gross-margin views with shared warning rules", () => {
   const chartSource = readProjectFile(
     "src",
     "features",
@@ -201,28 +206,33 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
 
   assert.match(
     chartSource,
-    /type SortMode = "salesAmount" \| "grossMarginRate"/,
+    /type ViewMode = "salesAmount" \| "grossMarginRate"/,
   );
+  assert.match(chartSource, /<ToggleGroup/);
+  assert.match(chartSource, /type="single"/);
+  assert.match(chartSource, /aria-label="보기 방식"/);
+  assert.match(chartSource, /<SalesAmountView rows=\{salesRows\}/);
+  assert.match(chartSource, /<GrossMarginView rows=\{marginRows\}/);
   assert.match(chartSource, /<Bar dataKey="salesAmount"/);
+  assert.match(chartSource, /maxBarSize=\{20\}/);
   assert.match(chartSource, /<Cell/);
   assert.match(chartSource, /hasSignificantGrossMarginGap/);
+  assert.match(chartSource, /getGrossMarginGap/);
   assert.match(chartSource, /expectedGrossMarginRate\.value/);
-  assert.match(
-    chartSource,
-    /\.filter\(\(row\) => row\.salesAmount\.value !== null\)/,
-  );
+  assert.match(chartSource, /row\.salesAmount !== null/);
   assert.match(
     chartSource,
     /function compareNullableDescending[\s\S]*?if \(a === null\) return b === null \? 0 : 1;[\s\S]*?if \(b === null\) return -1;/,
   );
-  assert.match(chartSource, /실제 데이터 부족/);
-  assert.match(chartSource, /예상 데이터 부족/);
+  assert.match(chartSource, /signDisplay:\s*"always"/);
+  assert.match(chartSource, /minimumFractionDigits:\s*1/);
+  assert.match(chartSource, /판정 불가/);
   assert.match(chartSource, /reportMarginGapThresholdBps/);
   assert.match(chartSource, /formatMarginThreshold/);
-  assert.match(chartSource, /title="지점별 영업 매출 합계·마진율"/);
+  assert.match(chartSource, /title="지점별 영업 매출 합계"/);
   assert.match(
     chartSource,
-    /desc="막대는 장부 마감 매출과 이월 매출을 더한 영업 매출 합계/,
+    /desc="매출액순 막대와 실제 마진, 예상 마진, 부호 있는 차이/,
   );
   assert.match(
     chartSource,
@@ -235,7 +245,9 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
   assert.match(chartSource, /장부 마감 매출/);
   assert.match(chartSource, /이월 매출/);
   assert.match(chartSource, /영업 매출 합계/);
+  assert.match(chartSource, /지점 설정값/);
   assert.match(chartSource, /<table className="sr-only"/);
+  assert.match(chartSource, /<table className="w-full table-fixed text-sm"/);
   assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
   assert.match(
     chartSource,
@@ -245,7 +257,7 @@ test("HQ daily chart always uses sales bars and raw actual/expected margin rates
     chartSource,
     /formatter=\{\(_value, _name, item\) =>[\s\S]*?item\.payload as StoreChartRow[\s\S]*?\.label/,
   );
-  assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|sortMode)\}/);
+  assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|viewMode)\}/);
   assert.doesNotMatch(chartSource, /추정 매출액|추정 이익률/);
 });
 
@@ -286,7 +298,10 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
   // WO-25(2026-07-25) #5: 판매수량 상위 10개 차트는 삭제하고 표만 남긴다.
   assert.doesNotMatch(componentSource, /function SalesRankingChart/);
   assert.doesNotMatch(componentSource, /salesRankingChartItems/);
-  assert.doesNotMatch(componentSource, /품목별 판매수량 상위 10개 세로 막대 차트/);
+  assert.doesNotMatch(
+    componentSource,
+    /품목별 판매수량 상위 10개 세로 막대 차트/,
+  );
   // 표의 품목/규격 칸은 긴 이름이 옆으로 넘치지 않도록 줄바꿈한다(가로 스크롤 방지).
   assert.match(
     componentSource,
@@ -423,11 +438,10 @@ test("daily sales analysis and attendance components are display-only responsive
     "signed charts should define a dedicated category-axis lane",
   );
   assert.equal(
-    salesSource.match(
-      /tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g,
-    )?.length,
-    1,
-    "the signed sales-change chart should separate category ticks from negative labels",
+    salesSource.match(/tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g)
+      ?.length,
+    2,
+    "both signed bar charts should separate category ticks from negative labels",
   );
   assert.match(
     salesSource,
