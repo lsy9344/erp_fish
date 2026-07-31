@@ -19,6 +19,7 @@ const STORE_IDS = {
   marginDefault: "store-report-margin-default",
   marginDestructive: "store-report-margin-destructive",
   marginMissing: "store-report-margin-missing",
+  marginSortHighSales: "store-report-margin-sort-high-sales",
   productRanking: "store-report-product-ranking",
 } as const;
 const STORY_STORE_IDS = Object.values(STORE_IDS);
@@ -26,6 +27,7 @@ const DAILY_CHART_STORE_IDS = [
   STORE_IDS.marginDefault,
   STORE_IDS.marginDestructive,
   STORE_IDS.marginMissing,
+  STORE_IDS.marginSortHighSales,
   STORE_IDS.productRanking,
 ];
 const PRODUCT_IDS = {
@@ -530,6 +532,12 @@ async function seedDailyChartAndRankingFixtures() {
         updatedById: actorId,
       },
       {
+        id: STORE_IDS.marginSortHighSales,
+        name: "고매출 저마진점",
+        isActive: true,
+        updatedById: actorId,
+      },
+      {
         id: STORE_IDS.productRanking,
         name: "품목 순위점",
         isActive: true,
@@ -552,6 +560,13 @@ async function seedDailyChartAndRankingFixtures() {
     actorId,
     storeId: STORE_IDS.marginMissing,
     plannedUnitPrice: null,
+  });
+  await seedMarginFixture({
+    actorId,
+    storeId: STORE_IDS.marginSortHighSales,
+    plannedUnitPrice: 2_000_000,
+    totalSalesAmount: 2_000_000,
+    costAmount: 1_800_000,
   });
   await seedProductRankingFixture(actorId);
 }
@@ -618,13 +633,17 @@ async function seedMarginFixture(input: {
   actorId: string;
   storeId: string;
   plannedUnitPrice: number | null;
+  totalSalesAmount?: number;
+  costAmount?: number;
 }) {
+  const totalSalesAmount = input.totalSalesAmount ?? 1_000_001;
+  const costAmount = input.costAmount ?? 700_000;
   const ledger = await seedLedger({
     actorId: input.actorId,
     storeId: input.storeId,
     status: "HEADQUARTERS_CLOSED",
-    totalSalesAmount: 1000001,
-    cashAmount: 1000001,
+    totalSalesAmount,
+    cashAmount: totalSalesAmount,
     cardAmount: 0,
     otherPaymentAmount: 0,
     workerCount: 1,
@@ -636,7 +655,7 @@ async function seedMarginFixture(input: {
       productName: "마진 경계 품목",
       productCategory: "선어",
       productSpec: "1개",
-      unitPrice: 700000,
+      unitPrice: costAmount,
       previousQuantity: 1,
       purchasedQuantity: 0,
       currentQuantity: 0,
@@ -654,12 +673,12 @@ async function seedMarginFixture(input: {
       ledgerInventoryItemId: inventoryItem.id,
       productId: PRODUCT_IDS.margin,
       sourceType: "PURCHASE",
-      unitPrice: 700000,
+      unitPrice: costAmount,
       originalQuantity: 1,
       consumedQuantity: 1,
       remainingQuantity: 0,
-      originalAmount: 700000,
-      consumedAmount: 700000,
+      originalAmount: costAmount,
+      consumedAmount: costAmount,
       remainingAmount: 0,
       sortOrder: 1,
       sourceBusinessDate: ledger.closingDate,
@@ -1259,6 +1278,66 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await cleanupDailyChartAndRankingFixtures();
   });
 
+  test("매출 검토는 기존 정렬 버튼으로 동일 차트의 지점 순서를 바꾼다", async ({
+    page,
+  }) => {
+    await login(page, "hq@example.com");
+    await page.goto("/app/reports/sales-review?date=today");
+
+    const section = page
+      .locator("section")
+      .filter({ hasText: "지점별 영업 매출 합계·마진율" });
+    const salesSort = section.getByRole("button", {
+      name: "매출액순",
+      exact: true,
+    });
+    const marginSort = section.getByRole("button", {
+      name: "마진율순",
+      exact: true,
+    });
+    const bars = section.locator('[data-testid^="store-performance-bar-"]');
+
+    await expect(salesSort).toHaveAttribute("aria-pressed", "true");
+    await expect(marginSort).toHaveAttribute("aria-pressed", "false");
+    await expect(bars.first()).toHaveAttribute(
+      "data-testid",
+      `store-performance-bar-${STORE_IDS.marginSortHighSales}`,
+    );
+    const salesOrder = await bars.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-testid")),
+    );
+    expect(
+      salesOrder.indexOf(
+        `store-performance-bar-${STORE_IDS.marginSortHighSales}`,
+      ),
+    ).toBeLessThan(
+      salesOrder.indexOf(`store-performance-bar-${STORE_IDS.marginDefault}`),
+    );
+
+    await marginSort.click();
+
+    await expect(salesSort).toHaveAttribute("aria-pressed", "false");
+    await expect(marginSort).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      section.getByTestId("store-performance-chart-scroll"),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const marginOrder = await bars.evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute("data-testid")),
+        );
+        return (
+          marginOrder.indexOf(
+            `store-performance-bar-${STORE_IDS.marginDefault}`,
+          ) <
+          marginOrder.indexOf(
+            `store-performance-bar-${STORE_IDS.marginSortHighSales}`,
+          )
+        );
+      })
+      .toBe(true);
+  });
+
   test("아침 회의 지점별 실적은 매출·마진 보기를 분리하고 5.00%p 경계를 적용한다", async ({
     page,
   }) => {
@@ -1357,50 +1436,77 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       section.getByTestId("store-performance-chart-scroll"),
     ).toHaveCount(0);
 
-    const marginRows = section.locator(
-      'tbody tr[data-testid^="store-margin-row-"]',
-    );
-    const actualMarginLabels = await marginRows
-      .locator("td:nth-child(2)")
-      .allTextContents();
-    const firstUnavailableIndex = actualMarginLabels.findIndex(
-      (label) => label === "판정 불가",
+    const marginCards = section.locator('[data-testid^="store-margin-card-"]');
+    const marginCardLabels = await marginCards.allTextContents();
+    const firstUnavailableIndex = marginCardLabels.findIndex((label) =>
+      label.includes("판정 불가"),
     );
     expect(firstUnavailableIndex).toBeGreaterThan(0);
     expect(
-      actualMarginLabels
+      marginCardLabels
         .slice(firstUnavailableIndex)
-        .every((label) => label === "판정 불가"),
+        .every((label) => label.includes("판정 불가")),
     ).toBe(true);
 
     const defaultModeRow = section.getByTestId(
-      `store-margin-row-${STORE_IDS.marginDefault}`,
+      `store-margin-card-${STORE_IDS.marginDefault}`,
     );
     await expect(defaultModeRow).toContainText("기준 이내");
     await expect(defaultModeRow).toContainText("+5.0%p");
-    await expect(defaultModeRow.locator("td").last()).not.toHaveClass(
-      /text-destructive/,
-    );
 
     const destructiveModeRow = section.getByTestId(
-      `store-margin-row-${STORE_IDS.marginDestructive}`,
+      `store-margin-card-${STORE_IDS.marginDestructive}`,
     );
     await expect(destructiveModeRow).toContainText("지점 설정값 5.0%p 이상");
     await expect(destructiveModeRow).toContainText("+5.0%p");
-    await expect(destructiveModeRow.locator("td").last()).toHaveClass(
-      /text-destructive/,
-    );
 
     const missingModeRow = section.getByTestId(
-      `store-margin-row-${STORE_IDS.marginMissing}`,
+      `store-margin-card-${STORE_IDS.marginMissing}`,
     );
     await expect(missingModeRow).toContainText("판정 불가");
+    await expect(missingModeRow).toContainText(
+      "계획 매출 또는 매출이익이 부족해 판매가 기준 마진율을 계산할 수 없습니다.",
+    );
+  });
 
+  test("모바일 마진 보기는 카드로 읽히며 페이지 가로 넘침이 없다", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page, "hq@example.com");
+    await page.goto("/app/reports/daily?date=today");
+
+    const section = page
+      .locator("section")
+      .filter({ hasText: "지점별 영업 매출·이익률" });
+    await section.getByRole("radio", { name: "마진율순", exact: true }).click();
+
+    const card = section.getByTestId(
+      `store-margin-card-${STORE_IDS.marginDefault}`,
+    );
+    await expect(card).toBeVisible();
     await expect(
-      section.getByRole("table", {
-        name: "지점별 매출 구성과 마진 데이터",
-      }),
-    ).toBeVisible();
+      section.getByTestId(`store-margin-row-${STORE_IDS.marginDefault}`),
+    ).toBeHidden();
+    await expect(card).toContainText("경계 기본점");
+    await expect(card).toContainText("실제");
+    await expect(card).toContainText("예상");
+    await expect(card).toContainText("차이");
+
+    const viewportWidths = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
+      viewportWidths.clientWidth + 1,
+    );
+
+    const cardBox = await card.boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(cardBox!.x).toBeGreaterThanOrEqual(0);
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(
+      viewportWidths.clientWidth + 1,
+    );
   });
 
   test("일별 품목별 판매 현황은 판매수량 상위 10개와 이름·규격 검색을 제공한다", async ({
@@ -2331,10 +2437,11 @@ test("본사는 매출 검토 페이지에서 지점별 매출 차트와 표를 
     storeSection.getByTestId("store-performance-chart-scroll"),
   ).toBeVisible();
   await expect(
-    storeSection.getByRole("radio", {
-      name: /매출액순|마진율순/,
-    }),
-  ).toHaveCount(0);
+    storeSection.getByRole("button", { name: "매출액순", exact: true }),
+  ).toBeVisible();
+  await expect(
+    storeSection.getByRole("button", { name: "마진율순", exact: true }),
+  ).toBeVisible();
   await storeSection.getByRole("button", { name: "표 보기" }).click();
   await expect(
     storeSection.locator('[data-testid^="hq-report-row-"]').first(),

@@ -176,7 +176,7 @@ export default async function DailyMeetingReportPage({
           매출액순은 매출 막대를, 마진율순은 실제·예상·차이 비교를 표시합니다.
         </p>
         <div className="mt-3">
-          <StoreDailyPerformanceChart rows={report.rows} enableViewModes />
+          <StoreDailyPerformanceChart rows={report.rows} variant="daily" />
         </div>
       </section>
 

@@ -224,11 +224,13 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
     chartSource,
     /type ViewMode = "salesAmount" \| "grossMarginRate"/,
   );
-  assert.match(chartSource, /enableViewModes\?: boolean/);
-  assert.match(chartSource, /enableViewModes = false/);
   assert.match(
     chartSource,
-    /const effectiveViewMode = enableViewModes \? viewMode : "salesAmount"/,
+    /variant: "daily" \| "salesReview"/,
+  );
+  assert.match(
+    chartSource,
+    /variant === "daily"[\s\S]*?<DailyPerformanceViews rows=\{rows\} \/>[\s\S]*?<SalesReviewPerformanceChart rows=\{rows\} \/>/,
   );
   assert.match(chartSource, /<ToggleGroup/);
   assert.match(chartSource, /type="single"/);
@@ -269,7 +271,16 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
   assert.match(chartSource, /영업 매출 합계/);
   assert.match(chartSource, /지점 설정값/);
   assert.match(chartSource, /<table className="sr-only"/);
-  assert.match(chartSource, /<table className="w-full table-fixed text-sm"/);
+  assert.match(
+    chartSource,
+    /<table className="hidden w-full table-fixed text-sm sm:table"/,
+  );
+  assert.match(chartSource, /data-testid=\{`store-margin-card-\$\{row\.storeId\}`\}/);
+  assert.match(chartSource, /formatMarginUnavailableReason/);
+  assert.match(chartSource, /expectedGrossMarginRate\.reason \?\? null/);
+  assert.match(chartSource, /useLayoutEffect/);
+  assert.match(chartSource, /getBoundingClientRect\(\)\.width/);
+  assert.doesNotMatch(chartSource, /right:\s*420/);
   assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
   assert.match(
     chartSource,
@@ -281,9 +292,11 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
   );
   assert.match(
     dailyPageSource,
-    /<StoreDailyPerformanceChart rows=\{report\.rows\} enableViewModes \/>/,
+    /<StoreDailyPerformanceChart rows=\{report\.rows\} variant="daily" \/>/,
   );
-  assert.doesNotMatch(salesReviewPageSource, /enableViewModes/);
+  assert.match(salesReviewPageSource, /variant="salesReview"/);
+  assert.match(chartSource, /aria-label="정렬 기준"/);
+  assert.match(chartSource, /aria-pressed=\{sortMode === "salesAmount"\}/);
   assert.doesNotMatch(chartSource, /dataKey=\{(?:metric|viewMode)\}/);
   assert.doesNotMatch(chartSource, /추정 매출액|추정 이익률/);
 });
