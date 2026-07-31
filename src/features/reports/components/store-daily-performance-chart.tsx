@@ -501,11 +501,9 @@ function DailyPerformanceViews({ rows }: { rows: DailyMeetingReportRow[] }) {
     () =>
       [...storeRows].sort((a, b) => {
         const aUnavailable =
-          a.grossMarginRate === null ||
-          a.expectedGrossMarginRate === null;
+          a.grossMarginRate === null || a.expectedGrossMarginRate === null;
         const bUnavailable =
-          b.grossMarginRate === null ||
-          b.expectedGrossMarginRate === null;
+          b.grossMarginRate === null || b.expectedGrossMarginRate === null;
         if (aUnavailable !== bUnavailable) {
           return aUnavailable ? 1 : -1;
         }
