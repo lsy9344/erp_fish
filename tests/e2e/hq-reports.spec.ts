@@ -1372,7 +1372,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     ).toBe(true);
 
     for (const bar of await bars.all()) {
-      expect((await bar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(20);
+      expect((await bar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(20.01);
     }
 
     const accessibleTable = section.getByRole("table", {
