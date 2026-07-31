@@ -556,6 +556,64 @@ async function seedDailyChartAndRankingFixtures() {
   await seedProductRankingFixture(actorId);
 }
 
+async function seedEqualInventoryRatioFixture() {
+  const actorId = await getHeadquartersUserId();
+  await prisma.store.create({
+    data: {
+      id: STORE_IDS.inventoryEqual,
+      name: "재고동일점",
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+  const ledger = await seedLedger({
+    actorId,
+    storeId: STORE_IDS.inventoryEqual,
+    status: "HEADQUARTERS_CLOSED",
+    totalSalesAmount: 45000,
+    cashAmount: 45000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+  });
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: PRODUCT_IDS.fish,
+      productName: "스토리5-5 광어",
+      productCategory: "선어",
+      productSpec: "1kg",
+      unitPrice: 45000,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 45000,
+      isModified: true,
+      carryoverSource: "MANUAL",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerInventoryFifoLot.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      ledgerInventoryItemId: inventoryItem.id,
+      productId: PRODUCT_IDS.fish,
+      sourceType: "PURCHASE",
+      unitPrice: 45000,
+      originalQuantity: 1,
+      consumedQuantity: 0,
+      remainingQuantity: 1,
+      originalAmount: 45000,
+      consumedAmount: 0,
+      remainingAmount: 45000,
+      sortOrder: 1,
+      sourceBusinessDate: ledger.closingDate,
+    },
+  });
+}
+
 async function seedMarginFixture(input: {
   actorId: string;
   storeId: string;
@@ -1004,6 +1062,7 @@ test("통합 리포트는 좁은 화면에서 가로 넘침 없이 키보드로 
 test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 반영 숫자를 본다", async ({
   page,
 }) => {
+  await seedEqualInventoryRatioFixture();
   await login(page, "hq@example.com");
   await page.goto("/app/reports/daily?date=today");
 
@@ -1021,10 +1080,10 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     page.getByRole("heading", { name: "지점별 영업 매출·이익률" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "마진율순", exact: true }),
+    page.getByRole("radio", { name: "마진율순", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "매출액순", exact: true }),
+    page.getByRole("radio", { name: "매출액순", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "품목별 판매 현황" }),
@@ -1077,18 +1136,26 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
     .locator('[data-slot="card"]')
     .filter({ hasText: "재고비율" });
   await expect(
-    inventoryCard.getByLabel("지점별 매출 대비 재고 편차율 차트"),
+    inventoryCard.getByLabel("지점별 재고비율 차트"),
   ).toBeVisible();
   const inventoryRatioRow = inventoryCard
-    .getByRole("table", { name: "지점별 매출 대비 재고 편차 데이터" })
+    .getByRole("table", { name: "지점별 재고비율 데이터" })
     .getByRole("row")
     .filter({ hasText: "스토리6-1 정정마감점" });
   await expect(inventoryRatioRow).toContainText("₩120,000");
-  await expect(inventoryRatioRow).toContainText("+166.7%");
-  await expect(inventoryCard).toContainText("+166.7% (75,000원)");
+  await expect(inventoryRatioRow).toContainText("266.7%");
+  await expect(inventoryRatioRow).not.toContainText("+");
+  await expect(inventoryCard).toContainText("266.7%");
+  await expect(inventoryCard).not.toContainText("75,000원");
+  const equalInventoryRatioRow = inventoryCard
+    .getByRole("table", { name: "지점별 재고비율 데이터" })
+    .getByRole("row")
+    .filter({ hasText: "재고동일점" });
+  await expect(equalInventoryRatioRow).toContainText("₩45,000");
+  await expect(equalInventoryRatioRow).toContainText("100.0%");
   await expect(salesChangeCard).toContainText("전일 매출 0원");
   const incompleteInventoryRow = inventoryCard
-    .getByRole("table", { name: "지점별 매출 대비 재고 편차 데이터" })
+    .getByRole("table", { name: "지점별 재고비율 데이터" })
     .getByRole("row")
     .filter({ hasText: "스토리6-2 입력중점" });
   await expect(incompleteInventoryRow).toContainText("저장 FIFO 재고금액 누락");
@@ -1194,7 +1261,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await cleanupDailyChartAndRankingFixtures();
   });
 
-  test("아침 회의 지점별 장부 매출 차트는 지점별 기준값과 정확한 1.5%p 경계를 표시한다", async ({
+  test("아침 회의 지점별 실적은 매출·마진 보기를 분리하고 5.00%p 경계를 적용한다", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1204,16 +1271,16 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     const section = page
       .locator("section")
       .filter({ hasText: "지점별 영업 매출·이익률" });
-    const salesSort = section.getByRole("button", {
+    const salesMode = section.getByRole("radio", {
       name: "매출액순",
       exact: true,
     });
-    const marginSort = section.getByRole("button", {
+    const marginMode = section.getByRole("radio", {
       name: "마진율순",
       exact: true,
     });
-    await expect(salesSort).toHaveAttribute("aria-pressed", "true");
-    await expect(marginSort).toHaveAttribute("aria-pressed", "false");
+    await expect(salesMode).toBeChecked();
+    await expect(marginMode).not.toBeChecked();
 
     const bars = section.locator('[data-testid^="store-performance-bar-"]');
     await expect(
@@ -1227,10 +1294,9 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       ),
     ).toBe(true);
 
-    const closedBar = section.getByTestId(
-      `store-performance-bar-${STORE_IDS.marginDefault}`,
-    );
-    expect((await closedBar.boundingBox())?.width ?? 0).toBeGreaterThan(80);
+    for (const bar of await bars.all()) {
+      expect((await bar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(20);
+    }
 
     const accessibleTable = section.getByRole("table", {
       name: "지점별 매출 구성과 마진 데이터",
@@ -1239,18 +1305,26 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .locator("tbody tr")
       .filter({ hasText: "경계 기본점" });
     await expect(defaultMarginRow).toContainText("경계 기본점");
-    await expect(defaultMarginRow).toContainText("₩100만");
-    await expect(defaultMarginRow).toContainText("30%");
-    await expect(defaultMarginRow).toContainText("28.51%");
-    await expect(defaultMarginRow).toContainText("1%p 이상");
+    await expect(defaultMarginRow).toContainText("₩1,000,001");
+    await expect(defaultMarginRow).toContainText("30.0%");
+    await expect(defaultMarginRow).toContainText("25.0%");
+    await expect(defaultMarginRow).toContainText("+5.0%p");
+    await expect(defaultMarginRow).toContainText("기준 이내");
+
+    const destructiveMarginRow = accessibleTable
+      .locator("tbody tr")
+      .filter({ hasText: "경계 경고점" });
+    await expect(destructiveMarginRow).toContainText("+5.0%p");
+    await expect(destructiveMarginRow).toContainText(
+      "지점 설정값 5.0%p 이상",
+    );
 
     const missingMarginRow = accessibleTable
       .locator("tbody tr")
       .filter({ hasText: "경계 예상없음점" });
     await expect(missingMarginRow).toContainText("경계 예상없음점");
-    await expect(missingMarginRow).toContainText("₩100만");
-    await expect(missingMarginRow).toContainText("30%");
-    await expect(missingMarginRow).toContainText("데이터 부족");
+    await expect(missingMarginRow).toContainText("₩1,000,001");
+    await expect(missingMarginRow).toContainText("30.0%");
     await expect(missingMarginRow).toContainText("판정 불가");
 
     const salesOrder = await bars.evaluateAll((elements) =>
@@ -1269,78 +1343,70 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /영업 합계 ₩100만[\s\S]*실제 30% \(예상 28\.51%\)[\s\S]*마진 차이 1%p 이상/,
+      /₩1,000,001 · 실제 30\.0% · 예상 25\.0% · 차이 \+5\.0%p/,
     );
 
     await section
       .getByTestId(`store-performance-bar-${STORE_IDS.marginDestructive}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /영업 합계 ₩100만[\s\S]*실제 30% \(예상 28\.50%\)[\s\S]*마진 차이 1\.5%p 이상/,
+      /₩1,000,001 · 실제 30\.0% · 예상 25\.0% · 차이 \+5\.0%p · 기준 이상/,
     );
 
-    await marginSort.click();
-    await expect(salesSort).toHaveAttribute("aria-pressed", "false");
-    await expect(marginSort).toHaveAttribute("aria-pressed", "true");
-    await expect
-      .poll(async () => {
-        const marginOrder = await bars.evaluateAll((elements) =>
-          elements.map((element) => element.getAttribute("data-testid")),
-        );
-        const closedIndex = marginOrder.indexOf(
-          `store-performance-bar-${STORE_IDS.closed}`,
-        );
-        const defaultIndex = marginOrder.indexOf(
-          `store-performance-bar-${STORE_IDS.marginDefault}`,
-        );
-        return (
-          closedIndex >= 0 && defaultIndex >= 0 && closedIndex < defaultIndex
-        );
-      })
-      .toBe(true);
-    await expect
-      .poll(async () => {
-        const marginOrder = await bars.evaluateAll((elements) =>
-          elements.map((element) => element.getAttribute("data-testid")),
-        );
-        const unavailableIndex = marginOrder.indexOf(
-          `store-performance-bar-${STORE_IDS.tieGa}`,
-        );
-        const availableIndex = marginOrder.indexOf(
-          `store-performance-bar-${STORE_IDS.marginDefault}`,
-        );
-        return availableIndex >= 0 && availableIndex < unavailableIndex;
-      })
-      .toBe(true);
+    await marginMode.click();
+    await expect(salesMode).not.toBeChecked();
+    await expect(marginMode).toBeChecked();
+    await expect(bars).toHaveCount(0);
+    await expect(
+      section.getByTestId("store-performance-chart-scroll"),
+    ).toHaveCount(0);
 
-    await section
-      .getByTestId(`store-performance-bar-${STORE_IDS.tieGa}`)
-      .hover();
-    await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /영업 합계 ₩5만[\s\S]*실제 데이터 부족 \(예상 데이터 부족\)/,
+    const marginRows = section.locator(
+      'tbody tr[data-testid^="store-margin-row-"]',
+    );
+    const actualMarginLabels = await marginRows
+      .locator("td:nth-child(2)")
+      .allTextContents();
+    const firstUnavailableIndex = actualMarginLabels.findIndex(
+      (label) => label === "판정 불가",
+    );
+    expect(firstUnavailableIndex).toBeGreaterThan(0);
+    expect(
+      actualMarginLabels
+        .slice(firstUnavailableIndex)
+        .every((label) => label === "판정 불가"),
+    ).toBe(true);
+
+    const defaultModeRow = section.getByTestId(
+      `store-margin-row-${STORE_IDS.marginDefault}`,
+    );
+    await expect(defaultModeRow).toContainText("기준 이내");
+    await expect(defaultModeRow).toContainText("+5.0%p");
+    await expect(defaultModeRow.locator("td").last()).not.toHaveClass(
+      /text-destructive/,
     );
 
-    await expect(section.getByText(/실제 30% \(예상 28\.51%\)/)).toBeVisible();
+    const destructiveModeRow = section.getByTestId(
+      `store-margin-row-${STORE_IDS.marginDestructive}`,
+    );
+    await expect(destructiveModeRow).toContainText(
+      "지점 설정값 5.0%p 이상",
+    );
+    await expect(destructiveModeRow).toContainText("+5.0%p");
+    await expect(destructiveModeRow.locator("td").last()).toHaveClass(
+      /text-destructive/,
+    );
+
+    const missingModeRow = section.getByTestId(
+      `store-margin-row-${STORE_IDS.marginMissing}`,
+    );
+    await expect(missingModeRow).toContainText("판정 불가");
+
     await expect(
-      section.getByText("마진 차이 1%p 이상", { exact: true }),
+      section.getByRole("table", {
+        name: "지점별 매출 구성과 마진 데이터",
+      }),
     ).toBeVisible();
-    await expect(
-      section.getByText("마진 차이 1.5%p 이상", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      section.getByText(/실제 30% \(예상 데이터 부족\)/),
-    ).toBeVisible();
-    await expect(
-      section.getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`),
-    ).toHaveAttribute("fill", "var(--destructive)");
-    await expect(
-      section.getByTestId(
-        `store-performance-bar-${STORE_IDS.marginDestructive}`,
-      ),
-    ).toHaveAttribute("fill", "var(--destructive)");
-    await expect(
-      section.getByTestId(`store-performance-bar-${STORE_IDS.marginMissing}`),
-    ).toHaveAttribute("fill", "var(--chart-1)");
   });
 
   test("일별 품목별 판매 현황은 판매수량 상위 10개와 이름·규격 검색을 제공한다", async ({
