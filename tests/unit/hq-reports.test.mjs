@@ -307,6 +307,14 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /<h3 className="text-sm font-medium">판매수량 상위 10개<\/h3>/,
   );
+  assert.match(
+    componentSource,
+    /mx-auto flex w-full max-w-2xl flex-col gap-3/,
+  );
+  assert.match(componentSource, /<Table className="table-fixed">/);
+  assert.match(componentSource, /<TableHead className="w-1\/2">품목/);
+  assert.match(componentSource, /<TableHead className="w-\[30%\]">규격/);
+  assert.match(componentSource, /className="w-1\/5 text-right"/);
   assert.match(componentSource, /colSpan=\{3\}/);
   assert.match(componentSource, /검색 결과가 없습니다\./);
   assert.match(componentSource, /추정 판매 수량/);
@@ -418,8 +426,8 @@ test("daily sales analysis and attendance components are display-only responsive
     salesSource.match(
       /tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g,
     )?.length,
-    2,
-    "both signed bar charts should separate category ticks from negative labels",
+    1,
+    "the signed sales-change chart should separate category ticks from negative labels",
   );
   assert.match(
     salesSource,
@@ -427,10 +435,14 @@ test("daily sales analysis and attendance components are display-only responsive
     "category labels should move into the reserved left margin only when negative labels need the axis lane",
   );
   assert.match(salesSource, /lg:grid-cols-3/);
-  assert.match(salesSource, /deviationRate/);
-  assert.match(salesSource, /deviationAmount/);
+  assert.match(salesSource, /inventoryRatio/);
+  assert.match(salesSource, /재고금액 ÷ 매출액 비율/);
+  assert.match(salesSource, /<ReferenceLine x=\{1\} \/>/);
+  assert.match(salesSource, /dataKey="inventoryRatio" maxBarSize=\{20\}/);
+  assert.doesNotMatch(salesSource, /deviationRate/);
+  assert.doesNotMatch(salesSource, /deviationAmount/);
+  assert.doesNotMatch(salesSource, /재고 편차/);
   assert.match(salesSource, /formatShareWithAmount/);
-  assert.match(salesSource, /formatPercentWithAmount/);
   assert.match(salesSource, /표시할 매출 분석 데이터가 없습니다\./);
   assert.doesNotMatch(salesSource, /전체 평균 대비/);
   assert.doesNotMatch(salesSource, /\.reduce\(|\/\s*(?:total|previous|sales)/);
@@ -2340,32 +2352,29 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
   );
   assert.equal(inventoryRatio.inventoryAmount.value, 30_000);
   assert.equal(inventoryRatio.salesAmount.value, 120_000);
-  assert.equal(inventoryRatio.deviationAmount.value, -90_000);
-  assert.equal(inventoryRatio.deviationRate.value, -0.75);
+  assert.equal(inventoryRatio.inventoryRatio.value, 0.25);
   const zeroSalesInventory = analysis.inventoryRatios.find(
     (row) => row.storeId === "store-zero",
   );
   assert.equal(zeroSalesInventory.inventoryAmount.value, 10_000);
-  assert.equal(zeroSalesInventory.deviationAmount.value, 10_000);
-  assert.equal(zeroSalesInventory.deviationRate.value, null);
-  assert.equal(zeroSalesInventory.deviationRate.reason, "선택일 매출 0원");
+  assert.equal(zeroSalesInventory.inventoryRatio.value, null);
+  assert.equal(zeroSalesInventory.inventoryRatio.reason, "선택일 매출 0원");
   for (const storeId of ["store-incomplete", "store-corrected-inventory"]) {
     const row = analysis.inventoryRatios.find(
       (item) => item.storeId === storeId,
     );
     assert.equal(row.inventoryAmount.value, null);
-    assert.equal(row.deviationAmount.value, null);
-    assert.equal(row.deviationRate.value, null);
+    assert.equal(row.inventoryRatio.value, null);
   }
   assert.equal(
     analysis.inventoryRatios.find((row) => row.storeId === "store-incomplete")
-      .deviationRate.reason,
+      .inventoryRatio.reason,
     "저장 FIFO 재고금액 누락",
   );
   assert.equal(
     analysis.inventoryRatios.find(
       (row) => row.storeId === "store-corrected-inventory",
-    ).deviationRate.reason,
+    ).inventoryRatio.reason,
     "재고 수량 정정으로 FIFO 금액을 확정할 수 없음",
   );
 
@@ -2483,11 +2492,20 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
       }),
       previous: null,
     },
+    {
+      storeId: "inventory-empty",
+      storeName: "재고없음점",
+      current: ledger({
+        id: "inventory-empty-current",
+        sales: 100_000,
+        inventory: [{ inventoryAmount: 0 }],
+      }),
+      previous: null,
+    },
   ]).inventoryRatios;
-  assert.equal(inventoryDeviationEdges[0].deviationRate.value, 0);
-  assert.equal(inventoryDeviationEdges[0].deviationAmount.value, 0);
-  assert.equal(inventoryDeviationEdges[1].deviationRate.value, 1.5);
-  assert.equal(inventoryDeviationEdges[1].deviationAmount.value, 150_000);
+  assert.equal(inventoryDeviationEdges[0].inventoryRatio.value, 1);
+  assert.equal(inventoryDeviationEdges[1].inventoryRatio.value, 2.5);
+  assert.equal(inventoryDeviationEdges[2].inventoryRatio.value, 0);
 
   const attendance = buildDailyAttendanceReport(stores);
   assert.deepEqual(attendance.summary, {

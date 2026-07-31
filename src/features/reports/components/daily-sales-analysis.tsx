@@ -53,9 +53,8 @@ type PositionChartRow = {
 type InventoryChartRow = {
   storeId: string;
   storeName: string;
-  deviationRate: number;
-  deviationLabel: string;
-  compactLabel: string;
+  inventoryRatio: number;
+  ratioLabel: string;
 };
 
 type UnavailableRow = {
@@ -91,7 +90,7 @@ const positionConfig = {
 } satisfies ChartConfig;
 
 const inventoryConfig = {
-  deviationRate: { label: "재고 편차율", color: "var(--chart-2)" },
+  inventoryRatio: { label: "재고비율", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 const SIGNED_CHART_CATEGORY_AXIS_WIDTH = 72;
@@ -183,10 +182,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
 
   const inventoryRows: InventoryChartRow[] = data.inventoryRatios.flatMap(
     (row) => {
-      if (
-        row.deviationRate.value === null ||
-        row.deviationAmount.value === null
-      ) {
+      if (row.inventoryRatio.value === null) {
         return [];
       }
 
@@ -194,27 +190,20 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
         {
           storeId: row.storeId,
           storeName: row.storeName,
-          deviationRate: row.deviationRate.value,
-          deviationLabel: formatPercentWithAmount(
-            row.deviationRate,
-            row.deviationAmount,
-          ),
-          compactLabel: formatCompactPercentWithAmount(
-            row.deviationRate,
-            row.deviationAmount,
-          ),
+          inventoryRatio: row.inventoryRatio.value,
+          ratioLabel: formatPercent(row.inventoryRatio),
         },
       ];
     },
   );
   const unavailableInventoryRows: UnavailableRow[] =
     data.inventoryRatios.flatMap((row) =>
-      row.deviationRate.value === null
+      row.inventoryRatio.value === null
         ? [
             {
               key: row.storeId,
               label: row.storeName,
-              reason: getUnavailableReason(row.deviationRate),
+              reason: getUnavailableReason(row.inventoryRatio),
             },
           ]
         : [],
@@ -272,7 +261,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
         <CardHeader>
           <CardTitle>재고비율</CardTitle>
           <CardDescription>
-            (재고금액 - 매출액) ÷ 매출액 편차율과 편차액을 표시합니다.
+            재고금액 ÷ 매출액 비율을 표시하며, 동일 금액은 100.0%입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
@@ -280,14 +269,14 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
             <EmptyChartMessage message="계산 가능한 재고비율이 없습니다." />
           ) : (
             <>
-              <InventoryDeviationChart rows={inventoryRows} />
-              <InventoryDeviationLegend rows={inventoryRows} />
+              <InventoryRatioChart rows={inventoryRows} />
+              <InventoryRatioLegend rows={inventoryRows} />
             </>
           )}
           <InventoryAccessibleTable data={data} />
         </CardContent>
         <AvailabilityFooter
-          availableMessage="축 범위는 지점별 최솟값·최댓값에 맞춰 자동 조정됩니다."
+          availableMessage="100% 기준선은 재고금액과 매출액이 같은 지점을 뜻합니다."
           rows={unavailableInventoryRows}
         />
       </Card>
@@ -504,13 +493,13 @@ function SalesChangeLegend({ rows }: { rows: SalesChangeChartRow[] }) {
   );
 }
 
-function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
-  const values = rows.map((row) => row.deviationRate);
+function InventoryRatioChart({ rows }: { rows: InventoryChartRow[] }) {
+  const values = rows.map((row) => row.inventoryRatio);
   const chartHeight = Math.max(220, rows.length * 52 + 40);
 
   return (
     <ChartContainer
-      aria-label="지점별 매출 대비 재고 편차율 차트"
+      aria-label="지점별 재고비율 차트"
       className="min-h-56 w-full min-w-0"
       config={inventoryConfig}
       style={{ height: chartHeight }}
@@ -519,12 +508,12 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
         accessibilityLayer
         data={rows}
         layout="vertical"
-        margin={getSignedChartMargin(values, 104)}
+        margin={{ top: 4, right: 72, bottom: 4, left: 8 }}
       >
         <CartesianGrid horizontal={false} />
         <XAxis
           axisLine={false}
-          domain={getSignedDomain(values)}
+          domain={[0, getInventoryRatioDomainMaximum(values)]}
           tickFormatter={(value) =>
             unsignedPercentFormatter.format(Number(value))
           }
@@ -534,12 +523,12 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
         <YAxis
           axisLine={false}
           dataKey="storeName"
-          tickMargin={getSignedCategoryTickMargin(values)}
+          tickMargin={8}
           tickLine={false}
           type="category"
           width={SIGNED_CHART_CATEGORY_AXIS_WIDTH}
         />
-        <ReferenceLine x={0} />
+        <ReferenceLine x={1} />
         <ChartTooltip
           content={
             <ChartTooltipContent
@@ -553,7 +542,7 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
                       {row.storeName}
                     </span>
                     <span className="font-mono font-medium tabular-nums">
-                      {row.deviationLabel}
+                      {row.ratioLabel}
                     </span>
                   </div>
                 );
@@ -561,30 +550,28 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
             />
           }
         />
-        <Bar dataKey="deviationRate" radius={4}>
+        <Bar dataKey="inventoryRatio" maxBarSize={20} radius={4}>
           {rows.map((row) => (
             <Cell
-              data-testid={`inventory-deviation-bar-${row.storeId}`}
-              fill={
-                row.deviationRate < 0
-                  ? "var(--chart-3)"
-                  : row.deviationRate > 0
-                    ? "var(--chart-2)"
-                    : "var(--muted-foreground)"
-              }
+              data-testid={`inventory-ratio-bar-${row.storeId}`}
+              fill="var(--chart-2)"
               key={row.storeId}
             />
           ))}
-          <LabelList content={SignedTwoLineLabel} dataKey="compactLabel" />
+          <LabelList
+            className="fill-foreground text-[10px]"
+            dataKey="ratioLabel"
+            position="right"
+          />
         </Bar>
       </BarChart>
     </ChartContainer>
   );
 }
 
-function InventoryDeviationLegend({ rows }: { rows: InventoryChartRow[] }) {
+function InventoryRatioLegend({ rows }: { rows: InventoryChartRow[] }) {
   return (
-    <ul className="grid gap-2" aria-label="지점별 재고 편차율과 편차액 상세">
+    <ul className="grid gap-2" aria-label="지점별 재고비율 상세">
       {rows.map((row) => (
         <li
           className="flex min-w-0 items-start justify-between gap-2 text-xs"
@@ -592,7 +579,7 @@ function InventoryDeviationLegend({ rows }: { rows: InventoryChartRow[] }) {
         >
           <span className="truncate font-medium">{row.storeName}</span>
           <span className="shrink-0 text-right tabular-nums">
-            {row.deviationLabel}
+            {row.ratioLabel}
           </span>
         </li>
       ))}
@@ -707,14 +694,13 @@ function InventoryAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
   return (
     <div className="sr-only">
       <table>
-        <caption>지점별 매출 대비 재고 편차 데이터</caption>
+        <caption>지점별 재고비율 데이터</caption>
         <thead>
           <tr>
             <th>지점</th>
             <th>재고금액</th>
             <th>매출액</th>
-            <th>재고 편차율</th>
-            <th>재고 편차액</th>
+            <th>재고비율</th>
             <th>계산 상태</th>
           </tr>
         </thead>
@@ -724,11 +710,10 @@ function InventoryAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
               <td>{row.storeName}</td>
               <td>{formatMoney(row.inventoryAmount)}</td>
               <td>{formatMoney(row.salesAmount)}</td>
-              <td>{formatPercent(row.deviationRate)}</td>
-              <td>{formatMoney(row.deviationAmount)}</td>
+              <td>{formatPercent(row.inventoryRatio)}</td>
               <td>
-                {row.deviationRate.value === null
-                  ? getUnavailableReason(row.deviationRate)
+                {row.inventoryRatio.value === null
+                  ? getUnavailableReason(row.inventoryRatio)
                   : "계산 가능"}
               </td>
             </tr>
@@ -800,6 +785,10 @@ function getSignedCategoryTickMargin(values: number[]) {
     : 8;
 }
 
+function getInventoryRatioDomainMaximum(values: number[]) {
+  return Math.max(1, ...values) * 1.12;
+}
+
 function formatMoney(metric: LedgerReviewMetric) {
   return metric.value === null
     ? formatUnavailable(metric)
@@ -827,26 +816,6 @@ function formatShareWithAmount(
   }
 
   return `${unsignedPercentFormatter.format(share.value)} (${formatSignedWon(salesAmount.value)})`;
-}
-
-function formatPercentWithAmount(
-  rate: LedgerReviewMetric,
-  amount: LedgerReviewMetric,
-) {
-  if (rate.value === null || amount.value === null) {
-    return formatUnavailable(rate.value === null ? rate : amount);
-  }
-
-  return `${percentFormatter.format(rate.value)} (${formatSignedWon(amount.value)})`;
-}
-
-function formatCompactPercentWithAmount(
-  rate: LedgerReviewMetric,
-  amount: LedgerReviewMetric,
-) {
-  if (rate.value === null || amount.value === null) return "계산 불가|";
-
-  return `${percentFormatter.format(rate.value)}|(${formatSignedWon(amount.value)})`;
 }
 
 function formatChangeWithAmount(
