@@ -245,9 +245,7 @@ export function ProductProfitabilityReport({
                 <TableRow>
                   <TableHead className="w-1/2">품목</TableHead>
                   <TableHead className="w-[30%]">규격</TableHead>
-                  <TableHead className="w-1/5 text-right">
-                    판매수량
-                  </TableHead>
+                  <TableHead className="w-1/5 text-right">판매수량</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

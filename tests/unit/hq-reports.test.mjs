@@ -322,10 +322,7 @@ test("daily product table is searchable, quantity-ranked, and limited to three c
     componentSource,
     /<h3 className="text-sm font-medium">판매수량 상위 10개<\/h3>/,
   );
-  assert.match(
-    componentSource,
-    /mx-auto flex w-full max-w-2xl flex-col gap-3/,
-  );
+  assert.match(componentSource, /mx-auto flex w-full max-w-2xl flex-col gap-3/);
   assert.match(componentSource, /<Table className="table-fixed">/);
   assert.match(componentSource, /<TableHead className="w-1\/2">품목/);
   assert.match(componentSource, /<TableHead className="w-\[30%\]">규격/);
@@ -440,8 +437,8 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.equal(
     salesSource.match(/tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g)
       ?.length,
-    2,
-    "both signed bar charts should separate category ticks from negative labels",
+    1,
+    "the signed sales-change chart should separate category ticks from negative labels",
   );
   assert.match(
     salesSource,
