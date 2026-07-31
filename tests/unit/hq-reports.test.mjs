@@ -180,8 +180,8 @@ test("gross-margin gap defaults to 5.00%p, preserves its sign, and includes the 
   } = await import(pathToFileURL(helperPath).href);
 
   assert.equal(DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS, 500);
-  assert.equal(getGrossMarginGap(0.2, 0.25), -0.05);
-  assert.equal(getGrossMarginGap(0.3, 0.25), 0.04999999999999999);
+  assert.ok(Math.abs(getGrossMarginGap(0.2, 0.25) + 0.05) < 1e-12);
+  assert.ok(Math.abs(getGrossMarginGap(0.3, 0.25) - 0.05) < 1e-12);
   assert.equal(getGrossMarginGap(null, 0.25), null);
   assert.equal(getGrossMarginGap(0.3, null), null);
   assert.equal(hasSignificantGrossMarginGap(0.2, 0.2499), false);
@@ -251,7 +251,7 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
   assert.match(chartSource, /data-testid="store-performance-chart-scroll"/);
   assert.match(
     chartSource,
-    /actual === null \|\| expected === null[\s\S]*?"판정 불가"/,
+    /const gap = getGrossMarginGap\(actual, expected\);[\s\S]*?gap === null[\s\S]*?"판정 불가"/,
   );
   assert.match(
     chartSource,
