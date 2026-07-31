@@ -409,6 +409,23 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.match(salesSource, /BarChart/);
   assert.match(salesSource, /PieChart/);
   assert.match(salesSource, /ReferenceLine/);
+  assert.match(
+    salesSource,
+    /const SIGNED_CHART_CATEGORY_AXIS_WIDTH = 72;/,
+    "signed charts should define a dedicated category-axis lane",
+  );
+  assert.equal(
+    salesSource.match(
+      /tickMargin=\{getSignedCategoryTickMargin\(values\)\}/g,
+    )?.length,
+    2,
+    "both signed bar charts should separate category ticks from negative labels",
+  );
+  assert.match(
+    salesSource,
+    /values\.some\(\(value\) => value < 0\)\s+\? SIGNED_CHART_CATEGORY_AXIS_WIDTH\s+: 8/,
+    "category labels should move into the reserved left margin only when negative labels need the axis lane",
+  );
   assert.match(salesSource, /lg:grid-cols-3/);
   assert.match(salesSource, /deviationRate/);
   assert.match(salesSource, /deviationAmount/);

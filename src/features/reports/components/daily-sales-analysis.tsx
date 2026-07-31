@@ -94,6 +94,8 @@ const inventoryConfig = {
   deviationRate: { label: "재고 편차율", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
+const SIGNED_CHART_CATEGORY_AXIS_WIDTH = 72;
+
 const chartColors = [
   "var(--chart-1)",
   "var(--chart-2)",
@@ -323,9 +325,10 @@ function SignedChangeChart({ rows }: { rows: SalesChangeChartRow[] }) {
         <YAxis
           axisLine={false}
           dataKey="storeName"
+          tickMargin={getSignedCategoryTickMargin(values)}
           tickLine={false}
           type="category"
-          width={72}
+          width={SIGNED_CHART_CATEGORY_AXIS_WIDTH}
         />
         <ReferenceLine x={0} />
         <ChartTooltip
@@ -531,9 +534,10 @@ function InventoryDeviationChart({ rows }: { rows: InventoryChartRow[] }) {
         <YAxis
           axisLine={false}
           dataKey="storeName"
+          tickMargin={getSignedCategoryTickMargin(values)}
           tickLine={false}
           type="category"
-          width={72}
+          width={SIGNED_CHART_CATEGORY_AXIS_WIDTH}
         />
         <ReferenceLine x={0} />
         <ChartTooltip
@@ -788,6 +792,12 @@ function getSignedChartMargin(values: number[], labelSpace: number) {
     bottom: 4,
     left: values.some((value) => value < 0) ? labelSpace : 8,
   };
+}
+
+function getSignedCategoryTickMargin(values: number[]) {
+  return values.some((value) => value < 0)
+    ? SIGNED_CHART_CATEGORY_AXIS_WIDTH
+    : 8;
 }
 
 function formatMoney(metric: LedgerReviewMetric) {
