@@ -173,10 +173,10 @@ export default async function DailyMeetingReportPage({
         <p className="text-muted-foreground mt-1 text-xs">
           막대는 정정 반영 영업 매출 합계이며, 실제 이익률은 영업 매출 합계와
           매출원가로, 예상 이익률은 재고 흐름과 판매한 가격으로 계산합니다.
-          버튼은 정렬 기준만 변경합니다.
+          매출액순은 매출 막대를, 마진율순은 실제·예상·차이 비교를 표시합니다.
         </p>
         <div className="mt-3">
-          <StoreDailyPerformanceChart rows={report.rows} />
+          <StoreDailyPerformanceChart rows={report.rows} enableViewModes />
         </div>
       </section>
 
