@@ -1135,9 +1135,7 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   const inventoryCard = salesAnalysisSection
     .locator('[data-slot="card"]')
     .filter({ hasText: "재고비율" });
-  await expect(
-    inventoryCard.getByLabel("지점별 재고비율 차트"),
-  ).toBeVisible();
+  await expect(inventoryCard.getByLabel("지점별 재고비율 차트")).toBeVisible();
   const inventoryRatioRow = inventoryCard
     .getByRole("table", { name: "지점별 재고비율 데이터" })
     .getByRole("row")
@@ -1279,8 +1277,8 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       name: "마진율순",
       exact: true,
     });
-    await expect(salesMode).toBeChecked();
-    await expect(marginMode).not.toBeChecked();
+    await expect(salesMode).toHaveAttribute("aria-checked", "true");
+    await expect(marginMode).toHaveAttribute("aria-checked", "false");
 
     const bars = section.locator('[data-testid^="store-performance-bar-"]');
     await expect(
@@ -1315,9 +1313,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .locator("tbody tr")
       .filter({ hasText: "경계 경고점" });
     await expect(destructiveMarginRow).toContainText("+5.0%p");
-    await expect(destructiveMarginRow).toContainText(
-      "지점 설정값 5.0%p 이상",
-    );
+    await expect(destructiveMarginRow).toContainText("지점 설정값 5.0%p 이상");
 
     const missingMarginRow = accessibleTable
       .locator("tbody tr")
@@ -1354,8 +1350,8 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     );
 
     await marginMode.click();
-    await expect(salesMode).not.toBeChecked();
-    await expect(marginMode).toBeChecked();
+    await expect(salesMode).toHaveAttribute("aria-checked", "false");
+    await expect(marginMode).toHaveAttribute("aria-checked", "true");
     await expect(bars).toHaveCount(0);
     await expect(
       section.getByTestId("store-performance-chart-scroll"),
@@ -1389,9 +1385,7 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     const destructiveModeRow = section.getByTestId(
       `store-margin-row-${STORE_IDS.marginDestructive}`,
     );
-    await expect(destructiveModeRow).toContainText(
-      "지점 설정값 5.0%p 이상",
-    );
+    await expect(destructiveModeRow).toContainText("지점 설정값 5.0%p 이상");
     await expect(destructiveModeRow).toContainText("+5.0%p");
     await expect(destructiveModeRow.locator("td").last()).toHaveClass(
       /text-destructive/,
@@ -1441,7 +1435,8 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     ]);
     const salesRankingTable = section.getByRole("table");
     expect(
-      (await salesRankingTable.boundingBox())?.width ?? Number.POSITIVE_INFINITY,
+      (await salesRankingTable.boundingBox())?.width ??
+        Number.POSITIVE_INFINITY,
     ).toBeLessThanOrEqual(672);
     for (const removedHeader of [
       "분류",
