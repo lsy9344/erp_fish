@@ -80,6 +80,11 @@ const unsignedPercentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",
   maximumFractionDigits: 1,
 });
+const inventoryRatioFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 const salesChangeConfig = {
   rate: { label: "전일 대비 증감률", color: "var(--chart-1)" },
@@ -191,7 +196,7 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
           storeId: row.storeId,
           storeName: row.storeName,
           inventoryRatio: row.inventoryRatio.value,
-          ratioLabel: formatPercent(row.inventoryRatio),
+          ratioLabel: formatInventoryRatio(row.inventoryRatio),
         },
       ];
     },
@@ -710,7 +715,7 @@ function InventoryAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
               <td>{row.storeName}</td>
               <td>{formatMoney(row.inventoryAmount)}</td>
               <td>{formatMoney(row.salesAmount)}</td>
-              <td>{formatPercent(row.inventoryRatio)}</td>
+              <td>{formatInventoryRatio(row.inventoryRatio)}</td>
               <td>
                 {row.inventoryRatio.value === null
                   ? getUnavailableReason(row.inventoryRatio)
@@ -799,6 +804,12 @@ function formatPercent(metric: LedgerReviewMetric) {
   return metric.value === null
     ? formatUnavailable(metric)
     : percentFormatter.format(metric.value);
+}
+
+function formatInventoryRatio(metric: LedgerReviewMetric) {
+  return metric.value === null
+    ? formatUnavailable(metric)
+    : inventoryRatioFormatter.format(metric.value);
 }
 
 function formatShare(metric: LedgerReviewMetric) {

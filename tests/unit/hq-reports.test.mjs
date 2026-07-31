@@ -448,6 +448,11 @@ test("daily sales analysis and attendance components are display-only responsive
   assert.match(salesSource, /lg:grid-cols-3/);
   assert.match(salesSource, /inventoryRatio/);
   assert.match(salesSource, /재고금액 ÷ 매출액 비율/);
+  assert.match(
+    salesSource,
+    /const inventoryRatioFormatter = new Intl\.NumberFormat\("ko-KR", \{\s+style: "percent",\s+minimumFractionDigits: 1,\s+maximumFractionDigits: 1,/,
+  );
+  assert.match(salesSource, /formatInventoryRatio\(row\.inventoryRatio\)/);
   assert.match(salesSource, /<ReferenceLine x=\{1\} \/>/);
   assert.match(salesSource, /dataKey="inventoryRatio" maxBarSize=\{20\}/);
   assert.doesNotMatch(salesSource, /deviationRate/);
