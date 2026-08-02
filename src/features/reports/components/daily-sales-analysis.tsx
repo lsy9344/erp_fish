@@ -500,7 +500,11 @@ function SalesChangeLegend({ rows }: { rows: SalesChangeChartRow[] }) {
 
 function InventoryRatioChart({ rows }: { rows: InventoryChartRow[] }) {
   const values = rows.map((row) => row.inventoryRatio);
-  const chartHeight = Math.max(220, rows.length * 52 + 40);
+  const chartHeight = Math.max(232, rows.length * 56 + 40);
+  const labelRightMargin = Math.max(
+    72,
+    ...rows.map((row) => row.ratioLabel.length * 8 + 24),
+  );
 
   return (
     <ChartContainer
@@ -513,7 +517,7 @@ function InventoryRatioChart({ rows }: { rows: InventoryChartRow[] }) {
         accessibilityLayer
         data={rows}
         layout="vertical"
-        margin={{ top: 4, right: 72, bottom: 4, left: 8 }}
+        margin={{ top: 4, right: labelRightMargin, bottom: 4, left: 8 }}
       >
         <CartesianGrid horizontal={false} />
         <XAxis
@@ -563,14 +567,34 @@ function InventoryRatioChart({ rows }: { rows: InventoryChartRow[] }) {
               key={row.storeId}
             />
           ))}
-          <LabelList
-            className="fill-foreground text-[10px]"
-            dataKey="ratioLabel"
-            position="right"
-          />
+          <LabelList dataKey="ratioLabel" content={InventoryRatioLabel} />
         </Bar>
       </BarChart>
     </ChartContainer>
+  );
+}
+
+function InventoryRatioLabel({ x, y, width, height, value }: LabelProps) {
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    typeof value !== "string"
+  ) {
+    return null;
+  }
+
+  return (
+    <text
+      data-slot="inventory-ratio-label"
+      x={x + width + 8}
+      y={y + height / 2}
+      dominantBaseline="central"
+      className="fill-foreground text-[10px]"
+    >
+      {value}
+    </text>
   );
 }
 

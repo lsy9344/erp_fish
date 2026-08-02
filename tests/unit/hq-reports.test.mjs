@@ -238,7 +238,13 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
   assert.match(chartSource, /<SalesAmountView rows=\{salesRows\}/);
   assert.match(chartSource, /<GrossMarginView rows=\{marginRows\}/);
   assert.match(chartSource, /<Bar dataKey="salesAmount"/);
-  assert.match(chartSource, /maxBarSize=\{20\}/);
+  assert.match(chartSource, /maxBarSize=\{26\}/);
+  assert.match(chartSource, /data-slot="store-performance-bar-label"/);
+  assert.match(chartSource, /value\.split\("\\n"\)/);
+  assert.match(
+    chartSource,
+    /실제 \$\{formatMargin\(row\.grossMarginRate\)\} \(예상 \$\{formatMargin\(row\.expectedGrossMarginRate\)\}\)/,
+  );
   assert.match(chartSource, /<Cell/);
   assert.match(chartSource, /hasSignificantGrossMarginGap/);
   assert.match(chartSource, /getGrossMarginGap/);
