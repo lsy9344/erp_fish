@@ -1164,6 +1164,22 @@ test("본사는 일별 아침 회의 리포트에서 지점별 상태와 정정 
   await expect(inventoryRatioRow).not.toContainText("+");
   await expect(inventoryCard).toContainText("266.7%");
   await expect(inventoryCard).not.toContainText("75,000원");
+  const inventoryRatioLabels = inventoryCard.locator(
+    '[data-slot="inventory-ratio-label"]',
+  );
+  await expect(inventoryRatioLabels.first()).toBeVisible();
+  const inventoryRatioLabelBoxes = await inventoryRatioLabels.evaluateAll(
+    (labels) =>
+      labels
+        .map((label) => label.getBoundingClientRect())
+        .sort((a, b) => a.top - b.top)
+        .map(({ top, bottom }) => ({ top, bottom })),
+  );
+  for (let index = 1; index < inventoryRatioLabelBoxes.length; index += 1) {
+    expect(inventoryRatioLabelBoxes[index]!.top).toBeGreaterThanOrEqual(
+      inventoryRatioLabelBoxes[index - 1]!.bottom,
+    );
+  }
   const equalInventoryRatioRow = inventoryCard
     .getByRole("table", { name: "지점별 재고비율 데이터" })
     .getByRole("row")
@@ -1372,7 +1388,31 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     ).toBe(true);
 
     for (const bar of await bars.all()) {
-      expect((await bar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(20.01);
+      expect((await bar.boundingBox())?.height ?? 0).toBeCloseTo(26, 0);
+    }
+
+    const performanceLabels = section.locator(
+      '[data-slot="store-performance-bar-label"]',
+    );
+    await expect(performanceLabels.first()).toBeVisible();
+    await expect(performanceLabels.first().locator("tspan")).toHaveCount(2);
+    await expect(performanceLabels.first().locator("tspan").nth(0)).toHaveText(
+      /^₩[\d,]+$/,
+    );
+    await expect(performanceLabels.first().locator("tspan").nth(1)).toHaveText(
+      /^실제 .+ \(예상 .+\) · 차이 .+/,
+    );
+    const performanceLabelBoxes = await performanceLabels.evaluateAll(
+      (labels) =>
+        labels
+          .map((label) => label.getBoundingClientRect())
+          .sort((a, b) => a.top - b.top)
+          .map(({ top, bottom }) => ({ top, bottom })),
+    );
+    for (let index = 1; index < performanceLabelBoxes.length; index += 1) {
+      expect(performanceLabelBoxes[index]!.top).toBeGreaterThanOrEqual(
+        performanceLabelBoxes[index - 1]!.bottom,
+      );
     }
 
     const accessibleTable = section.getByRole("table", {
@@ -1418,14 +1458,14 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
       .getByTestId(`store-performance-bar-${STORE_IDS.marginDefault}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /₩1,000,001 · 실제 30\.0% · 예상 25\.0% · 차이 \+5\.0%p/,
+      /₩1,000,001\s*실제 30\.0% \(예상 25\.0%\) · 차이 \+5\.0%p/,
     );
 
     await section
       .getByTestId(`store-performance-bar-${STORE_IDS.marginDestructive}`)
       .hover();
     await expect(section.locator(".recharts-tooltip-wrapper")).toContainText(
-      /₩1,000,001 · 실제 30\.0% · 예상 25\.0% · 차이 \+5\.0%p · 기준 이상/,
+      /₩1,000,001\s*실제 30\.0% \(예상 25\.0%\) · 차이 \+5\.0%p · 기준 이상/,
     );
 
     await marginMode.click();
