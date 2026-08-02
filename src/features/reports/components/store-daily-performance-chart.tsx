@@ -163,15 +163,15 @@ function isWarning(row: StoreChartRow) {
 }
 
 function formatChartLabel(row: StoreChartRow & { salesAmount: number }) {
-  return [
-    krwFormatter.format(row.salesAmount),
-    `실제 ${formatMargin(row.grossMarginRate)}`,
-    `예상 ${formatMargin(row.expectedGrossMarginRate)}`,
+  const comparisonLabel = [
+    `실제 ${formatMargin(row.grossMarginRate)} (예상 ${formatMargin(row.expectedGrossMarginRate)})`,
     `차이 ${formatMarginGap(row.grossMarginRate, row.expectedGrossMarginRate)}`,
     isWarning(row) ? "기준 이상" : "",
   ]
     .filter(Boolean)
     .join(" · ");
+
+  return `${krwFormatter.format(row.salesAmount)}\n${comparisonLabel}`;
 }
 
 function compareNullableDescending(a: number | null, b: number | null) {
@@ -191,27 +191,41 @@ function StorePerformanceLabel({ x, y, width, height, value }: LabelProps) {
     return null;
   }
 
+  const lines = value.split("\n");
+  const lineHeight = 16;
+  const labelY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
+
   return (
     <text
+      data-slot="store-performance-bar-label"
       x={x + width + 8}
-      y={y + height / 2}
+      y={labelY}
       dominantBaseline="central"
       className="fill-foreground text-xs"
     >
-      {value}
+      {lines.map((line, index) => (
+        <tspan
+          key={`${line}-${index}`}
+          x={x + width + 8}
+          dy={index === 0 ? 0 : lineHeight}
+        >
+          {line}
+        </tspan>
+      ))}
     </text>
   );
 }
 
 function SalesAmountView({ rows }: { rows: SalesChartRow[] }) {
-  const chartHeight = Math.max(140, rows.length * 48 + 48);
-  const longestLabel = useMemo(
+  const chartHeight = Math.max(160, rows.length * 56 + 48);
+  const longestLabelLine = useMemo(
     () =>
-      rows.reduce(
-        (longest, row) =>
-          row.label.length > longest.length ? row.label : longest,
-        "",
-      ),
+      rows
+        .flatMap((row) => row.label.split("\n"))
+        .reduce(
+          (longest, line) => (line.length > longest.length ? line : longest),
+          "",
+        ),
     [rows],
   );
   const labelMeasureRef = useRef<HTMLSpanElement>(null);
@@ -223,7 +237,7 @@ function SalesAmountView({ rows }: { rows: SalesChartRow[] }) {
     if (measuredWidth) {
       setLabelRightMargin(Math.ceil(measuredWidth) + 24);
     }
-  }, [longestLabel]);
+  }, [longestLabelLine]);
 
   const chartMinWidth = Math.max(520, 380 + labelRightMargin);
 
@@ -234,7 +248,7 @@ function SalesAmountView({ rows }: { rows: SalesChartRow[] }) {
         aria-hidden="true"
         className="pointer-events-none invisible absolute text-xs whitespace-nowrap"
       >
-        {longestLabel}
+        {longestLabelLine}
       </span>
       <div
         data-testid="store-performance-chart-scroll"
@@ -251,7 +265,7 @@ function SalesAmountView({ rows }: { rows: SalesChartRow[] }) {
             desc="매출액순 막대와 실제 마진, 예상 마진, 부호 있는 차이 및 지점 설정값 이상 경고를 함께 표시합니다."
             data={rows}
             layout="vertical"
-            maxBarSize={20}
+            maxBarSize={26}
             margin={{
               top: 4,
               right: labelRightMargin,
