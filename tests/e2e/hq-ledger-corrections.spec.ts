@@ -514,11 +514,12 @@ test("마스터 직접 저장은 기존 정정을 대체하고 이력은 보존�
   await page.getByRole("tab", { name: "매출/결제" }).click();
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
 
-  // 총매출을 직접 수정해 저장한다(KRW 입력은 포맷되므로 raw 숫자만 입력).
-  const totalSalesInput = salesPanel.getByLabel("총매출", { exact: true });
-  await totalSalesInput.click();
-  await totalSalesInput.press("Control+A");
-  await totalSalesInput.pressSequentially("52000");
+  // 총매출은 결제수단 합계로 파생되는 읽기 전용 값이다. 현금·카드·기타 입력으로
+  // 52,000원(현금 46,000 + 카드 6,000)을 만들어 저장한다.
+  const cashInput = salesPanel.getByLabel("현금", { exact: true });
+  await cashInput.click();
+  await cashInput.press("Control+A");
+  await cashInput.pressSequentially("46000");
 
   const reasonInput = salesPanel.getByLabel("본사 수정 사유");
   await reasonInput.fill("정정 대체 직접 수정");

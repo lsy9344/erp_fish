@@ -230,17 +230,24 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
 
-  const priceInput = page.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  // 다른 탭의 수정 사유/저장 버튼이 forceMount로 함께 존재하므로 재고 패널로 한정한다.
+  const inventoryPanel = page.locator(
+    '[data-ledger-detail-panel="inventory"]',
+  );
+
+  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
   await expect(priceInput).toBeVisible();
   await expect(priceInput).toBeEnabled();
   // 판매가가 없는 품목도 같은 행 목록에 입력 없이 함께 보인다.
-  await expect(page.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`)).toBeVisible();
+  await expect(
+    inventoryPanel.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`),
+  ).toBeVisible();
 
   await priceInput.click();
   await priceInput.press("Control+A");
   await priceInput.pressSequentially("1800");
-  await page.getByLabel("본사 수정 사유").fill("판매한 가격 오기입 정정");
-  await page.getByRole("button", { name: "저장" }).click();
+  await inventoryPanel.getByLabel("본사 수정 사유").fill("판매한 가격 오기입 정정");
+  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
 
   await expect
     .poll(async () => {
@@ -296,8 +303,12 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
 
-  const priceA = page.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
-  const priceB = page.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`);
+  const inventoryPanel = page.locator(
+    '[data-ledger-detail-panel="inventory"]',
+  );
+
+  const priceA = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  const priceB = inventoryPanel.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`);
 
   // 품목 A 가격을 비우고(변경 없음), 품목 B에 0원을 저장한다.
   await priceA.click();
@@ -306,8 +317,10 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
   await priceB.click();
   await priceB.press("Control+A");
   await priceB.pressSequentially("0");
-  await page.getByLabel("본사 수정 사유").fill("무가격 품목 0원 저장 확인");
-  await page.getByRole("button", { name: "저장" }).click();
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("무가격 품목 0원 저장 확인");
+  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
 
   await expect
     .poll(async () => {
@@ -333,4 +346,51 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
       return { planA: planA?.plannedUnitPrice, planB: planB?.plannedUnitPrice };
     })
     .toEqual({ planA: 1500, planB: 0 });
+});
+
+// DESIGN.md D8: 마감 재고/판매가격 저장도 오래된 화면 저장은 충돌로 거부된다.
+test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로 거부된다", async ({
+  page,
+}) => {
+  const { actorId, ledger, productA } = await seedClosedLedgerWithPrices();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "재고" }).click();
+
+  const inventoryPanel = page.locator(
+    '[data-ledger-detail-panel="inventory"]',
+  );
+
+  // 화면 로드 후 다른 곳에서 장부가 바뀌면(UpdatedAt/version 변동) stale token이다.
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: { workerCount: 3, updatedById: actorId, version: { increment: 1 } },
+  });
+
+  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  await priceInput.click();
+  await priceInput.press("Control+A");
+  await priceInput.pressSequentially("1900");
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("stale 마감 재고 저장 확인");
+  await inventoryPanel
+    .getByRole("button", { name: "저장", exact: true })
+    .click();
+
+  await expect(
+    page.getByRole("dialog", { name: "저장 충돌이 발생했습니다" }),
+  ).toBeVisible();
+
+  // 판매가격은 변하지 않는다.
+  const plan = await prisma.storeSalesPricePlan.findFirst({
+    where: {
+      storeId: STORE_ID,
+      businessDate: getKstMidnight(),
+      productId: productA.id,
+    },
+    select: { plannedUnitPrice: true },
+  });
+  expect(plan?.plannedUnitPrice).toBe(1500);
 });

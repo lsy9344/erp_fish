@@ -232,7 +232,9 @@ async function seedStoryThreeOneData() {
     product.id,
     actorId,
   );
-  await seedInventoryItem(closedLedger.id, product.id, actorId);
+  await seedInventoryItem(closedLedger.id, product.id, actorId, {
+    withFifoLot: true,
+  });
   await prisma.storeSalesPricePlan.create({
     data: {
       storeId: STORE_IDS.closed,
@@ -364,8 +366,9 @@ async function seedInventoryItem(
   dailyLedgerId: string,
   productId: string,
   actorId: string,
+  options: { withFifoLot?: boolean } = {},
 ) {
-  return prisma.ledgerInventoryItem.create({
+  const item = await prisma.ledgerInventoryItem.create({
     data: {
       dailyLedgerId,
       productId,
@@ -383,6 +386,32 @@ async function seedInventoryItem(
       updatedById: actorId,
     },
   });
+
+  // DESIGN.md D2: 마감 재고금액은 FIFO 근거가 있을 때만 금액으로 표시된다.
+  // 잔액 7,000원 FIFO lot을 마감 장부에만 심어 마감 행이 실제 FIFO 총액을
+  // 보여준다. 미마감 행은 기존 fallback 계산(마진율 등)을 유지하도록 lot 없이 둔다.
+  if (options.withFifoLot) {
+    await prisma.ledgerInventoryFifoLot.create({
+      data: {
+        dailyLedgerId,
+        ledgerInventoryItemId: item.id,
+        productId,
+        sourceType: "PURCHASE",
+        unitPrice: 1000,
+        // 기준재고(전일 10 + 매입 5) 15개 중 8개 소비·7개 잔량. 소비액 8,000원은
+        // 미마감 fallback 매출원가((10+5-7)×1000)와 동일해 마진율 계산을 유지한다.
+        originalQuantity: 15,
+        consumedQuantity: 8,
+        remainingQuantity: 7,
+        originalAmount: 15000,
+        consumedAmount: 8000,
+        remainingAmount: 7000,
+        sortOrder: 0,
+      },
+    });
+  }
+
+  return item;
 }
 
 async function cleanupStoryThreeOneData() {

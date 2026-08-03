@@ -321,6 +321,9 @@ async function cleanupStoryFourOneData() {
     await prisma.auditLog.deleteMany({
       where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
     });
+    await prisma.correctionRecord.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerLaborItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -370,6 +373,8 @@ async function cleanupStoryFourOneData() {
 test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹션을 보완 저장한다", async ({
   page,
 }) => {
+  // 7개 섹션을 순차 저장하는 긴 시나리오라 기본 30초 예산이 부족하다.
+  test.slow();
   const { actorId, ledger, product } = await seedEditableStoryData();
 
   await loginAsHq(page);
@@ -838,14 +843,200 @@ test("HQ_ADMIN이 마감 장부의 매출/결제를 수정해도 마감 상태�
       action: "ledger.hq.sales_payment.updated",
       reason: "마감 후 현금 오기입 정정",
     },
-    select: { after: true, actorId: true },
+    select: { after: true, before: true, actorId: true },
   });
   expect(audit?.actorId).toBe(await getHeadquartersUserId());
+  // DESIGN.md D8: before/after는 사용자에게 실제 적용된 유효값 기준이다.
+  expect(audit?.before).toMatchObject({
+    cashAmount: 4000,
+    cardAmount: 6000,
+    status: "HEADQUARTERS_CLOSED",
+  });
   expect(audit?.after).toMatchObject({
     ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
     closedEdit: true,
     cashAmount: 5000,
   });
+});
+
+// DESIGN.md D9/D8: 활성 정정이 있는 마감 장부를 직접 수정하면 편집 폼은 정정
+// 반영값으로 초기화되고, 감사 before/after에도 유효값이 기록되며 해당 정정은
+// supersede된다.
+test("마감 장부 직접 수정 시 편집 폼과 감사는 활성 정정 유효값을 기준으로 동작한다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const ledger = await seedClosedStoryData();
+
+  // 현금 4,000 → 4,500 활성 정정을 먼저 만든다.
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "cashAmount",
+      originalValue: { kind: "money", value: 4000, label: "현금" },
+      previousAppliedValue: { kind: "money", value: 4000, label: "현금" },
+      correctedValue: { kind: "money", value: 4500, label: "현금" },
+      reason: STORY_MARKER,
+      createdById: actorId,
+    },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+
+  // 편집 폼은 원본 4,000원이 아니라 정정 반영값 4,500원으로 초기화된다.
+  await expect(salesPanel.getByLabel("현금", { exact: true })).toHaveValue(
+    "4,500",
+  );
+
+  // 카드만 바꿔 저장한다. 현금은 유효값 그대로 재저장돼야 한다.
+  await replaceKrwControlValue(salesPanel.getByLabel("카드"), "7000");
+  await fillHqEditReason(salesPanel, "정정 유효값 기준 직접 수정");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+
+  await expect
+    .poll(async () =>
+      prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: { cashAmount: true, cardAmount: true, status: true },
+      }),
+    )
+    .toMatchObject({
+      cashAmount: 4500,
+      cardAmount: 7000,
+      status: "HEADQUARTERS_CLOSED",
+    });
+
+  // 현금 정정은 supersede되고 이력은 보존된다.
+  await expect
+    .poll(async () => {
+      const correction = await prisma.correctionRecord.findFirst({
+        where: {
+          dailyLedgerId: ledger.id,
+          targetType: "PAYMENT_FIELD",
+          fieldKey: "cashAmount",
+        },
+        select: { supersededAt: true },
+      });
+
+      return correction?.supersededAt ?? null;
+    })
+    .not.toBeNull();
+
+  // 감사 before/after는 원본값이 아닌 유효값 기준이다.
+  const audit = await prisma.auditLog.findFirst({
+    where: {
+      targetType: "DailyLedger",
+      targetId: ledger.id,
+      action: "ledger.hq.sales_payment.updated",
+      reason: "정정 유효값 기준 직접 수정",
+    },
+    select: { before: true, after: true },
+  });
+  expect(audit?.before).toMatchObject({
+    cashAmount: 4500,
+    cardAmount: 6000,
+  });
+  expect(audit?.after).toMatchObject({
+    cashAmount: 4500,
+    cardAmount: 7000,
+    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+    closedEdit: true,
+  });
+});
+
+// DESIGN.md D5/E2E1: 마감 장부에서도 기존 본사 편집 화면으로 근무·급여를 포함한
+// 업무 항목을 수정할 수 있고, 마감 상태와 최초 마감 정보는 유지된다.
+test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 수정해도 마감 상태가 유지된다", async ({
+  page,
+}) => {
+  const ledger = await seedClosedStoryData();
+  const beforeClosed = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { closedAt: true, closedById: true },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "근무" }).click();
+  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
+
+  // 근무인원·특이사항 수정(기존 근무 저장 경로 재사용).
+  await replaceControlValue(workPanel.getByLabel("근무인원"), "3");
+  await replaceControlValue(
+    workPanel.getByLabel("특이사항 메모"),
+    "마감 후 근무 보완",
+  );
+  await replaceControlValue(
+    workPanel.locator("#work-hq-edit-reason"),
+    "마감 장부 근무 수정",
+  );
+  await workPanel.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    workPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () =>
+      prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: {
+          workerCount: true,
+          workMemo: true,
+          status: true,
+          closedAt: true,
+          closedById: true,
+        },
+      }),
+    )
+    .toMatchObject({
+      workerCount: 3,
+      workMemo: "마감 후 근무 보완",
+      status: "HEADQUARTERS_CLOSED",
+      closedAt: beforeClosed.closedAt,
+      closedById: beforeClosed.closedById,
+    });
+
+  // 급여 행 추가(기존 급여 저장 경로 재사용) 후에도 마감 상태가 유지된다.
+  await workPanel.getByRole("button", { name: "직원 추가" }).click();
+  await replaceControlValue(workPanel.getByLabel("직원명"), "마감 급여 직원");
+  await replaceKrwControlValue(workPanel.getByLabel("급여 금액"), "1200000");
+  await replaceControlValue(
+    workPanel.locator("#labor-hq-edit-reason"),
+    "마감 장부 급여 수정",
+  );
+  await workPanel.getByRole("button", { name: "급여 저장" }).click();
+  await expect(
+    workPanel
+      .getByRole("status")
+      .filter({ hasText: "급여 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+  // DESIGN.md D7: 급여 저장에도 마감 유지 문구가 함께 표시된다.
+  await expect(
+    workPanel.getByRole("status").filter({
+      hasText: "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    }),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const [count, current] = await Promise.all([
+        prisma.ledgerLaborItem.count({ where: { dailyLedgerId: ledger.id } }),
+        prisma.dailyLedger.findUniqueOrThrow({
+          where: { id: ledger.id },
+          select: { status: true },
+        }),
+      ]);
+
+      return { count, status: current.status };
+    })
+    .toMatchObject({ count: 1, status: "HEADQUARTERS_CLOSED" });
 });
 
 test("마감 장부의 오래된 화면 저장은 충돌로 거부되고 서버 최신값이 유지된다", async ({
@@ -1319,8 +1510,10 @@ test("ClosePreflight 사유 필요 항목은 사유 입력 후 개별 마감을 
   await expect(
     page.getByText("마감 요청이 실패했습니다.", { exact: false }),
   ).not.toBeVisible();
+  // DESIGN.md D7: HQ_ADMIN은 마감 편집 권한이 있어 차단 안내 대신
+  // 마감 상태 유지·마스터 수정 안내를 본다.
   await expect(
-    page.getByText("본사 마감된 장부", { exact: true }),
+    page.getByText("마감 상태 유지 · 마스터 수정", { exact: true }),
   ).toBeVisible();
 
   await expect

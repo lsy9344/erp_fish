@@ -31,6 +31,14 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+async function loginAsHq(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("로그인 식별자").fill("hq@example.com");
+  await page.getByLabel("비밀번호").fill("correct-password");
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/app\//);
+}
+
 async function expectInventorySaveSucceeded(page: Page) {
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
@@ -1125,6 +1133,128 @@ test("마감 후 이월 기준이 바뀌면 기존 입력을 덮어쓰지 않고
   await expect(
     page.getByLabel(`${product.name} 당일재고`, { exact: true }),
   ).toHaveValue("4");
+});
+
+// DESIGN.md D10/E2E10: 과거 마감 장부를 마스터가 실제로 수정해서 이월 기준이
+// 달라지면 다음 장부에 재확인이 표시되고, 다음 날 실제 입력은 보존된다.
+test("마스터가 과거 마감 장부 재고를 수정하면 다음 장부에 이월 재확인이 생긴다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct("스토리2-5 원인 재확인 대구", "냉동", 11000);
+
+  const previousLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      closingDate: getPreviousKstMidnight(),
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 0,
+      cashAmount: 0,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 1,
+      createdById: actorId,
+      updatedById: actorId,
+      closedById: actorId,
+      closedAt: new Date(),
+    },
+  });
+
+  // 기준재고(전일 9)와 당일재고(9)가 일치하는 안정적인 마감 상태.
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: previousLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 9,
+      purchasedQuantity: 0,
+      currentQuantity: 9,
+      quantity: 9,
+      inventoryAmount: 99000,
+      carryoverSource: "MANUAL",
+      carryoverStatus: "PREVIOUS_CARRYOVER",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  // 다음 장부는 일치하는 이월 기준(9)과 실제 당일재고(4)를 이미 입력한 상태.
+  const currentLedger = await upsertLedger(getTodayKstMidnight(), actorId);
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: currentLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 9,
+      purchasedQuantity: 0,
+      currentQuantity: 4,
+      quantity: 4,
+      inventoryAmount: 44000,
+      carryoverSource: "PREVIOUS_SAVED_LEDGER",
+      carryoverStatus: "PREVIOUS_CARRYOVER",
+      carryoverLedgerId: previousLedger.id,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  // 마스터가 과거 마감 장부의 당일재고 9 → 7로 직접 수정한다.
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${previousLedger.id}`);
+  await page.getByRole("tab", { name: "재고" }).click();
+  const inventoryPanel = page.locator(
+    '[data-ledger-detail-panel="inventory"]',
+  );
+  const currentQuantityInput = inventoryPanel.getByLabel(
+    `${product.name} 당일재고`,
+    { exact: true },
+  );
+  await currentQuantityInput.click();
+  await currentQuantityInput.press("Control+A");
+  await currentQuantityInput.pressSequentially("7");
+  await inventoryPanel
+    .locator("#inventory-hq-edit-reason")
+    .fill("과거 당일재고 오기입 정정");
+  await inventoryPanel
+    .getByRole("button", { name: "저장", exact: true })
+    .click();
+
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerInventoryItem.findFirst({
+        where: { dailyLedgerId: previousLedger.id, productId: product.id },
+        select: { currentQuantity: true },
+      });
+
+      return current?.currentQuantity?.toString();
+    })
+    .toBe("7");
+
+  // 지점장 화면: 다음 날 실제 입력(4)은 보존되고 이월 재확인 필요가 표시된다.
+  await page.context().clearCookies();
+  await login(page);
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+
+  const row = page.locator("tr").filter({ hasText: product.name });
+  await expect(row.getByText("이월 재확인 필요").first()).toBeVisible();
+  await expect(
+    page.getByLabel(`${product.name} 당일재고`, { exact: true }),
+  ).toHaveValue("4");
+
+  // 다음 날 실제 입력은 DB에서도 변하지 않았다.
+  const nextItem = await prisma.ledgerInventoryItem.findFirst({
+    where: { dailyLedgerId: currentLedger.id, productId: product.id },
+    select: { currentQuantity: true, previousQuantity: true },
+  });
+  expect(nextItem?.currentQuantity?.toString()).toBe("4");
+  expect(nextItem?.previousQuantity.toString()).toBe("9");
 });
 
 test("30개 이상 재고 행은 50행 단위 페이지 처리를 제공한다", async ({
