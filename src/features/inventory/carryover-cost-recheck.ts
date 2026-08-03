@@ -5,29 +5,75 @@ import type { InventoryCarryoverStatus } from "../../../generated/prisma";
 const CARRYOVER_RECHECK_REQUIRED: InventoryCarryoverStatus =
   "CARRYOVER_RECHECK_REQUIRED";
 
+export type CarryoverCostBasisComparison =
+  | "unchanged"
+  | "changed"
+  | "basis-lost";
+
+export type CarryoverLotSignatureInput = {
+  unitPrice: number;
+  quantity: number;
+};
+
 /**
  * DESIGN.md D10: 다음 날 이월 재확인은 수량뿐 아니라 FIFO 원가 근거 변화도 잡아야
  * 한다. 과거 매입 단가 수정으로 이월 수량이 같아도 원가 근거가 바뀔 수 있기
- * 때문이다. 비교는 순수 함수로 분리해 단위 테스트가 DB 없이 검증할 수 있게 한다.
+ * 때문이다.
  *
- * - previousRemainingCost: 원천(이전) 장부의 "현재" FIFO 잔액 원가 합(품목별).
- *   lot 근거가 아예 없으면 null(비교 불가 → 재확인을 강제로 띄우지 않는다).
- * - recordedCarryoverCost: 다음 장부가 마지막 저장 시점에 기록한 이월 lot 원가 합
- *   (PURCHASE 제외 lot의 originalAmount). 기록이 없으면 null.
+ * 원가 근거는 금액 합계 하나가 아니라 lot 구성 자체로 비교한다. 합계가 같아도
+ * 단가/수량 구성이 다르면(예: 1개×100원+1개×200원 vs 1개×150원+1개×150원) 다음 날
+ * 판매 소진 순서에 따라 매출원가가 달라지므로 재확인이 필요하다.
+ *
+ * 시그니처는 `단가:수량` 항목을 정렬해 결합한 문자열이다. 정렬해서 DB 조회
+ * 순서와 무관하게 같은 구성은 같은 시그니처가 된다. 수량이 0 이하인 lot은 이월
+ * 대상이 아니므로 제외한다(이월 복사도 양수 lot만 수행한다).
  */
-export function isCarryoverCostBasisChanged(input: {
-  previousRemainingCost: number | null;
-  recordedCarryoverCost: number | null;
-}): boolean {
-  if (input.previousRemainingCost === null) {
-    return false;
+export function toCarryoverLotSignature(
+  lots: Iterable<CarryoverLotSignatureInput>,
+): string {
+  const entries: string[] = [];
+
+  for (const lot of lots) {
+    if (
+      !Number.isFinite(lot.unitPrice) ||
+      !Number.isFinite(lot.quantity) ||
+      lot.quantity <= 0
+    ) {
+      continue;
+    }
+
+    entries.push(`${lot.unitPrice}:${lot.quantity}`);
   }
 
-  if (input.recordedCarryoverCost === null) {
-    return false;
+  return entries.sort().join("|");
+}
+
+/**
+ * 원천 장부의 현재 lot 시그니처와 다음 장부가 저장 시점에 기록한 lot 시그니처를
+ * 비교한다.
+ *
+ * - recordedLotSignature === null: 다음 장부에 기록된 이월 근거가 없어 비교 불가.
+ *   기존 상태를 유지한다(오탐 방지).
+ * - sourceLotSignature === null: 원천 장부에서 품목 행 자체가 사라졌다. 기록된
+ *   근거가 있으면 근거 소실이라 재확인으로 승격한다.
+ * - sourceLotSignature === "": 품목 행은 있지만 남은 lot이 없다(전부 소진 등).
+ *   기록된 근거가 있으면 이 역시 근거 소실이다.
+ */
+export function compareCarryoverCostBasis(input: {
+  sourceLotSignature: string | null;
+  recordedLotSignature: string | null;
+}): CarryoverCostBasisComparison {
+  if (input.recordedLotSignature === null) {
+    return "unchanged";
   }
 
-  return input.previousRemainingCost !== input.recordedCarryoverCost;
+  if (input.sourceLotSignature === null || input.sourceLotSignature === "") {
+    return "basis-lost";
+  }
+
+  return input.sourceLotSignature === input.recordedLotSignature
+    ? "unchanged"
+    : "changed";
 }
 
 /**
@@ -39,8 +85,7 @@ export function resolveCarryoverRecheckStatus(input: {
   isReviewRequiredCarryover: boolean;
   previousLedgerClosed: boolean;
   quantityMatches: boolean;
-  previousRemainingCost: number | null;
-  recordedCarryoverCost: number | null;
+  costBasisComparison: CarryoverCostBasisComparison;
 }): InventoryCarryoverStatus {
   if (input.isReviewRequiredCarryover && input.previousLedgerClosed) {
     return CARRYOVER_RECHECK_REQUIRED;
@@ -50,12 +95,7 @@ export function resolveCarryoverRecheckStatus(input: {
     return CARRYOVER_RECHECK_REQUIRED;
   }
 
-  if (
-    isCarryoverCostBasisChanged({
-      previousRemainingCost: input.previousRemainingCost,
-      recordedCarryoverCost: input.recordedCarryoverCost,
-    })
-  ) {
+  if (input.costBasisComparison !== "unchanged") {
     return CARRYOVER_RECHECK_REQUIRED;
   }
 

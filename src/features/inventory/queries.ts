@@ -5,7 +5,11 @@ import {
 import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
-import { resolveCarryoverRecheckStatus } from "~/features/inventory/carryover-cost-recheck";
+import {
+  compareCarryoverCostBasis,
+  resolveCarryoverRecheckStatus,
+  toCarryoverLotSignature,
+} from "~/features/inventory/carryover-cost-recheck";
 import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
 import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-price";
 import { SALES_PRICE_CARRYOVER_LEDGER_STATUSES } from "~/features/inventory/sales-price-carryover.ts";
@@ -590,10 +594,10 @@ function resolveExistingCarryoverStatus(
     | {
         status: string;
         ledgerInventoryItems: ExistingCarryoverBasis[];
-        remainingCostByProduct: Map<string, number>;
+        lotSignatureByProduct: Map<string, string>;
       }
     | undefined,
-  recordedCarryoverCostByLedger: Map<string, Map<string, number>>,
+  recordedLotSignatureByLedger: Map<string, Map<string, string>>,
 ) {
   if (!carryoverLedger) {
     return item.carryoverStatus;
@@ -606,29 +610,41 @@ function resolveExistingCarryoverStatus(
     return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
   }
 
+  const recordedLotSignature =
+    (item.carryoverLedgerId
+      ? recordedLotSignatureByLedger.get(item.carryoverLedgerId)
+      : undefined
+    )?.get(item.productId) ?? null;
+
   const basis = carryoverLedger.ledgerInventoryItems.find(
     (candidate) => candidate.productId === item.productId,
   );
 
   if (!basis) {
+    // 원천 장부에서 품목 행 자체가 사라진 경우: 기록된 이월 근거가 있으면 근거
+    // 소실이라 재확인으로 승격한다. 근거가 없던 품목은 기존 상태를 유지한다.
+    if (recordedLotSignature !== null) {
+      return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+    }
+
     return item.carryoverStatus;
   }
 
   // DESIGN.md D10: 수량 일치뿐 아니라 FIFO 원가 근거 변화도 재확인 사유다.
   // 과거 매입 단가/FIFO 원가가 바뀌면 수량이 같아도 이월 재확인이 필요하다.
+  // 합계가 아닌 lot 구성(단가:수량) 시그니처로 비교하고, 남은 lot이 없거나
+  // 사라진 경우는 근거 소실로 승격한다. 실제 입력은 덮어쓰지 않는다.
   return resolveCarryoverRecheckStatus({
     currentStatus: item.carryoverStatus,
     isReviewRequiredCarryover: false,
     previousLedgerClosed: false,
     quantityMatches:
       toPreviousQuantity(basis) === decimalToNumber(item.previousQuantity),
-    previousRemainingCost:
-      carryoverLedger.remainingCostByProduct.get(item.productId) ?? null,
-    recordedCarryoverCost:
-      (item.carryoverLedgerId
-        ? recordedCarryoverCostByLedger.get(item.carryoverLedgerId)
-        : undefined
-      )?.get(item.productId) ?? null,
+    costBasisComparison: compareCarryoverCostBasis({
+      sourceLotSignature:
+        carryoverLedger.lotSignatureByProduct.get(item.productId) ?? "",
+      recordedLotSignature,
+    }),
   });
 }
 
@@ -714,25 +730,38 @@ async function mergeExistingInventoryLines(
                 quantity: true,
               },
             },
-            // DESIGN.md D10: 원천 장부의 현재 FIFO 잔액 원가. 이월 재확인 판정에 쓴다.
+            // DESIGN.md D10: 원천 장부의 현재 FIFO lot 구성(단가·잔량). 이월 재확인
+            // 판정은 합계가 아닌 lot 시그니처 비교로 한다.
             ledgerInventoryFifoLots: {
               select: {
                 productId: true,
-                remainingAmount: true,
+                unitPrice: true,
+                remainingQuantity: true,
               },
             },
           },
         });
   const carryoverLedgerById = new Map(
     carryoverLedgers.map((ledger) => {
-      const remainingCostByProduct = new Map<string, number>();
+      const lotsByProduct = new Map<
+        string,
+        Array<{ unitPrice: number; quantity: number }>
+      >();
 
       for (const lot of ledger.ledgerInventoryFifoLots) {
-        remainingCostByProduct.set(
-          lot.productId,
-          (remainingCostByProduct.get(lot.productId) ?? 0) +
-            lot.remainingAmount,
-        );
+        const lots = lotsByProduct.get(lot.productId) ?? [];
+
+        lots.push({
+          unitPrice: lot.unitPrice,
+          quantity: decimalToNumber(lot.remainingQuantity),
+        });
+        lotsByProduct.set(lot.productId, lots);
+      }
+
+      const lotSignatureByProduct = new Map<string, string>();
+
+      for (const [productId, lots] of lotsByProduct) {
+        lotSignatureByProduct.set(productId, toCarryoverLotSignature(lots));
       }
 
       return [
@@ -740,14 +769,15 @@ async function mergeExistingInventoryLines(
         {
           status: ledger.status,
           ledgerInventoryItems: ledger.ledgerInventoryItems,
-          remainingCostByProduct,
+          lotSignatureByProduct,
         },
       ] as const;
     }),
   );
-  // 다음 장부가 마지막 저장 시점에 원천 장부에서 이어받은 lot의 원가 기록
-  // (sourceLedgerId = 원천 장부 id인 lot의 originalAmount). 이월 lot은 다음 날 판매로
-  // 소진돼도 originalAmount가 보존되므로 저장 시점 이월 원가 근거 그대로다.
+  // 다음 장부가 마지막 저장 시점에 원천 장부에서 이어받은 lot의 구성 기록
+  // (sourceLedgerId = 원천 장부 id인 lot의 unitPrice + originalAmount 기준 수량).
+  // 이월 lot은 다음 날 판매로 소진돼도 originalQuantity/originalAmount가 보존되므로
+  // 저장 시점 이월 원가 근거 그대로다.
   const currentLedgerCarryoverLots =
     carryoverLedgerIds.length === 0
       ? []
@@ -759,25 +789,49 @@ async function mergeExistingInventoryLines(
           select: {
             sourceLedgerId: true,
             productId: true,
-            originalAmount: true,
+            unitPrice: true,
+            originalQuantity: true,
           },
         });
-  const recordedCarryoverCostByLedger = new Map<string, Map<string, number>>();
+  const recordedLotSignatureByLedger = new Map<string, Map<string, string>>();
 
-  for (const lot of currentLedgerCarryoverLots) {
-    if (!lot.sourceLedgerId) {
-      continue;
+  {
+    const lotsByLedgerAndProduct = new Map<
+      string,
+      Map<string, Array<{ unitPrice: number; quantity: number }>>
+    >();
+
+    for (const lot of currentLedgerCarryoverLots) {
+      if (!lot.sourceLedgerId) {
+        continue;
+      }
+
+      const byProduct =
+        lotsByLedgerAndProduct.get(lot.sourceLedgerId) ??
+        new Map<string, Array<{ unitPrice: number; quantity: number }>>();
+      const lots = byProduct.get(lot.productId) ?? [];
+
+      lots.push({
+        unitPrice: lot.unitPrice,
+        quantity: decimalToNumber(lot.originalQuantity),
+      });
+      byProduct.set(lot.productId, lots);
+      lotsByLedgerAndProduct.set(lot.sourceLedgerId, byProduct);
     }
 
-    const byProduct =
-      recordedCarryoverCostByLedger.get(lot.sourceLedgerId) ??
-      new Map<string, number>();
+    for (const [sourceLedgerId, byProduct] of lotsByLedgerAndProduct) {
+      const signatures = new Map<string, string>();
 
-    byProduct.set(
-      lot.productId,
-      (byProduct.get(lot.productId) ?? 0) + lot.originalAmount,
-    );
-    recordedCarryoverCostByLedger.set(lot.sourceLedgerId, byProduct);
+      for (const [productId, lots] of byProduct) {
+        const signature = toCarryoverLotSignature(lots);
+
+        if (signature !== "") {
+          signatures.set(productId, signature);
+        }
+      }
+
+      recordedLotSignatureByLedger.set(sourceLedgerId, signatures);
+    }
   }
   const lines = existingItems.map((item) =>
     toExistingInventoryLine(
@@ -790,7 +844,7 @@ async function mergeExistingInventoryLines(
         item.carryoverLedgerId
           ? carryoverLedgerById.get(item.carryoverLedgerId)
           : undefined,
-        recordedCarryoverCostByLedger,
+        recordedLotSignatureByLedger,
       ),
     ),
   );

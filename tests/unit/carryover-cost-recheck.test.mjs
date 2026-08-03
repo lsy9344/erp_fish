@@ -6,42 +6,90 @@ const recheckUrl = new URL(
   import.meta.url,
 );
 
-test("carryover cost basis comparison detects FIFO changes without quantity changes", async () => {
-  const { isCarryoverCostBasisChanged, resolveCarryoverRecheckStatus } =
-    await import(recheckUrl.href);
+test("carryover lot signature comparison detects FIFO basis changes without quantity changes", async () => {
+  const {
+    toCarryoverLotSignature,
+    compareCarryoverCostBasis,
+    resolveCarryoverRecheckStatus,
+  } = await import(recheckUrl.href);
 
-  // 원가가 같으면 변화 없음.
+  // 같은 구성은(저장 순서와 무관하게) 같은 시그니처다.
+  const signatureA = toCarryoverLotSignature([
+    { unitPrice: 100, quantity: 1 },
+    { unitPrice: 200, quantity: 1 },
+  ]);
   assert.equal(
-    isCarryoverCostBasisChanged({
-      previousRemainingCost: 3000,
-      recordedCarryoverCost: 3000,
-    }),
-    false,
+    signatureA,
+    toCarryoverLotSignature([
+      { unitPrice: 200, quantity: 1 },
+      { unitPrice: 100, quantity: 1 },
+    ]),
   );
 
-  // 수량이 같아도 원가 근거가 달라지면 변화.
+  // 0 이하 수량 lot은 이월 대상이 아니라 시그니처에서 제외한다.
   assert.equal(
-    isCarryoverCostBasisChanged({
-      previousRemainingCost: 3600,
-      recordedCarryoverCost: 3000,
-    }),
-    true,
+    toCarryoverLotSignature([
+      { unitPrice: 100, quantity: 1 },
+      { unitPrice: 300, quantity: 0 },
+    ]),
+    toCarryoverLotSignature([{ unitPrice: 100, quantity: 1 }]),
   );
 
-  // 한쪽 근거가 없으면(false/null) 강제로 재확인을 띄우지 않는다.
+  // 총액이 같아도 lot 구성이 다르면(1×100+1×200 vs 1×150+1×150) 변화로 판정한다.
+  // 합계만 비교하던 기존 판정이 놓치던 케이스다.
+  const equalTotalDifferentComposition = toCarryoverLotSignature([
+    { unitPrice: 150, quantity: 1 },
+    { unitPrice: 150, quantity: 1 },
+  ]);
+  assert.notEqual(signatureA, equalTotalDifferentComposition);
   assert.equal(
-    isCarryoverCostBasisChanged({
-      previousRemainingCost: null,
-      recordedCarryoverCost: 3000,
+    compareCarryoverCostBasis({
+      sourceLotSignature: signatureA,
+      recordedLotSignature: equalTotalDifferentComposition,
     }),
-    false,
+    "changed",
+  );
+
+  // 같은 구성이면 변화 없음.
+  assert.equal(
+    compareCarryoverCostBasis({
+      sourceLotSignature: signatureA,
+      recordedLotSignature: signatureA,
+    }),
+    "unchanged",
+  );
+
+  // 다음 장부에 기록된 근거가 없으면 비교 불가 → 기존 상태 유지(오탐 방지).
+  assert.equal(
+    compareCarryoverCostBasis({
+      sourceLotSignature: signatureA,
+      recordedLotSignature: null,
+    }),
+    "unchanged",
   );
   assert.equal(
-    isCarryoverCostBasisChanged({
-      previousRemainingCost: 3000,
-      recordedCarryoverCost: null,
+    compareCarryoverCostBasis({
+      sourceLotSignature: null,
+      recordedLotSignature: null,
     }),
-    false,
+    "unchanged",
+  );
+
+  // 기록된 근거가 있는데 원천 품목 행이 사라졌거나(null) 남은 lot이 없으면("")
+  // 근거 소실로 재확인이 필요하다.
+  assert.equal(
+    compareCarryoverCostBasis({
+      sourceLotSignature: null,
+      recordedLotSignature: signatureA,
+    }),
+    "basis-lost",
+  );
+  assert.equal(
+    compareCarryoverCostBasis({
+      sourceLotSignature: "",
+      recordedLotSignature: signatureA,
+    }),
+    "basis-lost",
   );
 
   // REVIEW_REQUIRED 이월은 원천 장부 마감 시 재확인으로 승격한다(기존 정책 유지).
@@ -51,8 +99,7 @@ test("carryover cost basis comparison detects FIFO changes without quantity chan
       isReviewRequiredCarryover: true,
       previousLedgerClosed: true,
       quantityMatches: true,
-      previousRemainingCost: 3000,
-      recordedCarryoverCost: 3000,
+      costBasisComparison: "unchanged",
     }),
     "CARRYOVER_RECHECK_REQUIRED",
   );
@@ -64,34 +111,43 @@ test("carryover cost basis comparison detects FIFO changes without quantity chan
       isReviewRequiredCarryover: false,
       previousLedgerClosed: true,
       quantityMatches: false,
-      previousRemainingCost: 3000,
-      recordedCarryoverCost: 3000,
+      costBasisComparison: "unchanged",
     }),
     "CARRYOVER_RECHECK_REQUIRED",
   );
 
-  // 수량이 같아도 원가 근거가 달라지면 재확인.
+  // 수량이 같아도 lot 구성이 달라지면 재확인.
   assert.equal(
     resolveCarryoverRecheckStatus({
       currentStatus: "PREVIOUS_CARRYOVER",
       isReviewRequiredCarryover: false,
       previousLedgerClosed: true,
       quantityMatches: true,
-      previousRemainingCost: 3600,
-      recordedCarryoverCost: 3000,
+      costBasisComparison: "changed",
     }),
     "CARRYOVER_RECHECK_REQUIRED",
   );
 
-  // 수량·원가 모두 일치하면 현재 상태를 유지한다(실제 입력 자동 변경 없음).
+  // 근거 소실도 재확인.
   assert.equal(
     resolveCarryoverRecheckStatus({
       currentStatus: "PREVIOUS_CARRYOVER",
       isReviewRequiredCarryover: false,
       previousLedgerClosed: true,
       quantityMatches: true,
-      previousRemainingCost: 3000,
-      recordedCarryoverCost: 3000,
+      costBasisComparison: "basis-lost",
+    }),
+    "CARRYOVER_RECHECK_REQUIRED",
+  );
+
+  // 수량·구성 모두 일치하면 현재 상태를 유지한다(실제 입력 자동 변경 없음).
+  assert.equal(
+    resolveCarryoverRecheckStatus({
+      currentStatus: "PREVIOUS_CARRYOVER",
+      isReviewRequiredCarryover: false,
+      previousLedgerClosed: true,
+      quantityMatches: true,
+      costBasisComparison: "unchanged",
     }),
     "PREVIOUS_CARRYOVER",
   );
