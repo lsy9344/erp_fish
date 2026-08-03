@@ -464,3 +464,221 @@ test("HQ_STAFF는 마감 장부 상세에서 원본 입력을 수정할 수 없�
     await prisma.store.deleteMany({ where: { id: closedStoreId } });
   }
 });
+
+// DESIGN.md 테스트 계획 3: UI를 우회해도 서버 게이트가 마감 장부 저장을 막는지
+// 프로파일별로 검증한다. OWNER는 허용, HQ_STAFF/CLOSE_MANAGER/SETTINGS_ADMIN/
+// STORE_MANAGER는 거부·DB 불변, HOLIDAY는 차단.
+test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지된다", async ({
+  page,
+}) => {
+  const storeId = "store-perm-closed-server";
+  const adminUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .split("-");
+  const closingDate = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  );
+
+  await prisma.store.upsert({
+    where: { id: storeId },
+    create: {
+      id: storeId,
+      name: "서버 권한 검증 마감점",
+      isActive: true,
+      updatedById: adminUser.id,
+    },
+    update: {},
+  });
+
+  const staffUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq-assigned@example.com" },
+    select: { id: true },
+  });
+  const closeManagerUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "close-manager@example.com" },
+    select: { id: true },
+  });
+  const managerUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "manager@example.com" },
+    select: { id: true },
+  });
+
+  for (const userId of [staffUser.id, closeManagerUser.id, managerUser.id]) {
+    await prisma.userStoreAssignment.upsert({
+      where: { userId_storeId: { userId, storeId } },
+      create: { userId, storeId },
+      update: {},
+    });
+  }
+
+  await prisma.dailyLedger.deleteMany({ where: { storeId } });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId,
+      closingDate,
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 10000,
+      cashAmount: 4000,
+      cardAmount: 6000,
+      otherPaymentAmount: 0,
+      workerCount: 2,
+      createdById: adminUser.id,
+      updatedById: adminUser.id,
+      closedById: adminUser.id,
+      closedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  });
+  const holidayLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId,
+      closingDate: new Date(closingDate.getTime() - 86400000),
+      status: "HOLIDAY",
+      totalSalesAmount: 0,
+      cashAmount: 0,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 0,
+      createdById: adminUser.id,
+      updatedById: adminUser.id,
+    },
+  });
+
+  async function snapshotLedger(id: string) {
+    return prisma.dailyLedger.findUniqueOrThrow({
+      where: { id },
+      select: {
+        version: true,
+        updatedAt: true,
+        updatedById: true,
+        cashAmount: true,
+        status: true,
+        closedAt: true,
+        closedById: true,
+      },
+    });
+  }
+
+  // UI 차단 속성(disabled)을 제거해 폼 제출이 서버 action까지 도달하게 한다.
+  async function bypassUiAndSubmitSales(
+    page: Page,
+    ledgerId: string,
+    cashValue: string,
+  ) {
+    await page.goto(`/app/ledgers/${ledgerId}?tab=sales`);
+    await page.evaluate(() => {
+      document
+        .querySelectorAll('[data-ledger-detail-panel="sales"] [disabled]')
+        .forEach((element) => element.removeAttribute("disabled"));
+    });
+    const panel = page.locator('[data-ledger-detail-panel="sales"]');
+    await panel.getByLabel("현금", { exact: true }).fill(cashValue);
+    await panel.getByLabel("본사 수정 사유").fill("서버 권한 경계 검증");
+    await panel.getByRole("button", { name: "저장", exact: true }).click();
+  }
+
+  try {
+    // 1) HQ_STAFF: LEDGER_EDIT는 있지만 LEDGER_CLOSED_EDIT가 없다. 서버가 상태
+    // 게이트에서 거부하고 DB는 변하지 않는다.
+    const beforeStaff = await snapshotLedger(ledger.id);
+    await login(page, "hq-assigned@example.com");
+    await bypassUiAndSubmitSales(page, ledger.id, "4100");
+    await expect(
+      page.getByText("원본 항목으로 수정할 수 없습니다").first(),
+    ).toBeVisible();
+    expect(await snapshotLedger(ledger.id)).toEqual(beforeStaff);
+
+    // 2) CLOSE_MANAGER: LEDGER_EDIT 자체가 없어 action 진입 시 미승인으로 이동한다.
+    const beforeCloseManager = await snapshotLedger(ledger.id);
+    await login(page, "close-manager@example.com");
+    await bypassUiAndSubmitSales(page, ledger.id, "4200");
+    await expect(page).toHaveURL(/\/app\/unauthorized/);
+    expect(await snapshotLedger(ledger.id)).toEqual(beforeCloseManager);
+
+    // 3) SETTINGS_ADMIN: REPORT_VIEW만 있어 화면은 열리지만 저장은 미승인으로 이동.
+    const beforeSettings = await snapshotLedger(ledger.id);
+    await login(page, "settings-admin@example.com");
+    await bypassUiAndSubmitSales(page, ledger.id, "4300");
+    await expect(page).toHaveURL(/\/app\/unauthorized/);
+    expect(await snapshotLedger(ledger.id)).toEqual(beforeSettings);
+
+    // 4) OWNER: seed 기본 권한으로 마감 장부 저장이 허용된다. 상태·최초 마감 정보는 유지.
+    await login(page, "owner@example.com");
+    let capturedActionId: string | null = null;
+    page.on("request", (request) => {
+      const nextAction = request.headers()["next-action"];
+
+      if (request.method() === "POST" && nextAction) {
+        capturedActionId = nextAction;
+      }
+    });
+    await bypassUiAndSubmitSales(page, ledger.id, "4400");
+    await expect(
+      page.getByText("마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다."),
+    ).toBeVisible();
+    const afterOwner = await snapshotLedger(ledger.id);
+    expect(afterOwner.cashAmount).toBe(4400);
+    expect(afterOwner.status).toBe("HEADQUARTERS_CLOSED");
+    expect(afterOwner.closedById).toBe(adminUser.id);
+    expect(afterOwner.closedAt?.toISOString()).toBe(
+      "2026-01-01T00:00:00.000Z",
+    );
+    expect(afterOwner.version).toBe(beforeStaff.version + 1);
+
+    // 5) STORE_MANAGER: 화면 자체가 미승인이고, OWNER 저장에서 확보한 action id로
+    // 서버 action을 직접 호출해도 거부되고 DB는 변하지 않는다.
+    await login(page, "manager@example.com");
+    await page.goto(`/app/ledgers/${ledger.id}`);
+    await expect(page).toHaveURL(/\/app\/unauthorized/);
+
+    if (capturedActionId) {
+      const fresh = await snapshotLedger(ledger.id);
+      const response = await page.request.post(`/app/ledgers/${ledger.id}`, {
+        headers: {
+          "Next-Action": capturedActionId,
+          "Content-Type": "text/plain;charset=UTF-8",
+        },
+        data: JSON.stringify([
+          {
+            ledgerId: ledger.id,
+            storeId,
+            closingDate: closingDate.toISOString().slice(0, 10),
+            version: fresh.version,
+            ledgerUpdatedAt: fresh.updatedAt.toISOString(),
+            totalSalesAmount: "10000",
+            carryoverSalesAmount: "0",
+            cashAmount: "4500",
+            cardAmount: "6000",
+            otherPaymentAmount: "0",
+            reason: "서버 권한 경계 검증",
+          },
+        ]),
+      });
+
+      // 서버가 저장만 거부한다면 응답 상태와 무관하게 DB는 변하지 않아야 한다.
+      expect(response.status()).not.toBeGreaterThanOrEqual(500);
+      expect(await snapshotLedger(ledger.id)).toEqual(fresh);
+    }
+
+    // 6) HOLIDAY: OWNER 권한이어도 휴무 장부는 서버에서 차단된다.
+    const beforeHoliday = await snapshotLedger(holidayLedger.id);
+    await login(page, "owner@example.com");
+    await bypassUiAndSubmitSales(page, holidayLedger.id, "1000");
+    await expect(
+      page.getByText("휴무 장부는 원본 항목으로 수정할 수 없습니다").first(),
+    ).toBeVisible();
+    expect(await snapshotLedger(holidayLedger.id)).toEqual(beforeHoliday);
+  } finally {
+    await prisma.dailyLedger.deleteMany({ where: { storeId } });
+    await prisma.userStoreAssignment.deleteMany({ where: { storeId } });
+    await prisma.store.deleteMany({ where: { id: storeId } });
+  }
+});

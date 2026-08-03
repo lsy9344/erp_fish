@@ -11,6 +11,26 @@ import { hashPassword } from "../../src/server/password";
 const databaseUrl = process.env.DATABASE_URL;
 const profileDefinitions = [
   {
+    // DESIGN.md D4 테스트 fixture: seed의 OWNER 프로파일과 동일한 action 목록을
+    // 유지해야 마감 편집 권한 테스트가 실제 배포 기본값을 검증한다.
+    code: "OWNER",
+    name: "대표/소유자",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+    actions: [
+      PermissionAction.LEDGER_CREATE,
+      PermissionAction.LEDGER_EDIT,
+      PermissionAction.LEDGER_HQ_CLOSE,
+      PermissionAction.LEDGER_CLOSED_EDIT,
+      PermissionAction.CORRECTION_CREATE,
+      PermissionAction.UPLOAD_PREVIEW,
+      PermissionAction.UPLOAD_COMMIT,
+      PermissionAction.SETTINGS_MANAGE,
+      PermissionAction.REPORT_VIEW,
+      PermissionAction.EXPORT_CREATE,
+      PermissionAction.USER_PERMISSION_MANAGE,
+    ],
+  },
+  {
     code: "HQ_ADMIN",
     name: "본사 관리자",
     storeAccessMode: StoreAccessMode.ALL_STORES,
@@ -38,6 +58,18 @@ const profileDefinitions = [
     name: "본사 조회 전용",
     storeAccessMode: StoreAccessMode.ALL_STORES,
     actions: [PermissionAction.REPORT_VIEW],
+  },
+  {
+    // DESIGN.md D4 테스트 fixture: seed의 CLOSE_MANAGER 프로파일과 동일하게 마감·정정
+    // action만 있고 LEDGER_EDIT/LEDGER_CLOSED_EDIT는 없다.
+    code: "CLOSE_MANAGER",
+    name: "마감 담당자",
+    storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
+    actions: [
+      PermissionAction.LEDGER_HQ_CLOSE,
+      PermissionAction.CORRECTION_CREATE,
+      PermissionAction.REPORT_VIEW,
+    ],
   },
   {
     code: "SETTINGS_ADMIN",
@@ -429,6 +461,59 @@ export default async function globalSetup() {
     },
   });
 
+  // DESIGN.md D4 서버 권한 경계 e2e fixture: 프로파일별 마감 장부 직접 수정 허용/
+  // 차단을 검증하는 전용 사용자. OWNER는 seed 기본값과 동일한 전체 action을 갖는다.
+  const ownerUser = await prisma.user.upsert({
+    where: { email: "owner@example.com" },
+    create: {
+      email: "owner@example.com",
+      name: "대표 소유자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "대표 소유자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
+  const closeManagerUser = await prisma.user.upsert({
+    where: { email: "close-manager@example.com" },
+    create: {
+      email: "close-manager@example.com",
+      name: "마감 담당자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "마감 담당자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
+  const settingsAdminUser = await prisma.user.upsert({
+    where: { email: "settings-admin@example.com" },
+    create: {
+      email: "settings-admin@example.com",
+      name: "설정 관리자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "설정 관리자",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
   const gangnamStore = await prisma.store.upsert({
     where: { id: "store-gangnam" },
     create: {
@@ -551,6 +636,9 @@ export default async function globalSetup() {
           hqUser.id,
           assignedHqUser.id,
           readOnlyHqUser.id,
+          ownerUser.id,
+          closeManagerUser.id,
+          settingsAdminUser.id,
           manager.id,
           unassignedManager.id,
           inactiveOnlyManager.id,
@@ -578,6 +666,21 @@ export default async function globalSetup() {
     prisma,
     readOnlyHqUser.id,
     permissionProfiles.get("HQ_VIEWER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    ownerUser.id,
+    permissionProfiles.get("OWNER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    closeManagerUser.id,
+    permissionProfiles.get("CLOSE_MANAGER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    settingsAdminUser.id,
+    permissionProfiles.get("SETTINGS_ADMIN")?.id,
   );
   await assignPermissionProfile(
     prisma,
