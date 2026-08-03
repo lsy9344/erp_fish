@@ -1,3 +1,5 @@
+import type { DailyLedgerStatus } from "../../../generated/prisma";
+
 export const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
 
 export type EditableLedgerStatus = (typeof editableLedgerStatuses)[number];
@@ -57,7 +59,7 @@ export function isLedgerEditableForActor(
  */
 export function getEditableLedgerStatusesForActor(
   actor: LedgerEditActorContext = {},
-): readonly string[] {
+): readonly DailyLedgerStatus[] {
   return actor.closedEditAllowed
     ? [...editableLedgerStatuses, "HEADQUARTERS_CLOSED"]
     : editableLedgerStatuses;
