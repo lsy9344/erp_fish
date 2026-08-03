@@ -715,8 +715,10 @@ export async function saveHqLedgerLosses(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
-          // 손실 행 직접 저장은 LOSS_ROW 정정을 대체한다.
+          // 손실 재저장은 기존 행을 갱신하거나 삭제하므로 기존 행 id 전체의 LOSS_ROW
+          // 정정을 대체한다(삭제된 행의 정정도 다시 적용될 수 없도록 확실히 차단).
           targetTypes: ["LOSS_ROW"],
+          targetIds: [...existingById.keys()],
         });
 
         await writeAuditLog(tx, {

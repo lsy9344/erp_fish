@@ -126,19 +126,32 @@ export async function getLatestCorrectionByTargetInTx(
 }
 
 /**
- * DESIGN.md D9: 마스터 직접 저장이 덮어쓴 대상 종류의 활성 정정만 supersede한다.
+ * DESIGN.md D9: 마스터 직접 저장이 덮어쓴 대상의 활성 정정만 supersede한다.
  * 기록은 삭제하지 않고 supersededAt만 채워 이력으로 보존하며, 이후 읽기 시점
  * overlay에서 제외된다. 저장 CAS 통과 후 감사 로그 기록 전 같은 트랜잭션에서 호출한다.
+ *
+ * targetIds/fieldKeys는 실제로 덮어쓴 대상으로 범위를 좁힐 때 사용한다. 빈 배열은
+ * "덮어쓴 대상이 없음"으로 보고 아무것도 supersede하지 않는다. 섹션 전체를 재저장하는
+ * action은 기존 행 id 전체를 targetIds로 넘겨 삭제된 행의 정정까지 확실히 대체한다.
  */
 export async function supersedeCorrectionRecordsInTx(
   tx: Prisma.TransactionClient,
   input: {
     dailyLedgerId: string;
     targetTypes: readonly CorrectionTargetType[];
+    targetIds?: readonly string[];
+    fieldKeys?: readonly string[];
     supersededAt?: Date;
   },
 ) {
   if (input.targetTypes.length === 0) {
+    return { count: 0 };
+  }
+
+  if (
+    (input.targetIds !== undefined && input.targetIds.length === 0) ||
+    (input.fieldKeys !== undefined && input.fieldKeys.length === 0)
+  ) {
     return { count: 0 };
   }
 
@@ -147,6 +160,12 @@ export async function supersedeCorrectionRecordsInTx(
       dailyLedgerId: input.dailyLedgerId,
       supersededAt: null,
       targetType: { in: [...input.targetTypes] },
+      ...(input.targetIds !== undefined
+        ? { targetId: { in: [...input.targetIds] } }
+        : {}),
+      ...(input.fieldKeys !== undefined
+        ? { fieldKey: { in: [...input.fieldKeys] } }
+        : {}),
     },
     data: { supersededAt: input.supersededAt ?? new Date() },
   });

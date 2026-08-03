@@ -39,7 +39,10 @@ import {
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
-import { upsertInventorySalesPricePlansInTx } from "./sales-price-persistence";
+import {
+  getSalesPriceWriteGateDecision,
+  upsertInventorySalesPricePlansInTx,
+} from "./sales-price-persistence";
 import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
@@ -377,6 +380,96 @@ export async function saveHqLedgerInventoryItems(
           );
         }
 
+        // DESIGN.md D6: 값이 온 품목만 판매한 가격 저장 대상이다(빈칸=변경 없음,
+        // 0원=유효). 가격 변경은 마감 편집 권한 + 마감 상태 게이트를 통과해야 하고,
+        // 품목은 이 장부의 재고 행이거나 검증된 활성 품목이어야 한다. 버전 증가 전에
+        // 검증·거부한다.
+        const plannedPriceItems = parsed.data.items.flatMap((item) =>
+          item.plannedUnitPrice === null || item.plannedUnitPrice === undefined
+            ? []
+            : [
+                {
+                  productId: item.productId,
+                  plannedUnitPrice: item.plannedUnitPrice,
+                },
+              ],
+        );
+
+        if (plannedPriceItems.length > 0) {
+          const priceGate = getSalesPriceWriteGateDecision({
+            hasPlannedPriceInput: true,
+            closedEditAllowed: actor.closedEditAllowed,
+            ledgerStatus: before.status,
+          });
+
+          if (!priceGate.ok) {
+            return actionError<InventoryStepData>(
+              priceGate.code,
+              priceGate.message,
+              Object.fromEntries(
+                parsed.data.items.flatMap((item, index) =>
+                  item.plannedUnitPrice === null ||
+                  item.plannedUnitPrice === undefined
+                    ? []
+                    : [
+                        [
+                          `items.${index}.plannedUnitPrice`,
+                          [priceGate.message],
+                        ],
+                      ],
+                ),
+              ),
+            );
+          }
+
+          const manualPriceProductIds = [
+            ...new Set(
+              plannedPriceItems
+                .map((item) => item.productId)
+                .filter((productId) => !existingProductIds.has(productId)),
+            ),
+          ];
+
+          if (manualPriceProductIds.length > 0) {
+            const validManualProducts = await tx.product.findMany({
+              where: {
+                id: { in: manualPriceProductIds },
+                isActive: true,
+              },
+              select: { id: true },
+            });
+            const validManualProductIds = new Set(
+              validManualProducts.map((product) => product.id),
+            );
+            const invalidPriceProductIds = manualPriceProductIds.filter(
+              (productId) => !validManualProductIds.has(productId),
+            );
+
+            if (invalidPriceProductIds.length > 0) {
+              const invalidProductIdSet = new Set(invalidPriceProductIds);
+
+              return actionError<InventoryStepData>(
+                "VALIDATION_ERROR",
+                "판매한 가격을 수정할 품목을 확인해 주세요.",
+                Object.fromEntries(
+                  parsed.data.items.flatMap((item, index) =>
+                    invalidProductIdSet.has(item.productId) &&
+                    item.plannedUnitPrice !== null &&
+                    item.plannedUnitPrice !== undefined
+                      ? [
+                          [
+                            `items.${index}.plannedUnitPrice`,
+                            ["판매한 가격을 수정할 품목을 확인해 주세요."],
+                          ],
+                        ]
+                      : [],
+                  ),
+                ),
+              );
+            }
+          }
+        }
+
         const updated = await markEditableLedgerInTx(
           tx,
           ledgerId,
@@ -467,19 +560,8 @@ export async function saveHqLedgerInventoryItems(
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
-        // DESIGN.md D6: 값이 온 품목만 판매한 가격을 저장한다(빈칸=변경 없음,
-        // 0원=유효). 날짜 키는 장부 closingDate라 다른 날짜 가격은 변하지 않는다.
-        const plannedPriceItems = parsed.data.items.flatMap((item) =>
-          item.plannedUnitPrice === null || item.plannedUnitPrice === undefined
-            ? []
-            : [
-                {
-                  productId: item.productId,
-                  plannedUnitPrice: item.plannedUnitPrice,
-                },
-              ],
-        );
-
+        // DESIGN.md D6: 가격 대상은 앞에서 게이트·품목 검증을 통과했다. 날짜 키는
+        // 장부 closingDate라 다른 날짜 가격은 변하지 않는다.
         if (plannedPriceItems.length > 0) {
           const businessDate = new Date(before.closingDate);
 
@@ -513,8 +595,12 @@ export async function saveHqLedgerInventoryItems(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
-          // 재고 행 직접 저장은 INVENTORY_ROW 정정을 대체한다.
+          // 재고 전체 재저장은 기존 행을 전부 삭제·재생성하므로 기존 행 id 전체의
+          // INVENTORY_ROW 정정을 대체한다. 가상 행(id===productId)은 정정 대상이 될 수 없다.
           targetTypes: ["INVENTORY_ROW"],
+          targetIds: before.items
+            .filter((item) => item.id !== item.productId)
+            .map((item) => item.id),
         });
 
         await writeAuditLog(tx, {
@@ -781,8 +867,11 @@ export async function saveHqLedgerInventoryAdjustment(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
-          // 단독 재고 조정 저장도 해당 행의 INVENTORY_ROW 정정을 대체한다.
+          // 단독 재고 조정은 한 품목 행의 현재고만 바꾸므로 그 행의 수량 정정만
+          // 대체한다. 다른 품목의 유효 정정은 그대로 유지돼야 한다.
           targetTypes: ["INVENTORY_ROW"],
+          targetIds: [inventoryItem.id],
+          fieldKeys: ["currentQuantity", "quantity"],
         });
 
         await writeAuditLog(tx, {

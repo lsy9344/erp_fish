@@ -467,8 +467,16 @@ export async function saveHqLedgerSalesPayment(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
-          // 매출/결제 직접 저장은 PAYMENT_FIELD 정정만 대체한다.
+          // 매출/결제 직접 저장은 다섯 결제 필드 전체를 재저장하므로 해당 정정을 대체한다.
           targetTypes: ["PAYMENT_FIELD"],
+          targetIds: [beforeLedger.id],
+          fieldKeys: [
+            "totalSalesAmount",
+            "carryoverSalesAmount",
+            "cashAmount",
+            "cardAmount",
+            "otherPaymentAmount",
+          ],
         });
 
         await writeAuditLog(tx, {
@@ -583,8 +591,10 @@ export async function saveHqLedgerExpenses(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
-          // 지출 행 전체 재저장은 EXPENSE_ROW 정정을 대체한다.
+          // 지출 행 목록은 전체 삭제 후 재저장된다. 갱신·삭제된 기존 행의 정정을
+          // 모두 대체하되 기존 행 id로 범위를 한정한다.
           targetTypes: ["EXPENSE_ROW"],
+          targetIds: beforeLedger.ledgerExpenses.map((expense) => expense.id),
         });
 
         await writeAuditLog(tx, {
@@ -1166,8 +1176,10 @@ export async function saveHqLedgerWorkInfo(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
-          // 근무인원/특이사항 저장은 LEDGER_FIELD 정정을 대체한다.
+          // 근무 저장은 근무인원과 특이사항만 덮어쓴다. 해당 필드 정정만 대체한다.
           targetTypes: ["LEDGER_FIELD"],
+          targetIds: [beforeLedger.id],
+          fieldKeys: ["workerCount", "workMemo"],
         });
 
         await writeAuditLog(tx, {
