@@ -60,7 +60,11 @@ export function toStoreManagerLedgerCostStepData(
 // (UI 숨김만으로 끝내지 않고 서버 응답에서 뺀다.) 2026-06-21에 의도적으로 노출했던
 // grossMarginRate(마진율)와 inventoryAmount(총 재고금액)는 이 결정으로 차단 대상이 됐다.
 // 재고 입력 화면의 FIFO 금액/원가도 별도로 제거한다(inventory/queries.ts). 결제차액(WO-01),
-// 급여 합계(WO-10)는 이미 제거됨. 지점장 요약은 총매출·근무인원·운영 보조 카운트만 남긴다.
+// 급여 합계(WO-10)는 이미 제거됨.
+// 소유자 결정(2026-08-03): 위 차단 중 grossMarginRate(마진율)와 inventoryAmount(당일 재고
+// 총 금액)만 지점장 7단계 상단 KPI 카드용으로 해제한다. 급여·원가·이익 절대금액·매출 차이·
+// 결제 차액은 계속 차단이다. 아래 storeManagerReviewMetricIds(단계 요약 metric 허용 목록)는
+// 건드리지 않는다 — 검토 요약 카드에는 마진율/재고금액을 넣지 않는다.
 // 새 지표를 단계 요약에 추가할 때는 반드시 위 민감 차단 정책과 충돌하지 않는지 먼저 확인한다.
 const storeManagerReviewMetricIds = new Set([
   "totalSales",
@@ -106,6 +110,18 @@ function toStoreManagerReviewStepMetrics(
     );
 }
 
+// 지점장 응답에는 내부 계산 사유(reason: "FIFO 원천 lot 근거가 부족해…" 등)를 담지 않는다.
+// 값/상태/상태 라벨만 남긴다.
+type LedgerReviewSummaryMetric =
+  LedgerReviewStepData["summary"]["grossMarginRate"];
+
+function toStoreManagerSummaryMetric(metric: LedgerReviewSummaryMetric) {
+  const { reason, ...safeMetric } = metric;
+  void reason;
+
+  return safeMetric;
+}
+
 export function toStoreManagerLedgerReviewStepData(
   data: LedgerReviewStepData,
 ): StoreManagerLedgerReviewStepData {
@@ -132,13 +148,23 @@ export function toStoreManagerLedgerReviewStepData(
     signals,
     warnings,
     stepSummaries,
-    // 마진율·재고금액은 본사 전용. 지점장 상단 요약에는 매출 구성과 근무인원만 남긴다.
+    // 소유자 결정(2026-08-03): 마진율·당일 재고 총 금액은 7단계 KPI 카드용으로 노출한다.
+    // 모든 요약 지표는 reason을 제거한 안전 타입(StoreManagerLedgerReviewSummaryMetric)
+    // 이므로 여기서 전부 toStoreManagerSummaryMetric을 거친다.
     summary: {
-      totalSales: data.summary.totalSales,
-      closingTotalSales: data.summary.closingTotalSales,
-      carryoverSales: data.summary.carryoverSales,
-      operatingSales: data.summary.operatingSales,
-      workerCount: data.summary.workerCount,
+      totalSales: toStoreManagerSummaryMetric(data.summary.totalSales),
+      closingTotalSales: toStoreManagerSummaryMetric(
+        data.summary.closingTotalSales,
+      ),
+      carryoverSales: toStoreManagerSummaryMetric(data.summary.carryoverSales),
+      operatingSales: toStoreManagerSummaryMetric(data.summary.operatingSales),
+      workerCount: toStoreManagerSummaryMetric(data.summary.workerCount),
+      grossMarginRate: toStoreManagerSummaryMetric(
+        data.summary.grossMarginRate,
+      ),
+      inventoryAmount: toStoreManagerSummaryMetric(
+        data.summary.inventoryAmount,
+      ),
     },
   };
 }

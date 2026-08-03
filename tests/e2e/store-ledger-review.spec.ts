@@ -511,7 +511,11 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   await expect(metrics).not.toContainText("마감 정산 차액");
   await expect(metrics).toContainText("근무인원");
   await expect(metrics).toContainText("4명");
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용. 지점장 검토 요약에서 제거한다.
+  // 정책 이력: 2026-06-21 노출 → 2026-06-28 정책 반전으로 본사 전용 차단 →
+  // 2026-08-03 소유자 결정으로 grossMarginRate·inventoryAmount는 7단계 상단 KPI
+  // 카드(매출·마진율·당일 재고 총 금액·근무 인원)에만 부분 허용. 아래 검토 요약
+  // 단계 지표는 계속 차단하므로 not.toContainText 단언은 유지한다.
+  // 매출 차이·결제 차액·급여·원가/이익은 계속 본사 전용이다.
   await expect(metrics).not.toContainText("마진율");
   await expect(metrics).not.toContainText("재고금액");
   // 매출원가/매출이익/영업이익/인당생산성 절대금액과 매출차액은 계속 차단한다.
@@ -520,6 +524,13 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   await expect(metrics).not.toContainText("영업이익");
   await expect(metrics).not.toContainText("인당생산성");
   await expect(metrics).not.toContainText("매출차액");
+
+  // 소유자 결정(2026-08-03): 7단계 상단 KPI 카드 4개(매출·마진율·당일 재고 총 금액·근무 인원).
+  const dailyKpi = page.getByLabel("당일 주요 숫자");
+  await expect(dailyKpi).toContainText("매출");
+  await expect(dailyKpi).toContainText("마진율");
+  await expect(dailyKpi).toContainText("당일 재고 총 금액");
+  await expect(dailyKpi).toContainText("근무 인원");
 
   // WO-04(2026-06-22): 오늘 많이 팔린 품목 카드(재고 흐름 기반 추정값).
   // 판매수량 = 전일 10 + 매입 5 - 당일 8 = 7개, 추정 매출 = 7 * 2,000 = 14,000원.
@@ -575,8 +586,10 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   ).toHaveAttribute("aria-current", "step");
 
   // 내부 필드 키와 차단 지표는 계속 노출 금지.
+  // 소유자 결정(2026-08-03): grossMarginRate/inventoryAmount는 7단계 KPI 카드로 노출되므로
+  // 차단 목록에서 제외한다(calculation-policy-gates.spec.ts와 같은 기준).
   await expect(page.locator("main")).not.toContainText(
-    /costOfGoodsSold|grossProfit|grossMarginRate|operatingProfit|productivity|inventoryAmount|differenceAmount/,
+    /costOfGoodsSold|grossProfit|operatingProfit|productivity|differenceAmount/,
   );
 });
 

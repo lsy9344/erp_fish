@@ -783,20 +783,24 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(querySource, /toStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
-  assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 요약에서 제거한다.
-  // 지점장 요약은 총매출·근무인원만 남는다.
+  // 소유자 결정(2026-08-03): 마진율·당일 재고 총 금액은 지점장 7단계 KPI 카드용으로 노출한다.
+  // 매출 차이·결제 차액은 계속 본사 전용이다. 요약 지표 7개는 모두 reason 제거
+  // sanitizer(toStoreManagerSummaryMetric)를 거친다.
   assert.match(
     responseShapeSource,
-    /workerCount:\s*data\.summary\.workerCount/,
+    /totalSales:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.totalSales,?\s*\)/,
   );
-  assert.doesNotMatch(
+  assert.match(
     responseShapeSource,
-    /grossMarginRate:\s*data\.summary\.grossMarginRate/,
+    /workerCount:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.workerCount,?\s*\)/,
   );
-  assert.doesNotMatch(
+  assert.match(
     responseShapeSource,
-    /inventoryAmount:\s*data\.summary\.inventoryAmount/,
+    /grossMarginRate:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.grossMarginRate,?\s*\)/,
+  );
+  assert.match(
+    responseShapeSource,
+    /inventoryAmount:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.inventoryAmount,?\s*\)/,
   );
   assert.doesNotMatch(
     responseShapeSource,
@@ -817,6 +821,13 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.doesNotMatch(clientSource, /label="영업이익"/);
   assert.doesNotMatch(clientSource, /label="인당생산성"/);
   assert.doesNotMatch(clientSource, /label="매출차액"/);
+  // 7단계 상단 KPI 카드(2026-08-03).
+  assert.match(clientSource, /aria-label="당일 주요 숫자"/);
+  assert.match(clientSource, /label="마진율"/);
+  assert.match(clientSource, /label="당일 재고 총 금액"/);
+  assert.match(clientSource, /label="근무 인원"/);
+  assert.match(clientSource, /summary\.grossMarginRate/);
+  assert.match(clientSource, /summary\.inventoryAmount/);
 
   const queryPath = assertProjectFile(
     "src",
@@ -839,9 +850,15 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     authorDisplayName: "작성자",
     summary: {
       totalSales: ok(100_000),
+      closingTotalSales: ok(90_000),
+      carryoverSales: ok(10_000),
+      operatingSales: ok(80_000),
       costOfGoodsSold: ok(30_000),
       grossProfit: ok(70_000),
-      grossMarginRate: ok(0.7),
+      grossMarginRate: {
+        ...ok(0.7),
+        reason: "FIFO 원천 lot 근거가 부족해 계산 기준 확인이 필요합니다.",
+      },
       operatingProfit: ok(60_000),
       productivity: ok(30_000),
       workerCount: ok(3),
@@ -902,18 +919,27 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     ],
   });
 
-  // 마진율·재고금액은 본사 전용. 지점장 요약에는 안전한 매출 구성과 근무인원만 남는다.
+  // 소유자 결정(2026-08-03): 마진율·당일 재고 총 금액은 7단계 KPI 카드로 노출되고,
+  // 나머지 민감 지표는 계속 제거된다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
     "carryoverSales",
     "closingTotalSales",
+    "grossMarginRate",
+    "inventoryAmount",
     "operatingSales",
     "totalSales",
     "workerCount",
   ]);
   assert.equal(Object.hasOwn(safeReview.summary, "totalSales"), true);
   assert.equal(Object.hasOwn(safeReview.summary, "workerCount"), true);
-  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), false);
-  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), false);
+  assert.equal(Object.hasOwn(safeReview.summary, "grossMarginRate"), true);
+  assert.equal(Object.hasOwn(safeReview.summary, "inventoryAmount"), true);
+  // 값·상태는 유지하되 내부 계산 사유(reason)는 지점장 응답에서 제거한다.
+  assert.equal(safeReview.summary.grossMarginRate.value, 0.7);
+  assert.equal(
+    Object.hasOwn(safeReview.summary.grossMarginRate, "reason"),
+    false,
+  );
   assert.equal(Object.hasOwn(safeReview.summary, "paymentDifference"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "salesDifference"), false);
   assert.equal(Object.hasOwn(safeReview.summary, "costOfGoodsSold"), false);
