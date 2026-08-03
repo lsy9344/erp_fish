@@ -642,24 +642,9 @@ export async function createCorrectionRecord(
           return correctionConflictError();
         }
 
-        // 정정도 장부 version을 올려 이후 직접 저장/정정이 같은 토큰으로 충돌 판정하게
-        // 한다. 토큰이 이미 달라졌으면(동시 요청) 여기서 0건이 되어 충돌로 끝난다.
-        const claimed = await tx.dailyLedger.updateMany({
-          where: {
-            id: ledgerId,
-            status: "HEADQUARTERS_CLOSED",
-            updatedAt: expectedLedgerUpdatedAt,
-          },
-          data: {
-            version: { increment: 1 },
-            updatedById: actor.user.id,
-          },
-        });
-
-        if (claimed.count !== 1) {
-          return correctionConflictError();
-        }
-
+        // 대상·값·합산 검증은 장부 claim 전에 끝낸다. 검증 실패가 반환돼도
+        // 트랜잭션이 커밋되므로, claim이 먼저 실행되면 감사 없는 version/수정자
+        // 변경만 남는다(ghost update). 검증 통과 후 claim으로 직렬화한다.
         const originalValue = await resolveOriginalCorrectionValue(
           tx,
           parsed.data,
@@ -689,6 +674,24 @@ export async function createCorrectionRecord(
 
         if (!operatingSalesValidation.ok) {
           return operatingSalesValidation;
+        }
+
+        // 정정도 장부 version을 올려 이후 직접 저장/정정이 같은 토큰으로 충돌 판정하게
+        // 한다. 토큰이 이미 달라졌으면(동시 요청) 여기서 0건이 되어 충돌로 끝난다.
+        const claimed = await tx.dailyLedger.updateMany({
+          where: {
+            id: ledgerId,
+            status: "HEADQUARTERS_CLOSED",
+            updatedAt: expectedLedgerUpdatedAt,
+          },
+          data: {
+            version: { increment: 1 },
+            updatedById: actor.user.id,
+          },
+        });
+
+        if (claimed.count !== 1) {
+          return correctionConflictError();
         }
 
         await lockCorrectionTargetInTx(tx, {

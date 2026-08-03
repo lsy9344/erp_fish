@@ -580,3 +580,63 @@ test("마스터 직접 저장은 기존 정정을 대체하고 이력은 보존�
     )
     .toBe(1);
 });
+
+// 라운드2 FIX 1: 거부되는 정정 요청이 장부 version/수정자를 바꾸는 ghost update를
+// 남기지 않는지 검증한다. 입력 검증은 통과하지만 서버 합산 범위 검증에서 거부되는
+// 정정을 제출해 트랜잭션 내부 실패 경로를 재현한다.
+test("거부된 정정은 장부 version과 마지막 수정 정보를 바꾸지 않는다", async ({
+  page,
+}) => {
+  const { ledger } = await seedClosedLedger();
+
+  // 이월 매출을 미리 올려둬 정정값 자체는 유효해도 합산이 범위를 넘게 만든다.
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: { carryoverSalesAmount: 1000 },
+  });
+  const before = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { version: true, updatedAt: true, updatedById: true },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+
+  const correctionPanel = page
+    .getByRole("region")
+    .filter({ has: page.getByRole("heading", { name: "정정 기록" }) });
+
+  await correctionPanel
+    .getByLabel("정정 대상")
+    .selectOption({ label: "총매출" });
+  await replaceControlValue(
+    correctionPanel.getByLabel("정정값"),
+    "2147483647",
+  );
+  await replaceControlValue(
+    correctionPanel.getByLabel("정정 사유"),
+    "거부 정정 토큰 불변 검증",
+  );
+  await correctionPanel
+    .getByRole("button", { name: "정정 기록 저장" })
+    .click();
+
+  // 합산 범위 오류로 거부된다.
+  await expect(
+    correctionPanel.getByText("2,147,483,647원을 넘을 수 없습니다"),
+  ).toBeVisible();
+
+  // 정정 기록은 생성되지 않는다.
+  await expect
+    .poll(async () =>
+      prisma.correctionRecord.count({ where: { dailyLedgerId: ledger.id } }),
+    )
+    .toBe(0);
+
+  // 장부 충돌 토큰(version/updatedAt)과 수정자는 그대로다.
+  const after = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { version: true, updatedAt: true, updatedById: true },
+  });
+  expect(after).toEqual(before);
+});
