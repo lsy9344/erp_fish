@@ -185,6 +185,123 @@ async function seedClosedLedgerWithPrices() {
   return { actorId, ledger, productA, productB };
 }
 
+async function seedClosedLedgerForDashboardRecalc() {
+  const actorId = await getHeadquartersUserId();
+  const closingDate = getKstMidnight();
+
+  const store = await prisma.store.create({
+    data: {
+      id: STORE_ID,
+      name: "스토리D6 마감점",
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+  const productA = await prisma.product.create({
+    data: {
+      name: PRODUCT_A_NAME,
+      category: "수산물",
+      spec: "1kg",
+      defaultUnitPrice: 1000,
+      updatedById: actorId,
+    },
+  });
+  const lossCode = await prisma.ledgerInputCode.create({
+    data: {
+      name: LOSS_CODE_NAME,
+      group: "LOSS_TYPE",
+      displayOrder: 1,
+      isActive: true,
+      updatedById: actorId,
+    },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate,
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 50000,
+      cashAmount: 50000,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 2,
+      createdById: actorId,
+      updatedById: actorId,
+      closedById: actorId,
+      closedAt: new Date(),
+    },
+  });
+
+  // 품목 A: 판매수량 = 전일 10 + 매입 5 - 손실 3 - 당일재고 7 = 5개.
+  const inventoryItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: productA.id,
+      productName: productA.name,
+      productCategory: productA.category,
+      productSpec: productA.spec,
+      unitPrice: 1000,
+      previousQuantity: 10,
+      purchasedQuantity: 5,
+      currentQuantity: 7,
+      quantity: 7,
+      inventoryAmount: 7000,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  // FIFO lot: 15개 중 5개 소진(COGS 5,000원), 10개 잔존(재고금액 10,000원).
+  await prisma.ledgerInventoryFifoLot.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      ledgerInventoryItemId: inventoryItem.id,
+      productId: productA.id,
+      sourceType: "PURCHASE",
+      sourceBusinessDate: closingDate,
+      unitPrice: 1000,
+      originalQuantity: 15,
+      consumedQuantity: 5,
+      remainingQuantity: 10,
+      originalAmount: 15000,
+      consumedAmount: 5000,
+      remainingAmount: 10000,
+      sortOrder: 0,
+    },
+  });
+  await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: productA.id,
+      ledgerInputCodeId: lossCode.id,
+      productName: productA.name,
+      productCategory: productA.category,
+      productSpec: productA.spec,
+      unitPrice: 1500,
+      lossTypeName: lossCode.name,
+      quantity: 3,
+      recoveredAmount: 0,
+      amount: 4500,
+      usedPlannedPrice: true,
+      reason: "seed",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.storeSalesPricePlan.create({
+    data: {
+      storeId: store.id,
+      businessDate: closingDate,
+      productId: productA.id,
+      plannedUnitPrice: 1500,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  return { actorId, ledger, productA };
+}
+
 async function cleanupStoryData() {
   const ledgers = await prisma.dailyLedger.findMany({
     where: { storeId: STORE_ID },
@@ -349,6 +466,60 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
 });
 
 // DESIGN.md D8: 마감 재고/판매가격 저장도 오래된 화면 저장은 충돌로 거부된다.
+// DESIGN.md D6/테스트 계획 5: 판매가격 수정 후 관제판의 예상매출·예상 마진율이 같은
+// 날짜 기준으로 갱신되는지 처음부터 끝까지 검증한다.
+test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 갱신된다", async ({
+  page,
+}) => {
+  const { ledger, productA } = await seedClosedLedgerForDashboardRecalc();
+
+  await loginAsHq(page);
+
+  const dashboardRow = page
+    .getByRole("row")
+    .filter({ hasText: "스토리D6 마감점" });
+
+  // 수정 전: 판매수량 5개 × 1,500원 = 예상매출 7,500원,
+  // 예상 마진율 (7,500 - COGS 5,000) / 7,500 = 33.3%.
+  await page.goto("/app/dashboard?date=today");
+  await expect(dashboardRow).toContainText("예상매출 7,500원");
+  await expect(dashboardRow).toContainText("예상 33.3%");
+
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "재고" }).click();
+
+  const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
+  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  await priceInput.click();
+  await priceInput.press("Control+A");
+  await priceInput.pressSequentially("1800");
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("관제판 재계산 확인용 가격 수정");
+  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
+
+  await expect
+    .poll(async () => {
+      const plan = await prisma.storeSalesPricePlan.findFirst({
+        where: {
+          storeId: STORE_ID,
+          businessDate: getKstMidnight(),
+          productId: productA.id,
+        },
+        select: { plannedUnitPrice: true },
+      });
+
+      return plan?.plannedUnitPrice;
+    })
+    .toBe(1800);
+
+  // 수정 후: 판매수량 5개 × 1,800원 = 예상매출 9,000원,
+  // 예상 마진율 (9,000 - 5,000) / 9,000 = 44.4%.
+  await page.goto("/app/dashboard?date=today");
+  await expect(dashboardRow).toContainText("예상매출 9,000원");
+  await expect(dashboardRow).toContainText("예상 44.4%");
+});
+
 test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로 거부된다", async ({
   page,
 }) => {
