@@ -13,6 +13,7 @@ export type CarryoverCostBasisComparison =
 export type CarryoverLotSignatureInput = {
   unitPrice: number;
   quantity: number;
+  sortOrder: number;
 };
 
 /**
@@ -24,14 +25,17 @@ export type CarryoverLotSignatureInput = {
  * 단가/수량 구성이 다르면(예: 1개×100원+1개×200원 vs 1개×150원+1개×150원) 다음 날
  * 판매 소진 순서에 따라 매출원가가 달라지므로 재확인이 필요하다.
  *
- * 시그니처는 `단가:수량` 항목을 정렬해 결합한 문자열이다. 정렬해서 DB 조회
- * 순서와 무관하게 같은 구성은 같은 시그니처가 된다. 수량이 0 이하인 lot은 이월
- * 대상이 아니므로 제외한다(이월 복사도 양수 lot만 수행한다).
+ * FIFO는 lot 순서대로 원가를 소진하므로 같은 구성이라도 순서가 다르면 매출원가가
+ * 달라진다(예: 100원 lot 선소진 vs 200원 lot 선소진). 따라서 시그니처는
+ * `단가:수량` 항목을 FIFO sortOrder 순서로 결합한 문자열이다. DB 조회 순서와
+ * 무관하게 sortOrder로 정렬하지만, sortOrder 자체가 다르면(순서 변경) 다른
+ * 시그니처가 되어 재확인으로 이어진다. 수량이 0 이하인 lot은 이월 대상이
+ * 아니므로 제외한다(이월 복사도 양수 lot만 수행한다).
  */
 export function toCarryoverLotSignature(
   lots: Iterable<CarryoverLotSignatureInput>,
 ): string {
-  const entries: string[] = [];
+  const ordered: CarryoverLotSignatureInput[] = [];
 
   for (const lot of lots) {
     if (
@@ -42,10 +46,15 @@ export function toCarryoverLotSignature(
       continue;
     }
 
-    entries.push(`${lot.unitPrice}:${lot.quantity}`);
+    ordered.push(lot);
   }
 
-  return entries.sort().join("|");
+  // 입력 배열 순서 대신 FIFO sortOrder로 정렬해 DB 반환 순서와 무관하게 같은
+  // 구성·같은 순서는 같은 시그니처가 된다. 정렬은 안정 정렬이라 sortOrder가
+  // 같은 lot은 입력 순서를 유지한다.
+  ordered.sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return ordered.map((lot) => `${lot.unitPrice}:${lot.quantity}`).join("|");
 }
 
 /**

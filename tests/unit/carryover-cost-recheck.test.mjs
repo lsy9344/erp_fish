@@ -13,33 +13,58 @@ test("carryover lot signature comparison detects FIFO basis changes without quan
     resolveCarryoverRecheckStatus,
   } = await import(recheckUrl.href);
 
-  // 같은 구성은(저장 순서와 무관하게) 같은 시그니처다.
+  // 같은 구성·같은 FIFO 순서는 입력 배열 순서와 무관하게 같은 시그니처다.
   const signatureA = toCarryoverLotSignature([
-    { unitPrice: 100, quantity: 1 },
-    { unitPrice: 200, quantity: 1 },
+    { unitPrice: 100, quantity: 1, sortOrder: 2 },
+    { unitPrice: 200, quantity: 1, sortOrder: 3 },
   ]);
   assert.equal(
     signatureA,
     toCarryoverLotSignature([
-      { unitPrice: 200, quantity: 1 },
-      { unitPrice: 100, quantity: 1 },
+      { unitPrice: 200, quantity: 1, sortOrder: 3 },
+      { unitPrice: 100, quantity: 1, sortOrder: 2 },
     ]),
+  );
+
+  // 이월 복사 등에서 sortOrder가 다시 번호 매겨져도 상대 순서가 같으면 같은
+  // 시그니처다(원천 2,3 → 복사본 0,1).
+  assert.equal(
+    signatureA,
+    toCarryoverLotSignature([
+      { unitPrice: 100, quantity: 1, sortOrder: 0 },
+      { unitPrice: 200, quantity: 1, sortOrder: 1 },
+    ]),
+  );
+
+  // 같은 구성이라도 FIFO 소진 순서만 바뀌면 매출원가가 달라지므로 다른
+  // 시그니처(재확인 필요)다.
+  const reversedOrder = toCarryoverLotSignature([
+    { unitPrice: 200, quantity: 1, sortOrder: 0 },
+    { unitPrice: 100, quantity: 1, sortOrder: 1 },
+  ]);
+  assert.notEqual(signatureA, reversedOrder);
+  assert.equal(
+    compareCarryoverCostBasis({
+      sourceLotSignature: reversedOrder,
+      recordedLotSignature: signatureA,
+    }),
+    "changed",
   );
 
   // 0 이하 수량 lot은 이월 대상이 아니라 시그니처에서 제외한다.
   assert.equal(
     toCarryoverLotSignature([
-      { unitPrice: 100, quantity: 1 },
-      { unitPrice: 300, quantity: 0 },
+      { unitPrice: 100, quantity: 1, sortOrder: 0 },
+      { unitPrice: 300, quantity: 0, sortOrder: 1 },
     ]),
-    toCarryoverLotSignature([{ unitPrice: 100, quantity: 1 }]),
+    toCarryoverLotSignature([{ unitPrice: 100, quantity: 1, sortOrder: 0 }]),
   );
 
   // 총액이 같아도 lot 구성이 다르면(1×100+1×200 vs 1×150+1×150) 변화로 판정한다.
   // 합계만 비교하던 기존 판정이 놓치던 케이스다.
   const equalTotalDifferentComposition = toCarryoverLotSignature([
-    { unitPrice: 150, quantity: 1 },
-    { unitPrice: 150, quantity: 1 },
+    { unitPrice: 150, quantity: 1, sortOrder: 0 },
+    { unitPrice: 150, quantity: 1, sortOrder: 1 },
   ]);
   assert.notEqual(signatureA, equalTotalDifferentComposition);
   assert.equal(

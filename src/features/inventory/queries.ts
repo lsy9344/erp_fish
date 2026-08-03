@@ -730,14 +730,17 @@ async function mergeExistingInventoryLines(
                 quantity: true,
               },
             },
-            // DESIGN.md D10: 원천 장부의 현재 FIFO lot 구성(단가·잔량). 이월 재확인
-            // 판정은 합계가 아닌 lot 시그니처 비교로 한다.
+            // DESIGN.md D10: 원천 장부의 현재 FIFO lot 구성(단가·잔량·순서). 이월
+            // 재확인 판정은 합계가 아닌 lot 시그니처 비교로 하며 FIFO 소진 순서가
+            // 달라지는 경우도 잡아야 하므로 sortOrder를 포함한다.
             ledgerInventoryFifoLots: {
               select: {
                 productId: true,
                 unitPrice: true,
                 remainingQuantity: true,
+                sortOrder: true,
               },
+              orderBy: [{ sortOrder: "asc" }],
             },
           },
         });
@@ -745,7 +748,7 @@ async function mergeExistingInventoryLines(
     carryoverLedgers.map((ledger) => {
       const lotsByProduct = new Map<
         string,
-        Array<{ unitPrice: number; quantity: number }>
+        Array<{ unitPrice: number; quantity: number; sortOrder: number }>
       >();
 
       for (const lot of ledger.ledgerInventoryFifoLots) {
@@ -754,6 +757,7 @@ async function mergeExistingInventoryLines(
         lots.push({
           unitPrice: lot.unitPrice,
           quantity: decimalToNumber(lot.remainingQuantity),
+          sortOrder: lot.sortOrder,
         });
         lotsByProduct.set(lot.productId, lots);
       }
@@ -791,14 +795,19 @@ async function mergeExistingInventoryLines(
             productId: true,
             unitPrice: true,
             originalQuantity: true,
+            sortOrder: true,
           },
+          orderBy: [{ sortOrder: "asc" }],
         });
   const recordedLotSignatureByLedger = new Map<string, Map<string, string>>();
 
   {
     const lotsByLedgerAndProduct = new Map<
       string,
-      Map<string, Array<{ unitPrice: number; quantity: number }>>
+      Map<
+        string,
+        Array<{ unitPrice: number; quantity: number; sortOrder: number }>
+      >
     >();
 
     for (const lot of currentLedgerCarryoverLots) {
@@ -808,12 +817,16 @@ async function mergeExistingInventoryLines(
 
       const byProduct =
         lotsByLedgerAndProduct.get(lot.sourceLedgerId) ??
-        new Map<string, Array<{ unitPrice: number; quantity: number }>>();
+        new Map<
+          string,
+          Array<{ unitPrice: number; quantity: number; sortOrder: number }>
+        >();
       const lots = byProduct.get(lot.productId) ?? [];
 
       lots.push({
         unitPrice: lot.unitPrice,
         quantity: decimalToNumber(lot.originalQuantity),
+        sortOrder: lot.sortOrder,
       });
       byProduct.set(lot.productId, lots);
       lotsByLedgerAndProduct.set(lot.sourceLedgerId, byProduct);
