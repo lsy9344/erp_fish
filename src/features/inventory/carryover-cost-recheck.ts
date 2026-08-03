@@ -1,4 +1,9 @@
-import { InventoryCarryoverStatus } from "../../../generated/prisma";
+import type { InventoryCarryoverStatus } from "../../../generated/prisma";
+
+// enum 값 문자열을 리터럴로 사용해 이 모듈이 런타임 prisma import 없이
+// 단위 테스트에서 바로 import될 수 있게 한다.
+const CARRYOVER_RECHECK_REQUIRED: InventoryCarryoverStatus =
+  "CARRYOVER_RECHECK_REQUIRED";
 
 /**
  * DESIGN.md D10: 다음 날 이월 재확인은 수량뿐 아니라 FIFO 원가 근거 변화도 잡아야
@@ -38,11 +43,11 @@ export function resolveCarryoverRecheckStatus(input: {
   recordedCarryoverCost: number | null;
 }): InventoryCarryoverStatus {
   if (input.isReviewRequiredCarryover && input.previousLedgerClosed) {
-    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+    return CARRYOVER_RECHECK_REQUIRED;
   }
 
   if (!input.quantityMatches) {
-    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+    return CARRYOVER_RECHECK_REQUIRED;
   }
 
   if (
@@ -51,7 +56,7 @@ export function resolveCarryoverRecheckStatus(input: {
       recordedCarryoverCost: input.recordedCarryoverCost,
     })
   ) {
-    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+    return CARRYOVER_RECHECK_REQUIRED;
   }
 
   return input.currentStatus;
