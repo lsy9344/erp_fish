@@ -149,8 +149,8 @@ export async function supersedeCorrectionRecordsInTx(
   }
 
   if (
-    (input.targetIds !== undefined && input.targetIds.length === 0) ||
-    (input.fieldKeys !== undefined && input.fieldKeys.length === 0)
+    (input.targetIds?.length === 0) ||
+    (input.fieldKeys?.length === 0)
   ) {
     return { count: 0 };
   }

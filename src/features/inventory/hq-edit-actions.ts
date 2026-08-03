@@ -57,7 +57,12 @@ import {
   persistLedgerInventoryCarryoverDetails,
 } from "./carryover-detail-persistence";
 import { getInventoryStepDataByLedgerIdInTx } from "./queries";
-import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
+import {
+  getCorrectionRecordsForLedgerInTx,
+  getLatestCorrectionValueMap,
+  supersedeCorrectionRecordsInTx,
+} from "~/features/corrections/queries";
+import { applyCorrectionOverlayToInventoryEditValues } from "~/features/corrections/edit-overlay";
 import {
   ledgerInventoryAdjustmentSchema,
   ledgerInventorySchema,
@@ -593,6 +598,14 @@ export async function saveHqLedgerInventoryItems(
           return notFoundError();
         }
 
+        // DESIGN.md D8: 감사 before는 supersede 전 활성 정정이 반영된 유효값 기준이다.
+        const beforeAuditData = applyCorrectionOverlayToInventoryEditValues(
+          before,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
           // 재고 전체 재저장은 기존 행을 전부 삭제·재생성하므로 기존 행 id 전체의
@@ -603,13 +616,21 @@ export async function saveHqLedgerInventoryItems(
             .map((item) => item.id),
         });
 
+        // 감사 after는 supersede 후 남아 있는 활성 정정까지 반영한 유효값 기준이다.
+        const afterAuditData = applyCorrectionOverlayToInventoryEditValues(
+          after,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before,
-          after: withLedgerEditContext(after, {
+          before: beforeAuditData,
+          after: withLedgerEditContext(afterAuditData, {
             ledgerStatusAtEdit: before.status,
             closedEdit: before.status === "HEADQUARTERS_CLOSED",
           }),
@@ -865,6 +886,16 @@ export async function saveHqLedgerInventoryAdjustment(
         const afterLine =
           after.items.find((item) => item.productId === line.productId) ?? null;
 
+        // DESIGN.md D8: 감사 before/after는 유효값 기준이다. supersede 전·후의 활성
+        // 정정 overlay를 해당 행에 적용한다.
+        const beforeAuditLine =
+          applyCorrectionOverlayToInventoryEditValues(
+            { id: before.id, items: [line] },
+            getLatestCorrectionValueMap(
+              await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+            ).values(),
+          ).items[0] ?? line;
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
           // 단독 재고 조정은 한 품목 행의 현재고만 바꾸므로 그 행의 수량 정정만
@@ -874,18 +905,28 @@ export async function saveHqLedgerInventoryAdjustment(
           fieldKeys: ["currentQuantity", "quantity"],
         });
 
+        const afterAuditLine = afterLine
+          ? applyCorrectionOverlayToInventoryEditValues(
+              { id: before.id, items: [afterLine] },
+              getLatestCorrectionValueMap(
+                await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+              ).values(),
+            ).items[0] ?? afterLine
+          : afterLine;
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory_adjustment.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before: line,
-          after: afterLine
-            ? withLedgerEditContext(afterLine, {
-                ledgerStatusAtEdit: before.status,
-                closedEdit: before.status === "HEADQUARTERS_CLOSED",
-              })
-            : afterLine,
+          before: beforeAuditLine,
+          after:
+            afterAuditLine !== null
+              ? withLedgerEditContext(afterAuditLine, {
+                  ledgerStatusAtEdit: before.status,
+                  closedEdit: before.status === "HEADQUARTERS_CLOSED",
+                })
+              : afterAuditLine,
           reason: parsed.data.reason,
         });
 

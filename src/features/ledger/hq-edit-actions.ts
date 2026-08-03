@@ -22,7 +22,15 @@ import {
   validatePurchaseAmount,
 } from "~/lib/validation";
 import { withLedgerEditContext, writeAuditLog } from "~/server/audit";
-import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
+import {
+  getCorrectionRecordsForLedgerInTx,
+  getLatestCorrectionValueMap,
+  supersedeCorrectionRecordsInTx,
+} from "~/features/corrections/queries";
+import {
+  applyCorrectionOverlayToLedgerFields,
+  applyExpenseRowOverlay,
+} from "~/features/corrections/edit-overlay";
 import {
   requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
@@ -330,6 +338,34 @@ function notEditableError(status: LedgerRecord["status"]): ActionResult<never> {
   return actionError(reason.code, reason.message);
 }
 
+/**
+ * DESIGN.md D8: 감사 before/after는 사용자에게 실제 적용된 유효값 기준이다.
+ * 시점(직접 저장 전/후)의 활성 정정 overlay를 장부 스냅샷에 입혀서 payload를 만든다.
+ * 정정이 없으면 원본 스냅샷 그대로다.
+ */
+async function toEffectiveLedgerAuditPayloadInTx(
+  tx: Prisma.TransactionClient,
+  ledger: LedgerRecord,
+) {
+  const values = getLatestCorrectionValueMap(
+    await getCorrectionRecordsForLedgerInTx(tx, ledger.id),
+  );
+  const overlaidLedger = applyCorrectionOverlayToLedgerFields(
+    ledger,
+    values.values(),
+    { includeDerivedTotal: true },
+  );
+
+  return toLedgerAuditPayload({
+    ...overlaidLedger,
+    ledgerExpenses: applyExpenseRowOverlay(
+      ledger.ledgerExpenses,
+      ledger.id,
+      values.values(),
+    ),
+  });
+}
+
 function ensureTargetLedger(
   ledger: LedgerRecord | null,
   storeId: string,
@@ -465,6 +501,9 @@ export async function saveHqLedgerSalesPayment(
           select: ledgerSelect,
         });
 
+        const beforeAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
           // 매출/결제 직접 저장은 다섯 결제 필드 전체를 재저장하므로 해당 정정을 대체한다.
@@ -479,13 +518,16 @@ export async function saveHqLedgerSalesPayment(
           ],
         });
 
+        const afterAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+
         await writeAuditLog(tx, {
           action: "ledger.hq.sales_payment.updated",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+          before: beforeAuditPayload,
+          after: withLedgerEditContext(afterAuditPayload, {
             ledgerStatusAtEdit: beforeLedger.status,
             closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
           }),
@@ -589,6 +631,9 @@ export async function saveHqLedgerExpenses(
           select: ledgerSelect,
         });
 
+        const beforeAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
           // 지출 행 목록은 전체 삭제 후 재저장된다. 갱신·삭제된 기존 행의 정정을
@@ -597,13 +642,16 @@ export async function saveHqLedgerExpenses(
           targetIds: beforeLedger.ledgerExpenses.map((expense) => expense.id),
         });
 
+        const afterAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+
         await writeAuditLog(tx, {
           action: "ledger.hq.expenses.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+          before: beforeAuditPayload,
+          after: withLedgerEditContext(afterAuditPayload, {
             ledgerStatusAtEdit: beforeLedger.status,
             closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
           }),
@@ -1054,13 +1102,18 @@ export async function saveHqLedgerPurchases(
           }
         }
 
+        const beforeAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+        const afterAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+
         await writeAuditLog(tx, {
           action: "ledger.hq.purchases.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+          before: beforeAuditPayload,
+          after: withLedgerEditContext(afterAuditPayload, {
             ledgerStatusAtEdit: beforeLedger.status,
             closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
           }),
@@ -1174,6 +1227,9 @@ export async function saveHqLedgerWorkInfo(
           select: ledgerSelect,
         });
 
+        const beforeAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
           // 근무 저장은 근무인원과 특이사항만 덮어쓴다. 해당 필드 정정만 대체한다.
@@ -1182,13 +1238,16 @@ export async function saveHqLedgerWorkInfo(
           fieldKeys: ["workerCount", "workMemo"],
         });
 
+        const afterAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+
         await writeAuditLog(tx, {
           action: "ledger.hq.work_info.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+          before: beforeAuditPayload,
+          after: withLedgerEditContext(afterAuditPayload, {
             ledgerStatusAtEdit: beforeLedger.status,
             closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
           }),
@@ -1292,13 +1351,18 @@ export async function saveHqLedgerLaborInfo(
           select: ledgerSelect,
         });
 
+        const beforeAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+        const afterAuditPayload =
+          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+
         await writeAuditLog(tx, {
           action: "ledger.hq.labor.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+          before: beforeAuditPayload,
+          after: withLedgerEditContext(afterAuditPayload, {
             ledgerStatusAtEdit: beforeLedger.status,
             closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
           }),

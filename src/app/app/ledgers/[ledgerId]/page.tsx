@@ -18,6 +18,12 @@ import {
   getCorrectionRecordsForLedger,
   getLatestCorrectionValueMap,
 } from "~/features/corrections/queries";
+import {
+  applyCorrectionOverlayToInventoryEditValues,
+  applyCorrectionOverlayToLedgerFields,
+  applyCorrectionOverlayToLossEditValues,
+  applyExpenseRowOverlay,
+} from "~/features/corrections/edit-overlay";
 import type {
   CorrectionAppliedValue,
   CorrectionTargetOption,
@@ -203,6 +209,28 @@ export default async function LedgerDetailPage({
     : [];
   const latestCorrectionValues = getLatestCorrectionValueMap(correctionRecords);
   const appliedCorrections = Array.from(latestCorrectionValues.values());
+  // DESIGN.md D9: 편집 폼은 원본값이 아니라 현재 적용 중인 정정 반영값으로
+  // 초기화한다. 다른 필드를 저장해도 유효 정정값이 조용히 되돌아가지 않는다.
+  const editLedger = {
+    ...applyCorrectionOverlayToLedgerFields(
+      ledger,
+      latestCorrectionValues.values(),
+      { includeDerivedTotal: false },
+    ),
+    expenseItems: applyExpenseRowOverlay(
+      ledger.expenseItems,
+      ledger.id,
+      latestCorrectionValues.values(),
+    ),
+  };
+  const editInventoryData = applyCorrectionOverlayToInventoryEditValues(
+    inventoryData,
+    latestCorrectionValues.values(),
+  );
+  const editLossData = applyCorrectionOverlayToLossEditValues(
+    lossData,
+    latestCorrectionValues.values(),
+  );
   const totalSalesCorrection = getAppliedCorrection(latestCorrectionValues, {
     dailyLedgerId: ledger.id,
     targetType: "PAYMENT_FIELD",
@@ -459,7 +487,7 @@ export default async function LedgerDetailPage({
             <PurchaseStepClient
               key={`purchases-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
-              initialLedger={ledger}
+              initialLedger={editLedger}
               productOptions={productOptions}
               currentStep="purchase"
               saveAction={saveHqLedgerPurchases}
@@ -478,7 +506,7 @@ export default async function LedgerDetailPage({
             <LossStepClient
               key={`losses-${lossData.id}-${lossData.status}`}
               storeName={detail.storeName}
-              initialData={lossData}
+              initialData={editLossData}
               saveAction={saveHqLedgerLosses}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
@@ -495,7 +523,7 @@ export default async function LedgerDetailPage({
             <InventoryStepClient
               key={`inventory-${inventoryData.id}-${inventoryData.status}`}
               storeName={detail.storeName}
-              initialData={inventoryData}
+              initialData={editInventoryData}
               saveItemsAction={saveHqLedgerInventoryItems}
               saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
               showStepNavigation={false}
@@ -513,7 +541,7 @@ export default async function LedgerDetailPage({
             <ExpenseStepClient
               key={`expenses-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
-              initialLedger={ledger}
+              initialLedger={editLedger}
               expenseCodeOptions={expenseCodeOptions}
               currentStep="cost"
               saveAction={saveHqLedgerExpenses}
@@ -533,7 +561,7 @@ export default async function LedgerDetailPage({
             <WorkStepClient
               key={`work-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
-              initialLedger={ledger}
+              initialLedger={editLedger}
               currentStep="work"
               saveAction={saveHqLedgerWorkInfo}
               laborSaveAction={saveHqLedgerLaborInfo}
@@ -554,7 +582,7 @@ export default async function LedgerDetailPage({
             <SalesPaymentStepClient
               key={`sales-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
-              initialLedger={ledger}
+              initialLedger={editLedger}
               currentStep="sales"
               saveAction={saveHqLedgerSalesPayment}
               showStepNavigation={false}

@@ -90,8 +90,10 @@ test("inventory plan persistence is patch-only and preserves plan metadata", asy
   );
   assert.match(
     hqActionsSource,
-    /import \{ upsertInventorySalesPricePlansInTx \} from "\.\/sales-price-persistence"/,
+    /import \{[\s\S]*?upsertInventorySalesPricePlansInTx,[\s\S]*?\} from "\.\/sales-price-persistence"/,
   );
+  // DESIGN.md D6: 본사 마감 편집 경로는 판매가격 쓰기 게이트를 통과한 항목만 저장한다.
+  assert.match(hqActionsSource, /getSalesPriceWriteGateDecision\(/);
   // 양쪽 모두 품목별 upsert가 아닌 공유 벌크 helper를 호출한다.
   assert.doesNotMatch(actionsSource, /storeSalesPricePlan\.upsert\(/);
   assert.doesNotMatch(hqActionsSource, /storeSalesPricePlan\.upsert\(/);
@@ -141,4 +143,50 @@ test("inventory plan save revalidates every consumer path", async () => {
   );
   assert.match(helper, /revalidateDashboardAndReports\(\)/);
   assert.match(source, /revalidateLedgerDetailPath\(parsed\.data\.ledgerId\)/);
+});
+
+test("sales price write gate allows only closed-edit masters on closed ledgers", async () => {
+  // DESIGN.md D6: 판매한 가격 쓰기는 마감 편집 권한 + HEADQUARTERS_CLOSED 상태의
+  // 마스터만 허용한다. 행동 테스트로 판정 함수를 직접 검증한다.
+  const { getSalesPriceWriteGateDecision, salesPriceWriteForbiddenMessage } =
+    await import(salesPricePersistenceUrl.href);
+
+  // 가격이 없는 저장은 게이트와 무관하게 통과한다.
+  assert.deepEqual(
+    getSalesPriceWriteGateDecision({
+      hasPlannedPriceInput: false,
+      closedEditAllowed: false,
+      ledgerStatus: "IN_PROGRESS",
+    }),
+    { ok: true },
+  );
+
+  // 마감 편집 권한 + 마감 장부만 통과.
+  assert.deepEqual(
+    getSalesPriceWriteGateDecision({
+      hasPlannedPriceInput: true,
+      closedEditAllowed: true,
+      ledgerStatus: "HEADQUARTERS_CLOSED",
+    }),
+    { ok: true },
+  );
+
+  // 권한 없는 사용자(HQ_STAFF 등)는 마감 장부에서도 거부.
+  const forbidden = getSalesPriceWriteGateDecision({
+    hasPlannedPriceInput: true,
+    closedEditAllowed: false,
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+  });
+  assert.equal(forbidden.ok, false);
+  assert.equal(forbidden.code, "LEDGER_NOT_EDITABLE");
+  assert.equal(forbidden.message, salesPriceWriteForbiddenMessage);
+
+  // 마스터여도 미마감/검토 중 장부에서는 거부.
+  const notClosed = getSalesPriceWriteGateDecision({
+    hasPlannedPriceInput: true,
+    closedEditAllowed: true,
+    ledgerStatus: "IN_REVIEW",
+  });
+  assert.equal(notClosed.ok, false);
+  assert.equal(notClosed.code, "LEDGER_NOT_EDITABLE");
 });

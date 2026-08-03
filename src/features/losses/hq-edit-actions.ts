@@ -42,6 +42,11 @@ import {
 } from "~/server/revalidation";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
 import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
+import {
+  getCorrectionRecordsForLedgerInTx,
+  getLatestCorrectionValueMap,
+} from "~/features/corrections/queries";
+import { applyCorrectionOverlayToLossEditValues } from "~/features/corrections/edit-overlay";
 import { getLossQuantityErrorMessage } from "./quantity-error";
 import { toFieldErrors } from "./schemas";
 import { lossTerms } from "./terms";
@@ -713,6 +718,14 @@ export async function saveHqLedgerLosses(
           return notFoundError();
         }
 
+        // DESIGN.md D8: 감사 before는 supersede 전 활성 정정이 반영된 유효값 기준이다.
+        const beforeAuditData = applyCorrectionOverlayToLossEditValues(
+          before,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
           // 손실 재저장은 기존 행을 갱신하거나 삭제하므로 기존 행 id 전체의 LOSS_ROW
@@ -721,13 +734,21 @@ export async function saveHqLedgerLosses(
           targetIds: [...existingById.keys()],
         });
 
+        // 감사 after는 supersede 후 남아 있는 활성 정정까지 반영한 유효값 기준이다.
+        const afterAuditData = applyCorrectionOverlayToLossEditValues(
+          after,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
+
         await writeAuditLog(tx, {
           action: "ledger.hq.losses.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before,
-          after: withLedgerEditContext(after, {
+          before: beforeAuditData,
+          after: withLedgerEditContext(afterAuditData, {
             ledgerStatusAtEdit: before.status,
             closedEdit: before.status === "HEADQUARTERS_CLOSED",
           }),

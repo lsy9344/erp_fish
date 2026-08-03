@@ -111,6 +111,8 @@ test("correction feature validates input and writes append-only records with aud
   );
 
   assert.match(schemas, /correctionRecordSchema/);
+  // DESIGN.md D9: 정정 생성은 렌더링 시점 장부 충돌 토큰을 요구한다.
+  assert.match(schemas, /ledgerUpdatedAt/);
   assert.match(schemas, /정정 사유를 입력해 주세요/);
   assert.match(schemas, /correctedValue/);
   assert.match(schemas, /MAX_CORRECTION_INTEGER\s*=\s*2_147_483_647/);
@@ -169,7 +171,12 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /reason:\s*parsed\.data\.reason/);
   assert.match(actions, /revalidateLedgerDetailPath\(ledgerId\)/);
   assert.match(actions, /revalidateDashboardAndReports\(\)/);
-  assert.doesNotMatch(actions, /tx\.dailyLedger\.update/);
+  // DESIGN.md D9: 정정 저장은 업무 필드를 직접 수정하지 않는다. 직접 저장과 같은
+  // 충돌 경계를 공유하도록 version/updatedById만 올린다(updateMany 토큰 증가).
+  assert.match(actions, /version: \{ increment: 1 \}/);
+  assert.match(actions, /updatedAt: expectedLedgerUpdatedAt/);
+  assert.match(actions, /LEDGER_CONFLICT/);
+  assert.doesNotMatch(actions, /tx\.dailyLedger\.update\(/);
   assert.doesNotMatch(actions, /tx\.ledgerExpense\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerInventoryItem\.update/);
@@ -223,6 +230,7 @@ test("correction schema rejects new purchase row corrections until report applic
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "PURCHASE_ROW",
     targetId: "purchase-1",
     fieldKey: "quantity",
@@ -251,6 +259,7 @@ test("correction schema rejects inventory amount corrections until all calculati
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "inventoryAmount",
@@ -278,6 +287,7 @@ test("correction schema accepts one-decimal inventory quantities and rejects fin
   );
   const input = {
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "currentQuantity",
@@ -316,6 +326,7 @@ test("correction schema accepts two-decimal loss quantities and rejects finer pr
 
   const input = {
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "LOSS_ROW",
     targetId: "loss-1",
     fieldKey: "quantity",
@@ -352,6 +363,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
   );
   const workerInput = {
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "LEDGER_FIELD",
     targetId: "ledger-1",
     fieldKey: "workerCount",
@@ -389,6 +401,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
 
   const fractionalMoney = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "PAYMENT_FIELD",
     targetId: "ledger-1",
     fieldKey: "cashAmount",
@@ -543,7 +556,14 @@ test("overlay map and next-correction baseline skip superseded records while his
   assert.match(queries, /export async function supersedeCorrectionRecordsInTx/);
   assert.match(
     queries,
-    /correctionRecord\.updateMany\(\{[\s\S]*?supersededAt:\s*null,\s*targetType:\s*\{\s*in:\s*\[\.\.\.input\.targetTypes\]\s*\},\s*\},\s*data:\s*\{\s*supersededAt:\s*input\.supersededAt\s*\?\?\s*new Date\(\)/,
+    /correctionRecord\.updateMany\(\{[\s\S]*?supersededAt:\s*null,\s*targetType:\s*\{\s*in:\s*\[\.\.\.input\.targetTypes\]\s*\},/,
+  );
+  // 실제 덮어쓴 대상만으로 범위를 좁힐 수 있게 targetIds/fieldKeys를 지원한다.
+  assert.match(queries, /targetId:\s*\{\s*in:\s*\[\.\.\.input\.targetIds\]\s*\}/);
+  assert.match(queries, /fieldKey:\s*\{\s*in:\s*\[\.\.\.input\.fieldKeys\]\s*\}/);
+  assert.match(
+    queries,
+    /data:\s*\{\s*supersededAt:\s*input\.supersededAt\s*\?\?\s*new Date\(\)/,
   );
   assert.doesNotMatch(queries, /correctionRecord\.delete/);
 });

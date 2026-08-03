@@ -16,18 +16,48 @@ test("LEDGER_CLOSED_EDIT action exists in schema, migration and seed", () => {
   assert.match(schemaSource, /enum PermissionAction[\s\S]*LEDGER_CLOSED_EDIT/);
 
   const migrationDirs = readdirSync(path.join(root, "prisma", "migrations"));
-  const migrationSource = migrationDirs
-    .filter((entry) => entry.includes("ledger_closed_edit"))
-    .map((entry) =>
-      readProjectFile("prisma", "migrations", entry, "migration.sql"),
-    )
-    .join("\n");
+  const enumMigrationSource = readProjectFile(
+    "prisma",
+    "migrations",
+    "20260731120000_add_ledger_closed_edit_permission",
+    "migration.sql",
+  );
   assert.match(
-    migrationSource,
+    enumMigrationSource,
     /ALTER TYPE "PermissionAction" ADD VALUE IF NOT EXISTS 'LEDGER_CLOSED_EDIT'/,
   );
   // 새 enum 값 추가 마이그레이션은 같은 트랜잭션에서 값을 사용할 수 없어 DML 금지.
-  assert.doesNotMatch(migrationSource, /INSERT|UPDATE|DELETE/i);
+  assert.doesNotMatch(enumMigrationSource, /INSERT|UPDATE|DELETE/i);
+
+  // 기존 운영 DB는 migrate deploy만 돌리므로 별도 마이그레이션에서 OWNER/HQ_ADMIN에
+  // 권한을 부여한다. ON CONFLICT DO NOTHING으로 재실행에도 안전해야 한다.
+  const grantMigrationDir = migrationDirs.find((entry) =>
+    entry.includes("grant_ledger_closed_edit"),
+  );
+  assert.ok(
+    grantMigrationDir,
+    "OWNER/HQ_ADMIN 권한 부여 마이그레이션이 있어야 한다",
+  );
+  const grantMigrationSource = readProjectFile(
+    "prisma",
+    "migrations",
+    grantMigrationDir,
+    "migration.sql",
+  );
+  assert.match(
+    grantMigrationSource,
+    /INSERT INTO "PermissionProfileAction"[\s\S]*'LEDGER_CLOSED_EDIT'/,
+  );
+  assert.match(
+    grantMigrationSource,
+    /"code" IN \('OWNER', 'HQ_ADMIN'\)/,
+  );
+  assert.match(grantMigrationSource, /ON CONFLICT[\s\S]*DO NOTHING/);
+  // OWNER/HQ_ADMIN 외 프로파일에는 부여하지 않는다.
+  assert.doesNotMatch(
+    grantMigrationSource,
+    /HQ_STAFF|CLOSE_MANAGER|SETTINGS_ADMIN|HQ_READONLY|STORE_MANAGER/,
+  );
 
   const seedSource = readProjectFile("prisma", "seed.ts");
   // OWNER는 ALL_PERMISSION_ACTIONS 전체를 받으므로 새 action이 포함되어야 한다.
