@@ -54,6 +54,7 @@ import {
   persistLedgerInventoryCarryoverDetails,
 } from "./carryover-detail-persistence";
 import { getInventoryStepDataByLedgerIdInTx } from "./queries";
+import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
 import {
   ledgerInventoryAdjustmentSchema,
   ledgerInventorySchema,
@@ -505,6 +506,12 @@ export async function saveHqLedgerInventoryItems(
           return notFoundError();
         }
 
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: before.id,
+          // 재고 행 직접 저장은 INVENTORY_ROW 정정을 대체한다.
+          targetTypes: ["INVENTORY_ROW"],
+        });
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory.saved",
           targetType: "DailyLedger",
@@ -765,6 +772,12 @@ export async function saveHqLedgerInventoryAdjustment(
 
         const afterLine =
           after.items.find((item) => item.productId === line.productId) ?? null;
+
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: before.id,
+          // 단독 재고 조정 저장도 해당 행의 INVENTORY_ROW 정정을 대체한다.
+          targetTypes: ["INVENTORY_ROW"],
+        });
 
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory_adjustment.saved",

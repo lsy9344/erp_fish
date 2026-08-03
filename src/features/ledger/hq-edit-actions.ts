@@ -22,6 +22,7 @@ import {
   validatePurchaseAmount,
 } from "~/lib/validation";
 import { withLedgerEditContext, writeAuditLog } from "~/server/audit";
+import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
 import {
   requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
@@ -457,6 +458,12 @@ export async function saveHqLedgerSalesPayment(
           select: ledgerSelect,
         });
 
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: beforeLedger.id,
+          // 매출/결제 직접 저장은 PAYMENT_FIELD 정정만 대체한다.
+          targetTypes: ["PAYMENT_FIELD"],
+        });
+
         await writeAuditLog(tx, {
           action: "ledger.hq.sales_payment.updated",
           targetType: "DailyLedger",
@@ -564,6 +571,12 @@ export async function saveHqLedgerExpenses(
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
           where: { id: ledgerId },
           select: ledgerSelect,
+        });
+
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: beforeLedger.id,
+          // 지출 행 전체 재저장은 EXPENSE_ROW 정정을 대체한다.
+          targetTypes: ["EXPENSE_ROW"],
         });
 
         await writeAuditLog(tx, {
@@ -1139,6 +1152,12 @@ export async function saveHqLedgerWorkInfo(
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
           where: { id: ledgerId },
           select: ledgerSelect,
+        });
+
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: beforeLedger.id,
+          // 근무인원/특이사항 저장은 LEDGER_FIELD 정정을 대체한다.
+          targetTypes: ["LEDGER_FIELD"],
         });
 
         await writeAuditLog(tx, {

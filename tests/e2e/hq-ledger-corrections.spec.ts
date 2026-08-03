@@ -480,3 +480,102 @@ test("지점장은 마감 장부 정정 화면에 접근해도 정정 기록을 
     )
     .toBe(0);
 });
+
+// DESIGN.md D9: 기존 정정이 있는 값을 마스터가 직접 저장하면 옛 정정이 다시
+// 원본 위에 얹히지 않고(supersede), 정정 이력은 보존된다.
+test("마스터 직접 저장은 기존 정정을 대체하고 이력은 보존한다", async ({
+  page,
+}) => {
+  const { actorId, ledger } = await seedClosedLedger();
+
+  // 총매출 10000 → 45000 정정을 먼저 만들어 overlay가 적용된 상태를 만든다.
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "totalSalesAmount",
+      originalValue: { kind: "money", value: 10000, label: "총매출" },
+      previousAppliedValue: { kind: "money", value: 10000, label: "총매출" },
+      correctedValue: { kind: "money", value: 45000, label: "총매출" },
+      reason: STORY_MARKER,
+      createdById: actorId,
+    },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+
+  // 정정 반영값이 상세 주요 숫자에 노출된다.
+  await expect(
+    page.getByRole("heading", { name: "현재 정정 반영값" }),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+
+  // 총매출을 직접 수정해 저장한다(KRW 입력은 포맷되므로 raw 숫자만 입력).
+  const totalSalesInput = salesPanel.getByLabel("총매출", { exact: true });
+  await totalSalesInput.click();
+  await totalSalesInput.press("Control+A");
+  await totalSalesInput.pressSequentially("52000");
+
+  const reasonInput = salesPanel.getByLabel("본사 수정 사유");
+  await reasonInput.fill("정정 대체 직접 수정");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
+
+  // 직접 저장값이 DB에 반영되고 기존 정정은 supersededAt가 채워진다.
+  await expect
+    .poll(async () => {
+      const current = await prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: { totalSalesAmount: true, status: true },
+      });
+      const correction = await prisma.correctionRecord.findFirst({
+        where: {
+          dailyLedgerId: ledger.id,
+          targetType: "PAYMENT_FIELD",
+          fieldKey: "totalSalesAmount",
+        },
+        select: { supersededAt: true },
+      });
+      return { ...current, supersededAt: correction?.supersededAt };
+    })
+    .toMatchObject({
+      totalSalesAmount: 52000,
+      status: "HEADQUARTERS_CLOSED",
+    });
+
+  const correction = await prisma.correctionRecord.findFirst({
+    where: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      fieldKey: "totalSalesAmount",
+    },
+    select: { supersededAt: true },
+  });
+  expect(correction?.supersededAt).not.toBeNull();
+
+  // 재방문하면 정정 overlay가 다시 얹히지 않고 직접 저장값이 보인다.
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await expect(
+    page.getByRole("heading", { name: "현재 정정 반영값" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('section[aria-label="장부 주요 숫자"]'),
+  ).toContainText("₩52,000");
+  await expect(
+    page.locator('section[aria-label="장부 주요 숫자"]'),
+  ).not.toContainText("₩45,000");
+  // 정정 이력 자체는 보존된다(기록 목록에 남음).
+  await expect
+    .poll(async () =>
+      prisma.correctionRecord.count({ where: { dailyLedgerId: ledger.id } }),
+    )
+    .toBe(1);
+});

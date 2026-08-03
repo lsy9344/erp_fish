@@ -56,7 +56,15 @@ export function CorrectionReadonlySummary({
           <TableBody>
             {records.map((record) => (
               <TableRow key={record.id}>
-                <TableCell>{record.targetLabel}</TableCell>
+                <TableCell>
+                  {record.targetLabel}
+                  {record.supersededAt ? (
+                    // DESIGN.md D9: 직접 수정으로 대체된 정정은 이력으로만 남는다.
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      (직접 수정으로 대체됨)
+                    </span>
+                  ) : null}
+                </TableCell>
                 <TableCell>
                   {formatCorrectionValue(record.originalValue)}
                 </TableCell>

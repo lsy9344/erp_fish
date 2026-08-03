@@ -36,6 +36,7 @@ const correctionRecordSelect = {
   correctedValue: true,
   reason: true,
   createdAt: true,
+  supersededAt: true,
   createdBy: {
     select: {
       name: true,
@@ -99,6 +100,8 @@ function toCorrectionRecordListItem(
     correctedValue: record.correctedValue,
     reason: record.reason,
     createdAt: record.createdAt.toISOString(),
+    // DESIGN.md D9: 이력 목록에는 supersede 여부만 함께 보여주고 기록은 지우지 않는다.
+    supersededAt: record.supersededAt?.toISOString() ?? null,
     createdBy: record.createdBy,
   };
 }
@@ -113,9 +116,39 @@ export async function getLatestCorrectionByTargetInTx(
       targetType: input.targetType,
       targetId: input.targetId,
       fieldKey: input.fieldKey,
+      // DESIGN.md D9: 직접 수정으로 대체된 정정은 새 정정의 이전 반영값 기준으로
+      // 참조되지 않는다.
+      supersededAt: null,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: correctionRecordSelect,
+  });
+}
+
+/**
+ * DESIGN.md D9: 마스터 직접 저장이 덮어쓴 대상 종류의 활성 정정만 supersede한다.
+ * 기록은 삭제하지 않고 supersededAt만 채워 이력으로 보존하며, 이후 읽기 시점
+ * overlay에서 제외된다. 저장 CAS 통과 후 감사 로그 기록 전 같은 트랜잭션에서 호출한다.
+ */
+export async function supersedeCorrectionRecordsInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    dailyLedgerId: string;
+    targetTypes: readonly CorrectionTargetType[];
+    supersededAt?: Date;
+  },
+) {
+  if (input.targetTypes.length === 0) {
+    return { count: 0 };
+  }
+
+  return tx.correctionRecord.updateMany({
+    where: {
+      dailyLedgerId: input.dailyLedgerId,
+      supersededAt: null,
+      targetType: { in: [...input.targetTypes] },
+    },
+    data: { supersededAt: input.supersededAt ?? new Date() },
   });
 }
 
@@ -156,6 +189,13 @@ export function getLatestCorrectionValueMap(
   const latestByTarget = new Map<string, CorrectionAppliedValue>();
 
   for (const record of sortedRecords) {
+    // DESIGN.md D9: 마스터 직접 수정으로 대체된 정정은 읽기 시점 overlay에서
+    // 제외한다(이력 목록 조회는 그대로 반환). 이 한 지점이 대시보드·상세·리포트·
+    // 알림·cron의 공통 overlay 진입점이다.
+    if (record.supersededAt !== null) {
+      continue;
+    }
+
     const key = buildCorrectionTargetKey(record);
 
     if (latestByTarget.has(key)) {

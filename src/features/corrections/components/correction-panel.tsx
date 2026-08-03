@@ -250,7 +250,15 @@ export function CorrectionPanel({
           <TableBody>
             {records.map((record) => (
               <TableRow key={record.id}>
-                <TableCell>{record.targetLabel}</TableCell>
+                <TableCell>
+                  {record.targetLabel}
+                  {record.supersededAt ? (
+                    // DESIGN.md D9: 이력은 유지하되 계산에서 빠진 정정임을 텍스트로 표시.
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      (직접 수정으로 대체됨)
+                    </span>
+                  ) : null}
+                </TableCell>
                 <TableCell>
                   {formatCorrectionValue(record.originalValue)}
                 </TableCell>

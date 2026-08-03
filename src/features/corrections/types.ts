@@ -28,6 +28,8 @@ export type CorrectionRecordListItem = {
   correctedValue: Prisma.JsonValue;
   reason: string;
   createdAt: string;
+  // DESIGN.md D9: 마스터 직접 수정으로 대체된 시각(ISO string). null이면 활성 정정.
+  supersededAt: string | null;
   createdBy: {
     name: string | null;
     email: string | null;

@@ -41,6 +41,7 @@ import {
   revalidateStoreEntryPaths,
 } from "~/server/revalidation";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
+import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
 import { getLossQuantityErrorMessage } from "./quantity-error";
 import { toFieldErrors } from "./schemas";
 import { lossTerms } from "./terms";
@@ -682,6 +683,12 @@ export async function saveHqLedgerLosses(
         if (!after) {
           return notFoundError();
         }
+
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: before.id,
+          // 손실 행 직접 저장은 LOSS_ROW 정정을 대체한다.
+          targetTypes: ["LOSS_ROW"],
+        });
 
         await writeAuditLog(tx, {
           action: "ledger.hq.losses.saved",

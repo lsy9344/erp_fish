@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -472,4 +472,143 @@ test("latest correction map preserves database ordering when JS timestamps tie",
   );
   assert.match(queries, /createdAtOrder\s*\|\|\s*left\.index - right\.index/);
   assert.doesNotMatch(queries, /right\.id\.localeCompare\(left\.id\)/);
+});
+
+// DESIGN.md D9: 마스터 직접 수정으로 대체된 정정은 이력으로 보존하되 읽기 시점
+// overlay와 새 정정의 이전 반영값 기준에서만 제외한다.
+test("correction supersede keeps history but excludes records from overlay reads", () => {
+  const schema = readProjectFile("prisma", "schema.prisma");
+
+  assert.match(
+    schema,
+    /model CorrectionRecord \{[\s\S]*?supersededAt\s+DateTime\?/,
+  );
+});
+
+test("correction supersede migration only adds a nullable column", () => {
+  const dir = readdirSync(path.join(root, "prisma", "migrations")).find(
+    (entry) => entry.includes("add_correction_superseded_at"),
+  );
+
+  assert.ok(dir, "supersededAt migration should exist");
+  const migration = readProjectFile(
+    "prisma",
+    "migrations",
+    dir,
+    "migration.sql",
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE "CorrectionRecord" ADD COLUMN "supersededAt" TIMESTAMP\(3\)/,
+  );
+  // 기존 행 백필·변조 없이 NULL 기본으로 현행 동작을 유지한다.
+  assert.doesNotMatch(migration, /UPDATE|DELETE|NOT NULL/i);
+});
+
+test("overlay map and next-correction baseline skip superseded records while history keeps them", () => {
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "queries.ts",
+  );
+  const types = readProjectFile("src", "features", "corrections", "types.ts");
+
+  // select와 목록 아이템 타입에 supersededAt가 포함된다.
+  assert.match(queries, /supersededAt:\s*true/);
+  assert.match(types, /supersededAt:\s*string\s*\|\s*null/);
+  assert.match(
+    queries,
+    /supersededAt:\s*record\.supersededAt\?\.toISOString\(\)\s*\?\?\s*null/,
+  );
+
+  // overlay 진입점(getLatestCorrectionValueMap)은 superseded 기록을 건너뛴다.
+  assert.match(
+    queries,
+    /if \(record\.supersededAt !== null\) \{\s*continue;\s*\}/,
+  );
+  // 새 정정의 이전 반영값 기준도 superseded 기록을 제외한다.
+  assert.match(
+    queries,
+    /getLatestCorrectionByTargetInTx[\s\S]*?supersededAt:\s*null/,
+  );
+  // 이력 목록 조회는 필터링하지 않는다(기록 보존).
+  const listQuery = queries.slice(
+    queries.indexOf("async function getCorrectionRecordsForLedgerInTx"),
+    queries.indexOf("export async function getCorrectionRecordsForLedger("),
+  );
+  assert.doesNotMatch(listQuery, /supersededAt/);
+
+  // supersede helper는 활성 정정만, 대상 종류별로 supersededAt만 채운다.
+  assert.match(queries, /export async function supersedeCorrectionRecordsInTx/);
+  assert.match(
+    queries,
+    /correctionRecord\.updateMany\(\{[\s\S]*?supersededAt:\s*null,\s*targetType:\s*\{\s*in:\s*\[\.\.\.input\.targetTypes\]\s*\},\s*\},\s*data:\s*\{\s*supersededAt:\s*input\.supersededAt\s*\?\?\s*new Date\(\)/,
+  );
+  assert.doesNotMatch(queries, /correctionRecord\.delete/);
+});
+
+test("HQ direct saves supersede only the correction target kinds they overwrite", () => {
+  const ledgerActions = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const inventoryActions = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  const lossesActions = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+
+  for (const [source, targetType, count] of [
+    [ledgerActions, "PAYMENT_FIELD", 1],
+    [ledgerActions, "EXPENSE_ROW", 1],
+    [ledgerActions, "LEDGER_FIELD", 1],
+    [inventoryActions, "INVENTORY_ROW", 2],
+    [lossesActions, "LOSS_ROW", 1],
+  ]) {
+    const matches = source.match(
+      new RegExp(
+        `supersedeCorrectionRecordsInTx\\(tx, \\{[\\s\\S]*?targetTypes: \\["${targetType}"\\]`,
+      ),
+    );
+    assert.ok(matches, `${targetType} supersede should be wired`);
+    assert.equal(
+      source.match(new RegExp(`targetTypes: \\["${targetType}"\\]`, "g"))
+        .length,
+      count,
+      `${targetType} supersede count`,
+    );
+  }
+
+  // 계산 표시값 정정은 직접 저장으로 대체되지 않는다.
+  assert.doesNotMatch(ledgerActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+  assert.doesNotMatch(inventoryActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+  assert.doesNotMatch(lossesActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+
+  // 패널과 읽기 전용 요약은 대체 상태를 텍스트 배지로 표시한다.
+  const panel = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "components",
+    "correction-panel.tsx",
+  );
+  const summary = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "components",
+    "correction-readonly-summary.tsx",
+  );
+  assert.match(panel, /record\.supersededAt[\s\S]*직접 수정으로 대체됨/);
+  assert.match(summary, /record\.supersededAt[\s\S]*직접 수정으로 대체됨/);
 });

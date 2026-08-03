@@ -481,6 +481,9 @@ model CorrectionRecord {
   reason               String
   createdById          String
   createdAt            DateTime             @default(now())
+  // DESIGN.md D9: 마스터 직접 수정으로 대체된 시각. 이력은 보존하고 읽기 시점
+  // overlay에서만 제외한다(NULL = 활성 정정, 백필·변조 없음).
+  supersededAt         DateTime?
 
   dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   createdBy   User        @relation("CorrectionRecordCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
