@@ -197,9 +197,11 @@ test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값
     correctionPanel.getByRole("button", { name: "정정 기록 저장" }),
   ).toBeEnabled();
   await expect(correctionPanel.getByLabel("정정 대상")).toHaveValue("0");
-  await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
+  // DESIGN.md D5: LEDGER_CLOSED_EDIT를 가진 HQ_ADMIN은 마감 장부에서도 원본 입력이
+  // 가능하고 정정 기록 경로는 그대로 함께 제공된다.
+  await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "매출/결제" }).click();
 
   await replaceControlValue(correctionPanel.getByLabel("정정값"), "45000");

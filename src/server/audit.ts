@@ -44,3 +44,15 @@ export function withAuditActorContext<T extends Record<string, unknown>>(
     },
   } as Prisma.InputJsonObject;
 }
+
+/**
+ * DESIGN.md D8: 본사 장부 저장 감사 payload에 편집 시점의 장부 상태와 마감 편집
+ * 여부를 문맥으로 남긴다. before/after는 실제 적용된 유효값 기준이고, 이 문맥은
+ * after에 함께 기록해 마감 장부 직접 수정 이력을 구분할 수 있게 한다.
+ */
+export function withLedgerEditContext<T extends object>(
+  snapshot: T,
+  context: { ledgerStatusAtEdit: string; closedEdit: boolean },
+): Prisma.InputJsonObject {
+  return { ...snapshot, ...context };
+}

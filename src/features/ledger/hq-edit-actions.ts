@@ -21,9 +21,9 @@ import {
   getPurchaseQuantityIdentity,
   validatePurchaseAmount,
 } from "~/lib/validation";
-import { writeAuditLog } from "~/server/audit";
+import { withLedgerEditContext, writeAuditLog } from "~/server/audit";
 import {
-  requireLedgerHqEditAccess,
+  requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
@@ -69,9 +69,10 @@ type UnitPriceOverrideAudit = {
   reason: string | null;
 };
 import {
-  editableLedgerStatuses,
+  getEditableLedgerStatusesForActor,
   getLedgerEditBlockReason,
-  isLedgerEditable,
+  isLedgerEditableForActor,
+  type LedgerEditActorContext,
 } from "./status-policy";
 import { type LedgerCostStepData } from "./types";
 
@@ -331,12 +332,15 @@ function notEditableError(status: LedgerRecord["status"]): ActionResult<never> {
 function ensureTargetLedger(
   ledger: LedgerRecord | null,
   storeId: string,
+  actor: LedgerEditActorContext,
 ): ActionResult<LedgerRecord> {
   if (ledger?.storeId !== storeId) {
     return notFoundError();
   }
 
-  if (!isLedgerEditable(ledger.status)) {
+  // DESIGN.md D5: HEADQUARTERS_CLOSED는 LEDGER_CLOSED_EDIT 보유 액터 문맥에서만
+  // 허용하고, 그 외 상태는 기존 정책을 그대로 따른다.
+  if (!isLedgerEditableForActor(ledger.status, actor)) {
     return notEditableError(ledger.status);
   }
 
@@ -347,12 +351,15 @@ async function updateEditableDailyLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
   expectedUpdatedAt: Date,
+  actor: LedgerEditActorContext,
   data: Prisma.DailyLedgerUncheckedUpdateManyInput,
 ) {
+  // DESIGN.md D7: update data에는 status/closedAt/closedById를 절대 넣지 않아
+  // 마감 상태와 최초 마감 정보가 보존된다. CAS는 updatedAt과 편집 가능 상태만 본다.
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
-      status: { in: [...editableLedgerStatuses] },
+      status: { in: [...getEditableLedgerStatusesForActor(actor)] },
       updatedAt: expectedUpdatedAt,
     },
     data,
@@ -401,7 +408,7 @@ export async function saveHqLedgerSalesPayment(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -418,6 +425,7 @@ export async function saveHqLedgerSalesPayment(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -429,6 +437,7 @@ export async function saveHqLedgerSalesPayment(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          actor,
           {
             totalSalesAmount: parsed.data.totalSalesAmount,
             carryoverSalesAmount: parsed.data.carryoverSalesAmount,
@@ -454,7 +463,10 @@ export async function saveHqLedgerSalesPayment(
           targetId: afterLedger.id,
           actorId: actor.user.id,
           before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 
@@ -484,7 +496,7 @@ export async function saveHqLedgerExpenses(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -501,6 +513,7 @@ export async function saveHqLedgerExpenses(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -521,6 +534,7 @@ export async function saveHqLedgerExpenses(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          actor,
           {
             updatedById: actor.user.id,
           },
@@ -558,7 +572,10 @@ export async function saveHqLedgerExpenses(
           targetId: afterLedger.id,
           actorId: actor.user.id,
           before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 
@@ -588,7 +605,7 @@ export async function saveHqLedgerPurchases(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -605,6 +622,7 @@ export async function saveHqLedgerPurchases(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -937,6 +955,7 @@ export async function saveHqLedgerPurchases(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          actor,
           {
             updatedById: actor.user.id,
           },
@@ -1009,7 +1028,10 @@ export async function saveHqLedgerPurchases(
           targetId: afterLedger.id,
           actorId: actor.user.id,
           before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 
@@ -1073,7 +1095,7 @@ export async function saveHqLedgerWorkInfo(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -1090,6 +1112,7 @@ export async function saveHqLedgerWorkInfo(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -1101,6 +1124,7 @@ export async function saveHqLedgerWorkInfo(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          actor,
           {
             workerCount: parsed.data.workerCount,
             workMemo: parsed.data.workMemo,
@@ -1123,7 +1147,10 @@ export async function saveHqLedgerWorkInfo(
           targetId: afterLedger.id,
           actorId: actor.user.id,
           before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 
@@ -1150,7 +1177,7 @@ export async function saveHqLedgerLaborInfo(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -1167,6 +1194,7 @@ export async function saveHqLedgerLaborInfo(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -1178,6 +1206,7 @@ export async function saveHqLedgerLaborInfo(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          actor,
           {
             updatedById: actor.user.id,
           },
@@ -1227,7 +1256,10 @@ export async function saveHqLedgerLaborInfo(
           targetId: afterLedger.id,
           actorId: actor.user.id,
           before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          after: withLedgerEditContext(toLedgerAuditPayload(afterLedger), {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 

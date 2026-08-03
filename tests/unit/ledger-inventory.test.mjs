@@ -2725,7 +2725,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     /export\s+async\s+function\s+saveHqLedgerInventoryAdjustment/,
   );
   assert.match(hqActionSource, /db\.\$transaction/);
-  assert.match(hqActionSource, /editableLedgerStatuses/);
+  assert.match(hqActionSource, /getEditableLedgerStatusesForActor/);
   assert.match(hqActionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
   assert.match(hqActionSource, /tx\.ledgerInventoryItem\.upsert/);
   assert.match(hqActionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
@@ -2913,7 +2913,8 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(inventoryUiSource, /확인\/고치기/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
-  assert.match(componentSource, /isLedgerReadOnly/);
+  assert.match(componentSource, /isLedgerEditableForActor/);
+  assert.match(componentSource, /closedEditAllowed/);
   assert.match(componentSource, /휴무 장부/);
   assert.match(
     componentSource,

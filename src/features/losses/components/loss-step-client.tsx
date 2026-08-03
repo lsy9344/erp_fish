@@ -26,7 +26,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import { isLedgerEditableForActor } from "~/features/ledger/status-policy";
 import { saveLedgerLosses } from "~/features/losses/actions";
 import { lossTerms } from "~/features/losses/terms";
 import {
@@ -66,6 +66,8 @@ type LossStepClientProps = {
   ledgerLabel?: string;
   showStepNavigation?: boolean;
   hqEditReasonRequired?: boolean;
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -138,6 +140,7 @@ export function LossStepClient({
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
   hqEditReasonRequired = false,
+  closedEditAllowed = false,
 }: LossStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -379,7 +382,9 @@ export function LossStepClient({
     (sum, item) => sum + parseNumber(item.amount ?? "0"),
     0,
   );
-  const isOriginalEditBlocked = isLedgerReadOnly(data.status);
+  const isOriginalEditBlocked = !isLedgerEditableForActor(data.status, {
+    closedEditAllowed,
+  });
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
   const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
@@ -447,6 +452,7 @@ export function LossStepClient({
         ]}
         onRetry={handleRetry}
         retryDisabled={isSaving || isOriginalEditBlocked || !hasOptions}
+        closedEditRetained={closedEditAllowed}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">

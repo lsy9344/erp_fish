@@ -42,7 +42,10 @@ import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-c
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
 import { getLedgerCostStepDataById } from "~/features/ledger/queries";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import {
+  closedEditRetainedStatusNotice,
+  isLedgerEditableForActor,
+} from "~/features/ledger/status-policy";
 import {
   saveHqLedgerInventoryAdjustment,
   saveHqLedgerInventoryItems,
@@ -119,13 +122,20 @@ export default async function LedgerDetailPage({
   searchParams,
 }: LedgerDetailPageProps) {
   const user = await requireReportAccess();
-  const [navigationItems, canEditLedger, canCloseLedger, canCreateCorrection] =
-    await Promise.all([
-      getHeadquartersNavigationItems(user.id),
-      hasActionPermission(user.id, PermissionAction.LEDGER_EDIT),
-      hasActionPermission(user.id, PermissionAction.LEDGER_HQ_CLOSE),
-      hasActionPermission(user.id, PermissionAction.CORRECTION_CREATE),
-    ]);
+  const [
+    navigationItems,
+    canEditLedger,
+    canCloseLedger,
+    canCreateCorrection,
+    canEditClosedLedger,
+  ] = await Promise.all([
+    getHeadquartersNavigationItems(user.id),
+    hasActionPermission(user.id, PermissionAction.LEDGER_EDIT),
+    hasActionPermission(user.id, PermissionAction.LEDGER_HQ_CLOSE),
+    hasActionPermission(user.id, PermissionAction.CORRECTION_CREATE),
+    // DESIGN.md D4: 마감 장부 직접 수정 전용 권한. 이메일/이름이 아닌 action으로 판별.
+    hasActionPermission(user.id, PermissionAction.LEDGER_CLOSED_EDIT),
+  ]);
   const { ledgerId } = await params;
   const query = await searchParams;
   const selectedTab = getLedgerDetailTab(query.tab);
@@ -160,7 +170,16 @@ export default async function LedgerDetailPage({
         getActiveEmployeeOptions(),
       ])
     : [[], [], []];
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  // DESIGN.md D4/D5: 마감 편집 허용은 LEDGER_EDIT + LEDGER_CLOSED_EDIT를 모두 가진
+  // 사용자가 HEADQUARTERS_CLOSED 장부를 볼 때만 true다. 표시 제어 전용이며
+  // 최종 판정은 각 저장 action의 서버 게이트가 한다.
+  const closedEditAllowed =
+    canEditLedger &&
+    canEditClosedLedger &&
+    ledger.status === "HEADQUARTERS_CLOSED";
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const lastModifiedBy =
     detail.lastModifiedBy?.name ??
     detail.lastModifiedBy?.email ??
@@ -370,7 +389,18 @@ export default async function LedgerDetailPage({
           </AlertDescription>
         </Alert>
       ) : null}
-      {!isOriginalEditBlocked && canCloseLedger ? (
+      {closedEditAllowed ? (
+        <Alert>
+          <AlertTitle>{closedEditRetainedStatusNotice}</AlertTitle>
+          <AlertDescription>
+            이 장부의 업무 내용을 수정할 수 있습니다. 저장해도 본사 마감 상태는
+            유지되며 수정 사유가 필요합니다.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {ledger.status !== "HEADQUARTERS_CLOSED" &&
+      !isOriginalEditBlocked &&
+      canCloseLedger ? (
         <section className="bg-card rounded-lg border p-4 shadow-sm">
           <HqLedgerCloseDialog
             ledgerId={ledger.id}
@@ -435,6 +465,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -451,6 +482,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -468,6 +500,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -487,6 +520,7 @@ export default async function LedgerDetailPage({
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -507,6 +541,7 @@ export default async function LedgerDetailPage({
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -524,6 +559,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
         </LedgerDetailTabs>

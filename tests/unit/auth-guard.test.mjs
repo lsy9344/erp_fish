@@ -124,6 +124,7 @@ test("server authorization helper exposes profile-aware semantic gates", () => {
     "requireUserPermissionAccess",
     "requireReportAccess",
     "requireLedgerHqEditAccess",
+    "requireLedgerHqEditContext",
     "requireStoreManagerLedgerEditAccess",
     "requireLedgerHqCloseAccess",
     "requireCorrectionCreateAccess",
@@ -334,7 +335,7 @@ test("headquarters pages and queries use semantic action gates before data reads
     },
     {
       file: path.join(root, "src", "features", "ledger", "hq-edit-actions.ts"),
-      gate: "requireLedgerHqEditAccess",
+      gate: "requireLedgerHqEditContext",
     },
     {
       file: path.join(
@@ -344,11 +345,11 @@ test("headquarters pages and queries use semantic action gates before data reads
         "inventory",
         "hq-edit-actions.ts",
       ),
-      gate: "requireLedgerHqEditAccess",
+      gate: "requireLedgerHqEditContext",
     },
     {
       file: path.join(root, "src", "features", "losses", "hq-edit-actions.ts"),
-      gate: "requireLedgerHqEditAccess",
+      gate: "requireLedgerHqEditContext",
     },
     {
       file: path.join(root, "src", "features", "ledger", "hq-close-actions.ts"),

@@ -9,6 +9,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { formatKstDateTime } from "~/lib/format";
 import { cn } from "~/lib/utils";
+import { closedEditSaveSuccessMessage } from "../status-policy";
 
 type LedgerSaveStatusProps = {
   stepLabel: string;
@@ -20,6 +21,8 @@ type LedgerSaveStatusProps = {
   unsavedFields?: string[];
   onRetry?: () => void;
   retryDisabled?: boolean;
+  // DESIGN.md D7: 마감 장부 직접 수정 저장 성공 시 마감 상태 유지 안내를 함께 표시.
+  closedEditRetained?: boolean;
 };
 
 function formatAuthorDisplayName(value?: string | null) {
@@ -38,6 +41,7 @@ export function LedgerSaveStatus({
   unsavedFields = [],
   onRetry,
   retryDisabled = false,
+  closedEditRetained = false,
 }: LedgerSaveStatusProps) {
   const stateLabel = isSaving
     ? "저장 중"
@@ -84,6 +88,11 @@ export function LedgerSaveStatus({
           {successMessage ? (
             <p className="text-sm text-emerald-700 dark:text-emerald-300">
               {successMessage}
+            </p>
+          ) : null}
+          {successMessage && closedEditRetained ? (
+            <p className="text-muted-foreground text-sm break-words">
+              {closedEditSaveSuccessMessage}
             </p>
           ) : null}
           {errorMessage ? (

@@ -343,6 +343,18 @@ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만
       ({ action }) => action,
     ),
   ).not.toContain(PermissionAction.SETTINGS_MANAGE);
+  // DESIGN.md D4: 마감 장부 직접 수정 권한은 HQ_ADMIN까지만 부여하고 HQ_STAFF에는
+  // 자동 부여하지 않는다.
+  expect(
+    hq?.permissionProfiles.flatMap(({ profile }) =>
+      profile.actions.map(({ action }) => action),
+    ),
+  ).toEqual(expect.arrayContaining([PermissionAction.LEDGER_CLOSED_EDIT]));
+  expect(
+    assignedHq?.permissionProfiles[0]?.profile.actions.map(
+      ({ action }) => action,
+    ),
+  ).not.toContain(PermissionAction.LEDGER_CLOSED_EDIT);
   expect(assignedHq?.storeAssignments.map(({ storeId }) => storeId)).toEqual([
     "store-seocho",
   ]);
@@ -366,4 +378,89 @@ test("E2E 권한 fixture는 프로파일별 action과 지점 범위를 DB에 만
     "store-gangnam",
     "store-seocho",
   ]);
+});
+
+// DESIGN.md D4/D5: LEDGER_CLOSED_EDIT가 없는 HQ_STAFF는 마감 장부 상세에서 원본
+// 입력이 계속 차단되고 마스터 안내도 볼 수 없다.
+test("HQ_STAFF는 마감 장부 상세에서 원본 입력을 수정할 수 없다", async ({
+  page,
+}) => {
+  const closedStoreId = "store-perm-closed-edit";
+  const staffUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq-assigned@example.com" },
+    select: { id: true },
+  });
+  const adminUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .split("-");
+  const closingDate = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  );
+
+  await prisma.store.upsert({
+    where: { id: closedStoreId },
+    create: {
+      id: closedStoreId,
+      name: "권한 검증 마감점",
+      isActive: true,
+      updatedById: adminUser.id,
+    },
+    update: {},
+  });
+  await prisma.userStoreAssignment.upsert({
+    where: {
+      userId_storeId: { userId: staffUser.id, storeId: closedStoreId },
+    },
+    create: { userId: staffUser.id, storeId: closedStoreId },
+    update: {},
+  });
+  await prisma.dailyLedger.deleteMany({
+    where: { storeId: closedStoreId },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: closedStoreId,
+      closingDate,
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 10000,
+      cashAmount: 4000,
+      cardAmount: 6000,
+      otherPaymentAmount: 0,
+      workerCount: 2,
+      createdById: adminUser.id,
+      updatedById: adminUser.id,
+      closedById: adminUser.id,
+      closedAt: new Date(),
+    },
+  });
+
+  try {
+    await login(page, "hq-assigned@example.com");
+    await page.goto(`/app/ledgers/${ledger.id}`);
+
+    await expect(
+      page.getByText("본사 마감된 장부", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toHaveCount(0);
+    await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
+    await page.getByRole("tab", { name: "근무" }).click();
+    await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+  } finally {
+    await prisma.dailyLedger.deleteMany({
+      where: { storeId: closedStoreId },
+    });
+    await prisma.userStoreAssignment.deleteMany({
+      where: { storeId: closedStoreId },
+    });
+    await prisma.store.deleteMany({ where: { id: closedStoreId } });
+  }
 });

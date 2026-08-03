@@ -58,7 +58,7 @@ import { type StoreEntryStep } from "~/features/ledger/step-completion";
 import { inventoryTerms } from "~/features/inventory/terms";
 import {
   getLedgerEditBlockReason,
-  isLedgerReadOnly,
+  isLedgerEditableForActor,
 } from "~/features/ledger/status-policy";
 import {
   saveLedgerInventoryAdjustment,
@@ -117,6 +117,8 @@ type InventoryStepClientProps = {
   ledgerLabel?: string;
   showStepNavigation?: boolean;
   hqEditReasonRequired?: boolean;
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
@@ -359,6 +361,7 @@ export function InventoryStepClient({
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
   hqEditReasonRequired = false,
+  closedEditAllowed = false,
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const manualProductSelectRef = useRef<HTMLSelectElement>(null);
@@ -449,7 +452,9 @@ export function InventoryStepClient({
     (data.carryover.status === "manual"
       ? carryoverManualMessage
       : carryoverLoadedMessage);
-  const isOriginalEditBlocked = isLedgerReadOnly(data.status);
+  const isOriginalEditBlocked = !isLedgerEditableForActor(data.status, {
+    closedEditAllowed,
+  });
   const isClosed = isOriginalEditBlocked;
   const originalEditBlockedMessage = getLedgerEditBlockReason(
     data.status,
@@ -2742,6 +2747,7 @@ export function InventoryStepClient({
           }
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}
+          closedEditRetained={closedEditAllowed}
         />
 
         {/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}

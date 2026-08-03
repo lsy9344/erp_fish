@@ -24,7 +24,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import { isLedgerEditableForActor } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -64,6 +64,8 @@ type WorkStepClientProps = {
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -172,6 +174,7 @@ export function WorkStepClient({
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  closedEditAllowed = false,
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const workerCountInputRef = useRef<HTMLInputElement>(null);
@@ -460,7 +463,9 @@ export function WorkStepClient({
     );
   }
 
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);
@@ -536,6 +541,7 @@ export function WorkStepClient({
         unsavedFields={["근무인원", "특이사항 메모"]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
+        closedEditRetained={closedEditAllowed}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">

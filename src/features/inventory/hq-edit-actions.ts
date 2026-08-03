@@ -4,9 +4,9 @@ import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import { writeAuditLog } from "~/server/audit";
+import { withLedgerEditContext, writeAuditLog } from "~/server/audit";
 import {
-  requireLedgerHqEditAccess,
+  requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import {
@@ -25,9 +25,10 @@ import {
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
 import {
-  editableLedgerStatuses,
+  getEditableLedgerStatusesForActor,
   getLedgerEditBlockReason,
-  isLedgerEditable,
+  isLedgerEditableForActor,
+  type LedgerEditActorContext,
 } from "~/features/ledger/status-policy";
 import {
   getInventorySaveAdjustmentErrors,
@@ -198,12 +199,14 @@ function notEditableError(
 function ensureTargetInventory(
   data: InventoryStepData | null,
   storeId: string,
+  actor: LedgerEditActorContext,
 ): ActionResult<InventoryStepData> {
   if (data?.storeId !== storeId) {
     return notFoundError();
   }
 
-  if (!isLedgerEditable(data.status)) {
+  // DESIGN.md D5: HEADQUARTERS_CLOSED는 마감 편집 권한을 가진 액터 문맥에서만 허용.
+  if (!isLedgerEditableForActor(data.status, actor)) {
     return notEditableError(data.status);
   }
 
@@ -215,11 +218,12 @@ async function markEditableLedgerInTx(
   ledgerId: string,
   expectedUpdatedAt: Date,
   actorId: string,
+  actor: LedgerEditActorContext,
 ) {
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
-      status: { in: [...editableLedgerStatuses] },
+      status: { in: [...getEditableLedgerStatusesForActor(actor)] },
       updatedAt: expectedUpdatedAt,
     },
     data: { updatedById: actorId },
@@ -246,7 +250,7 @@ export async function saveHqLedgerInventoryItems(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -263,6 +267,7 @@ export async function saveHqLedgerInventoryItems(
         const beforeResult = ensureTargetInventory(
           await getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeResult.ok) {
@@ -370,6 +375,7 @@ export async function saveHqLedgerInventoryItems(
           ledgerId,
           expectedUpdatedAt,
           actor.user.id,
+          actor,
         );
 
         if (!updated) {
@@ -468,7 +474,10 @@ export async function saveHqLedgerInventoryItems(
           targetId: before.id,
           actorId: actor.user.id,
           before,
-          after,
+          after: withLedgerEditContext(after, {
+            ledgerStatusAtEdit: before.status,
+            closedEdit: before.status === "HEADQUARTERS_CLOSED",
+          }),
           reason: parsed.data.reason,
         });
 
@@ -498,7 +507,7 @@ export async function saveHqLedgerInventoryAdjustment(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -515,6 +524,7 @@ export async function saveHqLedgerInventoryAdjustment(
         const beforeResult = ensureTargetInventory(
           await getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor,
         );
 
         if (!beforeResult.ok) {
@@ -599,6 +609,7 @@ export async function saveHqLedgerInventoryAdjustment(
           ledgerId,
           expectedUpdatedAt,
           actor.user.id,
+          actor,
         );
 
         if (!updated) {
@@ -715,13 +726,21 @@ export async function saveHqLedgerInventoryAdjustment(
           return notFoundError();
         }
 
+        const afterLine =
+          after.items.find((item) => item.productId === line.productId) ?? null;
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory_adjustment.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
           before: line,
-          after: after.items.find((item) => item.productId === line.productId),
+          after: afterLine
+            ? withLedgerEditContext(afterLine, {
+                ledgerStatusAtEdit: before.status,
+                closedEdit: before.status === "HEADQUARTERS_CLOSED",
+              })
+            : afterLine,
           reason: parsed.data.reason,
         });
 

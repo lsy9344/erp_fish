@@ -16,7 +16,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import { isLedgerEditableForActor } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -69,6 +69,8 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 function formatKrw(value: number | null) {
@@ -167,6 +169,7 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  closedEditAllowed = false,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -486,7 +489,9 @@ export function PurchaseStepClient({
   const hasPurchaseRows = purchaseItems.length > 0;
   const hqEditReasonError = fieldErrors.reason?.[0];
   const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: ledger.storeId,
     date: getKstLedgerDateParam(ledger.closingDate),
@@ -548,6 +553,7 @@ export function PurchaseStepClient({
         }
         onRetry={handleRetry}
         retryDisabled={isFormSaving || isOriginalEditBlocked}
+        closedEditRetained={closedEditAllowed}
       />
 
       {showAuthorDisplayName ? (

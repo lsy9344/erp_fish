@@ -746,7 +746,7 @@ test("본사 장부 상세 탭을 클릭하면 6개 입력 섹션 카드로 각�
   }
 });
 
-test("본사 마감 장부 상세는 원본 입력 컨트롤을 비활성화하고 정정 안내를 보인다", async ({
+test("HQ_ADMIN은 마감 장부 상세에서 마감 상태 유지 안내와 함께 원본 입력을 수정할 수 있다", async ({
   page,
 }) => {
   const ledger = await seedClosedStoryData();
@@ -754,9 +754,14 @@ test("본사 마감 장부 상세는 원본 입력 컨트롤을 비활성화하�
   await loginAsHq(page);
   await page.goto(`/app/ledgers/${ledger.id}`);
 
+  // DESIGN.md D7: 마스터는 차단 안내 대신 마감 상태 유지 안내를 본다.
+  await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toBeVisible();
   await expect(
-    page.getByText("본사 마감된 장부", { exact: true }),
+    page.getByText("이 장부의 업무 내용을 수정할 수 있습니다."),
   ).toBeVisible();
+  await expect(page.getByText("본사 마감된 장부", { exact: true })).toHaveCount(
+    0,
+  );
   const reviewSummary = page.getByRole("region", { name: "검토 상태 요약" });
   await expect(reviewSummary.getByText("본사 마감 정보")).toBeVisible();
   await expect(reviewSummary.getByText("본사 관리자")).toBeVisible();
@@ -765,17 +770,135 @@ test("본사 마감 장부 상세는 원본 입력 컨트롤을 비활성화하�
       formatKstDateTimeForTest(new Date("2026-06-11T06:30:00.000Z")),
     ),
   ).toBeVisible();
-  await expect(
-    page.getByText(/정정 기록을 사용해 주세요/).first(),
-  ).toBeVisible();
   await expect(page.getByRole("region", { name: "정정 기록" })).toBeVisible();
   await expect(
     page.getByText("원본 장부 값은 보존하고 정정 이력만 추가합니다."),
   ).toBeVisible();
-  await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
+
+  // Non-goal: 재마감 절차는 없으므로 마감 다이얼로그 버튼이 다시 노출되지 않는다.
+  await expect(page.getByRole("button", { name: "본사 마감" })).toHaveCount(0);
+});
+
+test("HQ_ADMIN이 마감 장부의 매출/결제를 수정해도 마감 상태와 최초 마감 정보가 유지된다", async ({
+  page,
+}) => {
+  const ledger = await seedClosedStoryData();
+  const beforeClosed = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { status: true, closedAt: true, closedById: true },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "5000");
+
+  // 수정 사유 없이는 저장할 수 없다.
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText("본사 수정 사유를 입력해 주세요."),
+  ).toBeVisible();
+
+  await fillHqEditReason(salesPanel, "마감 후 현금 오기입 정정");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () =>
+      prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: {
+          status: true,
+          closedAt: true,
+          closedById: true,
+          cashAmount: true,
+        },
+      }),
+    )
+    .toMatchObject({
+      status: "HEADQUARTERS_CLOSED",
+      closedAt: beforeClosed.closedAt,
+      closedById: beforeClosed.closedById,
+      cashAmount: 5000,
+    });
+
+  const audit = await prisma.auditLog.findFirst({
+    where: {
+      targetType: "DailyLedger",
+      targetId: ledger.id,
+      action: "ledger.hq.sales_payment.updated",
+      reason: "마감 후 현금 오기입 정정",
+    },
+    select: { after: true, actorId: true },
+  });
+  expect(audit?.actorId).toBe(await getHeadquartersUserId());
+  expect(audit?.after).toMatchObject({
+    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+    closedEdit: true,
+    cashAmount: 5000,
+  });
+});
+
+test("마감 장부의 오래된 화면 저장은 충돌로 거부되고 서버 최신값이 유지된다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const ledger = await seedClosedStoryData();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+
+  // 화면 로드 후 다른 곳에서 장부가 바뀌면(UpdatedAt 변동) stale token이 된다.
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: {
+      cashAmount: 4444,
+      updatedById: actorId,
+      version: { increment: 1 },
+    },
+  });
+
+  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "5000");
+  await fillHqEditReason(salesPanel, "stale 마감 장부 저장 확인");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("매출/결제")).toBeVisible();
+
+  const current = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { status: true, cashAmount: true },
+  });
+  expect(current).toMatchObject({
+    status: "HEADQUARTERS_CLOSED",
+    cashAmount: 4444,
+  });
+  await expect
+    .poll(async () =>
+      prisma.auditLog.count({
+        where: {
+          targetType: "DailyLedger",
+          targetId: ledger.id,
+          action: "ledger.hq.sales_payment.updated",
+          reason: "stale 마감 장부 저장 확인",
+        },
+      }),
+    )
+    .toBe(0);
 });
 
 test("본사 상세 매출 폼은 한국어 검증 오류와 첫 오류 포커스를 제공한다", async ({
@@ -914,7 +1037,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
     .toBe(0);
 });
 
-test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 원본 수정이 비활성화된다", async ({
+test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 마스터는 마감 상태를 유지하며 수정할 수 있다", async ({
   page,
 }) => {
   const { actorId, ledger, product } = await seedEditableStoryData();
@@ -971,9 +1094,7 @@ test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 원본 
       updatedById: actorId,
     });
 
-  await expect(
-    page.getByText("본사 마감된 장부", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toBeVisible();
   const closedLedger = await prisma.dailyLedger.findUniqueOrThrow({
     where: { id: ledger.id },
     select: { closedAt: true },
@@ -985,10 +1106,11 @@ test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 원본 
   await expect(
     reviewSummary.getByText(formatKstDateTimeForTest(closedLedger.closedAt!)),
   ).toBeVisible();
-  await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
+  // DESIGN.md D5: LEDGER_CLOSED_EDIT를 가진 HQ_ADMIN은 마감 후에도 원본 입력이 가능하다.
+  await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
   const correctionPanel = page.getByRole("region", { name: "정정 기록" });
   await expect(correctionPanel).toBeVisible();
   await expect(

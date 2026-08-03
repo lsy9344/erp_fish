@@ -38,13 +38,24 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
     );
   }
 
-  assert.match(source, /requireLedgerHqEditAccess\(/);
+  assert.match(source, /requireLedgerHqEditContext\(/);
   assert.match(source, /ledgerId/);
   assert.match(
     source,
-    /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
+    /status:\s*{\s*in:\s*\[\s*\.\.\.getEditableLedgerStatusesForActor\(actor\)\s*\]/s,
   );
   assert.match(source, /updatedById:\s*actor\.user\.id/);
+  // DESIGN.md D7/D8: 감사에는 마감 편집 문맥을 남기고, update payload에는
+  // status/closedAt/closedById를 절대 넣지 않는다.
+  assert.match(source, /withLedgerEditContext\(/);
+  assert.match(source, /ledgerStatusAtEdit:\s*beforeLedger\.status/);
+  assert.match(
+    source,
+    /closedEdit:\s*beforeLedger\.status\s*===\s*"HEADQUARTERS_CLOSED"/,
+  );
+  assert.doesNotMatch(source, /data:\s*\{[^}]*\bstatus:/s);
+  assert.doesNotMatch(source, /data:\s*\{[^}]*closedAt/s);
+  assert.doesNotMatch(source, /data:\s*\{[^}]*closedById/s);
   assert.match(source, /writeAuditLog\(/);
   assert.match(source, /ledger\.hq\.sales_payment\.updated/);
   assert.match(source, /ledger\.hq\.expenses\.saved/);
@@ -137,13 +148,17 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
 
   for (const source of [inventorySource, lossesSource]) {
     assert.match(source, /"use server"/);
-    assert.match(source, /requireLedgerHqEditAccess\(/);
+    assert.match(source, /requireLedgerHqEditContext\(/);
     assert.match(source, /ledgerId/);
     assert.match(
       source,
-      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
+      /status:\s*{\s*in:\s*\[\s*\.\.\.getEditableLedgerStatusesForActor\(actor\)\s*\]/s,
     );
     assert.match(source, /updatedById:\s*actor\.user\.id/);
+    // DESIGN.md D8: 마감 편집 문맥(closedEdit/ledgerStatusAtEdit)을 감사에 남긴다.
+    assert.match(source, /withLedgerEditContext\(/);
+    assert.match(source, /ledgerStatusAtEdit:\s*before\.status/);
+    assert.match(source, /closedEdit/);
     assert.match(source, /writeAuditLog\(/);
     assert.match(source, /revalidateLedgerDetailPath\(ledgerId\)/);
     assert.match(source, /revalidateDashboardAndReports\(\)/);
@@ -206,8 +221,14 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
     );
     assert.match(
       source,
-      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
-      `${label} should condition writes on editable statuses`,
+      /status:\s*{\s*in:\s*\[\s*\.\.\.getEditableLedgerStatusesForActor\(actor\)\s*\]/s,
+      `${label} should condition writes on actor-aware editable statuses`,
+    );
+    // DESIGN.md D5: actor 문맥이 없을 때는 마감 상태가 CAS 목록에 포함되지 않는다.
+    assert.match(
+      source,
+      /getEditableLedgerStatusesForActor\(actor\)/,
+      `${label} should derive editable statuses from the actor context`,
     );
   }
 });
