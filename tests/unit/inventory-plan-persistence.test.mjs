@@ -10,6 +10,14 @@ const lossSyncUrl = new URL(
   "../../src/features/losses/planned-price-sync.ts",
   import.meta.url,
 );
+const salesPricePersistenceUrl = new URL(
+  "../../src/features/inventory/sales-price-persistence.ts",
+  import.meta.url,
+);
+const hqInventoryActionUrl = new URL(
+  "../../src/features/inventory/hq-edit-actions.ts",
+  import.meta.url,
+);
 
 test("inventory save owns one CAS and atomically patches plans before derived loss sync", async () => {
   const source = await readFile(inventoryActionUrl, "utf8");
@@ -66,11 +74,27 @@ test("store inventory action uses the manager-only validated schema", async () =
 });
 
 test("inventory plan persistence is patch-only and preserves plan metadata", async () => {
-  const source = await readFile(inventoryActionUrl, "utf8");
-  const helper = source.slice(
-    source.indexOf("async function upsertInventorySalesPricePlansInTx"),
-    source.indexOf("function parseLedgerInventoryInput"),
+  // DESIGN.md D6/F6: 벌크 저장 helper는 순수 모듈로 분리되어 지점장 저장과 본사
+  // 마감 편집이 공유한다. 품목별 반복 저장은 만들지 않는다.
+  const helper = await readFile(salesPricePersistenceUrl, "utf8");
+  const actionsSource = await readFile(inventoryActionUrl, "utf8");
+  const hqActionsSource = await readFile(hqInventoryActionUrl, "utf8");
+
+  assert.match(
+    helper,
+    /export async function upsertInventorySalesPricePlansInTx/,
   );
+  assert.match(
+    actionsSource,
+    /import \{ upsertInventorySalesPricePlansInTx \} from "\.\/sales-price-persistence"/,
+  );
+  assert.match(
+    hqActionsSource,
+    /import \{ upsertInventorySalesPricePlansInTx \} from "\.\/sales-price-persistence"/,
+  );
+  // 양쪽 모두 품목별 upsert가 아닌 공유 벌크 helper를 호출한다.
+  assert.doesNotMatch(actionsSource, /storeSalesPricePlan\.upsert\(/);
+  assert.doesNotMatch(hqActionsSource, /storeSalesPricePlan\.upsert\(/);
 
   assert.doesNotMatch(helper, /storeSalesPricePlan\.delete/);
 

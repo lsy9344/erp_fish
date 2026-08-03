@@ -467,6 +467,9 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   const isStoreManagerMode = !hqEditReasonRequired;
+  // DESIGN.md D6: 판매한 가격 입력은 지점장 모드 또는 마감 편집이 허용된 본사
+  // 마스터 모드에서 노출한다. 읽기 전용 output과 동시에는 표시하지 않는다.
+  const plannedUnitPriceEditable = isStoreManagerMode || closedEditAllowed;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
   // WO-03(2026-06-28): 미입력 필수 수량은 "사용자가 값을 바꾼 상태(dirty)"가 아니라
   // "저장 전에 막아야 하는 validation 상태"다. 둘을 분리한다. 예전엔 이걸 dirty에 섞어
@@ -856,20 +859,24 @@ export function InventoryStepClient({
           item.currentQuantityInput,
       );
 
+      const rawPlannedUnitPrice = toRawKrwInputValue(
+        plannedUnitPriceRefs.current[item.productId]?.value ??
+          item.plannedUnitPriceInput,
+      );
+
       return {
         productId: item.productId,
         currentQuantity: isStoreManagerMode
           ? storeQuantityInput
           : quantityInput,
         quantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
+        // 지점장은 기존 필수 계약대로 항상 전송한다. 본사 마감 편집은 값이
+        // 있을 때만 전송하고 빈칸은 키 자체를 보내지 않는다(변경 없음, 삭제 아님).
         ...(isStoreManagerMode
-          ? {
-              plannedUnitPrice: toRawKrwInputValue(
-                plannedUnitPriceRefs.current[item.productId]?.value ??
-                  item.plannedUnitPriceInput,
-              ),
-            }
-          : {}),
+          ? { plannedUnitPrice: rawPlannedUnitPrice }
+          : closedEditAllowed && rawPlannedUnitPrice !== ""
+            ? { plannedUnitPrice: rawPlannedUnitPrice }
+            : {}),
         unitPrice: addedManualIds.has(item.productId)
           ? toRawKrwInputValue(
               manualUnitPriceRefs.current[item.productId]?.value ??
@@ -2379,7 +2386,7 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
-                {isStoreManagerMode ? (
+                {plannedUnitPriceEditable ? (
                   <Field
                     data-invalid={Boolean(plannedUnitPriceError)}
                     className="w-auto gap-1"
@@ -2415,7 +2422,7 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
-                {!isStoreManagerMode &&
+                {!plannedUnitPriceEditable &&
                 hasSensitiveInventoryAmounts(item) &&
                 !addedManualIds.has(item.productId) ? (
                   <div className="flex flex-col gap-1 pb-2.5">
@@ -2743,7 +2750,9 @@ export function InventoryStepClient({
           unsavedFields={
             isStoreManagerMode
               ? ["당일재고", "판매한 가격", "바꾼 이유"]
-              : ["현재 재고", "바꾼 이유"]
+              : closedEditAllowed
+                ? ["현재 재고", "판매한 가격", "바꾼 이유"]
+                : ["현재 재고", "바꾼 이유"]
           }
           onRetry={() => formRef.current?.requestSubmit()}
           retryDisabled={isSaving || isAdjustmentSavePending || isClosed}

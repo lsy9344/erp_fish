@@ -1470,7 +1470,8 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /plannedUnitPriceInput/);
   assert.match(componentSource, /plannedUnitPriceRefs/);
   assert.match(componentSource, /validateRequiredPlannedUnitPrices/);
-  assert.match(componentSource, /plannedUnitPrice:\s*toRawKrwInputValue/);
+  assert.match(componentSource, /rawPlannedUnitPrice = toRawKrwInputValue/);
+  assert.match(componentSource, /plannedUnitPrice:\s*rawPlannedUnitPrice/);
   assert.match(componentSource, /calculatePlannedMarginRate/);
   assert.match(
     componentSource,
@@ -3078,15 +3079,13 @@ test("FIFO lot refresh writes item amounts in one bulk statement, not one query 
 });
 
 test("inventory sales price plan upsert avoids one query per item", () => {
-  const actionSource = readProjectFile(
+  // DESIGN.md D6/F6: 벌크 저장 helper는 순수 모듈로 분리되어 지점장과 본사 마감
+  // 편집이 공유한다.
+  const helper = readProjectFile(
     "src",
     "features",
     "inventory",
-    "actions.ts",
-  );
-  const helper = actionSource.slice(
-    actionSource.indexOf("async function upsertInventorySalesPricePlansInTx"),
-    actionSource.indexOf("function parseLedgerInventoryInput"),
+    "sales-price-persistence.ts",
   );
 
   assert.match(

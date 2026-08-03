@@ -38,6 +38,8 @@ import {
 } from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
+import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
+import { upsertInventorySalesPricePlansInTx } from "./sales-price-persistence";
 import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
@@ -458,6 +460,41 @@ export async function saveHqLedgerInventoryItems(
         }
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
+
+        // DESIGN.md D6: 값이 온 품목만 판매한 가격을 저장한다(빈칸=변경 없음,
+        // 0원=유효). 날짜 키는 장부 closingDate라 다른 날짜 가격은 변하지 않는다.
+        const plannedPriceItems = parsed.data.items.flatMap((item) =>
+          item.plannedUnitPrice === null || item.plannedUnitPrice === undefined
+            ? []
+            : [
+                {
+                  productId: item.productId,
+                  plannedUnitPrice: item.plannedUnitPrice,
+                },
+              ],
+        );
+
+        if (plannedPriceItems.length > 0) {
+          const businessDate = new Date(before.closingDate);
+
+          await upsertInventorySalesPricePlansInTx(tx, {
+            storeId: before.storeId,
+            businessDate,
+            items: plannedPriceItems,
+            actorId: actor.user.id,
+          });
+
+          // 판매가 기준 손실금액을 같은 날짜·같은 트랜잭션에서 재산정한다. 마감
+          // 편집 문맥에서는 HEADQUARTERS_CLOSED도 손실 재산정 대상에 포함한다.
+          await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
+            storeId: before.storeId,
+            businessDate,
+            dailyLedgerId: before.id,
+            productIds: plannedPriceItems.map((item) => item.productId),
+            actorId: actor.user.id,
+            ledgerStatuses: getEditableLedgerStatusesForActor(actor),
+          });
+        }
 
         // WO-02(2026-06-22): 본사 재고 마감 수정 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
         await refreshLedgerInventoryFifoLots(tx, before.id);

@@ -1,4 +1,5 @@
 import type { Prisma } from "../../../generated/prisma";
+import type { DailyLedgerStatus } from "../../../generated/prisma/index.js";
 
 import { editableLedgerStatuses } from "~/features/ledger/status-policy";
 import { decimalToNumber } from "~/lib/decimal";
@@ -12,6 +13,9 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
     dailyLedgerId?: string;
     productIds: string[];
     actorId: string;
+    // 기본은 편집 가능 상태(IN_PROGRESS/IN_REVIEW). 마스터 마감 편집에서는
+    // HEADQUARTERS_CLOSED를 포함한 actor 문맥 상태를 넘긴다(DESIGN.md D6/F7).
+    ledgerStatuses?: readonly DailyLedgerStatus[];
   },
 ) {
   const productIds = [...new Set(input.productIds)].filter(Boolean);
@@ -28,7 +32,9 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
         dailyLedger: {
           storeId: input.storeId,
           closingDate: input.businessDate,
-          status: { in: [...editableLedgerStatuses] },
+          status: {
+            in: [...(input.ledgerStatuses ?? editableLedgerStatuses)],
+          },
         },
       },
       select: {

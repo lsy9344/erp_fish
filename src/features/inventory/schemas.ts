@@ -148,6 +148,14 @@ const ledgerInventoryItemSchema = z.object({
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
+  // DESIGN.md D6: 본사 재고 편집에서만 전송하는 판매한 가격. 빈칸/미전송은
+  // "변경 없음"(null)이며 삭제가 아니고, 0원은 유효한 값이다. 지점장 스키마는
+  // 이 필드를 required 파서로 덮어써 기존 필수 계약을 유지한다.
+  plannedUnitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalNonNegativeInteger(value, context, plannedUnitPriceError),
+    ),
 });
 
 const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
