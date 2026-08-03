@@ -18,6 +18,7 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import type { CorrectionAppliedValue } from "~/features/corrections/types";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -59,6 +60,8 @@ type ExpenseStepClientProps = {
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  allowHeadquartersClosedEdit?: boolean;
+  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
 };
 
 const DEFAULT_EXPENSE_CODE_OPTION: ExpenseCodeOption = {
@@ -147,6 +150,7 @@ export function ExpenseStepClient({
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  allowHeadquartersClosedEdit = false,
 }: ExpenseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const lineCodeRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -353,7 +357,9 @@ export function ExpenseStepClient({
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
   const hqEditReasonError = fieldErrors.reason?.[0];
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked =
+    isLedgerReadOnly(ledger.status) &&
+    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "work");
   const guard = useUnsavedStepGuard({
     isDirty,

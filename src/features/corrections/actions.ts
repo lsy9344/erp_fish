@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma } from "../../../generated/prisma";
+import { Prisma, type CorrectionTargetType } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import {
@@ -31,6 +31,48 @@ import {
 import { isOperatingSalesTotalInRange } from "./operating-sales-validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
+const CLOSED_LEDGER_DIRECT_EDIT_SUPERSEDE_REASON = "CLOSED_LEDGER_DIRECT_EDIT";
+
+export type ActiveCorrectionSupersedeTarget = {
+  targetType: CorrectionTargetType;
+  targetId: string;
+  fieldKey?: string;
+};
+
+export async function supersedeActiveCorrectionsForTargetsInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    dailyLedgerId: string;
+    targets: ActiveCorrectionSupersedeTarget[];
+    supersededById: string;
+    supersededAt?: Date;
+    reason?: string;
+  },
+) {
+  if (input.targets.length === 0) {
+    return 0;
+  }
+
+  const result = await tx.correctionRecord.updateMany({
+    where: {
+      dailyLedgerId: input.dailyLedgerId,
+      supersededAt: null,
+      OR: input.targets.map((target) => ({
+        targetType: target.targetType,
+        targetId: target.targetId,
+        ...(target.fieldKey ? { fieldKey: target.fieldKey } : {}),
+      })),
+    },
+    data: {
+      supersededAt: input.supersededAt ?? new Date(),
+      supersededById: input.supersededById,
+      supersedeReason:
+        input.reason ?? CLOSED_LEDGER_DIRECT_EDIT_SUPERSEDE_REASON,
+    },
+  });
+
+  return result.count;
+}
 
 const ledgerFieldKinds: Record<string, CorrectionValue["kind"]> = {
   workerCount: "quantity",
@@ -178,6 +220,13 @@ function ledgerNotClosedError(): ActionResult<never> {
   return actionError(
     "LEDGER_NOT_CLOSED",
     "본사 마감된 장부에만 정정 기록을 추가할 수 있습니다.",
+  );
+}
+
+function ledgerConflictError(): ActionResult<never> {
+  return actionError(
+    "LEDGER_CONFLICT",
+    "장부가 변경되었습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.",
   );
 }
 
@@ -597,6 +646,7 @@ export async function createCorrectionRecord(
           select: {
             id: true,
             status: true,
+            updatedAt: true,
             totalSalesAmount: true,
             carryoverSalesAmount: true,
           },
@@ -609,6 +659,12 @@ export async function createCorrectionRecord(
           });
 
           return existing ? ledgerNotClosedError() : ledgerNotFoundError();
+        }
+
+        if (
+          ledger.updatedAt.getTime() !== parsed.data.expectedUpdatedAt.getTime()
+        ) {
+          return ledgerConflictError();
         }
 
         const originalValue = await resolveOriginalCorrectionValue(
@@ -661,6 +717,22 @@ export async function createCorrectionRecord(
         );
         const previousAppliedValue =
           latest?.correctedValue ?? originalValue.data;
+        const ledgerUpdate = await tx.dailyLedger.updateMany({
+          where: {
+            id: ledgerId,
+            status: "HEADQUARTERS_CLOSED",
+            updatedAt: parsed.data.expectedUpdatedAt,
+          },
+          data: {
+            updatedById: actor.user.id,
+            version: { increment: 1 },
+          },
+        });
+
+        if (ledgerUpdate.count !== 1) {
+          return ledgerConflictError();
+        }
+
         const correction = await tx.correctionRecord.create({
           data: {
             dailyLedgerId: ledgerId,
@@ -721,7 +793,14 @@ export async function createCorrectionRecord(
     }
 
     return result;
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    ) {
+      return ledgerConflictError();
+    }
+
     return mapCorrectionActionError();
   }
 }

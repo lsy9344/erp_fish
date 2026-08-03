@@ -22,6 +22,7 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import type { CorrectionAppliedValue } from "~/features/corrections/types";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -63,6 +64,8 @@ type SalesPaymentStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  allowHeadquartersClosedEdit?: boolean;
+  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
 };
 
 export function SalesPaymentStepClient({
@@ -73,6 +76,7 @@ export function SalesPaymentStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  allowHeadquartersClosedEdit = false,
 }: SalesPaymentStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const totalSalesInputRef = useRef<HTMLInputElement>(null);
@@ -130,7 +134,9 @@ export function SalesPaymentStepClient({
   const cashAmountValue = parseKrwInputValue(cashAmount);
   const cardAmountValue = parseKrwInputValue(cardAmount);
   const otherPaymentAmountValue = parseKrwInputValue(otherPaymentAmount);
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked =
+    isLedgerReadOnly(ledger.status) &&
+    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
     totalSalesAmountValue !== ledger.totalSalesAmount ||

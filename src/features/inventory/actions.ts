@@ -181,17 +181,17 @@ function getInventoryAmountErrors(
   return errors;
 }
 
-async function upsertInventorySalesPricePlansInTx(
+export async function upsertInventorySalesPricePlansInTx(
   tx: Prisma.TransactionClient,
   input: {
     storeId: string;
     businessDate: Date;
-    items: InventoryItemWithPlannedPrice[];
+    items: Array<{ productId: string; plannedUnitPrice: number }>;
     actorId: string;
   },
 ) {
   if (input.items.length === 0) {
-    return;
+    return { changedProductIds: [] as string[] };
   }
 
   // 품목별 upsert를 개별 호출하면 DB 왕복이 품목 수만큼 늘어난다. Prisma는 인터랙티브
@@ -205,16 +205,18 @@ async function upsertInventorySalesPricePlansInTx(
       businessDate: input.businessDate,
       productId: { in: input.items.map((item) => item.productId) },
     },
-    select: { productId: true },
+    select: { productId: true, plannedUnitPrice: true },
   });
-  const existingProductIds = new Set(
-    existingPlans.map((plan) => plan.productId),
+  const existingPriceByProductId = new Map(
+    existingPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
   );
-  const plansToUpdate = input.items.filter((item) =>
-    existingProductIds.has(item.productId),
+  const plansToUpdate = input.items.filter(
+    (item) =>
+      existingPriceByProductId.has(item.productId) &&
+      existingPriceByProductId.get(item.productId) !== item.plannedUnitPrice,
   );
   const plansToCreate = input.items.filter(
-    (item) => !existingProductIds.has(item.productId),
+    (item) => !existingPriceByProductId.has(item.productId),
   );
 
   if (plansToUpdate.length > 0) {
@@ -258,6 +260,12 @@ async function upsertInventorySalesPricePlansInTx(
       })),
     });
   }
+
+  return {
+    changedProductIds: [...plansToUpdate, ...plansToCreate].map(
+      (item) => item.productId,
+    ),
+  };
 }
 
 function parseLedgerInventoryInput(
@@ -395,6 +403,13 @@ export async function saveLedgerInventoryItems(
 
   if (!parsed.ok) {
     return parsed;
+  }
+
+  if (parsed.data.deletedProductIds.length > 0) {
+    return actionError(
+      "FORBIDDEN",
+      "재고 행 삭제는 본사 원본 수정에서만 사용할 수 있습니다.",
+    );
   }
 
   const dateGuard = assertStoreManagerClosingDateIsToday(

@@ -1,6 +1,6 @@
 import type { Prisma } from "../../../generated/prisma";
 
-import { editableLedgerStatuses } from "~/features/ledger/status-policy";
+import { getHeadquartersEditableLedgerStatuses } from "~/features/ledger/status-policy";
 import { decimalToNumber } from "~/lib/decimal";
 import { toPlannedPriceLossSnapshot } from "./amount";
 
@@ -12,12 +12,16 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
     dailyLedgerId?: string;
     productIds: string[];
     actorId: string;
+    allowClosedEdit?: boolean;
   },
 ) {
   const productIds = [...new Set(input.productIds)].filter(Boolean);
 
   if (productIds.length === 0) {
-    return;
+    return {
+      affectedLedgerIds: [] as string[],
+      changedProductIds: [] as string[],
+    };
   }
 
   const [lossItems, salesPricePlans] = await Promise.all([
@@ -28,7 +32,13 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
         dailyLedger: {
           storeId: input.storeId,
           closingDate: input.businessDate,
-          status: { in: [...editableLedgerStatuses] },
+          status: {
+            in: [
+              ...getHeadquartersEditableLedgerStatuses(
+                input.allowClosedEdit ?? false,
+              ),
+            ],
+          },
         },
       },
       select: {
@@ -56,7 +66,10 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
   ]);
 
   if (lossItems.length === 0) {
-    return;
+    return {
+      affectedLedgerIds: [] as string[],
+      changedProductIds: [] as string[],
+    };
   }
 
   const plannedUnitPriceByProductId = new Map(
@@ -66,6 +79,7 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
   // 이 helper는 손실 파생값만 갱신한다. 장부 version과 검토 metadata는 이 helper를
   // 호출한 writer가 소유해야 한 저장에서 CAS/version 증가가 두 번 일어나지 않는다.
   const affectedLedgerIds = new Set<string>();
+  const changedProductIds = new Set<string>();
 
   await Promise.all(
     lossItems.flatMap((loss) => {
@@ -87,6 +101,7 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
       }
 
       affectedLedgerIds.add(loss.dailyLedgerId);
+      changedProductIds.add(loss.productId);
 
       return [
         tx.ledgerLossItem.update({
@@ -100,5 +115,8 @@ export async function syncLedgerLossItemsWithSalesPricePlansInTx(
     }),
   );
 
-  return { affectedLedgerIds: [...affectedLedgerIds] };
+  return {
+    affectedLedgerIds: [...affectedLedgerIds],
+    changedProductIds: [...changedProductIds],
+  };
 }

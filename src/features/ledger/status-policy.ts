@@ -1,6 +1,12 @@
 export const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
+export const headquartersClosedEditableLedgerStatuses = [
+  ...editableLedgerStatuses,
+  "HEADQUARTERS_CLOSED",
+] as const;
 
 export type EditableLedgerStatus = (typeof editableLedgerStatuses)[number];
+export type HeadquartersEditableLedgerStatus =
+  (typeof headquartersClosedEditableLedgerStatuses)[number];
 export type ReadOnlyLedgerStatus = "HEADQUARTERS_CLOSED" | "HOLIDAY";
 export type LedgerEditBlockCode = "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE";
 export type LedgerEditBlockContext =
@@ -19,6 +25,23 @@ export function isLedgerEditable(
   status: string | null | undefined,
 ): status is EditableLedgerStatus {
   return editableLedgerStatuses.some(
+    (editableStatus) => editableStatus === status,
+  );
+}
+
+export function getHeadquartersEditableLedgerStatuses(
+  allowClosedEdit: boolean,
+): readonly HeadquartersEditableLedgerStatus[] {
+  return allowClosedEdit
+    ? headquartersClosedEditableLedgerStatuses
+    : editableLedgerStatuses;
+}
+
+export function isLedgerEditableByHeadquarters(
+  status: string | null | undefined,
+  allowClosedEdit: boolean,
+): status is HeadquartersEditableLedgerStatus {
+  return getHeadquartersEditableLedgerStatuses(allowClosedEdit).some(
     (editableStatus) => editableStatus === status,
   );
 }

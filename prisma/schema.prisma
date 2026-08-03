@@ -28,6 +28,7 @@ enum StoreAccessMode {
 enum PermissionAction {
   LEDGER_CREATE
   LEDGER_EDIT
+  LEDGER_CLOSED_EDIT
   LEDGER_HQ_CLOSE
   CORRECTION_CREATE
   UPLOAD_PREVIEW
@@ -348,6 +349,7 @@ model User {
   createdLedgerLaborItems             LedgerLaborItem[]           @relation("LedgerLaborItemCreatedBy")
   updatedLedgerLaborItems             LedgerLaborItem[]           @relation("LedgerLaborItemUpdatedBy")
   createdCorrectionRecords            CorrectionRecord[]          @relation("CorrectionRecordCreatedBy")
+  supersededCorrectionRecords         CorrectionRecord[]          @relation("CorrectionRecordSupersededBy")
   createdLedgerInputCodeAliases       LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasCreatedBy")
   updatedLedgerInputCodeAliases       LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasUpdatedBy")
   createdStoreSalesPricePlans         StoreSalesPricePlan[]       @relation("StoreSalesPricePlanCreatedBy")
@@ -478,14 +480,21 @@ model CorrectionRecord {
   reason               String
   createdById          String
   createdAt            DateTime             @default(now())
+  supersededAt         DateTime?
+  supersededById       String?
+  supersedeReason      String?
 
-  dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
-  createdBy   User        @relation("CorrectionRecordCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  dailyLedger  DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  createdBy    User        @relation("CorrectionRecordCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  supersededBy User?       @relation("CorrectionRecordSupersededBy", fields: [supersededById], references: [id], onDelete: SetNull)
 
   @@index([dailyLedgerId])
   @@index([createdById])
   @@index([createdAt])
+  @@index([supersededById])
+  @@index([dailyLedgerId, supersededAt])
   @@index([dailyLedgerId, targetType, targetId, fieldKey, createdAt])
+  @@index([dailyLedgerId, targetType, targetId, fieldKey, supersededAt, createdAt], map: "CorrectionRecord_active_target_createdAt_idx")
 }
 
 model LedgerExpense {

@@ -24,6 +24,7 @@ import { formatShortKstDateTime } from "~/lib/format";
 
 type CorrectionPanelProps = {
   ledgerId: string;
+  ledgerUpdatedAt: string;
   targetOptions: CorrectionTargetOption[];
   records: CorrectionRecordListItem[];
   createAction: typeof createCorrectionRecord;
@@ -65,6 +66,7 @@ function getCorrectionInputMode(target: CorrectionTargetOption | null) {
 
 export function CorrectionPanel({
   ledgerId,
+  ledgerUpdatedAt,
   targetOptions,
   records,
   createAction,
@@ -114,6 +116,7 @@ export function CorrectionPanel({
     try {
       const result = await createAction({
         ledgerId,
+        expectedUpdatedAt: ledgerUpdatedAt,
         targetType: selectedTarget.targetType,
         targetId: selectedTarget.targetId,
         fieldKey: selectedTarget.fieldKey,
@@ -245,6 +248,7 @@ export function CorrectionPanel({
               <TableHead>정정값</TableHead>
               <TableHead>사유</TableHead>
               <TableHead>작성</TableHead>
+              <TableHead>처리 상태</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -265,12 +269,27 @@ export function CorrectionPanel({
                   {formatShortKstDateTime(record.createdAt)} ·{" "}
                   {record.createdBy.name ?? record.createdBy.email ?? "본사"}
                 </TableCell>
+                <TableCell>
+                  {record.supersededAt ? (
+                    <span className="text-muted-foreground">
+                      {formatShortKstDateTime(record.supersededAt)} ·{" "}
+                      {record.supersededBy?.name ??
+                        record.supersededBy?.email ??
+                        "본사"}
+                      {record.supersedeReason
+                        ? ` · ${record.supersedeReason}`
+                        : null}
+                    </span>
+                  ) : (
+                    "현재 반영"
+                  )}
+                </TableCell>
               </TableRow>
             ))}
             {records.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-muted-foreground py-6 text-center"
                 >
                   정정 기록이 없습니다.

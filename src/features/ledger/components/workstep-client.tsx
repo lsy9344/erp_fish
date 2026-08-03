@@ -25,6 +25,7 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import type { CorrectionAppliedValue } from "~/features/corrections/types";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -64,6 +65,8 @@ type WorkStepClientProps = {
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  allowHeadquartersClosedEdit?: boolean;
+  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
 };
 
 function formatKrw(value: number) {
@@ -172,6 +175,7 @@ export function WorkStepClient({
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  allowHeadquartersClosedEdit = false,
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const workerCountInputRef = useRef<HTMLInputElement>(null);
@@ -460,7 +464,9 @@ export function WorkStepClient({
     );
   }
 
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked =
+    isLedgerReadOnly(ledger.status) &&
+    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);

@@ -42,6 +42,14 @@ const correctionRecordSelect = {
       email: true,
     },
   },
+  supersededAt: true,
+  supersedeReason: true,
+  supersededBy: {
+    select: {
+      name: true,
+      email: true,
+    },
+  },
 } as const;
 
 type CorrectionRecordPayload = Prisma.CorrectionRecordGetPayload<{
@@ -100,6 +108,9 @@ function toCorrectionRecordListItem(
     reason: record.reason,
     createdAt: record.createdAt.toISOString(),
     createdBy: record.createdBy,
+    supersededAt: record.supersededAt?.toISOString() ?? null,
+    supersededBy: record.supersededBy,
+    supersedeReason: record.supersedeReason,
   };
 }
 
@@ -113,13 +124,27 @@ export async function getLatestCorrectionByTargetInTx(
       targetType: input.targetType,
       targetId: input.targetId,
       fieldKey: input.fieldKey,
+      supersededAt: null,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: correctionRecordSelect,
   });
 }
 
-export async function getCorrectionRecordsForLedgerInTx(
+export async function getActiveCorrectionsForLedgerInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+) {
+  const records = await tx.correctionRecord.findMany({
+    where: { dailyLedgerId: ledgerId, supersededAt: null },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: correctionRecordSelect,
+  });
+
+  return records.map(toCorrectionRecordListItem);
+}
+
+export async function getCorrectionHistoryForLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
 ) {
@@ -132,19 +157,35 @@ export async function getCorrectionRecordsForLedgerInTx(
   return records.map(toCorrectionRecordListItem);
 }
 
-export async function getCorrectionRecordsForLedger(ledgerId: string) {
+export async function getActiveCorrectionsForLedger(ledgerId: string) {
   await requireReportAccess();
   await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) =>
-    getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+    getActiveCorrectionsForLedgerInTx(tx, ledgerId),
   );
 }
+
+export async function getCorrectionHistoryForLedger(ledgerId: string) {
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
+
+  return db.$transaction((tx) =>
+    getCorrectionHistoryForLedgerInTx(tx, ledgerId),
+  );
+}
+
+// Full history is the existing UI contract. Calculation and overlay callers must
+// use the explicitly active helpers below.
+export const getCorrectionRecordsForLedger = getCorrectionHistoryForLedger;
+export const getCorrectionRecordsForLedgerInTx =
+  getActiveCorrectionsForLedgerInTx;
 
 export function getLatestCorrectionValueMap(
   records: CorrectionRecordListItem[],
 ) {
   const sortedRecords = records
+    .filter((record) => record.supersededAt === null)
     .map((record, index) => ({ record, index }))
     .sort((left, right) => {
       const createdAtOrder =
@@ -184,7 +225,7 @@ export function getLatestCorrectionValueMap(
 }
 
 export async function getLatestCorrectionValuesForLedger(ledgerId: string) {
-  const records = await getCorrectionRecordsForLedger(ledgerId);
+  const records = await getActiveCorrectionsForLedger(ledgerId);
 
   return getLatestCorrectionValueMap(records);
 }
@@ -213,6 +254,7 @@ export async function getLatestCorrectionValuesForLedgersScoped(
   const records = await db.correctionRecord.findMany({
     where: {
       dailyLedgerId: { in: ledgerIds },
+      supersededAt: null,
       dailyLedger: {
         storeId: { in: storeIds },
       },
@@ -268,6 +310,6 @@ export async function getStoreReadableCorrectionRecordsForLedger(
   }
 
   return db.$transaction((tx) =>
-    getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+    getCorrectionHistoryForLedgerInTx(tx, ledgerId),
   );
 }

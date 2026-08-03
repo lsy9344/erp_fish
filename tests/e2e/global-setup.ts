@@ -16,6 +16,7 @@ const profileDefinitions = [
     storeAccessMode: StoreAccessMode.ALL_STORES,
     actions: [
       PermissionAction.LEDGER_EDIT,
+      PermissionAction.LEDGER_CLOSED_EDIT,
       PermissionAction.LEDGER_HQ_CLOSE,
       PermissionAction.CORRECTION_CREATE,
       PermissionAction.UPLOAD_PREVIEW,

@@ -578,8 +578,23 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   ).toHaveAttribute("href", new RegExp(`/app/ledgers/.+[?&]tab=losses\\b`));
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩200,000");
-  // WO-14 part2(2026-06-29): 매출 셀에 장부 매출 아래로 분석 매출(판매한 가격 기준)이 함께 보인다.
-  await expect(reviewRow).toContainText("분석");
+  await expect(reviewRow).toContainText("매출 ₩200,000");
+  await expect(reviewRow).toContainText("예상매출");
+  await expect(reviewRow).toContainText("재고금액 마감 전");
+  await expect(reviewRow).not.toContainText("장부 마감 ₩");
+  await expect(reviewRow).not.toContainText("영업 합계");
+  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText(
+    "재고금액 데이터 부족",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.progress)).toContainText(
+    "재고금액 마감 전",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
+    "재고금액 ₩7,000",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText(
+    "재고금액 해당 없음",
+  );
   await expect(reviewRow).toContainText(
     formatDashboardDateTime(reviewLedger.updatedAt),
   );
@@ -594,6 +609,29 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   });
 
   expect(emptyLedgerCountAfter).toBe(0);
+});
+
+test("이월 재확인 무결성 신호와 재고금액 차단은 영향받은 행에만 적용된다", async ({
+  page,
+}) => {
+  const closedLedger = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.closed },
+    select: { id: true },
+  });
+  await prisma.ledgerInventoryItem.updateMany({
+    where: { dailyLedgerId: closedLedger.id },
+    data: { carryoverStatus: "CARRYOVER_RECHECK_REQUIRED" },
+  });
+
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=store-name&filter=all");
+
+  const closedRow = getDesktopRow(page, STORE_IDS.closed);
+  const reviewRow = getDesktopRow(page, STORE_IDS.review);
+  await expect(closedRow).toContainText("재고금액 기준 재확인 필요");
+  await expect(closedRow).not.toContainText("재고금액 ₩7,000");
+  await expect(closedRow).toContainText("이월 재확인 필요");
+  await expect(reviewRow).not.toContainText("이월 재확인 필요");
 });
 
 test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아웃 상태가 URL에 유지된다", async ({
@@ -860,7 +898,7 @@ test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불�
   await expect(metrics).not.toContainText("계산 불가");
 });
 
-test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 신호를 구분한다", async ({
+test("관제판 마진은 실제·예상만 표시하고 기존 재고 이상 신호를 유지한다", async ({
   page,
 }) => {
   await seedStoryThreeThreeThresholds();
@@ -889,8 +927,10 @@ test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 
   ).toBeVisible();
   const progressRow = getDesktopRow(page, STORE_IDS.progress);
   await expect(progressRow).toContainText("실제 35.9% / 예상 데이터 부족");
-  await expect(progressRow).toContainText("경보 기준 90.0%");
-  await expect(progressRow).toContainText("90.0% 기준 미달 금액 1,392,700원");
+  await expect(progressRow).not.toContainText("경보 기준 90.0%");
+  await expect(progressRow).not.toContainText(
+    "90.0% 기준 미달 금액 1,392,700원",
+  );
   const marginCell = progressRow.getByTestId(
     `hq-dashboard-margin-${STORE_IDS.progress}`,
   );
@@ -1029,6 +1069,7 @@ test("정정 저장 후 관제판 이상 신호는 정정 반영값 기준으로
   await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
 
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
+  await expect(reviewRow).toContainText("재고금액 마감 전");
   await expect(reviewRow).not.toContainText("재고 이상");
   await expect(reviewRow).not.toContainText("손실 이상");
   await expect(reviewRow).not.toContainText("재고 기준 확인");
@@ -1157,6 +1198,10 @@ test("390px 모바일 관제판은 핵심 상태가 겹치지 않고 보인다",
   await expect(signal).toBeVisible();
   await expect(signal).toContainText("기준값 설정 전");
   await expect(row).toContainText("₩200,000");
+  await expect(row).toContainText("매출 ₩200,000");
+  await expect(row).toContainText("예상매출");
+  await expect(row).toContainText("재고금액 마감 전");
+  await expect(row).toContainText("실제 / 예상 마진율");
 
   const rowBox = await getVisibleBoundingBox(row);
   expect(rowBox.x).toBeGreaterThanOrEqual(0);

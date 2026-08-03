@@ -531,7 +531,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">마진율</dt>
+                    <dt className="text-muted-foreground">
+                      실제 / 예상 마진율
+                    </dt>
                     <dd className="font-medium tabular-nums">
                       <MarginCell row={row} />
                     </dd>
@@ -749,38 +751,28 @@ function LossCell({
   );
 }
 
-// 장부 마감 매출, 이월 매출, 영업 매출 합계를 구분하고 판매한 가격 기준
-// 분석 매출도 함께 보여준다.
 function SalesCell({ row }: { row: HqDashboardRow }) {
   const analysis = row.analysisSalesAmount;
   const analysisLabel =
     analysis.value === null
-      ? (analysis.label ?? analysis.unavailableReason ?? "분석 매출 기준 확인")
+      ? (analysis.label ?? analysis.unavailableReason ?? "예상매출 기준 확인")
       : formatKrw(analysis.value);
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
-      <span className="text-xs">
-        장부 마감 {formatKrwMetric(row.closingSalesAmount)}
-      </span>
-      <span className="text-xs">
-        이월 {formatKrwMetric(row.carryoverSalesAmount)}
-      </span>
-      <span>영업 합계 {formatKrwMetric(row.operatingSalesAmount)}</span>
+      <span>매출 {formatKrwMetric(row.operatingSalesAmount)}</span>
       <span className="text-muted-foreground text-xs font-normal">
-        분석 {analysisLabel}
+        예상매출 {analysisLabel}
+      </span>
+      <span className="text-muted-foreground text-xs font-normal">
+        재고금액 {formatKrwMetric(row.inventoryAmount)}
       </span>
     </div>
   );
 }
 
 function MarginCell({ row }: { row: HqDashboardRow }) {
-  const actual = row.marginDisplay;
-  const {
-    currentLabel: actualLabel,
-    targetLabel,
-    shortfallAmountLabel,
-  } = actual;
+  const actualLabel = row.marginDisplay.currentLabel;
   const expectedLabel = row.analysisMarginDisplay.currentLabel;
 
   return (
@@ -788,16 +780,6 @@ function MarginCell({ row }: { row: HqDashboardRow }) {
       <span>
         실제 {actualLabel} / 예상 {expectedLabel}
       </span>
-      {targetLabel ? (
-        <span className="text-muted-foreground text-xs font-normal">
-          경보 기준 {targetLabel}
-        </span>
-      ) : null}
-      {targetLabel && shortfallAmountLabel ? (
-        <span className="text-warning text-xs font-normal">
-          {targetLabel} 기준 {shortfallAmountLabel}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -878,7 +860,19 @@ function formatKrw(value: number | null) {
   return value === null ? "-" : krwFormatter.format(value);
 }
 
-function formatKrwMetric(metric: HqDashboardRow["salesAmount"]) {
+function formatKrwMetric(
+  metric:
+    | {
+        value: number | null;
+        label?: string;
+        unavailableReason?: string;
+      }
+    | undefined,
+) {
+  if (!metric) {
+    return "데이터 부족";
+  }
+
   return metric.value === null
     ? (metric.label ?? metric.unavailableReason ?? "-")
     : formatKrw(metric.value);

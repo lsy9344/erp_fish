@@ -17,6 +17,7 @@ import { useSaveConflictDialog } from "~/features/ledger/components/use-save-con
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
 import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import type { CorrectionAppliedValue } from "~/features/corrections/types";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -69,6 +70,8 @@ type PurchaseStepClientProps = {
   showStepNavigation?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
+  allowHeadquartersClosedEdit?: boolean;
+  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
 };
 
 function formatKrw(value: number | null) {
@@ -167,6 +170,7 @@ export function PurchaseStepClient({
   showStepNavigation = true,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
+  allowHeadquartersClosedEdit = false,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -486,7 +490,9 @@ export function PurchaseStepClient({
   const hasPurchaseRows = purchaseItems.length > 0;
   const hqEditReasonError = fieldErrors.reason?.[0];
   const authorDisplayNameError = fieldErrors.authorDisplayName?.[0];
-  const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
+  const isOriginalEditBlocked =
+    isLedgerReadOnly(ledger.status) &&
+    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
   const nextStepHref = `/app/store-entry/losses?${new URLSearchParams({
     storeId: ledger.storeId,
     date: getKstLedgerDateParam(ledger.closingDate),

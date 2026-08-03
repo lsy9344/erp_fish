@@ -3,9 +3,17 @@
 import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
+import {
+  supersedeActiveCorrectionsForTargetsInTx,
+  type ActiveCorrectionSupersedeTarget,
+} from "~/features/corrections/actions";
+import { getActiveCorrectionsForLedgerInTx } from "~/features/corrections/queries";
+import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import { decimalToNumber, nullableDecimalToNumber } from "~/lib/decimal";
 import { writeAuditLog } from "~/server/audit";
 import {
+  hasLedgerClosedEditAccess,
   requireLedgerHqEditAccess,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
@@ -25,17 +33,24 @@ import {
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
 import {
-  editableLedgerStatuses,
   getLedgerEditBlockReason,
-  isLedgerEditable,
+  isLedgerEditableByHeadquarters,
 } from "~/features/ledger/status-policy";
+import {
+  invalidateCarryoverDependentsInTx,
+  updateHqLedgerMutationTokenInTx,
+} from "~/features/ledger/hq-mutation";
 import {
   getInventorySaveAdjustmentErrors,
   getInventorySaveRequiredEntryErrors,
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
-import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import {
+  applyInventoryAdjustmentReasonsInTx,
+  reconcileLedgerInventoryAdjustments,
+} from "./adjustment-reconciliation";
+import { upsertInventorySalesPricePlansInTx } from "./actions";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import {
   buildManualInventoryRows,
@@ -58,7 +73,10 @@ import {
   type LedgerInventoryAdjustmentInput,
   type LedgerInventoryInput,
 } from "./schemas";
-import { type InventoryStepData } from "./types";
+import {
+  type InventoryCarryoverDetailView,
+  type InventoryStepData,
+} from "./types";
 
 const ledgerIdInputSchema = z.object({
   ledgerId: z
@@ -198,34 +216,314 @@ function notEditableError(
 function ensureTargetInventory(
   data: InventoryStepData | null,
   storeId: string,
+  allowClosedEdit: boolean,
 ): ActionResult<InventoryStepData> {
   if (data?.storeId !== storeId) {
     return notFoundError();
   }
 
-  if (!isLedgerEditable(data.status)) {
+  if (!isLedgerEditableByHeadquarters(data.status, allowClosedEdit)) {
     return notEditableError(data.status);
   }
 
   return actionOk(data);
 }
 
-async function markEditableLedgerInTx(
-  tx: Prisma.TransactionClient,
-  ledgerId: string,
-  expectedUpdatedAt: Date,
-  actorId: string,
+async function getHqInventoryMutationActor() {
+  const user = await requireLedgerHqEditAccess();
+  const allowClosedEdit = await hasLedgerClosedEditAccess(user.id);
+
+  return { user, allowClosedEdit };
+}
+
+function getChangedInventoryProductIds(
+  before: InventoryStepData,
+  after: InventoryStepData,
+  forcedProductIds: Iterable<string> = [],
 ) {
-  const updated = await tx.dailyLedger.updateMany({
-    where: {
-      id: ledgerId,
-      status: { in: [...editableLedgerStatuses] },
-      updatedAt: expectedUpdatedAt,
-    },
-    data: { updatedById: actorId },
+  function fingerprints(data: InventoryStepData) {
+    return new Map(
+      data.items.map((item) => [
+        item.productId,
+        JSON.stringify({
+          unitPrice: item.unitPrice,
+          previousQuantity: item.previousQuantity,
+          purchasedQuantity: item.purchasedQuantity,
+          lossQuantity: item.lossQuantity,
+          currentQuantity: item.currentQuantity,
+          quantity: item.quantity,
+          inventoryAmount: item.inventoryAmount,
+          carryoverSource: item.carryoverSource,
+          carryoverStatus: item.carryoverStatus,
+          carryoverLedgerId: item.carryoverLedgerId,
+          fifoLots: item.fifoLots.map((lot) => ({
+            sourceType: lot.sourceType,
+            sourceLedgerId: lot.sourceLedgerId,
+            sourcePurchaseItemId: lot.sourcePurchaseItemId,
+            sourceBusinessDate: lot.sourceBusinessDate,
+            unitPrice: lot.unitPrice,
+            originalQuantity: lot.originalQuantity,
+            consumedQuantity: lot.consumedQuantity,
+            remainingQuantity: lot.remainingQuantity,
+            originalAmount: lot.originalAmount,
+            consumedAmount: lot.consumedAmount,
+            remainingAmount: lot.remainingAmount,
+            sortOrder: lot.sortOrder,
+          })),
+        }),
+      ]),
+    );
+  }
+
+  const beforeByProductId = fingerprints(before);
+  const afterByProductId = fingerprints(after);
+  const forcedProductIdSet = new Set(forcedProductIds);
+
+  return [
+    ...new Set([
+      ...beforeByProductId.keys(),
+      ...afterByProductId.keys(),
+      ...forcedProductIdSet,
+    ]),
+  ]
+    .filter(
+      (productId) =>
+        forcedProductIdSet.has(productId) ||
+        beforeByProductId.get(productId) !== afterByProductId.get(productId),
+    )
+    .sort();
+}
+
+function inventoryCalculatedMetricTargets(
+  ledgerId: string,
+  changed: boolean,
+): ActiveCorrectionSupersedeTarget[] {
+  if (!changed) return [];
+
+  return ["grossMarginRate", "salesDifference"].map((fieldKey) => ({
+    targetType: "CALCULATED_METRIC" as const,
+    targetId: ledgerId,
+    fieldKey,
+  }));
+}
+
+function priceCalculatedMetricTargets(
+  ledgerId: string,
+  changed: boolean,
+): ActiveCorrectionSupersedeTarget[] {
+  if (!changed) return [];
+
+  return ["salesDifference", "lossAmount"].map((fieldKey) => ({
+    targetType: "CALCULATED_METRIC" as const,
+    targetId: ledgerId,
+    fieldKey,
+  }));
+}
+
+function adjustmentCalculatedMetricTargets(
+  ledgerId: string,
+  changed: boolean,
+): ActiveCorrectionSupersedeTarget[] {
+  if (!changed) return [];
+
+  return ["grossMarginRate", "salesDifference"].map((fieldKey) => ({
+    targetType: "CALCULATED_METRIC" as const,
+    targetId: ledgerId,
+    fieldKey,
+  }));
+}
+
+type AcknowledgedCarryover = {
+  previousQuantity: number;
+  carryoverSource: "PREVIOUS_CLOSED_LEDGER";
+  carryoverStatus: "PREVIOUS_CARRYOVER";
+  detail: InventoryCarryoverDetailView;
+};
+
+type ActiveLedgerCorrections = Awaited<
+  ReturnType<typeof getActiveCorrectionsForLedgerInTx>
+>;
+
+function getActiveInventoryCorrectionNumber(
+  records: ActiveLedgerCorrections,
+  targetId: string,
+  fieldKey: "currentQuantity" | "quantity",
+) {
+  const correctedValue = records.find(
+    (record) =>
+      record.targetType === "INVENTORY_ROW" &&
+      record.targetId === targetId &&
+      record.fieldKey === fieldKey,
+  )?.correctedValue;
+
+  if (
+    !correctedValue ||
+    typeof correctedValue !== "object" ||
+    Array.isArray(correctedValue)
+  ) {
+    return undefined;
+  }
+
+  return typeof correctedValue.value === "number"
+    ? correctedValue.value
+    : undefined;
+}
+
+function applyActiveInventoryCorrections(
+  data: InventoryStepData,
+  records: ActiveLedgerCorrections,
+): InventoryStepData {
+  return {
+    ...data,
+    items: data.items.map((item) => ({
+      ...item,
+      currentQuantity:
+        getActiveInventoryCorrectionNumber(
+          records,
+          item.id,
+          "currentQuantity",
+        ) ?? item.currentQuantity,
+      quantity:
+        getActiveInventoryCorrectionNumber(records, item.id, "quantity") ??
+        item.quantity,
+    })),
+  };
+}
+
+async function resolveAcknowledgedCarryoversInTx(
+  tx: Prisma.TransactionClient,
+  before: InventoryStepData,
+  productIds: string[],
+): Promise<ActionResult<Map<string, AcknowledgedCarryover>>> {
+  const acknowledgedProductIds = [...new Set(productIds)];
+
+  if (acknowledgedProductIds.length === 0) {
+    return actionOk(new Map());
+  }
+
+  const beforeByProductId = new Map(
+    before.items.map((item) => [item.productId, item]),
+  );
+  const invalidProductId = acknowledgedProductIds.find((productId) => {
+    const item = beforeByProductId.get(productId);
+
+    return (
+      item?.carryoverStatus !== "CARRYOVER_RECHECK_REQUIRED" ||
+      !item.carryoverLedgerId
+    );
   });
 
-  return updated.count === 1;
+  if (invalidProductId) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "이월 재확인 대상을 확인해 주세요.",
+      {
+        acknowledgedCarryoverProductIds: [
+          "현재 이월 재확인 상태인 품목만 확인 처리할 수 있습니다.",
+        ],
+      },
+    );
+  }
+
+  const sourceLedgerIds = [
+    ...new Set(
+      acknowledgedProductIds.map(
+        (productId) => beforeByProductId.get(productId)!.carryoverLedgerId!,
+      ),
+    ),
+  ];
+  const [sourceItems, sourceLosses] = await Promise.all([
+    tx.ledgerInventoryItem.findMany({
+      where: {
+        dailyLedgerId: { in: sourceLedgerIds },
+        productId: { in: acknowledgedProductIds },
+      },
+      select: {
+        dailyLedgerId: true,
+        productId: true,
+        previousQuantity: true,
+        purchasedQuantity: true,
+        currentQuantity: true,
+        quantity: true,
+        dailyLedger: {
+          select: { id: true, closingDate: true, status: true },
+        },
+      },
+    }),
+    tx.ledgerLossItem.findMany({
+      where: {
+        dailyLedgerId: { in: sourceLedgerIds },
+        productId: { in: acknowledgedProductIds },
+      },
+      select: { dailyLedgerId: true, productId: true, quantity: true },
+    }),
+  ]);
+  const sourceItemByKey = new Map(
+    sourceItems.map((item) => [
+      `${item.dailyLedgerId}:${item.productId}`,
+      item,
+    ]),
+  );
+  const lossQuantityByKey = new Map<string, number>();
+
+  sourceLosses.forEach((loss) => {
+    const key = `${loss.dailyLedgerId}:${loss.productId}`;
+    lossQuantityByKey.set(
+      key,
+      (lossQuantityByKey.get(key) ?? 0) + decimalToNumber(loss.quantity),
+    );
+  });
+
+  const resolved = new Map<string, AcknowledgedCarryover>();
+
+  for (const productId of acknowledgedProductIds) {
+    const current = beforeByProductId.get(productId)!;
+    const sourceLedgerId = current.carryoverLedgerId!;
+    const source = sourceItemByKey.get(`${sourceLedgerId}:${productId}`);
+
+    if (source?.dailyLedger.status !== "HEADQUARTERS_CLOSED") {
+      return actionError(
+        "VALIDATION_ERROR",
+        "새 이월 근거를 확정할 수 없습니다.",
+        {
+          acknowledgedCarryoverProductIds: [
+            "원천 장부가 본사 마감 상태인지 확인해 주세요.",
+          ],
+        },
+      );
+    }
+
+    const previousQuantity =
+      nullableDecimalToNumber(source.currentQuantity) ??
+      nullableDecimalToNumber(source.quantity) ??
+      0;
+
+    resolved.set(productId, {
+      previousQuantity,
+      carryoverSource: "PREVIOUS_CLOSED_LEDGER",
+      carryoverStatus: "PREVIOUS_CARRYOVER",
+      detail: {
+        ...current.previousQuantityDetail,
+        source: "PREVIOUS_CLOSED_LEDGER",
+        status: "PREVIOUS_CARRYOVER",
+        resolvedQuantity: previousQuantity,
+        sourceLedgerId: source.dailyLedger.id,
+        sourceLedgerClosingDate: source.dailyLedger.closingDate.toISOString(),
+        sourceLedgerStatus: source.dailyLedger.status,
+        sourceYearMonth: null,
+        sourceSnapshotId: null,
+        sourcePreviousQuantity: decimalToNumber(source.previousQuantity),
+        sourcePurchasedQuantity: decimalToNumber(source.purchasedQuantity),
+        sourceLossQuantity:
+          lossQuantityByKey.get(`${sourceLedgerId}:${productId}`) ?? 0,
+        sourceCurrentQuantity: nullableDecimalToNumber(source.currentQuantity),
+        sourceQuantity: nullableDecimalToNumber(source.quantity),
+        message: "수정된 원천 장부의 이월 재고를 확인하고 다시 계산했습니다.",
+      },
+    });
+  }
+
+  return actionOk(resolved);
 }
 
 function parseExpectedUpdatedAt(value: string): Date | null {
@@ -246,7 +544,7 @@ export async function saveHqLedgerInventoryItems(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqInventoryMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -257,12 +555,15 @@ export async function saveHqLedgerInventoryItems(
     );
   }
 
+  let invalidatedTargetLedgerIds: string[] = [];
+
   try {
     const result = await db.$transaction<ActionResult<InventoryStepData>>(
       async (tx) => {
         const beforeResult = ensureTargetInventory(
           await getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeResult.ok) {
@@ -270,14 +571,53 @@ export async function saveHqLedgerInventoryItems(
         }
 
         const before = beforeResult.data;
+        const effectiveBefore = applyActiveInventoryCorrections(
+          before,
+          await getActiveCorrectionsForLedgerInTx(tx, ledgerId),
+        );
 
         if (before.updatedAt !== expectedUpdatedAt.toISOString()) {
           return await hqInventoryConflictError(tx, "inventory", parsed.data);
         }
 
+        const acknowledgedResult = await resolveAcknowledgedCarryoversInTx(
+          tx,
+          before,
+          parsed.data.acknowledgedCarryoverProductIds,
+        );
+
+        if (!acknowledgedResult.ok) {
+          return acknowledgedResult;
+        }
+
+        const acknowledgedCarryovers = acknowledgedResult.data;
+
         const inputByProductId = new Map(
           parsed.data.items.map((item) => [item.productId, item]),
         );
+        const deletedProductIds = new Set(parsed.data.deletedProductIds);
+        const persistedProductIds = new Set(
+          before.items
+            .filter((item) => item.id !== item.productId)
+            .map((item) => item.productId),
+        );
+        const invalidDeletedProductIds = parsed.data.deletedProductIds.filter(
+          (productId) =>
+            !persistedProductIds.has(productId) ||
+            inputByProductId.has(productId),
+        );
+
+        if (invalidDeletedProductIds.length > 0) {
+          return actionError<InventoryStepData>(
+            "VALIDATION_ERROR",
+            "삭제할 기존 재고 행을 확인해 주세요.",
+            {
+              deletedProductIds: [
+                "저장된 재고 행만 삭제할 수 있으며 삭제 행은 입력 목록에 함께 보낼 수 없습니다.",
+              ],
+            },
+          );
+        }
         const existingProductIds = new Set(
           before.items.map((item) => item.productId),
         );
@@ -321,13 +661,20 @@ export async function saveHqLedgerInventoryItems(
               };
             }
 
+            const acknowledged = acknowledgedCarryovers.get(
+              inputItem.productId,
+            );
+
             return {
               productId: beforeItem.productId,
-              previousQuantity: beforeItem.previousQuantity,
+              previousQuantity:
+                acknowledged?.previousQuantity ?? beforeItem.previousQuantity,
               purchasedQuantity: beforeItem.purchasedQuantity,
               lossQuantity: beforeItem.lossQuantity,
-              carryoverSource: beforeItem.carryoverSource,
-              carryoverStatus: beforeItem.carryoverStatus,
+              carryoverSource:
+                acknowledged?.carryoverSource ?? beforeItem.carryoverSource,
+              carryoverStatus:
+                acknowledged?.carryoverStatus ?? beforeItem.carryoverStatus,
               carryoverLedgerId: beforeItem.carryoverLedgerId,
               currentQuantity:
                 inputItem.currentQuantity ?? beforeItem.currentQuantity,
@@ -339,6 +686,12 @@ export async function saveHqLedgerInventoryItems(
               productId: item.productId,
               afterQuantity: item.adjustment!.afterQuantity,
             })),
+          new Map(
+            parsed.data.items.map((item) => [
+              item.productId,
+              item.adjustmentReason,
+            ]),
+          ),
         );
 
         if (Object.keys(adjustmentErrors).length > 0) {
@@ -365,12 +718,12 @@ export async function saveHqLedgerInventoryItems(
           );
         }
 
-        const updated = await markEditableLedgerInTx(
-          tx,
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          actor.user.id,
-        );
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+        });
 
         if (!updated) {
           return await hqInventoryConflictError(tx, "inventory", parsed.data);
@@ -381,17 +734,35 @@ export async function saveHqLedgerInventoryItems(
         });
 
         const rowsToPersist = before.items.flatMap((item) => {
+          if (deletedProductIds.has(item.productId)) {
+            return [];
+          }
+
           const inputItem = inputByProductId.get(item.productId);
+          const acknowledged = acknowledgedCarryovers.get(item.productId);
+          const effectiveItem = acknowledged
+            ? {
+                ...item,
+                previousQuantity: acknowledged.previousQuantity,
+                carryoverSource: acknowledged.carryoverSource,
+                carryoverStatus: acknowledged.carryoverStatus,
+              }
+            : item;
           const currentQuantity =
             inputItem?.currentQuantity ?? item.currentQuantity;
           const quantity = inputItem?.quantity ?? item.quantity;
 
           if (
-            !shouldPersistInventoryLine(item, currentQuantity, quantity, {
-              hasExplicitCurrentQuantityInput:
-                inputItem?.currentQuantity !== null &&
-                inputItem?.currentQuantity !== undefined,
-            })
+            !shouldPersistInventoryLine(
+              effectiveItem,
+              currentQuantity,
+              quantity,
+              {
+                hasExplicitCurrentQuantityInput:
+                  inputItem?.currentQuantity !== null &&
+                  inputItem?.currentQuantity !== undefined,
+              },
+            )
           ) {
             return [];
           }
@@ -409,17 +780,18 @@ export async function saveHqLedgerInventoryItems(
               productCategory: item.productCategory,
               productSpec: item.productSpec,
               unitPrice: item.unitPrice,
-              previousQuantity: item.previousQuantity,
+              previousQuantity: effectiveItem.previousQuantity,
               purchasedQuantity: item.purchasedQuantity,
               currentQuantity,
               quantity,
               inventoryAmount,
               isModified:
                 (currentQuantity !== null &&
-                  currentQuantity !== item.previousQuantity) ||
-                (quantity !== null && quantity !== item.previousQuantity),
-              carryoverSource: item.carryoverSource,
-              carryoverStatus: item.carryoverStatus,
+                  currentQuantity !== effectiveItem.previousQuantity) ||
+                (quantity !== null &&
+                  quantity !== effectiveItem.previousQuantity),
+              carryoverSource: effectiveItem.carryoverSource,
+              carryoverStatus: effectiveItem.carryoverStatus,
               carryoverLedgerId: item.carryoverLedgerId,
               createdById: actor.user.id,
               updatedById: actor.user.id,
@@ -438,6 +810,15 @@ export async function saveHqLedgerInventoryItems(
 
         rowsToPersist.push(...manualRows);
 
+        if (deletedProductIds.size > 0) {
+          await tx.ledgerInventoryAdjustment.deleteMany({
+            where: {
+              dailyLedgerId: before.id,
+              productId: { in: [...deletedProductIds] },
+            },
+          });
+        }
+
         if (rowsToPersist.length > 0) {
           await tx.ledgerInventoryItem.createMany({
             data: rowsToPersist,
@@ -445,11 +826,66 @@ export async function saveHqLedgerInventoryItems(
           await persistLedgerInventoryCarryoverDetails(
             tx,
             before.id,
-            before.items.filter((item) =>
-              rowsToPersist.some((row) => row.productId === item.productId),
-            ),
+            before.items
+              .filter((item) =>
+                rowsToPersist.some((row) => row.productId === item.productId),
+              )
+              .map((item) => {
+                const acknowledged = acknowledgedCarryovers.get(item.productId);
+
+                return acknowledged
+                  ? {
+                      ...item,
+                      previousQuantity: acknowledged.previousQuantity,
+                      carryoverSource: acknowledged.carryoverSource,
+                      carryoverStatus: acknowledged.carryoverStatus,
+                      previousQuantityDetail: acknowledged.detail,
+                    }
+                  : item;
+              }),
           );
         }
+
+        const salesPriceItems = parsed.data.items.flatMap((item) =>
+          item.plannedUnitPrice === null
+            ? []
+            : [
+                {
+                  productId: item.productId,
+                  plannedUnitPrice: item.plannedUnitPrice,
+                },
+              ],
+        );
+        const { changedProductIds: priceChangedProductIds } =
+          await upsertInventorySalesPricePlansInTx(tx, {
+            storeId: before.storeId,
+            businessDate: new Date(before.closingDate),
+            items: salesPriceItems,
+            actorId: actor.user.id,
+          });
+        const lossPriceSync = await syncLedgerLossItemsWithSalesPricePlansInTx(
+          tx,
+          {
+            storeId: before.storeId,
+            businessDate: new Date(before.closingDate),
+            dailyLedgerId: before.id,
+            productIds: priceChangedProductIds,
+            actorId: actor.user.id,
+            allowClosedEdit: actor.allowClosedEdit,
+          },
+        );
+
+        await applyInventoryAdjustmentReasonsInTx(
+          tx,
+          before.id,
+          new Map(
+            parsed.data.items.map((item) => [
+              item.productId,
+              item.adjustmentReason,
+            ]),
+          ),
+          actor.user.id,
+        );
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
@@ -462,13 +898,66 @@ export async function saveHqLedgerInventoryItems(
           return notFoundError();
         }
 
+        const fifoAffectedProductIds = getChangedInventoryProductIds(
+          before,
+          after,
+          parsed.data.acknowledgedCarryoverProductIds,
+        );
+        const invalidation = await invalidateCarryoverDependentsInTx(tx, {
+          sourceLedgerId: before.id,
+          productIds: fifoAffectedProductIds,
+          actorId: actor.user.id,
+          reason: parsed.data.reason,
+        });
+        invalidatedTargetLedgerIds = invalidation.targetLedgerIds;
+        const supersededCorrectionCount =
+          await supersedeActiveCorrectionsForTargetsInTx(tx, {
+            dailyLedgerId: before.id,
+            supersededById: actor.user.id,
+            targets: [
+              ...before.items.map((item) => ({
+                targetType: "INVENTORY_ROW" as const,
+                targetId: item.id,
+              })),
+              ...inventoryCalculatedMetricTargets(
+                before.id,
+                fifoAffectedProductIds.length > 0,
+              ),
+              ...priceCalculatedMetricTargets(
+                before.id,
+                lossPriceSync.changedProductIds.length > 0,
+              ),
+            ],
+          });
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before,
-          after,
+          before: {
+            ...effectiveBefore,
+            ledgerStatusAtEdit: before.status,
+            closedEdit: before.status === "HEADQUARTERS_CLOSED",
+            hqEditContext: {
+              closedLedgerEdit: before.status === "HEADQUARTERS_CLOSED",
+            },
+          },
+          after: {
+            ...after,
+            ledgerStatusAtEdit: before.status,
+            closedEdit: before.status === "HEADQUARTERS_CLOSED",
+            hqEditContext: {
+              closedLedgerEdit: after.status === "HEADQUARTERS_CLOSED",
+              supersededCorrectionCount,
+              fifoAffectedProductIds,
+              priceChangedProductIds,
+              lossPriceChangedProductIds: lossPriceSync.changedProductIds,
+              deletedProductIds: [...deletedProductIds],
+              acknowledgedCarryoverProductIds:
+                parsed.data.acknowledgedCarryoverProductIds,
+            },
+          },
           reason: parsed.data.reason,
         });
 
@@ -478,6 +967,7 @@ export async function saveHqLedgerInventoryItems(
 
     if (result.ok) {
       revalidateHqInventoryPaths(ledgerId);
+      invalidatedTargetLedgerIds.forEach(revalidateLedgerDetailPath);
     }
 
     return result;
@@ -498,7 +988,7 @@ export async function saveHqLedgerInventoryAdjustment(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqInventoryMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -509,12 +999,15 @@ export async function saveHqLedgerInventoryAdjustment(
     );
   }
 
+  let invalidatedTargetLedgerIds: string[] = [];
+
   try {
     const result = await db.$transaction<ActionResult<InventoryStepData>>(
       async (tx) => {
         const beforeResult = ensureTargetInventory(
           await getInventoryStepDataByLedgerIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeResult.ok) {
@@ -522,7 +1015,14 @@ export async function saveHqLedgerInventoryAdjustment(
         }
 
         const before = beforeResult.data;
+        const effectiveBefore = applyActiveInventoryCorrections(
+          before,
+          await getActiveCorrectionsForLedgerInTx(tx, ledgerId),
+        );
         const line = before.items.find(
+          (item) => item.productId === parsed.data.productId,
+        );
+        const effectiveLine = effectiveBefore.items.find(
           (item) => item.productId === parsed.data.productId,
         );
 
@@ -594,12 +1094,12 @@ export async function saveHqLedgerInventoryAdjustment(
           );
         }
 
-        const updated = await markEditableLedgerInTx(
-          tx,
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          actor.user.id,
-        );
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+        });
 
         if (!updated) {
           return await hqInventoryConflictError(
@@ -715,13 +1215,61 @@ export async function saveHqLedgerInventoryAdjustment(
           return notFoundError();
         }
 
+        const fifoAffectedProductIds =
+          line.currentQuantity !== adjustment.afterQuantity
+            ? [line.productId]
+            : [];
+        const invalidation = await invalidateCarryoverDependentsInTx(tx, {
+          sourceLedgerId: before.id,
+          productIds: fifoAffectedProductIds,
+          actorId: actor.user.id,
+          reason: parsed.data.reason,
+        });
+        invalidatedTargetLedgerIds = invalidation.targetLedgerIds;
+        const supersededCorrectionCount =
+          await supersedeActiveCorrectionsForTargetsInTx(tx, {
+            dailyLedgerId: before.id,
+            supersededById: actor.user.id,
+            targets: [
+              {
+                targetType: "INVENTORY_ROW",
+                targetId: line.id,
+              },
+              ...adjustmentCalculatedMetricTargets(
+                before.id,
+                fifoAffectedProductIds.length > 0,
+              ),
+            ],
+          });
+        const afterLine = after.items.find(
+          (item) => item.productId === line.productId,
+        );
+
         await writeAuditLog(tx, {
           action: "ledger.hq.inventory_adjustment.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before: line,
-          after: after.items.find((item) => item.productId === line.productId),
+          before: {
+            ...(effectiveLine ?? line),
+            ledgerStatusAtEdit: before.status,
+            closedEdit: before.status === "HEADQUARTERS_CLOSED",
+            hqEditContext: {
+              closedLedgerEdit: before.status === "HEADQUARTERS_CLOSED",
+            },
+          },
+          after: afterLine
+            ? {
+                ...afterLine,
+                ledgerStatusAtEdit: before.status,
+                closedEdit: before.status === "HEADQUARTERS_CLOSED",
+                hqEditContext: {
+                  closedLedgerEdit: after.status === "HEADQUARTERS_CLOSED",
+                  supersededCorrectionCount,
+                  fifoAffectedProductIds,
+                },
+              }
+            : null,
           reason: parsed.data.reason,
         });
 
@@ -731,6 +1279,7 @@ export async function saveHqLedgerInventoryAdjustment(
 
     if (result.ok) {
       revalidateHqInventoryPaths(ledgerId);
+      invalidatedTargetLedgerIds.forEach(revalidateLedgerDetailPath);
     }
 
     return result;

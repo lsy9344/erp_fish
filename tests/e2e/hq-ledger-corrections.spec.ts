@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 const STORE_ID = "store-story-4-3-corrections";
 const STORY_MARKER = "story-4-3-test";
 const PRODUCT_NAME = "스토리4-3 정정 광어";
+const LOSS_TYPE_NAME = "스토리4-3 정정 손실";
 
 test.beforeEach(async () => {
   await cleanupStoryFourThreeData();
@@ -122,7 +123,7 @@ async function seedClosedLedger() {
     },
   });
 
-  return { actorId, ledger, inventoryItem };
+  return { actorId, ledger, inventoryItem, product };
 }
 
 async function cleanupStoryFourThreeData() {
@@ -153,6 +154,9 @@ async function cleanupStoryFourThreeData() {
     await prisma.correctionRecord.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
+    await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerInventoryItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -170,9 +174,12 @@ async function cleanupStoryFourThreeData() {
   await prisma.product.deleteMany({
     where: { name: PRODUCT_NAME },
   });
+  await prisma.ledgerInputCode.deleteMany({
+    where: { group: "LOSS_TYPE", name: LOSS_TYPE_NAME },
+  });
 }
 
-test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값은 보존한다", async ({
+test("마스터는 활성 정정을 유효값으로 불러와 원본에 통합하고 이력을 보존한다", async ({
   page,
 }) => {
   const { actorId, ledger } = await seedClosedLedger();
@@ -197,9 +204,9 @@ test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값
     correctionPanel.getByRole("button", { name: "정정 기록 저장" }),
   ).toBeEnabled();
   await expect(correctionPanel.getByLabel("정정 대상")).toHaveValue("0");
-  await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "매출/결제" }).click();
 
   await replaceControlValue(correctionPanel.getByLabel("정정값"), "45000");
@@ -216,6 +223,9 @@ test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값
   await expect(metricArea).toContainText("정정 반영");
   await expect(metricArea).toContainText("₩10,000");
   await expect(metricArea).toContainText("₩45,000");
+  await expect(page.getByLabel("총매출", { exact: true })).toHaveValue(
+    "45,000",
+  );
 
   await expect
     .poll(async () => {
@@ -314,6 +324,171 @@ test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값
       previousAppliedValue: { kind: "money", value: 45000 },
       correctedValue: { kind: "money", value: 47000 },
       reason: "최종 집계 반영",
+    });
+
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+  await expect(salesPanel.getByLabel("총매출", { exact: true })).toHaveValue(
+    "47,000",
+  );
+  await replaceControlValue(
+    salesPanel.getByLabel("본사 수정 사유"),
+    "정정값 원본 통합",
+  );
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByRole("status").filter({ hasText: "저장됐습니다." }),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const [currentLedger, corrections] = await Promise.all([
+        prisma.dailyLedger.findUnique({
+          where: { id: ledger.id },
+          select: { totalSalesAmount: true, status: true, version: true },
+        }),
+        prisma.correctionRecord.findMany({
+          where: { dailyLedgerId: ledger.id },
+          select: {
+            supersededAt: true,
+            supersededById: true,
+            supersedeReason: true,
+          },
+        }),
+      ]);
+
+      return { currentLedger, corrections };
+    })
+    .toMatchObject({
+      currentLedger: {
+        totalSalesAmount: 47000,
+        status: "HEADQUARTERS_CLOSED",
+        version: ledger.version + 3,
+      },
+      corrections: [
+        {
+          supersededAt: expect.any(Date),
+          supersededById: actorId,
+          supersedeReason: "CLOSED_LEDGER_DIRECT_EDIT",
+        },
+        {
+          supersededAt: expect.any(Date),
+          supersededById: actorId,
+          supersedeReason: "CLOSED_LEDGER_DIRECT_EDIT",
+        },
+      ],
+    });
+
+  await page.reload();
+  await expect(correctionPanel).toContainText("CLOSED_LEDGER_DIRECT_EDIT");
+});
+
+test("활성 손실 금액 정정을 원본에 통합한 뒤 정정 이력으로 보존한다", async ({
+  page,
+}) => {
+  const { actorId, ledger, product } = await seedClosedLedger();
+  const lossType = await prisma.ledgerInputCode.create({
+    data: {
+      group: "LOSS_TYPE",
+      name: LOSS_TYPE_NAME,
+      displayOrder: 1,
+      updatedById: actorId,
+    },
+  });
+  const lossItem = await prisma.ledgerLossItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      ledgerInputCodeId: lossType.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 100,
+      lossTypeName: lossType.name,
+      quantity: 1,
+      recoveredAmount: 0,
+      amount: 100,
+      usedPlannedPrice: true,
+      reason: "정정 전 손실",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  const correction = await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "LOSS_ROW",
+      targetId: lossItem.id,
+      fieldKey: "amount",
+      originalValue: { kind: "money", value: 100 },
+      previousAppliedValue: { kind: "money", value: 100 },
+      correctedValue: { kind: "money", value: 450 },
+      reason: "손실 금액 정정",
+      createdById: actorId,
+    },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}?tab=losses`);
+
+  const lossPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "손실/폐기/떨이 입력" });
+  await expect(lossPanel).toBeVisible();
+  await replaceControlValue(
+    lossPanel.getByLabel("본사 수정 사유"),
+    "정정값 원본 통합",
+  );
+  await lossPanel.getByRole("button", { name: "저장" }).click();
+
+  await expect
+    .poll(async () => {
+      const [savedLoss, savedCorrection, audit] = await Promise.all([
+        prisma.ledgerLossItem.findUnique({
+          where: { id: lossItem.id },
+          select: { amount: true },
+        }),
+        prisma.correctionRecord.findUnique({
+          where: { id: correction.id },
+          select: {
+            supersededAt: true,
+            supersededById: true,
+            supersedeReason: true,
+          },
+        }),
+        prisma.auditLog.findFirst({
+          where: {
+            action: "ledger.hq.losses.saved",
+            targetType: "DailyLedger",
+            targetId: ledger.id,
+          },
+          orderBy: { createdAt: "desc" },
+          select: { before: true, after: true },
+        }),
+      ]);
+
+      return { savedLoss, savedCorrection, audit };
+    })
+    .toMatchObject({
+      savedLoss: { amount: 450 },
+      savedCorrection: {
+        supersededAt: expect.any(Date),
+        supersededById: actorId,
+        supersedeReason: "CLOSED_LEDGER_DIRECT_EDIT",
+      },
+      audit: {
+        before: {
+          ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+          closedEdit: true,
+          lossItems: [{ id: lossItem.id, amount: 450, quantity: 1 }],
+          hqEditContext: { closedLedgerEdit: true },
+        },
+        after: {
+          ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+          closedEdit: true,
+          lossItems: [{ id: lossItem.id, amount: 450, quantity: 1 }],
+          hqEditContext: { closedLedgerEdit: true },
+        },
+      },
     });
 });
 

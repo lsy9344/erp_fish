@@ -39,11 +39,10 @@ test("HQ ledger edit actions use ledgerId and headquarters authorization", () =>
   }
 
   assert.match(source, /requireLedgerHqEditAccess\(/);
+  assert.match(source, /hasLedgerClosedEditAccess\(/);
   assert.match(source, /ledgerId/);
-  assert.match(
-    source,
-    /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
-  );
+  assert.match(source, /isLedgerEditableByHeadquarters\(/);
+  assert.match(source, /updateHqLedgerMutationTokenInTx\(/);
   assert.match(source, /updatedById:\s*actor\.user\.id/);
   assert.match(source, /writeAuditLog\(/);
   assert.match(source, /ledger\.hq\.sales_payment\.updated/);
@@ -121,6 +120,87 @@ test("HQ ledger edit actions require and audit headquarters edit reasons", () =>
   );
 });
 
+test("HQ ledger audit snapshots keep closed-edit keys and apply active corrections before supersede", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+
+  assert.match(source, /ledgerStatusAtEdit,/);
+  assert.match(source, /closedEdit,/);
+  assert.match(
+    source,
+    /hqEditContext:\s*{[\s\S]*closedLedgerEdit:\s*closedEdit/,
+  );
+  assert.match(source, /getActiveCorrectionsForLedgerInTx\(/);
+  assert.match(source, /getLatestCorrectionValueMap\(activeCorrections\)/);
+  assert.match(source, /section === "sales"[\s\S]*PAYMENT_FIELD/);
+  assert.match(source, /section === "work"[\s\S]*LEDGER_FIELD/);
+  assert.match(source, /section === "expenses"[\s\S]*EXPENSE_ROW/);
+  assert.match(
+    source,
+    /action:\s*"ledger\.hq\.ecount_unit_price\.overridden"[\s\S]*before:\s*{[\s\S]*ledgerStatusAtEdit:\s*beforeLedger\.status,[\s\S]*closedEdit:\s*beforeLedger\.status === "HEADQUARTERS_CLOSED"[\s\S]*after:\s*{[\s\S]*ledgerStatusAtEdit:\s*beforeLedger\.status,[\s\S]*closedEdit:\s*beforeLedger\.status === "HEADQUARTERS_CLOSED"/,
+  );
+
+  for (const section of ["sales", "expenses", "work"]) {
+    const snapshotIndex = source.indexOf(
+      `getEffectiveHqLedgerAuditBeforeInTx(\n          tx,\n          beforeLedger,\n          "${section}",`,
+    );
+    const supersedeIndex = source.indexOf(
+      "await integrateHqDirectEditCorrectionsInTx",
+      snapshotIndex,
+    );
+
+    assert.ok(
+      snapshotIndex >= 0,
+      `${section} should create an effective snapshot`,
+    );
+    assert.ok(
+      supersedeIndex > snapshotIndex,
+      `${section} should snapshot active corrections before superseding them`,
+    );
+  }
+});
+
+test("HQ inventory and loss audits snapshot active corrections with closed-edit metadata", () => {
+  const inventorySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  const lossSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+
+  for (const source of [inventorySource, lossSource]) {
+    const snapshotIndex = source.indexOf("effectiveBefore");
+    const supersedeIndex = source.indexOf(
+      "await supersedeActiveCorrectionsForTargetsInTx",
+      snapshotIndex,
+    );
+
+    assert.match(source, /getActiveCorrectionsForLedgerInTx\(/);
+    assert.match(source, /ledgerStatusAtEdit:\s*before\.status/);
+    assert.match(
+      source,
+      /closedEdit:\s*before\.status === "HEADQUARTERS_CLOSED"/,
+    );
+    assert.ok(
+      snapshotIndex >= 0 && supersedeIndex > snapshotIndex,
+      "effective audit snapshot must be built before corrections are superseded",
+    );
+  }
+
+  assert.match(inventorySource, /applyActiveInventoryCorrections\(/);
+  assert.match(lossSource, /applyActiveLossCorrectionsToAuditSnapshot\(/);
+});
+
 test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
   const inventorySource = readProjectFile(
     "src",
@@ -138,11 +218,10 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
   for (const source of [inventorySource, lossesSource]) {
     assert.match(source, /"use server"/);
     assert.match(source, /requireLedgerHqEditAccess\(/);
+    assert.match(source, /hasLedgerClosedEditAccess\(/);
     assert.match(source, /ledgerId/);
-    assert.match(
-      source,
-      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
-    );
+    assert.match(source, /isLedgerEditableByHeadquarters\(/);
+    assert.match(source, /updateHqLedgerMutationTokenInTx\(/);
     assert.match(source, /updatedById:\s*actor\.user\.id/);
     assert.match(source, /writeAuditLog\(/);
     assert.match(source, /revalidateLedgerDetailPath\(ledgerId\)/);
@@ -162,7 +241,19 @@ test("HQ inventory and loss actions use ledgerId and HQ audit labels", () => {
   assert.match(lossesSource, /ledger\.hq\.losses\.saved/);
 });
 
-test("HQ original edit actions reject closed or holiday ledgers before writing audit logs", () => {
+test("HQ original edit actions capability-gate closed ledgers and keep holiday blocked", () => {
+  const statusPolicy = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "status-policy.ts",
+  );
+  const mutationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-mutation.ts",
+  );
   const sources = [
     [
       "ledger",
@@ -189,7 +280,7 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
     );
     assert.match(
       source,
-      /isLedgerEditable/,
+      /isLedgerEditableByHeadquarters/,
       `${label} should use the shared ledger status policy for editability`,
     );
     assert.match(
@@ -204,12 +295,19 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
       ),
       `${label} should return closed/not-editable errors before audit writes`,
     );
-    assert.match(
-      source,
-      /status:\s*{\s*in:\s*\[\s*\.\.\.editableLedgerStatuses\s*\]/s,
-      `${label} should condition writes on editable statuses`,
-    );
+    assert.match(source, /hasLedgerClosedEditAccess\(/);
+    assert.match(source, /updateHqLedgerMutationTokenInTx\(/);
   }
+
+  assert.match(statusPolicy, /HEADQUARTERS_CLOSED/);
+  assert.doesNotMatch(
+    statusPolicy.match(
+      /export const editableLedgerStatuses[\s\S]*?as const;/,
+    )?.[0] ?? "",
+    /HEADQUARTERS_CLOSED/,
+  );
+  assert.match(mutationSource, /getHeadquartersEditableLedgerStatuses/);
+  assert.match(mutationSource, /version:\s*{\s*increment:\s*1\s*}/);
 });
 
 test("HQ detail page renders editable sections with HQ actions", () => {
@@ -297,6 +395,201 @@ test("HQ detail page enables headquarters edit reason input on every editable ta
     6,
     "each HQ editable tab should require a headquarters edit reason",
   );
+});
+
+test("closed-ledger master editing stays capability-gated across every input tab", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+  const clientFiles = [
+    [
+      "src",
+      "features",
+      "ledger",
+      "components",
+      "sales-payment-step-client.tsx",
+    ],
+    ["src", "features", "ledger", "components", "expense-step-client.tsx"],
+    ["src", "features", "ledger", "components", "purchase-step-client.tsx"],
+    ["src", "features", "ledger", "components", "workstep-client.tsx"],
+    ["src", "features", "inventory", "components", "inventory-step-client.tsx"],
+    ["src", "features", "losses", "components", "loss-step-client.tsx"],
+  ];
+
+  assert.match(pageSource, /PermissionAction\.LEDGER_CLOSED_EDIT/);
+  assert.match(
+    pageSource,
+    /ledger\.status\s*===\s*"HEADQUARTERS_CLOSED"[\s\S]*canEditLedger[\s\S]*canEditClosedLedger/,
+  );
+  assert.equal(
+    pageSource.match(/allowHeadquartersClosedEdit=\{/g)?.length,
+    6,
+    "all six business tabs must receive the explicit closed-edit capability",
+  );
+  assert.match(pageSource, /마감 상태 유지 · 마스터 수정/);
+  assert.match(pageSource, /현재 탭 정정/);
+  assert.match(pageSource, /superseded\s+이력으로 보존/);
+
+  for (const segments of clientFiles) {
+    const source = readProjectFile(...segments);
+
+    assert.match(source, /allowHeadquartersClosedEdit\?:\s*boolean/);
+    assert.match(source, /allowHeadquartersClosedEdit\s*=\s*false/);
+    assert.match(
+      source,
+      /allowHeadquartersClosedEdit[\s\S]*status\s*===\s*"HEADQUARTERS_CLOSED"/,
+    );
+  }
+
+  const inventorySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  assert.match(inventorySource, /allowClosedLedgerSalesPriceEdit\?:\s*boolean/);
+  assert.match(
+    inventorySource,
+    /canEditSalesPrice\s*=\s*[\s\S]*isStoreManagerMode\s*\|\|\s*allowClosedLedgerSalesPriceEdit/,
+  );
+  assert.match(
+    inventorySource,
+    /acknowledgedCarryoverProductIds:\s*Array\.from/,
+  );
+  assert.match(inventorySource, /새 이월 근거 확인 후 재계산/);
+});
+
+test("closed inventory edits update exact-date prices and explicitly resolve carryover rechecks", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  const schemaSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "schemas.ts",
+  );
+  const priceSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  const lossSyncSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "planned-price-sync.ts",
+  );
+  const mutationSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-mutation.ts",
+  );
+
+  assert.match(schemaSource, /plannedUnitPrice/);
+  assert.match(schemaSource, /acknowledgedCarryoverProductIds/);
+  assert.match(
+    priceSource,
+    /export async function upsertInventorySalesPricePlansInTx/,
+  );
+  assert.match(actionSource, /upsertInventorySalesPricePlansInTx\(tx/);
+  assert.match(actionSource, /businessDate:\s*new Date\(before\.closingDate\)/);
+  assert.match(
+    actionSource,
+    /syncLedgerLossItemsWithSalesPricePlansInTx\(\s*tx/,
+  );
+  assert.match(actionSource, /allowClosedEdit:\s*actor\.allowClosedEdit/);
+  assert.match(actionSource, /resolveAcknowledgedCarryoversInTx/);
+  assert.match(actionSource, /CARRYOVER_RECHECK_REQUIRED/);
+  assert.match(actionSource, /PREVIOUS_CARRYOVER/);
+  assert.match(
+    actionSource,
+    /const currentQuantity\s*=\s*inputItem\?\.currentQuantity\s*\?\?\s*item\.currentQuantity/,
+  );
+  assert.match(actionSource, /invalidateCarryoverDependentsInTx/);
+  assert.match(actionSource, /supersedeActiveCorrectionsForTargetsInTx/);
+  assert.match(actionSource, /applyInventoryAdjustmentReasonsInTx/);
+  assert.match(
+    actionSource,
+    /getInventorySaveAdjustmentErrors\([\s\S]*item\.adjustmentReason/,
+  );
+  assert.match(
+    actionSource,
+    /adjustmentCalculatedMetricTargets[\s\S]*"grossMarginRate"[\s\S]*"salesDifference"/,
+  );
+  assert.match(lossSyncSource, /changedProductIds/);
+  assert.match(
+    mutationSource,
+    /carryoverStatus:\s*"CARRYOVER_RECHECK_REQUIRED"/,
+  );
+  assert.match(mutationSource, /version:\s*{\s*increment:\s*1\s*}/);
+});
+
+test("carryover invalidation locks target ledgers before reloading dependents and verifies writes", () => {
+  const source = readProjectFile("src", "features", "ledger", "hq-mutation.ts");
+  const lockIndex = source.indexOf("FOR UPDATE OF ledger");
+  const dependentReloadIndex = source.indexOf(
+    "const dependentItems = await tx.ledgerInventoryItem.findMany",
+  );
+
+  assert.ok(lockIndex >= 0, "target ledgers must be row-locked");
+  assert.ok(
+    dependentReloadIndex > lockIndex,
+    "dependent inventory rows must be loaded after the target ledger lock",
+  );
+  assert.match(source, /ORDER BY ledger\."id"[\s\S]*FOR UPDATE OF ledger/);
+  assert.match(source, /dailyLedgerId:\s*{\s*in:\s*lockedTargetLedgerIds\s*}/);
+  assert.match(source, /const itemsToInvalidate = dependentItems\.filter/);
+  assert.doesNotMatch(
+    source.slice(0, source.indexOf("const dependentItems")),
+    /carryoverStatus.*CARRYOVER_RECHECK_REQUIRED/,
+    "already-invalid rows must remain part of the lock set",
+  );
+  assert.match(
+    source,
+    /inventoryUpdate\.count !== itemsToInvalidate\.length[\s\S]*CARRYOVER_INVALIDATION_CONFLICT/,
+  );
+  assert.match(
+    source,
+    /detailUpdate\.count !== carryoverDetails\.length[\s\S]*CARRYOVER_INVALIDATION_CONFLICT/,
+  );
+  assert.match(
+    source,
+    /ledgerUpdate\.count !== targetLedgerIds\.length[\s\S]*CARRYOVER_INVALIDATION_CONFLICT/,
+  );
+});
+
+test("closed edit forms initialize supported fields from active correction values", () => {
+  const pageSource = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(pageSource, /applyActiveCorrectionsToLedgerEditData/);
+  assert.match(pageSource, /applyActiveCorrectionsToInventoryEditData/);
+  assert.match(pageSource, /applyActiveCorrectionsToLossEditData/);
+  assert.match(pageSource, /initialLedger={editLedger}/);
+  assert.match(pageSource, /initialData={editInventoryData}/);
+  assert.match(pageSource, /initialData={editLossData}/);
+  assert.match(pageSource, /targetType:\s*"PAYMENT_FIELD"/);
+  assert.match(pageSource, /targetType:\s*"EXPENSE_ROW"/);
+  assert.match(pageSource, /targetType:\s*"INVENTORY_ROW"/);
+  assert.match(pageSource, /targetType:\s*"LOSS_ROW"/);
 });
 
 test("shared entry clients can accept injected HQ save actions", () => {
@@ -1073,7 +1366,7 @@ test("HQ close dialog extracts updatedAt from synchronized snapshots", () => {
   assert.match(source, /ledgerUpdatedAt:\s*preflight\.ledgerUpdatedAt/);
 });
 
-test("HQ edit actions block HEADQUARTERS_CLOSED in all editable paths", () => {
+test("HQ edit actions route closed editability through the capability-aware policy", () => {
   const ledgerSource = readProjectFile(
     "src",
     "features",
@@ -1095,10 +1388,7 @@ test("HQ edit actions block HEADQUARTERS_CLOSED in all editable paths", () => {
 
   for (const source of [ledgerSource, inventorySource, lossesSource]) {
     assert.match(source, /getLedgerEditBlockReason/);
-    assert.match(
-      source,
-      /notEditableError\([^)]*\)/,
-      "closed branch should be routed through notEditableError",
-    );
+    assert.match(source, /isLedgerEditableByHeadquarters/);
+    assert.match(source, /hasLedgerClosedEditAccess/);
   }
 });

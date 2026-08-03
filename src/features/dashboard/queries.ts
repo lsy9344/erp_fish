@@ -1,5 +1,8 @@
 import { StoreAccessMode } from "../../../generated/prisma/index.js";
-import type { DailyLedgerStatus } from "../../../generated/prisma/index.js";
+import type {
+  DailyLedgerStatus,
+  InventoryCarryoverStatus,
+} from "../../../generated/prisma/index.js";
 import {
   applyCorrectionValuesToLedgerReviewInput,
   calculateExpenseTotal,
@@ -34,6 +37,7 @@ import type {
   DashboardDensity,
   DashboardEmptyStateReason,
   DashboardFilterMode,
+  DashboardInventoryAmount,
   DashboardLedgerStatus,
   DashboardMarginDisplay,
   DashboardSortMode,
@@ -170,6 +174,7 @@ type DashboardLedgerRecord = {
     quantity: number | null;
     unitPrice: number;
     inventoryAmount: number | null;
+    carryoverStatus: InventoryCarryoverStatus;
     fifoLots?: {
       sourceType: string;
       consumedAmount: number;
@@ -410,6 +415,7 @@ export async function getHqDashboardRows({
                 quantity: true,
                 unitPrice: true,
                 inventoryAmount: true,
+                carryoverStatus: true,
                 fifoLots: {
                   select: {
                     sourceType: true,
@@ -642,6 +648,12 @@ function toDashboardRow(
       analysisSalesAmount: dataInsufficient(
         "장부 입력 전이라 분석 매출 데이터가 없습니다.",
       ),
+      inventoryAmount: getDashboardInventoryAmountMetric({
+        status: null,
+        calculatedMetric: dataInsufficient(
+          "장부 입력 전이라 재고금액 데이터가 없습니다.",
+        ),
+      }),
       grossMarginRate: metrics.grossMarginRate,
       marginDisplay: buildMarginDisplay(
         thresholdSettings,
@@ -695,6 +707,11 @@ function toDashboardRow(
     lossItems: correctionOverlay.lossItems,
     plannedSalesItems,
   });
+  const hasCarryoverRecheck = ledger.ledgerInventoryItems.some(
+    (item) => item.carryoverStatus === "CARRYOVER_RECHECK_REQUIRED",
+  );
+  const hasActiveInventoryQuantityCorrection =
+    hasInventoryQuantityCorrection(corrections);
   const missingItems = getLedgerReviewMissingItems({
     storeId: store.id,
     closingDate: ledger.closingDate.toISOString(),
@@ -735,6 +752,7 @@ function toDashboardRow(
           evaluateInventoryLossAnomalySignals,
           correctionState,
           missingItems,
+          hasCarryoverRecheck,
         });
 
   return {
@@ -749,6 +767,12 @@ function toDashboardRow(
     carryoverSalesAmount: reviewSummary.carryoverSales,
     operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
+    inventoryAmount: getDashboardInventoryAmountMetric({
+      status: ledger.status,
+      calculatedMetric: reviewSummary.inventoryAmount,
+      hasCarryoverRecheck,
+      hasActiveInventoryQuantityCorrection,
+    }),
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -829,6 +853,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
             quantity: true,
             unitPrice: true,
             inventoryAmount: true,
+            carryoverStatus: true,
             fifoLots: {
               select: {
                 sourceType: true,
@@ -914,6 +939,9 @@ export async function getHqLedgerDetail(ledgerId: string) {
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
   });
+  const hasCarryoverRecheck = ledger.ledgerInventoryItems.some(
+    (item) => item.carryoverStatus === "CARRYOVER_RECHECK_REQUIRED",
+  );
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.store.id,
     closingDate: ledger.closingDate.toISOString(),
@@ -954,6 +982,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
           evaluateInventoryLossAnomalySignals,
           correctionState,
           missingItems,
+          hasCarryoverRecheck,
         });
 
   return {
@@ -968,6 +997,13 @@ export async function getHqLedgerDetail(ledgerId: string) {
     carryoverSalesAmount: correctedReviewSummary.carryoverSales,
     operatingSalesAmount: correctedReviewSummary.operatingSales,
     analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
+    inventoryAmount: getDashboardInventoryAmountMetric({
+      status: ledger.status,
+      calculatedMetric: correctedReviewSummary.inventoryAmount,
+      hasCarryoverRecheck,
+      hasActiveInventoryQuantityCorrection:
+        hasInventoryQuantityCorrection(corrections),
+    }),
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -1000,6 +1036,7 @@ export function getDashboardSignals({
   evaluateInventoryLossAnomalySignals,
   correctionState = emptyCorrectionState(),
   missingItems = [],
+  hasCarryoverRecheck = false,
 }: {
   thresholdSettings: AnomalyThresholdSignalSettings | null;
   revenueCurrent: DashboardRevenueCurrent;
@@ -1008,6 +1045,7 @@ export function getDashboardSignals({
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
   correctionState?: HqDashboardRow["correctionState"];
   missingItems?: LedgerReviewMissingItem[];
+  hasCarryoverRecheck?: boolean;
 }) {
   const missingSignals = missingItems
     .filter((item) => item.status === "missing")
@@ -1050,6 +1088,16 @@ export function getDashboardSignals({
         },
       ]
     : [];
+  const carryoverSignals = hasCarryoverRecheck
+    ? [
+        {
+          id: "carryover-recheck-required",
+          label: "이월 재확인 필요",
+          severity: "info" as const,
+          detail: "과거 장부 변경으로 재고 이월 기준을 다시 확인해야 합니다.",
+        },
+      ]
+    : [];
 
   return [
     ...missingSignals,
@@ -1057,7 +1105,65 @@ export function getDashboardSignals({
     ...revenueSignals,
     ...inventoryLossSignals,
     ...correctionSignals,
+    ...carryoverSignals,
   ];
+}
+
+export function getDashboardInventoryAmountMetric({
+  status,
+  calculatedMetric,
+  hasCarryoverRecheck = false,
+  hasActiveInventoryQuantityCorrection = false,
+}: {
+  status: DailyLedgerStatus | null;
+  calculatedMetric: LedgerReviewMetric;
+  hasCarryoverRecheck?: boolean;
+  hasActiveInventoryQuantityCorrection?: boolean;
+}): DashboardInventoryAmount {
+  if (status === null) {
+    return dashboardInventoryUnavailable("데이터 부족");
+  }
+
+  if (status === "HOLIDAY") {
+    return dashboardInventoryUnavailable("해당 없음");
+  }
+
+  if (status === "IN_PROGRESS" || status === "IN_REVIEW") {
+    return dashboardInventoryUnavailable("마감 전");
+  }
+
+  if (hasCarryoverRecheck || hasActiveInventoryQuantityCorrection) {
+    return dashboardInventoryUnavailable(
+      "기준 재확인 필요",
+      "policy-unconfirmed",
+    );
+  }
+
+  return calculatedMetric;
+}
+
+function dashboardInventoryUnavailable(
+  label: string,
+  status: "data-insufficient" | "policy-unconfirmed" = "data-insufficient",
+): DashboardInventoryAmount {
+  return {
+    value: null,
+    status,
+    label,
+    unavailableReason:
+      status === "policy-unconfirmed" ? "계산 기준 확인 필요" : "계산 불가",
+  };
+}
+
+function hasInventoryQuantityCorrection(
+  corrections?: Map<string, CorrectionAppliedValue>,
+) {
+  return [...(corrections?.values() ?? [])].some(
+    (correction) =>
+      correction.targetType === "INVENTORY_ROW" &&
+      (correction.fieldKey === "currentQuantity" ||
+        correction.fieldKey === "quantity"),
+  );
 }
 
 function getMetricStatusSignals(revenueCurrent: DashboardRevenueCurrent) {

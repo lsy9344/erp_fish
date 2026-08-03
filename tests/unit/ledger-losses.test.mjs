@@ -286,10 +286,8 @@ test("loss quantity draft parser accepts only two-decimal DB-safe input", async 
 
 test("headquarters and store loss quantity validators accept 1.25 then 1.26", async () => {
   const validationPath = assertProjectFile("src", "lib", "validation.ts");
-  const {
-    isNonNegativeTwoDecimalInRange,
-    parseRequiredNonNegativeTwoDecimal,
-  } = await import(pathToFileURL(validationPath).href);
+  const { isNonNegativeTwoDecimalInRange, parseRequiredNonNegativeTwoDecimal } =
+    await import(pathToFileURL(validationPath).href);
 
   assert.equal(isNonNegativeTwoDecimalInRange(1.25), true);
   assert.equal(isNonNegativeTwoDecimalInRange(1.26), true);
@@ -809,7 +807,8 @@ test("ledger loss query action and UI contracts are wired", () => {
     "losses",
     "planned-price-sync.ts",
   );
-  assert.match(plannedPriceSyncSource, /editableLedgerStatuses/);
+  assert.match(plannedPriceSyncSource, /getHeadquartersEditableLedgerStatuses/);
+  assert.match(plannedPriceSyncSource, /allowClosedEdit\?:\s*boolean/);
   assert.match(plannedPriceSyncSource, /status:\s*\{\s*in:\s*\[/);
 });
 

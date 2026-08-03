@@ -163,6 +163,13 @@ export const correctionRecordSchema = z
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, "장부를 확인해 주세요.")),
+    expectedUpdatedAt: z
+      .string({
+        required_error: "장부 수정 기준 시각을 확인해 주세요.",
+        invalid_type_error: "장부 수정 기준 시각을 확인해 주세요.",
+      })
+      .datetime({ message: "장부 수정 기준 시각을 확인해 주세요." })
+      .transform((value) => new Date(value)),
     targetType: z.enum(correctionTargetTypes, {
       errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
     }),

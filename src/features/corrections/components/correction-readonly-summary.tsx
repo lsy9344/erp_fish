@@ -51,6 +51,7 @@ export function CorrectionReadonlySummary({
               <TableHead>정정 반영값</TableHead>
               <TableHead>사유</TableHead>
               <TableHead>작성</TableHead>
+              <TableHead>처리 상태</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -70,6 +71,22 @@ export function CorrectionReadonlySummary({
                 <TableCell>
                   {dateTimeFormatter.format(new Date(record.createdAt))} ·{" "}
                   {record.createdBy.name ?? record.createdBy.email ?? "본사"}
+                </TableCell>
+                <TableCell>
+                  {record.supersededAt ? (
+                    <span className="text-muted-foreground">
+                      {dateTimeFormatter.format(new Date(record.supersededAt))}
+                      {" · "}
+                      {record.supersededBy?.name ??
+                        record.supersededBy?.email ??
+                        "본사"}
+                      {record.supersedeReason
+                        ? ` · ${record.supersedeReason}`
+                        : null}
+                    </span>
+                  ) : (
+                    "현재 반영"
+                  )}
                 </TableCell>
               </TableRow>
             ))}

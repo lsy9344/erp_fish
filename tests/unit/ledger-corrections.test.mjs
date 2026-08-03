@@ -169,7 +169,9 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /reason:\s*parsed\.data\.reason/);
   assert.match(actions, /revalidateLedgerDetailPath\(ledgerId\)/);
   assert.match(actions, /revalidateDashboardAndReports\(\)/);
-  assert.doesNotMatch(actions, /tx\.dailyLedger\.update/);
+  assert.match(actions, /tx\.dailyLedger\.updateMany/);
+  assert.match(actions, /updatedAt:\s*parsed\.data\.expectedUpdatedAt/);
+  assert.match(actions, /version:\s*\{\s*increment:\s*1\s*\}/);
   assert.doesNotMatch(actions, /tx\.ledgerExpense\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerInventoryItem\.update/);
@@ -223,6 +225,7 @@ test("correction schema rejects new purchase row corrections until report applic
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "PURCHASE_ROW",
     targetId: "purchase-1",
     fieldKey: "quantity",
@@ -251,6 +254,7 @@ test("correction schema rejects inventory amount corrections until all calculati
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "inventoryAmount",
@@ -278,6 +282,7 @@ test("correction schema accepts one-decimal inventory quantities and rejects fin
   );
   const input = {
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "currentQuantity",
@@ -316,6 +321,7 @@ test("correction schema accepts two-decimal loss quantities and rejects finer pr
 
   const input = {
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "LOSS_ROW",
     targetId: "loss-1",
     fieldKey: "quantity",
@@ -352,6 +358,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
   );
   const workerInput = {
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "LEDGER_FIELD",
     targetId: "ledger-1",
     fieldKey: "workerCount",
@@ -389,6 +396,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
 
   const fractionalMoney = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
+    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
     targetType: "PAYMENT_FIELD",
     targetId: "ledger-1",
     fieldKey: "cashAmount",

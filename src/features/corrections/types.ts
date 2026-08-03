@@ -32,6 +32,12 @@ export type CorrectionRecordListItem = {
     name: string | null;
     email: string | null;
   };
+  supersededAt: string | null;
+  supersededBy: {
+    name: string | null;
+    email: string | null;
+  } | null;
+  supersedeReason: string | null;
 };
 
 export type CorrectionAppliedValue = {

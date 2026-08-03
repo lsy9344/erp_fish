@@ -16,6 +16,7 @@ const SEED_HQ_PASSWORD_MIN_LENGTH = 12;
 const ALL_PERMISSION_ACTIONS = [
   PermissionAction.LEDGER_CREATE,
   PermissionAction.LEDGER_EDIT,
+  PermissionAction.LEDGER_CLOSED_EDIT,
   PermissionAction.LEDGER_HQ_CLOSE,
   PermissionAction.CORRECTION_CREATE,
   PermissionAction.UPLOAD_PREVIEW,
@@ -41,6 +42,7 @@ const SYSTEM_PERMISSION_PROFILES = [
     storeAccessMode: StoreAccessMode.ALL_STORES,
     actions: [
       PermissionAction.LEDGER_EDIT,
+      PermissionAction.LEDGER_CLOSED_EDIT,
       PermissionAction.LEDGER_HQ_CLOSE,
       PermissionAction.CORRECTION_CREATE,
       PermissionAction.REPORT_VIEW,

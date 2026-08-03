@@ -197,6 +197,25 @@ export async function requireLedgerHqEditAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
 }
 
+export async function hasLedgerClosedEditAccess(userId: string) {
+  const [canEditLedger, canEditClosedLedger] = await Promise.all([
+    hasActionPermission(userId, PermissionAction.LEDGER_EDIT),
+    hasActionPermission(userId, PermissionAction.LEDGER_CLOSED_EDIT),
+  ]);
+
+  return canEditLedger && canEditClosedLedger;
+}
+
+export async function requireLedgerClosedEditAccess() {
+  const currentUser = await requireHeadquartersUser();
+
+  if (!(await hasLedgerClosedEditAccess(currentUser.id))) {
+    redirect("/app/unauthorized");
+  }
+
+  return currentUser;
+}
+
 // WO(2026-06-24): 이카운트 출고/입고 업로드는 본사 전용. preview는 UPLOAD_PREVIEW,
 // commit/void는 UPLOAD_COMMIT 권한으로 분리한다.
 export async function requireEcountUploadPreviewAccess() {

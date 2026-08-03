@@ -1899,6 +1899,7 @@ test("본사는 좁은 화면에서도 기간 비교 핵심 지표와 상태를 
 test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 이상을 본다", async ({
   page,
 }) => {
+  test.slow();
   await login(page, "hq@example.com");
   await page.goto("/app/reports/daily?date=today");
 

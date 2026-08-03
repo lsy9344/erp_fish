@@ -11,6 +11,7 @@ import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
+import type { CorrectionAppliedValue } from "~/features/corrections/types";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -117,6 +118,10 @@ type InventoryStepClientProps = {
   ledgerLabel?: string;
   showStepNavigation?: boolean;
   hqEditReasonRequired?: boolean;
+  allowHeadquartersClosedEdit?: boolean;
+  allowClosedLedgerSalesPriceEdit?: boolean;
+  allowHeadquartersCarryoverAcknowledgement?: boolean;
+  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
 };
 
 type InventoryDisplayData = InventoryStepData | StoreManagerInventoryStepData;
@@ -359,6 +364,9 @@ export function InventoryStepClient({
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
   hqEditReasonRequired = false,
+  allowHeadquartersClosedEdit = false,
+  allowClosedLedgerSalesPriceEdit = false,
+  allowHeadquartersCarryoverAcknowledgement = false,
 }: InventoryStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const manualProductSelectRef = useRef<HTMLSelectElement>(null);
@@ -401,6 +409,13 @@ export function InventoryStepClient({
   const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // 본사 원본 편집에서 삭제를 명시한 기존 재고 행. 저장 전 화면에서 제거하고
+  // 서버에는 productId 계약으로 전달해 같은 장부의 기존 행만 삭제한다.
+  const [deletedProductIds, setDeletedProductIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [acknowledgedCarryoverProductIds, setAcknowledgedCarryoverProductIds] =
+    useState<ReadonlySet<string>>(() => new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [saveReceipt, setSaveReceipt] = useState<
@@ -449,7 +464,9 @@ export function InventoryStepClient({
     (data.carryover.status === "manual"
       ? carryoverManualMessage
       : carryoverLoadedMessage);
-  const isOriginalEditBlocked = isLedgerReadOnly(data.status);
+  const isOriginalEditBlocked =
+    isLedgerReadOnly(data.status) &&
+    !(allowHeadquartersClosedEdit && data.status === "HEADQUARTERS_CLOSED");
   const isClosed = isOriginalEditBlocked;
   const originalEditBlockedMessage = getLedgerEditBlockReason(
     data.status,
@@ -462,13 +479,17 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   const isStoreManagerMode = !hqEditReasonRequired;
+  const canEditSalesPrice =
+    isStoreManagerMode || allowClosedLedgerSalesPriceEdit;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
   // WO-03(2026-06-28): 미입력 필수 수량은 "사용자가 값을 바꾼 상태(dirty)"가 아니라
   // "저장 전에 막아야 하는 validation 상태"다. 둘을 분리한다. 예전엔 이걸 dirty에 섞어
   // 진입 직후(아무것도 안 바꾼 화면)에도 미저장 경고가 떴다(false positive).
   // 필수 수량 미입력은 saveCurrentDraft의 validateRequiredCurrentQuantities로 막고,
   // "다음 단계로" 버튼은 저장 성공 후에만 보이므로 그 경로에서도 이미 검증을 통과한다.
-  const isDirty = !areInventoryLinesEqual(items, toLineState(data));
+  const isDirty =
+    !areInventoryLinesEqual(items, toLineState(data)) ||
+    acknowledgedCarryoverProductIds.size > 0;
   const previousInitialDataRef = useRef(initialData);
 
   useEffect(() => {
@@ -480,6 +501,7 @@ export function InventoryStepClient({
     setItems((current) =>
       areInventoryLinesEqual(current, previousItems) ? nextItems : current,
     );
+    setAcknowledgedCarryoverProductIds(new Set());
     previousInitialDataRef.current = initialData;
   }, [initialData]);
 
@@ -686,7 +708,7 @@ export function InventoryStepClient({
   }
 
   function validateRequiredPlannedUnitPrices() {
-    if (!isStoreManagerMode) {
+    if (!canEditSalesPrice) {
       return true;
     }
 
@@ -857,7 +879,7 @@ export function InventoryStepClient({
           ? storeQuantityInput
           : quantityInput,
         quantity: isStoreManagerMode ? storeQuantityInput : quantityInput,
-        ...(isStoreManagerMode
+        ...(canEditSalesPrice
           ? {
               plannedUnitPrice: toRawKrwInputValue(
                 plannedUnitPriceRefs.current[item.productId]?.value ??
@@ -904,6 +926,16 @@ export function InventoryStepClient({
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
         items: submittedItems,
+        ...(hqEditReasonRequired && deletedProductIds.size > 0
+          ? { deletedProductIds: Array.from(deletedProductIds) }
+          : {}),
+        ...(allowHeadquartersCarryoverAcknowledgement
+          ? {
+              acknowledgedCarryoverProductIds: Array.from(
+                acknowledgedCarryoverProductIds,
+              ),
+            }
+          : {}),
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -934,6 +966,8 @@ export function InventoryStepClient({
       setData(result.data);
       setItems(toLineState(result.data));
       setAddedManualIds(new Set());
+      setDeletedProductIds(new Set());
+      setAcknowledgedCarryoverProductIds(new Set());
       pendingFocusTargetRef.current = null;
       pendingFocusOriginRef.current = null;
       notifyLedgerUpdated(result.data);
@@ -1072,6 +1106,40 @@ export function InventoryStepClient({
     delete manualUnitPriceRefs.current[productId];
     delete plannedUnitPriceRefs.current[productId];
     delete reasonRefs.current[productId];
+  }
+
+  function handleRemoveInventoryItem(item: InventoryLineState) {
+    if (addedManualIds.has(item.productId)) {
+      handleRemoveManualProduct(item.productId);
+      return;
+    }
+
+    if (!hqEditReasonRequired) {
+      return;
+    }
+
+    setDeletedProductIds((current) => {
+      const next = new Set(current);
+
+      // synthetic seed 행(id === productId)은 아직 원본 행이 아니므로 서버 삭제
+      // 목록에 넣지 않는다. 화면에서만 제거하면 일반 저장 입력에서도 제외된다.
+      if (item.id !== item.productId) {
+        next.add(item.productId);
+      }
+
+      return next;
+    });
+    setItems((current) =>
+      current.filter((candidate) => candidate.productId !== item.productId),
+    );
+    setFieldErrors({});
+    setAdjustmentErrors({});
+    setFormError(null);
+    clearRecentlySavedProduct(item.productId);
+    delete currentQuantityRefs.current[item.productId];
+    delete manualUnitPriceRefs.current[item.productId];
+    delete plannedUnitPriceRefs.current[item.productId];
+    delete reasonRefs.current[item.productId];
   }
 
   function updateAdjustmentReason(productId: string, value: string) {
@@ -2215,14 +2283,51 @@ export function InventoryStepClient({
                       })
                     : null}
                   {sourceBadges.map(renderBadgeWithTooltip)}
+                  {allowHeadquartersCarryoverAcknowledgement &&
+                  item.carryoverStatus === "CARRYOVER_RECHECK_REQUIRED" ? (
+                    <label className="flex min-h-9 items-center gap-2 rounded-md border border-orange-500/60 px-2 text-xs font-medium">
+                      <input
+                        type="checkbox"
+                        checked={acknowledgedCarryoverProductIds.has(
+                          item.productId,
+                        )}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setAcknowledgedCarryoverProductIds((current) => {
+                            const next = new Set(current);
+
+                            if (checked) {
+                              next.add(item.productId);
+                            } else {
+                              next.delete(item.productId);
+                            }
+
+                            return next;
+                          });
+                        }}
+                        disabled={
+                          isSaving || isClosed || isAdjustmentSavePending
+                        }
+                        className="size-4 accent-current"
+                      />
+                      새 이월 근거 확인 후 재계산
+                    </label>
+                  ) : null}
                 </div>
-                {addedManualIds.has(item.productId) ? (
+                {addedManualIds.has(item.productId) ||
+                (hqEditReasonRequired &&
+                  !isClosed &&
+                  item.id !== item.productId) ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`${item.productName} 추가 행 제거`}
-                    onClick={() => handleRemoveManualProduct(item.productId)}
+                    aria-label={
+                      addedManualIds.has(item.productId)
+                        ? `${item.productName} 추가 행 제거`
+                        : `${item.productName} 재고 행 제거`
+                    }
+                    onClick={() => handleRemoveInventoryItem(item)}
                     disabled={isSaving || isAdjustmentSavePending}
                     className="ml-auto h-9 w-9"
                   >
@@ -2374,7 +2479,7 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
-                {isStoreManagerMode ? (
+                {canEditSalesPrice ? (
                   <Field
                     data-invalid={Boolean(plannedUnitPriceError)}
                     className="w-auto gap-1"
@@ -2410,7 +2515,7 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
-                {!isStoreManagerMode &&
+                {!canEditSalesPrice &&
                 hasSensitiveInventoryAmounts(item) &&
                 !addedManualIds.has(item.productId) ? (
                   <div className="flex flex-col gap-1 pb-2.5">
@@ -2424,7 +2529,7 @@ export function InventoryStepClient({
                     </output>
                   </div>
                 ) : null}
-                {isStoreManagerMode ? (
+                {canEditSalesPrice ? (
                   <div className="flex flex-col gap-1 pb-2.5">
                     <span className="text-muted-foreground text-xs">
                       판매가 기준 마진율
@@ -2736,7 +2841,7 @@ export function InventoryStepClient({
           isSaving={isSaving || isAdjustmentSavePending}
           errorMessage={formError}
           unsavedFields={
-            isStoreManagerMode
+            canEditSalesPrice
               ? ["당일재고", "판매한 가격", "바꾼 이유"]
               : ["현재 재고", "바꾼 이유"]
           }

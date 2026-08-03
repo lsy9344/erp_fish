@@ -4,6 +4,14 @@ import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
 import {
+  supersedeActiveCorrectionsForTargetsInTx,
+  type ActiveCorrectionSupersedeTarget,
+} from "~/features/corrections/actions";
+import {
+  getActiveCorrectionsForLedgerInTx,
+  getLatestCorrectionValueMap,
+} from "~/features/corrections/queries";
+import {
   reconcileLedgerInventoryAdjustments,
   syncLedgerInventoryPurchasedQuantitiesInTx,
 } from "~/features/inventory/adjustment-reconciliation";
@@ -23,6 +31,7 @@ import {
 } from "~/lib/validation";
 import { writeAuditLog } from "~/server/audit";
 import {
+  hasLedgerClosedEditAccess,
   requireLedgerHqEditAccess,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
@@ -69,10 +78,13 @@ type UnitPriceOverrideAudit = {
   reason: string | null;
 };
 import {
-  editableLedgerStatuses,
   getLedgerEditBlockReason,
-  isLedgerEditable,
+  isLedgerEditableByHeadquarters,
 } from "./status-policy";
+import {
+  invalidateCarryoverDependentsInTx,
+  updateHqLedgerMutationTokenInTx,
+} from "./hq-mutation";
 import { type LedgerCostStepData } from "./types";
 
 type LedgerRecord = Prisma.DailyLedgerGetPayload<{
@@ -139,6 +151,125 @@ function mapHqActionError(): ActionResult<never> {
     "LEDGER_SAVE_FAILED",
     "저장에 실패했습니다. 다시 시도해 주세요.",
   );
+}
+
+function toHqLedgerAuditPayload(
+  ledger: LedgerRecord,
+  metadata: {
+    ledgerStatusAtEdit?: LedgerRecord["status"];
+    closedEdit?: boolean;
+    supersededCorrectionCount?: number;
+  } = {},
+) {
+  const ledgerStatusAtEdit = metadata.ledgerStatusAtEdit ?? ledger.status;
+  const closedEdit =
+    metadata.closedEdit ?? ledgerStatusAtEdit === "HEADQUARTERS_CLOSED";
+
+  return {
+    ...toLedgerAuditPayload(ledger),
+    ledgerStatusAtEdit,
+    closedEdit,
+    hqEditContext: {
+      closedLedgerEdit: closedEdit,
+      supersededCorrectionCount: metadata.supersededCorrectionCount ?? 0,
+    },
+  };
+}
+
+function getCorrectionPrimitive(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return "value" in value ? value.value : undefined;
+}
+
+async function getEffectiveHqLedgerAuditBeforeInTx(
+  tx: Prisma.TransactionClient,
+  ledger: LedgerRecord,
+  section: HqLedgerConflictSection,
+) {
+  const activeCorrections = await getActiveCorrectionsForLedgerInTx(
+    tx,
+    ledger.id,
+  );
+  const latestCorrections = getLatestCorrectionValueMap(activeCorrections);
+  const effectiveLedger: LedgerRecord = {
+    ...ledger,
+    ledgerExpenses: ledger.ledgerExpenses.map((expense) => ({ ...expense })),
+  };
+
+  for (const correction of latestCorrections.values()) {
+    const value = getCorrectionPrimitive(correction.latestAppliedValue);
+
+    if (
+      section === "sales" &&
+      correction.targetType === "PAYMENT_FIELD" &&
+      correction.targetId === ledger.id &&
+      typeof value === "number" &&
+      [
+        "totalSalesAmount",
+        "carryoverSalesAmount",
+        "cashAmount",
+        "cardAmount",
+        "otherPaymentAmount",
+      ].includes(correction.fieldKey)
+    ) {
+      const fieldKey = correction.fieldKey as
+        | "totalSalesAmount"
+        | "carryoverSalesAmount"
+        | "cashAmount"
+        | "cardAmount"
+        | "otherPaymentAmount";
+
+      effectiveLedger[fieldKey] = value;
+      continue;
+    }
+
+    if (
+      section === "work" &&
+      correction.targetType === "LEDGER_FIELD" &&
+      correction.targetId === ledger.id
+    ) {
+      if (
+        correction.fieldKey === "workerCount" &&
+        (typeof value === "number" || value === null)
+      ) {
+        effectiveLedger.workerCount = value;
+      } else if (
+        correction.fieldKey === "workMemo" &&
+        (typeof value === "string" || value === null)
+      ) {
+        effectiveLedger.workMemo = value;
+      }
+
+      continue;
+    }
+
+    if (section === "expenses" && correction.targetType === "EXPENSE_ROW") {
+      const expense = effectiveLedger.ledgerExpenses.find(
+        (item) => item.id === correction.targetId,
+      );
+
+      if (!expense) {
+        continue;
+      }
+
+      if (correction.fieldKey === "amount" && typeof value === "number") {
+        expense.amount = value;
+      } else if (
+        correction.fieldKey === "memo" &&
+        (typeof value === "string" || value === null)
+      ) {
+        expense.memo = value;
+      }
+    }
+  }
+
+  return toHqLedgerAuditPayload(effectiveLedger, {
+    ledgerStatusAtEdit: ledger.status,
+    closedEdit: ledger.status === "HEADQUARTERS_CLOSED",
+  });
 }
 
 async function validateActiveExpenseCodesInTx(
@@ -331,34 +462,59 @@ function notEditableError(status: LedgerRecord["status"]): ActionResult<never> {
 function ensureTargetLedger(
   ledger: LedgerRecord | null,
   storeId: string,
+  allowClosedEdit: boolean,
 ): ActionResult<LedgerRecord> {
   if (ledger?.storeId !== storeId) {
     return notFoundError();
   }
 
-  if (!isLedgerEditable(ledger.status)) {
+  if (!isLedgerEditableByHeadquarters(ledger.status, allowClosedEdit)) {
     return notEditableError(ledger.status);
   }
 
   return actionOk(ledger);
 }
 
-async function updateEditableDailyLedgerInTx(
-  tx: Prisma.TransactionClient,
-  ledgerId: string,
-  expectedUpdatedAt: Date,
-  data: Prisma.DailyLedgerUncheckedUpdateManyInput,
-) {
-  const updated = await tx.dailyLedger.updateMany({
-    where: {
-      id: ledgerId,
-      status: { in: [...editableLedgerStatuses] },
-      updatedAt: expectedUpdatedAt,
-    },
-    data,
-  });
+async function getHqLedgerMutationActor() {
+  const user = await requireLedgerHqEditAccess();
+  const allowClosedEdit = await hasLedgerClosedEditAccess(user.id);
 
-  return updated.count === 1;
+  return { user, allowClosedEdit };
+}
+
+function calculatedMetricCorrectionTargets(
+  ledgerId: string,
+  fieldKeys: Array<"grossMarginRate" | "salesDifference" | "lossAmount">,
+): ActiveCorrectionSupersedeTarget[] {
+  return fieldKeys.map((fieldKey) => ({
+    targetType: "CALCULATED_METRIC",
+    targetId: ledgerId,
+    fieldKey,
+  }));
+}
+
+async function integrateHqDirectEditCorrectionsInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    ledgerId: string;
+    actorId: string;
+    targets: ActiveCorrectionSupersedeTarget[];
+    calculatedMetricFieldKeys?: Array<
+      "grossMarginRate" | "salesDifference" | "lossAmount"
+    >;
+  },
+) {
+  return supersedeActiveCorrectionsForTargetsInTx(tx, {
+    dailyLedgerId: input.ledgerId,
+    supersededById: input.actorId,
+    targets: [
+      ...input.targets,
+      ...calculatedMetricCorrectionTargets(
+        input.ledgerId,
+        input.calculatedMetricFieldKeys ?? [],
+      ),
+    ],
+  });
 }
 
 function isExistingSnapshotPurchase(
@@ -371,6 +527,48 @@ function isExistingSnapshotPurchase(
     existing?.productId === purchase.productId &&
     existing.purchaseStandardId === purchase.purchaseStandardId
   );
+}
+
+function getChangedPurchaseProductIds(
+  before: LedgerRecord["ledgerPurchaseItems"],
+  after: LedgerRecord["ledgerPurchaseItems"],
+) {
+  function fingerprints(items: LedgerRecord["ledgerPurchaseItems"]) {
+    const byProductId = new Map<string, string[]>();
+
+    for (const item of items) {
+      if (!item.productId) continue;
+
+      const values = byProductId.get(item.productId) ?? [];
+      values.push(
+        [
+          item.sourceType,
+          item.purchaseStandardId ?? "",
+          item.unitPrice,
+          decimalToNumber(item.quantity),
+          item.amount,
+        ].join(":"),
+      );
+      byProductId.set(item.productId, values);
+    }
+
+    return new Map(
+      [...byProductId].map(([productId, values]) => [
+        productId,
+        values.sort().join("|"),
+      ]),
+    );
+  }
+
+  const beforeByProductId = fingerprints(before);
+  const afterByProductId = fingerprints(after);
+
+  return [...new Set([...beforeByProductId.keys(), ...afterByProductId.keys()])]
+    .filter(
+      (productId) =>
+        beforeByProductId.get(productId) !== afterByProductId.get(productId),
+    )
+    .sort();
 }
 
 async function getLedgerByIdInTx(
@@ -401,7 +599,7 @@ export async function saveHqLedgerSalesPayment(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqLedgerMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -418,6 +616,7 @@ export async function saveHqLedgerSalesPayment(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -425,19 +624,24 @@ export async function saveHqLedgerSalesPayment(
         }
 
         const beforeLedger = beforeLedgerResult.data;
-        const updated = await updateEditableDailyLedgerInTx(
+        const beforeAuditPayload = await getEffectiveHqLedgerAuditBeforeInTx(
           tx,
+          beforeLedger,
+          "sales",
+        );
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          {
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+          data: {
             totalSalesAmount: parsed.data.totalSalesAmount,
             carryoverSalesAmount: parsed.data.carryoverSalesAmount,
             cashAmount: parsed.data.cashAmount,
             cardAmount: parsed.data.cardAmount,
             otherPaymentAmount: parsed.data.otherPaymentAmount,
-            updatedById: actor.user.id,
           },
-        );
+        });
 
         if (!updated) {
           return await hqConflictError(tx, "sales", parsed.data);
@@ -447,14 +651,40 @@ export async function saveHqLedgerSalesPayment(
           where: { id: ledgerId },
           select: ledgerSelect,
         });
-
+        const salesBasisChanged =
+          beforeLedger.totalSalesAmount !== parsed.data.totalSalesAmount ||
+          beforeLedger.carryoverSalesAmount !==
+            parsed.data.carryoverSalesAmount;
+        const supersededCorrectionCount =
+          await integrateHqDirectEditCorrectionsInTx(tx, {
+            ledgerId,
+            actorId: actor.user.id,
+            targets: [
+              "totalSalesAmount",
+              "carryoverSalesAmount",
+              "cashAmount",
+              "cardAmount",
+              "otherPaymentAmount",
+            ].map((fieldKey) => ({
+              targetType: "PAYMENT_FIELD" as const,
+              targetId: ledgerId,
+              fieldKey,
+            })),
+            calculatedMetricFieldKeys: salesBasisChanged
+              ? ["grossMarginRate", "salesDifference"]
+              : [],
+          });
         await writeAuditLog(tx, {
           action: "ledger.hq.sales_payment.updated",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          before: beforeAuditPayload,
+          after: toHqLedgerAuditPayload(afterLedger, {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+            supersededCorrectionCount,
+          }),
           reason: parsed.data.reason,
         });
 
@@ -484,7 +714,7 @@ export async function saveHqLedgerExpenses(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqLedgerMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -501,6 +731,7 @@ export async function saveHqLedgerExpenses(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -508,6 +739,11 @@ export async function saveHqLedgerExpenses(
         }
 
         const beforeLedger = beforeLedgerResult.data;
+        const beforeAuditPayload = await getEffectiveHqLedgerAuditBeforeInTx(
+          tx,
+          beforeLedger,
+          "expenses",
+        );
         const expenseCodeValidation = await validateActiveExpenseCodesInTx(
           tx,
           parsed.data.expenses,
@@ -517,14 +753,12 @@ export async function saveHqLedgerExpenses(
           return expenseCodeValidation;
         }
 
-        const updated = await updateEditableDailyLedgerInTx(
-          tx,
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          {
-            updatedById: actor.user.id,
-          },
-        );
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+        });
 
         if (!updated) {
           return await hqConflictError(tx, "expenses", parsed.data);
@@ -547,18 +781,31 @@ export async function saveHqLedgerExpenses(
           });
         }
 
+        const supersededCorrectionCount =
+          await integrateHqDirectEditCorrectionsInTx(tx, {
+            ledgerId,
+            actorId: actor.user.id,
+            targets: beforeLedger.ledgerExpenses.map((expense) => ({
+              targetType: "EXPENSE_ROW",
+              targetId: expense.id,
+            })),
+          });
+
         const afterLedger = await tx.dailyLedger.findUniqueOrThrow({
           where: { id: ledgerId },
           select: ledgerSelect,
         });
-
         await writeAuditLog(tx, {
           action: "ledger.hq.expenses.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          before: beforeAuditPayload,
+          after: toHqLedgerAuditPayload(afterLedger, {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+            supersededCorrectionCount,
+          }),
           reason: parsed.data.reason,
         });
 
@@ -588,7 +835,7 @@ export async function saveHqLedgerPurchases(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqLedgerMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -599,12 +846,15 @@ export async function saveHqLedgerPurchases(
     );
   }
 
+  let invalidatedTargetLedgerIds: string[] = [];
+
   try {
     const result = await db.$transaction<ActionResult<LedgerCostStepData>>(
       async (tx) => {
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -933,14 +1183,12 @@ export async function saveHqLedgerPurchases(
           });
         }
 
-        const updated = await updateEditableDailyLedgerInTx(
-          tx,
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          {
-            updatedById: actor.user.id,
-          },
-        );
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+        });
 
         if (!updated) {
           return await hqConflictError(tx, "purchases", parsed.data);
@@ -977,6 +1225,30 @@ export async function saveHqLedgerPurchases(
           where: { id: ledgerId },
           select: ledgerSelect,
         });
+        const fifoAffectedProductIds = getChangedPurchaseProductIds(
+          beforeLedger.ledgerPurchaseItems,
+          afterLedger.ledgerPurchaseItems,
+        );
+        const invalidation = await invalidateCarryoverDependentsInTx(tx, {
+          sourceLedgerId: beforeLedger.id,
+          productIds: fifoAffectedProductIds,
+          actorId: actor.user.id,
+          reason: parsed.data.reason,
+        });
+        invalidatedTargetLedgerIds = invalidation.targetLedgerIds;
+        const supersededCorrectionCount =
+          await integrateHqDirectEditCorrectionsInTx(tx, {
+            ledgerId,
+            actorId: actor.user.id,
+            targets: beforeLedger.ledgerPurchaseItems.map((purchase) => ({
+              targetType: "PURCHASE_ROW",
+              targetId: purchase.id,
+            })),
+            calculatedMetricFieldKeys:
+              fifoAffectedProductIds.length > 0
+                ? ["grossMarginRate", "salesDifference"]
+                : [],
+          });
         const overrideImportLineIds = [
           ...new Set(
             unitPriceOverrides.map((override) => override.ecountImportLineId),
@@ -1008,8 +1280,10 @@ export async function saveHqLedgerPurchases(
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          before: toHqLedgerAuditPayload(beforeLedger),
+          after: toHqLedgerAuditPayload(afterLedger, {
+            supersededCorrectionCount,
+          }),
           reason: parsed.data.reason,
         });
 
@@ -1030,6 +1304,8 @@ export async function saveHqLedgerPurchases(
             targetId,
             actorId: actor.user.id,
             before: {
+              ledgerStatusAtEdit: beforeLedger.status,
+              closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
               productName: override.productName,
               productSpec: override.productSpec,
               sourceType: override.sourceType,
@@ -1037,6 +1313,8 @@ export async function saveHqLedgerPurchases(
               appliedUnitPrice: override.previousUnitPrice,
             },
             after: {
+              ledgerStatusAtEdit: beforeLedger.status,
+              closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
               productName: override.productName,
               productSpec: override.productSpec,
               sourceType: override.sourceType,
@@ -1053,6 +1331,7 @@ export async function saveHqLedgerPurchases(
 
     if (result.ok) {
       revalidateHqLedgerPaths(ledgerId);
+      invalidatedTargetLedgerIds.forEach(revalidateLedgerDetailPath);
     }
 
     return result;
@@ -1073,7 +1352,7 @@ export async function saveHqLedgerWorkInfo(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqLedgerMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -1090,6 +1369,7 @@ export async function saveHqLedgerWorkInfo(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -1097,16 +1377,21 @@ export async function saveHqLedgerWorkInfo(
         }
 
         const beforeLedger = beforeLedgerResult.data;
-        const updated = await updateEditableDailyLedgerInTx(
+        const beforeAuditPayload = await getEffectiveHqLedgerAuditBeforeInTx(
           tx,
+          beforeLedger,
+          "work",
+        );
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          {
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+          data: {
             workerCount: parsed.data.workerCount,
             workMemo: parsed.data.workMemo,
-            updatedById: actor.user.id,
           },
-        );
+        });
 
         if (!updated) {
           return await hqConflictError(tx, "work", parsed.data);
@@ -1116,14 +1401,28 @@ export async function saveHqLedgerWorkInfo(
           where: { id: ledgerId },
           select: ledgerSelect,
         });
+        const supersededCorrectionCount =
+          await integrateHqDirectEditCorrectionsInTx(tx, {
+            ledgerId,
+            actorId: actor.user.id,
+            targets: ["workerCount", "workMemo"].map((fieldKey) => ({
+              targetType: "LEDGER_FIELD" as const,
+              targetId: ledgerId,
+              fieldKey,
+            })),
+          });
 
         await writeAuditLog(tx, {
           action: "ledger.hq.work_info.saved",
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          before: beforeAuditPayload,
+          after: toHqLedgerAuditPayload(afterLedger, {
+            ledgerStatusAtEdit: beforeLedger.status,
+            closedEdit: beforeLedger.status === "HEADQUARTERS_CLOSED",
+            supersededCorrectionCount,
+          }),
           reason: parsed.data.reason,
         });
 
@@ -1150,7 +1449,7 @@ export async function saveHqLedgerLaborInfo(
     return parsed;
   }
 
-  const actor = { user: await requireLedgerHqEditAccess() };
+  const actor = await getHqLedgerMutationActor();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
   const expectedUpdatedAt = parseExpectedUpdatedAt(parsed.data.ledgerUpdatedAt);
@@ -1167,6 +1466,7 @@ export async function saveHqLedgerLaborInfo(
         const beforeLedgerResult = ensureTargetLedger(
           await getLedgerByIdInTx(tx, ledgerId),
           parsed.data.storeId,
+          actor.allowClosedEdit,
         );
 
         if (!beforeLedgerResult.ok) {
@@ -1174,14 +1474,12 @@ export async function saveHqLedgerLaborInfo(
         }
 
         const beforeLedger = beforeLedgerResult.data;
-        const updated = await updateEditableDailyLedgerInTx(
-          tx,
+        const updated = await updateHqLedgerMutationTokenInTx(tx, {
           ledgerId,
           expectedUpdatedAt,
-          {
-            updatedById: actor.user.id,
-          },
-        );
+          actorId: actor.user.id,
+          allowClosedEdit: actor.allowClosedEdit,
+        });
 
         if (!updated) {
           return await hqConflictError(tx, "labor", parsed.data);
@@ -1226,8 +1524,8 @@ export async function saveHqLedgerLaborInfo(
           targetType: "DailyLedger",
           targetId: afterLedger.id,
           actorId: actor.user.id,
-          before: toLedgerAuditPayload(beforeLedger),
-          after: toLedgerAuditPayload(afterLedger),
+          before: toHqLedgerAuditPayload(beforeLedger),
+          after: toHqLedgerAuditPayload(afterLedger),
           reason: parsed.data.reason,
         });
 

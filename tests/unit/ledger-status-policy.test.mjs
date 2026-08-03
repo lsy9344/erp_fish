@@ -15,8 +15,10 @@ const policyPath = path.join(
 test("ledger status policy exposes the editable and read-only status rules", async () => {
   const {
     editableLedgerStatuses,
+    getHeadquartersEditableLedgerStatuses,
     getLedgerEditBlockReason,
     isLedgerEditable,
+    isLedgerEditableByHeadquarters,
     isLedgerReadOnly,
   } = await import(pathToFileURL(policyPath).href);
 
@@ -27,6 +29,25 @@ test("ledger status policy exposes the editable and read-only status rules", asy
   assert.equal(isLedgerEditable("HEADQUARTERS_CLOSED"), false);
   assert.equal(isLedgerEditable("HOLIDAY"), false);
   assert.equal(isLedgerEditable("UNKNOWN"), false);
+
+  assert.deepEqual(getHeadquartersEditableLedgerStatuses(false), [
+    "IN_PROGRESS",
+    "IN_REVIEW",
+  ]);
+  assert.deepEqual(getHeadquartersEditableLedgerStatuses(true), [
+    "IN_PROGRESS",
+    "IN_REVIEW",
+    "HEADQUARTERS_CLOSED",
+  ]);
+  assert.equal(
+    isLedgerEditableByHeadquarters("HEADQUARTERS_CLOSED", true),
+    true,
+  );
+  assert.equal(
+    isLedgerEditableByHeadquarters("HEADQUARTERS_CLOSED", false),
+    false,
+  );
+  assert.equal(isLedgerEditableByHeadquarters("HOLIDAY", true), false);
 
   assert.equal(isLedgerReadOnly("HEADQUARTERS_CLOSED"), true);
   assert.equal(isLedgerReadOnly("HOLIDAY"), true);
