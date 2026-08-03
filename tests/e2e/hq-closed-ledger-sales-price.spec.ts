@@ -251,22 +251,57 @@ async function seedClosedLedgerForDashboardRecalc() {
       updatedById: actorId,
     },
   });
-  // FIFO lot: 15개 중 5개 소진(COGS 5,000원), 10개 잔존(재고금액 10,000원).
-  await prisma.ledgerInventoryFifoLot.create({
+  // 저장 시 FIFO 재계산과 동일한 lot 구성을 심어 저장 전후 재고금액/COGS가
+  // 달라지지 않게 한다: 기초 10개 중 8개 소진 + 매입 5개 미소진(잔존 7개 = 7,000원,
+  // COGS 8,000원).
+  await prisma.ledgerInventoryFifoLot.createMany({
+    data: [
+      {
+        dailyLedgerId: ledger.id,
+        ledgerInventoryItemId: inventoryItem.id,
+        productId: productA.id,
+        sourceType: "LEGACY_OPENING",
+        sourceBusinessDate: closingDate,
+        unitPrice: 1000,
+        originalQuantity: 10,
+        consumedQuantity: 8,
+        remainingQuantity: 2,
+        originalAmount: 10000,
+        consumedAmount: 8000,
+        remainingAmount: 2000,
+        sortOrder: 0,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        ledgerInventoryItemId: inventoryItem.id,
+        productId: productA.id,
+        sourceType: "PURCHASE",
+        sourceBusinessDate: closingDate,
+        unitPrice: 1000,
+        originalQuantity: 5,
+        consumedQuantity: 0,
+        remainingQuantity: 5,
+        originalAmount: 5000,
+        consumedAmount: 0,
+        remainingAmount: 5000,
+        sortOrder: 1,
+      },
+    ],
+  });
+  // 매입 행: 저장 시 purchasedQuantity 동기화가 5개를 유지하게 한다.
+  await prisma.ledgerPurchaseItem.create({
     data: {
       dailyLedgerId: ledger.id,
-      ledgerInventoryItemId: inventoryItem.id,
       productId: productA.id,
-      sourceType: "PURCHASE",
-      sourceBusinessDate: closingDate,
+      sourceType: "MANUAL",
+      productName: productA.name,
+      productCategory: productA.category,
+      productSpec: productA.spec,
       unitPrice: 1000,
-      originalQuantity: 15,
-      consumedQuantity: 5,
-      remainingQuantity: 10,
-      originalAmount: 15000,
-      consumedAmount: 5000,
-      remainingAmount: 10000,
-      sortOrder: 0,
+      quantity: 5,
+      amount: 5000,
+      createdById: actorId,
+      updatedById: actorId,
     },
   });
   await prisma.ledgerLossItem.create({
@@ -277,11 +312,11 @@ async function seedClosedLedgerForDashboardRecalc() {
       productName: productA.name,
       productCategory: productA.category,
       productSpec: productA.spec,
-      unitPrice: 1500,
+      unitPrice: 2000,
       lossTypeName: lossCode.name,
       quantity: 3,
       recoveredAmount: 0,
-      amount: 4500,
+      amount: 6000,
       usedPlannedPrice: true,
       reason: "seed",
       createdById: actorId,
@@ -293,7 +328,7 @@ async function seedClosedLedgerForDashboardRecalc() {
       storeId: store.id,
       businessDate: closingDate,
       productId: productA.id,
-      plannedUnitPrice: 1500,
+      plannedUnitPrice: 2000,
       createdById: actorId,
       updatedById: actorId,
     },
@@ -313,7 +348,16 @@ async function cleanupStoryData() {
     await prisma.auditLog.deleteMany({
       where: { targetType: "DailyLedger", targetId: { in: ledgerIds } },
     });
+    await prisma.ledgerInventoryFifoLot.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerLossItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerPurchaseItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.ledgerInventoryAdjustment.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
     await prisma.ledgerInventoryItem.deleteMany({
@@ -348,9 +392,7 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
   await page.getByRole("tab", { name: "재고" }).click();
 
   // 다른 탭의 수정 사유/저장 버튼이 forceMount로 함께 존재하므로 재고 패널로 한정한다.
-  const inventoryPanel = page.locator(
-    '[data-ledger-detail-panel="inventory"]',
-  );
+  const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
 
   const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
   await expect(priceInput).toBeVisible();
@@ -363,8 +405,12 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
   await priceInput.click();
   await priceInput.press("Control+A");
   await priceInput.pressSequentially("1800");
-  await inventoryPanel.getByLabel("본사 수정 사유").fill("판매한 가격 오기입 정정");
-  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("판매한 가격 오기입 정정");
+  await inventoryPanel
+    .getByRole("button", { name: "저장", exact: true })
+    .click();
 
   await expect
     .poll(async () => {
@@ -420,9 +466,7 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
 
-  const inventoryPanel = page.locator(
-    '[data-ledger-detail-panel="inventory"]',
-  );
+  const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
 
   const priceA = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
   const priceB = inventoryPanel.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`);
@@ -437,7 +481,9 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
   await inventoryPanel
     .getByLabel("본사 수정 사유")
     .fill("무가격 품목 0원 저장 확인");
-  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
+  await inventoryPanel
+    .getByRole("button", { name: "저장", exact: true })
+    .click();
 
   await expect
     .poll(async () => {
@@ -475,15 +521,13 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
 
   await loginAsHq(page);
 
-  const dashboardRow = page
-    .getByRole("row")
-    .filter({ hasText: "스토리D6 마감점" });
+  const dashboardRow = page.getByTestId(`hq-dashboard-row-${STORE_ID}`);
 
-  // 수정 전: 판매수량 5개 × 1,500원 = 예상매출 7,500원,
-  // 예상 마진율 (7,500 - COGS 5,000) / 7,500 = 33.3%.
+  // 수정 전: 판매수량 5개 × 2,000원 = 예상매출 10,000원,
+  // 예상 마진율 (10,000 - COGS 8,000) / 10,000 = 20%.
   await page.goto("/app/dashboard?date=today");
-  await expect(dashboardRow).toContainText("예상매출 7,500원");
-  await expect(dashboardRow).toContainText("예상 33.3%");
+  await expect(dashboardRow).toContainText("예상매출 ₩10,000");
+  await expect(dashboardRow).toContainText("예상 20.0%");
 
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
@@ -496,7 +540,9 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
   await inventoryPanel
     .getByLabel("본사 수정 사유")
     .fill("관제판 재계산 확인용 가격 수정");
-  await inventoryPanel.getByRole("button", { name: "저장", exact: true }).click();
+  await inventoryPanel
+    .getByRole("button", { name: "저장", exact: true })
+    .click();
 
   await expect
     .poll(async () => {
@@ -514,10 +560,10 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
     .toBe(1800);
 
   // 수정 후: 판매수량 5개 × 1,800원 = 예상매출 9,000원,
-  // 예상 마진율 (9,000 - 5,000) / 9,000 = 44.4%.
+  // 예상 마진율 (9,000 - COGS 8,000) / 9,000 = 11.1%.
   await page.goto("/app/dashboard?date=today");
-  await expect(dashboardRow).toContainText("예상매출 9,000원");
-  await expect(dashboardRow).toContainText("예상 44.4%");
+  await expect(dashboardRow).toContainText("예상매출 ₩9,000");
+  await expect(dashboardRow).toContainText("예상 11.1%");
 });
 
 test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로 거부된다", async ({
@@ -529,9 +575,7 @@ test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
 
-  const inventoryPanel = page.locator(
-    '[data-ledger-detail-panel="inventory"]',
-  );
+  const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
 
   // 화면 로드 후 다른 곳에서 장부가 바뀌면(UpdatedAt/version 변동) stale token이다.
   await prisma.dailyLedger.update({
