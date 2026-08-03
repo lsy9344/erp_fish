@@ -408,13 +408,15 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await page.getByRole("tab", { name: "매출/결제" }).click();
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
   await expect(salesPanel).toBeVisible();
-  const expenseTotalInput = salesPanel.getByLabel("4단계 지출 합계");
+  const expenseTotalInput = salesPanel.getByLabel("지출합계");
   await expect(expenseTotalInput).toHaveValue("1,000원");
   await expect(expenseTotalInput).toHaveJSProperty("readOnly", true);
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "45000");
   await replaceKrwControlValue(salesPanel.getByLabel("현금"), "14000");
   await replaceKrwControlValue(salesPanel.getByLabel("카드"), "25000");
-  await replaceKrwControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
+  await replaceKrwControlValue(
+    salesPanel.getByLabel("기타 결제수단(온누리QR)"),
+    "5000",
+  );
   await fillHqEditReason(salesPanel, "매출 결제 원본 보완");
   await salesPanel.getByRole("button", { name: "저장" }).click();
   await expect(
@@ -785,16 +787,16 @@ test("본사 상세 매출 폼은 한국어 검증 오류와 첫 오류 포커�
   await page.goto(`/app/ledgers/${ledger.id}`);
 
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
-  const totalSalesInput = salesPanel.getByLabel("총매출");
+  const cashInput = salesPanel.getByLabel("현금", { exact: true });
 
   await expect(salesPanel).toBeVisible();
-  await clearControlValue(totalSalesInput);
+  await clearControlValue(cashInput);
   await salesPanel.getByRole("button", { name: "저장" }).click();
 
   await expect(
-    salesPanel.getByText("총매출은 0원 이상의 정수여야 합니다."),
+    salesPanel.getByText("현금은 0원 이상의 정수여야 합니다."),
   ).toBeVisible();
-  await expect(totalSalesInput).toBeFocused();
+  await expect(cashInput).toBeFocused();
 });
 
 test("조회 전용 본사는 장부 상세를 볼 수 있지만 원본 입력 탭을 저장할 수 없다", async ({
@@ -858,10 +860,12 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
     },
   });
 
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "45000");
   await replaceKrwControlValue(salesPanel.getByLabel("현금"), "15000");
   await replaceKrwControlValue(salesPanel.getByLabel("카드"), "25000");
-  await replaceKrwControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
+  await replaceKrwControlValue(
+    salesPanel.getByLabel("기타 결제수단(온누리QR)"),
+    "5000",
+  );
   await fillHqEditReason(salesPanel, "stale 매출 저장 확인");
   await salesPanel.getByRole("button", { name: "저장" }).click();
 
@@ -875,7 +879,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
   await expect(conflictDialog.getByText("내 입력값").first()).toBeVisible();
   await expect(conflictDialog.getByText("서버 최신값").first()).toBeVisible();
   await expect(conflictDialog.getByText("총매출")).toBeVisible();
-  await expect(conflictDialog.getByText("45000")).toBeVisible();
+  await expect(conflictDialog.getByText("46000")).toBeVisible();
   await expect(conflictDialog.getByText("77777")).toBeVisible();
   await expect(
     conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),

@@ -428,10 +428,10 @@ test("지점장은 오늘 장부에서 매출/결제 단계를 본다", async ({
   await expect(page.getByLabel("영업일")).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toBeVisible();
+  ).toHaveJSProperty("readOnly", true);
   await expect(
     page.getByRole("textbox", {
-      name: "현금 (당일 지출 후)",
+      name: "현금",
       exact: true,
     }),
   ).toBeVisible();
@@ -439,8 +439,15 @@ test("지점장은 오늘 장부에서 매출/결제 단계를 본다", async ({
     page.getByRole("textbox", { name: "카드", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "기타 결제수단", exact: true }),
+    page.getByRole("textbox", {
+      name: "기타 결제수단(온누리QR)",
+      exact: true,
+    }),
   ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "지출합계" })).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "영업 매출 합계" }),
+  ).toHaveCount(0);
 });
 
 test("지점장은 선택 날짜 장부를 열고 재방문 시 같은 장부를 본다", async ({
@@ -456,15 +463,10 @@ test("지점장은 선택 날짜 장부를 열고 재방문 시 같은 장부를
   await expect(page.getByText("상태 입력 중")).toBeVisible();
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("22222");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("12000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("10000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("222");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -483,7 +485,7 @@ test("지점장은 선택 날짜 장부를 열고 재방문 시 같은 장부를
   );
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toHaveValue("22,222");
+  ).toHaveValue("22,222원");
 
   await page.goto(
     `/app/store-entry/inventory?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
@@ -567,15 +569,12 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
   page,
 }) => {
   await loginAsStoreManager(page);
-  // 총매출은 6단계 매출/결제에서 입력한다. 작성자 표시명은 1단계로 옮겨졌으므로
-  // 이 테스트는 총매출만 미저장 변경 필드로 사용해 이동 dialog 동작을 검증한다.
+  // 현금 입력을 바꾸면 총매출도 자동으로 바뀌며 미저장 상태가 된다.
   await page.goto(
     `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=sales`,
   );
 
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("77777");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("77777");
 
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await expect(
@@ -584,8 +583,11 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
   await page.getByRole("button", { name: "계속 편집" }).click();
   await expect(page).toHaveURL(/step=sales/);
   await expect(
-    page.getByRole("textbox", { name: "총매출", exact: true }),
+    page.getByRole("textbox", { name: "현금", exact: true }),
   ).toHaveValue("77,777");
+  await expect(
+    page.getByRole("textbox", { name: "총매출", exact: true }),
+  ).toHaveValue("77,777원");
 
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await page
@@ -610,11 +612,9 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
   );
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toHaveValue("0");
+  ).toHaveValue("0원");
 
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("77777");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("77777");
 
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await page
@@ -653,15 +653,10 @@ test("지점장은 stale version 저장 충돌 시 저장 충돌 dialog를 본�
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("33333");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("13000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("333");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -728,48 +723,45 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
     name: "이월 매출",
     exact: true,
   });
-  const operatingSales = page.getByRole("textbox", {
-    name: "영업 매출 합계",
-    exact: true,
-  });
   const cash = page.getByRole("textbox", {
-    name: "현금 (당일 지출 후)",
+    name: "현금",
     exact: true,
   });
   const card = page.getByRole("textbox", { name: "카드", exact: true });
   const expenseTotal = page.locator("#expense-total");
   const other = page.getByRole("textbox", {
-    name: "기타 결제수단",
+    name: "기타 결제수단(온누리QR)",
     exact: true,
   });
   const save = page.getByRole("button", { name: "저장" });
 
-  await expect(
-    page.getByText("당일 현금지출을 하고 남은 당일 현금매출을 입력합니다.", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(cash).toHaveAttribute(
-    "aria-describedby",
-    "cash-amount-preview cash-amount-help",
-  );
+  await expect(cash).not.toHaveAttribute("aria-describedby");
   expect(
     await page
-      .locator("#card-amount, #expense-total, #other-payment-amount")
+      .locator(
+        "#cash-amount, #card-amount, #other-payment-amount, #carryover-sales-amount, #expense-total, #total-sales-amount",
+      )
       .evaluateAll((inputs) => inputs.map((input) => input.id)),
-  ).toEqual(["card-amount", "expense-total", "other-payment-amount"]);
+  ).toEqual([
+    "cash-amount",
+    "card-amount",
+    "other-payment-amount",
+    "carryover-sales-amount",
+    "expense-total",
+    "total-sales-amount",
+  ]);
   await expect(expenseTotal).toHaveValue("4,000원");
   await expect(expenseTotal).toHaveJSProperty("readOnly", true);
   await expect(expenseTotal).not.toBeDisabled();
-  await expect(operatingSales).toHaveJSProperty("readOnly", true);
+  await expect(total).toHaveJSProperty("readOnly", true);
   await expect(page.getByText("결제 합계 차액")).toHaveCount(0);
+  await expect(page.getByText("표시:", { exact: false })).toHaveCount(0);
 
-  await total.fill("10000");
   await carryover.fill("2500");
   await cash.fill("3000");
   await card.fill("2000");
   await other.fill("1000");
-  await expect(operatingSales).toHaveValue("12,500원");
+  await expect(total).toHaveValue("12,500원");
 
   await save.click();
 
@@ -778,9 +770,8 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
   ).toBeVisible();
 
   await page.reload();
-  await expect(total).toHaveValue("10,000");
+  await expect(total).toHaveValue("12,500원");
   await expect(carryover).toHaveValue("2,500");
-  await expect(operatingSales).toHaveValue("12,500원");
   await expect(cash).toHaveValue("3,000");
   await expect(card).toHaveValue("2,000");
   await expect(other).toHaveValue("1,000");
@@ -814,7 +805,7 @@ test("지점장은 매출/결제 금액을 저장하고 재방문 시 유지된�
   ).toBeVisible();
 });
 
-test("지점장은 0 뒤에 금액을 입력해도 원 단위 천 단위 형식으로 본다", async ({
+test("지점장은 0 뒤에 금액을 입력해도 총매출 자동 합계를 천 단위 형식으로 본다", async ({
   page,
 }) => {
   await loginAsStoreManager(page);
@@ -822,11 +813,12 @@ test("지점장은 0 뒤에 금액을 입력해도 원 단위 천 단위 형식�
   await page.goto("/app/store-entry?storeId=store-gangnam&step=sales");
 
   const total = page.getByRole("textbox", { name: "총매출", exact: true });
+  const cash = page.getByRole("textbox", { name: "현금", exact: true });
 
-  await total.fill("05000");
+  await cash.fill("05000");
 
-  await expect(total).toHaveValue("5,000");
-  await expect(page.getByText("표시: 5,000원")).toBeVisible();
+  await expect(cash).toHaveValue("5,000");
+  await expect(total).toHaveValue("5,000원");
 });
 
 test("지점장은 본사 마감 장부에서 원본 매출/결제 입력을 수정할 수 없다", async ({
@@ -841,10 +833,10 @@ test("지점장은 본사 마감 장부에서 원본 매출/결제 입력을 수
   await expect(page.getByText("상태 본사 마감")).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toBeDisabled();
+  ).toHaveJSProperty("readOnly", true);
   await expect(
     page.getByRole("textbox", {
-      name: "현금 (당일 지출 후)",
+      name: "현금",
       exact: true,
     }),
   ).toBeDisabled();
@@ -852,7 +844,7 @@ test("지점장은 본사 마감 장부에서 원본 매출/결제 입력을 수
     page.getByRole("textbox", { name: "카드", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("textbox", { name: "기타 결제수단", exact: true }),
+    page.getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true }),
   ).toBeDisabled();
   // 작성자 표시명 입력은 1단계 매입으로 이동했으므로 매출 단계에서는 확인하지 않는다.
   await expect(page.getByRole("button", { name: "저장" })).toBeDisabled();
@@ -880,30 +872,28 @@ test("매출/결제 단계는 필수 금액 오류를 입력과 연결하고 첫
     `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}&step=sales`,
   );
 
-  const totalSalesInput = page.getByRole("textbox", {
-    name: "총매출",
+  const cashInput = page.getByRole("textbox", {
+    name: "현금",
     exact: true,
   });
 
-  // 작성자 표시명은 1단계 매입으로 이동해 더 이상 매출 저장 필수가 아니므로,
-  // 총매출만 비워 첫 오류 포커스를 검증한다.
-  await totalSalesInput.fill("");
+  await cashInput.fill("");
   await page.getByRole("button", { name: "저장" }).click();
 
   await expect(
     page.getByRole("alert").filter({ hasText: "입력값을 확인해 주세요." }),
   ).toBeVisible();
   await expect(
-    page.getByText("총매출은 0원 이상의 정수여야 합니다."),
+    page.getByText("현금은 0원 이상의 정수여야 합니다."),
   ).toBeVisible();
-  await expect(totalSalesInput).toBeFocused();
-  await expect(totalSalesInput).toHaveAttribute("aria-invalid", "true");
-  await expect(totalSalesInput).toHaveAttribute(
+  await expect(cashInput).toBeFocused();
+  await expect(cashInput).toHaveAttribute("aria-invalid", "true");
+  await expect(cashInput).toHaveAttribute(
     "aria-describedby",
-    "total-sales-amount-error",
+    "cash-amount-error",
   );
-  await expect(page.locator("#total-sales-amount-error")).toContainText(
-    "총매출은 0원 이상의 정수여야 합니다.",
+  await expect(page.locator("#cash-amount-error")).toContainText(
+    "현금은 0원 이상의 정수여야 합니다.",
   );
 });
 
@@ -916,13 +906,13 @@ test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족�
   await page.goto("/app/store-entry?storeId=store-gangnam&step=sales");
 
   const numericInputs = [
-    page.getByRole("textbox", { name: "총매출", exact: true }),
     page.getByRole("textbox", {
-      name: "현금 (당일 지출 후)",
+      name: "현금",
       exact: true,
     }),
     page.getByRole("textbox", { name: "카드", exact: true }),
-    page.getByRole("textbox", { name: "기타 결제수단", exact: true }),
+    page.getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true }),
+    page.getByRole("textbox", { name: "이월 매출", exact: true }),
   ];
 
   for (const input of numericInputs) {
@@ -933,6 +923,9 @@ test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족�
     expect(box?.height).toBeGreaterThanOrEqual(44);
     expect(box?.width).toBeGreaterThanOrEqual(44);
   }
+  await expect(
+    page.getByRole("textbox", { name: "총매출", exact: true }),
+  ).toHaveJSProperty("readOnly", true);
 
   const submit = page.getByRole("button", { name: "저장" });
   await expect(submit).toBeVisible();
@@ -942,13 +935,10 @@ test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족�
   expect(submitBox?.width).toBeGreaterThanOrEqual(44);
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page.getByRole("textbox", { name: "총매출", exact: true }).fill("1000");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("1000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("1000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("0");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("0");
   await submit.click();
   await expect(
@@ -1025,13 +1015,10 @@ test("저장 실패 시 한국어 오류와 재시도 동작이 표시된다", a
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page.getByRole("textbox", { name: "총매출", exact: true }).fill("3000");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("1000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("1000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("1000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("500");
 
   await page.getByRole("button", { name: "저장" }).click();

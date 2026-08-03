@@ -5,12 +5,7 @@ import { CheckCircle2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "~/components/ui/field";
+import { Field, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import { saveLedgerSalesPayment } from "~/features/ledger/actions";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
@@ -83,9 +78,6 @@ export function SalesPaymentStepClient({
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
 
   const [ledger, setLedger] = useState(initialLedger);
-  const [totalSalesAmount, setTotalSalesAmount] = useState(
-    formatKrwInput(String(initialLedger.totalSalesAmount)),
-  );
   const [carryoverSalesAmount, setCarryoverSalesAmount] = useState(
     formatKrwInput(String(initialLedger.carryoverSalesAmount)),
   );
@@ -123,17 +115,21 @@ export function SalesPaymentStepClient({
     setIsHydrated(true);
   }, []);
 
-  const totalSalesAmountValue = parseKrwInputValue(totalSalesAmount);
   const carryoverSalesAmountValue = parseKrwInputValue(carryoverSalesAmount);
-  const operatingSalesAmountValue =
-    totalSalesAmountValue + carryoverSalesAmountValue;
   const cashAmountValue = parseKrwInputValue(cashAmount);
   const cardAmountValue = parseKrwInputValue(cardAmount);
   const otherPaymentAmountValue = parseKrwInputValue(otherPaymentAmount);
+  const closingSalesAmountValue =
+    cashAmountValue +
+    cardAmountValue +
+    otherPaymentAmountValue +
+    ledger.expenseTotal;
+  const totalSalesAmountValue =
+    closingSalesAmountValue + carryoverSalesAmountValue;
   const isOriginalEditBlocked = isLedgerReadOnly(ledger.status);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "review");
   const isDirty =
-    totalSalesAmountValue !== ledger.totalSalesAmount ||
+    closingSalesAmountValue !== ledger.totalSalesAmount ||
     carryoverSalesAmountValue !== ledger.carryoverSalesAmount ||
     cashAmountValue !== ledger.cashAmount ||
     cardAmountValue !== ledger.cardAmount ||
@@ -141,7 +137,6 @@ export function SalesPaymentStepClient({
 
   function fillLedger(data: StoreManagerLedgerCostStepData) {
     setLedger(data);
-    setTotalSalesAmount(formatKrwInput(String(data.totalSalesAmount)));
     setCarryoverSalesAmount(formatKrwInput(String(data.carryoverSalesAmount)));
     setCashAmount(formatKrwInput(String(data.cashAmount)));
     setCardAmount(formatKrwInput(String(data.cardAmount)));
@@ -150,16 +145,6 @@ export function SalesPaymentStepClient({
 
   function focusFirstError(errors: FieldErrors) {
     window.setTimeout(() => {
-      if (errors.totalSalesAmount?.length) {
-        totalSalesInputRef.current?.focus();
-        return;
-      }
-
-      if (errors.carryoverSalesAmount?.length) {
-        carryoverSalesInputRef.current?.focus();
-        return;
-      }
-
       if (errors.cashAmount?.length) {
         cashAmountInputRef.current?.focus();
         return;
@@ -172,6 +157,16 @@ export function SalesPaymentStepClient({
 
       if (errors.otherPaymentAmount?.length) {
         otherPaymentInputRef.current?.focus();
+        return;
+      }
+
+      if (errors.carryoverSalesAmount?.length) {
+        carryoverSalesInputRef.current?.focus();
+        return;
+      }
+
+      if (errors.totalSalesAmount?.length) {
+        totalSalesInputRef.current?.focus();
         return;
       }
 
@@ -194,9 +189,7 @@ export function SalesPaymentStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
-        totalSalesAmount: toRawKrwInputValue(
-          totalSalesInputRef.current?.value ?? totalSalesAmount,
-        ),
+        totalSalesAmount: String(closingSalesAmountValue),
         carryoverSalesAmount: toRawKrwInputValue(
           carryoverSalesInputRef.current?.value ?? carryoverSalesAmount,
         ),
@@ -315,7 +308,14 @@ export function SalesPaymentStepClient({
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["총매출", "이월 매출", "현금", "카드", "기타 결제수단"]}
+        unsavedFields={[
+          "현금",
+          "카드",
+          "기타 결제수단(온누리QR)",
+          "이월 매출",
+          "지출합계",
+          "총매출",
+        ]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
       />
@@ -327,37 +327,80 @@ export function SalesPaymentStepClient({
           className="flex flex-col gap-4"
           noValidate
         >
-          {/* 단계 순서 변경(2026-07-02): 작성자 표시명 입력은 1단계 매입 화면으로 이동했다. */}
-          <Field data-invalid={Boolean(totalSalesError)}>
-            <FieldLabel htmlFor="total-sales-amount">총매출</FieldLabel>
+          <Field data-invalid={Boolean(cashAmountError)}>
+            <FieldLabel htmlFor="cash-amount">현금</FieldLabel>
             <Input
-              ref={totalSalesInputRef}
-              id="total-sales-amount"
-              name="totalSalesAmount"
+              ref={cashAmountInputRef}
+              id="cash-amount"
+              name="cashAmount"
               inputMode="numeric"
               autoComplete="off"
-              value={totalSalesAmount}
+              value={cashAmount}
               disabled={!isHydrated || isOriginalEditBlocked}
               onChange={(event) =>
-                setTotalSalesAmount(formatKrwInput(event.currentTarget.value))
+                setCashAmount(formatKrwInput(event.currentTarget.value))
               }
               className="min-h-11 tabular-nums"
-              aria-invalid={Boolean(totalSalesError)}
+              aria-invalid={Boolean(cashAmountError)}
               aria-describedby={
-                totalSalesError
-                  ? "total-sales-amount-error"
-                  : "total-sales-amount-preview"
+                cashAmountError ? "cash-amount-error" : undefined
               }
             />
-            <p
-              id="total-sales-amount-preview"
-              className="text-muted-foreground mt-1 text-xs tabular-nums"
-            >
-              표시: {formatKrw(totalSalesAmountValue)}
-            </p>
-            {totalSalesError ? (
-              <FieldError id="total-sales-amount-error">
-                {totalSalesError}
+            {cashAmountError ? (
+              <FieldError id="cash-amount-error">{cashAmountError}</FieldError>
+            ) : null}
+          </Field>
+
+          <Field data-invalid={Boolean(cardAmountError)}>
+            <FieldLabel htmlFor="card-amount">카드</FieldLabel>
+            <Input
+              ref={cardAmountInputRef}
+              id="card-amount"
+              name="cardAmount"
+              inputMode="numeric"
+              autoComplete="off"
+              value={cardAmount}
+              disabled={!isHydrated || isOriginalEditBlocked}
+              onChange={(event) =>
+                setCardAmount(formatKrwInput(event.currentTarget.value))
+              }
+              className="min-h-11 tabular-nums"
+              aria-invalid={Boolean(cardAmountError)}
+              aria-describedby={
+                cardAmountError ? "card-amount-error" : undefined
+              }
+            />
+            {cardAmountError ? (
+              <FieldError id="card-amount-error">{cardAmountError}</FieldError>
+            ) : null}
+          </Field>
+
+          <Field data-invalid={Boolean(otherPaymentAmountError)}>
+            <FieldLabel htmlFor="other-payment-amount">
+              기타 결제수단(온누리QR)
+            </FieldLabel>
+            <Input
+              ref={otherPaymentInputRef}
+              id="other-payment-amount"
+              name="otherPaymentAmount"
+              inputMode="numeric"
+              autoComplete="off"
+              value={otherPaymentAmount}
+              disabled={!isHydrated || isOriginalEditBlocked}
+              onChange={(event) =>
+                setOtherPaymentAmount(formatKrwInput(event.currentTarget.value))
+              }
+              className="min-h-11 tabular-nums"
+              aria-invalid={Boolean(otherPaymentAmountError)}
+              aria-describedby={
+                otherPaymentAmountError
+                  ? "other-payment-amount-error"
+                  : undefined
+              }
+            />
+            {otherPaymentAmountError ? (
+              <FieldError id="other-payment-amount-error">
+                {otherPaymentAmountError}
               </FieldError>
             ) : null}
           </Field>
@@ -380,21 +423,9 @@ export function SalesPaymentStepClient({
               className="min-h-11 tabular-nums"
               aria-invalid={Boolean(carryoverSalesError)}
               aria-describedby={
-                carryoverSalesError
-                  ? "carryover-sales-amount-help carryover-sales-amount-error"
-                  : "carryover-sales-amount-preview carryover-sales-amount-help"
+                carryoverSalesError ? "carryover-sales-amount-error" : undefined
               }
             />
-            <p
-              id="carryover-sales-amount-preview"
-              className="text-muted-foreground mt-1 text-xs tabular-nums"
-            >
-              표시: {formatKrw(carryoverSalesAmountValue)}
-            </p>
-            <FieldDescription id="carryover-sales-amount-help">
-              장부 마감 뒤 추가로 발생한 매출입니다. 당일 현금·카드·기타 결제
-              정산에는 포함하지 않습니다.
-            </FieldDescription>
             {carryoverSalesError ? (
               <FieldError id="carryover-sales-amount-error">
                 {carryoverSalesError}
@@ -403,135 +434,35 @@ export function SalesPaymentStepClient({
           </Field>
 
           <Field>
-            <FieldLabel htmlFor="operating-sales-amount">
-              영업 매출 합계
-            </FieldLabel>
-            <Input
-              id="operating-sales-amount"
-              value={formatKrw(operatingSalesAmountValue)}
-              readOnly
-              aria-readonly="true"
-              aria-describedby="operating-sales-amount-help"
-              className="min-h-11 tabular-nums"
-            />
-            <FieldDescription id="operating-sales-amount-help">
-              총매출과 이월 매출을 합한 영업 성과 기준 금액입니다.
-            </FieldDescription>
-          </Field>
-
-          <Field data-invalid={Boolean(cashAmountError)}>
-            <FieldLabel htmlFor="cash-amount">현금 (당일 지출 후)</FieldLabel>
-            <Input
-              ref={cashAmountInputRef}
-              id="cash-amount"
-              name="cashAmount"
-              inputMode="numeric"
-              autoComplete="off"
-              value={cashAmount}
-              disabled={!isHydrated || isOriginalEditBlocked}
-              onChange={(event) =>
-                setCashAmount(formatKrwInput(event.currentTarget.value))
-              }
-              className="min-h-11 tabular-nums"
-              aria-invalid={Boolean(cashAmountError)}
-              aria-describedby={
-                cashAmountError
-                  ? "cash-amount-help cash-amount-error"
-                  : "cash-amount-preview cash-amount-help"
-              }
-            />
-            <p
-              id="cash-amount-preview"
-              className="text-muted-foreground mt-1 text-xs tabular-nums"
-            >
-              표시: {formatKrw(cashAmountValue)}
-            </p>
-            <FieldDescription id="cash-amount-help">
-              당일 현금지출을 하고 남은 당일 현금매출을 입력합니다.
-            </FieldDescription>
-            {cashAmountError ? (
-              <FieldError id="cash-amount-error">{cashAmountError}</FieldError>
-            ) : null}
-          </Field>
-
-          <Field data-invalid={Boolean(cardAmountError)}>
-            <FieldLabel htmlFor="card-amount">카드</FieldLabel>
-            <Input
-              ref={cardAmountInputRef}
-              id="card-amount"
-              name="cardAmount"
-              inputMode="numeric"
-              autoComplete="off"
-              value={cardAmount}
-              disabled={!isHydrated || isOriginalEditBlocked}
-              onChange={(event) =>
-                setCardAmount(formatKrwInput(event.currentTarget.value))
-              }
-              className="min-h-11 tabular-nums"
-              aria-invalid={Boolean(cardAmountError)}
-              aria-describedby={
-                cardAmountError ? "card-amount-error" : "card-amount-preview"
-              }
-            />
-            <p
-              id="card-amount-preview"
-              className="text-muted-foreground mt-1 text-xs tabular-nums"
-            >
-              표시: {formatKrw(cardAmountValue)}
-            </p>
-            {cardAmountError ? (
-              <FieldError id="card-amount-error">{cardAmountError}</FieldError>
-            ) : null}
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor="expense-total">4단계 지출 합계</FieldLabel>
+            <FieldLabel htmlFor="expense-total">지출합계</FieldLabel>
             <Input
               id="expense-total"
               value={formatKrw(ledger.expenseTotal)}
               readOnly
               aria-readonly="true"
-              aria-describedby="expense-total-help"
               className="min-h-11 tabular-nums"
             />
-            <FieldDescription id="expense-total-help">
-              4단계에서 마지막으로 저장한 당일 현금지출 합계입니다. 수정은
-              4단계에서 합니다.
-            </FieldDescription>
           </Field>
 
-          <Field data-invalid={Boolean(otherPaymentAmountError)}>
-            <FieldLabel htmlFor="other-payment-amount">
-              기타 결제수단
-            </FieldLabel>
+          <Field data-invalid={Boolean(totalSalesError)}>
+            <FieldLabel htmlFor="total-sales-amount">총매출</FieldLabel>
             <Input
-              ref={otherPaymentInputRef}
-              id="other-payment-amount"
-              name="otherPaymentAmount"
-              inputMode="numeric"
-              autoComplete="off"
-              value={otherPaymentAmount}
+              ref={totalSalesInputRef}
+              id="total-sales-amount"
+              name="totalSalesAmount"
+              value={formatKrw(totalSalesAmountValue)}
+              readOnly
               disabled={!isHydrated || isOriginalEditBlocked}
-              onChange={(event) =>
-                setOtherPaymentAmount(formatKrwInput(event.currentTarget.value))
-              }
+              aria-readonly="true"
               className="min-h-11 tabular-nums"
-              aria-invalid={Boolean(otherPaymentAmountError)}
+              aria-invalid={Boolean(totalSalesError)}
               aria-describedby={
-                otherPaymentAmountError
-                  ? "other-payment-amount-error"
-                  : "other-payment-amount-preview"
+                totalSalesError ? "total-sales-amount-error" : undefined
               }
             />
-            <p
-              id="other-payment-amount-preview"
-              className="text-muted-foreground mt-1 text-xs tabular-nums"
-            >
-              표시: {formatKrw(otherPaymentAmountValue)}
-            </p>
-            {otherPaymentAmountError ? (
-              <FieldError id="other-payment-amount-error">
-                {otherPaymentAmountError}
+            {totalSalesError ? (
+              <FieldError id="total-sales-amount-error">
+                {totalSalesError}
               </FieldError>
             ) : null}
           </Field>

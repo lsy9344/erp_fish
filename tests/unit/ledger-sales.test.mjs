@@ -230,7 +230,7 @@ test("ledger query settlement difference includes saved expenses", () => {
   );
 });
 
-test("sales payment step explains cash after saved expenses without a difference box", () => {
+test("sales payment step uses the requested order and removes field descriptions", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -240,18 +240,31 @@ test("sales payment step explains cash after saved expenses without a difference
   );
   const termsSource = readProjectFile("src", "features", "ledger", "terms.ts");
 
-  assert.match(source, /현금 \(당일 지출 후\)/);
-  assert.match(
-    source,
-    /당일 현금지출을 하고 남은 당일 현금매출을 입력합니다\./,
-  );
-  assert.match(
-    source,
-    /cashAmountError\s*\?\s*"cash-amount-help cash-amount-error"\s*:\s*"cash-amount-preview cash-amount-help"/,
-  );
-  assert.match(source, /4단계 지출 합계/);
+  const orderedLabels = [
+    ">현금</FieldLabel>",
+    ">카드</FieldLabel>",
+    "기타 결제수단(온누리QR)",
+    ">이월 매출</FieldLabel>",
+    ">지출합계</FieldLabel>",
+    ">총매출</FieldLabel>",
+  ];
+  let previousIndex = -1;
+
+  for (const label of orderedLabels) {
+    const index = source.indexOf(label, previousIndex + 1);
+    assert.ok(
+      index > previousIndex,
+      `${label} must appear in the requested order`,
+    );
+    previousIndex = index;
+  }
+
   assert.match(source, /ledger\.expenseTotal/);
   assert.match(source, /readOnly/);
+  assert.doesNotMatch(source, /FieldDescription/);
+  assert.doesNotMatch(source, /표시:/);
+  assert.doesNotMatch(source, /현금 \(당일 지출 후\)/);
+  assert.doesNotMatch(source, /4단계 지출 합계/);
   assert.doesNotMatch(source, /결제 합계 차액/);
   assert.doesNotMatch(source, /hasPaymentDifference/);
   assert.doesNotMatch(source, /function\s+calculatePaymentDifference\s*\(/);
@@ -595,7 +608,7 @@ test("store-entry UI passes selected date and ledger version through save and na
   assert.match(headerSource, /name="date"/);
 });
 
-test("sales UI edits carryover sales and shows the read-only operating total", () => {
+test("sales UI calculates the read-only total and removes the operating-sales field", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -618,12 +631,18 @@ test("sales UI edits carryover sales and shows the read-only operating total", (
 
   assert.match(source, /name="carryoverSalesAmount"/);
   assert.match(source, /carryoverSalesInputRef\.current\?\.focus\(\)/);
-  assert.match(source, /id="operating-sales-amount"[\s\S]*readOnly/);
   assert.match(
     source,
-    /totalSalesAmountValue\s*\+\s*carryoverSalesAmountValue/,
+    /closingSalesAmountValue\s*=\s*cashAmountValue\s*\+\s*cardAmountValue\s*\+\s*otherPaymentAmountValue\s*\+\s*ledger\.expenseTotal/,
   );
-  assert.match(source, /당일 현금·카드·기타 결제/);
+  assert.match(
+    source,
+    /totalSalesAmountValue\s*=\s*closingSalesAmountValue\s*\+\s*carryoverSalesAmountValue/,
+  );
+  assert.match(source, /totalSalesAmount:\s*String\(closingSalesAmountValue\)/);
+  assert.match(source, /id="total-sales-amount"[\s\S]*readOnly/);
+  assert.doesNotMatch(source, /operating-sales-amount/);
+  assert.doesNotMatch(source, /영업 매출 합계/);
   assert.match(
     hqActionSource,
     /carryoverSalesAmount:\s*parsed\.data\.carryoverSalesAmount/,

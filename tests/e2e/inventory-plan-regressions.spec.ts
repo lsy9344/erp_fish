@@ -711,20 +711,22 @@ test("재고 계획 완료 상태는 매출을 연속 저장한 응답에서도 
     exact: true,
   });
   const cash = page.getByRole("textbox", {
-    name: "현금 (당일 지출 후)",
+    name: "현금",
     exact: true,
   });
   const card = page.getByRole("textbox", { name: "카드", exact: true });
   const other = page.getByRole("textbox", {
-    name: "기타 결제수단",
+    name: "기타 결제수단(온누리QR)",
     exact: true,
   });
 
   for (const amount of ["1000", "2000"]) {
-    await totalSales.fill(amount);
     await cash.fill("0");
     await card.fill(amount);
     await other.fill("0");
+    await expect(totalSales).toHaveValue(
+      `${Number(amount).toLocaleString("ko-KR")}원`,
+    );
     await page.getByRole("button", { name: "저장", exact: true }).click();
     await expect(
       page.getByRole("status").filter({ hasText: "저장됐습니다." }),

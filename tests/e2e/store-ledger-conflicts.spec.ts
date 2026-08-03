@@ -173,15 +173,10 @@ test("stale sales 저장은 structured conflict dialog를 보여주고 첫 저�
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("33333");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("13000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("333");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -237,11 +232,8 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
 
     // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
     await firstPage
-      .getByRole("textbox", { name: "총매출", exact: true })
-      .fill("55555");
-    await firstPage
       .getByRole("textbox", {
-        name: "현금 (당일 지출 후)",
+        name: "현금",
         exact: true,
       })
       .fill("15000");
@@ -249,7 +241,7 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "카드", exact: true })
       .fill("40000");
     await firstPage
-      .getByRole("textbox", { name: "기타 결제수단", exact: true })
+      .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
       .fill("555");
     await firstPage.getByRole("button", { name: "저장" }).click();
     await expect(
@@ -258,11 +250,8 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
 
     // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
     await secondPage
-      .getByRole("textbox", { name: "총매출", exact: true })
-      .fill("66666");
-    await secondPage
       .getByRole("textbox", {
-        name: "현금 (당일 지출 후)",
+        name: "현금",
         exact: true,
       })
       .fill("16000");
@@ -270,7 +259,7 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "카드", exact: true })
       .fill("50000");
     await secondPage
-      .getByRole("textbox", { name: "기타 결제수단", exact: true })
+      .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
       .fill("666");
     await secondPage.getByRole("button", { name: "저장" }).click();
 
@@ -332,15 +321,10 @@ test("서로 다른 섹션 변경도 안전 병합 없이 stale 저장으로 명
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("22222");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("12000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("10000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("222");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -373,9 +357,7 @@ test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 �
     `/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}&step=sales`,
   );
 
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("12345");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12345");
   await page
     .getByRole("navigation", { name: "지점장 하단 업무" })
     .getByRole("link", { name: "재고" })
@@ -398,5 +380,5 @@ test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 �
   await unsavedDialog.getByRole("button", { name: "계속 편집" }).click();
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toHaveValue("12,345");
+  ).toHaveValue("12,345원");
 });
