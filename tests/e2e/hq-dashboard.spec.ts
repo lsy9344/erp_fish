@@ -570,6 +570,19 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   );
   await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText("휴무");
 
+  // DESIGN.md D1/D2: 재고금액은 마감 장부만 FIFO 총액을 금액으로 보여주고,
+  // 미마감·휴무·장부 없음은 상태 문구로 표시한다.
+  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
+    "재고금액 ₩7,000",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.progress)).toContainText(
+    "재고금액 마감 전",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText(
+    "재고금액 해당 없음",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText("재고금액");
+
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
   await expect(reviewRow).toContainText("손실 있음");
   // WO-02(2026-06-28): 손실이 있는 행의 손실 값은 장부 상세 손실 탭으로 가는 링크다.
@@ -578,8 +591,10 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   ).toHaveAttribute("href", new RegExp(`/app/ledgers/.+[?&]tab=losses\\b`));
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩200,000");
-  // WO-14 part2(2026-06-29): 매출 셀에 장부 매출 아래로 분석 매출(판매한 가격 기준)이 함께 보인다.
-  await expect(reviewRow).toContainText("분석");
+  // WO-14 part2(2026-06-29) → DESIGN.md D1: 매출 셀은 매출·예상매출(기존 분석
+  // 매출 라벨 변경)·재고금액 세 줄만 보여준다.
+  await expect(reviewRow).toContainText("예상매출");
+  await expect(reviewRow).toContainText("재고금액");
   await expect(reviewRow).toContainText(
     formatDashboardDateTime(reviewLedger.updatedAt),
   );
@@ -860,7 +875,7 @@ test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불�
   await expect(metrics).not.toContainText("계산 불가");
 });
 
-test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 신호를 구분한다", async ({
+test("관제판 마진은 실제·예상 한 줄만 보여주고 재고 이상 신호를 구분한다", async ({
   page,
 }) => {
   await seedStoryThreeThreeThresholds();
@@ -889,8 +904,11 @@ test("관제판 마진은 실제·예상·경보 기준 의미와 재고 이상 
   ).toBeVisible();
   const progressRow = getDesktopRow(page, STORE_IDS.progress);
   await expect(progressRow).toContainText("실제 35.9% / 예상 데이터 부족");
-  await expect(progressRow).toContainText("경보 기준 90.0%");
-  await expect(progressRow).toContainText("90.0% 기준 미달 금액 1,392,700원");
+  // DESIGN.md D3: 경보 기준 문구와 미달 금액은 화면에서 제거한다(업무 규칙은 유지).
+  await expect(progressRow).not.toContainText("경보 기준 90.0%");
+  await expect(progressRow).not.toContainText(
+    "90.0% 기준 미달 금액 1,392,700원",
+  );
   const marginCell = progressRow.getByTestId(
     `hq-dashboard-margin-${STORE_IDS.progress}`,
   );

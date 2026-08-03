@@ -34,6 +34,7 @@ import type {
   DashboardDensity,
   DashboardEmptyStateReason,
   DashboardFilterMode,
+  DashboardInventoryAmountStatus,
   DashboardLedgerStatus,
   DashboardMarginDisplay,
   DashboardSortMode,
@@ -343,6 +344,30 @@ export function mapDashboardBusinessStatus(
   return { key: "OPEN", label: "영업일" };
 }
 
+/**
+ * DESIGN.md D2: 장부 상태별 재고금액 표시 분기. 마감 장부만 FIFO 기준 총액을
+ * 금액으로 보여주고, 미마감은 "마감 전", 휴무는 "해당 없음", 장부 없음·계산
+ * 근거 부족은 "데이터 부족" 계열로 표시한다.
+ */
+export function getDashboardInventoryAmountStatus(
+  ledgerStatus: DailyLedgerStatus | null,
+  inventoryAmount: LedgerReviewMetric,
+): DashboardInventoryAmountStatus {
+  if (ledgerStatus === null) {
+    return "unavailable";
+  }
+
+  if (ledgerStatus === "HOLIDAY") {
+    return "not-applicable";
+  }
+
+  if (ledgerStatus !== "HEADQUARTERS_CLOSED") {
+    return "before-close";
+  }
+
+  return inventoryAmount.value === null ? "unavailable" : "amount";
+}
+
 export async function getHqDashboardRows({
   datePreset = "today",
   sortMode = "priority",
@@ -642,6 +667,10 @@ function toDashboardRow(
       analysisSalesAmount: dataInsufficient(
         "장부 입력 전이라 분석 매출 데이터가 없습니다.",
       ),
+      inventoryAmount: dataInsufficient(
+        "장부 입력 전이라 재고금액 데이터가 없습니다.",
+      ),
+      inventoryAmountStatus: "unavailable",
       grossMarginRate: metrics.grossMarginRate,
       marginDisplay: buildMarginDisplay(
         thresholdSettings,
@@ -749,6 +778,13 @@ function toDashboardRow(
     carryoverSalesAmount: reviewSummary.carryoverSales,
     operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
+    // DESIGN.md D1: 재고금액은 서버 계산값을 그대로 노출하고 부분합은 허용하지
+    // 않는다(계산 근거 부족 시 reviewSummary.inventoryAmount.value === null).
+    inventoryAmount: reviewSummary.inventoryAmount,
+    inventoryAmountStatus: getDashboardInventoryAmountStatus(
+      ledger.status,
+      reviewSummary.inventoryAmount,
+    ),
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -968,6 +1004,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
     carryoverSalesAmount: correctedReviewSummary.carryoverSales,
     operatingSalesAmount: correctedReviewSummary.operatingSales,
     analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
+    // DESIGN.md D1: 상세 화면도 동일한 재고금액 계약(상태 분기 포함)을 유지한다.
+    inventoryAmount: correctedReviewSummary.inventoryAmount,
+    inventoryAmountStatus: getDashboardInventoryAmountStatus(
+      ledger.status,
+      correctedReviewSummary.inventoryAmount,
+    ),
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,

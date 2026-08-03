@@ -21,6 +21,7 @@ import type {
 } from "../../server/calculations/anomaly.ts";
 import {
   buildMarginDisplay,
+  getDashboardInventoryAmountStatus,
   mapDashboardBusinessStatus,
   mapDashboardLedgerStatus,
   summarizeDashboardRows,
@@ -4083,6 +4084,10 @@ function toEmptyReportRow({
     analysisSalesAmount: dataInsufficient(
       "장부 입력 전이라 분석 매출 데이터가 없습니다.",
     ),
+    inventoryAmount: dataInsufficient(
+      "장부 입력 전이라 재고금액 데이터가 없습니다.",
+    ),
+    inventoryAmountStatus: "unavailable" as const,
     grossMarginRate: metrics.grossMarginRate,
     expectedGrossMarginRate: dataInsufficient(
       "장부 입력 전이라 예상 마진율 데이터가 없습니다.",
@@ -4226,6 +4231,12 @@ function toLedgerReportRow({
     carryoverSalesAmount: reviewSummary.carryoverSales,
     operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
+    // DESIGN.md D1/D2: 리포트 행도 대시보드와 동일한 재고금액 계약을 따른다.
+    inventoryAmount: reviewSummary.inventoryAmount,
+    inventoryAmountStatus: getDashboardInventoryAmountStatus(
+      ledger.status,
+      reviewSummary.inventoryAmount,
+    ),
     grossMarginRate: reviewSummary.grossMarginRate,
     expectedGrossMarginRate: reviewSummary.plannedGrossMarginRate,
     marginDisplay: buildMarginDisplay(

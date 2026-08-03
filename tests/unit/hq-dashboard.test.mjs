@@ -77,16 +77,18 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(pageSource, /datePreset/);
   assert.doesNotMatch(pageSource, /overviewItems/);
   assert.match(tableSource, /본사 마감/);
-  assert.match(tableSource, /장부 마감/);
-  assert.match(tableSource, /이월/);
-  assert.match(tableSource, /영업 합계/);
+  // DESIGN.md D1: 매출 구성은 매출·예상매출·재고금액 세 줄만 남기고 기존
+  // 장부 마감·이월·영업 합계 줄은 제거한다.
+  assert.doesNotMatch(tableSource, /장부 마감/);
+  assert.doesNotMatch(tableSource, /이월/);
+  assert.doesNotMatch(tableSource, /영업 합계/);
   assert.match(tableSource, /overflow-x-auto/);
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
   assert.doesNotMatch(tableSource, /disabled[\s\S]*상세 준비 중/);
   assert.match(tableSource, /break-words/);
   assert.match(
     tableSource,
-    /columnId === "signals" \|\| columnId === "grossMarginRate"/,
+    /columnId === "signals" \|\|[\s\S]*columnId === "grossMarginRate" \|\|[\s\S]*columnId === "salesAmount"/,
   );
   assert.doesNotMatch(
     tableSource,
@@ -380,8 +382,8 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   assert.doesNotMatch(tableSource, /lossAmount/);
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
   assert.doesNotMatch(tableSource, /baselineSales/);
-  // 실제/예상 마진율과 경보 기준/미달 금액은 쿼리에서 만든 라벨만 렌더링하고,
-  // UI에서 마진 계산을 다시 하지 않는다.
+  // 실제/예상 마진율은 한 줄만 렌더링하고, 경보 기준·미달 금액 문구는
+  // 제거했다(DESIGN.md D3). 임계값 설정과 이상 신호 계산은 서버에서 유지된다.
   assert.match(tableSource, /row\.marginDisplay/);
   assert.match(tableSource, /row\.analysisMarginDisplay\.currentLabel/);
   assert.match(
@@ -390,9 +392,8 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   );
   assert.match(tableSource, /실제 \{actualLabel\} \/ 예상 \{expectedLabel\}/);
   assert.doesNotMatch(tableSource, /expectedDisplayLabel|endsWith\("%"\)/);
-  assert.match(tableSource, /경보 기준 \{targetLabel\}/);
-  assert.match(tableSource, /\{targetLabel\} 기준 \{shortfallAmountLabel\}/);
-  assert.match(tableSource, /shortfallAmountLabel/);
+  assert.doesNotMatch(tableSource, /경보 기준/);
+  assert.doesNotMatch(tableSource, /shortfallAmountLabel/);
   assert.doesNotMatch(tableSource, /marginRateBps/);
 });
 
@@ -1255,6 +1256,8 @@ function makeDashboardRow(overrides = {}) {
     ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
     salesAmount: { value: 1000 },
     analysisSalesAmount: { value: 1300 },
+    inventoryAmount: { value: 350000, status: "ok" },
+    inventoryAmountStatus: "amount",
     grossMarginRate: { value: 0.3 },
     marginDisplay: {
       currentLabel: "35.9%",
@@ -1299,9 +1302,65 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
     queries,
     /analysisSalesAmount:\s*(reviewSummary|correctedReviewSummary)\.plannedSalesTotal/,
   );
-  // 표는 매출 셀에서 장부 매출과 분석 매출을 함께 보여준다.
+  // 표는 매출 셀에서 매출·예상매출·재고금액 세 줄만 보여준다(DESIGN.md D1).
   assert.match(table, /function SalesCell/);
-  assert.match(table, /분석/);
+  assert.match(table, /매출 \{formatKrwMetric\(row\.operatingSalesAmount\)\}/);
+  assert.match(
+    table,
+    /예상매출 \{formatKrwMetric\(row\.analysisSalesAmount\)\}/,
+  );
+  assert.match(table, /재고금액 \{formatInventoryAmountCell\(row\)\}/);
+  // 기존 장부 마감·이월·영업 합계·분석 라벨 줄은 제거한다.
+  assert.doesNotMatch(table, /장부 마감 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /이월 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /영업 합계 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /분석 \{/);
+});
+
+// DESIGN.md D1/D2: 재고금액 상태 분기. 마감 장부만 FIFO 총액을 금액으로
+// 보여주고 미마감·휴무·근거 부족은 상태 문구로 표시한다.
+test("DESIGN D2: getDashboardInventoryAmountStatus matrix", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { getDashboardInventoryAmountStatus } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const okAmount = { value: 350000, status: "ok" };
+  const noAmount = {
+    value: null,
+    status: "data-insufficient",
+    label: "데이터 부족",
+  };
+
+  assert.equal(
+    getDashboardInventoryAmountStatus(null, noAmount),
+    "unavailable",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HOLIDAY", okAmount),
+    "not-applicable",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("IN_PROGRESS", okAmount),
+    "before-close",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("IN_REVIEW", okAmount),
+    "before-close",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HEADQUARTERS_CLOSED", okAmount),
+    "amount",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HEADQUARTERS_CLOSED", noAmount),
+    "unavailable",
+  );
 });
 
 // WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매한 가격 기준)을 함께 보여준다.

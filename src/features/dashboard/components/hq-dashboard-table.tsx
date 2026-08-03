@@ -624,9 +624,12 @@ function getColumnStyle(
 function getColumnCellClassName(columnId: DashboardColumnId) {
   const column = dashboardColumnConfigById[columnId];
 
-  // 신호·마진 칼럼은 여러 줄로 줄바꿈되므로 클리핑하지 않고 높이가 늘어나게 둔다.
-  // 나머지 칼럼은 한 줄 말줄임을 유지한다.
-  const wraps = columnId === "signals" || columnId === "grossMarginRate";
+  // 신호·마진·매출 구성 칼럼은 여러 줄로 줄바꿈되므로 클리핑하지 않고 높이가
+  // 늘어나게 둔다. 나머지 칼럼은 한 줄 말줄임을 유지한다.
+  const wraps =
+    columnId === "signals" ||
+    columnId === "grossMarginRate" ||
+    columnId === "salesAmount";
 
   return cn(
     "min-w-0 align-top",
@@ -749,38 +752,46 @@ function LossCell({
   );
 }
 
-// 장부 마감 매출, 이월 매출, 영업 매출 합계를 구분하고 판매한 가격 기준
-// 분석 매출도 함께 보여준다.
+// DESIGN.md D1: 매출 구성은 매출·예상매출(라벨만 변경)·재고금액 세 줄만
+// 표시한다. 기존 네 줄 구성은 제거하고 데이터 계약(closingSalesAmount,
+// carryoverSalesAmount)은 리포트 호환을 위해 유지한다.
 function SalesCell({ row }: { row: HqDashboardRow }) {
-  const analysis = row.analysisSalesAmount;
-  const analysisLabel =
-    analysis.value === null
-      ? (analysis.label ?? analysis.unavailableReason ?? "분석 매출 기준 확인")
-      : formatKrw(analysis.value);
-
   return (
     <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
-      <span className="text-xs">
-        장부 마감 {formatKrwMetric(row.closingSalesAmount)}
-      </span>
-      <span className="text-xs">
-        이월 {formatKrwMetric(row.carryoverSalesAmount)}
-      </span>
-      <span>영업 합계 {formatKrwMetric(row.operatingSalesAmount)}</span>
+      <span>매출 {formatKrwMetric(row.operatingSalesAmount)}</span>
       <span className="text-muted-foreground text-xs font-normal">
-        분석 {analysisLabel}
+        예상매출 {formatKrwMetric(row.analysisSalesAmount)}
+      </span>
+      <span className="text-muted-foreground text-xs font-normal">
+        재고금액 {formatInventoryAmountCell(row)}
       </span>
     </div>
   );
 }
 
+// DESIGN.md D2: 재고금액 상태별 표시. 계산 근거가 부족하면 서버가 정한 라벨
+// (데이터 부족/계산 불가)을 그대로 보여 부분합을 정상 금액처럼 노출하지 않는다.
+function formatInventoryAmountCell(row: HqDashboardRow) {
+  switch (row.inventoryAmountStatus) {
+    case "amount":
+      return formatKrwMetric(row.inventoryAmount);
+    case "before-close":
+      return "마감 전";
+    case "not-applicable":
+      return "해당 없음";
+    default:
+      return (
+        row.inventoryAmount.label ??
+        row.inventoryAmount.unavailableReason ??
+        "데이터 부족"
+      );
+  }
+}
+
+// DESIGN.md D3: 실제/예상 마진율은 한 줄만 유지한다. 임계값 기준 문구와 미달 금액
+// 표시는 제거하되 임계값 설정·이상 신호 계산 같은 업무 규칙은 서버에서 유지한다.
 function MarginCell({ row }: { row: HqDashboardRow }) {
-  const actual = row.marginDisplay;
-  const {
-    currentLabel: actualLabel,
-    targetLabel,
-    shortfallAmountLabel,
-  } = actual;
+  const actualLabel = row.marginDisplay.currentLabel;
   const expectedLabel = row.analysisMarginDisplay.currentLabel;
 
   return (
@@ -788,16 +799,6 @@ function MarginCell({ row }: { row: HqDashboardRow }) {
       <span>
         실제 {actualLabel} / 예상 {expectedLabel}
       </span>
-      {targetLabel ? (
-        <span className="text-muted-foreground text-xs font-normal">
-          경보 기준 {targetLabel}
-        </span>
-      ) : null}
-      {targetLabel && shortfallAmountLabel ? (
-        <span className="text-warning text-xs font-normal">
-          {targetLabel} 기준 {shortfallAmountLabel}
-        </span>
-      ) : null}
     </div>
   );
 }
