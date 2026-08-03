@@ -12,6 +12,9 @@ test.afterAll(async () => {
 });
 
 async function login(page: Page, email: string) {
+  // 활성 세션이 있으면 /login이 리다이렉트되어 폼이 렌더링되지 않으므로
+  // 사용자 전환마다 쿠키를 먼저 정리한다.
+  await page.context().clearCookies();
   await page.goto("/login");
   await page.getByLabel("로그인 식별자").fill(email);
   await page.getByLabel("비밀번호").fill("correct-password");
@@ -471,6 +474,8 @@ test("HQ_STAFF는 마감 장부 상세에서 원본 입력을 수정할 수 없�
 test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지된다", async ({
   page,
 }) => {
+  // 7개 시나리오(로그인·저장·직접 호출)를 순차 수행하므로 예산을 늘린다.
+  test.setTimeout(180_000);
   const storeId = "store-perm-closed-server";
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { email: "hq@example.com" },
@@ -567,26 +572,32 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     });
   }
 
-  // UI 차단 속성(disabled)을 제거해 폼 제출이 서버 action까지 도달하게 한다.
+  // UI 차단 속성(disabled)을 제거하고 저장 버튼 클릭 대신 폼을 직접 제출해
+  // 요청이 반드시 서버 action까지 도달하게 한다. React가 리렌더링마다 disabled를
+  // 다시 붙이므로 버튼 클릭은 불안정하다.
   async function bypassUiAndSubmitSales(
     page: Page,
     ledgerId: string,
     cashValue: string,
   ) {
     await page.goto(`/app/ledgers/${ledgerId}?tab=sales`);
-    await page.evaluate(() => {
-      document
-        .querySelectorAll('[data-ledger-detail-panel="sales"] [disabled]')
-        .forEach((element) => element.removeAttribute("disabled"));
-    });
     const panel = page.locator('[data-ledger-detail-panel="sales"]');
+    await panel
+      .locator("[disabled]")
+      .evaluateAll((elements) =>
+        elements.forEach((element) => element.removeAttribute("disabled")),
+      );
     await panel.getByLabel("현금", { exact: true }).fill(cashValue);
     await panel.getByLabel("본사 수정 사유").fill("서버 권한 경계 검증");
-    await panel.getByRole("button", { name: "저장", exact: true }).click();
+    await panel
+      .locator("form")
+      .filter({ has: page.getByLabel("본사 수정 사유") })
+      .evaluate((form) => (form as HTMLFormElement).requestSubmit());
   }
 
   try {
-    // 1) HQ_STAFF: LEDGER_EDIT는 있지만 LEDGER_CLOSED_EDIT가 없다. 서버가 상태
+    // 1) HQ_STAFF: LEDGER_EDIT는 있지만 LEDGER_CLOSED_EDIT가 없다. 편집 패널이
+    // 렌더링되므로 disabled를 제거해 폼 제출을 서버까지 도달하게 한다. 서버가 상태
     // 게이트에서 거부하고 DB는 변하지 않는다.
     const beforeStaff = await snapshotLedger(ledger.id);
     await login(page, "hq-assigned@example.com");
@@ -596,21 +607,8 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     ).toBeVisible();
     expect(await snapshotLedger(ledger.id)).toEqual(beforeStaff);
 
-    // 2) CLOSE_MANAGER: LEDGER_EDIT 자체가 없어 action 진입 시 미승인으로 이동한다.
-    const beforeCloseManager = await snapshotLedger(ledger.id);
-    await login(page, "close-manager@example.com");
-    await bypassUiAndSubmitSales(page, ledger.id, "4200");
-    await expect(page).toHaveURL(/\/app\/unauthorized/);
-    expect(await snapshotLedger(ledger.id)).toEqual(beforeCloseManager);
-
-    // 3) SETTINGS_ADMIN: REPORT_VIEW만 있어 화면은 열리지만 저장은 미승인으로 이동.
-    const beforeSettings = await snapshotLedger(ledger.id);
-    await login(page, "settings-admin@example.com");
-    await bypassUiAndSubmitSales(page, ledger.id, "4300");
-    await expect(page).toHaveURL(/\/app\/unauthorized/);
-    expect(await snapshotLedger(ledger.id)).toEqual(beforeSettings);
-
-    // 4) OWNER: seed 기본 권한으로 마감 장부 저장이 허용된다. 상태·최초 마감 정보는 유지.
+    // 2) OWNER: seed 기본 권한으로 마감 장부 저장이 허용된다. 이 저장에서 서버
+    // action id를 확보해 이후 직접 호출 검증에 쓴다. 상태·최초 마감 정보는 유지.
     await login(page, "owner@example.com");
     let capturedActionId: string | null = null;
     page.on("request", (request) => {
@@ -628,47 +626,70 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     expect(afterOwner.cashAmount).toBe(4400);
     expect(afterOwner.status).toBe("HEADQUARTERS_CLOSED");
     expect(afterOwner.closedById).toBe(adminUser.id);
-    expect(afterOwner.closedAt?.toISOString()).toBe(
-      "2026-01-01T00:00:00.000Z",
-    );
+    expect(afterOwner.closedAt?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
     expect(afterOwner.version).toBe(beforeStaff.version + 1);
+    expect(capturedActionId).toBeTruthy();
 
-    // 5) STORE_MANAGER: 화면 자체가 미승인이고, OWNER 저장에서 확보한 action id로
-    // 서버 action을 직접 호출해도 거부되고 DB는 변하지 않는다.
+    // UI를 거치지 않는 서버 action 직접 호출 헬퍼. 확보한 action id로 현재 장부
+    // 토큰 기준 payload를 POST한다.
+    async function rawSalesSave(cashAmount: string) {
+      const fresh = await snapshotLedger(ledger.id);
+
+      return {
+        before: fresh,
+        response: await page.request.post(`/app/ledgers/${ledger.id}`, {
+          headers: {
+            "Next-Action": capturedActionId!,
+            "Content-Type": "text/plain;charset=UTF-8",
+          },
+          data: JSON.stringify([
+            {
+              ledgerId: ledger.id,
+              storeId,
+              closingDate: closingDate.toISOString().slice(0, 10),
+              version: fresh.version,
+              ledgerUpdatedAt: fresh.updatedAt.toISOString(),
+              totalSalesAmount: "10000",
+              carryoverSalesAmount: "0",
+              cashAmount,
+              cardAmount: "6000",
+              otherPaymentAmount: "0",
+              reason: "서버 권한 경계 검증",
+            },
+          ]),
+        }),
+      };
+    }
+
+    // 3) OWNER 직접 호출 양성 대조: 같은 경로로 OWNER는 저장이 성공해야 이후
+    // 거부 검증이 무의미한 실패가 아님을 보장한다.
+    const ownerRaw = await rawSalesSave("4450");
+    expect(ownerRaw.response.status()).toBeLessThan(400);
+    await expect
+      .poll(async () => (await snapshotLedger(ledger.id)).cashAmount)
+      .toBe(4450);
+
+    // 4) CLOSE_MANAGER: LEDGER_EDIT 자체가 없어 직접 호출이 거부되고 DB는 불변.
+    await login(page, "close-manager@example.com");
+    const closeManagerRaw = await rawSalesSave("4500");
+    expect(closeManagerRaw.response.status()).not.toBeGreaterThanOrEqual(500);
+    expect(await snapshotLedger(ledger.id)).toEqual(closeManagerRaw.before);
+
+    // 5) SETTINGS_ADMIN: REPORT_VIEW만 있어 직접 호출이 거부되고 DB는 불변.
+    await login(page, "settings-admin@example.com");
+    const settingsRaw = await rawSalesSave("4600");
+    expect(settingsRaw.response.status()).not.toBeGreaterThanOrEqual(500);
+    expect(await snapshotLedger(ledger.id)).toEqual(settingsRaw.before);
+
+    // 6) STORE_MANAGER: 화면 자체가 미승인이고 직접 호출도 거부된다.
     await login(page, "manager@example.com");
     await page.goto(`/app/ledgers/${ledger.id}`);
     await expect(page).toHaveURL(/\/app\/unauthorized/);
+    const managerRaw = await rawSalesSave("4700");
+    expect(managerRaw.response.status()).not.toBeGreaterThanOrEqual(500);
+    expect(await snapshotLedger(ledger.id)).toEqual(managerRaw.before);
 
-    if (capturedActionId) {
-      const fresh = await snapshotLedger(ledger.id);
-      const response = await page.request.post(`/app/ledgers/${ledger.id}`, {
-        headers: {
-          "Next-Action": capturedActionId,
-          "Content-Type": "text/plain;charset=UTF-8",
-        },
-        data: JSON.stringify([
-          {
-            ledgerId: ledger.id,
-            storeId,
-            closingDate: closingDate.toISOString().slice(0, 10),
-            version: fresh.version,
-            ledgerUpdatedAt: fresh.updatedAt.toISOString(),
-            totalSalesAmount: "10000",
-            carryoverSalesAmount: "0",
-            cashAmount: "4500",
-            cardAmount: "6000",
-            otherPaymentAmount: "0",
-            reason: "서버 권한 경계 검증",
-          },
-        ]),
-      });
-
-      // 서버가 저장만 거부한다면 응답 상태와 무관하게 DB는 변하지 않아야 한다.
-      expect(response.status()).not.toBeGreaterThanOrEqual(500);
-      expect(await snapshotLedger(ledger.id)).toEqual(fresh);
-    }
-
-    // 6) HOLIDAY: OWNER 권한이어도 휴무 장부는 서버에서 차단된다.
+    // 7) HOLIDAY: OWNER 권한이어도 휴무 장부는 서버에서 차단된다.
     const beforeHoliday = await snapshotLedger(holidayLedger.id);
     await login(page, "owner@example.com");
     await bypassUiAndSubmitSales(page, holidayLedger.id, "1000");
