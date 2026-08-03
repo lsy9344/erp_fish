@@ -2,6 +2,7 @@ import { StoreAccessMode } from "../../../generated/prisma/index.js";
 import type { DailyLedgerStatus } from "../../../generated/prisma/index.js";
 import {
   applyCorrectionValuesToLedgerReviewInput,
+  hasCompleteFifoRemainingBasis,
   calculateExpenseTotal,
   calculateLedgerReviewSummary,
   calculatePaymentTotal,
@@ -368,6 +369,33 @@ export function getDashboardInventoryAmountStatus(
   return inventoryAmount.value === null ? "unavailable" : "amount";
 }
 
+/**
+ * DESIGN.md D2: 마감 장부의 재고금액은 FIFO 근거가 전 품목에 완저할 때만 금액으로
+ * 표시한다. 하나라도 근거가 없으면 부분합을 정상 금액처럼 보여주지 않고
+ * “데이터 부족”으로 내린다. 미마감·휴무는 기존 계산값 계약을 그대로 쓴다.
+ */
+export function getClosedLedgerFifoInventoryAmount(
+  ledgerStatus: DailyLedgerStatus | null,
+  inventoryItems: LedgerReviewInventoryInput[],
+  inventoryAmount: LedgerReviewMetric,
+): LedgerReviewMetric {
+  if (
+    ledgerStatus !== "HEADQUARTERS_CLOSED" ||
+    hasCompleteFifoRemainingBasis(inventoryItems)
+  ) {
+    return inventoryAmount;
+  }
+
+  return {
+    ...inventoryAmount,
+    value: null,
+    status: "data-insufficient",
+    label: "데이터 부족",
+    unavailableReason: "계산 불가",
+    reason: "FIFO 근거가 불완전해 마감 재고금액을 계산할 수 없습니다.",
+  };
+}
+
 export async function getHqDashboardRows({
   datePreset = "today",
   sortMode = "priority",
@@ -724,6 +752,12 @@ function toDashboardRow(
     lossItems: correctionOverlay.lossItems,
     plannedSalesItems,
   });
+  // DESIGN.md D2: 마감 장부 재고금액은 FIFO 근거가 완전할 때만 금액으로 표시한다.
+  const inventoryAmount = getClosedLedgerFifoInventoryAmount(
+    ledger.status,
+    correctionOverlay.reviewInput.inventoryItems,
+    reviewSummary.inventoryAmount,
+  );
   const missingItems = getLedgerReviewMissingItems({
     storeId: store.id,
     closingDate: ledger.closingDate.toISOString(),
@@ -779,11 +813,11 @@ function toDashboardRow(
     operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
     // DESIGN.md D1: 재고금액은 서버 계산값을 그대로 노출하고 부분합은 허용하지
-    // 않는다(계산 근거 부족 시 reviewSummary.inventoryAmount.value === null).
-    inventoryAmount: reviewSummary.inventoryAmount,
+    // 않는다(계산 근거 부족 시 inventoryAmount.value === null).
+    inventoryAmount,
     inventoryAmountStatus: getDashboardInventoryAmountStatus(
       ledger.status,
-      reviewSummary.inventoryAmount,
+      inventoryAmount,
     ),
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
@@ -950,6 +984,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
   });
+  // DESIGN.md D2: 상세 화면도 마감 장부 재고금액의 FIFO 완전성 계약을 동일하게 적용한다.
+  const inventoryAmount = getClosedLedgerFifoInventoryAmount(
+    ledger.status,
+    correctionOverlay.reviewInput.inventoryItems,
+    correctedReviewSummary.inventoryAmount,
+  );
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.store.id,
     closingDate: ledger.closingDate.toISOString(),
@@ -1005,10 +1045,10 @@ export async function getHqLedgerDetail(ledgerId: string) {
     operatingSalesAmount: correctedReviewSummary.operatingSales,
     analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
     // DESIGN.md D1: 상세 화면도 동일한 재고금액 계약(상태 분기 포함)을 유지한다.
-    inventoryAmount: correctedReviewSummary.inventoryAmount,
+    inventoryAmount,
     inventoryAmountStatus: getDashboardInventoryAmountStatus(
       ledger.status,
-      correctedReviewSummary.inventoryAmount,
+      inventoryAmount,
     ),
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(

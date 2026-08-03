@@ -452,6 +452,17 @@ function canUseFifoRemainingAmounts(items: LedgerReviewInventoryInput[]) {
   );
 }
 
+/**
+ * DESIGN.md D2: 마감 장부 재고금액은 FIFO 기준 총액만 표시해야 한다. 품목 하나라도
+ * FIFO 잔액 근거가 없으면 quantity×unitPrice 대체 합계가 정상 금액처럼 보일 수 있으므로
+ * 대시보드 표시 전에 이 함수로 완전성을 확인한다.
+ */
+export function hasCompleteFifoRemainingBasis(
+  items: LedgerReviewInventoryInput[],
+) {
+  return canUseFifoRemainingAmounts(items);
+}
+
 function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
   if (items.length === 0) {
     return null;
