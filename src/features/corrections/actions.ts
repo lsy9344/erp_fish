@@ -32,6 +32,23 @@ import { isOperatingSalesTotalInRange } from "./operating-sales-validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
 
+// DESIGN.md D9: 정정 저장과 직접 저장이 같은 충돌 경계를 공유하도록, 렌더링 시점
+// 장부 토큰이 오래된 정정 요청은 충돌로 거부한다.
+const correctionConflictMessage =
+  "저장 사이에 장부가 변경돼 정정할 수 없습니다. 화면을 새로고침한 뒤 다시 정정해 주세요.";
+
+function parseCorrectionLedgerToken(value: string): Date | null {
+  const parsed = new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function correctionConflictError<T = never>(): ActionResult<T> {
+  // 정정 패널은 구조화 충돌 다이얼로그가 아니라 폼 오류로 안내하므로 기존 오류
+  // UX 경로를 쓴다. 코드만 직접 저장과 동일하게 LEDGER_CONFLICT로 맞춘다.
+  return actionError("LEDGER_CONFLICT", correctionConflictMessage);
+}
+
 const ledgerFieldKinds: Record<string, CorrectionValue["kind"]> = {
   workerCount: "quantity",
   workMemo: "text",
@@ -579,6 +596,13 @@ export async function createCorrectionRecord(
 
   const { ledgerId } = parsed.data;
   await requireHeadquartersLedgerScope(ledgerId);
+  const expectedLedgerUpdatedAt = parseCorrectionLedgerToken(
+    parsed.data.ledgerUpdatedAt,
+  );
+
+  if (!expectedLedgerUpdatedAt) {
+    return actionError("LEDGER_CONFLICT", correctionConflictMessage);
+  }
 
   try {
     const result = await db.$transaction<
@@ -597,6 +621,7 @@ export async function createCorrectionRecord(
           select: {
             id: true,
             status: true,
+            updatedAt: true,
             totalSalesAmount: true,
             carryoverSalesAmount: true,
           },
@@ -609,6 +634,30 @@ export async function createCorrectionRecord(
           });
 
           return existing ? ledgerNotClosedError() : ledgerNotFoundError();
+        }
+
+        // DESIGN.md D9: 렌더링 이후 직접 저장(또는 다른 정정)이 장부를 바꿨다면
+        // 이 정정은 오래된 요청이라 충돌로 거부한다.
+        if (ledger.updatedAt.getTime() !== expectedLedgerUpdatedAt.getTime()) {
+          return correctionConflictError();
+        }
+
+        // 정정도 장부 version을 올려 이후 직접 저장/정정이 같은 토큰으로 충돌 판정하게
+        // 한다. 토큰이 이미 달라졌으면(동시 요청) 여기서 0건이 되어 충돌로 끝난다.
+        const claimed = await tx.dailyLedger.updateMany({
+          where: {
+            id: ledgerId,
+            status: "HEADQUARTERS_CLOSED",
+            updatedAt: expectedLedgerUpdatedAt,
+          },
+          data: {
+            version: { increment: 1 },
+            updatedById: actor.user.id,
+          },
+        });
+
+        if (claimed.count !== 1) {
+          return correctionConflictError();
         }
 
         const originalValue = await resolveOriginalCorrectionValue(

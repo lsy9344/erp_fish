@@ -412,6 +412,7 @@ export default async function LedgerDetailPage({
       {canShowCorrectionPanel ? (
         <CorrectionPanel
           ledgerId={ledger.id}
+          ledgerUpdatedAt={ledger.updatedAt}
           targetOptions={correctionTargetOptions}
           records={correctionRecords}
           createAction={createCorrectionRecord}

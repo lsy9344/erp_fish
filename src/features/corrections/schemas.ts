@@ -163,6 +163,12 @@ export const correctionRecordSchema = z
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, "장부를 확인해 주세요.")),
+    // DESIGN.md D9: 정정 저장도 장부 충돌 토큰(updatedAt)을 함께 보내 직접 저장과
+    // 같은 충돌 경계를 공유한다. 화면이 렌더링된 시점의 장부 값이다.
+    ledgerUpdatedAt: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "장부 상태를 확인해 주세요.")),
     targetType: z.enum(correctionTargetTypes, {
       errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
     }),

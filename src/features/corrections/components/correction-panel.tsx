@@ -24,6 +24,9 @@ import { formatShortKstDateTime } from "~/lib/format";
 
 type CorrectionPanelProps = {
   ledgerId: string;
+  // DESIGN.md D9: 화면이 렌더링된 시점의 장부 충돌 토큰. 정정 저장 시 서버가
+  // 직접 저장과 같은 경계로 오래된 요청을 판정한다.
+  ledgerUpdatedAt: string;
   targetOptions: CorrectionTargetOption[];
   records: CorrectionRecordListItem[];
   createAction: typeof createCorrectionRecord;
@@ -65,6 +68,7 @@ function getCorrectionInputMode(target: CorrectionTargetOption | null) {
 
 export function CorrectionPanel({
   ledgerId,
+  ledgerUpdatedAt,
   targetOptions,
   records,
   createAction,
@@ -114,6 +118,7 @@ export function CorrectionPanel({
     try {
       const result = await createAction({
         ledgerId,
+        ledgerUpdatedAt,
         targetType: selectedTarget.targetType,
         targetId: selectedTarget.targetId,
         fieldKey: selectedTarget.fieldKey,
