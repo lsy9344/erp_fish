@@ -898,19 +898,27 @@ export async function saveHqLedgerInventoryAdjustment(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: before.id,
-          // 단독 재고 조정은 한 품목 행의 현재고만 바꾸므로 그 행의 수량 정정만
-          // 대체한다. 다른 품목의 유효 정정은 그대로 유지돼야 한다.
+          // 단독 재고 조정은 한 품목 행의 현재고(currentQuantity)만 바꾸므로 그 행의
+          // currentQuantity 정정만 대체한다. 건드리지 않은 quantity(표시재고) 정정은
+          // 유지돼야 한다.
           targetTypes: ["INVENTORY_ROW"],
           targetIds: [inventoryItem.id],
-          fieldKeys: ["currentQuantity", "quantity"],
+          fieldKeys: ["currentQuantity"],
         });
+
+        // 응답과 감사 after는 supersede 후 남아 있는 활성 정정까지 반영한 유효값
+        // 기준이다. 다른 정정이 남은 행을 원본 그대로 반환하면 화면에서 정정값이
+        // 사라져 보인다. 이터레이터는 한 번만 소진되므로 배열로 고정해 재사용한다.
+        const remainingOverlayValues = Array.from(
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
 
         const afterAuditLine = afterLine
           ? applyCorrectionOverlayToInventoryEditValues(
               { id: before.id, items: [afterLine] },
-              getLatestCorrectionValueMap(
-                await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
-              ).values(),
+              remainingOverlayValues,
             ).items[0] ?? afterLine
           : afterLine;
 
@@ -930,7 +938,14 @@ export async function saveHqLedgerInventoryAdjustment(
           reason: parsed.data.reason,
         });
 
-        return actionOk(applyInventoryFormDisplayPolicy(after));
+        return actionOk(
+          applyInventoryFormDisplayPolicy(
+            applyCorrectionOverlayToInventoryEditValues(
+              after,
+              remainingOverlayValues,
+            ),
+          ),
+        );
       },
     );
 

@@ -179,3 +179,106 @@ test("inventory and loss edit overlays apply row-scoped quantity/amount correcti
   assert.equal(overlaidLoss.lossItems[0].quantity, 3);
   assert.equal(overlaidLoss.lossItems[0].amount, 5400);
 });
+
+test("text overlays distinguish no-correction from clearing a value to null", async () => {
+  const {
+    applyCorrectionOverlayToLedgerFields,
+    applyExpenseRowOverlay,
+    applyCorrectionOverlayToLossEditValues,
+  } = await import(overlayUrl.href);
+
+  // 근무 메모: 원본값이 있는 상태를 null로 지우는 활성 정정은 폼/감사에 반영된다.
+  const ledger = {
+    id: "ledger-1",
+    totalSalesAmount: 10000,
+    carryoverSalesAmount: 0,
+    cashAmount: 4000,
+    cardAmount: 6000,
+    otherPaymentAmount: 0,
+    workerCount: 2,
+    workMemo: "원본 메모",
+  };
+  const clearedWorkMemo = applyCorrectionOverlayToLedgerFields(
+    ledger,
+    [
+      appliedValue({
+        dailyLedgerId: "ledger-1",
+        targetType: "LEDGER_FIELD",
+        targetId: "ledger-1",
+        fieldKey: "workMemo",
+        latestAppliedValue: { kind: "text", value: null, label: "특이사항" },
+      }),
+    ],
+    { includeDerivedTotal: false },
+  );
+  assert.equal(clearedWorkMemo.workMemo, null);
+
+  // 정정이 없으면 원본 메모가 유지된다("정정 없음"과 "null로 지운 정정" 구분).
+  const untouched = applyCorrectionOverlayToLedgerFields(ledger, [], {
+    includeDerivedTotal: false,
+  });
+  assert.equal(untouched.workMemo, "원본 메모");
+
+  // 문자열로 바꾸는 정정도 그대로 적용된다.
+  const replacedWorkMemo = applyCorrectionOverlayToLedgerFields(
+    ledger,
+    [
+      appliedValue({
+        dailyLedgerId: "ledger-1",
+        targetType: "LEDGER_FIELD",
+        targetId: "ledger-1",
+        fieldKey: "workMemo",
+        latestAppliedValue: { kind: "text", value: "정정 메모", label: "특이사항" },
+      }),
+    ],
+    { includeDerivedTotal: false },
+  );
+  assert.equal(replacedWorkMemo.workMemo, "정정 메모");
+
+  // 지출 메모: null로 지우는 정정이 행에 반영된다.
+  const rows = [{ id: "e1", amount: 1000, memo: "원본 메모" }];
+  const clearedMemoRows = applyExpenseRowOverlay(
+    rows,
+    "ledger-1",
+    [
+      appliedValue({
+        dailyLedgerId: "ledger-1",
+        targetType: "EXPENSE_ROW",
+        targetId: "e1",
+        fieldKey: "memo",
+        latestAppliedValue: { kind: "text", value: null, label: "지출 1 · 메모" },
+      }),
+    ],
+  );
+  assert.equal(clearedMemoRows[0].memo, null);
+  assert.equal(rows[0].memo, "원본 메모");
+
+  // 손실 사유: reason 정정이 폼/감사에 반영되고, null로 지우는 정정도 반영된다.
+  const loss = {
+    id: "ledger-1",
+    lossItems: [
+      { id: "loss-1", quantity: 2, amount: 4000, reason: "원본 사유" },
+      { id: "loss-2", quantity: 1, amount: 1000, reason: "지울 사유" },
+    ],
+  };
+  const overlaidLoss = applyCorrectionOverlayToLossEditValues(loss, [
+    appliedValue({
+      dailyLedgerId: "ledger-1",
+      targetType: "LOSS_ROW",
+      targetId: "loss-1",
+      fieldKey: "reason",
+      latestAppliedValue: { kind: "text", value: "정정 사유", label: "손실 1 · 사유" },
+    }),
+    appliedValue({
+      dailyLedgerId: "ledger-1",
+      targetType: "LOSS_ROW",
+      targetId: "loss-2",
+      fieldKey: "reason",
+      latestAppliedValue: { kind: "text", value: null, label: "손실 2 · 사유" },
+    }),
+  ]);
+  assert.equal(overlaidLoss.lossItems[0].reason, "정정 사유");
+  assert.equal(overlaidLoss.lossItems[1].reason, null);
+  // 정정이 없는 필드는 원본 유지.
+  assert.equal(overlaidLoss.lossItems[0].quantity, 2);
+});

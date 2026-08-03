@@ -86,7 +86,12 @@ function readAppliedNumber(
     : null;
 }
 
-function readAppliedString(
+/**
+ * 텍스트 정정의 삼상태 읽기. undefined는 "정정 없음", string|null은 "적용된
+ * 정정값"이다. 빈 텍스트를 지우는 정정은 스키마에서 value=null로 정규화되므로
+ * null도 유효한 적용 값으로 구분해 폼/감사에 반영해야 한다.
+ */
+function readAppliedText(
   map: Map<string, CorrectionAppliedValue>,
   input: {
     dailyLedgerId: string;
@@ -94,12 +99,18 @@ function readAppliedString(
     targetId: string;
     fieldKey: string;
   },
-): string | null {
+): string | null | undefined {
   const value = readAppliedValue(map, input);
 
-  return value !== null && typeof value.value === "string"
-    ? value.value
-    : null;
+  if (value === null) {
+    return undefined;
+  }
+
+  if (typeof value.value === "string") {
+    return value.value;
+  }
+
+  return value.value === null ? null : undefined;
 }
 
 const paymentOverlayFieldKeys = [
@@ -180,14 +191,14 @@ export function applyCorrectionOverlayToLedgerFields<
     overlay.workerCount = workerCount;
   }
 
-  const workMemo = readAppliedString(map, {
+  const workMemo = readAppliedText(map, {
     dailyLedgerId: ledger.id,
     targetType: "LEDGER_FIELD",
     targetId: ledger.id,
     fieldKey: "workMemo",
   });
 
-  if (workMemo !== null) {
+  if (workMemo !== undefined) {
     overlay.workMemo = workMemo;
   }
 
@@ -220,14 +231,14 @@ export function applyExpenseRowOverlay<T extends { id: string }>(
       targetId: row.id,
       fieldKey: "amount",
     });
-    const memo = readAppliedString(map, {
+    const memo = readAppliedText(map, {
       dailyLedgerId: ledgerId,
       targetType: "EXPENSE_ROW",
       targetId: row.id,
       fieldKey: "memo",
     });
 
-    if (amount === null && memo === null) {
+    if (amount === null && memo === undefined) {
       return row;
     }
 
@@ -237,7 +248,7 @@ export function applyExpenseRowOverlay<T extends { id: string }>(
       next.amount = amount;
     }
 
-    if (memo !== null && "memo" in row) {
+    if (memo !== undefined && "memo" in row) {
       next.memo = memo;
     }
 
@@ -301,6 +312,7 @@ type LossOverlayTarget = {
     id: string;
     quantity: number;
     amount: number;
+    reason: string | null;
   }>;
 };
 
@@ -328,8 +340,14 @@ export function applyCorrectionOverlayToLossEditValues<
       targetId: item.id,
       fieldKey: "amount",
     });
+    const reason = readAppliedText(map, {
+      dailyLedgerId: data.id,
+      targetType: "LOSS_ROW",
+      targetId: item.id,
+      fieldKey: "reason",
+    });
 
-    if (quantity === null && amount === null) {
+    if (quantity === null && amount === null && reason === undefined) {
       return item;
     }
 
@@ -339,6 +357,7 @@ export function applyCorrectionOverlayToLossEditValues<
       ...item,
       quantity: quantity ?? item.quantity,
       amount: amount ?? item.amount,
+      reason: reason !== undefined ? reason : item.reason,
     };
   });
 
