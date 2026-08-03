@@ -5,6 +5,7 @@ import {
 import type { Prisma } from "../../../generated/prisma";
 
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
+import { resolveCarryoverRecheckStatus } from "~/features/inventory/carryover-cost-recheck";
 import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
 import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-price";
 import { SALES_PRICE_CARRYOVER_LEDGER_STATUSES } from "~/features/inventory/sales-price-carryover.ts";
@@ -589,8 +590,10 @@ function resolveExistingCarryoverStatus(
     | {
         status: string;
         ledgerInventoryItems: ExistingCarryoverBasis[];
+        remainingCostByProduct: Map<string, number>;
       }
     | undefined,
+  recordedCarryoverCostByLedger: Map<string, Map<string, number>>,
 ) {
   if (!carryoverLedger) {
     return item.carryoverStatus;
@@ -607,14 +610,26 @@ function resolveExistingCarryoverStatus(
     (candidate) => candidate.productId === item.productId,
   );
 
-  if (
-    basis &&
-    toPreviousQuantity(basis) !== decimalToNumber(item.previousQuantity)
-  ) {
-    return InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED;
+  if (!basis) {
+    return item.carryoverStatus;
   }
 
-  return item.carryoverStatus;
+  // DESIGN.md D10: 수량 일치뿐 아니라 FIFO 원가 근거 변화도 재확인 사유다.
+  // 과거 매입 단가/FIFO 원가가 바뀌면 수량이 같아도 이월 재확인이 필요하다.
+  return resolveCarryoverRecheckStatus({
+    currentStatus: item.carryoverStatus,
+    isReviewRequiredCarryover: false,
+    previousLedgerClosed: false,
+    quantityMatches:
+      toPreviousQuantity(basis) === decimalToNumber(item.previousQuantity),
+    previousRemainingCost:
+      carryoverLedger.remainingCostByProduct.get(item.productId) ?? null,
+    recordedCarryoverCost:
+      (item.carryoverLedgerId
+        ? recordedCarryoverCostByLedger.get(item.carryoverLedgerId)
+        : undefined
+      )?.get(item.productId) ?? null,
+  });
 }
 
 function withPurchaseAggregate(
@@ -699,11 +714,71 @@ async function mergeExistingInventoryLines(
                 quantity: true,
               },
             },
+            // DESIGN.md D10: 원천 장부의 현재 FIFO 잔액 원가. 이월 재확인 판정에 쓴다.
+            ledgerInventoryFifoLots: {
+              select: {
+                productId: true,
+                remainingAmount: true,
+              },
+            },
           },
         });
   const carryoverLedgerById = new Map(
-    carryoverLedgers.map((ledger) => [ledger.id, ledger]),
+    carryoverLedgers.map((ledger) => {
+      const remainingCostByProduct = new Map<string, number>();
+
+      for (const lot of ledger.ledgerInventoryFifoLots) {
+        remainingCostByProduct.set(
+          lot.productId,
+          (remainingCostByProduct.get(lot.productId) ?? 0) +
+            lot.remainingAmount,
+        );
+      }
+
+      return [
+        ledger.id,
+        {
+          status: ledger.status,
+          ledgerInventoryItems: ledger.ledgerInventoryItems,
+          remainingCostByProduct,
+        },
+      ] as const;
+    }),
   );
+  // 다음 장부가 마지막 저장 시점에 원천 장부에서 이어받은 lot의 원가 기록
+  // (sourceLedgerId = 원천 장부 id인 lot의 originalAmount). 이월 lot은 다음 날 판매로
+  // 소진돼도 originalAmount가 보존되므로 저장 시점 이월 원가 근거 그대로다.
+  const currentLedgerCarryoverLots =
+    carryoverLedgerIds.length === 0
+      ? []
+      : await tx.ledgerInventoryFifoLot.findMany({
+          where: {
+            dailyLedgerId,
+            sourceLedgerId: { in: carryoverLedgerIds },
+          },
+          select: {
+            sourceLedgerId: true,
+            productId: true,
+            originalAmount: true,
+          },
+        });
+  const recordedCarryoverCostByLedger = new Map<string, Map<string, number>>();
+
+  for (const lot of currentLedgerCarryoverLots) {
+    if (!lot.sourceLedgerId) {
+      continue;
+    }
+
+    const byProduct =
+      recordedCarryoverCostByLedger.get(lot.sourceLedgerId) ??
+      new Map<string, number>();
+
+    byProduct.set(
+      lot.productId,
+      (byProduct.get(lot.productId) ?? 0) + lot.originalAmount,
+    );
+    recordedCarryoverCostByLedger.set(lot.sourceLedgerId, byProduct);
+  }
   const lines = existingItems.map((item) =>
     toExistingInventoryLine(
       item,
@@ -715,6 +790,7 @@ async function mergeExistingInventoryLines(
         item.carryoverLedgerId
           ? carryoverLedgerById.get(item.carryoverLedgerId)
           : undefined,
+        recordedCarryoverCostByLedger,
       ),
     ),
   );
