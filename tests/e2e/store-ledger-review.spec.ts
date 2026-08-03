@@ -521,6 +521,13 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   await expect(metrics).not.toContainText("인당생산성");
   await expect(metrics).not.toContainText("매출차액");
 
+  // 소유자 결정(2026-08-03): 7단계 상단 KPI 카드 4개(매출·마진율·당일 재고 총 금액·근무 인원).
+  const dailyKpi = page.getByLabel("당일 주요 숫자");
+  await expect(dailyKpi).toContainText("매출");
+  await expect(dailyKpi).toContainText("마진율");
+  await expect(dailyKpi).toContainText("당일 재고 총 금액");
+  await expect(dailyKpi).toContainText("근무 인원");
+
   // WO-04(2026-06-22): 오늘 많이 팔린 품목 카드(재고 흐름 기반 추정값).
   // 판매수량 = 전일 10 + 매입 5 - 당일 8 = 7개, 추정 매출 = 7 * 2,000 = 14,000원.
   // WO(2026-06-26): 관리자 리포트식 막대 차트(금액/수량 전환)로 교체. 막대 라벨은
@@ -575,8 +582,10 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   ).toHaveAttribute("aria-current", "step");
 
   // 내부 필드 키와 차단 지표는 계속 노출 금지.
+  // 소유자 결정(2026-08-03): grossMarginRate/inventoryAmount는 7단계 KPI 카드로 노출되므로
+  // 차단 목록에서 제외한다(calculation-policy-gates.spec.ts와 같은 기준).
   await expect(page.locator("main")).not.toContainText(
-    /costOfGoodsSold|grossProfit|grossMarginRate|operatingProfit|productivity|inventoryAmount|differenceAmount/,
+    /costOfGoodsSold|grossProfit|operatingProfit|productivity|differenceAmount/,
   );
 });
 

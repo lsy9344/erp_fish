@@ -104,7 +104,10 @@ test("store manager response shaping recursively removes sensitive ledger metric
       totalSales: { value: 100_000 },
       costOfGoodsSold: { value: 30_000 },
       grossProfit: { value: 70_000 },
-      grossMarginRate: { value: 0.7 },
+      grossMarginRate: {
+        value: 0.7,
+        reason: "FIFO 원천 lot 근거가 부족해 계산 기준 확인이 필요합니다.",
+      },
       operatingProfit: { value: 60_000 },
       productivity: { value: 30_000 },
       workerCount: { value: 3 },
@@ -202,12 +205,11 @@ test("store manager response shaping recursively removes sensitive ledger metric
     ],
   });
 
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 응답에서 제거한다.
   // 보완(2026-06-22 WO-01): 결제차액은 제거, 근무인원 수 추가.
   // 매출원가·매출이익·영업이익·인당생산성·매출차이·FIFO·lot 근거는 계속 차단한다.
   // WO(2026-06-26): 판매한 가격 비교 지표는 본사 전용으로 두고 지점장 요약에서는 제거한다.
-  // 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)도 본사 전용으로
-  // 확정되어 지점장 요약/단계 응답에서 제거된다.
+  // 소유자 결정(2026-08-03): 마진율(grossMarginRate)·당일 재고 총 금액(inventoryAmount)은
+  // 지점장 7단계 KPI 카드로 노출되므로 차단 목록에서 제외한다(reason은 제거됨).
   const stillBlockedSummaryKeys = [
     "costOfGoodsSold",
     "grossProfit",
@@ -217,8 +219,6 @@ test("store manager response shaping recursively removes sensitive ledger metric
     "hopedSalePriceLossAmount",
     "paymentDifference",
     "expenseTotal",
-    "grossMarginRate",
-    "inventoryAmount",
     "plannedSalesTotal",
     "plannedGrossProfit",
     "plannedGrossMarginRate",
@@ -233,15 +233,25 @@ test("store manager response shaping recursively removes sensitive ledger metric
     );
   }
 
-  // 지점장 요약은 직접 입력·확인하는 매출 구성과 근무인원만 남긴다.
-  // 마진율·재고금액 등 내부 성과/원가 지표는 계속 제거한다.
+  // 지점장 요약은 직접 입력·확인하는 매출 구성과 근무인원, 그리고 7단계 KPI 카드로
+  // 노출하는 마진율·당일 재고 총 금액만 남긴다(소유자 결정 2026-08-03).
+  // 나머지 내부 성과/원가 지표는 계속 제거한다.
   assert.deepEqual(Object.keys(safeReview.summary).sort(), [
     "carryoverSales",
     "closingTotalSales",
+    "grossMarginRate",
+    "inventoryAmount",
     "operatingSales",
     "totalSales",
     "workerCount",
   ]);
+  // 값·상태는 유지하되 내부 계산 사유(reason)는 지점장 응답에서 제거한다.
+  assert.equal(safeReview.summary.grossMarginRate.value, 0.7);
+  assert.equal(
+    Object.hasOwn(safeReview.summary.grossMarginRate, "reason"),
+    false,
+  );
+  assert.equal(safeReview.summary.inventoryAmount.value, 8_000);
   // 판매 추정 표시 필드(quantityLabel/quantityText)는 민감 금액이 아니므로 지점장
   // 응답에서도 유지되고, amount만 제거된다(2026-06-26 WO).
   assert.deepEqual(safeReview.signals[0], {

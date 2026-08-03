@@ -12,6 +12,7 @@ import {
   XIcon,
 } from "lucide-react";
 
+import { MetricCard } from "~/components/metric-card";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -26,6 +27,7 @@ import { getKstLedgerDateParam } from "~/features/ledger/date";
 import type {
   LedgerReviewStepMetric,
   StoreManagerLedgerReviewStepData,
+  StoreManagerLedgerReviewSummary,
 } from "~/features/ledger/review-types";
 import type { FieldErrors } from "~/lib/action-result";
 import { formatKrw, formatSignedKrw, formatSignedQuantity } from "~/lib/format";
@@ -157,6 +159,34 @@ function formatMetric(metric: LedgerReviewStepMetric) {
   return metric.value === null ? "계산 불가" : String(metric.value);
 }
 
+// 본사 장부 상세(app/ledgers/[ledgerId]/page.tsx)의 카드 표기와 같은 형식을 쓴다.
+const percentFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+type ReviewSummaryMetric = StoreManagerLedgerReviewSummary["totalSales"];
+
+function formatSummaryKrw(metric: ReviewSummaryMetric) {
+  if (metric.value === null) {
+    return metric.label ?? metric.unavailableReason ?? "계산 불가";
+  }
+
+  return formatKrw(metric.value);
+}
+
+function formatSummaryPercent(metric: ReviewSummaryMetric) {
+  if (metric.value === null) {
+    return metric.label ?? metric.unavailableReason ?? "계산 불가";
+  }
+
+  return percentFormatter.format(metric.value);
+}
+
+function formatSummaryWorkerCount(metric: ReviewSummaryMetric) {
+  return metric.value === null ? "미입력" : `${metric.value}명`;
+}
+
 export function ReviewSummaryClient({
   storeName,
   reviewData,
@@ -285,6 +315,34 @@ export function ReviewSummaryClient({
           onRetry={handleSubmit}
           retryDisabled={isSubmitting}
         />
+
+        {/* 소유자 결정(2026-08-03): 본사 장부 상세 "장부 주요 숫자"와 같은 형태의 KPI 카드를
+            지점장 7단계 상단에 둔다. 매출 차이·손실 카드는 요청대로 제외한다. */}
+        <section
+          aria-label="당일 주요 숫자"
+          className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+        >
+          <MetricCard
+            label="매출"
+            value={formatSummaryKrw(currentReviewData.summary.totalSales)}
+          />
+          <MetricCard
+            label="마진율"
+            value={formatSummaryPercent(
+              currentReviewData.summary.grossMarginRate,
+            )}
+          />
+          <MetricCard
+            label="당일 재고 총 금액"
+            value={formatSummaryKrw(currentReviewData.summary.inventoryAmount)}
+          />
+          <MetricCard
+            label="근무 인원"
+            value={formatSummaryWorkerCount(
+              currentReviewData.summary.workerCount,
+            )}
+          />
+        </section>
 
         <section
           aria-labelledby="review-metrics-heading"

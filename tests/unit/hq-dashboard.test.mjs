@@ -1330,15 +1330,11 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     ledgerReviewTypesSource,
     /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
   );
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용으로 지점장 요약에서 제거된다.
-  // 지점장 요약은 매출 구성·영업 매출 합계·근무인원만 남는다.
+  // 소유자 결정(2026-08-03): 지점장 요약은 매출 구성·영업 매출 합계·근무인원에 더해
+  // 7단계 KPI 카드용 마진율·당일 재고 총 금액을 허용한다.
   assert.match(
     ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"closingTotalSales"[\s\S]*"carryoverSales"[\s\S]*"operatingSales"[\s\S]*"workerCount"/s,
-  );
-  assert.doesNotMatch(
-    ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"grossMarginRate"|StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"inventoryAmount"/s,
+    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"closingTotalSales"[\s\S]*"carryoverSales"[\s\S]*"operatingSales"[\s\S]*"workerCount"[\s\S]*"grossMarginRate"[\s\S]*"inventoryAmount"/s,
   );
   assert.match(
     ledgerReviewResponseSource,

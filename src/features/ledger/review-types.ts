@@ -99,9 +99,11 @@ export type LedgerReviewStepData = {
   topSoldItems: StoreManagerTopSoldItem[];
 };
 
-// 정책 반전(2026-06-28): 마진율(grossMarginRate)·재고금액(inventoryAmount)은 본사 전용으로
-// 확정. 지점장 요약은 총매출·근무인원만 유지하고, 7단계 그래프용 topSoldItems는 별도 안전
-// 타입(StoreManagerTopSoldItem)으로 계속 노출한다. 판매한 가격 비교 지표도 본사 전용이다.
+// 정책 반전(2026-06-28) → 소유자 결정(2026-08-03)으로 일부 해제: 마진율(grossMarginRate)과
+// 당일 재고 총 금액(inventoryAmount)은 지점장 7단계 검토 화면 상단 KPI 카드로 노출한다.
+// 매출 차이(salesDifference)·결제 차액(paymentDifference)·손실 금액·급여액과 원가/이익
+// 절대금액은 계속 본사 전용이다. 7단계 그래프용 topSoldItems는 별도 안전 타입
+// (StoreManagerTopSoldItem)으로 그대로 유지한다.
 export type StoreManagerLedgerReviewSummary = Pick<
   LedgerReviewSummary,
   | "totalSales"
@@ -109,6 +111,8 @@ export type StoreManagerLedgerReviewSummary = Pick<
   | "carryoverSales"
   | "operatingSales"
   | "workerCount"
+  | "grossMarginRate"
+  | "inventoryAmount"
 >;
 
 export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;
