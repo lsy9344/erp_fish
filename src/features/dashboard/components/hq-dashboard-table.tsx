@@ -531,7 +531,9 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">마진율</dt>
+                    <dt className="text-muted-foreground">
+                      실제 / 예상 마진율
+                    </dt>
                     <dd className="font-medium tabular-nums">
                       <MarginCell row={row} />
                     </dd>

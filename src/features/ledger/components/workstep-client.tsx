@@ -24,7 +24,10 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerEditableForActor } from "~/features/ledger/status-policy";
+import {
+  closedEditSaveSuccessMessage,
+  isLedgerEditableForActor,
+} from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -308,7 +311,7 @@ export function WorkStepClient({
     setLaborItems(toLaborLines(next.laborItems));
     notifyLedgerUpdated(next);
     const savedCount = next.laborItems.length;
-    const message =
+    const baseMessage =
       savedCount > 0
         ? showSensitiveAccountingMetrics
           ? `급여 항목 ${savedCount}건을 저장했습니다.`
@@ -316,6 +319,10 @@ export function WorkStepClient({
         : showSensitiveAccountingMetrics
           ? "저장됐습니다."
           : "근무자를 저장했습니다.";
+    // DESIGN.md D7: 급여 저장도 마감 유지 성공 문구를 동일하게 보여준다.
+    const message = closedEditAllowed
+      ? `${baseMessage} ${closedEditSaveSuccessMessage}`
+      : baseMessage;
     setLaborResultMessage(message);
     toast.success(message);
   }
