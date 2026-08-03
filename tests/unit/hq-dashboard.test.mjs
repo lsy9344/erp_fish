@@ -1363,6 +1363,83 @@ test("DESIGN D2: getDashboardInventoryAmountStatus matrix", async () => {
   );
 });
 
+// DESIGN.md D2: 마감 재고금액은 전 품목 FIFO 근거가 완전할 때만 금액으로 표시한다.
+// 일부 품목 근거가 없으면 quantity×unitPrice 부분합을 정상 금액처럼 보여주지 않는다.
+test("DESIGN D2: closed-ledger inventory amount requires complete FIFO basis", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { getClosedLedgerFifoInventoryAmount } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const { hasCompleteFifoRemainingBasis } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const completeItem = {
+    previousQuantity: 0,
+    purchasedQuantity: 10,
+    currentQuantity: 5,
+    quantity: 5,
+    unitPrice: 1000,
+    fifoRemainingAmount: 4800,
+  };
+  const incompleteItem = {
+    previousQuantity: 0,
+    purchasedQuantity: 3,
+    currentQuantity: 2,
+    quantity: 2,
+    unitPrice: 1500,
+    fifoRemainingAmount: null,
+    fifoLots: [],
+  };
+
+  // 혼합 품목: 하나라도 근거가 없으면 불완전.
+  assert.equal(hasCompleteFifoRemainingBasis([completeItem]), true);
+  assert.equal(
+    hasCompleteFifoRemainingBasis([completeItem, incompleteItem]),
+    false,
+  );
+  assert.equal(hasCompleteFifoRemainingBasis([]), false);
+
+  const fallbackAmount = { value: 7800, status: "ok" };
+
+  // 마감 + 근거 불완전 → 값 차단(데이터 부족).
+  const blocked = getClosedLedgerFifoInventoryAmount(
+    "HEADQUARTERS_CLOSED",
+    [completeItem, incompleteItem],
+    fallbackAmount,
+  );
+  assert.equal(blocked.value, null);
+  assert.equal(blocked.status, "data-insufficient");
+  assert.equal(blocked.label, "데이터 부족");
+
+  // 마감 + 근거 완전 → 계산 금액 유지.
+  const kept = getClosedLedgerFifoInventoryAmount(
+    "HEADQUARTERS_CLOSED",
+    [completeItem],
+    fallbackAmount,
+  );
+  assert.equal(kept.value, 7800);
+
+  // 미마감은 표시 계약상 마감 전이라 계산 fallback을 그대로 둔다.
+  const open = getClosedLedgerFifoInventoryAmount(
+    "IN_PROGRESS",
+    [completeItem, incompleteItem],
+    fallbackAmount,
+  );
+  assert.equal(open.value, 7800);
+});
+
 // WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매한 가격 기준)을 함께 보여준다.
 test("WO-14 part3: dashboard row carries analysisMarginDisplay from plannedGrossMarginRate", () => {
   const queries = readProjectFile("src", "features", "dashboard", "queries.ts");
