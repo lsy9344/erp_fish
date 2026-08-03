@@ -352,18 +352,24 @@ async function updateEditableDailyLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
   expectedUpdatedAt: Date,
+  expectedVersion: number,
   actor: LedgerEditActorContext,
   data: Prisma.DailyLedgerUncheckedUpdateManyInput,
 ) {
   // DESIGN.md D7: update data에는 status/closedAt/closedById를 절대 넣지 않아
-  // 마감 상태와 최초 마감 정보가 보존된다. CAS는 updatedAt과 편집 가능 상태만 본다.
+  // 마감 상태와 최초 마감 정보가 보존된다. CAS는 updatedAt·version·편집 가능 상태를
+  // 본다. version을 함께 올려 지점장 저장(version CAS)과 하나의 충돌 토큰을 공유한다.
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
       status: { in: [...getEditableLedgerStatusesForActor(actor)] },
       updatedAt: expectedUpdatedAt,
+      version: expectedVersion,
     },
-    data,
+    data: {
+      ...data,
+      version: { increment: 1 },
+    },
   });
 
   return updated.count === 1;
@@ -438,6 +444,7 @@ export async function saveHqLedgerSalesPayment(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor,
           {
             totalSalesAmount: parsed.data.totalSalesAmount,
@@ -541,6 +548,7 @@ export async function saveHqLedgerExpenses(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor,
           {
             updatedById: actor.user.id,
@@ -968,6 +976,7 @@ export async function saveHqLedgerPurchases(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor,
           {
             updatedById: actor.user.id,
@@ -1137,6 +1146,7 @@ export async function saveHqLedgerWorkInfo(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor,
           {
             workerCount: parsed.data.workerCount,
@@ -1225,6 +1235,7 @@ export async function saveHqLedgerLaborInfo(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor,
           {
             updatedById: actor.user.id,

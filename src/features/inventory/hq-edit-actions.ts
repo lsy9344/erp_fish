@@ -220,16 +220,20 @@ async function markEditableLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
   expectedUpdatedAt: Date,
+  expectedVersion: number,
   actorId: string,
   actor: LedgerEditActorContext,
 ) {
+  // DESIGN.md D7/D8: CAS는 updatedAt·version·편집 가능 상태를 보고 version을 올려
+  // 지점장 저장(version CAS)과 하나의 충돌 토큰을 공유한다.
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
       status: { in: [...getEditableLedgerStatusesForActor(actor)] },
       updatedAt: expectedUpdatedAt,
+      version: expectedVersion,
     },
-    data: { updatedById: actorId },
+    data: { updatedById: actorId, version: { increment: 1 } },
   });
 
   return updated.count === 1;
@@ -377,6 +381,7 @@ export async function saveHqLedgerInventoryItems(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor.user.id,
           actor,
         );
@@ -652,6 +657,7 @@ export async function saveHqLedgerInventoryAdjustment(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor.user.id,
           actor,
         );

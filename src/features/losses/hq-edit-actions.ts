@@ -116,6 +116,29 @@ const requiredIdSchema = (message: string) =>
     .transform((value) => value.trim())
     .pipe(z.string().min(1, message));
 
+// DESIGN.md D8: 지점장 저장과 동일한 version 충돌 토큰 계약을 본사 손실 저장에서도
+// 공유한다. 클라이언트가 보낸 version을 CAS에 사용한다.
+const hqLedgerVersionError = "장부 상태를 확인해 주세요.";
+const hqLedgerVersionSchema = z.unknown().transform((value, context) => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (Number.isSafeInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: hqLedgerVersionError,
+  });
+
+  return z.NEVER;
+});
+
 const hqLedgerLossItemSchema = z.object({
   id: z
     .unknown()
@@ -159,6 +182,7 @@ const hqLedgerLossItemSchema = z.object({
 const hqLedgerLossesSchema = z
   .object({
     storeId: requiredIdSchema("지점을 확인해 주세요."),
+    version: hqLedgerVersionSchema,
     ledgerUpdatedAt: requiredIdSchema("장부 상태를 확인해 주세요."),
     losses: z.array(hqLedgerLossItemSchema),
   })
@@ -320,16 +344,20 @@ async function markEditableLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
   expectedUpdatedAt: Date,
+  expectedVersion: number,
   actorId: string,
   actor: LedgerEditActorContext,
 ) {
+  // DESIGN.md D7/D8: CAS는 updatedAt·version·편집 가능 상태를 보고 version을 올려
+  // 지점장 저장(version CAS)과 하나의 충돌 토큰을 공유한다.
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledgerId,
       status: { in: [...getEditableLedgerStatusesForActor(actor)] },
       updatedAt: expectedUpdatedAt,
+      version: expectedVersion,
     },
-    data: { updatedById: actorId },
+    data: { updatedById: actorId, version: { increment: 1 } },
   });
 
   return updated.count === 1;
@@ -620,6 +648,7 @@ export async function saveHqLedgerLosses(
           tx,
           ledgerId,
           expectedUpdatedAt,
+          parsed.data.version,
           actor.user.id,
           actor,
         );
