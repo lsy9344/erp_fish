@@ -1331,10 +1331,15 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     /StoreManagerLedgerReviewStepData[\s\S]*HqDashboardRow/s,
   );
   // 소유자 결정(2026-08-03): 지점장 요약은 매출 구성·영업 매출 합계·근무인원에 더해
-  // 7단계 KPI 카드용 마진율·당일 재고 총 금액을 허용한다.
+  // 7단계 KPI 카드용 마진율·당일 재고 총 금액을 허용한다. 내부 계산 사유(reason)는
+  // 타입 단계에서도 제거(Omit)돼 런타임 sanitizer와 일치해야 한다.
   assert.match(
     ledgerReviewTypesSource,
-    /StoreManagerLedgerReviewSummary\s*=\s*Pick<[\s\S]*"closingTotalSales"[\s\S]*"carryoverSales"[\s\S]*"operatingSales"[\s\S]*"workerCount"[\s\S]*"grossMarginRate"[\s\S]*"inventoryAmount"/s,
+    /StoreManagerLedgerReviewSummaryMetric\s*=\s*Omit<\s*LedgerReviewMetric,\s*"reason"\s*>/,
+  );
+  assert.match(
+    ledgerReviewTypesSource,
+    /StoreManagerLedgerReviewSummary\s*=\s*\{[\s\S]*closingTotalSales:\s*StoreManagerLedgerReviewSummaryMetric;[\s\S]*carryoverSales:\s*StoreManagerLedgerReviewSummaryMetric;[\s\S]*operatingSales:\s*StoreManagerLedgerReviewSummaryMetric;[\s\S]*workerCount:\s*StoreManagerLedgerReviewSummaryMetric;[\s\S]*grossMarginRate:\s*StoreManagerLedgerReviewSummaryMetric;[\s\S]*inventoryAmount:\s*StoreManagerLedgerReviewSummaryMetric;/s,
   );
   assert.match(
     ledgerReviewResponseSource,

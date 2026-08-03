@@ -102,6 +102,9 @@ test("store manager response shaping recursively removes sensitive ledger metric
     submittedAt: null,
     summary: {
       totalSales: { value: 100_000 },
+      closingTotalSales: { value: 90_000 },
+      carryoverSales: { value: 10_000 },
+      operatingSales: { value: 80_000 },
       costOfGoodsSold: { value: 30_000 },
       grossProfit: { value: 70_000 },
       grossMarginRate: {
@@ -346,6 +349,9 @@ test("store manager response shaping replaces internal OQ details with generic c
     version: 1,
     summary: {
       totalSales: { value: 100_000, status: "ok" },
+      closingTotalSales: { value: 90_000, status: "ok" },
+      carryoverSales: { value: 10_000, status: "ok" },
+      operatingSales: { value: 80_000, status: "ok" },
       costOfGoodsSold: { value: 30_000, status: "ok" },
       grossProfit: { value: 70_000, status: "ok" },
       grossMarginRate: { value: 0.7, status: "ok" },

@@ -149,12 +149,16 @@ export function toStoreManagerLedgerReviewStepData(
     warnings,
     stepSummaries,
     // 소유자 결정(2026-08-03): 마진율·당일 재고 총 금액은 7단계 KPI 카드용으로 노출한다.
+    // 모든 요약 지표는 reason을 제거한 안전 타입(StoreManagerLedgerReviewSummaryMetric)
+    // 이므로 여기서 전부 toStoreManagerSummaryMetric을 거친다.
     summary: {
-      totalSales: data.summary.totalSales,
-      closingTotalSales: data.summary.closingTotalSales,
-      carryoverSales: data.summary.carryoverSales,
-      operatingSales: data.summary.operatingSales,
-      workerCount: data.summary.workerCount,
+      totalSales: toStoreManagerSummaryMetric(data.summary.totalSales),
+      closingTotalSales: toStoreManagerSummaryMetric(
+        data.summary.closingTotalSales,
+      ),
+      carryoverSales: toStoreManagerSummaryMetric(data.summary.carryoverSales),
+      operatingSales: toStoreManagerSummaryMetric(data.summary.operatingSales),
+      workerCount: toStoreManagerSummaryMetric(data.summary.workerCount),
       grossMarginRate: toStoreManagerSummaryMetric(
         data.summary.grossMarginRate,
       ),

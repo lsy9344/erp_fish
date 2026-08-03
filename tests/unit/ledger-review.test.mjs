@@ -783,12 +783,16 @@ test("store manager ledger review response omits sensitive accounting metrics", 
   assert.match(querySource, /toStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /getStoreManagerLedgerReviewStepData/);
   assert.match(querySource, /buildLedgerReviewStepSummaries/);
-  assert.match(responseShapeSource, /totalSales:\s*data\.summary\.totalSales/);
   // 소유자 결정(2026-08-03): 마진율·당일 재고 총 금액은 지점장 7단계 KPI 카드용으로 노출한다.
-  // 매출 차이·결제 차액은 계속 본사 전용이다.
+  // 매출 차이·결제 차액은 계속 본사 전용이다. 요약 지표 7개는 모두 reason 제거
+  // sanitizer(toStoreManagerSummaryMetric)를 거친다.
   assert.match(
     responseShapeSource,
-    /workerCount:\s*data\.summary\.workerCount/,
+    /totalSales:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.totalSales,?\s*\)/,
+  );
+  assert.match(
+    responseShapeSource,
+    /workerCount:\s*toStoreManagerSummaryMetric\(\s*data\.summary\.workerCount,?\s*\)/,
   );
   assert.match(
     responseShapeSource,
@@ -846,6 +850,9 @@ test("store manager ledger review response omits sensitive accounting metrics", 
     authorDisplayName: "작성자",
     summary: {
       totalSales: ok(100_000),
+      closingTotalSales: ok(90_000),
+      carryoverSales: ok(10_000),
+      operatingSales: ok(80_000),
       costOfGoodsSold: ok(30_000),
       grossProfit: ok(70_000),
       grossMarginRate: {

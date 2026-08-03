@@ -160,6 +160,12 @@ function formatMetric(metric: LedgerReviewStepMetric) {
 }
 
 // 본사 장부 상세(app/ledgers/[ledgerId]/page.tsx)의 카드 표기와 같은 형식을 쓴다.
+// 금액은 ₩ 접두 통화 형식(₩2,519,850), 비율은 소수 1자리(26.1%).
+const krwCurrencyFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+});
 const percentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",
   maximumFractionDigits: 1,
@@ -168,16 +174,18 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
 type ReviewSummaryMetric = StoreManagerLedgerReviewSummary["totalSales"];
 
 function formatSummaryKrw(metric: ReviewSummaryMetric) {
+  // 값이 없으면 라벨/사유 대신 이 화면의 기존 관례(formatMetric)와 동일하게
+  // "계산 불가"만 표시한다.
   if (metric.value === null) {
-    return metric.label ?? metric.unavailableReason ?? "계산 불가";
+    return "계산 불가";
   }
 
-  return formatKrw(metric.value);
+  return krwCurrencyFormatter.format(metric.value);
 }
 
 function formatSummaryPercent(metric: ReviewSummaryMetric) {
   if (metric.value === null) {
-    return metric.label ?? metric.unavailableReason ?? "계산 불가";
+    return "계산 불가";
   }
 
   return percentFormatter.format(metric.value);

@@ -373,7 +373,9 @@ test("지점장 검토 화면은 OQ-gated 파생 계산과 민감 지표를 응�
   await expect(metrics).not.toContainText("+2,000원");
   await expect(metrics).toContainText("근무인원");
   await expect(metrics).toContainText("4명");
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용. 지점장 검토 요약에서 제거한다.
+  // 정책 이력: 2026-06-21 노출 → 2026-06-28 정책 반전으로 본사 전용 차단 →
+  // 2026-08-03 소유자 결정으로 grossMarginRate·inventoryAmount는 7단계 상단 KPI
+  // 카드에만 부분 허용. 검토 요약 단계 지표는 계속 차단하므로 단언을 유지한다.
   await expect(metrics).not.toContainText("마진율");
   await expect(metrics).not.toContainText("재고금액");
 
@@ -400,7 +402,9 @@ test("지점장 검토 화면은 OQ-gated 파생 계산과 민감 지표를 응�
   await expect(warningSection).not.toContainText("-2,000원");
   await expect(warningSection).not.toContainText("금액 +1,000원");
   // 매출원가/이익/영업이익/인당생산성/FIFO 원가·매출차액·희망판매가 파생 키는 계속 차단한다.
-  // grossMarginRate/inventoryAmount는 2026-06-21 결정으로 노출되므로 차단 목록에서 제외한다.
+  // grossMarginRate/inventoryAmount 이력: 2026-06-21 노출 → 2026-06-28 본사 전용 차단 →
+  // 2026-08-03 소유자 결정으로 7단계 상단 KPI 카드에만 부분 허용(포맷된 값만 표시되고
+  // 파생 키 이름은 노출되지 않음). 매출 차이·결제 차액·급여·원가/이익은 계속 차단.
   await expect(page.locator("main")).not.toContainText(
     /costOfGoodsSold|grossProfit|operatingProfit|productivity|salesDifference|hopedSalePrice|fifo|thirtyPercent|OQ-/i,
   );

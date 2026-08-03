@@ -511,7 +511,11 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   await expect(metrics).not.toContainText("마감 정산 차액");
   await expect(metrics).toContainText("근무인원");
   await expect(metrics).toContainText("4명");
-  // 정책 반전(2026-06-28): 마진율·재고금액은 본사 전용. 지점장 검토 요약에서 제거한다.
+  // 정책 이력: 2026-06-21 노출 → 2026-06-28 정책 반전으로 본사 전용 차단 →
+  // 2026-08-03 소유자 결정으로 grossMarginRate·inventoryAmount는 7단계 상단 KPI
+  // 카드(매출·마진율·당일 재고 총 금액·근무 인원)에만 부분 허용. 아래 검토 요약
+  // 단계 지표는 계속 차단하므로 not.toContainText 단언은 유지한다.
+  // 매출 차이·결제 차액·급여·원가/이익은 계속 본사 전용이다.
   await expect(metrics).not.toContainText("마진율");
   await expect(metrics).not.toContainText("재고금액");
   // 매출원가/매출이익/영업이익/인당생산성 절대금액과 매출차액은 계속 차단한다.

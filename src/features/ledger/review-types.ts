@@ -104,16 +104,23 @@ export type LedgerReviewStepData = {
 // 매출 차이(salesDifference)·결제 차액(paymentDifference)·손실 금액·급여액과 원가/이익
 // 절대금액은 계속 본사 전용이다. 7단계 그래프용 topSoldItems는 별도 안전 타입
 // (StoreManagerTopSoldItem)으로 그대로 유지한다.
-export type StoreManagerLedgerReviewSummary = Pick<
-  LedgerReviewSummary,
-  | "totalSales"
-  | "closingTotalSales"
-  | "carryoverSales"
-  | "operatingSales"
-  | "workerCount"
-  | "grossMarginRate"
-  | "inventoryAmount"
+// 지점장 요약 지표는 내부 계산 사유(reason)를 타입 단계에서도 제거한다.
+// 런타임 차단(response-shaping.ts의 toStoreManagerSummaryMetric)과 타입을 일치시켜
+// 향후 reason이 다시 실려 내려오는 회귀가 컴파일에서 걸리도록 한다.
+export type StoreManagerLedgerReviewSummaryMetric = Omit<
+  LedgerReviewMetric,
+  "reason"
 >;
+
+export type StoreManagerLedgerReviewSummary = {
+  totalSales: StoreManagerLedgerReviewSummaryMetric;
+  closingTotalSales: StoreManagerLedgerReviewSummaryMetric;
+  carryoverSales: StoreManagerLedgerReviewSummaryMetric;
+  operatingSales: StoreManagerLedgerReviewSummaryMetric;
+  workerCount: StoreManagerLedgerReviewSummaryMetric;
+  grossMarginRate: StoreManagerLedgerReviewSummaryMetric;
+  inventoryAmount: StoreManagerLedgerReviewSummaryMetric;
+};
 
 export type StoreManagerLedgerReviewSignal = Omit<LedgerReviewSignal, "amount">;
 
