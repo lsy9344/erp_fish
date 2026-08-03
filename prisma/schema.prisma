@@ -29,6 +29,9 @@ enum PermissionAction {
   LEDGER_CREATE
   LEDGER_EDIT
   LEDGER_HQ_CLOSE
+  // DESIGN.md D4: 마감(HEADQUARTERS_CLOSED) 장부 직접 수정 전용 action.
+  // OWNER/HQ_ADMIN에만 부여하고 그 외 프로파일에는 부여하지 않는다.
+  LEDGER_CLOSED_EDIT
   CORRECTION_CREATE
   UPLOAD_PREVIEW
   UPLOAD_COMMIT

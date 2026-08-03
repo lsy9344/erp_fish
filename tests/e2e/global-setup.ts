@@ -17,6 +17,8 @@ const profileDefinitions = [
     actions: [
       PermissionAction.LEDGER_EDIT,
       PermissionAction.LEDGER_HQ_CLOSE,
+      // DESIGN.md D4: 마감 장부 직접 수정 권한은 HQ_ADMIN까지 부여한다.
+      PermissionAction.LEDGER_CLOSED_EDIT,
       PermissionAction.CORRECTION_CREATE,
       PermissionAction.UPLOAD_PREVIEW,
       PermissionAction.UPLOAD_COMMIT,
