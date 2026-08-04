@@ -925,10 +925,10 @@ export async function saveHqLedgerInventoryAdjustment(
         );
 
         const afterAuditLine = afterLine
-          ? applyCorrectionOverlayToInventoryEditValues(
+          ? (applyCorrectionOverlayToInventoryEditValues(
               { id: before.id, items: [afterLine] },
               remainingOverlayValues,
-            ).items[0] ?? afterLine
+            ).items[0] ?? afterLine)
           : afterLine;
 
         await writeAuditLog(tx, {

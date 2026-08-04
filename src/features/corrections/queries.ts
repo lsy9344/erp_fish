@@ -146,10 +146,7 @@ export async function supersedeCorrectionRecordsInTx(
     return { count: 0 };
   }
 
-  if (
-    (input.targetIds?.length === 0) ||
-    (input.fieldKeys?.length === 0)
-  ) {
+  if (input.targetIds?.length === 0 || input.fieldKeys?.length === 0) {
     return { count: 0 };
   }
 

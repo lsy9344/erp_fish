@@ -561,11 +561,9 @@ test("직접 저장과 정정의 동시 제출은 한 건만 성공하고 패배
     ]);
 
     const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
-    const correctionPanel = correctionPage
-      .getByRole("region")
-      .filter({
-        has: correctionPage.getByRole("heading", { name: "정정 기록" }),
-      });
+    const correctionPanel = correctionPage.getByRole("region").filter({
+      has: correctionPage.getByRole("heading", { name: "정정 기록" }),
+    });
 
     await correctionPanel
       .getByLabel("정정 대상")
@@ -839,16 +837,12 @@ test("거부된 정정은 장부 version과 마지막 수정 정보를 바꾸지
   await correctionPanel
     .getByLabel("정정 대상")
     .selectOption({ label: "총매출" });
+  await replaceControlValue(correctionPanel.getByLabel("정정값"), "2147483647");
   await replaceControlValue(
-    correctionPanel.getByLabel("정정값"),
-    "2147483647",
-  );  await replaceControlValue(
     correctionPanel.getByLabel("정정 사유"),
     "거부 정정 토큰 불변 검증",
   );
-  await correctionPanel
-    .getByRole("button", { name: "정정 기록 저장" })
-    .click();
+  await correctionPanel.getByRole("button", { name: "정정 기록 저장" }).click();
 
   // 합산 범위 오류로 거부된다.
   await expect(
