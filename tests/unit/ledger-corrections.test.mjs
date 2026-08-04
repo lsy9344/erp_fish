@@ -452,6 +452,31 @@ test("correction action and panel keep decimal quantities target-aware", () => {
   assert.match(panel, /inputMode=\{getCorrectionInputMode\(selectedTarget\)\}/);
 });
 
+test("ledger detail reads its conflict token and corrections in one snapshot", () => {
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "queries.ts",
+  );
+  const page = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+
+  assert.match(queries, /getLedgerCostStepDataAndCorrectionRecords/);
+  assert.match(queries, /getLedgerCostStepDataByIdInTx\(tx, ledgerId\)/);
+  assert.match(queries, /getCorrectionRecordsForLedgerInTx\(tx, ledgerId\)/);
+  assert.match(queries, /Prisma\.TransactionIsolationLevel\.RepeatableRead/);
+  assert.match(page, /getLedgerCostStepDataAndCorrectionRecords\(ledgerId\)/);
+  assert.doesNotMatch(page, /getLedgerCostStepDataById\(ledgerId\)/);
+  assert.doesNotMatch(page, /getCorrectionRecordsForLedger\(ledgerId\)/);
+});
+
 test("correction queries expose batched latest values for dashboard calculations", () => {
   const queries = readProjectFile(
     "src",
@@ -608,6 +633,18 @@ test("HQ direct saves supersede only the correction target kinds they overwrite"
       `${targetType} supersede count`,
     );
   }
+
+  // 단독 재고 조정은 currentQuantity만 덮어쓴다. 같은 행의 quantity 정정은
+  // DB에서 살아 있어야 하므로 fieldKeys 범위를 반드시 고정한다.
+  const adjustmentSource = inventoryActions.slice(
+    inventoryActions.indexOf(
+      "export async function saveHqLedgerInventoryAdjustment",
+    ),
+  );
+  assert.match(
+    adjustmentSource,
+    /targetTypes: \["INVENTORY_ROW"\][\s\S]*?targetIds: \[inventoryItem\.id\][\s\S]*?fieldKeys: \["currentQuantity"\]/,
+  );
 
   // 계산 표시값 정정은 직접 저장으로 대체되지 않는다.
   assert.doesNotMatch(ledgerActions, /targetTypes: \["CALCULATED_METRIC"\]/);

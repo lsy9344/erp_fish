@@ -477,6 +477,7 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
   // 7개 시나리오(로그인·저장·직접 호출)를 순차 수행하므로 예산을 늘린다.
   test.setTimeout(180_000);
   const storeId = "store-perm-closed-server";
+  const outOfScopeStoreId = "store-perm-conflict-out-of-scope";
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { email: "hq@example.com" },
     select: { id: true },
@@ -556,6 +557,32 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
       updatedById: adminUser.id,
     },
   });
+  const outOfScopeStore = await prisma.store.upsert({
+    where: { id: outOfScopeStoreId },
+    create: {
+      id: outOfScopeStoreId,
+      name: "충돌 응답 범위 밖 지점",
+      isActive: true,
+      updatedById: adminUser.id,
+    },
+    update: {},
+  });
+  const outOfScopeLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: outOfScopeStore.id,
+      closingDate,
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 987654,
+      cashAmount: 987654,
+      cardAmount: 0,
+      otherPaymentAmount: 0,
+      workerCount: 1,
+      createdById: adminUser.id,
+      updatedById: adminUser.id,
+      closedById: adminUser.id,
+      closedAt: new Date("2026-01-02T00:00:00.000Z"),
+    },
+  });
 
   async function snapshotLedger(id: string) {
     return prisma.dailyLedger.findUniqueOrThrow({
@@ -632,23 +659,33 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
 
     // UI를 거치지 않는 서버 action 직접 호출 헬퍼. 확보한 action id로 현재 장부
     // 토큰 기준 payload를 POST한다.
-    async function rawSalesSave(cashAmount: string) {
-      const fresh = await snapshotLedger(ledger.id);
+    async function rawSalesSave(
+      cashAmount: string,
+      options: {
+        ledgerId?: string;
+        storeId?: string;
+        ledgerUpdatedAt?: string;
+      } = {},
+    ) {
+      const targetLedgerId = options.ledgerId ?? ledger.id;
+      const targetStoreId = options.storeId ?? storeId;
+      const fresh = await snapshotLedger(targetLedgerId);
 
       return {
         before: fresh,
-        response: await page.request.post(`/app/ledgers/${ledger.id}`, {
+        response: await page.request.post(`/app/ledgers/${targetLedgerId}`, {
           headers: {
             "Next-Action": capturedActionId!,
             "Content-Type": "text/plain;charset=UTF-8",
           },
           data: JSON.stringify([
             {
-              ledgerId: ledger.id,
-              storeId,
+              ledgerId: targetLedgerId,
+              storeId: targetStoreId,
               closingDate: closingDate.toISOString().slice(0, 10),
               version: fresh.version,
-              ledgerUpdatedAt: fresh.updatedAt.toISOString(),
+              ledgerUpdatedAt:
+                options.ledgerUpdatedAt ?? fresh.updatedAt.toISOString(),
               totalSalesAmount: "10000",
               carryoverSalesAmount: "0",
               cashAmount,
@@ -669,19 +706,40 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
       .poll(async () => (await snapshotLedger(ledger.id)).cashAmount)
       .toBe(4450);
 
-    // 4) CLOSE_MANAGER: LEDGER_EDIT 자체가 없어 직접 호출이 거부되고 DB는 불변.
+    // 4) 충돌 응답도 실제 장부의 지점 범위를 확인한다. 배정 지점만 볼 수 있는
+    // HQ_STAFF가 다른 지점 장부 id와 잘못된 토큰을 보내도 serverValues에
+    // 다른 지점의 민감한 금액(987654)을 받지 않는다.
+    await login(page, "hq-assigned@example.com");
+    const outOfScopeRaw = await rawSalesSave("1", {
+      ledgerId: outOfScopeLedger.id,
+      storeId,
+      ledgerUpdatedAt: "not-a-date",
+    });
+    expect(outOfScopeRaw.response.status()).not.toBeGreaterThanOrEqual(500);
+    expect(await outOfScopeRaw.response.text()).not.toContain("987654");
+    expect(await snapshotLedger(outOfScopeLedger.id)).toEqual(
+      outOfScopeRaw.before,
+    );
+
+    // 5) CLOSE_MANAGER: LEDGER_EDIT 자체가 없어 직접 호출이 거부되고 DB는 불변.
     await login(page, "close-manager@example.com");
     const closeManagerRaw = await rawSalesSave("4500");
     expect(closeManagerRaw.response.status()).not.toBeGreaterThanOrEqual(500);
     expect(await snapshotLedger(ledger.id)).toEqual(closeManagerRaw.before);
 
-    // 5) SETTINGS_ADMIN: REPORT_VIEW만 있어 직접 호출이 거부되고 DB는 불변.
+    // 6) SETTINGS_ADMIN: REPORT_VIEW만 있어 직접 호출이 거부되고 DB는 불변.
     await login(page, "settings-admin@example.com");
     const settingsRaw = await rawSalesSave("4600");
     expect(settingsRaw.response.status()).not.toBeGreaterThanOrEqual(500);
     expect(await snapshotLedger(ledger.id)).toEqual(settingsRaw.before);
 
-    // 6) STORE_MANAGER: 화면 자체가 미승인이고 직접 호출도 거부된다.
+    // 7) HQ_READONLY: 조회 권한만 있어 직접 호출이 거부되고 DB는 불변.
+    await login(page, "hq-readonly@example.com");
+    const readonlyRaw = await rawSalesSave("4650");
+    expect(readonlyRaw.response.status()).not.toBeGreaterThanOrEqual(500);
+    expect(await snapshotLedger(ledger.id)).toEqual(readonlyRaw.before);
+
+    // 8) STORE_MANAGER: 화면 자체가 미승인이고 직접 호출도 거부된다.
     await login(page, "manager@example.com");
     await page.goto(`/app/ledgers/${ledger.id}`);
     await expect(page).toHaveURL(/\/app\/unauthorized/);
@@ -689,7 +747,7 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     expect(managerRaw.response.status()).not.toBeGreaterThanOrEqual(500);
     expect(await snapshotLedger(ledger.id)).toEqual(managerRaw.before);
 
-    // 7) HOLIDAY: OWNER 권한이어도 휴무 장부는 서버에서 차단된다.
+    // 9) HOLIDAY: OWNER 권한이어도 휴무 장부는 서버에서 차단된다.
     const beforeHoliday = await snapshotLedger(holidayLedger.id);
     await login(page, "owner@example.com");
     await bypassUiAndSubmitSales(page, holidayLedger.id, "1000");
@@ -698,8 +756,14 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     ).toBeVisible();
     expect(await snapshotLedger(holidayLedger.id)).toEqual(beforeHoliday);
   } finally {
-    await prisma.dailyLedger.deleteMany({ where: { storeId } });
-    await prisma.userStoreAssignment.deleteMany({ where: { storeId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.dailyLedger.deleteMany({
+      where: { storeId: { in: [storeId, outOfScopeStoreId] } },
+    });
+    await prisma.userStoreAssignment.deleteMany({
+      where: { storeId: { in: [storeId, outOfScopeStoreId] } },
+    });
+    await prisma.store.deleteMany({
+      where: { id: { in: [storeId, outOfScopeStoreId] } },
+    });
   }
 });

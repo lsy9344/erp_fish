@@ -233,6 +233,48 @@ test("HQ original edit actions reject closed or holiday ledgers before writing a
   }
 });
 
+test("HQ sales saves keep an unchanged derived-total correction active", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+
+  assert.match(source, /paymentFieldKeysToSupersede/);
+  assert.match(
+    source,
+    /fieldKey !== "totalSalesAmount"[\s\S]*parsed\.data\.totalSalesAmount !== beforeLedger\.totalSalesAmount/,
+  );
+  assert.match(source, /폼에 표시하지 않는 총매출 정정을 유지한다/);
+});
+
+test("HQ conflict responses scope server values to the requested store", () => {
+  const ledgerSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const inventorySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+
+  assert.match(
+    ledgerSource,
+    /const scopedLedger = ledger\?\.storeId === input\.storeId \? ledger : null/,
+  );
+  assert.match(ledgerSource, /serverValues: scopedLedger/);
+  assert.match(
+    inventorySource,
+    /const scopedCurrent = current\?\.storeId === input\.storeId \? current : null/,
+  );
+  assert.match(inventorySource, /serverValues: formCurrent/);
+});
+
 test("HQ detail page renders editable sections with HQ actions", () => {
   const source = readProjectFile(
     "src",
@@ -263,13 +305,13 @@ test("HQ detail page renders editable sections with HQ actions", () => {
   assert.match(source, /saveHqLedgerLosses/);
   assert.match(source, /saveHqLedgerWorkInfo/);
   assert.match(source, /showSensitiveAccountingMetrics/);
-  assert.match(source, /getLedgerCostStepDataById/);
+  assert.match(source, /getLedgerCostStepDataAndCorrectionRecords/);
   assert.match(source, /getInventoryStepDataByLedgerId/);
   assert.match(source, /getLossStepDataByLedgerId/);
   assert.match(source, /본사 마감된 장부/);
   assert.match(source, /정정 기록/);
   assert.match(source, /CorrectionPanel/);
-  assert.match(source, /getCorrectionRecordsForLedger/);
+  assert.match(source, /getLedgerCostStepDataAndCorrectionRecords/);
   assert.match(source, /getLatestCorrectionValueMap/);
   assert.match(source, /createCorrectionRecord/);
   assert.match(

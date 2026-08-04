@@ -5,6 +5,10 @@ const overlayUrl = new URL(
   "../../src/features/corrections/edit-overlay.ts",
   import.meta.url,
 );
+const schemaUrl = new URL(
+  "../../src/features/corrections/schemas.ts",
+  import.meta.url,
+);
 
 function appliedValue(overrides) {
   return {
@@ -253,7 +257,8 @@ test("text overlays distinguish no-correction from clearing a value to null", as
   assert.equal(clearedMemoRows[0].memo, null);
   assert.equal(rows[0].memo, "원본 메모");
 
-  // 손실 사유: reason 정정이 폼/감사에 반영되고, null로 지우는 정정도 반영된다.
+  // 손실 사유: 기존 활성 정정은 폼/감사에 반영된다. 새 손실 사유 정정은
+  // 빈 값이 스키마에서 차단되므로 null overlay는 과거 데이터 호환 경로로만 둔다.
   const loss = {
     id: "ledger-1",
     lossItems: [
@@ -281,4 +286,42 @@ test("text overlays distinguish no-correction from clearing a value to null", as
   assert.equal(overlaidLoss.lossItems[1].reason, null);
   // 정정이 없는 필드는 원본 유지.
   assert.equal(overlaidLoss.lossItems[0].quantity, 2);
+});
+
+test("loss reason corrections reject blank values at the schema boundary", async () => {
+  const { correctionRecordSchema, toFieldErrors } = await import(
+    schemaUrl.href
+  );
+  const input = {
+    ledgerId: "ledger-1",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
+    targetType: "LOSS_ROW",
+    targetId: "loss-1",
+    fieldKey: "reason",
+    correctedValue: { kind: "text", value: "   " },
+    reason: "손실 사유 확인",
+  };
+
+  const rejected = correctionRecordSchema.safeParse(input);
+
+  assert.equal(rejected.success, false);
+  assert.deepEqual(toFieldErrors(rejected.error), {
+    "correctedValue.value": ["손실 사유를 입력해 주세요."],
+  });
+
+  const accepted = correctionRecordSchema.safeParse({
+    ...input,
+    correctedValue: { kind: "text", value: "  정정 손실 사유  " },
+  });
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.data.correctedValue.value, "정정 손실 사유");
+
+  const tooLong = correctionRecordSchema.safeParse({
+    ...input,
+    correctedValue: { kind: "text", value: "x".repeat(501) },
+  });
+  assert.equal(tooLong.success, false);
+  assert.deepEqual(toFieldErrors(tooLong.error), {
+    "correctedValue.value": ["손실 사유는 500자 이하여야 합니다."],
+  });
 });

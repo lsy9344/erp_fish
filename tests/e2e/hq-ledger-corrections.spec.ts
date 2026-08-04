@@ -153,6 +153,9 @@ async function cleanupStoryFourThreeData() {
     await prisma.correctionRecord.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
+    await prisma.ledgerInventoryAdjustment.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerInventoryItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -460,6 +463,187 @@ test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산�
     .toMatchObject({ kind: "quantity", value: 1.5 });
 });
 
+test("단독 재고 조정은 현재고 정정만 대체하고 표시재고 정정은 보존한다", async ({
+  page,
+}) => {
+  const { actorId, ledger, inventoryItem } = await seedClosedLedger();
+
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "INVENTORY_ROW",
+      targetId: inventoryItem.id,
+      fieldKey: "currentQuantity",
+      originalValue: { kind: "quantity", value: 8, label: "재고 1 · 현재고" },
+      previousAppliedValue: {
+        kind: "quantity",
+        value: 8,
+        label: "재고 1 · 현재고",
+      },
+      correctedValue: { kind: "quantity", value: 11, label: "재고 1 · 현재고" },
+      reason: "현재고 정정 시드",
+      createdById: actorId,
+    },
+  });
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "INVENTORY_ROW",
+      targetId: inventoryItem.id,
+      fieldKey: "quantity",
+      originalValue: { kind: "quantity", value: 8, label: "재고 1 · 수량" },
+      previousAppliedValue: {
+        kind: "quantity",
+        value: 8,
+        label: "재고 1 · 수량",
+      },
+      correctedValue: { kind: "quantity", value: 9, label: "재고 1 · 수량" },
+      reason: "표시재고 정정 시드",
+      createdById: actorId,
+    },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "재고" }).click();
+
+  const inventoryPanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "재고 입력" });
+  const currentQuantity = inventoryPanel.getByLabel(
+    `${PRODUCT_NAME} 당일재고`,
+    { exact: true },
+  );
+  await currentQuantity.fill("12");
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("단독 재고 조정 범위 검증");
+  await inventoryPanel
+    .getByRole("button", { name: `${PRODUCT_NAME} 고친 이유 저장` })
+    .click();
+  await expect(
+    inventoryPanel
+      .getByRole("status")
+      .filter({ hasText: "고친 내용이 저장됐습니다." }),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const records = await prisma.correctionRecord.findMany({
+        where: { dailyLedgerId: ledger.id },
+        orderBy: [{ fieldKey: "asc" }],
+        select: { fieldKey: true, supersededAt: true },
+      });
+
+      return records;
+    })
+    .toEqual([
+      expect.objectContaining({
+        fieldKey: "currentQuantity",
+        supersededAt: expect.any(Date),
+      }),
+      expect.objectContaining({ fieldKey: "quantity", supersededAt: null }),
+    ]);
+});
+
+test("직접 저장과 정정의 동시 제출은 한 건만 성공하고 패배 요청은 충돌로 끝난다", async ({
+  page,
+}) => {
+  test.slow();
+  const { ledger } = await seedClosedLedger();
+  const correctionPage = await page.context().newPage();
+
+  try {
+    await Promise.all([loginAsHq(page), loginAsHq(correctionPage)]);
+    await Promise.all([
+      page.goto(`/app/ledgers/${ledger.id}?tab=sales`),
+      correctionPage.goto(`/app/ledgers/${ledger.id}`),
+    ]);
+
+    const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+    const correctionPanel = correctionPage
+      .getByRole("region")
+      .filter({
+        has: correctionPage.getByRole("heading", { name: "정정 기록" }),
+      });
+
+    await correctionPanel
+      .getByLabel("정정 대상")
+      .selectOption({ label: "총매출" });
+    await replaceControlValue(correctionPanel.getByLabel("정정값"), "45000");
+    await replaceControlValue(
+      correctionPanel.getByLabel("정정 사유"),
+      "동시 정정 충돌 검증",
+    );
+    const salesCash = salesPanel.getByLabel("현금", { exact: true });
+    await salesCash.fill("5000");
+    await expect(salesCash).toHaveValue("5,000");
+    await replaceControlValue(
+      salesPanel.getByLabel("본사 수정 사유"),
+      "동시 직접 저장 충돌 검증",
+    );
+
+    await Promise.all([
+      salesPanel.getByRole("button", { name: "저장" }).click(),
+      correctionPanel.getByRole("button", { name: "정정 기록 저장" }).click(),
+    ]);
+
+    await expect
+      .poll(async () =>
+        prisma.dailyLedger.findUniqueOrThrow({
+          where: { id: ledger.id },
+          select: { version: true },
+        }),
+      )
+      .toEqual({ version: ledger.version + 1 });
+
+    const records = await prisma.correctionRecord.findMany({
+      where: { dailyLedgerId: ledger.id },
+      select: { id: true, supersededAt: true },
+    });
+    const correctionAudits = await prisma.auditLog.count({
+      where: {
+        targetType: "CorrectionRecord",
+        targetId: { in: records.map((record) => record.id) },
+        action: "correction.created",
+      },
+    });
+    const directSaveAudits = await prisma.auditLog.count({
+      where: {
+        targetType: "DailyLedger",
+        targetId: ledger.id,
+        action: "ledger.hq.sales_payment.updated",
+      },
+    });
+
+    expect(records.length).toBeLessThanOrEqual(1);
+    expect(correctionAudits).toBe(records.length);
+    expect(directSaveAudits).toBe(records.length === 0 ? 1 : 0);
+
+    if (records.length === 0) {
+      await expect(
+        correctionPanel.getByText(
+          "저장 사이에 장부가 변경돼 정정할 수 없습니다. 화면을 새로고침한 뒤 다시 정정해 주세요.",
+        ),
+      ).toBeVisible();
+      await expect(
+        salesPanel.getByText(
+          "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+        ),
+      ).toBeVisible();
+    } else {
+      await expect(
+        correctionPanel.getByText("정정 기록이 저장됐습니다."),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("dialog", { name: "저장 충돌이 발생했습니다" }),
+      ).toBeVisible();
+    }
+  } finally {
+    await correctionPage.close();
+  }
+});
+
 test("지점장은 마감 장부 정정 화면에 접근해도 정정 기록을 생성할 수 없다", async ({
   page,
 }) => {
@@ -581,6 +765,52 @@ test("마스터 직접 저장은 기존 정정을 대체하고 이력은 보존�
     .toBe(1);
 });
 
+test("결제 합계가 바뀌지 않은 직접 저장은 총매출 정정을 대체하지 않는다", async ({
+  page,
+}) => {
+  const { actorId, ledger } = await seedClosedLedger();
+
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "totalSalesAmount",
+      originalValue: { kind: "money", value: 10000, label: "총매출" },
+      previousAppliedValue: { kind: "money", value: 10000, label: "총매출" },
+      correctedValue: { kind: "money", value: 45000, label: "총매출" },
+      reason: "총매출 정정 유지 검증",
+      createdById: actorId,
+    },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}?tab=sales`);
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+  await salesPanel
+    .getByLabel("본사 수정 사유")
+    .fill("결제 합계 불변 저장 검증");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
+
+  const correction = await prisma.correctionRecord.findFirstOrThrow({
+    where: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      fieldKey: "totalSalesAmount",
+    },
+    select: { supersededAt: true },
+  });
+  expect(correction.supersededAt).toBeNull();
+  await expect(
+    page.locator('section[aria-label="장부 주요 숫자"]'),
+  ).toContainText("₩45,000");
+});
+
 // 라운드2 FIX 1: 거부되는 정정 요청이 장부 version/수정자를 바꾸는 ghost update를
 // 남기지 않는지 검증한다. 입력 검증은 통과하지만 서버 합산 범위 검증에서 거부되는
 // 정정을 제출해 트랜잭션 내부 실패 경로를 재현한다.
@@ -612,8 +842,7 @@ test("거부된 정정은 장부 version과 마지막 수정 정보를 바꾸지
   await replaceControlValue(
     correctionPanel.getByLabel("정정값"),
     "2147483647",
-  );
-  await replaceControlValue(
+  );  await replaceControlValue(
     correctionPanel.getByLabel("정정 사유"),
     "거부 정정 토큰 불변 검증",
   );

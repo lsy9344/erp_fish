@@ -60,6 +60,13 @@ const profileDefinitions = [
     actions: [PermissionAction.REPORT_VIEW],
   },
   {
+    // DESIGN.md D4: 조회 권한만 가진 HQ_READONLY도 마감 원본 수정은 불허한다.
+    code: "HQ_READONLY",
+    name: "본사 읽기 전용",
+    storeAccessMode: StoreAccessMode.ALL_STORES,
+    actions: [PermissionAction.REPORT_VIEW],
+  },
+  {
     // DESIGN.md D4 테스트 fixture: seed의 CLOSE_MANAGER 프로파일과 동일하게 마감·정정
     // action만 있고 LEDGER_EDIT/LEDGER_CLOSED_EDIT는 없다.
     code: "CLOSE_MANAGER",
@@ -461,6 +468,23 @@ export default async function globalSetup() {
     },
   });
 
+  const hqReadonlyUser = await prisma.user.upsert({
+    where: { email: "hq-readonly@example.com" },
+    create: {
+      email: "hq-readonly@example.com",
+      name: "본사 읽기 전용",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+    update: {
+      name: "본사 읽기 전용",
+      role: UserRole.HEADQUARTERS,
+      passwordHash,
+      isActive: true,
+    },
+  });
+
   // DESIGN.md D4 서버 권한 경계 e2e fixture: 프로파일별 마감 장부 직접 수정 허용/
   // 차단을 검증하는 전용 사용자. OWNER는 seed 기본값과 동일한 전체 action을 갖는다.
   const ownerUser = await prisma.user.upsert({
@@ -636,6 +660,7 @@ export default async function globalSetup() {
           hqUser.id,
           assignedHqUser.id,
           readOnlyHqUser.id,
+          hqReadonlyUser.id,
           ownerUser.id,
           closeManagerUser.id,
           settingsAdminUser.id,
@@ -666,6 +691,11 @@ export default async function globalSetup() {
     prisma,
     readOnlyHqUser.id,
     permissionProfiles.get("HQ_VIEWER")?.id,
+  );
+  await assignPermissionProfile(
+    prisma,
+    hqReadonlyUser.id,
+    permissionProfiles.get("HQ_READONLY")?.id,
   );
   await assignPermissionProfile(
     prisma,
