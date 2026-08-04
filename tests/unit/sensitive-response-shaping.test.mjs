@@ -513,6 +513,71 @@ test("report export source keeps sensitive unauthorised paths out of CSV and aud
   assert.doesNotMatch(exportSource, /clientColumns|requestedColumns/);
 });
 
+test("store manager inventory mapper preserves display average without original amounts", async () => {
+  const mapperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "response-shaping.ts",
+  );
+  const { shapeStoreManagerInventoryStepData } = await import(
+    pathToFileURL(mapperPath).href
+  );
+  const shaped = shapeStoreManagerInventoryStepData({
+    id: "ledger-1",
+    storeId: "store-1",
+    closingDate: "2026-08-04T00:00:00.000Z",
+    updatedAt: "2026-08-04T00:00:00.000Z",
+    version: 1,
+    authorDisplayName: null,
+    status: "IN_PROGRESS",
+    stepCompletion: { inventory: false },
+    carryover: {
+      status: "loaded",
+      source: "PREVIOUS_CLOSED_LEDGER",
+      message: "loaded",
+    },
+    items: [
+      {
+        id: "item-1",
+        productId: "product-1",
+        productName: "광어",
+        productCategory: "냉동",
+        productSpec: "1kg",
+        purchasePrice: { kind: "AVERAGE", unitPrice: 15_000 },
+        plannedUnitPrice: null,
+        unitPrice: 10_000,
+        previousQuantity: 1,
+        purchasedQuantity: 1,
+        purchaseAmount: 20_000,
+        lossQuantity: 0,
+        lossAmount: 0,
+        currentQuantity: 2,
+        quantity: 2,
+        inventoryAmount: 30_000,
+        fifoLots: [],
+        carryoverSource: "PREVIOUS_CLOSED_LEDGER",
+        carryoverStatus: "PREVIOUS_CARRYOVER",
+        carryoverLedgerId: "ledger-0",
+        previousQuantityDetail: {
+          source: "PREVIOUS_CLOSED_LEDGER",
+          history: [],
+        },
+        isModified: false,
+        adjustment: null,
+      },
+    ],
+    manualProductOptions: [],
+  });
+
+  assert.deepEqual(shaped.items[0].purchasePrice, {
+    kind: "AVERAGE",
+    unitPrice: 15_000,
+  });
+  assert.equal(Object.hasOwn(shaped.items[0], "inventoryAmount"), false);
+  assert.equal(Object.hasOwn(shaped.items[0], "purchaseAmount"), false);
+});
+
 test("store manager inventory mapper exposes planned price on item rows and manual options", async () => {
   const mapperPath = assertProjectFile(
     "src",

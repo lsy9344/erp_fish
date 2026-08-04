@@ -741,6 +741,129 @@ test("inventory purchase price uses a same-day quantity-weighted average", async
   assert.equal(prices.get("p1")?.unitPrice, 13_333);
 });
 
+test("inventory carryover weighted average uses trusted carryover amount and falls back safely", async () => {
+  const {
+    calculateInventoryCarryoverWeightedAveragePrice,
+    resolveInventoryCarryoverWeightedAveragePrices,
+  } = await loadPurchasePriceHelper();
+
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 1,
+      sourceClosingQuantity: 1,
+      sourceInventoryAmount: 10_000,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    }),
+    15_000,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 2,
+      sourceClosingQuantity: 2,
+      sourceInventoryAmount: 20_000,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    }),
+    13_333,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 0.5,
+      sourceClosingQuantity: 0.5,
+      sourceInventoryAmount: 5_000,
+      purchasedQuantity: 1.5,
+      purchaseAmount: 30_000,
+    }),
+    17_500,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 0.1 + 0.2,
+      sourceClosingQuantity: 0.3,
+      sourceInventoryAmount: 3_000,
+      purchasedQuantity: 0.01 + 0.01,
+      purchaseAmount: 400,
+    }),
+    10_625,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 0.46,
+      sourceClosingQuantity: 0.46,
+      sourceInventoryAmount: 6_000,
+      purchasedQuantity: 0.01 + 0.01,
+      purchaseAmount: 6,
+    }),
+    12_513,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 2,
+      sourceClosingQuantity: 1,
+      sourceInventoryAmount: 10_000,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    }),
+    null,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 0,
+      sourceClosingQuantity: 0,
+      sourceInventoryAmount: 0,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    }),
+    null,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 1,
+      sourceClosingQuantity: 1,
+      sourceInventoryAmount: 10_000,
+      purchasedQuantity: 0,
+      purchaseAmount: 0,
+    }),
+    null,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 1,
+      sourceClosingQuantity: 1,
+      sourceInventoryAmount: null,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    }),
+    null,
+  );
+  assert.equal(
+    calculateInventoryCarryoverWeightedAveragePrice({
+      currentPreviousQuantity: 0.01,
+      sourceClosingQuantity: 0.01,
+      sourceInventoryAmount: Number.MAX_SAFE_INTEGER,
+      purchasedQuantity: 0.01,
+      purchaseAmount: 0,
+    }),
+    null,
+  );
+
+  const prices = resolveInventoryCarryoverWeightedAveragePrices([
+    {
+      productId: "p1",
+      currentPreviousQuantity: 1,
+      sourceClosingQuantity: 1,
+      sourceInventoryAmount: 10_000,
+      purchasedQuantity: 1,
+      purchaseAmount: 20_000,
+    },
+  ]);
+  assert.deepEqual(prices.get("p1"), {
+    kind: "AVERAGE",
+    unitPrice: 15_000,
+  });
+});
+
 test("inventory purchase price ignores future and null-product rows", async () => {
   const { resolveInventoryPurchasePrices } = await loadPurchasePriceHelper();
 
