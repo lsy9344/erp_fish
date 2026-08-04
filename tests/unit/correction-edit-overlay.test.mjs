@@ -64,6 +64,29 @@ test("derived sales total uses active payment corrections but ignores totalSales
   assert.equal(0 !== untouchedBaseline, true);
 });
 
+test("derived sales total excludes carryover sales to match submitted closing total", async () => {
+  const { getDerivedSalesFormTotal } = await import(overlayUrl.href);
+  const ledger = {
+    id: "ledger-2",
+    totalSalesAmount: 120,
+    carryoverSalesAmount: 20,
+    cashAmount: 100,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: null,
+    workMemo: null,
+  };
+
+  // 폼은 totalSalesAmount로 이월 제외 마감 합계(현금 100)를 제출한다.
+  // 기준값에 이월(20)이 포함되면 무변경 저장에서도 총매출 정정이 풀리므로
+  // 기준값은 제출값과 같은 100이어야 한다.
+  const baseline = getDerivedSalesFormTotal(ledger, [], 0);
+  assert.equal(baseline, 100);
+
+  // 지출 합계는 제출값과 동일하게 기준값에 포함된다.
+  assert.equal(getDerivedSalesFormTotal(ledger, [], 30), 130);
+});
+
 test("ledger edit overlay applies active payment/ledger-field corrections except derived total", async () => {
   const { applyCorrectionOverlayToLedgerFields, applyExpenseRowOverlay } =
     await import(overlayUrl.href);

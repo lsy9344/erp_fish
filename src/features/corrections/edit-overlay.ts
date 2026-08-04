@@ -211,8 +211,10 @@ export function applyCorrectionOverlayToLedgerFields<
 
 /**
  * 매출/결제 폼이 제출하는 파생 총매출 기준값을 계산한다. 총매출 자체 정정은
- * 폼의 파생값에 적용하지 않고, 현금·카드·기타 결제수단·이월 매출 정정만
- * 반영한다. 직접 저장이 총매출 정정을 대체할지 판단할 때 사용한다.
+ * 폼의 파생값에 적용하지 않고, 현금·카드·기타 결제수단 정정만 반영한다.
+ * 폼은 totalSalesAmount로 이월 매출을 제외한 마감 합계(현금+카드+기타+지출)를
+ * 제출하므로(sales-payment-step-client.tsx) 이월 매출은 기준값에 포함하지
+ * 않는다. 직접 저장이 총매출 정정을 대체할지 판단할 때 사용한다.
  */
 export function getDerivedSalesFormTotal<T extends LedgerFieldOverlayTarget>(
   ledger: T,
@@ -227,7 +229,6 @@ export function getDerivedSalesFormTotal<T extends LedgerFieldOverlayTarget>(
     formLedger.cashAmount +
     formLedger.cardAmount +
     formLedger.otherPaymentAmount +
-    formLedger.carryoverSalesAmount +
     expenseTotal
   );
 }
