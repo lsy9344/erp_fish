@@ -1,8 +1,5 @@
-import type {
-  CorrectionTargetType,
-  Prisma,
-} from "../../../generated/prisma/index.js";
-import { UserRole } from "../../../generated/prisma/index.js";
+import { Prisma, UserRole } from "../../../generated/prisma/index.js";
+import type { CorrectionTargetType } from "../../../generated/prisma/index.js";
 import { redirect } from "next/navigation";
 
 import {
@@ -12,6 +9,7 @@ import {
   requireReportAccess,
 } from "../../server/authz.ts";
 import { db } from "../../server/db.ts";
+import { getLedgerCostStepDataByIdInTx } from "../ledger/queries.ts";
 import type {
   CorrectionAppliedValue,
   CorrectionRecordListItem,
@@ -190,6 +188,26 @@ export async function getCorrectionRecordsForLedger(ledgerId: string) {
 
   return db.$transaction((tx) =>
     getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+  );
+}
+
+/**
+ * 장부 상세의 충돌 토큰과 정정 overlay를 같은 Repeatable Read snapshot에서 읽는다.
+ * 장부 조회와 정정 조회 사이에 다른 정정이 커밋되면 화면에 최신 토큰과 오래된
+ * 정정 목록이 섞일 수 있으므로, 직접 저장이 보지 못한 정정을 supersede하지 않게 한다.
+ */
+export async function getLedgerCostStepDataAndCorrectionRecords(
+  ledgerId: string,
+) {
+  await requireReportAccess();
+  await requireHeadquartersLedgerScope(ledgerId);
+
+  return db.$transaction(
+    async (tx) => ({
+      ledger: await getLedgerCostStepDataByIdInTx(tx, ledgerId),
+      correctionRecords: await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+    }),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
   );
 }
 

@@ -175,6 +175,14 @@ function correctionValueShapeError(): ActionResult<never> {
   });
 }
 
+function lossReasonCorrectionError(
+  message = "손실 사유를 입력해 주세요.",
+): ActionResult<never> {
+  return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+    "correctedValue.value": [message],
+  });
+}
+
 function operatingSalesRangeError(): ActionResult<never> {
   return actionError(
     "VALIDATION_ERROR",
@@ -258,6 +266,24 @@ function normalizeCorrectedValueForTarget(
       typeof correctedValue.value !== "string"
     ) {
       return correctionValueShapeError();
+    }
+
+    if (
+      target.targetType === "LOSS_ROW" &&
+      target.fieldKey === "reason" &&
+      (typeof correctedValue.value !== "string" ||
+        correctedValue.value.trim().length === 0)
+    ) {
+      return lossReasonCorrectionError();
+    }
+
+    if (
+      target.targetType === "LOSS_ROW" &&
+      target.fieldKey === "reason" &&
+      typeof correctedValue.value === "string" &&
+      correctedValue.value.length > 500
+    ) {
+      return lossReasonCorrectionError("손실 사유는 500자 이하여야 합니다.");
     }
 
     return actionOk(correctedValue);
@@ -773,7 +799,17 @@ export async function createCorrectionRecord(
     }
 
     return result;
-  } catch {
+  } catch (error) {
+    // Serializable transactions may surface a concurrent direct-save race as
+    // P2034 instead of returning claimed.count=0. Keep the loser on the same
+    // LEDGER_CONFLICT contract and roll back its audit/correction writes.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    ) {
+      return correctionConflictError();
+    }
+
     return mapCorrectionActionError();
   }
 }

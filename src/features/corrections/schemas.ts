@@ -27,6 +27,8 @@ const correctionQuantityError =
   "정정 수량은 0 이상이고 소수점 둘째 자리까지 입력해 주세요.";
 const inventoryQuantityError =
   "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.";
+const lossReasonRequiredError = "손실 사유를 입력해 주세요.";
+const lossReasonTooLongError = "손실 사유는 500자 이하여야 합니다.";
 
 function parseNumericCorrectionValue(value: unknown) {
   if (
@@ -203,6 +205,32 @@ export const correctionRecordSchema = z
         code: z.ZodIssueCode.custom,
         message: unsupportedInventoryAmountCorrectionMessage,
         path: ["fieldKey"],
+      });
+    }
+
+    if (
+      value.targetType === "LOSS_ROW" &&
+      value.fieldKey === "reason" &&
+      (value.correctedValue.kind !== "text" ||
+        typeof value.correctedValue.value !== "string" ||
+        value.correctedValue.value.length === 0)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: lossReasonRequiredError,
+        path: ["correctedValue", "value"],
+      });
+    } else if (
+      value.targetType === "LOSS_ROW" &&
+      value.fieldKey === "reason" &&
+      value.correctedValue.kind === "text" &&
+      typeof value.correctedValue.value === "string" &&
+      value.correctedValue.value.length > 500
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: lossReasonTooLongError,
+        path: ["correctedValue", "value"],
       });
     }
 

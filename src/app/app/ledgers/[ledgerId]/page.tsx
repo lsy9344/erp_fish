@@ -15,7 +15,7 @@ import { createCorrectionRecord } from "~/features/corrections/actions";
 import { CorrectionPanel } from "~/features/corrections/components/correction-panel";
 import {
   buildCorrectionTargetKey,
-  getCorrectionRecordsForLedger,
+  getLedgerCostStepDataAndCorrectionRecords,
   getLatestCorrectionValueMap,
 } from "~/features/corrections/queries";
 import {
@@ -47,7 +47,6 @@ import { ExpenseStepClient } from "~/features/ledger/components/expense-step-cli
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
-import { getLedgerCostStepDataById } from "~/features/ledger/queries";
 import {
   closedEditRetainedStatusNotice,
   isLedgerEditableForActor,
@@ -156,14 +155,13 @@ export default async function LedgerDetailPage({
       Array.isArray(query.filter) ? query.filter[0] : query.filter,
     ),
   });
-  const [detail, ledger, inventoryData, lossData, correctionRecords] =
-    await Promise.all([
-      getHqLedgerDetail(ledgerId),
-      getLedgerCostStepDataById(ledgerId),
-      getInventoryStepDataByLedgerId(ledgerId),
-      getLossStepDataByLedgerId(ledgerId),
-      getCorrectionRecordsForLedger(ledgerId),
-    ]);
+  const [detail, ledgerSnapshot, inventoryData, lossData] = await Promise.all([
+    getHqLedgerDetail(ledgerId),
+    getLedgerCostStepDataAndCorrectionRecords(ledgerId),
+    getInventoryStepDataByLedgerId(ledgerId),
+    getLossStepDataByLedgerId(ledgerId),
+  ]);
+  const { ledger, correctionRecords } = ledgerSnapshot;
 
   if (!detail || !ledger || !inventoryData || !lossData) {
     notFound();
@@ -602,7 +600,11 @@ function getCorrectionTargetOptions({
   inventoryData,
   lossData,
 }: {
-  ledger: NonNullable<Awaited<ReturnType<typeof getLedgerCostStepDataById>>>;
+  ledger: NonNullable<
+    Awaited<
+      ReturnType<typeof getLedgerCostStepDataAndCorrectionRecords>
+    >["ledger"]
+  >;
   inventoryData: NonNullable<
     Awaited<ReturnType<typeof getInventoryStepDataByLedgerId>>
   >;

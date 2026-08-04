@@ -312,21 +312,29 @@ async function hqConflictError<T = never>(
     getLedgerByIdInTx(tx, input.ledgerId),
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
+  // Conflict payloads can be requested before the normal target-ledger gate (for
+  // example, with an invalid token). Never echo a ledger from another store even
+  // when the caller's requested store is within their allowed headquarters scope.
+  const scopedLedger = ledger?.storeId === input.storeId ? ledger : null;
+  const scopedMeta = scopedLedger ? meta : null;
 
   return ledgerConflictErrorFromMeta<T>({
-    meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section,
     clientToken: input.ledgerUpdatedAt,
     serverToken:
-      ledger?.updatedAt.toISOString() ??
-      meta?.updatedAt.toISOString() ??
+      scopedLedger?.updatedAt.toISOString() ??
+      scopedMeta?.updatedAt.toISOString() ??
       "unknown",
     clientValues: toHqLedgerClientConflictValues(section, input),
-    serverValues: ledger
-      ? toHqLedgerServerConflictValues(section, toLedgerCostStepData(ledger))
+    serverValues: scopedLedger
+      ? toHqLedgerServerConflictValues(
+          section,
+          toLedgerCostStepData(scopedLedger),
+        )
       : {},
-    lastModifiedAt: ledger?.updatedAt.toISOString(),
+    lastModifiedAt: scopedLedger?.updatedAt.toISOString() ?? "unknown",
     reloadRequired: true,
     hqEditing: true,
   });
@@ -504,18 +512,28 @@ export async function saveHqLedgerSalesPayment(
         const beforeAuditPayload =
           await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
 
+        const paymentFieldKeys = [
+          "totalSalesAmount",
+          "carryoverSalesAmount",
+          "cashAmount",
+          "cardAmount",
+          "otherPaymentAmount",
+        ] as const;
+        // 총매출은 결제수단 합계에서 파생되는 값이다. 직접 저장의 파생 총매출이
+        // 기존 원본과 같으면 결제수단을 저장해도 총매출이 실질적으로 바뀐 것이
+        // 아니므로, 폼에 표시하지 않는 총매출 정정을 유지한다. 합계가 달라진
+        // 경우에만 직접 저장이 총매출 정정을 의도적으로 대체한다.
+        const paymentFieldKeysToSupersede = paymentFieldKeys.filter(
+          (fieldKey) =>
+            fieldKey !== "totalSalesAmount" ||
+            parsed.data.totalSalesAmount !== beforeLedger.totalSalesAmount,
+        );
+
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
-          // 매출/결제 직접 저장은 다섯 결제 필드 전체를 재저장하므로 해당 정정을 대체한다.
           targetTypes: ["PAYMENT_FIELD"],
           targetIds: [beforeLedger.id],
-          fieldKeys: [
-            "totalSalesAmount",
-            "carryoverSalesAmount",
-            "cashAmount",
-            "cardAmount",
-            "otherPaymentAmount",
-          ],
+          fieldKeys: paymentFieldKeysToSupersede,
         });
 
         const afterAuditPayload =

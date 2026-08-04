@@ -182,18 +182,27 @@ async function hqInventoryConflictError<T = never>(
     getInventoryStepDataByLedgerIdInTx(tx, input.ledgerId),
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
-  const formCurrent = current ? applyInventoryFormDisplayPolicy(current) : null;
+  // Conflict responses can run before the normal target-ledger gate when the
+  // token is malformed. Keep another store's inventory out of serverValues and
+  // its metadata in that early-error path as well.
+  const scopedCurrent = current?.storeId === input.storeId ? current : null;
+  const formCurrent = scopedCurrent
+    ? applyInventoryFormDisplayPolicy(scopedCurrent)
+    : null;
+  const scopedMeta = formCurrent ? meta : null;
 
   return ledgerConflictErrorFromMeta<T>({
-    meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section,
     clientToken: input.ledgerUpdatedAt,
     serverToken:
-      formCurrent?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+      formCurrent?.updatedAt ??
+      scopedMeta?.updatedAt.toISOString() ??
+      "unknown",
     clientValues: toInventoryClientValues(input),
     serverValues: formCurrent ? toInventoryConflictValues(formCurrent) : {},
-    lastModifiedAt: formCurrent?.updatedAt,
+    lastModifiedAt: formCurrent?.updatedAt ?? "unknown",
     reloadRequired: true,
     hqEditing: true,
   });
