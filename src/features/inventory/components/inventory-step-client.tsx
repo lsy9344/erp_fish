@@ -2118,11 +2118,13 @@ export function InventoryStepClient({
         ),
       );
       const unitPriceSummary = item.purchasePrice
-        ? item.purchasePrice.kind === "OPENING"
-          ? `월초 재고단가 · ${item.purchasePrice.yearMonth} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-          : item.purchasePrice.kind === "CARRYOVER"
-            ? `이월 재고단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
-            : `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+        ? item.purchasePrice.kind === "AVERAGE"
+          ? `재고 평균단가 · 당일 · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+          : item.purchasePrice.kind === "OPENING"
+            ? `월초 재고단가 · ${item.purchasePrice.yearMonth} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+            : item.purchasePrice.kind === "CARRYOVER"
+              ? `이월 재고단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
+              : `${item.purchasePrice.kind === "TODAY" ? "당일" : "최근"} 매입단가 · ${item.purchasePrice.businessDate} · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
         : "단가 근거 없음";
       const modified = isLineModified(item) || item.isModified;
       const recentlySaved = recentlySavedProductIds.has(item.productId);

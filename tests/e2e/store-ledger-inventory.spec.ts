@@ -834,6 +834,262 @@ test("재고 행에 당일 가중평균과 최근 실제 거래일 매입단가�
   );
 });
 
+test("재고 평균단가는 전일 원천 금액과 당일 매입의 가중평균을 저장 후에도 유지한다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const today = getTodayKstMidnight();
+  const previousDate = getPreviousKstMidnight();
+  const product = await seedProduct(
+    "스토리2-5 재고 평균단가 광어",
+    "냉동",
+    10000,
+  );
+  const previousLedger = await upsertLedger(
+    previousDate,
+    actorId,
+    "HEADQUARTERS_CLOSED",
+  );
+
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: previousLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 10000,
+      previousQuantity: 1,
+      purchasedQuantity: 0,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 10000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  const currentLedger = await upsertLedger(today, actorId);
+  await markLossStepReviewed(currentLedger.id, actorId);
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: currentLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: 20000,
+      quantity: 1,
+      amount: 20000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  const row = page.locator("tr").filter({ hasText: product.name });
+  await expect(row).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
+
+  await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
+  await fillVisiblePlannedUnitPrices(page);
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expectInventorySaveSucceeded(page);
+  await page.reload();
+
+  await expect(
+    page.locator("tr").filter({ hasText: product.name }),
+  ).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
+
+  const saved = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: currentLedger.id,
+        productId: product.id,
+      },
+    },
+    select: { currentQuantity: true, inventoryAmount: true },
+  });
+  expect(saved?.currentQuantity?.toString()).toBe("1");
+  // 저장된 재고금액은 표시 평균이 아니라 기존 FIFO 결과를 유지한다.
+  expect(saved?.inventoryAmount).toBe(20000);
+});
+
+test("재고 평균단가는 월초 원천을 사용하고 불완전한 전일 근거는 기존 단가로 폴백한다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const today = getTodayKstMidnight();
+  const previousDate = getPreviousKstMidnight();
+  const openingProduct = await seedProduct(
+    "스토리2-5 월초 평균단가 광어",
+    "냉동",
+    12_000,
+  );
+  const mismatchProduct = await seedProduct(
+    "스토리2-5 수량불일치 평균단가 광어",
+    "냉동",
+    10_000,
+  );
+  const missingAmountProduct = await seedProduct(
+    "스토리2-5 금액누락 평균단가 광어",
+    "냉동",
+    10_000,
+  );
+  const previousLedger = await upsertLedger(
+    previousDate,
+    actorId,
+    "HEADQUARTERS_CLOSED",
+  );
+  const currentLedger = await upsertLedger(today, actorId);
+  const openingSnapshot = await prisma.inventoryOpeningSnapshot.create({
+    data: {
+      storeId: STORY_STORE_ID,
+      yearMonth: getCurrentKstYearMonth(),
+      productId: openingProduct.id,
+      productName: openingProduct.name,
+      productCategory: openingProduct.category,
+      productSpec: openingProduct.spec,
+      unitPrice: 10_000,
+      quantity: 1,
+    },
+  });
+  const openingItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: currentLedger.id,
+      productId: openingProduct.id,
+      productName: openingProduct.name,
+      productCategory: openingProduct.category,
+      productSpec: openingProduct.spec,
+      // 현재 행 단가가 달라도 원천 월초 스냅샷 단가를 사용해야 한다.
+      unitPrice: 12_000,
+      previousQuantity: 1,
+      purchasedQuantity: 1,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 12_000,
+      carryoverSource: "OPENING_SNAPSHOT",
+      carryoverStatus: "OPENING_CARRYOVER",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await prisma.ledgerInventoryCarryoverDetail.create({
+    data: {
+      ledgerInventoryItemId: openingItem.id,
+      source: "OPENING_SNAPSHOT",
+      status: "OPENING_CARRYOVER",
+      resolvedQuantity: 1,
+      sourceYearMonth: getCurrentKstYearMonth(),
+      sourceSnapshotId: openingSnapshot.id,
+      sourcePreviousQuantity: 1,
+      sourceQuantity: 1,
+      message: "월초 스냅샷 이월",
+    },
+  });
+
+  await prisma.ledgerInventoryItem.createMany({
+    data: [
+      {
+        dailyLedgerId: previousLedger.id,
+        productId: mismatchProduct.id,
+        productName: mismatchProduct.name,
+        productCategory: mismatchProduct.category,
+        productSpec: mismatchProduct.spec,
+        unitPrice: 10_000,
+        previousQuantity: 2,
+        purchasedQuantity: 0,
+        currentQuantity: 2,
+        quantity: 2,
+        inventoryAmount: 20_000,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: previousLedger.id,
+        productId: missingAmountProduct.id,
+        productName: missingAmountProduct.name,
+        productCategory: missingAmountProduct.category,
+        productSpec: missingAmountProduct.spec,
+        unitPrice: 10_000,
+        previousQuantity: 1,
+        purchasedQuantity: 0,
+        currentQuantity: 1,
+        quantity: 1,
+        inventoryAmount: null,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: currentLedger.id,
+        productId: mismatchProduct.id,
+        productName: mismatchProduct.name,
+        productCategory: mismatchProduct.category,
+        productSpec: mismatchProduct.spec,
+        unitPrice: 10_000,
+        previousQuantity: 1,
+        purchasedQuantity: 1,
+        currentQuantity: 1,
+        quantity: 1,
+        inventoryAmount: 10_000,
+        carryoverSource: "PREVIOUS_CLOSED_LEDGER",
+        carryoverStatus: "PREVIOUS_CARRYOVER",
+        carryoverLedgerId: previousLedger.id,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      {
+        dailyLedgerId: currentLedger.id,
+        productId: missingAmountProduct.id,
+        productName: missingAmountProduct.name,
+        productCategory: missingAmountProduct.category,
+        productSpec: missingAmountProduct.spec,
+        unitPrice: 10_000,
+        previousQuantity: 1,
+        purchasedQuantity: 1,
+        currentQuantity: 1,
+        quantity: 1,
+        inventoryAmount: 10_000,
+        carryoverSource: "PREVIOUS_CLOSED_LEDGER",
+        carryoverStatus: "PREVIOUS_CARRYOVER",
+        carryoverLedgerId: previousLedger.id,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    ],
+  });
+  await prisma.ledgerPurchaseItem.createMany({
+    data: [openingProduct, mismatchProduct, missingAmountProduct].map(
+      (product) => ({
+        dailyLedgerId: currentLedger.id,
+        productId: product.id,
+        productName: product.name,
+        productCategory: product.category,
+        productSpec: product.spec,
+        unitPrice: 20_000,
+        quantity: 1,
+        amount: 20_000,
+        createdById: actorId,
+        updatedById: actorId,
+      }),
+    ),
+  });
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  await expect(
+    page.locator("tr").filter({ hasText: openingProduct.name }),
+  ).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
+
+  const expectedFallback = `당일 매입단가 · ${today.toISOString().slice(0, 10)} · 20,000원/1박스`;
+  await expect(
+    page.locator("tr").filter({ hasText: mismatchProduct.name }),
+  ).toContainText(expectedFallback);
+  await expect(
+    page.locator("tr").filter({ hasText: missingAmountProduct.name }),
+  ).toContainText(expectedFallback);
+});
+
 test("매입 품목은 당일재고를 빈칸으로 시작하고 손실 검토 전 재고 저장을 막는다", async ({
   page,
 }) => {

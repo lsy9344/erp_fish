@@ -81,8 +81,12 @@ test("destructive scripts wire the shared safety guards before deleting data", (
     path.join(root, "scripts", "reset-neon-data.mjs"),
     "utf8",
   );
+  const branchOperationalReset = readFileSync(
+    path.join(root, "scripts", "reset-branch-operational-data.mjs"),
+    "utf8",
+  );
 
-  for (const source of [prevday, neonReset]) {
+  for (const source of [prevday, neonReset, branchOperationalReset]) {
     assert.match(source, /destructive-script-guards\.mjs/);
     assert.match(source, /requireResettableDatabaseUrl/);
     assert.match(source, /requireExplicitResetConfirmation/);
@@ -90,4 +94,7 @@ test("destructive scripts wire the shared safety guards before deleting data", (
 
   assert.match(prevday, /await wipeTransactional\(\)/);
   assert.match(neonReset, /TRUNCATE TABLE/);
+  assert.match(branchOperationalReset, /--scope=all-stores/);
+  assert.match(branchOperationalReset, /--dry-run/);
+  assert.match(branchOperationalReset, /await db\.\$transaction/);
 });

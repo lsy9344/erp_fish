@@ -11,7 +11,10 @@ import {
   toCarryoverLotSignature,
 } from "~/features/inventory/carryover-cost-recheck";
 import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
-import { resolveInventoryPurchasePrices } from "~/features/inventory/purchase-price";
+import {
+  resolveInventoryCarryoverWeightedAveragePrices,
+  resolveInventoryPurchasePrices,
+} from "~/features/inventory/purchase-price";
 import { SALES_PRICE_CARRYOVER_LEDGER_STATUSES } from "~/features/inventory/sales-price-carryover.ts";
 import { resolveInventoryPreviousQuantitySource } from "~/features/inventory/inventory-previous-quantity-source.ts";
 import { db } from "~/server/db";
@@ -1237,6 +1240,49 @@ function resolveCarryoverPurchasePriceFallback(
   return null;
 }
 
+type InventoryCarryoverPriceEvidence = {
+  sourceClosingQuantity: number | null;
+  sourceInventoryAmount: number | null;
+};
+
+function resolveSourceClosingQuantity({
+  currentQuantity,
+  quantity,
+}: {
+  currentQuantity: number | null;
+  quantity: number | null;
+}) {
+  // 전일 이월 수량과 같은 우선순위다. 과거 행에서 두 필드가 다르더라도 실제
+  // 당일재고(currentQuantity)가 있으면 그 값을 원천 장부의 마감수량으로 본다.
+  return currentQuantity ?? quantity;
+}
+
+function aggregateCurrentDayPurchases(ledger: InventoryLedgerPayload) {
+  const purchases = new Map<string, { quantity: number; amount: number }>();
+
+  for (const purchase of ledger.ledgerPurchaseItems) {
+    if (!purchase.productId) {
+      continue;
+    }
+
+    const current = purchases.get(purchase.productId);
+    const quantity = decimalToNumber(purchase.quantity);
+
+    if (current) {
+      current.quantity += quantity;
+      current.amount += purchase.amount;
+      continue;
+    }
+
+    purchases.set(purchase.productId, {
+      quantity,
+      amount: purchase.amount,
+    });
+  }
+
+  return purchases;
+}
+
 async function attachPurchasePrices(
   tx: Prisma.TransactionClient,
   ledger: InventoryLedgerPayload,
@@ -1296,10 +1342,144 @@ async function attachPurchasePrices(
     currentSalesPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
   );
 
+  const todayPurchases = aggregateCurrentDayPurchases(ledger);
+  const averageCandidates = items.filter(
+    (item) => item.previousQuantity > 0 && todayPurchases.has(item.productId),
+  );
+  const averageProductIds = [
+    ...new Set(averageCandidates.map((item) => item.productId)),
+  ];
+
+  // 표시 평균의 원천은 현재 장부의 전일수량이 아니라, 이월 원천 장부의
+  // 마감 inventoryAmount 또는 월초 스냅샷이다. 저장 후 현재고가 줄어도 시작 평균이
+  // 달라지지 않도록, 당일 매입과 전일재고가 모두 있는 품목의 근거만 일괄 조회한다.
+  const sourceLedgerIds = [
+    ...new Set(
+      averageCandidates
+        .filter(
+          (item) => item.previousQuantityDetail.source !== "OPENING_SNAPSHOT",
+        )
+        .map(
+          (item) =>
+            item.previousQuantityDetail.sourceLedgerId ??
+            item.carryoverLedgerId,
+        )
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const sourceSnapshotIds = [
+    ...new Set(
+      averageCandidates
+        .filter(
+          (item) => item.previousQuantityDetail.source === "OPENING_SNAPSHOT",
+        )
+        .map((item) => item.previousQuantityDetail.sourceSnapshotId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const [sourceInventoryItems, sourceSnapshots] = await Promise.all([
+    sourceLedgerIds.length === 0
+      ? []
+      : tx.ledgerInventoryItem.findMany({
+          where: {
+            dailyLedgerId: { in: sourceLedgerIds },
+            productId: { in: averageProductIds },
+            dailyLedger: {
+              storeId: ledger.storeId,
+              closingDate: { lt: ledger.closingDate },
+            },
+          },
+          select: {
+            dailyLedgerId: true,
+            productId: true,
+            currentQuantity: true,
+            quantity: true,
+            inventoryAmount: true,
+          },
+        }),
+    sourceSnapshotIds.length === 0
+      ? []
+      : tx.inventoryOpeningSnapshot.findMany({
+          where: {
+            id: { in: sourceSnapshotIds },
+            storeId: ledger.storeId,
+            productId: { in: averageProductIds },
+          },
+          select: {
+            id: true,
+            productId: true,
+            unitPrice: true,
+            quantity: true,
+          },
+        }),
+  ]);
+  const sourceEvidenceByKey = new Map<string, InventoryCarryoverPriceEvidence>(
+    sourceInventoryItems.map((sourceItem) => {
+      const sourceCurrentQuantity = nullableDecimalToNumber(
+        sourceItem.currentQuantity,
+      );
+      const sourceQuantity = nullableDecimalToNumber(sourceItem.quantity);
+
+      return [
+        `${sourceItem.dailyLedgerId}:${sourceItem.productId}`,
+        {
+          sourceClosingQuantity: resolveSourceClosingQuantity({
+            currentQuantity: sourceCurrentQuantity,
+            quantity: sourceQuantity,
+          }),
+          sourceInventoryAmount: sourceItem.inventoryAmount,
+        },
+      ];
+    }),
+  );
+  const snapshotEvidenceById = new Map<string, InventoryCarryoverPriceEvidence>(
+    sourceSnapshots.map((snapshot) => {
+      const quantity = decimalToNumber(snapshot.quantity);
+
+      return [
+        snapshot.id,
+        {
+          sourceClosingQuantity: quantity,
+          sourceInventoryAmount: calculateInventoryAmount(
+            quantity,
+            snapshot.unitPrice,
+          ),
+        },
+      ];
+    }),
+  );
+  const averageRows = averageCandidates.map((item) => {
+    const todayPurchase = todayPurchases.get(item.productId)!;
+    const detail = item.previousQuantityDetail;
+    const evidence =
+      detail.source === "OPENING_SNAPSHOT" && detail.sourceSnapshotId
+        ? snapshotEvidenceById.get(detail.sourceSnapshotId)
+        : (() => {
+            const sourceLedgerId =
+              detail.sourceLedgerId ?? item.carryoverLedgerId;
+
+            return sourceLedgerId
+              ? sourceEvidenceByKey.get(`${sourceLedgerId}:${item.productId}`)
+              : undefined;
+          })();
+
+    return {
+      productId: item.productId,
+      currentPreviousQuantity: item.previousQuantity,
+      sourceClosingQuantity: evidence?.sourceClosingQuantity ?? null,
+      sourceInventoryAmount: evidence?.sourceInventoryAmount ?? null,
+      purchasedQuantity: todayPurchase.quantity,
+      purchaseAmount: todayPurchase.amount,
+    };
+  });
+  const carryoverAveragePrices =
+    resolveInventoryCarryoverWeightedAveragePrices(averageRows);
+
   return {
     items: items.map((item) => ({
       ...item,
       purchasePrice:
+        carryoverAveragePrices.get(item.productId) ??
         purchasePrices.get(item.productId) ??
         resolveCarryoverPurchasePriceFallback(item),
       plannedUnitPrice: plannedUnitPrices.get(item.productId) ?? null,
