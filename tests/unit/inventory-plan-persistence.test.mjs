@@ -10,6 +10,14 @@ const lossSyncUrl = new URL(
   "../../src/features/losses/planned-price-sync.ts",
   import.meta.url,
 );
+const salesPricePersistenceUrl = new URL(
+  "../../src/features/inventory/sales-price-persistence.ts",
+  import.meta.url,
+);
+const hqInventoryActionUrl = new URL(
+  "../../src/features/inventory/hq-edit-actions.ts",
+  import.meta.url,
+);
 
 test("inventory save owns one CAS and atomically patches plans before derived loss sync", async () => {
   const source = await readFile(inventoryActionUrl, "utf8");
@@ -66,11 +74,29 @@ test("store inventory action uses the manager-only validated schema", async () =
 });
 
 test("inventory plan persistence is patch-only and preserves plan metadata", async () => {
-  const source = await readFile(inventoryActionUrl, "utf8");
-  const helper = source.slice(
-    source.indexOf("async function upsertInventorySalesPricePlansInTx"),
-    source.indexOf("function parseLedgerInventoryInput"),
+  // DESIGN.md D6/F6: 벌크 저장 helper는 순수 모듈로 분리되어 지점장 저장과 본사
+  // 마감 편집이 공유한다. 품목별 반복 저장은 만들지 않는다.
+  const helper = await readFile(salesPricePersistenceUrl, "utf8");
+  const actionsSource = await readFile(inventoryActionUrl, "utf8");
+  const hqActionsSource = await readFile(hqInventoryActionUrl, "utf8");
+
+  assert.match(
+    helper,
+    /export async function upsertInventorySalesPricePlansInTx/,
   );
+  assert.match(
+    actionsSource,
+    /import \{ upsertInventorySalesPricePlansInTx \} from "\.\/sales-price-persistence"/,
+  );
+  assert.match(
+    hqActionsSource,
+    /import \{[\s\S]*?upsertInventorySalesPricePlansInTx,[\s\S]*?\} from "\.\/sales-price-persistence"/,
+  );
+  // DESIGN.md D6: 본사 마감 편집 경로는 판매가격 쓰기 게이트를 통과한 항목만 저장한다.
+  assert.match(hqActionsSource, /getSalesPriceWriteGateDecision\(/);
+  // 양쪽 모두 품목별 upsert가 아닌 공유 벌크 helper를 호출한다.
+  assert.doesNotMatch(actionsSource, /storeSalesPricePlan\.upsert\(/);
+  assert.doesNotMatch(hqActionsSource, /storeSalesPricePlan\.upsert\(/);
 
   assert.doesNotMatch(helper, /storeSalesPricePlan\.delete/);
 
@@ -117,4 +143,50 @@ test("inventory plan save revalidates every consumer path", async () => {
   );
   assert.match(helper, /revalidateDashboardAndReports\(\)/);
   assert.match(source, /revalidateLedgerDetailPath\(parsed\.data\.ledgerId\)/);
+});
+
+test("sales price write gate allows only closed-edit masters on closed ledgers", async () => {
+  // DESIGN.md D6: 판매한 가격 쓰기는 마감 편집 권한 + HEADQUARTERS_CLOSED 상태의
+  // 마스터만 허용한다. 행동 테스트로 판정 함수를 직접 검증한다.
+  const { getSalesPriceWriteGateDecision, salesPriceWriteForbiddenMessage } =
+    await import(salesPricePersistenceUrl.href);
+
+  // 가격이 없는 저장은 게이트와 무관하게 통과한다.
+  assert.deepEqual(
+    getSalesPriceWriteGateDecision({
+      hasPlannedPriceInput: false,
+      closedEditAllowed: false,
+      ledgerStatus: "IN_PROGRESS",
+    }),
+    { ok: true },
+  );
+
+  // 마감 편집 권한 + 마감 장부만 통과.
+  assert.deepEqual(
+    getSalesPriceWriteGateDecision({
+      hasPlannedPriceInput: true,
+      closedEditAllowed: true,
+      ledgerStatus: "HEADQUARTERS_CLOSED",
+    }),
+    { ok: true },
+  );
+
+  // 권한 없는 사용자(HQ_STAFF 등)는 마감 장부에서도 거부.
+  const forbidden = getSalesPriceWriteGateDecision({
+    hasPlannedPriceInput: true,
+    closedEditAllowed: false,
+    ledgerStatus: "HEADQUARTERS_CLOSED",
+  });
+  assert.equal(forbidden.ok, false);
+  assert.equal(forbidden.code, "LEDGER_NOT_EDITABLE");
+  assert.equal(forbidden.message, salesPriceWriteForbiddenMessage);
+
+  // 마스터여도 미마감/검토 중 장부에서는 거부.
+  const notClosed = getSalesPriceWriteGateDecision({
+    hasPlannedPriceInput: true,
+    closedEditAllowed: true,
+    ledgerStatus: "IN_REVIEW",
+  });
+  assert.equal(notClosed.ok, false);
+  assert.equal(notClosed.code, "LEDGER_NOT_EDITABLE");
 });

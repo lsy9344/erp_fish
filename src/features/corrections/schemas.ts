@@ -27,6 +27,8 @@ const correctionQuantityError =
   "정정 수량은 0 이상이고 소수점 둘째 자리까지 입력해 주세요.";
 const inventoryQuantityError =
   "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.";
+const lossReasonRequiredError = "손실 사유를 입력해 주세요.";
+const lossReasonTooLongError = "손실 사유는 500자 이하여야 합니다.";
 
 function parseNumericCorrectionValue(value: unknown) {
   if (
@@ -163,13 +165,12 @@ export const correctionRecordSchema = z
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, "장부를 확인해 주세요.")),
-    expectedUpdatedAt: z
-      .string({
-        required_error: "장부 수정 기준 시각을 확인해 주세요.",
-        invalid_type_error: "장부 수정 기준 시각을 확인해 주세요.",
-      })
-      .datetime({ message: "장부 수정 기준 시각을 확인해 주세요." })
-      .transform((value) => new Date(value)),
+    // DESIGN.md D9: 정정 저장도 장부 충돌 토큰(updatedAt)을 함께 보내 직접 저장과
+    // 같은 충돌 경계를 공유한다. 화면이 렌더링된 시점의 장부 값이다.
+    ledgerUpdatedAt: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "장부 상태를 확인해 주세요.")),
     targetType: z.enum(correctionTargetTypes, {
       errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
     }),
@@ -204,6 +205,32 @@ export const correctionRecordSchema = z
         code: z.ZodIssueCode.custom,
         message: unsupportedInventoryAmountCorrectionMessage,
         path: ["fieldKey"],
+      });
+    }
+
+    if (
+      value.targetType === "LOSS_ROW" &&
+      value.fieldKey === "reason" &&
+      (value.correctedValue.kind !== "text" ||
+        typeof value.correctedValue.value !== "string" ||
+        value.correctedValue.value.length === 0)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: lossReasonRequiredError,
+        path: ["correctedValue", "value"],
+      });
+    } else if (
+      value.targetType === "LOSS_ROW" &&
+      value.fieldKey === "reason" &&
+      value.correctedValue.kind === "text" &&
+      typeof value.correctedValue.value === "string" &&
+      value.correctedValue.value.length > 500
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: lossReasonTooLongError,
+        path: ["correctedValue", "value"],
       });
     }
 

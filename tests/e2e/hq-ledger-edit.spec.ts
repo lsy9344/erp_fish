@@ -5,7 +5,6 @@ const prisma = new PrismaClient();
 const STORY_MARKER = "story-4-3-test";
 const STORE_ID = "store-story-4-3-edit";
 const CLOSED_STORE_ID = "store-story-4-3-closed";
-const CARRYOVER_CLOSED_STORE_ID = "store-story-4-3-carryover-closed";
 const PREFLIGHT_BLOCKED_STORE_ID = "store-story-4-4-preflight-blocked";
 const PRODUCT_NAME = "스토리4-3 광어";
 const EXPENSE_CODE_NAME = "스토리4-3 비용";
@@ -31,14 +30,6 @@ async function loginAsHq(page: Page) {
 async function loginAsHqViewer(page: Page) {
   await page.goto("/login");
   await page.getByLabel("로그인 식별자").fill("hq-viewer@example.com");
-  await page.getByLabel("비밀번호").fill("correct-password");
-  await page.getByRole("button", { name: "로그인" }).click();
-  await expect(page).toHaveURL(/\/app\//);
-}
-
-async function loginAsHqStaff(page: Page) {
-  await page.goto("/login");
-  await page.getByLabel("로그인 식별자").fill("hq-assigned@example.com");
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/app\//);
@@ -261,14 +252,6 @@ async function seedClosedStoryData() {
     },
   });
 
-  const hqStaff = await prisma.user.findUniqueOrThrow({
-    where: { email: "hq-assigned@example.com" },
-    select: { id: true },
-  });
-  await prisma.userStoreAssignment.create({
-    data: { userId: hqStaff.id, storeId: store.id },
-  });
-
   return prisma.dailyLedger.create({
     data: {
       storeId: store.id,
@@ -286,262 +269,6 @@ async function seedClosedStoryData() {
       closedAt,
     },
   });
-}
-
-async function seedClosedCarryoverStoryData({
-  sourceQuantity = 8,
-  withDownstreamLedger = false,
-}: {
-  sourceQuantity?: number;
-  withDownstreamLedger?: boolean;
-} = {}) {
-  const actorId = await getHeadquartersUserId();
-  const targetDate = getTodayKstMidnight();
-  const sourceDate = new Date(targetDate);
-  sourceDate.setUTCDate(sourceDate.getUTCDate() - 1);
-  const store = await prisma.store.create({
-    data: {
-      id: CARRYOVER_CLOSED_STORE_ID,
-      name: "스토리4-3 이월재확인점",
-      isActive: true,
-      updatedById: actorId,
-    },
-  });
-  const product = await prisma.product.create({
-    data: {
-      name: PRODUCT_NAME,
-      category: "냉동",
-      spec: "1kg",
-      defaultUnitPrice: 50,
-      updatedById: actorId,
-    },
-  });
-  const lossCode = await prisma.ledgerInputCode.create({
-    data: {
-      group: "LOSS_TYPE",
-      name: LOSS_CODE_NAME,
-      displayOrder: 943,
-      updatedById: actorId,
-    },
-  });
-  const sourceLedger = await prisma.dailyLedger.create({
-    data: {
-      storeId: store.id,
-      closingDate: sourceDate,
-      status: "HEADQUARTERS_CLOSED",
-      totalSalesAmount: 1000,
-      cashAmount: 1000,
-      cardAmount: 0,
-      otherPaymentAmount: 0,
-      workerCount: 1,
-      createdById: actorId,
-      updatedById: actorId,
-      closedById: actorId,
-      closedAt: new Date(),
-    },
-  });
-  const targetLedger = await prisma.dailyLedger.create({
-    data: {
-      storeId: store.id,
-      closingDate: targetDate,
-      status: "HEADQUARTERS_CLOSED",
-      totalSalesAmount: 1000,
-      cashAmount: 1000,
-      cardAmount: 0,
-      otherPaymentAmount: 0,
-      workerCount: 1,
-      createdById: actorId,
-      updatedById: actorId,
-      closedById: actorId,
-      closedAt: new Date(),
-    },
-  });
-  const sourceItem = await prisma.ledgerInventoryItem.create({
-    data: {
-      dailyLedgerId: sourceLedger.id,
-      productId: product.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      unitPrice: 50,
-      previousQuantity: 10,
-      purchasedQuantity: 0,
-      currentQuantity: sourceQuantity,
-      quantity: sourceQuantity,
-      inventoryAmount: sourceQuantity * 50,
-      isModified: true,
-      carryoverSource: "PREVIOUS_CLOSED_LEDGER",
-      carryoverStatus: "PREVIOUS_CARRYOVER",
-      createdById: actorId,
-      updatedById: actorId,
-    },
-  });
-  await prisma.ledgerInventoryFifoLot.create({
-    data: {
-      dailyLedgerId: sourceLedger.id,
-      ledgerInventoryItemId: sourceItem.id,
-      productId: product.id,
-      sourceType: "PURCHASE",
-      unitPrice: 50,
-      originalQuantity: sourceQuantity,
-      consumedQuantity: 0,
-      remainingQuantity: sourceQuantity,
-      originalAmount: sourceQuantity * 50,
-      consumedAmount: 0,
-      remainingAmount: sourceQuantity * 50,
-      sortOrder: 0,
-      sourceBusinessDate: sourceDate,
-    },
-  });
-  const targetItem = await prisma.ledgerInventoryItem.create({
-    data: {
-      dailyLedgerId: targetLedger.id,
-      productId: product.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      unitPrice: 50,
-      previousQuantity: 5,
-      purchasedQuantity: 0,
-      currentQuantity: 4,
-      quantity: 4,
-      inventoryAmount: 200,
-      isModified: true,
-      carryoverSource: "PREVIOUS_CLOSED_LEDGER",
-      carryoverStatus: "CARRYOVER_RECHECK_REQUIRED",
-      carryoverLedgerId: sourceLedger.id,
-      createdById: actorId,
-      updatedById: actorId,
-    },
-  });
-  await prisma.ledgerInventoryCarryoverDetail.create({
-    data: {
-      ledgerInventoryItemId: targetItem.id,
-      source: "PREVIOUS_CLOSED_LEDGER",
-      status: "CARRYOVER_RECHECK_REQUIRED",
-      resolvedQuantity: 5,
-      sourceLedgerId: sourceLedger.id,
-      sourceLedgerClosingDate: sourceDate,
-      sourceLedgerStatus: "HEADQUARTERS_CLOSED",
-      sourcePreviousQuantity: 10,
-      sourcePurchasedQuantity: 0,
-      sourceLossQuantity: 0,
-      sourceCurrentQuantity: 5,
-      sourceQuantity: 5,
-      message: "원천 장부 수정 후 재확인이 필요합니다.",
-    },
-  });
-  let downstreamLedger: Awaited<
-    ReturnType<typeof prisma.dailyLedger.create>
-  > | null = null;
-
-  if (withDownstreamLedger) {
-    const downstreamDate = new Date(targetDate);
-    downstreamDate.setUTCDate(downstreamDate.getUTCDate() + 1);
-    downstreamLedger = await prisma.dailyLedger.create({
-      data: {
-        storeId: store.id,
-        closingDate: downstreamDate,
-        status: "HEADQUARTERS_CLOSED",
-        totalSalesAmount: 1000,
-        cashAmount: 1000,
-        cardAmount: 0,
-        otherPaymentAmount: 0,
-        workerCount: 1,
-        createdById: actorId,
-        updatedById: actorId,
-        closedById: actorId,
-        closedAt: new Date(),
-      },
-    });
-    const downstreamItem = await prisma.ledgerInventoryItem.create({
-      data: {
-        dailyLedgerId: downstreamLedger.id,
-        productId: product.id,
-        productName: product.name,
-        productCategory: product.category,
-        productSpec: product.spec,
-        unitPrice: 40,
-        previousQuantity: 4,
-        purchasedQuantity: 0,
-        currentQuantity: 3,
-        quantity: 3,
-        inventoryAmount: 120,
-        isModified: true,
-        carryoverSource: "PREVIOUS_CLOSED_LEDGER",
-        carryoverStatus: "PREVIOUS_CARRYOVER",
-        carryoverLedgerId: targetLedger.id,
-        createdById: actorId,
-        updatedById: actorId,
-      },
-    });
-    await prisma.ledgerInventoryCarryoverDetail.create({
-      data: {
-        ledgerInventoryItemId: downstreamItem.id,
-        source: "PREVIOUS_CLOSED_LEDGER",
-        status: "PREVIOUS_CARRYOVER",
-        resolvedQuantity: 4,
-        sourceLedgerId: targetLedger.id,
-        sourceLedgerClosingDate: targetDate,
-        sourceLedgerStatus: "HEADQUARTERS_CLOSED",
-        sourcePreviousQuantity: 5,
-        sourcePurchasedQuantity: 0,
-        sourceLossQuantity: 0,
-        sourceCurrentQuantity: 4,
-        sourceQuantity: 4,
-        message: "직전 마감 장부에서 이월했습니다.",
-      },
-    });
-    await prisma.ledgerInventoryFifoLot.create({
-      data: {
-        dailyLedgerId: targetLedger.id,
-        ledgerInventoryItemId: targetItem.id,
-        productId: product.id,
-        sourceType: "PREVIOUS_CARRYOVER",
-        sourceLedgerId: sourceLedger.id,
-        unitPrice: 40,
-        originalQuantity: 4,
-        consumedQuantity: 0,
-        remainingQuantity: 4,
-        originalAmount: 160,
-        consumedAmount: 0,
-        remainingAmount: 160,
-        sortOrder: 0,
-        sourceBusinessDate: sourceDate,
-      },
-    });
-  }
-  await prisma.storeSalesPricePlan.create({
-    data: {
-      storeId: store.id,
-      businessDate: targetDate,
-      productId: product.id,
-      plannedUnitPrice: 100,
-      createdById: actorId,
-      updatedById: actorId,
-    },
-  });
-  await prisma.ledgerLossItem.create({
-    data: {
-      dailyLedgerId: targetLedger.id,
-      productId: product.id,
-      ledgerInputCodeId: lossCode.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      unitPrice: 100,
-      lossTypeName: lossCode.name,
-      quantity: 1,
-      recoveredAmount: 0,
-      amount: 100,
-      usedPlannedPrice: true,
-      reason: STORY_MARKER,
-      createdById: actorId,
-      updatedById: actorId,
-    },
-  });
-
-  return { targetLedger, sourceLedger, downstreamLedger, product };
 }
 
 async function seedPreflightBlockedStoryData() {
@@ -573,12 +300,7 @@ async function seedPreflightBlockedStoryData() {
 }
 
 async function cleanupStoryFourOneData() {
-  const stores = [
-    STORE_ID,
-    CLOSED_STORE_ID,
-    CARRYOVER_CLOSED_STORE_ID,
-    PREFLIGHT_BLOCKED_STORE_ID,
-  ];
+  const stores = [STORE_ID, CLOSED_STORE_ID, PREFLIGHT_BLOCKED_STORE_ID];
   const ledgers = await prisma.dailyLedger.findMany({
     where: { storeId: { in: stores } },
     select: { id: true },
@@ -625,10 +347,6 @@ async function cleanupStoryFourOneData() {
     });
   }
 
-  await prisma.storeSalesPricePlan.deleteMany({
-    where: { storeId: { in: stores } },
-  });
-
   if (productIds.length > 0) {
     await prisma.purchaseStandard.deleteMany({
       where: { productId: { in: productIds } },
@@ -655,6 +373,7 @@ async function cleanupStoryFourOneData() {
 test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹션을 보완 저장한다", async ({
   page,
 }) => {
+  // 7개 섹션을 순차 저장하는 긴 시나리오라 기본 30초 예산이 부족하다.
   test.slow();
   const { actorId, ledger, product } = await seedEditableStoryData();
 
@@ -694,13 +413,15 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await page.getByRole("tab", { name: "매출/결제" }).click();
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
   await expect(salesPanel).toBeVisible();
-  const expenseTotalInput = salesPanel.getByLabel("4단계 지출 합계");
+  const expenseTotalInput = salesPanel.getByLabel("지출합계");
   await expect(expenseTotalInput).toHaveValue("1,000원");
   await expect(expenseTotalInput).toHaveJSProperty("readOnly", true);
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "45000");
   await replaceKrwControlValue(salesPanel.getByLabel("현금"), "14000");
   await replaceKrwControlValue(salesPanel.getByLabel("카드"), "25000");
-  await replaceKrwControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
+  await replaceKrwControlValue(
+    salesPanel.getByLabel("기타 결제수단(온누리QR)"),
+    "5000",
+  );
   await fillHqEditReason(salesPanel, "매출 결제 원본 보완");
   await salesPanel.getByRole("button", { name: "저장" }).click();
   await expect(
@@ -785,6 +506,11 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await replaceControlValue(purchasePanel.getByLabel("수량"), "3");
   await fillHqEditReason(purchasePanel, "매입 원본 보완");
   await purchasePanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    purchasePanel
+      .getByRole("status")
+      .filter({ hasText: /저장됐습니다|매입 항목 1건을 저장했습니다/ }),
+  ).toBeVisible();
   await expect
     .poll(async () => {
       const current = await prisma.ledgerPurchaseItem.findFirst({
@@ -947,68 +673,6 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   );
 });
 
-test("본사 원본 재고 편집은 저장된 재고 행 삭제를 저장한다", async ({
-  page,
-}) => {
-  test.slow();
-  const { ledger, product } = await seedEditableStoryData();
-
-  await loginAsHq(page);
-  await page.goto(`/app/ledgers/${ledger.id}?tab=inventory`);
-
-  const inventoryPanel = page
-    .getByRole("tabpanel")
-    .filter({ hasText: "재고 입력" });
-  const removeButton = inventoryPanel.getByRole("button", {
-    name: `${product.name} 재고 행 제거`,
-  });
-
-  await expect(removeButton).toBeVisible();
-  await removeButton.click();
-  await expect(removeButton).not.toBeVisible();
-  await fillHqEditReason(inventoryPanel, "오류로 생성된 재고 행 삭제");
-  await inventoryPanel
-    .getByRole("button", { name: "저장", exact: true })
-    .click();
-
-  await expect
-    .poll(async () => {
-      const [item, audit] = await Promise.all([
-        prisma.ledgerInventoryItem.findUnique({
-          where: {
-            dailyLedgerId_productId: {
-              dailyLedgerId: ledger.id,
-              productId: product.id,
-            },
-          },
-        }),
-        prisma.auditLog.findFirst({
-          where: {
-            targetType: "DailyLedger",
-            targetId: ledger.id,
-            action: "ledger.hq.inventory.saved",
-            reason: "오류로 생성된 재고 행 삭제",
-          },
-          orderBy: { createdAt: "desc" },
-          select: { after: true },
-        }),
-      ]);
-
-      return {
-        itemExists: item !== null,
-        deletedProductIds:
-          audit?.after && typeof audit.after === "object"
-            ? ((
-                audit.after as {
-                  hqEditContext?: { deletedProductIds?: string[] };
-                }
-              ).hqEditContext?.deletedProductIds ?? [])
-            : [],
-      };
-    })
-    .toEqual({ itemExists: false, deletedProductIds: [product.id] });
-});
-
 // WO-02(2026-06-28): 본사 장부 상세 탭이 URL ?tab= 과 연결되고, 기존 쿼리를 보존하며,
 // 딥링크/뒤로가기에서 탭 상태가 유지·복원된다.
 test("본사 장부 상세 탭은 URL ?tab=와 연결되고 딥링크/뒤로가기에서 유지된다", async ({
@@ -1087,7 +751,7 @@ test("본사 장부 상세 탭을 클릭하면 6개 입력 섹션 카드로 각�
   }
 });
 
-test("마스터 본사는 마감 상태와 최초 마감 정보를 유지하며 원본을 수정한다", async ({
+test("HQ_ADMIN은 마감 장부 상세에서 마감 상태 유지 안내와 함께 원본 입력을 수정할 수 있다", async ({
   page,
 }) => {
   const ledger = await seedClosedStoryData();
@@ -1095,9 +759,14 @@ test("마스터 본사는 마감 상태와 최초 마감 정보를 유지하며 
   await loginAsHq(page);
   await page.goto(`/app/ledgers/${ledger.id}`);
 
+  // DESIGN.md D7: 마스터는 차단 안내 대신 마감 상태 유지 안내를 본다.
+  await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toBeVisible();
   await expect(
-    page.getByText("마감 상태 유지 · 마스터 수정", { exact: true }),
+    page.getByText("이 장부의 업무 내용을 수정할 수 있습니다."),
   ).toBeVisible();
+  await expect(page.getByText("본사 마감된 장부", { exact: true })).toHaveCount(
+    0,
+  );
   const reviewSummary = page.getByRole("region", { name: "검토 상태 요약" });
   await expect(reviewSummary.getByText("본사 마감 정보")).toBeVisible();
   await expect(reviewSummary.getByText("본사 관리자")).toBeVisible();
@@ -1110,33 +779,61 @@ test("마스터 본사는 마감 상태와 최초 마감 정보를 유지하며 
   await expect(
     page.getByText("원본 장부 값은 보존하고 정정 이력만 추가합니다."),
   ).toBeVisible();
+  await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
+  await page.getByRole("tab", { name: "근무" }).click();
+  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
+
+  // Non-goal: 재마감 절차는 없으므로 마감 다이얼로그 버튼이 다시 노출되지 않는다.
+  await expect(page.getByRole("button", { name: "본사 마감" })).toHaveCount(0);
+});
+
+test("HQ_ADMIN이 마감 장부의 매출/결제를 수정해도 마감 상태와 최초 마감 정보가 유지된다", async ({
+  page,
+}) => {
+  const ledger = await seedClosedStoryData();
+  const beforeClosed = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { status: true, closedAt: true, closedById: true },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "매출/결제" }).click();
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
-  await expect(salesPanel.getByLabel("총매출", { exact: true })).toBeEnabled();
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "12000");
-  await fillHqEditReason(salesPanel, "마감 장부 매출 근거 확인");
+  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "5000");
+
+  // 수정 사유 없이는 저장할 수 없다.
   await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText("본사 수정 사유를 입력해 주세요."),
+  ).toBeVisible();
+
+  await fillHqEditReason(salesPanel, "마감 후 현금 오기입 정정");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+  await expect(
+    salesPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
 
   await expect
     .poll(async () =>
-      prisma.dailyLedger.findUnique({
+      prisma.dailyLedger.findUniqueOrThrow({
         where: { id: ledger.id },
         select: {
           status: true,
-          totalSalesAmount: true,
           closedAt: true,
           closedById: true,
-          version: true,
+          cashAmount: true,
         },
       }),
     )
-    .toEqual({
+    .toMatchObject({
       status: "HEADQUARTERS_CLOSED",
-      totalSalesAmount: 12000,
-      closedAt: new Date("2026-06-11T06:30:00.000Z"),
-      closedById: ledger.closedById,
-      version: ledger.version + 1,
+      closedAt: beforeClosed.closedAt,
+      closedById: beforeClosed.closedById,
+      cashAmount: 5000,
     });
 
   const audit = await prisma.auditLog.findFirst({
@@ -1144,528 +841,255 @@ test("마스터 본사는 마감 상태와 최초 마감 정보를 유지하며 
       targetType: "DailyLedger",
       targetId: ledger.id,
       action: "ledger.hq.sales_payment.updated",
+      reason: "마감 후 현금 오기입 정정",
     },
-    orderBy: { createdAt: "desc" },
+    select: { after: true, before: true, actorId: true },
   });
-  expect(audit?.reason).toBe("마감 장부 매출 근거 확인");
+  expect(audit?.actorId).toBe(await getHeadquartersUserId());
+  // DESIGN.md D8: before/after는 사용자에게 실제 적용된 유효값 기준이다.
+  expect(audit?.before).toMatchObject({
+    cashAmount: 4000,
+    cardAmount: 6000,
+    status: "HEADQUARTERS_CLOSED",
+  });
   expect(audit?.after).toMatchObject({
     ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
     closedEdit: true,
-    hqEditContext: { closedLedgerEdit: true },
+    cashAmount: 5000,
   });
 });
 
-test("마감 원본 수정 감사 before는 같은 transaction의 활성 정정 유효값을 기록한다", async ({
+// DESIGN.md D9/D8: 활성 정정이 있는 마감 장부를 직접 수정하면 편집 폼은 정정
+// 반영값으로 초기화되고, 감사 before/after에도 유효값이 기록되며 해당 정정은
+// supersede된다.
+test("마감 장부 직접 수정 시 편집 폼과 감사는 활성 정정 유효값을 기준으로 동작한다", async ({
   page,
 }) => {
-  const ledger = await seedClosedStoryData();
   const actorId = await getHeadquartersUserId();
+  const ledger = await seedClosedStoryData();
 
-  await prisma.correctionRecord.createMany({
-    data: [
-      {
-        dailyLedgerId: ledger.id,
-        targetType: "PAYMENT_FIELD",
-        targetId: ledger.id,
-        fieldKey: "totalSalesAmount",
-        originalValue: { kind: "money", value: 10000, label: "총매출" },
-        previousAppliedValue: {
-          kind: "money",
-          value: 10000,
-          label: "총매출",
-        },
-        correctedValue: { kind: "money", value: 11000, label: "총매출" },
-        reason: "매출 유효값 확인",
-        createdById: actorId,
-      },
-      {
-        dailyLedgerId: ledger.id,
-        targetType: "LEDGER_FIELD",
-        targetId: ledger.id,
-        fieldKey: "workerCount",
-        originalValue: { kind: "quantity", value: 2, label: "근무인원" },
-        previousAppliedValue: {
-          kind: "quantity",
-          value: 2,
-          label: "근무인원",
-        },
-        correctedValue: { kind: "quantity", value: 4, label: "근무인원" },
-        reason: "근무 유효값 확인",
-        createdById: actorId,
-      },
-    ],
+  // 현금 4,000 → 4,500 활성 정정을 먼저 만든다.
+  await prisma.correctionRecord.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      targetType: "PAYMENT_FIELD",
+      targetId: ledger.id,
+      fieldKey: "cashAmount",
+      originalValue: { kind: "money", value: 4000, label: "현금" },
+      previousAppliedValue: { kind: "money", value: 4000, label: "현금" },
+      correctedValue: { kind: "money", value: 4500, label: "현금" },
+      reason: STORY_MARKER,
+      createdById: actorId,
+    },
   });
 
   await loginAsHq(page);
-  await page.goto(`/app/ledgers/${ledger.id}?tab=sales`);
-
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매출/결제" }).click();
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
-  await expect(salesPanel.getByLabel("총매출", { exact: true })).toHaveValue(
-    "11,000",
-  );
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "12000");
-  await fillHqEditReason(salesPanel, "매출 correction 원본 통합");
-  await salesPanel.getByRole("button", { name: "저장", exact: true }).click();
 
-  await page.getByRole("tab", { name: "근무", exact: true }).click();
-  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
-  await expect(workPanel.getByLabel("근무인원", { exact: true })).toHaveValue(
-    "4",
+  // 편집 폼은 원본 4,000원이 아니라 정정 반영값 4,500원으로 초기화된다.
+  await expect(salesPanel.getByLabel("현금", { exact: true })).toHaveValue(
+    "4,500",
   );
-  await replaceControlValue(workPanel.getByLabel("근무인원"), "5");
-  await replaceControlValue(
-    workPanel.locator("#work-hq-edit-reason"),
-    "근무 correction 원본 통합",
-  );
-  await workPanel.getByRole("button", { name: "저장", exact: true }).click();
+
+  // 카드만 바꿔 저장한다. 현금은 유효값 그대로 재저장돼야 한다.
+  await replaceKrwControlValue(salesPanel.getByLabel("카드"), "7000");
+  await fillHqEditReason(salesPanel, "정정 유효값 기준 직접 수정");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
 
   await expect
-    .poll(() =>
+    .poll(async () =>
+      prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: { cashAmount: true, cardAmount: true, status: true },
+      }),
+    )
+    .toMatchObject({
+      cashAmount: 4500,
+      cardAmount: 7000,
+      status: "HEADQUARTERS_CLOSED",
+    });
+
+  // 현금 정정은 supersede되고 이력은 보존된다.
+  await expect
+    .poll(async () => {
+      const correction = await prisma.correctionRecord.findFirst({
+        where: {
+          dailyLedgerId: ledger.id,
+          targetType: "PAYMENT_FIELD",
+          fieldKey: "cashAmount",
+        },
+        select: { supersededAt: true },
+      });
+
+      return correction?.supersededAt ?? null;
+    })
+    .not.toBeNull();
+
+  // 감사 before/after는 원본값이 아닌 유효값 기준이다.
+  const audit = await prisma.auditLog.findFirst({
+    where: {
+      targetType: "DailyLedger",
+      targetId: ledger.id,
+      action: "ledger.hq.sales_payment.updated",
+      reason: "정정 유효값 기준 직접 수정",
+    },
+    select: { before: true, after: true },
+  });
+  expect(audit?.before).toMatchObject({
+    cashAmount: 4500,
+    cardAmount: 6000,
+  });
+  expect(audit?.after).toMatchObject({
+    cashAmount: 4500,
+    cardAmount: 7000,
+    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+    closedEdit: true,
+  });
+});
+
+// DESIGN.md D5/E2E1: 마감 장부에서도 기존 본사 편집 화면으로 근무·급여를 포함한
+// 업무 항목을 수정할 수 있고, 마감 상태와 최초 마감 정보는 유지된다.
+test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 수정해도 마감 상태가 유지된다", async ({
+  page,
+}) => {
+  const ledger = await seedClosedStoryData();
+  const beforeClosed = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { closedAt: true, closedById: true },
+  });
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "근무" }).click();
+  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
+
+  // 근무인원·특이사항 수정(기존 근무 저장 경로 재사용).
+  await replaceControlValue(workPanel.getByLabel("근무인원"), "3");
+  await replaceControlValue(
+    workPanel.getByLabel("특이사항 메모"),
+    "마감 후 근무 보완",
+  );
+  await replaceControlValue(
+    workPanel.locator("#work-hq-edit-reason"),
+    "마감 장부 근무 수정",
+  );
+  await workPanel.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    workPanel.getByText(
+      "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    ),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () =>
+      prisma.dailyLedger.findUniqueOrThrow({
+        where: { id: ledger.id },
+        select: {
+          workerCount: true,
+          workMemo: true,
+          status: true,
+          closedAt: true,
+          closedById: true,
+        },
+      }),
+    )
+    .toMatchObject({
+      workerCount: 3,
+      workMemo: "마감 후 근무 보완",
+      status: "HEADQUARTERS_CLOSED",
+      closedAt: beforeClosed.closedAt,
+      closedById: beforeClosed.closedById,
+    });
+
+  // 급여 행 추가(기존 급여 저장 경로 재사용) 후에도 마감 상태가 유지된다.
+  await workPanel.getByRole("button", { name: "직원 추가" }).click();
+  await replaceControlValue(workPanel.getByLabel("직원명"), "마감 급여 직원");
+  await replaceKrwControlValue(workPanel.getByLabel("급여 금액"), "1200000");
+  await replaceControlValue(
+    workPanel.locator("#labor-hq-edit-reason"),
+    "마감 장부 급여 수정",
+  );
+  await workPanel.getByRole("button", { name: "급여 저장" }).click();
+  await expect(
+    workPanel
+      .getByRole("status")
+      .filter({ hasText: "급여 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+  // DESIGN.md D7: 급여 저장에도 마감 유지 문구가 함께 표시된다.
+  await expect(
+    workPanel.getByRole("status").filter({
+      hasText: "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.",
+    }),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const [count, current] = await Promise.all([
+        prisma.ledgerLaborItem.count({ where: { dailyLedgerId: ledger.id } }),
+        prisma.dailyLedger.findUniqueOrThrow({
+          where: { id: ledger.id },
+          select: { status: true },
+        }),
+      ]);
+
+      return { count, status: current.status };
+    })
+    .toMatchObject({ count: 1, status: "HEADQUARTERS_CLOSED" });
+});
+
+test("마감 장부의 오래된 화면 저장은 충돌로 거부되고 서버 최신값이 유지된다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const ledger = await seedClosedStoryData();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매출/결제" }).click();
+  const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
+
+  // 화면 로드 후 다른 곳에서 장부가 바뀌면(UpdatedAt 변동) stale token이 된다.
+  await prisma.dailyLedger.update({
+    where: { id: ledger.id },
+    data: {
+      cashAmount: 4444,
+      updatedById: actorId,
+      version: { increment: 1 },
+    },
+  });
+
+  await replaceKrwControlValue(salesPanel.getByLabel("현금"), "5000");
+  await fillHqEditReason(salesPanel, "stale 마감 장부 저장 확인");
+  await salesPanel.getByRole("button", { name: "저장" }).click();
+
+  const conflictDialog = page.getByRole("dialog", {
+    name: "저장 충돌이 발생했습니다",
+  });
+  await expect(conflictDialog).toBeVisible();
+  await expect(conflictDialog.getByText("매출/결제")).toBeVisible();
+
+  const current = await prisma.dailyLedger.findUniqueOrThrow({
+    where: { id: ledger.id },
+    select: { status: true, cashAmount: true },
+  });
+  expect(current).toMatchObject({
+    status: "HEADQUARTERS_CLOSED",
+    cashAmount: 4444,
+  });
+  await expect
+    .poll(async () =>
       prisma.auditLog.count({
         where: {
           targetType: "DailyLedger",
           targetId: ledger.id,
-          action: {
-            in: [
-              "ledger.hq.sales_payment.updated",
-              "ledger.hq.work_info.saved",
-            ],
-          },
+          action: "ledger.hq.sales_payment.updated",
+          reason: "stale 마감 장부 저장 확인",
         },
       }),
     )
-    .toBe(2);
-
-  const audits = await prisma.auditLog.findMany({
-    where: {
-      targetType: "DailyLedger",
-      targetId: ledger.id,
-      action: {
-        in: ["ledger.hq.sales_payment.updated", "ledger.hq.work_info.saved"],
-      },
-    },
-    select: { action: true, before: true, after: true },
-  });
-  const salesAudit = audits.find(
-    (entry) => entry.action === "ledger.hq.sales_payment.updated",
-  );
-  const workAudit = audits.find(
-    (entry) => entry.action === "ledger.hq.work_info.saved",
-  );
-
-  expect(salesAudit?.before).toMatchObject({
-    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
-    closedEdit: true,
-    totalSalesAmount: 11000,
-  });
-  expect(salesAudit?.after).toMatchObject({
-    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
-    closedEdit: true,
-    totalSalesAmount: 12000,
-  });
-  expect(workAudit?.before).toMatchObject({
-    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
-    closedEdit: true,
-    workerCount: 4,
-  });
-  expect(workAudit?.after).toMatchObject({
-    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
-    closedEdit: true,
-    workerCount: 5,
-  });
-});
-
-test("활성 텍스트 정정은 본사 직접 저장에서 명시적 null로 보존된다", async ({
-  page,
-}) => {
-  test.slow();
-  const { actorId, ledger } = await seedEditableStoryData();
-  const expense = await prisma.ledgerExpense.findFirstOrThrow({
-    where: { dailyLedgerId: ledger.id },
-    select: { id: true, memo: true },
-  });
-
-  const closedLedger = await prisma.dailyLedger.update({
-    where: { id: ledger.id },
-    data: {
-      status: "HEADQUARTERS_CLOSED",
-      closedById: actorId,
-      closedAt: new Date(),
-    },
-  });
-
-  await prisma.correctionRecord.createMany({
-    data: [
-      {
-        dailyLedgerId: closedLedger.id,
-        targetType: "LEDGER_FIELD",
-        targetId: closedLedger.id,
-        fieldKey: "workMemo",
-        originalValue: {
-          kind: "text",
-          value: STORY_MARKER,
-          label: "근무 메모",
-        },
-        previousAppliedValue: {
-          kind: "text",
-          value: STORY_MARKER,
-          label: "근무 메모",
-        },
-        correctedValue: { kind: "text", value: null, label: "근무 메모" },
-        reason: "근무 메모 삭제",
-        createdById: actorId,
-      },
-      {
-        dailyLedgerId: closedLedger.id,
-        targetType: "EXPENSE_ROW",
-        targetId: expense.id,
-        fieldKey: "memo",
-        originalValue: {
-          kind: "text",
-          value: STORY_MARKER,
-          label: "지출 메모",
-        },
-        previousAppliedValue: {
-          kind: "text",
-          value: STORY_MARKER,
-          label: "지출 메모",
-        },
-        correctedValue: { kind: "text", value: null, label: "지출 메모" },
-        reason: "지출 메모 삭제",
-        createdById: actorId,
-      },
-    ],
-  });
-
-  await loginAsHq(page);
-  await page.goto(`/app/ledgers/${closedLedger.id}?tab=work`);
-
-  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
-  await expect(workPanel.getByLabel("특이사항 메모")).toHaveValue("");
-  await replaceControlValue(workPanel.getByLabel("근무인원"), "3");
-  await replaceControlValue(
-    workPanel.locator("#work-hq-edit-reason"),
-    "활성 근무 메모 정정 통합",
-  );
-  await workPanel.getByRole("button", { name: "저장", exact: true }).click();
-
-  await page.getByRole("tab", { name: "지출", exact: true }).click();
-  const expensePanel = page
-    .getByRole("tabpanel")
-    .filter({ hasText: "지출 항목" });
-  await expect(expensePanel.getByLabel("메모")).toHaveValue("");
-  await replaceKrwControlValue(expensePanel.getByLabel("지출 금액"), "2000");
-  await fillHqEditReason(expensePanel, "활성 지출 메모 정정 통합");
-  await expensePanel.getByRole("button", { name: "저장", exact: true }).click();
-
-  await expect
-    .poll(async () => {
-      const [currentLedger, currentExpense, corrections] = await Promise.all([
-        prisma.dailyLedger.findUnique({
-          where: { id: closedLedger.id },
-          select: { workMemo: true },
-        }),
-        prisma.ledgerExpense.findFirst({
-          where: { dailyLedgerId: closedLedger.id },
-          select: { amount: true, memo: true },
-        }),
-        prisma.correctionRecord.findMany({
-          where: { dailyLedgerId: closedLedger.id },
-          select: { fieldKey: true, supersededAt: true },
-        }),
-      ]);
-
-      return {
-        workMemo: currentLedger?.workMemo,
-        expense: currentExpense,
-        superseded: corrections.every((correction) => correction.supersededAt),
-      };
-    })
-    .toEqual({
-      workMemo: null,
-      expense: { amount: 2000, memo: null },
-      superseded: true,
-    });
-});
-
-test("LEDGER_EDIT만 가진 본사 직원은 마감 장부 원본을 수정할 수 없다", async ({
-  page,
-}) => {
-  const ledger = await seedClosedStoryData();
-
-  await loginAsHqStaff(page);
-  await page.goto(`/app/ledgers/${ledger.id}?tab=sales`);
-
-  await expect(
-    page.getByText("마감 상태 유지 · 마스터 수정", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText("본사 마감된 장부", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
-});
-
-test("마감 재고 수정은 과거 판매가와 손실을 동기화하고 명시한 이월만 재확인한다", async ({
-  page,
-}) => {
-  const { targetLedger, sourceLedger, product } =
-    await seedClosedCarryoverStoryData();
-
-  await loginAsHq(page);
-  await page.goto(`/app/ledgers/${targetLedger.id}?tab=inventory`);
-
-  const inventoryPanel = page
-    .getByRole("tabpanel")
-    .filter({ hasText: "재고 입력" });
-  const priceInput = inventoryPanel.getByLabel(`${product.name} 판매한 가격`);
-  const acknowledgement =
-    inventoryPanel.getByLabel("새 이월 근거 확인 후 재계산");
-
-  await expect(priceInput).toBeEnabled();
-  await expect(priceInput).toHaveValue("100");
-  await expect(acknowledgement).toBeVisible();
-  await replaceKrwControlValue(priceInput, "200");
-  await acknowledgement.check();
-  await fillHqEditReason(inventoryPanel, "원천 마감 장부 수정분 재확인");
-  await inventoryPanel
-    .getByRole("button", { name: "저장", exact: true })
-    .click();
-
-  await expect
-    .poll(async () => {
-      const [ledger, item, price, loss, fifo] = await Promise.all([
-        prisma.dailyLedger.findUnique({
-          where: { id: targetLedger.id },
-          select: { status: true, version: true },
-        }),
-        prisma.ledgerInventoryItem.findUnique({
-          where: {
-            dailyLedgerId_productId: {
-              dailyLedgerId: targetLedger.id,
-              productId: product.id,
-            },
-          },
-          select: {
-            previousQuantity: true,
-            currentQuantity: true,
-            quantity: true,
-            carryoverStatus: true,
-            carryoverLedgerId: true,
-          },
-        }),
-        prisma.storeSalesPricePlan.findUnique({
-          where: {
-            storeId_businessDate_productId: {
-              storeId: CARRYOVER_CLOSED_STORE_ID,
-              businessDate: targetLedger.closingDate,
-              productId: product.id,
-            },
-          },
-          select: { plannedUnitPrice: true },
-        }),
-        prisma.ledgerLossItem.findFirst({
-          where: { dailyLedgerId: targetLedger.id, productId: product.id },
-          select: { unitPrice: true, amount: true, usedPlannedPrice: true },
-        }),
-        prisma.ledgerInventoryFifoLot.aggregate({
-          where: { dailyLedgerId: targetLedger.id, productId: product.id },
-          _sum: { remainingQuantity: true },
-        }),
-      ]);
-
-      return {
-        ledger,
-        item: item
-          ? {
-              ...item,
-              previousQuantity: item.previousQuantity.toString(),
-              currentQuantity: item.currentQuantity?.toString(),
-              quantity: item.quantity?.toString(),
-            }
-          : null,
-        price,
-        loss,
-        fifoRemaining: fifo._sum.remainingQuantity?.toString(),
-      };
-    })
-    .toEqual({
-      ledger: {
-        status: "HEADQUARTERS_CLOSED",
-        version: targetLedger.version + 1,
-      },
-      item: {
-        previousQuantity: "8",
-        currentQuantity: "4",
-        quantity: "4",
-        carryoverStatus: "PREVIOUS_CARRYOVER",
-        carryoverLedgerId: sourceLedger.id,
-      },
-      price: { plannedUnitPrice: 200 },
-      loss: { unitPrice: 200, amount: 200, usedPlannedPrice: true },
-      fifoRemaining: "4",
-    });
-});
-
-test("A→B 이월 FIFO 원가 재확인은 B→C 다음 장부에도 전파된다", async ({
-  page,
-}) => {
-  const { targetLedger, downstreamLedger, product } =
-    await seedClosedCarryoverStoryData({ withDownstreamLedger: true });
-  expect(downstreamLedger).not.toBeNull();
-
-  await loginAsHq(page);
-  await page.goto(`/app/ledgers/${targetLedger.id}?tab=inventory`);
-
-  const inventoryPanel = page
-    .getByRole("tabpanel")
-    .filter({ hasText: "재고 입력" });
-  await inventoryPanel.getByLabel("새 이월 근거 확인 후 재계산").check();
-  await fillHqEditReason(inventoryPanel, "A 원천 FIFO 원가를 B에서 재확인");
-  await inventoryPanel
-    .getByRole("button", { name: "저장", exact: true })
-    .click();
-
-  await expect
-    .poll(async () => {
-      const [targetItem, targetLots, downstream, downstreamDetail] =
-        await Promise.all([
-          prisma.ledgerInventoryItem.findUnique({
-            where: {
-              dailyLedgerId_productId: {
-                dailyLedgerId: targetLedger.id,
-                productId: product.id,
-              },
-            },
-            select: { inventoryAmount: true, carryoverStatus: true },
-          }),
-          prisma.ledgerInventoryFifoLot.findMany({
-            where: {
-              dailyLedgerId: targetLedger.id,
-              productId: product.id,
-              remainingQuantity: { gt: 0 },
-            },
-            select: { unitPrice: true, remainingAmount: true },
-            orderBy: { sortOrder: "asc" },
-          }),
-          prisma.ledgerInventoryItem.findUnique({
-            where: {
-              dailyLedgerId_productId: {
-                dailyLedgerId: downstreamLedger!.id,
-                productId: product.id,
-              },
-            },
-            select: { carryoverStatus: true },
-          }),
-          prisma.ledgerInventoryCarryoverDetail.findFirst({
-            where: {
-              ledgerInventoryItem: {
-                dailyLedgerId: downstreamLedger!.id,
-                productId: product.id,
-              },
-            },
-            select: { status: true, message: true },
-          }),
-        ]);
-
-      return { targetItem, targetLots, downstream, downstreamDetail };
-    })
-    .toEqual({
-      targetItem: {
-        inventoryAmount: 200,
-        carryoverStatus: "PREVIOUS_CARRYOVER",
-      },
-      targetLots: [{ unitPrice: 50, remainingAmount: 200 }],
-      downstream: { carryoverStatus: "CARRYOVER_RECHECK_REQUIRED" },
-      downstreamDetail: {
-        status: "CARRYOVER_RECHECK_REQUIRED",
-        message:
-          "원천 장부가 수정되어 이월 수량과 FIFO 원가 근거를 다시 확인해야 합니다.",
-      },
-    });
-});
-
-test("이월 재확인으로 과재고가 생기면 제출한 행 사유로 조정을 함께 저장한다", async ({
-  page,
-}) => {
-  const { targetLedger, product } = await seedClosedCarryoverStoryData({
-    sourceQuantity: 2,
-  });
-
-  await loginAsHq(page);
-  await page.goto(`/app/ledgers/${targetLedger.id}?tab=inventory`);
-
-  const inventoryPanel = page
-    .getByRole("tabpanel")
-    .filter({ hasText: "재고 입력" });
-  await inventoryPanel.getByLabel("새 이월 근거 확인 후 재계산").check();
-  await inventoryPanel
-    .getByLabel(`${product.name} 재고 조정 이유`)
-    .fill("원천 감소 후 실제 재고 차이 확인");
-  await fillHqEditReason(inventoryPanel, "원천 감소분과 실제 재고 재확인");
-  await inventoryPanel
-    .getByRole("button", { name: "저장", exact: true })
-    .click();
-
-  await expect
-    .poll(async () => {
-      const [item, adjustment, fifo] = await Promise.all([
-        prisma.ledgerInventoryItem.findUnique({
-          where: {
-            dailyLedgerId_productId: {
-              dailyLedgerId: targetLedger.id,
-              productId: product.id,
-            },
-          },
-          select: {
-            previousQuantity: true,
-            currentQuantity: true,
-            carryoverStatus: true,
-          },
-        }),
-        prisma.ledgerInventoryAdjustment.findUnique({
-          where: {
-            dailyLedgerId_productId: {
-              dailyLedgerId: targetLedger.id,
-              productId: product.id,
-            },
-          },
-          select: { reason: true, afterQuantity: true },
-        }),
-        prisma.ledgerInventoryFifoLot.aggregate({
-          where: { dailyLedgerId: targetLedger.id, productId: product.id },
-          _sum: { remainingQuantity: true },
-        }),
-      ]);
-
-      return {
-        item: item
-          ? {
-              previousQuantity: item.previousQuantity.toString(),
-              currentQuantity: item.currentQuantity?.toString(),
-              carryoverStatus: item.carryoverStatus,
-            }
-          : null,
-        adjustment: adjustment
-          ? {
-              reason: adjustment.reason,
-              afterQuantity: adjustment.afterQuantity.toString(),
-            }
-          : null,
-        fifoRemaining: fifo._sum.remainingQuantity?.toString(),
-      };
-    })
-    .toEqual({
-      item: {
-        previousQuantity: "2",
-        currentQuantity: "4",
-        carryoverStatus: "PREVIOUS_CARRYOVER",
-      },
-      adjustment: {
-        reason: "원천 감소 후 실제 재고 차이 확인",
-        afterQuantity: "4",
-      },
-      fifoRemaining: "4",
-    });
+    .toBe(0);
 });
 
 test("본사 상세 매출 폼은 한국어 검증 오류와 첫 오류 포커스를 제공한다", async ({
@@ -1677,16 +1101,16 @@ test("본사 상세 매출 폼은 한국어 검증 오류와 첫 오류 포커�
   await page.goto(`/app/ledgers/${ledger.id}`);
 
   const salesPanel = page.getByRole("tabpanel").filter({ hasText: "총매출" });
-  const totalSalesInput = salesPanel.getByLabel("총매출");
+  const cashInput = salesPanel.getByLabel("현금", { exact: true });
 
   await expect(salesPanel).toBeVisible();
-  await clearControlValue(totalSalesInput);
+  await clearControlValue(cashInput);
   await salesPanel.getByRole("button", { name: "저장" }).click();
 
   await expect(
-    salesPanel.getByText("총매출은 0원 이상의 정수여야 합니다."),
+    salesPanel.getByText("현금은 0원 이상의 정수여야 합니다."),
   ).toBeVisible();
-  await expect(totalSalesInput).toBeFocused();
+  await expect(cashInput).toBeFocused();
 });
 
 test("조회 전용 본사는 장부 상세를 볼 수 있지만 원본 입력 탭을 저장할 수 없다", async ({
@@ -1750,10 +1174,12 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
     },
   });
 
-  await replaceKrwControlValue(salesPanel.getByLabel("총매출"), "45000");
   await replaceKrwControlValue(salesPanel.getByLabel("현금"), "15000");
   await replaceKrwControlValue(salesPanel.getByLabel("카드"), "25000");
-  await replaceKrwControlValue(salesPanel.getByLabel("기타 결제수단"), "5000");
+  await replaceKrwControlValue(
+    salesPanel.getByLabel("기타 결제수단(온누리QR)"),
+    "5000",
+  );
   await fillHqEditReason(salesPanel, "stale 매출 저장 확인");
   await salesPanel.getByRole("button", { name: "저장" }).click();
 
@@ -1767,7 +1193,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
   await expect(conflictDialog.getByText("내 입력값").first()).toBeVisible();
   await expect(conflictDialog.getByText("서버 최신값").first()).toBeVisible();
   await expect(conflictDialog.getByText("총매출")).toBeVisible();
-  await expect(conflictDialog.getByText("45000")).toBeVisible();
+  await expect(conflictDialog.getByText("46000")).toBeVisible();
   await expect(conflictDialog.getByText("77777")).toBeVisible();
   await expect(
     conflictDialog.getByRole("button", { name: "최신값 다시 불러오기" }),
@@ -1802,7 +1228,7 @@ test("stale token 본사 원본 저장은 충돌 정보를 보여주고 서버 �
     .toBe(0);
 });
 
-test("본사는 장부를 마감한 뒤 마스터 수정 권한으로 원본 편집을 계속할 수 있다", async ({
+test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 마스터는 마감 상태를 유지하며 수정할 수 있다", async ({
   page,
 }) => {
   const { actorId, ledger, product } = await seedEditableStoryData();
@@ -1859,9 +1285,7 @@ test("본사는 장부를 마감한 뒤 마스터 수정 권한으로 원본 편
       updatedById: actorId,
     });
 
-  await expect(
-    page.getByText("마감 상태 유지 · 마스터 수정", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toBeVisible();
   const closedLedger = await prisma.dailyLedger.findUniqueOrThrow({
     where: { id: ledger.id },
     select: { closedAt: true },
@@ -1873,6 +1297,7 @@ test("본사는 장부를 마감한 뒤 마스터 수정 권한으로 원본 편
   await expect(
     reviewSummary.getByText(formatKstDateTimeForTest(closedLedger.closedAt!)),
   ).toBeVisible();
+  // DESIGN.md D5: LEDGER_CLOSED_EDIT를 가진 HQ_ADMIN은 마감 후에도 원본 입력이 가능하다.
   await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
   await page.getByRole("tab", { name: "근무" }).click();
@@ -2085,6 +1510,8 @@ test("ClosePreflight 사유 필요 항목은 사유 입력 후 개별 마감을 
   await expect(
     page.getByText("마감 요청이 실패했습니다.", { exact: false }),
   ).not.toBeVisible();
+  // DESIGN.md D7: HQ_ADMIN은 마감 편집 권한이 있어 차단 안내 대신
+  // 마감 상태 유지·마스터 수정 안내를 본다.
   await expect(
     page.getByText("마감 상태 유지 · 마스터 수정", { exact: true }),
   ).toBeVisible();

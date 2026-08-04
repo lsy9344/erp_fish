@@ -541,10 +541,11 @@ test("지점장은 근무인원과 특이사항을 저장하고 민감 회계 �
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=sales`);
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page.getByRole("textbox", { name: "총매출" }).fill("10000");
   await page.getByRole("textbox", { name: "현금" }).fill("7000");
   await page.getByRole("textbox", { name: "카드" }).fill("2000");
-  await page.getByRole("textbox", { name: "기타 결제수단" }).fill("1000");
+  await page
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)" })
+    .fill("1000");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),

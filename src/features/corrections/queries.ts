@@ -1,8 +1,5 @@
-import type {
-  CorrectionTargetType,
-  Prisma,
-} from "../../../generated/prisma/index.js";
-import { UserRole } from "../../../generated/prisma/index.js";
+import { Prisma, UserRole } from "../../../generated/prisma/index.js";
+import type { CorrectionTargetType } from "../../../generated/prisma/index.js";
 import { redirect } from "next/navigation";
 
 import {
@@ -12,6 +9,7 @@ import {
   requireReportAccess,
 } from "../../server/authz.ts";
 import { db } from "../../server/db.ts";
+import { getLedgerCostStepDataByIdInTx } from "../ledger/queries.ts";
 import type {
   CorrectionAppliedValue,
   CorrectionRecordListItem,
@@ -36,15 +34,15 @@ const correctionRecordSelect = {
   correctedValue: true,
   reason: true,
   createdAt: true,
-  createdBy: {
+  supersededAt: true,
+  supersedeReason: true,
+  supersededBy: {
     select: {
       name: true,
       email: true,
     },
   },
-  supersededAt: true,
-  supersedeReason: true,
-  supersededBy: {
+  createdBy: {
     select: {
       name: true,
       email: true,
@@ -107,10 +105,11 @@ function toCorrectionRecordListItem(
     correctedValue: record.correctedValue,
     reason: record.reason,
     createdAt: record.createdAt.toISOString(),
-    createdBy: record.createdBy,
+    // DESIGN.md D9: 이력 목록에는 supersede 여부만 함께 보여주고 기록은 지우지 않는다.
     supersededAt: record.supersededAt?.toISOString() ?? null,
     supersededBy: record.supersededBy,
     supersedeReason: record.supersedeReason,
+    createdBy: record.createdBy,
   };
 }
 
@@ -124,6 +123,8 @@ export async function getLatestCorrectionByTargetInTx(
       targetType: input.targetType,
       targetId: input.targetId,
       fieldKey: input.fieldKey,
+      // DESIGN.md D9: 직접 수정으로 대체된 정정은 새 정정의 이전 반영값 기준으로
+      // 참조되지 않는다.
       supersededAt: null,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -131,20 +132,50 @@ export async function getLatestCorrectionByTargetInTx(
   });
 }
 
-export async function getActiveCorrectionsForLedgerInTx(
+/**
+ * DESIGN.md D9: 마스터 직접 저장이 덮어쓴 대상의 활성 정정만 supersede한다.
+ * 기록은 삭제하지 않고 supersededAt만 채워 이력으로 보존하며, 이후 읽기 시점
+ * overlay에서 제외된다. 저장 CAS 통과 후 감사 로그 기록 전 같은 트랜잭션에서 호출한다.
+ *
+ * targetIds/fieldKeys는 실제로 덮어쓴 대상으로 범위를 좁힐 때 사용한다. 빈 배열은
+ * "덮어쓴 대상이 없음"으로 보고 아무것도 supersede하지 않는다. 섹션 전체를 재저장하는
+ * action은 기존 행 id 전체를 targetIds로 넘겨 삭제된 행의 정정까지 확실히 대체한다.
+ */
+export async function supersedeCorrectionRecordsInTx(
   tx: Prisma.TransactionClient,
-  ledgerId: string,
+  input: {
+    dailyLedgerId: string;
+    targetTypes: readonly CorrectionTargetType[];
+    targetIds?: readonly string[];
+    fieldKeys?: readonly string[];
+    supersededAt?: Date;
+  },
 ) {
-  const records = await tx.correctionRecord.findMany({
-    where: { dailyLedgerId: ledgerId, supersededAt: null },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: correctionRecordSelect,
-  });
+  if (input.targetTypes.length === 0) {
+    return { count: 0 };
+  }
 
-  return records.map(toCorrectionRecordListItem);
+  if (input.targetIds?.length === 0 || input.fieldKeys?.length === 0) {
+    return { count: 0 };
+  }
+
+  return tx.correctionRecord.updateMany({
+    where: {
+      dailyLedgerId: input.dailyLedgerId,
+      supersededAt: null,
+      targetType: { in: [...input.targetTypes] },
+      ...(input.targetIds !== undefined
+        ? { targetId: { in: [...input.targetIds] } }
+        : {}),
+      ...(input.fieldKeys !== undefined
+        ? { fieldKey: { in: [...input.fieldKeys] } }
+        : {}),
+    },
+    data: { supersededAt: input.supersededAt ?? new Date() },
+  });
 }
 
-export async function getCorrectionHistoryForLedgerInTx(
+export async function getCorrectionRecordsForLedgerInTx(
   tx: Prisma.TransactionClient,
   ledgerId: string,
 ) {
@@ -157,35 +188,39 @@ export async function getCorrectionHistoryForLedgerInTx(
   return records.map(toCorrectionRecordListItem);
 }
 
-export async function getActiveCorrectionsForLedger(ledgerId: string) {
+export async function getCorrectionRecordsForLedger(ledgerId: string) {
   await requireReportAccess();
   await requireHeadquartersLedgerScope(ledgerId);
 
   return db.$transaction((tx) =>
-    getActiveCorrectionsForLedgerInTx(tx, ledgerId),
+    getCorrectionRecordsForLedgerInTx(tx, ledgerId),
   );
 }
 
-export async function getCorrectionHistoryForLedger(ledgerId: string) {
+/**
+ * 장부 상세의 충돌 토큰과 정정 overlay를 같은 Repeatable Read snapshot에서 읽는다.
+ * 장부 조회와 정정 조회 사이에 다른 정정이 커밋되면 화면에 최신 토큰과 오래된
+ * 정정 목록이 섞일 수 있으므로, 직접 저장이 보지 못한 정정을 supersede하지 않게 한다.
+ */
+export async function getLedgerCostStepDataAndCorrectionRecords(
+  ledgerId: string,
+) {
   await requireReportAccess();
   await requireHeadquartersLedgerScope(ledgerId);
 
-  return db.$transaction((tx) =>
-    getCorrectionHistoryForLedgerInTx(tx, ledgerId),
+  return db.$transaction(
+    async (tx) => ({
+      ledger: await getLedgerCostStepDataByIdInTx(tx, ledgerId),
+      correctionRecords: await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+    }),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
   );
 }
-
-// Full history is the existing UI contract. Calculation and overlay callers must
-// use the explicitly active helpers below.
-export const getCorrectionRecordsForLedger = getCorrectionHistoryForLedger;
-export const getCorrectionRecordsForLedgerInTx =
-  getActiveCorrectionsForLedgerInTx;
 
 export function getLatestCorrectionValueMap(
   records: CorrectionRecordListItem[],
 ) {
   const sortedRecords = records
-    .filter((record) => record.supersededAt === null)
     .map((record, index) => ({ record, index }))
     .sort((left, right) => {
       const createdAtOrder =
@@ -197,6 +232,13 @@ export function getLatestCorrectionValueMap(
   const latestByTarget = new Map<string, CorrectionAppliedValue>();
 
   for (const record of sortedRecords) {
+    // DESIGN.md D9: 마스터 직접 수정으로 대체된 정정은 읽기 시점 overlay에서
+    // 제외한다(이력 목록 조회는 그대로 반환). 이 한 지점이 대시보드·상세·리포트·
+    // 알림·cron의 공통 overlay 진입점이다.
+    if (record.supersededAt !== null) {
+      continue;
+    }
+
     const key = buildCorrectionTargetKey(record);
 
     if (latestByTarget.has(key)) {
@@ -225,7 +267,7 @@ export function getLatestCorrectionValueMap(
 }
 
 export async function getLatestCorrectionValuesForLedger(ledgerId: string) {
-  const records = await getActiveCorrectionsForLedger(ledgerId);
+  const records = await getCorrectionRecordsForLedger(ledgerId);
 
   return getLatestCorrectionValueMap(records);
 }
@@ -254,7 +296,6 @@ export async function getLatestCorrectionValuesForLedgersScoped(
   const records = await db.correctionRecord.findMany({
     where: {
       dailyLedgerId: { in: ledgerIds },
-      supersededAt: null,
       dailyLedger: {
         storeId: { in: storeIds },
       },
@@ -310,6 +351,6 @@ export async function getStoreReadableCorrectionRecordsForLedger(
   }
 
   return db.$transaction((tx) =>
-    getCorrectionHistoryForLedgerInTx(tx, ledgerId),
+    getCorrectionRecordsForLedgerInTx(tx, ledgerId),
   );
 }

@@ -16,8 +16,8 @@ const SEED_HQ_PASSWORD_MIN_LENGTH = 12;
 const ALL_PERMISSION_ACTIONS = [
   PermissionAction.LEDGER_CREATE,
   PermissionAction.LEDGER_EDIT,
-  PermissionAction.LEDGER_CLOSED_EDIT,
   PermissionAction.LEDGER_HQ_CLOSE,
+  PermissionAction.LEDGER_CLOSED_EDIT,
   PermissionAction.CORRECTION_CREATE,
   PermissionAction.UPLOAD_PREVIEW,
   PermissionAction.UPLOAD_COMMIT,
@@ -42,8 +42,9 @@ const SYSTEM_PERMISSION_PROFILES = [
     storeAccessMode: StoreAccessMode.ALL_STORES,
     actions: [
       PermissionAction.LEDGER_EDIT,
-      PermissionAction.LEDGER_CLOSED_EDIT,
       PermissionAction.LEDGER_HQ_CLOSE,
+      // DESIGN.md D4: 마감 장부 직접 수정은 OWNER와 HQ_ADMIN만 허용한다.
+      PermissionAction.LEDGER_CLOSED_EDIT,
       PermissionAction.CORRECTION_CREATE,
       PermissionAction.REPORT_VIEW,
       PermissionAction.EXPORT_CREATE,

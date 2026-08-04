@@ -38,6 +38,7 @@ import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
 } from "./manual-inventory-rows";
+import { upsertInventorySalesPricePlansInTx } from "./sales-price-persistence";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
   getInventorySaveAdjustmentErrors,
@@ -67,7 +68,6 @@ import {
   getLedgerEditBlockReason,
   isLedgerEditable,
 } from "~/features/ledger/status-policy";
-import type { Prisma } from "../../../generated/prisma";
 
 type InventoryItemWithPlannedPrice =
   LedgerStoreManagerInventoryInput["items"][number];
@@ -181,93 +181,6 @@ function getInventoryAmountErrors(
   return errors;
 }
 
-export async function upsertInventorySalesPricePlansInTx(
-  tx: Prisma.TransactionClient,
-  input: {
-    storeId: string;
-    businessDate: Date;
-    items: Array<{ productId: string; plannedUnitPrice: number }>;
-    actorId: string;
-  },
-) {
-  if (input.items.length === 0) {
-    return { changedProductIds: [] as string[] };
-  }
-
-  // 품목별 upsert를 개별 호출하면 DB 왕복이 품목 수만큼 늘어난다. Prisma는 인터랙티브
-  // 트랜잭션 안의 동시 요청을 한 왕복으로 묶어주지 않으므로 Promise.all도 소용없다
-  // (프로덕션 Neon 측정: 41건 순차 9.1s / Promise.all 8.3s / 단일 statement 0.8s).
-  // 저장 트랜잭션이 30s 타임아웃(P2028)을 넘기는 주원인이었다. 조회 1회 + 벌크 UPDATE
-  // 1회 + createMany 1회로 품목 수와 무관하게 왕복 3회로 고정한다.
-  const existingPlans = await tx.storeSalesPricePlan.findMany({
-    where: {
-      storeId: input.storeId,
-      businessDate: input.businessDate,
-      productId: { in: input.items.map((item) => item.productId) },
-    },
-    select: { productId: true, plannedUnitPrice: true },
-  });
-  const existingPriceByProductId = new Map(
-    existingPlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
-  );
-  const plansToUpdate = input.items.filter(
-    (item) =>
-      existingPriceByProductId.has(item.productId) &&
-      existingPriceByProductId.get(item.productId) !== item.plannedUnitPrice,
-  );
-  const plansToCreate = input.items.filter(
-    (item) => !existingPriceByProductId.has(item.productId),
-  );
-
-  if (plansToUpdate.length > 0) {
-    // 자리표시자는 배열 길이로만 만들고 값은 전부 바인딩 파라미터다(입력값이 SQL에
-    // 섞이지 않는다). SET 목록을 plannedUnitPrice/updatedById/updatedAt으로 한정해
-    // memo·createdAt·createdById를 건드리지 않는 기존 patch-only 계약을 유지한다.
-    const rowValues = plansToUpdate
-      .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2}::int)`)
-      .join(", ");
-    const tailIndex = plansToUpdate.length * 2;
-
-    await tx.$executeRawUnsafe(
-      `UPDATE "StoreSalesPricePlan" AS plan
-          SET "plannedUnitPrice" = source."plannedUnitPrice",
-              "updatedById" = $${tailIndex + 1},
-              "updatedAt" = now()
-         FROM (VALUES ${rowValues})
-           AS source("productId", "plannedUnitPrice")
-        WHERE plan."storeId" = $${tailIndex + 2}
-          AND plan."businessDate" = $${tailIndex + 3}
-          AND plan."productId" = source."productId"`,
-      ...plansToUpdate.flatMap((item) => [
-        item.productId,
-        item.plannedUnitPrice,
-      ]),
-      input.actorId,
-      input.storeId,
-      input.businessDate,
-    );
-  }
-
-  if (plansToCreate.length > 0) {
-    await tx.storeSalesPricePlan.createMany({
-      data: plansToCreate.map((item) => ({
-        storeId: input.storeId,
-        businessDate: input.businessDate,
-        productId: item.productId,
-        plannedUnitPrice: item.plannedUnitPrice,
-        createdById: input.actorId,
-        updatedById: input.actorId,
-      })),
-    });
-  }
-
-  return {
-    changedProductIds: [...plansToUpdate, ...plansToCreate].map(
-      (item) => item.productId,
-    ),
-  };
-}
-
 function parseLedgerInventoryInput(
   input: unknown,
 ): ActionResult<LedgerStoreManagerInventoryInput> {
@@ -367,18 +280,26 @@ async function mapLedgerConflictError(
     };
   });
 
+  // 충돌 응답은 정상 대상 장부 게이트보다 먼저 실행될 수 있다. ledgerId가 다른
+  // 지점에 속하면 존재 여부와 최신 재고·메타를 모두 숨겨 빈 payload를 반환한다.
+  const scopedData =
+    snapshot.data?.storeId === input.storeId ? snapshot.data : null;
+  const scopedMeta = scopedData ? snapshot.meta : null;
+
   return ledgerConflictErrorFromMeta({
-    meta: snapshot.meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section,
     clientToken: input.version,
+    serverToken: scopedMeta?.version ?? "unknown",
+    lastModifiedAt: scopedMeta?.updatedAt.toISOString() ?? "unknown",
     clientValues:
       section === "inventory"
         ? toInventoryClientValues(input as LedgerStoreManagerInventoryInput)
         : toInventoryAdjustmentClientValues(
             input as LedgerInventoryAdjustmentInput,
           ),
-    serverValues: snapshot.data ? toInventoryConflictValues(snapshot.data) : {},
+    serverValues: scopedData ? toInventoryConflictValues(scopedData) : {},
     reloadRequired: true,
   });
 }
@@ -403,13 +324,6 @@ export async function saveLedgerInventoryItems(
 
   if (!parsed.ok) {
     return parsed;
-  }
-
-  if (parsed.data.deletedProductIds.length > 0) {
-    return actionError(
-      "FORBIDDEN",
-      "재고 행 삭제는 본사 원본 수정에서만 사용할 수 있습니다.",
-    );
   }
 
   const dateGuard = assertStoreManagerClosingDateIsToday(

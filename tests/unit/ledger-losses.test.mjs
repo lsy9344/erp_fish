@@ -807,8 +807,8 @@ test("ledger loss query action and UI contracts are wired", () => {
     "losses",
     "planned-price-sync.ts",
   );
-  assert.match(plannedPriceSyncSource, /getHeadquartersEditableLedgerStatuses/);
-  assert.match(plannedPriceSyncSource, /allowClosedEdit\?:\s*boolean/);
+  assert.match(plannedPriceSyncSource, /editableLedgerStatuses/);
+  assert.match(plannedPriceSyncSource, /ledgerStatuses\?:\s*readonly DailyLedgerStatus\[\]/);
   assert.match(plannedPriceSyncSource, /status:\s*\{\s*in:\s*\[/);
 });
 

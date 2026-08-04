@@ -1470,7 +1470,8 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /plannedUnitPriceInput/);
   assert.match(componentSource, /plannedUnitPriceRefs/);
   assert.match(componentSource, /validateRequiredPlannedUnitPrices/);
-  assert.match(componentSource, /plannedUnitPrice:\s*toRawKrwInputValue/);
+  assert.match(componentSource, /rawPlannedUnitPrice = toRawKrwInputValue/);
+  assert.match(componentSource, /plannedUnitPrice:\s*rawPlannedUnitPrice/);
   assert.match(componentSource, /calculatePlannedMarginRate/);
   assert.match(
     componentSource,
@@ -1481,7 +1482,7 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /\["당일재고", "판매한 가격", "바꾼 이유"\]/);
 });
 
-test("inventory uses the approved display price DTO and capability-gates planned price editing", () => {
+test("inventory uses the approved display price DTO for opening price and keeps planned unit price read-only", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1498,16 +1499,10 @@ test("inventory uses the approved display price DTO and capability-gates planned
     componentSource,
     /판매한 가격[\s\S]*item\.plannedUnitPrice === null[\s\S]*미입력[\s\S]*formatKrw\(item\.plannedUnitPrice\)/,
   );
-  assert.match(componentSource, /const canEditSalesPrice\s*=/);
   assert.match(
     componentSource,
-    /isStoreManagerMode\s*\|\|\s*allowClosedLedgerSalesPriceEdit/,
+    /\.\.\.\(isStoreManagerMode[\s\S]*plannedUnitPrice:/,
   );
-  assert.match(
-    componentSource,
-    /\.\.\.\(canEditSalesPrice[\s\S]*plannedUnitPrice:/,
-  );
-  assert.match(componentSource, /!canEditSalesPrice[\s\S]*판매한 가격/);
 });
 
 test("inventory save receipt reports changed rows and Enter targets only the next quantity", async () => {
@@ -1944,12 +1939,13 @@ test("HQ inventory save enforces the same required-entry and adjustment guards a
     "HQ stale drafts should return a conflict before row validation",
   );
 
-  // 가드는 공용 CAS/version 증가 전에 위치해 빈 저장으로 version만 올라가지 않게 한다.
+  // 가드는 버전 증가(markEditableLedgerInTx) 전에 위치해 빈 저장으로 버전만 올라가지
+  // 않게 한다. 정의가 아니라 호출부(const updated = await markEditableLedgerInTx) 기준.
   const adjustmentGuardIndex = hqSource.indexOf(
     "getInventorySaveAdjustmentErrors(",
   );
   const markEditableCallIndex = hqSource.indexOf(
-    "const updated = await updateHqLedgerMutationTokenInTx(",
+    "const updated = await markEditableLedgerInTx(",
   );
   assert.ok(adjustmentGuardIndex > 0, "HQ adjustment guard should be present");
   assert.ok(markEditableCallIndex > 0, "HQ should mark the ledger editable");
@@ -2526,7 +2522,7 @@ test("manual inventory unit price is required only for new rows that will persis
 
   for (const [file, mutation] of [
     ["actions.ts", "dailyLedger.updateMany"],
-    ["hq-edit-actions.ts", "updateHqLedgerMutationTokenInTx("],
+    ["hq-edit-actions.ts", "markEditableLedgerInTx("],
   ]) {
     const actionSource = readProjectFile("src", "features", "inventory", file);
     const guardIndex = actionSource.indexOf(
@@ -2730,8 +2726,7 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     /export\s+async\s+function\s+saveHqLedgerInventoryAdjustment/,
   );
   assert.match(hqActionSource, /db\.\$transaction/);
-  assert.match(hqActionSource, /isLedgerEditableByHeadquarters/);
-  assert.match(hqActionSource, /updateHqLedgerMutationTokenInTx/);
+  assert.match(hqActionSource, /getEditableLedgerStatusesForActor/);
   assert.match(hqActionSource, /tx\.ledgerInventoryAdjustment\.upsert/);
   assert.match(hqActionSource, /tx\.ledgerInventoryItem\.upsert/);
   assert.match(hqActionSource, /amountStatus:\s*"POLICY_UNCONFIRMED"/);
@@ -2919,7 +2914,8 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(inventoryUiSource, /확인\/고치기/);
   assert.match(componentSource, /formatKrw\(item\.lossAmount\)/);
   assert.match(componentSource, /getLedgerEditBlockReason/);
-  assert.match(componentSource, /isLedgerReadOnly/);
+  assert.match(componentSource, /isLedgerEditableForActor/);
+  assert.match(componentSource, /closedEditAllowed/);
   assert.match(componentSource, /휴무 장부/);
   assert.match(
     componentSource,
@@ -3083,15 +3079,13 @@ test("FIFO lot refresh writes item amounts in one bulk statement, not one query 
 });
 
 test("inventory sales price plan upsert avoids one query per item", () => {
-  const actionSource = readProjectFile(
+  // DESIGN.md D6/F6: 벌크 저장 helper는 순수 모듈로 분리되어 지점장과 본사 마감
+  // 편집이 공유한다.
+  const helper = readProjectFile(
     "src",
     "features",
     "inventory",
-    "actions.ts",
-  );
-  const helper = actionSource.slice(
-    actionSource.indexOf("async function upsertInventorySalesPricePlansInTx"),
-    actionSource.indexOf("function parseLedgerInventoryInput"),
+    "sales-price-persistence.ts",
   );
 
   assert.match(

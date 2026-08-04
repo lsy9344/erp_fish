@@ -36,11 +36,17 @@ const sectionLabels: Record<string, string> = {
 };
 
 function formatModifiedAt(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Seoul",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatValue(value: unknown) {
@@ -82,6 +88,7 @@ export function SaveConflictDialog({
   );
   const sectionLabel = sectionLabels[conflict.section] ?? conflict.section;
   const lastModifiedBy = conflict.lastModifiedBy ?? "수정자 확인 필요";
+  const lastModifiedAt = formatModifiedAt(conflict.lastModifiedAt);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -109,7 +116,7 @@ export function SaveConflictDialog({
           </AlertTitle>
           <AlertDescription className="grid gap-1">
             <p>마지막 수정자: {lastModifiedBy}</p>
-            <p>수정 시각: {formatModifiedAt(conflict.lastModifiedAt)}</p>
+            <p>수정 시각: {lastModifiedAt ?? "확인할 수 없음"}</p>
             <p>
               내 token {formatValue(conflict.clientToken)} / 서버 token{" "}
               {formatValue(conflict.serverToken)}

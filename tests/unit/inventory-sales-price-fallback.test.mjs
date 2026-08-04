@@ -241,7 +241,7 @@ test("stale inventory conflict serverValues keep current and carryover sale-pric
   );
   assert.match(
     actionSource,
-    /serverValues:\s*snapshot\.data \? toInventoryConflictValues\(snapshot\.data\) : \{\}/,
+    /serverValues:\s*scopedData \? toInventoryConflictValues\(scopedData\) : \{\}/,
   );
 });
 

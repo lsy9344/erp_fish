@@ -197,23 +197,18 @@ export async function requireLedgerHqEditAccess() {
   return requireHeadquartersActionPermission(PermissionAction.LEDGER_EDIT);
 }
 
-export async function hasLedgerClosedEditAccess(userId: string) {
-  const [canEditLedger, canEditClosedLedger] = await Promise.all([
-    hasActionPermission(userId, PermissionAction.LEDGER_EDIT),
-    hasActionPermission(userId, PermissionAction.LEDGER_CLOSED_EDIT),
-  ]);
+// DESIGN.md D4/D5: 마감 장부 직접 수정은 LEDGER_EDIT에 더해 LEDGER_CLOSED_EDIT를
+// 가진 활성 본사 사용자만 가능하다. 지점 접근 범위는 각 저장 action이 이어서
+// 검사한다. 반환값의 closedEditAllowed는 서버 판정 결과이며 클라이언트 prop의
+// 기본값(false)과 동일한 의미로 사용한다.
+export async function requireLedgerHqEditContext() {
+  const user = await requireLedgerHqEditAccess();
+  const closedEditAllowed = await hasActionPermission(
+    user.id,
+    PermissionAction.LEDGER_CLOSED_EDIT,
+  );
 
-  return canEditLedger && canEditClosedLedger;
-}
-
-export async function requireLedgerClosedEditAccess() {
-  const currentUser = await requireHeadquartersUser();
-
-  if (!(await hasLedgerClosedEditAccess(currentUser.id))) {
-    redirect("/app/unauthorized");
-  }
-
-  return currentUser;
+  return { user, closedEditAllowed };
 }
 
 // WO(2026-06-24): 이카운트 출고/입고 업로드는 본사 전용. preview는 UPLOAD_PREVIEW,

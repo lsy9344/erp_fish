@@ -15,9 +15,14 @@ import { createCorrectionRecord } from "~/features/corrections/actions";
 import { CorrectionPanel } from "~/features/corrections/components/correction-panel";
 import {
   buildCorrectionTargetKey,
-  getCorrectionRecordsForLedger,
   getLatestCorrectionValueMap,
 } from "~/features/corrections/queries";
+import {
+  applyCorrectionOverlayToInventoryEditValues,
+  applyCorrectionOverlayToLedgerFields,
+  applyCorrectionOverlayToLossEditValues,
+  applyExpenseRowOverlay,
+} from "~/features/corrections/edit-overlay";
 import type {
   CorrectionAppliedValue,
   CorrectionTargetOption,
@@ -41,22 +46,17 @@ import { ExpenseStepClient } from "~/features/ledger/components/expense-step-cli
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
 import { WorkStepClient } from "~/features/ledger/components/workstep-client";
-import { getLedgerCostStepDataById } from "~/features/ledger/queries";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
+import {
+  closedEditRetainedStatusNotice,
+  isLedgerEditableForActor,
+} from "~/features/ledger/status-policy";
 import {
   saveHqLedgerInventoryAdjustment,
   saveHqLedgerInventoryItems,
 } from "~/features/inventory/hq-edit-actions";
 import { InventoryStepClient } from "~/features/inventory/components/inventory-step-client";
-import { getInventoryStepDataByLedgerId } from "~/features/inventory/queries";
-import {
-  applyActiveCorrectionsToInventoryEditData,
-  applyActiveCorrectionsToLedgerEditData,
-  applyActiveCorrectionsToLossEditData,
-} from "~/features/ledger/edit-correction-overlay";
 import { saveHqLedgerLosses } from "~/features/losses/hq-edit-actions";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
-import { getLossStepDataByLedgerId } from "~/features/losses/queries";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
 import { getActiveEmployeeOptions } from "~/features/labor/employees-queries";
@@ -109,26 +109,6 @@ const ledgerDetailTabs = [
 ] as const;
 type LedgerDetailTab = (typeof ledgerDetailTabs)[number];
 
-function isCorrectionForLedgerTab(
-  correction: CorrectionAppliedValue,
-  tab: LedgerDetailTab,
-) {
-  switch (tab) {
-    case "purchases":
-      return correction.targetType === "PURCHASE_ROW";
-    case "losses":
-      return correction.targetType === "LOSS_ROW";
-    case "inventory":
-      return correction.targetType === "INVENTORY_ROW";
-    case "expenses":
-      return correction.targetType === "EXPENSE_ROW";
-    case "work":
-      return correction.targetType === "LEDGER_FIELD";
-    case "sales":
-      return correction.targetType === "PAYMENT_FIELD";
-  }
-}
-
 function getLedgerDetailTab(
   value: string | string[] | undefined,
 ): LedgerDetailTab {
@@ -147,15 +127,16 @@ export default async function LedgerDetailPage({
   const [
     navigationItems,
     canEditLedger,
-    canEditClosedLedger,
     canCloseLedger,
     canCreateCorrection,
+    canEditClosedLedger,
   ] = await Promise.all([
     getHeadquartersNavigationItems(user.id),
     hasActionPermission(user.id, PermissionAction.LEDGER_EDIT),
-    hasActionPermission(user.id, PermissionAction.LEDGER_CLOSED_EDIT),
     hasActionPermission(user.id, PermissionAction.LEDGER_HQ_CLOSE),
     hasActionPermission(user.id, PermissionAction.CORRECTION_CREATE),
+    // DESIGN.md D4: 마감 장부 직접 수정 전용 권한. 이메일/이름이 아닌 action으로 판별.
+    hasActionPermission(user.id, PermissionAction.LEDGER_CLOSED_EDIT),
   ]);
   const { ledgerId } = await params;
   const query = await searchParams;
@@ -171,16 +152,19 @@ export default async function LedgerDetailPage({
       Array.isArray(query.filter) ? query.filter[0] : query.filter,
     ),
   });
-  const [detail, ledger, inventoryData, lossData, correctionRecords] =
-    await Promise.all([
-      getHqLedgerDetail(ledgerId),
-      getLedgerCostStepDataById(ledgerId),
-      getInventoryStepDataByLedgerId(ledgerId),
-      getLossStepDataByLedgerId(ledgerId),
-      getCorrectionRecordsForLedger(ledgerId),
-    ]);
+  // 요약·충돌 token·정정·재고·손실은 getHqLedgerDetail 내부의 하나의
+  // Repeatable Read snapshot에서 함께 읽는다. 서로 다른 조회를 병렬 실행하면
+  // 조회 사이에 저장된 값이 최신 token과 오래된 폼 값으로 섞일 수 있다.
+  const detail = await getHqLedgerDetail(ledgerId);
 
-  if (!detail || !ledger || !inventoryData || !lossData) {
+  if (!detail) {
+    notFound();
+  }
+
+  const { ledger, correctionRecords, inventoryData, lossData } =
+    detail.editSnapshot;
+
+  if (!ledger || !inventoryData || !lossData) {
     notFound();
   }
 
@@ -191,12 +175,16 @@ export default async function LedgerDetailPage({
         getActiveEmployeeOptions(),
       ])
     : [[], [], []];
-  const allowHeadquartersClosedEdit =
-    ledger.status === "HEADQUARTERS_CLOSED" &&
+  // DESIGN.md D4/D5: 마감 편집 허용은 LEDGER_EDIT + LEDGER_CLOSED_EDIT를 모두 가진
+  // 사용자가 HEADQUARTERS_CLOSED 장부를 볼 때만 true다. 표시 제어 전용이며
+  // 최종 판정은 각 저장 action의 서버 게이트가 한다.
+  const closedEditAllowed =
     canEditLedger &&
-    canEditClosedLedger;
-  const isOriginalEditBlocked =
-    isLedgerReadOnly(ledger.status) && !allowHeadquartersClosedEdit;
+    canEditClosedLedger &&
+    ledger.status === "HEADQUARTERS_CLOSED";
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const lastModifiedBy =
     detail.lastModifiedBy?.name ??
     detail.lastModifiedBy?.email ??
@@ -220,27 +208,28 @@ export default async function LedgerDetailPage({
     : [];
   const latestCorrectionValues = getLatestCorrectionValueMap(correctionRecords);
   const appliedCorrections = Array.from(latestCorrectionValues.values());
-  const editLedger = applyActiveCorrectionsToLedgerEditData(
-    ledger,
-    appliedCorrections,
-  );
-  const editInventoryData = applyActiveCorrectionsToInventoryEditData(
+  // DESIGN.md D9: 편집 폼은 원본값이 아니라 현재 적용 중인 정정 반영값으로
+  // 초기화한다. 다른 필드를 저장해도 유효 정정값이 조용히 되돌아가지 않는다.
+  const editLedger = {
+    ...applyCorrectionOverlayToLedgerFields(
+      ledger,
+      latestCorrectionValues.values(),
+      { includeDerivedTotal: false },
+    ),
+    expenseItems: applyExpenseRowOverlay(
+      ledger.expenseItems,
+      ledger.id,
+      latestCorrectionValues.values(),
+    ),
+  };
+  const editInventoryData = applyCorrectionOverlayToInventoryEditValues(
     inventoryData,
-    appliedCorrections,
+    latestCorrectionValues.values(),
   );
-  const editLossData = applyActiveCorrectionsToLossEditData(
+  const editLossData = applyCorrectionOverlayToLossEditValues(
     lossData,
-    appliedCorrections,
+    latestCorrectionValues.values(),
   );
-  const selectedTabCorrections = appliedCorrections.filter((correction) =>
-    isCorrectionForLedgerTab(correction, selectedTab),
-  );
-  const correctionRevisionForTab = (tab: LedgerDetailTab) =>
-    appliedCorrections
-      .filter((correction) => isCorrectionForLedgerTab(correction, tab))
-      .map((correction) => correction.correctionId)
-      .sort()
-      .join(":") || "none";
   const totalSalesCorrection = getAppliedCorrection(latestCorrectionValues, {
     dailyLedgerId: ledger.id,
     targetType: "PAYMENT_FIELD",
@@ -417,22 +406,6 @@ export default async function LedgerDetailPage({
         </section>
       ) : null}
 
-      {allowHeadquartersClosedEdit ? (
-        <Alert className="border-amber-500/60 bg-amber-500/10">
-          <AlertTitle>마감 상태 유지 · 마스터 수정</AlertTitle>
-          <AlertDescription className="grid gap-1">
-            <span>
-              활성 정정 {appliedCorrections.length}건 · 현재 탭 정정{" "}
-              {selectedTabCorrections.length}건
-            </span>
-            <span>
-              저장하면 현재 반영값을 장부 원본에 통합하고 기존 정정은 superseded
-              이력으로 보존합니다. 수정 사유는 필수이며 서버에서 권한과 장부
-              상태를 다시 확인합니다.
-            </span>
-          </AlertDescription>
-        </Alert>
-      ) : null}
       {isOriginalEditBlocked ? (
         <Alert variant="destructive">
           <AlertTitle>본사 마감된 장부</AlertTitle>
@@ -443,7 +416,18 @@ export default async function LedgerDetailPage({
           </AlertDescription>
         </Alert>
       ) : null}
-      {!isLedgerReadOnly(ledger.status) && canCloseLedger ? (
+      {closedEditAllowed ? (
+        <Alert>
+          <AlertTitle>{closedEditRetainedStatusNotice}</AlertTitle>
+          <AlertDescription>
+            이 장부의 업무 내용을 수정할 수 있습니다. 저장해도 본사 마감 상태는
+            유지되며 수정 사유가 필요합니다.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {ledger.status !== "HEADQUARTERS_CLOSED" &&
+      !isOriginalEditBlocked &&
+      canCloseLedger ? (
         <section className="bg-card rounded-lg border p-4 shadow-sm">
           <HqLedgerCloseDialog
             ledgerId={ledger.id}
@@ -500,7 +484,7 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <PurchaseStepClient
-              key={`purchases-${ledger.id}-${ledger.status}-${correctionRevisionForTab("purchases")}`}
+              key={`purchases-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={editLedger}
               productOptions={productOptions}
@@ -509,11 +493,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) =>
-                  isCorrectionForLedgerTab(correction, "purchases"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -523,17 +503,14 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <LossStepClient
-              key={`losses-${lossData.id}-${lossData.status}-${correctionRevisionForTab("losses")}`}
+              key={`losses-${lossData.id}-${lossData.status}`}
               storeName={detail.storeName}
               initialData={editLossData}
               saveAction={saveHqLedgerLosses}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) => isCorrectionForLedgerTab(correction, "losses"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -543,7 +520,7 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <InventoryStepClient
-              key={`inventory-${inventoryData.id}-${inventoryData.status}-${correctionRevisionForTab("inventory")}`}
+              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
               storeName={detail.storeName}
               initialData={editInventoryData}
               saveItemsAction={saveHqLedgerInventoryItems}
@@ -551,15 +528,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              allowClosedLedgerSalesPriceEdit={allowHeadquartersClosedEdit}
-              allowHeadquartersCarryoverAcknowledgement={
-                canEditLedger && ledger.status !== "HOLIDAY"
-              }
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) =>
-                  isCorrectionForLedgerTab(correction, "inventory"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -569,7 +538,7 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <ExpenseStepClient
-              key={`expenses-${ledger.id}-${ledger.status}-${correctionRevisionForTab("expenses")}`}
+              key={`expenses-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={editLedger}
               expenseCodeOptions={expenseCodeOptions}
@@ -579,11 +548,7 @@ export default async function LedgerDetailPage({
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) =>
-                  isCorrectionForLedgerTab(correction, "expenses"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -593,7 +558,7 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <WorkStepClient
-              key={`work-${ledger.id}-${ledger.status}-${correctionRevisionForTab("work")}`}
+              key={`work-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={editLedger}
               currentStep="work"
@@ -604,10 +569,7 @@ export default async function LedgerDetailPage({
               showSensitiveAccountingMetrics
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) => isCorrectionForLedgerTab(correction, "work"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
           <TabsContent
@@ -617,7 +579,7 @@ export default async function LedgerDetailPage({
             forceMount
           >
             <SalesPaymentStepClient
-              key={`sales-${ledger.id}-${ledger.status}-${correctionRevisionForTab("sales")}`}
+              key={`sales-${ledger.id}-${ledger.status}`}
               storeName={detail.storeName}
               initialLedger={editLedger}
               currentStep="sales"
@@ -625,10 +587,7 @@ export default async function LedgerDetailPage({
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
-              allowHeadquartersClosedEdit={allowHeadquartersClosedEdit}
-              initialActiveCorrectionValues={appliedCorrections.filter(
-                (correction) => isCorrectionForLedgerTab(correction, "sales"),
-              )}
+              closedEditAllowed={closedEditAllowed}
             />
           </TabsContent>
         </LedgerDetailTabs>
@@ -642,11 +601,15 @@ function getCorrectionTargetOptions({
   inventoryData,
   lossData,
 }: {
-  ledger: NonNullable<Awaited<ReturnType<typeof getLedgerCostStepDataById>>>;
+  ledger: NonNullable<
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["ledger"];
   inventoryData: NonNullable<
-    Awaited<ReturnType<typeof getInventoryStepDataByLedgerId>>
-  >;
-  lossData: NonNullable<Awaited<ReturnType<typeof getLossStepDataByLedgerId>>>;
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["inventoryData"];
+  lossData: NonNullable<
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["lossData"];
 }): CorrectionTargetOption[] {
   return [
     {
@@ -707,45 +670,17 @@ function getCorrectionTargetOptions({
         label: "근무인원",
       },
     },
-    {
-      targetType: "LEDGER_FIELD",
-      targetId: ledger.id,
-      fieldKey: "workMemo",
-      label: "근무 메모",
+    ...ledger.expenseItems.map<CorrectionTargetOption>((item, index) => ({
+      targetType: "EXPENSE_ROW",
+      targetId: item.id,
+      fieldKey: "amount",
+      label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       originalValue: {
-        kind: "text",
-        value: ledger.workMemo,
-        label: "근무 메모",
+        kind: "money",
+        value: item.amount,
+        label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
       },
-    },
-    ...ledger.expenseItems.flatMap<CorrectionTargetOption>((item, index) => {
-      const prefix = `지출 ${index + 1} · ${item.ledgerInputCodeName}`;
-
-      return [
-        {
-          targetType: "EXPENSE_ROW",
-          targetId: item.id,
-          fieldKey: "amount",
-          label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
-          originalValue: {
-            kind: "money",
-            value: item.amount,
-            label: `지출 ${index + 1} · ${item.ledgerInputCodeName} · 금액`,
-          },
-        },
-        {
-          targetType: "EXPENSE_ROW",
-          targetId: item.id,
-          fieldKey: "memo",
-          label: `${prefix} · 메모`,
-          originalValue: {
-            kind: "text",
-            value: item.memo,
-            label: `${prefix} · 메모`,
-          },
-        },
-      ];
-    }),
+    })),
     ...inventoryData.items
       .filter((item) => item.id !== item.productId)
       .flatMap<CorrectionTargetOption>((item, index) => {
@@ -789,17 +724,6 @@ function getCorrectionTargetOptions({
             kind: "money",
             value: item.amount,
             label: `${prefix} · 금액`,
-          },
-        },
-        {
-          targetType: "LOSS_ROW",
-          targetId: item.id,
-          fieldKey: "reason",
-          label: `${prefix} · 사유`,
-          originalValue: {
-            kind: "text",
-            value: item.reason,
-            label: `${prefix} · 사유`,
           },
         },
       ];

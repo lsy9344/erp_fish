@@ -140,11 +140,6 @@ const ledgerInventoryItemSchema = z.object({
     .transform((value, context) =>
       parseOptionalNonNegativeInteger(value, context, inventoryUnitPriceError),
     ),
-  plannedUnitPrice: z
-    .unknown()
-    .transform((value, context) =>
-      parseOptionalNonNegativeInteger(value, context, plannedUnitPriceError),
-    ),
   // 당일재고가 기준재고와 다른 행의 "고친 이유". 지점장이 일반 저장과 함께 보내면 서버가
   // 조정 레코드를 생성한다(단독 본사 전용 조정 액션과 별개로, 지점 실사 차이 사유 입력 경로).
   // 빈 값은 null(사유 없음)로 해석한다.
@@ -152,6 +147,14 @@ const ledgerInventoryItemSchema = z.object({
     .unknown()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
+  // DESIGN.md D6: 본사 재고 편집에서만 전송하는 판매한 가격. 빈칸/미전송은
+  // "변경 없음"(null)이며 삭제가 아니고, 0원은 유효한 값이다. 지점장 스키마는
+  // 이 필드를 required 파서로 덮어써 기존 필수 계약을 유지한다.
+  plannedUnitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseOptionalNonNegativeInteger(value, context, plannedUnitPriceError),
     ),
 });
 
@@ -169,26 +172,8 @@ const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
     ),
 });
 
-const deletedProductIdsSchema = z
-  .array(
-    z
-      .string()
-      .transform((value) => value.trim())
-      .pipe(z.string().min(1, productError)),
-  )
-  .default([]);
-
 export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
-  deletedProductIds: deletedProductIdsSchema,
-  acknowledgedCarryoverProductIds: z
-    .array(
-      z
-        .string()
-        .transform((value) => value.trim())
-        .pipe(z.string().min(1, productError)),
-    )
-    .default([]),
 });
 
 // 지점장 재고 저장만 두 자리 수량과 필수 판매한 가격을 받는다. 본사 조정/HQ 저장은
@@ -196,7 +181,6 @@ export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
 export const ledgerStoreManagerInventorySchema =
   ledgerMutationContextSchema.extend({
     items: z.array(ledgerStoreManagerInventoryItemSchema),
-    deletedProductIds: deletedProductIdsSchema,
   });
 
 export const ledgerInventoryAdjustmentSchema =

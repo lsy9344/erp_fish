@@ -1,12 +1,8 @@
+import type { DailyLedgerStatus } from "../../../generated/prisma";
+
 export const editableLedgerStatuses = ["IN_PROGRESS", "IN_REVIEW"] as const;
-export const headquartersClosedEditableLedgerStatuses = [
-  ...editableLedgerStatuses,
-  "HEADQUARTERS_CLOSED",
-] as const;
 
 export type EditableLedgerStatus = (typeof editableLedgerStatuses)[number];
-export type HeadquartersEditableLedgerStatus =
-  (typeof headquartersClosedEditableLedgerStatuses)[number];
 export type ReadOnlyLedgerStatus = "HEADQUARTERS_CLOSED" | "HOLIDAY";
 export type LedgerEditBlockCode = "LEDGER_CLOSED" | "LEDGER_NOT_EDITABLE";
 export type LedgerEditBlockContext =
@@ -29,28 +25,50 @@ export function isLedgerEditable(
   );
 }
 
-export function getHeadquartersEditableLedgerStatuses(
-  allowClosedEdit: boolean,
-): readonly HeadquartersEditableLedgerStatus[] {
-  return allowClosedEdit
-    ? headquartersClosedEditableLedgerStatuses
-    : editableLedgerStatuses;
-}
-
-export function isLedgerEditableByHeadquarters(
-  status: string | null | undefined,
-  allowClosedEdit: boolean,
-): status is HeadquartersEditableLedgerStatus {
-  return getHeadquartersEditableLedgerStatuses(allowClosedEdit).some(
-    (editableStatus) => editableStatus === status,
-  );
-}
-
 export function isLedgerReadOnly(
   status: string | null | undefined,
 ): status is ReadOnlyLedgerStatus {
   return status === "HEADQUARTERS_CLOSED" || status === "HOLIDAY";
 }
+
+// DESIGN.md D4/D5: 서버가 판정한 마감 편집 권한을 담은 액터 문맥. 클라이언트
+// prop은 표시만 제어하며 최종 판정은 항상 서버 게이트가 한다(기본 false).
+export type LedgerEditActorContext = {
+  closedEditAllowed?: boolean;
+};
+
+/**
+ * DESIGN.md D5: IN_PROGRESS/IN_REVIEW는 기존 정책대로 편집 가능하고,
+ * HEADQUARTERS_CLOSED는 LEDGER_CLOSED_EDIT를 가진 액터 문맥에서만 편집 가능하다.
+ * HOLIDAY는 어떤 문맥에서도 편집할 수 없다.
+ */
+export function isLedgerEditableForActor(
+  status: string | null | undefined,
+  actor: LedgerEditActorContext = {},
+): boolean {
+  if (isLedgerEditable(status)) {
+    return true;
+  }
+
+  return Boolean(actor.closedEditAllowed) && status === "HEADQUARTERS_CLOSED";
+}
+
+/**
+ * 저장 CAS where 절에 넣을 편집 가능 상태 목록. 마감 편집이 허용된 액터일 때만
+ * HEADQUARTERS_CLOSED를 포함한다.
+ */
+export function getEditableLedgerStatusesForActor(
+  actor: LedgerEditActorContext = {},
+): readonly DailyLedgerStatus[] {
+  return actor.closedEditAllowed
+    ? [...editableLedgerStatuses, "HEADQUARTERS_CLOSED"]
+    : editableLedgerStatuses;
+}
+
+// DESIGN.md D7: 마감 상태 유지 안내와 저장 성공 문구.
+export const closedEditRetainedStatusNotice = "마감 상태 유지 · 마스터 수정";
+export const closedEditSaveSuccessMessage =
+  "마감 장부 내용을 저장했습니다. 마감 상태는 유지됩니다.";
 
 export function getLedgerEditBlockReason(
   status: string,

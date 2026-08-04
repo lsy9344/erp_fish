@@ -3,18 +3,9 @@
 import { z } from "zod";
 
 import type { Prisma } from "../../../generated/prisma";
-import {
-  supersedeActiveCorrectionsForTargetsInTx,
-  type ActiveCorrectionSupersedeTarget,
-} from "~/features/corrections/actions";
-import { getActiveCorrectionsForLedgerInTx } from "~/features/corrections/queries";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getInventoryStepDataByLedgerIdInTx } from "~/features/inventory/queries";
-import {
-  invalidateCarryoverDependentsInTx,
-  updateHqLedgerMutationTokenInTx,
-} from "~/features/ledger/hq-mutation";
 import {
   calculatePlannedPriceLossAmount,
   recoveredAmountError,
@@ -26,13 +17,14 @@ import {
   ledgerConflictErrorFromMeta,
 } from "~/features/ledger/conflicts";
 import {
+  getEditableLedgerStatusesForActor,
   getLedgerEditBlockReason,
-  isLedgerEditableByHeadquarters,
+  isLedgerEditableForActor,
+  type LedgerEditActorContext,
 } from "~/features/ledger/status-policy";
-import { writeAuditLog } from "~/server/audit";
+import { withLedgerEditContext, writeAuditLog } from "~/server/audit";
 import {
-  hasLedgerClosedEditAccess,
-  requireLedgerHqEditAccess,
+  requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import { calculateSystemInventoryQuantity } from "~/server/calculations/inventory";
@@ -49,6 +41,12 @@ import {
   revalidateStoreEntryPaths,
 } from "~/server/revalidation";
 import { getLossStepDataByLedgerIdInTx } from "./queries";
+import { supersedeCorrectionRecordsInTx } from "~/features/corrections/queries";
+import {
+  getCorrectionRecordsForLedgerInTx,
+  getLatestCorrectionValueMap,
+} from "~/features/corrections/queries";
+import { applyCorrectionOverlayToLossEditValues } from "~/features/corrections/edit-overlay";
 import { getLossQuantityErrorMessage } from "./quantity-error";
 import { toFieldErrors } from "./schemas";
 import { lossTerms } from "./terms";
@@ -123,6 +121,29 @@ const requiredIdSchema = (message: string) =>
     .transform((value) => value.trim())
     .pipe(z.string().min(1, message));
 
+// DESIGN.md D8: 지점장 저장과 동일한 version 충돌 토큰 계약을 본사 손실 저장에서도
+// 공유한다. 클라이언트가 보낸 version을 CAS에 사용한다.
+const hqLedgerVersionError = "장부 상태를 확인해 주세요.";
+const hqLedgerVersionSchema = z.unknown().transform((value, context) => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (Number.isSafeInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: hqLedgerVersionError,
+  });
+
+  return z.NEVER;
+});
+
 const hqLedgerLossItemSchema = z.object({
   id: z
     .unknown()
@@ -166,6 +187,7 @@ const hqLedgerLossItemSchema = z.object({
 const hqLedgerLossesSchema = z
   .object({
     storeId: requiredIdSchema("지점을 확인해 주세요."),
+    version: hqLedgerVersionSchema,
     ledgerUpdatedAt: requiredIdSchema("장부 상태를 확인해 주세요."),
     losses: z.array(hqLedgerLossItemSchema),
   })
@@ -267,24 +289,18 @@ function notEditableError(status: LossStepData["status"]): ActionResult<never> {
 function ensureTargetLossData(
   data: LossStepData | null,
   storeId: string,
-  allowClosedEdit: boolean,
+  actor: LedgerEditActorContext,
 ): ActionResult<LossStepData> {
   if (data?.storeId !== storeId) {
     return notFoundError();
   }
 
-  if (!isLedgerEditableByHeadquarters(data.status, allowClosedEdit)) {
+  // DESIGN.md D5: HEADQUARTERS_CLOSED는 마감 편집 권한을 가진 액터 문맥에서만 허용.
+  if (!isLedgerEditableForActor(data.status, actor)) {
     return notEditableError(data.status);
   }
 
   return actionOk(data);
-}
-
-async function getHqLossMutationActor() {
-  const user = await requireLedgerHqEditAccess();
-  const allowClosedEdit = await hasLedgerClosedEditAccess(user.id);
-
-  return { user, allowClosedEdit };
 }
 
 function toLossConflictValues(data: LossStepData) {
@@ -314,19 +330,52 @@ async function hqLossConflictError<T = never>(
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
 
+  // 충돌 payload 생성은 정상 대상 장부 게이트보다 먼저 호출될 수 있다. 요청 지점과
+  // 장부 지점이 다르거나 장부가 없으면 존재 여부와 최신 손실·메타를 노출하지 않는다.
+  const scopedCurrent = current?.storeId === input.storeId ? current : null;
+  const scopedMeta = scopedCurrent ? meta : null;
+
   return ledgerConflictErrorFromMeta<T>({
-    meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section: "losses",
     clientToken: input.ledgerUpdatedAt,
     serverToken:
-      current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+      scopedCurrent?.updatedAt ??
+      scopedMeta?.updatedAt.toISOString() ??
+      "unknown",
     clientValues: toLossClientValues(input),
-    serverValues: current ? toLossConflictValues(current) : {},
-    lastModifiedAt: current?.updatedAt,
+    serverValues: scopedCurrent ? toLossConflictValues(scopedCurrent) : {},
+    lastModifiedAt:
+      scopedCurrent?.updatedAt ??
+      scopedMeta?.updatedAt.toISOString() ??
+      "unknown",
     reloadRequired: true,
     hqEditing: true,
   });
+}
+
+async function markEditableLedgerInTx(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+  expectedUpdatedAt: Date,
+  expectedVersion: number,
+  actorId: string,
+  actor: LedgerEditActorContext,
+) {
+  // DESIGN.md D7/D8: CAS는 updatedAt·version·편집 가능 상태를 보고 version을 올려
+  // 지점장 저장(version CAS)과 하나의 충돌 토큰을 공유한다.
+  const updated = await tx.dailyLedger.updateMany({
+    where: {
+      id: ledgerId,
+      status: { in: [...getEditableLedgerStatusesForActor(actor)] },
+      updatedAt: expectedUpdatedAt,
+      version: expectedVersion,
+    },
+    data: { updatedById: actorId, version: { increment: 1 } },
+  });
+
+  return updated.count === 1;
 }
 
 function normalizeLossItem({
@@ -385,147 +434,6 @@ function normalizeLossItem({
   };
 }
 
-function getChangedLossQuantityProductIds(
-  before: ExistingLossItem[],
-  after: NormalizedLossItem[],
-) {
-  const beforeById = new Map(before.map((item) => [item.id, item]));
-  const afterById = new Map(
-    after
-      .filter((item): item is NormalizedLossItem & { id: string } =>
-        Boolean(item.id),
-      )
-      .map((item) => [item.id, item]),
-  );
-  const affectedProductIds = new Set<string>();
-
-  for (const item of before) {
-    const next = afterById.get(item.id);
-
-    if (
-      next?.productId !== item.productId ||
-      next?.quantity !== item.quantity
-    ) {
-      affectedProductIds.add(item.productId);
-      if (next) affectedProductIds.add(next.productId);
-    }
-  }
-
-  for (const item of after) {
-    if (!item.id || !beforeById.has(item.id)) {
-      affectedProductIds.add(item.productId);
-    }
-  }
-
-  return [...affectedProductIds].sort();
-}
-
-function hasLossAmountInputChange(
-  before: ExistingLossItem[],
-  after: NormalizedLossItem[],
-) {
-  const beforeById = new Map(before.map((item) => [item.id, item]));
-
-  return after.some((item) => {
-    const existing = item.id ? beforeById.get(item.id) : undefined;
-
-    return (
-      existing?.recoveredAmount !== item.recoveredAmount ||
-      existing?.unitPrice !== item.unitPrice ||
-      existing?.amount !== item.amount
-    );
-  });
-}
-
-function calculatedMetricCorrectionTargets(
-  ledgerId: string,
-  fieldKeys: Array<"grossMarginRate" | "salesDifference" | "lossAmount">,
-): ActiveCorrectionSupersedeTarget[] {
-  return fieldKeys.map((fieldKey) => ({
-    targetType: "CALCULATED_METRIC",
-    targetId: ledgerId,
-    fieldKey,
-  }));
-}
-
-function getActiveLossCorrectionValues(
-  records: Awaited<ReturnType<typeof getActiveCorrectionsForLedgerInTx>>,
-) {
-  const amountByTargetId = new Map<string, number>();
-  const quantityByTargetId = new Map<string, number>();
-  const reasonByTargetId = new Map<string, string>();
-
-  for (const record of records) {
-    if (record.targetType !== "LOSS_ROW") {
-      continue;
-    }
-
-    const correctedValue = record.correctedValue;
-
-    if (
-      !correctedValue ||
-      typeof correctedValue !== "object" ||
-      Array.isArray(correctedValue)
-    ) {
-      continue;
-    }
-
-    if (
-      record.fieldKey === "reason" &&
-      correctedValue.kind === "text" &&
-      (typeof correctedValue.value === "string" ||
-        correctedValue.value === null) &&
-      !reasonByTargetId.has(record.targetId)
-    ) {
-      reasonByTargetId.set(record.targetId, correctedValue.value ?? "");
-      continue;
-    }
-
-    if (record.fieldKey !== "amount" && record.fieldKey !== "quantity") {
-      continue;
-    }
-
-    if (typeof correctedValue.value !== "number") {
-      continue;
-    }
-
-    if (
-      record.fieldKey === "amount" &&
-      correctedValue.kind === "money" &&
-      isValidInteger(correctedValue.value) &&
-      !amountByTargetId.has(record.targetId)
-    ) {
-      amountByTargetId.set(record.targetId, correctedValue.value);
-    }
-
-    if (
-      record.fieldKey === "quantity" &&
-      correctedValue.kind === "quantity" &&
-      isNonNegativeTwoDecimalInRange(correctedValue.value) &&
-      !quantityByTargetId.has(record.targetId)
-    ) {
-      quantityByTargetId.set(record.targetId, correctedValue.value);
-    }
-  }
-
-  return { amountByTargetId, quantityByTargetId, reasonByTargetId };
-}
-
-function applyActiveLossCorrectionsToAuditSnapshot(
-  data: LossStepData,
-  corrections: ReturnType<typeof getActiveLossCorrectionValues>,
-): LossStepData {
-  return {
-    ...data,
-    lossItems: data.lossItems.map((item) => ({
-      ...item,
-      quantity: corrections.quantityByTargetId.get(item.id) ?? item.quantity,
-      amount: corrections.amountByTargetId.get(item.id) ?? item.amount,
-      reason: corrections.reasonByTargetId.get(item.id) ?? item.reason,
-    })),
-  };
-}
-
 export async function saveHqLedgerLosses(
   input: unknown,
 ): Promise<ActionResult<LossStepData>> {
@@ -535,10 +443,9 @@ export async function saveHqLedgerLosses(
     return parsed;
   }
 
-  const actor = await getHqLossMutationActor();
+  const actor = await requireLedgerHqEditContext();
   const { ledgerId } = parsed.data;
   await requireHeadquartersStoreScope(parsed.data.storeId);
-  let invalidatedTargetLedgerIds: string[] = [];
 
   try {
     const result = await db.$transaction<ActionResult<LossStepData>>(
@@ -546,7 +453,7 @@ export async function saveHqLedgerLosses(
         const beforeResult = ensureTargetLossData(
           await getLossStepDataByLedgerIdInTx(tx, ledgerId),
           parsed.data.storeId,
-          actor.allowClosedEdit,
+          actor,
         );
 
         if (!beforeResult.ok) {
@@ -562,14 +469,6 @@ export async function saveHqLedgerLosses(
         ) {
           return await hqLossConflictError<LossStepData>(tx, parsed.data);
         }
-
-        const activeLossCorrectionValues = getActiveLossCorrectionValues(
-          await getActiveCorrectionsForLedgerInTx(tx, ledgerId),
-        );
-        const effectiveBefore = applyActiveLossCorrectionsToAuditSnapshot(
-          before,
-          activeLossCorrectionValues,
-        );
 
         const productIds = [
           ...new Set(parsed.data.losses.map((loss) => loss.productId)),
@@ -698,11 +597,6 @@ export async function saveHqLedgerLosses(
           }
 
           normalized.usedPlannedPrice = usedPlannedPrice;
-          if (normalized.id) {
-            normalized.amount =
-              activeLossCorrectionValues.amountByTargetId.get(normalized.id) ??
-              normalized.amount;
-          }
           normalizedLosses.push(normalized);
         }
 
@@ -765,21 +659,14 @@ export async function saveHqLedgerLosses(
           );
         }
 
-        const fifoAffectedProductIds = getChangedLossQuantityProductIds(
-          before.lossItems,
-          normalizedLosses,
-        );
-        const hasAmountInputChange = hasLossAmountInputChange(
-          before.lossItems,
-          normalizedLosses,
-        );
-
-        const updated = await updateHqLedgerMutationTokenInTx(tx, {
+        const updated = await markEditableLedgerInTx(
+          tx,
           ledgerId,
           expectedUpdatedAt,
-          actorId: actor.user.id,
-          allowClosedEdit: actor.allowClosedEdit,
-        });
+          parsed.data.version,
+          actor.user.id,
+          actor,
+        );
 
         if (!updated) {
           return await hqLossConflictError<LossStepData>(tx, parsed.data);
@@ -830,23 +717,10 @@ export async function saveHqLedgerLosses(
           });
         }
 
-        if (fifoAffectedProductIds.length > 0) {
-          await reconcileLedgerInventoryAdjustments(
-            tx,
-            before.id,
-            actor.user.id,
-          );
+        await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
-          // 손실 수량 또는 품목이 바뀐 경우에만 FIFO와 미래 이월 근거를 무효화한다.
-          await refreshLedgerInventoryFifoLots(tx, before.id);
-          const invalidation = await invalidateCarryoverDependentsInTx(tx, {
-            sourceLedgerId: before.id,
-            productIds: fifoAffectedProductIds,
-            actorId: actor.user.id,
-            reason: parsed.data.reason,
-          });
-          invalidatedTargetLedgerIds = invalidation.targetLedgerIds;
-        }
+        // WO-02(2026-06-22): 본사 손실 수정 후에도 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        await refreshLedgerInventoryFifoLots(tx, before.id);
 
         const after = await getLossStepDataByLedgerIdInTx(tx, ledgerId);
 
@@ -854,52 +728,40 @@ export async function saveHqLedgerLosses(
           return notFoundError();
         }
 
-        const calculatedMetricFieldKeys =
-          fifoAffectedProductIds.length > 0
-            ? (["grossMarginRate", "salesDifference", "lossAmount"] as const)
-            : hasAmountInputChange
-              ? (["salesDifference", "lossAmount"] as const)
-              : [];
-        const supersededCorrectionCount =
-          await supersedeActiveCorrectionsForTargetsInTx(tx, {
-            dailyLedgerId: before.id,
-            supersededById: actor.user.id,
-            targets: [
-              ...before.lossItems.map((item) => ({
-                targetType: "LOSS_ROW" as const,
-                targetId: item.id,
-              })),
-              ...calculatedMetricCorrectionTargets(before.id, [
-                ...calculatedMetricFieldKeys,
-              ]),
-            ],
-          });
+        // DESIGN.md D8: 감사 before는 supersede 전 활성 정정이 반영된 유효값 기준이다.
+        const beforeAuditData = applyCorrectionOverlayToLossEditValues(
+          before,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
+
+        await supersedeCorrectionRecordsInTx(tx, {
+          dailyLedgerId: before.id,
+          // 손실 재저장은 기존 행을 갱신하거나 삭제하므로 기존 행 id 전체의 LOSS_ROW
+          // 정정을 대체한다(삭제된 행의 정정도 다시 적용될 수 없도록 확실히 차단).
+          targetTypes: ["LOSS_ROW"],
+          targetIds: [...existingById.keys()],
+        });
+
+        // 감사 after는 supersede 후 남아 있는 활성 정정까지 반영한 유효값 기준이다.
+        const afterAuditData = applyCorrectionOverlayToLossEditValues(
+          after,
+          getLatestCorrectionValueMap(
+            await getCorrectionRecordsForLedgerInTx(tx, ledgerId),
+          ).values(),
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.losses.saved",
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before: {
-            ...effectiveBefore,
+          before: beforeAuditData,
+          after: withLedgerEditContext(afterAuditData, {
             ledgerStatusAtEdit: before.status,
             closedEdit: before.status === "HEADQUARTERS_CLOSED",
-            hqEditContext: {
-              closedLedgerEdit: before.status === "HEADQUARTERS_CLOSED",
-              supersededCorrectionCount: 0,
-              fifoAffectedProductIds: [],
-            },
-          },
-          after: {
-            ...after,
-            ledgerStatusAtEdit: before.status,
-            closedEdit: before.status === "HEADQUARTERS_CLOSED",
-            hqEditContext: {
-              closedLedgerEdit: after.status === "HEADQUARTERS_CLOSED",
-              supersededCorrectionCount,
-              fifoAffectedProductIds,
-            },
-          },
+          }),
           reason: parsed.data.reason,
         });
 
@@ -909,7 +771,6 @@ export async function saveHqLedgerLosses(
 
     if (result.ok) {
       revalidateHqLossPaths(ledgerId);
-      invalidatedTargetLedgerIds.forEach(revalidateLedgerDetailPath);
     }
 
     return result;

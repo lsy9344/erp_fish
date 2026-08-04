@@ -1,10 +1,8 @@
-import { StoreAccessMode } from "../../../generated/prisma/index.js";
-import type {
-  DailyLedgerStatus,
-  InventoryCarryoverStatus,
-} from "../../../generated/prisma/index.js";
+import { Prisma, StoreAccessMode } from "../../../generated/prisma/index.js";
+import type { DailyLedgerStatus } from "../../../generated/prisma/index.js";
 import {
   applyCorrectionValuesToLedgerReviewInput,
+  hasCompleteFifoRemainingBasis,
   calculateExpenseTotal,
   calculateLedgerReviewSummary,
   calculatePaymentTotal,
@@ -37,7 +35,7 @@ import type {
   DashboardDensity,
   DashboardEmptyStateReason,
   DashboardFilterMode,
-  DashboardInventoryAmount,
+  DashboardInventoryAmountStatus,
   DashboardLedgerStatus,
   DashboardMarginDisplay,
   DashboardSortMode,
@@ -174,7 +172,6 @@ type DashboardLedgerRecord = {
     quantity: number | null;
     unitPrice: number;
     inventoryAmount: number | null;
-    carryoverStatus: InventoryCarryoverStatus;
     fifoLots?: {
       sourceType: string;
       consumedAmount: number;
@@ -348,6 +345,57 @@ export function mapDashboardBusinessStatus(
   return { key: "OPEN", label: "영업일" };
 }
 
+/**
+ * DESIGN.md D2: 장부 상태별 재고금액 표시 분기. 마감 장부만 FIFO 기준 총액을
+ * 금액으로 보여주고, 미마감은 "마감 전", 휴무는 "해당 없음", 장부 없음·계산
+ * 근거 부족은 "데이터 부족" 계열로 표시한다.
+ */
+export function getDashboardInventoryAmountStatus(
+  ledgerStatus: DailyLedgerStatus | null,
+  inventoryAmount: LedgerReviewMetric,
+): DashboardInventoryAmountStatus {
+  if (ledgerStatus === null) {
+    return "unavailable";
+  }
+
+  if (ledgerStatus === "HOLIDAY") {
+    return "not-applicable";
+  }
+
+  if (ledgerStatus !== "HEADQUARTERS_CLOSED") {
+    return "before-close";
+  }
+
+  return inventoryAmount.value === null ? "unavailable" : "amount";
+}
+
+/**
+ * DESIGN.md D2: 마감 장부의 재고금액은 FIFO 근거가 전 품목에 완저할 때만 금액으로
+ * 표시한다. 하나라도 근거가 없으면 부분합을 정상 금액처럼 보여주지 않고
+ * “데이터 부족”으로 내린다. 미마감·휴무는 기존 계산값 계약을 그대로 쓴다.
+ */
+export function getClosedLedgerFifoInventoryAmount(
+  ledgerStatus: DailyLedgerStatus | null,
+  inventoryItems: LedgerReviewInventoryInput[],
+  inventoryAmount: LedgerReviewMetric,
+): LedgerReviewMetric {
+  if (
+    ledgerStatus !== "HEADQUARTERS_CLOSED" ||
+    hasCompleteFifoRemainingBasis(inventoryItems)
+  ) {
+    return inventoryAmount;
+  }
+
+  return {
+    ...inventoryAmount,
+    value: null,
+    status: "data-insufficient",
+    label: "데이터 부족",
+    unavailableReason: "계산 불가",
+    reason: "FIFO 근거가 불완전해 마감 재고금액을 계산할 수 없습니다.",
+  };
+}
+
 export async function getHqDashboardRows({
   datePreset = "today",
   sortMode = "priority",
@@ -415,7 +463,6 @@ export async function getHqDashboardRows({
                 quantity: true,
                 unitPrice: true,
                 inventoryAmount: true,
-                carryoverStatus: true,
                 fifoLots: {
                   select: {
                     sourceType: true,
@@ -648,12 +695,10 @@ function toDashboardRow(
       analysisSalesAmount: dataInsufficient(
         "장부 입력 전이라 분석 매출 데이터가 없습니다.",
       ),
-      inventoryAmount: getDashboardInventoryAmountMetric({
-        status: null,
-        calculatedMetric: dataInsufficient(
-          "장부 입력 전이라 재고금액 데이터가 없습니다.",
-        ),
-      }),
+      inventoryAmount: dataInsufficient(
+        "장부 입력 전이라 재고금액 데이터가 없습니다.",
+      ),
+      inventoryAmountStatus: "unavailable",
       grossMarginRate: metrics.grossMarginRate,
       marginDisplay: buildMarginDisplay(
         thresholdSettings,
@@ -707,11 +752,12 @@ function toDashboardRow(
     lossItems: correctionOverlay.lossItems,
     plannedSalesItems,
   });
-  const hasCarryoverRecheck = ledger.ledgerInventoryItems.some(
-    (item) => item.carryoverStatus === "CARRYOVER_RECHECK_REQUIRED",
+  // DESIGN.md D2: 마감 장부 재고금액은 FIFO 근거가 완전할 때만 금액으로 표시한다.
+  const inventoryAmount = getClosedLedgerFifoInventoryAmount(
+    ledger.status,
+    correctionOverlay.reviewInput.inventoryItems,
+    reviewSummary.inventoryAmount,
   );
-  const hasActiveInventoryQuantityCorrection =
-    hasInventoryQuantityCorrection(corrections);
   const missingItems = getLedgerReviewMissingItems({
     storeId: store.id,
     closingDate: ledger.closingDate.toISOString(),
@@ -752,7 +798,6 @@ function toDashboardRow(
           evaluateInventoryLossAnomalySignals,
           correctionState,
           missingItems,
-          hasCarryoverRecheck,
         });
 
   return {
@@ -767,12 +812,13 @@ function toDashboardRow(
     carryoverSalesAmount: reviewSummary.carryoverSales,
     operatingSalesAmount: reviewSummary.operatingSales,
     analysisSalesAmount: reviewSummary.plannedSalesTotal,
-    inventoryAmount: getDashboardInventoryAmountMetric({
-      status: ledger.status,
-      calculatedMetric: reviewSummary.inventoryAmount,
-      hasCarryoverRecheck,
-      hasActiveInventoryQuantityCorrection,
-    }),
+    // DESIGN.md D1: 재고금액은 서버 계산값을 그대로 노출하고 부분합은 허용하지
+    // 않는다(계산 근거 부족 시 inventoryAmount.value === null).
+    inventoryAmount,
+    inventoryAmountStatus: getDashboardInventoryAmountStatus(
+      ledger.status,
+      inventoryAmount,
+    ),
     grossMarginRate: reviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -804,113 +850,160 @@ export async function getHqLedgerDetail(ledgerId: string) {
   const { db } = await import("../../server/db.ts");
   const { getAnomalyThresholdSettingsForSignals } =
     await import("./threshold-queries.ts");
-  const { getLatestCorrectionValuesForLedger } =
+  const { getCorrectionRecordsForLedgerInTx, getLatestCorrectionValueMap } =
     await import("../corrections/queries.ts");
+  const { getLedgerCostStepDataByIdInTx } =
+    await import("../ledger/queries.ts");
+  const { getInventoryStepDataByLedgerIdInTx } =
+    await import("../inventory/queries.ts");
+  const { applyInventoryFormDisplayPolicy } =
+    await import("../inventory/inventory-zero-stock-display.ts");
+  const { getLossStepDataByLedgerIdInTx } =
+    await import("../losses/queries.ts");
   const { evaluateInventoryLossAnomalySignals, evaluateRevenueAnomalySignals } =
     await import("../../server/calculations/anomaly.ts");
-  const [rawLedger, thresholdSettings] = await Promise.all([
-    db.dailyLedger.findFirst({
-      where: { id: ledgerId, storeId: { in: storeScope.storeIds } },
-      select: {
-        id: true,
-        storeId: true,
-        closingDate: true,
-        status: true,
-        totalSalesAmount: true,
-        carryoverSalesAmount: true,
-        cashAmount: true,
-        cardAmount: true,
-        otherPaymentAmount: true,
-        workerCount: true,
-        updatedAt: true,
-        closedAt: true,
-        store: {
+  const [snapshot, thresholdSettings] = await Promise.all([
+    db.$transaction(
+      async (tx) => {
+        const rawLedger = await tx.dailyLedger.findFirst({
+          where: { id: ledgerId, storeId: { in: storeScope.storeIds } },
           select: {
             id: true,
-            name: true,
-          },
-        },
-        updatedBy: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-        closedBy: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-        ledgerInventoryItems: {
-          select: {
-            id: true,
-            productId: true,
-            productName: true,
-            previousQuantity: true,
-            purchasedQuantity: true,
-            currentQuantity: true,
-            quantity: true,
-            unitPrice: true,
-            inventoryAmount: true,
-            carryoverStatus: true,
-            fifoLots: {
+            storeId: true,
+            closingDate: true,
+            status: true,
+            totalSalesAmount: true,
+            carryoverSalesAmount: true,
+            cashAmount: true,
+            cardAmount: true,
+            otherPaymentAmount: true,
+            workerCount: true,
+            updatedAt: true,
+            closedAt: true,
+            store: {
               select: {
-                sourceType: true,
-                consumedAmount: true,
-                remainingAmount: true,
+                id: true,
+                name: true,
+              },
+            },
+            updatedBy: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+            closedBy: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+            ledgerInventoryItems: {
+              select: {
+                id: true,
+                productId: true,
+                productName: true,
+                previousQuantity: true,
+                purchasedQuantity: true,
+                currentQuantity: true,
+                quantity: true,
+                unitPrice: true,
+                inventoryAmount: true,
+                fifoLots: {
+                  select: {
+                    sourceType: true,
+                    consumedAmount: true,
+                    remainingAmount: true,
+                  },
+                },
+              },
+            },
+            ledgerExpenses: {
+              select: {
+                id: true,
+                amount: true,
+              },
+            },
+            ledgerInventoryAdjustments: {
+              select: {
+                productId: true,
+                ledgerInventoryItemId: true,
+                productName: true,
+                beforeQuantity: true,
+                beforeAmount: true,
+                afterQuantity: true,
+                afterAmount: true,
+                unitPrice: true,
+                differenceQuantity: true,
+                differenceAmount: true,
+                reason: true,
+              },
+            },
+            ledgerLossItems: {
+              select: {
+                id: true,
+                productId: true,
+                productName: true,
+                quantity: true,
+                amount: true,
+              },
+            },
+            _count: {
+              select: {
+                ledgerLossItems: true,
+                ledgerPurchaseItems: true,
               },
             },
           },
-        },
-        ledgerExpenses: {
-          select: {
-            id: true,
-            amount: true,
-          },
-        },
-        ledgerInventoryAdjustments: {
-          select: {
-            productId: true,
-            ledgerInventoryItemId: true,
-            productName: true,
-            beforeQuantity: true,
-            beforeAmount: true,
-            afterQuantity: true,
-            afterAmount: true,
-            unitPrice: true,
-            differenceQuantity: true,
-            differenceAmount: true,
-            reason: true,
-          },
-        },
-        ledgerLossItems: {
-          select: {
-            id: true,
-            productId: true,
-            productName: true,
-            quantity: true,
-            amount: true,
-          },
-        },
-        _count: {
-          select: {
-            ledgerLossItems: true,
-            ledgerPurchaseItems: true,
-          },
-        },
+        });
+
+        if (!rawLedger) {
+          return null;
+        }
+        // Interactive transaction client는 하나의 DB connection을 공유하므로
+        // 각 loader를 순서대로 실행해 snapshot과 connection 사용 순서를 명확히 한다.
+        const ledger = await getLedgerCostStepDataByIdInTx(tx, ledgerId);
+        const correctionRecords = await getCorrectionRecordsForLedgerInTx(
+          tx,
+          ledgerId,
+        );
+        const inventoryData = await getInventoryStepDataByLedgerIdInTx(
+          tx,
+          ledgerId,
+        );
+        const lossData = await getLossStepDataByLedgerIdInTx(tx, ledgerId);
+
+        if (!ledger || !inventoryData || !lossData) {
+          return null;
+        }
+
+        return {
+          rawLedger,
+          ledger,
+          correctionRecords,
+          inventoryData: applyInventoryFormDisplayPolicy(inventoryData),
+          lossData,
+        };
       },
-    }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    ),
     getAnomalyThresholdSettingsForSignals(),
   ]);
 
-  if (!rawLedger) {
+  if (!snapshot) {
     return null;
   }
 
+  const {
+    rawLedger,
+    ledger: ledgerSnapshot,
+    correctionRecords,
+    inventoryData,
+    lossData,
+  } = snapshot;
   const ledger = toDashboardLedgerRecord(rawLedger);
 
-  const corrections = await getLatestCorrectionValuesForLedger(ledger.id);
+  const corrections = getLatestCorrectionValueMap(correctionRecords);
   const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({
     ledgerId: ledger.id,
     reviewInput: {
@@ -939,8 +1032,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
   });
-  const hasCarryoverRecheck = ledger.ledgerInventoryItems.some(
-    (item) => item.carryoverStatus === "CARRYOVER_RECHECK_REQUIRED",
+  // DESIGN.md D2: 상세 화면도 마감 장부 재고금액의 FIFO 완전성 계약을 동일하게 적용한다.
+  const inventoryAmount = getClosedLedgerFifoInventoryAmount(
+    ledger.status,
+    correctionOverlay.reviewInput.inventoryItems,
+    correctedReviewSummary.inventoryAmount,
   );
   const missingItems = getLedgerReviewMissingItems({
     storeId: ledger.store.id,
@@ -982,7 +1078,6 @@ export async function getHqLedgerDetail(ledgerId: string) {
           evaluateInventoryLossAnomalySignals,
           correctionState,
           missingItems,
-          hasCarryoverRecheck,
         });
 
   return {
@@ -997,13 +1092,12 @@ export async function getHqLedgerDetail(ledgerId: string) {
     carryoverSalesAmount: correctedReviewSummary.carryoverSales,
     operatingSalesAmount: correctedReviewSummary.operatingSales,
     analysisSalesAmount: correctedReviewSummary.plannedSalesTotal,
-    inventoryAmount: getDashboardInventoryAmountMetric({
-      status: ledger.status,
-      calculatedMetric: correctedReviewSummary.inventoryAmount,
-      hasCarryoverRecheck,
-      hasActiveInventoryQuantityCorrection:
-        hasInventoryQuantityCorrection(corrections),
-    }),
+    // DESIGN.md D1: 상세 화면도 동일한 재고금액 계약(상태 분기 포함)을 유지한다.
+    inventoryAmount,
+    inventoryAmountStatus: getDashboardInventoryAmountStatus(
+      ledger.status,
+      inventoryAmount,
+    ),
     grossMarginRate: correctedReviewSummary.grossMarginRate,
     marginDisplay: buildMarginDisplay(
       ledger.status === "HOLIDAY" ? null : thresholdSettings,
@@ -1025,6 +1119,15 @@ export async function getHqLedgerDetail(ledgerId: string) {
     isHeadquartersClosed: ledger.status === "HEADQUARTERS_CLOSED",
     correctionState,
     signals,
+    // 상세 화면의 요약·편집 폼은 같은 Repeatable Read snapshot에서 읽은 값을
+    // 공유한다. 별도 조회로 다시 읽으면 최신 token과 오래된 정정/재고가 섞여
+    // 저장 시 보이지 않은 값을 되돌릴 수 있다.
+    editSnapshot: {
+      ledger: ledgerSnapshot,
+      correctionRecords,
+      inventoryData,
+      lossData,
+    },
   };
 }
 
@@ -1036,7 +1139,6 @@ export function getDashboardSignals({
   evaluateInventoryLossAnomalySignals,
   correctionState = emptyCorrectionState(),
   missingItems = [],
-  hasCarryoverRecheck = false,
 }: {
   thresholdSettings: AnomalyThresholdSignalSettings | null;
   revenueCurrent: DashboardRevenueCurrent;
@@ -1045,7 +1147,6 @@ export function getDashboardSignals({
   evaluateInventoryLossAnomalySignals: EvaluateInventoryLossAnomalySignals;
   correctionState?: HqDashboardRow["correctionState"];
   missingItems?: LedgerReviewMissingItem[];
-  hasCarryoverRecheck?: boolean;
 }) {
   const missingSignals = missingItems
     .filter((item) => item.status === "missing")
@@ -1088,16 +1189,6 @@ export function getDashboardSignals({
         },
       ]
     : [];
-  const carryoverSignals = hasCarryoverRecheck
-    ? [
-        {
-          id: "carryover-recheck-required",
-          label: "이월 재확인 필요",
-          severity: "info" as const,
-          detail: "과거 장부 변경으로 재고 이월 기준을 다시 확인해야 합니다.",
-        },
-      ]
-    : [];
 
   return [
     ...missingSignals,
@@ -1105,65 +1196,7 @@ export function getDashboardSignals({
     ...revenueSignals,
     ...inventoryLossSignals,
     ...correctionSignals,
-    ...carryoverSignals,
   ];
-}
-
-export function getDashboardInventoryAmountMetric({
-  status,
-  calculatedMetric,
-  hasCarryoverRecheck = false,
-  hasActiveInventoryQuantityCorrection = false,
-}: {
-  status: DailyLedgerStatus | null;
-  calculatedMetric: LedgerReviewMetric;
-  hasCarryoverRecheck?: boolean;
-  hasActiveInventoryQuantityCorrection?: boolean;
-}): DashboardInventoryAmount {
-  if (status === null) {
-    return dashboardInventoryUnavailable("데이터 부족");
-  }
-
-  if (status === "HOLIDAY") {
-    return dashboardInventoryUnavailable("해당 없음");
-  }
-
-  if (status === "IN_PROGRESS" || status === "IN_REVIEW") {
-    return dashboardInventoryUnavailable("마감 전");
-  }
-
-  if (hasCarryoverRecheck || hasActiveInventoryQuantityCorrection) {
-    return dashboardInventoryUnavailable(
-      "기준 재확인 필요",
-      "policy-unconfirmed",
-    );
-  }
-
-  return calculatedMetric;
-}
-
-function dashboardInventoryUnavailable(
-  label: string,
-  status: "data-insufficient" | "policy-unconfirmed" = "data-insufficient",
-): DashboardInventoryAmount {
-  return {
-    value: null,
-    status,
-    label,
-    unavailableReason:
-      status === "policy-unconfirmed" ? "계산 기준 확인 필요" : "계산 불가",
-  };
-}
-
-function hasInventoryQuantityCorrection(
-  corrections?: Map<string, CorrectionAppliedValue>,
-) {
-  return [...(corrections?.values() ?? [])].some(
-    (correction) =>
-      correction.targetType === "INVENTORY_ROW" &&
-      (correction.fieldKey === "currentQuantity" ||
-        correction.fieldKey === "quantity"),
-  );
 }
 
 function getMetricStatusSignals(revenueCurrent: DashboardRevenueCurrent) {

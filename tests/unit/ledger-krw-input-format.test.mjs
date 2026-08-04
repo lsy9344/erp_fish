@@ -41,7 +41,7 @@ test("KRW input formatter strips leading zeroes and displays thousands separator
   assert.equal(parseKrwInputValue(""), 0);
 });
 
-test("sales payment inputs display formatted KRW while submitting raw numeric values", () => {
+test("sales payment inputs format editable amounts and submit the derived closing total", () => {
   const source = readProjectFile(
     "src",
     "features",
@@ -53,7 +53,10 @@ test("sales payment inputs display formatted KRW while submitting raw numeric va
   assert.match(source, /formatKrwInput/);
   assert.match(source, /parseKrwInputValue/);
   assert.match(source, /toRawKrwInputValue/);
-  assert.match(source, /setTotalSalesAmount\(formatKrwInput/);
-  assert.match(source, /totalSalesAmount:\s*toRawKrwInputValue/);
+  assert.match(source, /setCashAmount\(formatKrwInput/);
+  assert.match(source, /setCardAmount\(formatKrwInput/);
+  assert.match(source, /setOtherPaymentAmount\(formatKrwInput/);
+  assert.match(source, /setCarryoverSalesAmount\(\s*formatKrwInput/);
+  assert.match(source, /totalSalesAmount:\s*String\(closingSalesAmountValue\)/);
   assert.doesNotMatch(source, /sanitizeAmountInput/);
 });

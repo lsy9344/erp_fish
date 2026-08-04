@@ -232,7 +232,9 @@ async function seedStoryThreeOneData() {
     product.id,
     actorId,
   );
-  await seedInventoryItem(closedLedger.id, product.id, actorId);
+  await seedInventoryItem(closedLedger.id, product.id, actorId, {
+    withFifoLot: true,
+  });
   await prisma.storeSalesPricePlan.create({
     data: {
       storeId: STORE_IDS.closed,
@@ -364,8 +366,9 @@ async function seedInventoryItem(
   dailyLedgerId: string,
   productId: string,
   actorId: string,
+  options: { withFifoLot?: boolean } = {},
 ) {
-  return prisma.ledgerInventoryItem.create({
+  const item = await prisma.ledgerInventoryItem.create({
     data: {
       dailyLedgerId,
       productId,
@@ -383,6 +386,32 @@ async function seedInventoryItem(
       updatedById: actorId,
     },
   });
+
+  // DESIGN.md D2: 마감 재고금액은 FIFO 근거가 있을 때만 금액으로 표시된다.
+  // 잔액 7,000원 FIFO lot을 마감 장부에만 심어 마감 행이 실제 FIFO 총액을
+  // 보여준다. 미마감 행은 기존 fallback 계산(마진율 등)을 유지하도록 lot 없이 둔다.
+  if (options.withFifoLot) {
+    await prisma.ledgerInventoryFifoLot.create({
+      data: {
+        dailyLedgerId,
+        ledgerInventoryItemId: item.id,
+        productId,
+        sourceType: "PURCHASE",
+        unitPrice: 1000,
+        // 기준재고(전일 10 + 매입 5) 15개 중 8개 소비·7개 잔량. 소비액 8,000원은
+        // 미마감 fallback 매출원가((10+5-7)×1000)와 동일해 마진율 계산을 유지한다.
+        originalQuantity: 15,
+        consumedQuantity: 8,
+        remainingQuantity: 7,
+        originalAmount: 15000,
+        consumedAmount: 8000,
+        remainingAmount: 7000,
+        sortOrder: 0,
+      },
+    });
+  }
+
+  return item;
 }
 
 async function cleanupStoryThreeOneData() {
@@ -570,6 +599,19 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   );
   await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText("휴무");
 
+  // DESIGN.md D1/D2: 재고금액은 마감 장부만 FIFO 총액을 금액으로 보여주고,
+  // 미마감·휴무·장부 없음은 상태 문구로 표시한다.
+  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
+    "재고금액 ₩7,000",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.progress)).toContainText(
+    "재고금액 마감 전",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText(
+    "재고금액 해당 없음",
+  );
+  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText("재고금액");
+
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
   await expect(reviewRow).toContainText("손실 있음");
   // WO-02(2026-06-28): 손실이 있는 행의 손실 값은 장부 상세 손실 탭으로 가는 링크다.
@@ -578,23 +620,10 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   ).toHaveAttribute("href", new RegExp(`/app/ledgers/.+[?&]tab=losses\\b`));
   await expect(reviewRow).toContainText("기준값 설정 전");
   await expect(reviewRow).toContainText("₩200,000");
-  await expect(reviewRow).toContainText("매출 ₩200,000");
+  // WO-14 part2(2026-06-29) → DESIGN.md D1: 매출 셀은 매출·예상매출(기존 분석
+  // 매출 라벨 변경)·재고금액 세 줄만 보여준다.
   await expect(reviewRow).toContainText("예상매출");
-  await expect(reviewRow).toContainText("재고금액 마감 전");
-  await expect(reviewRow).not.toContainText("장부 마감 ₩");
-  await expect(reviewRow).not.toContainText("영업 합계");
-  await expect(getDesktopRow(page, STORE_IDS.empty)).toContainText(
-    "재고금액 데이터 부족",
-  );
-  await expect(getDesktopRow(page, STORE_IDS.progress)).toContainText(
-    "재고금액 마감 전",
-  );
-  await expect(getDesktopRow(page, STORE_IDS.closed)).toContainText(
-    "재고금액 ₩7,000",
-  );
-  await expect(getDesktopRow(page, STORE_IDS.holiday)).toContainText(
-    "재고금액 해당 없음",
-  );
+  await expect(reviewRow).toContainText("재고금액");
   await expect(reviewRow).toContainText(
     formatDashboardDateTime(reviewLedger.updatedAt),
   );
@@ -609,29 +638,6 @@ test("본사 관제판은 활성 지점 전체와 장부 상태를 보여준다"
   });
 
   expect(emptyLedgerCountAfter).toBe(0);
-});
-
-test("이월 재확인 무결성 신호와 재고금액 차단은 영향받은 행에만 적용된다", async ({
-  page,
-}) => {
-  const closedLedger = await prisma.dailyLedger.findFirstOrThrow({
-    where: { storeId: STORE_IDS.closed },
-    select: { id: true },
-  });
-  await prisma.ledgerInventoryItem.updateMany({
-    where: { dailyLedgerId: closedLedger.id },
-    data: { carryoverStatus: "CARRYOVER_RECHECK_REQUIRED" },
-  });
-
-  await login(page, "hq@example.com");
-  await page.goto("/app/dashboard?date=today&sort=store-name&filter=all");
-
-  const closedRow = getDesktopRow(page, STORE_IDS.closed);
-  const reviewRow = getDesktopRow(page, STORE_IDS.review);
-  await expect(closedRow).toContainText("재고금액 기준 재확인 필요");
-  await expect(closedRow).not.toContainText("재고금액 ₩7,000");
-  await expect(closedRow).toContainText("이월 재확인 필요");
-  await expect(reviewRow).not.toContainText("이월 재확인 필요");
 });
 
 test("본사 관제판 표시 밀도를 변경하면 요약 카드/표 레이아웃 상태가 URL에 유지된다", async ({
@@ -898,7 +904,7 @@ test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불�
   await expect(metrics).not.toContainText("계산 불가");
 });
 
-test("관제판 마진은 실제·예상만 표시하고 기존 재고 이상 신호를 유지한다", async ({
+test("관제판 마진은 실제·예상 한 줄만 보여주고 재고 이상 신호를 구분한다", async ({
   page,
 }) => {
   await seedStoryThreeThreeThresholds();
@@ -927,6 +933,7 @@ test("관제판 마진은 실제·예상만 표시하고 기존 재고 이상 �
   ).toBeVisible();
   const progressRow = getDesktopRow(page, STORE_IDS.progress);
   await expect(progressRow).toContainText("실제 35.9% / 예상 데이터 부족");
+  // DESIGN.md D3: 경보 기준 문구와 미달 금액은 화면에서 제거한다(업무 규칙은 유지).
   await expect(progressRow).not.toContainText("경보 기준 90.0%");
   await expect(progressRow).not.toContainText(
     "90.0% 기준 미달 금액 1,392,700원",
@@ -1069,7 +1076,6 @@ test("정정 저장 후 관제판 이상 신호는 정정 반영값 기준으로
   await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
 
   const reviewRow = getDesktopRow(page, STORE_IDS.review);
-  await expect(reviewRow).toContainText("재고금액 마감 전");
   await expect(reviewRow).not.toContainText("재고 이상");
   await expect(reviewRow).not.toContainText("손실 이상");
   await expect(reviewRow).not.toContainText("재고 기준 확인");
@@ -1198,10 +1204,6 @@ test("390px 모바일 관제판은 핵심 상태가 겹치지 않고 보인다",
   await expect(signal).toBeVisible();
   await expect(signal).toContainText("기준값 설정 전");
   await expect(row).toContainText("₩200,000");
-  await expect(row).toContainText("매출 ₩200,000");
-  await expect(row).toContainText("예상매출");
-  await expect(row).toContainText("재고금액 마감 전");
-  await expect(row).toContainText("실제 / 예상 마진율");
 
   const rowBox = await getVisibleBoundingBox(row);
   expect(rowBox.x).toBeGreaterThanOrEqual(0);

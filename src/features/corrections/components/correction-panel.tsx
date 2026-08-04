@@ -24,6 +24,8 @@ import { formatShortKstDateTime } from "~/lib/format";
 
 type CorrectionPanelProps = {
   ledgerId: string;
+  // DESIGN.md D9: 화면이 렌더링된 시점의 장부 충돌 토큰. 정정 저장 시 서버가
+  // 직접 저장과 같은 경계로 오래된 요청을 판정한다.
   ledgerUpdatedAt: string;
   targetOptions: CorrectionTargetOption[];
   records: CorrectionRecordListItem[];
@@ -116,7 +118,7 @@ export function CorrectionPanel({
     try {
       const result = await createAction({
         ledgerId,
-        expectedUpdatedAt: ledgerUpdatedAt,
+        ledgerUpdatedAt,
         targetType: selectedTarget.targetType,
         targetId: selectedTarget.targetId,
         fieldKey: selectedTarget.fieldKey,
@@ -248,13 +250,20 @@ export function CorrectionPanel({
               <TableHead>정정값</TableHead>
               <TableHead>사유</TableHead>
               <TableHead>작성</TableHead>
-              <TableHead>처리 상태</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {records.map((record) => (
               <TableRow key={record.id}>
-                <TableCell>{record.targetLabel}</TableCell>
+                <TableCell>
+                  {record.targetLabel}
+                  {record.supersededAt ? (
+                    // DESIGN.md D9: 이력은 유지하되 계산에서 빠진 정정임을 텍스트로 표시.
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      (직접 수정으로 대체됨)
+                    </span>
+                  ) : null}
+                </TableCell>
                 <TableCell>
                   {formatCorrectionValue(record.originalValue)}
                 </TableCell>
@@ -269,27 +278,12 @@ export function CorrectionPanel({
                   {formatShortKstDateTime(record.createdAt)} ·{" "}
                   {record.createdBy.name ?? record.createdBy.email ?? "본사"}
                 </TableCell>
-                <TableCell>
-                  {record.supersededAt ? (
-                    <span className="text-muted-foreground">
-                      {formatShortKstDateTime(record.supersededAt)} ·{" "}
-                      {record.supersededBy?.name ??
-                        record.supersededBy?.email ??
-                        "본사"}
-                      {record.supersedeReason
-                        ? ` · ${record.supersedeReason}`
-                        : null}
-                    </span>
-                  ) : (
-                    "현재 반영"
-                  )}
-                </TableCell>
               </TableRow>
             ))}
             {records.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={6}
                   className="text-muted-foreground py-6 text-center"
                 >
                   정정 기록이 없습니다.

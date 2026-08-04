@@ -17,8 +17,7 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
-import type { CorrectionAppliedValue } from "~/features/corrections/types";
+import { isLedgerEditableForActor } from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -60,8 +59,8 @@ type ExpenseStepClientProps = {
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
-  allowHeadquartersClosedEdit?: boolean;
-  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 const DEFAULT_EXPENSE_CODE_OPTION: ExpenseCodeOption = {
@@ -150,7 +149,7 @@ export function ExpenseStepClient({
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
-  allowHeadquartersClosedEdit = false,
+  closedEditAllowed = false,
 }: ExpenseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const lineCodeRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -357,9 +356,9 @@ export function ExpenseStepClient({
   const draftExpenseTotal = getDraftExpenseTotal(expenseItems);
   const hqEditReasonError = fieldErrors.reason?.[0];
   const draftGrossProfit = ledger.totalSalesAmount - draftExpenseTotal;
-  const isOriginalEditBlocked =
-    isLedgerReadOnly(ledger.status) &&
-    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "work");
   const guard = useUnsavedStepGuard({
     isDirty,
@@ -418,6 +417,7 @@ export function ExpenseStepClient({
           isOriginalEditBlocked ||
           !hasRegisteredExpenseCodeOptions
         }
+        closedEditRetained={closedEditAllowed}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">

@@ -1,9 +1,10 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
 const FIXTURE_PRODUCT_PREFIX = "장부 충돌 재고 gate";
+const OUT_OF_SCOPE_STORE_PREFIX = "장부 충돌 범위 밖";
 
 // WO-A(2026-06-22): 지점장 저장/제출은 KST 오늘 날짜만 허용하므로 동적 오늘 날짜를 사용한다.
 function getTodayKstDateParam(inputDate = new Date()) {
@@ -173,15 +174,10 @@ test("stale sales 저장은 structured conflict dialog를 보여주고 첫 저�
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("33333");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("13000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("13000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("20000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("333");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -237,11 +233,8 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
 
     // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
     await firstPage
-      .getByRole("textbox", { name: "총매출", exact: true })
-      .fill("55555");
-    await firstPage
       .getByRole("textbox", {
-        name: "현금 (당일 지출 후)",
+        name: "현금",
         exact: true,
       })
       .fill("15000");
@@ -249,7 +242,7 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "카드", exact: true })
       .fill("40000");
     await firstPage
-      .getByRole("textbox", { name: "기타 결제수단", exact: true })
+      .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
       .fill("555");
     await firstPage.getByRole("button", { name: "저장" }).click();
     await expect(
@@ -258,11 +251,8 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
 
     // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
     await secondPage
-      .getByRole("textbox", { name: "총매출", exact: true })
-      .fill("66666");
-    await secondPage
       .getByRole("textbox", {
-        name: "현금 (당일 지출 후)",
+        name: "현금",
         exact: true,
       })
       .fill("16000");
@@ -270,7 +260,7 @@ test("두 브라우저 컨텍스트의 같은 매출 필드 동시 수정은 두
       .getByRole("textbox", { name: "카드", exact: true })
       .fill("50000");
     await secondPage
-      .getByRole("textbox", { name: "기타 결제수단", exact: true })
+      .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
       .fill("666");
     await secondPage.getByRole("button", { name: "저장" }).click();
 
@@ -332,15 +322,10 @@ test("서로 다른 섹션 변경도 안전 병합 없이 stale 저장으로 명
   });
 
   // 작성자 표시명은 1단계 매입으로 이동했고, 매출 저장에는 더 이상 필요치 않다.
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("22222");
-  await page
-    .getByRole("textbox", { name: "현금 (당일 지출 후)", exact: true })
-    .fill("12000");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12000");
   await page.getByRole("textbox", { name: "카드", exact: true }).fill("10000");
   await page
-    .getByRole("textbox", { name: "기타 결제수단", exact: true })
+    .getByRole("textbox", { name: "기타 결제수단(온누리QR)", exact: true })
     .fill("222");
   await page.getByRole("button", { name: "저장" }).click();
 
@@ -364,6 +349,183 @@ test("서로 다른 섹션 변경도 안전 병합 없이 stale 저장으로 명
   });
 });
 
+test("store-side sales/inventory conflicts do not expose another store", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const managerId = await getManagerUserId();
+  const otherStoreId = `store-conflict-out-${crypto.randomUUID().slice(0, 8)}`;
+  const otherProductName = `${OUT_OF_SCOPE_STORE_PREFIX} ${crypto.randomUUID().slice(0, 8)}`;
+  let salesActionId: string | null = null;
+  let inventoryActionId: string | null = null;
+
+  const otherStore = await prisma.store.create({
+    data: {
+      id: otherStoreId,
+      name: `${OUT_OF_SCOPE_STORE_PREFIX} ${otherStoreId.slice(-8)}`,
+      updatedById: managerId,
+    },
+  });
+  const otherProduct = await prisma.product.create({
+    data: {
+      name: otherProductName,
+      category: "테스트",
+      spec: "1kg",
+      defaultUnitPrice: 1_000,
+      updatedById: managerId,
+    },
+  });
+  const otherLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: otherStore.id,
+      closingDate: new Date(`${CONFLICT_DATE}T00:00:00.000Z`),
+      status: "IN_PROGRESS",
+      totalSalesAmount: 987654,
+      cashAmount: 987654,
+      createdById: managerId,
+      updatedById: managerId,
+    },
+  });
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: otherLedger.id,
+      productId: otherProduct.id,
+      productName: otherProduct.name,
+      productCategory: otherProduct.category,
+      productSpec: otherProduct.spec,
+      unitPrice: 987654,
+      previousQuantity: 1,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 987654,
+      createdById: managerId,
+      updatedById: managerId,
+    },
+  });
+
+  try {
+    await loginAsStoreManager(page);
+
+    const captureSalesAction = (request: Request) => {
+      const nextAction = request.headers()["next-action"];
+
+      if (request.method() === "POST" && nextAction) {
+        salesActionId = nextAction;
+      }
+    };
+    page.on("request", captureSalesAction);
+    await page.goto(
+      `/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}&step=sales`,
+    );
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "저장됐습니다." }),
+    ).toBeVisible();
+    page.off("request", captureSalesAction);
+    expect(salesActionId).toBeTruthy();
+
+    const staleLedger = await prisma.dailyLedger.findUniqueOrThrow({
+      where: { id: otherLedger.id },
+      select: { version: true, updatedAt: true },
+    });
+    await prisma.dailyLedger.update({
+      where: { id: otherLedger.id },
+      data: {
+        cashAmount: 987654,
+        totalSalesAmount: 987654,
+        version: { increment: 1 },
+        updatedById: managerId,
+      },
+    });
+
+    const salesResponse = await page.request.post(
+      `/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}&step=sales`,
+      {
+        headers: {
+          "Next-Action": salesActionId!,
+          "Content-Type": "text/plain;charset=UTF-8",
+        },
+        data: JSON.stringify([
+          {
+            ledgerId: otherLedger.id,
+            storeId: STORE_ID,
+            closingDate: CONFLICT_DATE,
+            version: staleLedger.version,
+            ledgerUpdatedAt: staleLedger.updatedAt.toISOString(),
+            totalSalesAmount: "1",
+            carryoverSalesAmount: "0",
+            cashAmount: "1",
+            cardAmount: "0",
+            otherPaymentAmount: "0",
+          },
+        ]),
+      },
+    );
+    const salesBody = await salesResponse.text();
+    expect(salesResponse.status()).not.toBeGreaterThanOrEqual(500);
+    expect(salesBody).not.toContain("987654");
+    expect(salesBody).toContain("unknown");
+    expect(salesBody).toContain('"lastModifiedBy":null');
+
+    const captureInventoryAction = (request: Request) => {
+      const nextAction = request.headers()["next-action"];
+
+      if (request.method() === "POST" && nextAction) {
+        inventoryActionId = nextAction;
+      }
+    };
+    page.on("request", captureInventoryAction);
+    await page.goto(
+      `/app/store-entry/inventory?storeId=${STORE_ID}&date=${CONFLICT_DATE}`,
+    );
+    await page
+      .locator('input[aria-label*="재고 조정 이유"]')
+      .first()
+      .fill("교차 지점 충돌 테스트");
+    await page
+      .locator("[disabled]")
+      .evaluateAll((elements) =>
+        elements.forEach((element) => element.removeAttribute("disabled")),
+      );
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await page.waitForTimeout(1_000);
+    page.off("request", captureInventoryAction);
+    expect(inventoryActionId).toBeTruthy();
+
+    const inventoryResponse = await page.request.post(
+      `/app/store-entry/inventory?storeId=${STORE_ID}&date=${CONFLICT_DATE}`,
+      {
+        headers: {
+          "Next-Action": inventoryActionId!,
+          "Content-Type": "text/plain;charset=UTF-8",
+        },
+        data: JSON.stringify([
+          {
+            ledgerId: otherLedger.id,
+            storeId: STORE_ID,
+            closingDate: CONFLICT_DATE,
+            version: staleLedger.version,
+            ledgerUpdatedAt: staleLedger.updatedAt.toISOString(),
+            items: [],
+          },
+        ]),
+      },
+    );
+    const inventoryBody = await inventoryResponse.text();
+    expect(inventoryResponse.status()).not.toBeGreaterThanOrEqual(500);
+    expect(inventoryBody).not.toContain("987654");
+    expect(inventoryBody).toContain("unknown");
+    expect(inventoryBody).toContain('"lastModifiedBy":null');
+  } finally {
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: otherLedger.id },
+    });
+    await prisma.dailyLedger.delete({ where: { id: otherLedger.id } });
+    await prisma.product.delete({ where: { id: otherProduct.id } });
+    await prisma.store.delete({ where: { id: otherStore.id } });
+  }
+});
+
 test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 연다", async ({
   page,
 }) => {
@@ -373,9 +535,7 @@ test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 �
     `/app/store-entry?storeId=${STORE_ID}&date=${CONFLICT_DATE}&step=sales`,
   );
 
-  await page
-    .getByRole("textbox", { name: "총매출", exact: true })
-    .fill("12345");
+  await page.getByRole("textbox", { name: "현금", exact: true }).fill("12345");
   await page
     .getByRole("navigation", { name: "지점장 하단 업무" })
     .getByRole("link", { name: "재고" })
@@ -398,5 +558,5 @@ test("모바일 하단 탭 이동은 미저장 변경 선택 dialog를 먼저 �
   await unsavedDialog.getByRole("button", { name: "계속 편집" }).click();
   await expect(
     page.getByRole("textbox", { name: "총매출", exact: true }),
-  ).toHaveValue("12,345");
+  ).toHaveValue("12,345원");
 });

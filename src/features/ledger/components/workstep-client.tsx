@@ -24,8 +24,10 @@ import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change
 import { useSaveConflictDialog } from "~/features/ledger/components/use-save-conflict-dialog";
 import { useUnsavedStepGuard } from "~/features/ledger/components/use-unsaved-step-guard";
 import { getKstLedgerDateParam } from "~/features/ledger/date";
-import { isLedgerReadOnly } from "~/features/ledger/status-policy";
-import type { CorrectionAppliedValue } from "~/features/corrections/types";
+import {
+  closedEditSaveSuccessMessage,
+  isLedgerEditableForActor,
+} from "~/features/ledger/status-policy";
 import {
   notifyLedgerUpdated,
   useLedgerSync,
@@ -65,8 +67,8 @@ type WorkStepClientProps = {
   showSensitiveAccountingMetrics?: boolean;
   ledgerLabel?: string;
   hqEditReasonRequired?: boolean;
-  allowHeadquartersClosedEdit?: boolean;
-  initialActiveCorrectionValues?: readonly CorrectionAppliedValue[];
+  // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
+  closedEditAllowed?: boolean;
 };
 
 function formatKrw(value: number) {
@@ -175,7 +177,7 @@ export function WorkStepClient({
   showSensitiveAccountingMetrics = false,
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
-  allowHeadquartersClosedEdit = false,
+  closedEditAllowed = false,
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const workerCountInputRef = useRef<HTMLInputElement>(null);
@@ -309,7 +311,7 @@ export function WorkStepClient({
     setLaborItems(toLaborLines(next.laborItems));
     notifyLedgerUpdated(next);
     const savedCount = next.laborItems.length;
-    const message =
+    const baseMessage =
       savedCount > 0
         ? showSensitiveAccountingMetrics
           ? `급여 항목 ${savedCount}건을 저장했습니다.`
@@ -317,6 +319,10 @@ export function WorkStepClient({
         : showSensitiveAccountingMetrics
           ? "저장됐습니다."
           : "근무자를 저장했습니다.";
+    // DESIGN.md D7: 급여 저장도 마감 유지 성공 문구를 동일하게 보여준다.
+    const message = closedEditAllowed
+      ? `${baseMessage} ${closedEditSaveSuccessMessage}`
+      : baseMessage;
     setLaborResultMessage(message);
     toast.success(message);
   }
@@ -464,9 +470,9 @@ export function WorkStepClient({
     );
   }
 
-  const isOriginalEditBlocked =
-    isLedgerReadOnly(ledger.status) &&
-    !(allowHeadquartersClosedEdit && ledger.status === "HEADQUARTERS_CLOSED");
+  const isOriginalEditBlocked = !isLedgerEditableForActor(ledger.status, {
+    closedEditAllowed,
+  });
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);
@@ -542,6 +548,7 @@ export function WorkStepClient({
         unsavedFields={["근무인원", "특이사항 메모"]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
+        closedEditRetained={closedEditAllowed}
       />
 
       <section className="bg-card text-card-foreground rounded-lg border p-4">

@@ -77,17 +77,10 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(pageSource, /datePreset/);
   assert.doesNotMatch(pageSource, /overviewItems/);
   assert.match(tableSource, /본사 마감/);
-  assert.match(
-    tableSource,
-    /매출 \{formatKrwMetric\(row\.operatingSalesAmount\)\}/,
-  );
-  assert.match(tableSource, /예상매출 \{analysisLabel\}/);
-  assert.match(
-    tableSource,
-    /재고금액 \{formatKrwMetric\(row\.inventoryAmount\)\}/,
-  );
-  assert.doesNotMatch(tableSource, /장부 마감 \{formatKrwMetric/);
-  assert.doesNotMatch(tableSource, /이월 \{formatKrwMetric/);
+  // DESIGN.md D1: 매출 구성은 매출·예상매출·재고금액 세 줄만 남기고 기존
+  // 장부 마감·이월·영업 합계 줄은 제거한다.
+  assert.doesNotMatch(tableSource, /장부 마감/);
+  assert.doesNotMatch(tableSource, /이월/);
   assert.doesNotMatch(tableSource, /영업 합계/);
   assert.match(tableSource, /overflow-x-auto/);
   assert.match(tableSource, /\/app\/ledgers\/\$\{row\.ledgerId\}/);
@@ -95,7 +88,7 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   assert.match(tableSource, /break-words/);
   assert.match(
     tableSource,
-    /columnId === "signals" \|\| columnId === "grossMarginRate"/,
+    /columnId === "signals" \|\|[\s\S]*columnId === "grossMarginRate" \|\|[\s\S]*columnId === "salesAmount"/,
   );
   assert.doesNotMatch(
     tableSource,
@@ -389,7 +382,8 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   assert.doesNotMatch(tableSource, /lossAmount/);
   assert.doesNotMatch(tableSource, /inventoryDifferenceQuantity/);
   assert.doesNotMatch(tableSource, /baselineSales/);
-  // 실제/예상 마진율은 쿼리 라벨만 렌더링하고 UI에서 다시 계산하지 않는다.
+  // 실제/예상 마진율은 한 줄만 렌더링하고, 경보 기준·미달 금액 문구는
+  // 제거했다(DESIGN.md D3). 임계값 설정과 이상 신호 계산은 서버에서 유지된다.
   assert.match(tableSource, /row\.marginDisplay/);
   assert.match(tableSource, /row\.analysisMarginDisplay\.currentLabel/);
   assert.match(
@@ -398,11 +392,7 @@ test("HQ dashboard keeps anomaly math out of UI components", () => {
   );
   assert.match(tableSource, /실제 \{actualLabel\} \/ 예상 \{expectedLabel\}/);
   assert.doesNotMatch(tableSource, /expectedDisplayLabel|endsWith\("%"\)/);
-  assert.doesNotMatch(tableSource, /경보 기준 \{targetLabel\}/);
-  assert.doesNotMatch(
-    tableSource,
-    /\{targetLabel\} 기준 \{shortfallAmountLabel\}/,
-  );
+  assert.doesNotMatch(tableSource, /경보 기준/);
   assert.doesNotMatch(tableSource, /shortfallAmountLabel/);
   assert.doesNotMatch(tableSource, /marginRateBps/);
 });
@@ -417,120 +407,6 @@ test("HQ dashboard margin heading states actual and expected meanings", () => {
   );
 
   assert.match(tableSource, /label: "실제 \/ 예상 마진율"/);
-  assert.match(tableSource, /<dt[^>]*>[\s\S]*실제 \/ 예상 마진율[\s\S]*<\/dt>/);
-});
-
-test("HQ dashboard inventory amount applies closed-ledger display states", async () => {
-  const queryPath = assertProjectFile(
-    "src",
-    "features",
-    "dashboard",
-    "queries.ts",
-  );
-  const { getDashboardInventoryAmountMetric } = await import(
-    pathToFileURL(queryPath).href
-  );
-  const fifoAmount = { value: 7000, status: "ok" };
-  const missingAmount = {
-    value: null,
-    status: "data-insufficient",
-    label: "데이터 부족",
-    reason: "재고 수량 또는 단가 입력이 부족합니다.",
-  };
-
-  assert.equal(
-    getDashboardInventoryAmountMetric({
-      status: null,
-      calculatedMetric: missingAmount,
-    }).label,
-    "데이터 부족",
-  );
-  assert.equal(
-    getDashboardInventoryAmountMetric({
-      status: "HOLIDAY",
-      calculatedMetric: fifoAmount,
-    }).label,
-    "해당 없음",
-  );
-
-  for (const status of ["IN_PROGRESS", "IN_REVIEW"]) {
-    assert.equal(
-      getDashboardInventoryAmountMetric({
-        status,
-        calculatedMetric: fifoAmount,
-      }).label,
-      "마감 전",
-    );
-  }
-
-  assert.equal(
-    getDashboardInventoryAmountMetric({
-      status: "HEADQUARTERS_CLOSED",
-      calculatedMetric: fifoAmount,
-      hasCarryoverRecheck: true,
-    }).label,
-    "기준 재확인 필요",
-  );
-  assert.equal(
-    getDashboardInventoryAmountMetric({
-      status: "HEADQUARTERS_CLOSED",
-      calculatedMetric: fifoAmount,
-      hasActiveInventoryQuantityCorrection: true,
-    }).label,
-    "기준 재확인 필요",
-  );
-  assert.deepEqual(
-    getDashboardInventoryAmountMetric({
-      status: "HEADQUARTERS_CLOSED",
-      calculatedMetric: missingAmount,
-    }),
-    missingAmount,
-  );
-  assert.deepEqual(
-    getDashboardInventoryAmountMetric({
-      status: "HEADQUARTERS_CLOSED",
-      calculatedMetric: fifoAmount,
-    }),
-    fifoAmount,
-  );
-});
-
-test("HQ dashboard adds carryover integrity signal only to the affected row", async () => {
-  const queryPath = assertProjectFile(
-    "src",
-    "features",
-    "dashboard",
-    "queries.ts",
-  );
-  const { getDashboardSignals } = await import(pathToFileURL(queryPath).href);
-  const input = {
-    thresholdSettings: null,
-    revenueCurrent: {
-      totalSales: { value: 1000, status: "ok" },
-      grossMarginRate: { value: 0.2, status: "ok" },
-      salesDifference: { value: 0, status: "ok" },
-    },
-    inventoryLossCurrent: {
-      inventoryItems: [],
-      inventoryAdjustments: [],
-      lossItems: [],
-    },
-    evaluateRevenueAnomalySignals: () => [],
-    evaluateInventoryLossAnomalySignals: () => [],
-  };
-
-  assert.equal(
-    getDashboardSignals(input).some(
-      (signal) => signal.id === "carryover-recheck-required",
-    ),
-    false,
-  );
-  assert.equal(
-    getDashboardSignals({ ...input, hasCarryoverRecheck: true }).filter(
-      (signal) => signal.id === "carryover-recheck-required",
-    ).length,
-    1,
-  );
 });
 
 test("HQ dashboard does not render a 매출 차이 column or signal label", () => {
@@ -1381,6 +1257,8 @@ function makeDashboardRow(overrides = {}) {
     ledgerStatus: { key: "HEADQUARTERS_CLOSED", label: "본사 마감" },
     salesAmount: { value: 1000 },
     analysisSalesAmount: { value: 1300 },
+    inventoryAmount: { value: 350000, status: "ok" },
+    inventoryAmountStatus: "amount",
     grossMarginRate: { value: 0.3 },
     marginDisplay: {
       currentLabel: "35.9%",
@@ -1425,10 +1303,142 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
     queries,
     /analysisSalesAmount:\s*(reviewSummary|correctedReviewSummary)\.plannedSalesTotal/,
   );
-  // 표는 매출 셀에서 영업 매출과 예상매출을 함께 보여준다.
+  // 표는 매출 셀에서 매출·예상매출·재고금액 세 줄만 보여준다(DESIGN.md D1).
   assert.match(table, /function SalesCell/);
-  assert.match(table, /예상매출/);
-  assert.doesNotMatch(table, />분석 /);
+  assert.match(table, /매출 \{formatKrwMetric\(row\.operatingSalesAmount\)\}/);
+  assert.match(
+    table,
+    /예상매출 \{formatKrwMetric\(row\.analysisSalesAmount\)\}/,
+  );
+  assert.match(table, /재고금액 \{formatInventoryAmountCell\(row\)\}/);
+  // 기존 장부 마감·이월·영업 합계·분석 라벨 줄은 제거한다.
+  assert.doesNotMatch(table, /장부 마감 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /이월 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /영업 합계 \{formatKrwMetric/);
+  assert.doesNotMatch(table, /분석 \{/);
+});
+
+// DESIGN.md D1/D2: 재고금액 상태 분기. 마감 장부만 FIFO 총액을 금액으로
+// 보여주고 미마감·휴무·근거 부족은 상태 문구로 표시한다.
+test("DESIGN D2: getDashboardInventoryAmountStatus matrix", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const { getDashboardInventoryAmountStatus } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  const okAmount = { value: 350000, status: "ok" };
+  const noAmount = {
+    value: null,
+    status: "data-insufficient",
+    label: "데이터 부족",
+  };
+
+  assert.equal(
+    getDashboardInventoryAmountStatus(null, noAmount),
+    "unavailable",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HOLIDAY", okAmount),
+    "not-applicable",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("IN_PROGRESS", okAmount),
+    "before-close",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("IN_REVIEW", okAmount),
+    "before-close",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HEADQUARTERS_CLOSED", okAmount),
+    "amount",
+  );
+  assert.equal(
+    getDashboardInventoryAmountStatus("HEADQUARTERS_CLOSED", noAmount),
+    "unavailable",
+  );
+});
+
+// DESIGN.md D2: 마감 재고금액은 전 품목 FIFO 근거가 완전할 때만 금액으로 표시한다.
+// 일부 품목 근거가 없으면 quantity×unitPrice 부분합을 정상 금액처럼 보여주지 않는다.
+test("DESIGN D2: closed-ledger inventory amount requires complete FIFO basis", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { getClosedLedgerFifoInventoryAmount } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const { hasCompleteFifoRemainingBasis } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const completeItem = {
+    previousQuantity: 0,
+    purchasedQuantity: 10,
+    currentQuantity: 5,
+    quantity: 5,
+    unitPrice: 1000,
+    fifoRemainingAmount: 4800,
+  };
+  const incompleteItem = {
+    previousQuantity: 0,
+    purchasedQuantity: 3,
+    currentQuantity: 2,
+    quantity: 2,
+    unitPrice: 1500,
+    fifoRemainingAmount: null,
+    fifoLots: [],
+  };
+
+  // 혼합 품목: 하나라도 근거가 없으면 불완전.
+  assert.equal(hasCompleteFifoRemainingBasis([completeItem]), true);
+  assert.equal(
+    hasCompleteFifoRemainingBasis([completeItem, incompleteItem]),
+    false,
+  );
+  assert.equal(hasCompleteFifoRemainingBasis([]), false);
+
+  const fallbackAmount = { value: 7800, status: "ok" };
+
+  // 마감 + 근거 불완전 → 값 차단(데이터 부족).
+  const blocked = getClosedLedgerFifoInventoryAmount(
+    "HEADQUARTERS_CLOSED",
+    [completeItem, incompleteItem],
+    fallbackAmount,
+  );
+  assert.equal(blocked.value, null);
+  assert.equal(blocked.status, "data-insufficient");
+  assert.equal(blocked.label, "데이터 부족");
+
+  // 마감 + 근거 완전 → 계산 금액 유지.
+  const kept = getClosedLedgerFifoInventoryAmount(
+    "HEADQUARTERS_CLOSED",
+    [completeItem],
+    fallbackAmount,
+  );
+  assert.equal(kept.value, 7800);
+
+  // 미마감은 표시 계약상 마감 전이라 계산 fallback을 그대로 둔다.
+  const open = getClosedLedgerFifoInventoryAmount(
+    "IN_PROGRESS",
+    [completeItem, incompleteItem],
+    fallbackAmount,
+  );
+  assert.equal(open.value, 7800);
 });
 
 // WO-14 part3(2026-06-29): 본사 관제판 마진 셀에 분석 이익률(AE5, 판매한 가격 기준)을 함께 보여준다.

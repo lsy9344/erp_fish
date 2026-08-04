@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -111,6 +111,8 @@ test("correction feature validates input and writes append-only records with aud
   );
 
   assert.match(schemas, /correctionRecordSchema/);
+  // DESIGN.md D9: 정정 생성은 렌더링 시점 장부 충돌 토큰을 요구한다.
+  assert.match(schemas, /ledgerUpdatedAt/);
   assert.match(schemas, /정정 사유를 입력해 주세요/);
   assert.match(schemas, /correctedValue/);
   assert.match(schemas, /MAX_CORRECTION_INTEGER\s*=\s*2_147_483_647/);
@@ -169,9 +171,12 @@ test("correction feature validates input and writes append-only records with aud
   assert.match(actions, /reason:\s*parsed\.data\.reason/);
   assert.match(actions, /revalidateLedgerDetailPath\(ledgerId\)/);
   assert.match(actions, /revalidateDashboardAndReports\(\)/);
-  assert.match(actions, /tx\.dailyLedger\.updateMany/);
-  assert.match(actions, /updatedAt:\s*parsed\.data\.expectedUpdatedAt/);
-  assert.match(actions, /version:\s*\{\s*increment:\s*1\s*\}/);
+  // DESIGN.md D9: 정정 저장은 업무 필드를 직접 수정하지 않는다. 직접 저장과 같은
+  // 충돌 경계를 공유하도록 version/updatedById만 올린다(updateMany 토큰 증가).
+  assert.match(actions, /version: \{ increment: 1 \}/);
+  assert.match(actions, /updatedAt: expectedLedgerUpdatedAt/);
+  assert.match(actions, /LEDGER_CONFLICT/);
+  assert.doesNotMatch(actions, /tx\.dailyLedger\.update\(/);
   assert.doesNotMatch(actions, /tx\.ledgerExpense\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerPurchaseItem\.update/);
   assert.doesNotMatch(actions, /tx\.ledgerInventoryItem\.update/);
@@ -225,7 +230,7 @@ test("correction schema rejects new purchase row corrections until report applic
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "PURCHASE_ROW",
     targetId: "purchase-1",
     fieldKey: "quantity",
@@ -254,7 +259,7 @@ test("correction schema rejects inventory amount corrections until all calculati
 
   const result = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "inventoryAmount",
@@ -282,7 +287,7 @@ test("correction schema accepts one-decimal inventory quantities and rejects fin
   );
   const input = {
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "INVENTORY_ROW",
     targetId: "inventory-1",
     fieldKey: "currentQuantity",
@@ -321,7 +326,7 @@ test("correction schema accepts two-decimal loss quantities and rejects finer pr
 
   const input = {
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "LOSS_ROW",
     targetId: "loss-1",
     fieldKey: "quantity",
@@ -358,7 +363,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
   );
   const workerInput = {
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "LEDGER_FIELD",
     targetId: "ledger-1",
     fieldKey: "workerCount",
@@ -396,7 +401,7 @@ test("correction schema keeps worker count and money integer-only", async () => 
 
   const fractionalMoney = correctionRecordSchema.safeParse({
     ledgerId: "ledger-1",
-    expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
     targetType: "PAYMENT_FIELD",
     targetId: "ledger-1",
     fieldKey: "cashAmount",
@@ -447,6 +452,47 @@ test("correction action and panel keep decimal quantities target-aware", () => {
   assert.match(panel, /inputMode=\{getCorrectionInputMode\(selectedTarget\)\}/);
 });
 
+test("ledger detail reads its conflict token and corrections in one snapshot", () => {
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "queries.ts",
+  );
+  const page = readProjectFile(
+    "src",
+    "app",
+    "app",
+    "ledgers",
+    "[ledgerId]",
+    "page.tsx",
+  );
+  const dashboard = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
+
+  assert.match(queries, /getLedgerCostStepDataAndCorrectionRecords/);
+  assert.match(queries, /getLedgerCostStepDataByIdInTx\(tx, ledgerId\)/);
+  assert.match(queries, /getCorrectionRecordsForLedgerInTx\(tx, ledgerId\)/);
+  assert.match(queries, /Prisma\.TransactionIsolationLevel\.RepeatableRead/);
+  assert.match(
+    dashboard,
+    /getInventoryStepDataByLedgerIdInTx\(\s*tx,\s*ledgerId,?\s*\)/,
+  );
+  assert.match(
+    dashboard,
+    /getLossStepDataByLedgerIdInTx\(\s*tx,\s*ledgerId\s*\)/,
+  );
+  assert.match(dashboard, /Prisma\.TransactionIsolationLevel\.RepeatableRead/);
+  assert.match(page, /getHqLedgerDetail\(ledgerId\)/);
+  assert.match(page, /detail\.editSnapshot/);
+  assert.doesNotMatch(page, /getLedgerCostStepDataById\(ledgerId\)/);
+  assert.doesNotMatch(page, /getCorrectionRecordsForLedger\(ledgerId\)/);
+});
+
 test("correction queries expose batched latest values for dashboard calculations", () => {
   const queries = readProjectFile(
     "src",
@@ -480,4 +526,169 @@ test("latest correction map preserves database ordering when JS timestamps tie",
   );
   assert.match(queries, /createdAtOrder\s*\|\|\s*left\.index - right\.index/);
   assert.doesNotMatch(queries, /right\.id\.localeCompare\(left\.id\)/);
+});
+
+// DESIGN.md D9: 마스터 직접 수정으로 대체된 정정은 이력으로 보존하되 읽기 시점
+// overlay와 새 정정의 이전 반영값 기준에서만 제외한다.
+test("correction supersede keeps history but excludes records from overlay reads", () => {
+  const schema = readProjectFile("prisma", "schema.prisma");
+
+  assert.match(
+    schema,
+    /model CorrectionRecord \{[\s\S]*?supersededAt\s+DateTime\?/,
+  );
+});
+
+test("correction supersede migration preserves the main schema history", () => {
+  const migrationDirs = readdirSync(path.join(root, "prisma", "migrations"));
+  const migration = readProjectFile(
+    "prisma",
+    "migrations",
+    "20260731112000_add_closed_ledger_edit_and_correction_supersede",
+    "migration.sql",
+  );
+
+  for (const field of ["supersededAt", "supersededById", "supersedeReason"]) {
+    assert.match(migration, new RegExp(`"${field}"`));
+  }
+  assert.match(migration, /CorrectionRecord_supersededById_fkey/);
+  assert.match(migration, /ON DELETE SET NULL/);
+  assert.match(migration, /CorrectionRecord_active_target_createdAt_idx/);
+  assert.doesNotMatch(
+    migrationDirs.join("\n"),
+    /20260803120000_add_correction_superseded_at|20260803130000_grant_ledger_closed_edit_permission/,
+  );
+});
+
+test("overlay map and next-correction baseline skip superseded records while history keeps them", () => {
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "queries.ts",
+  );
+  const types = readProjectFile("src", "features", "corrections", "types.ts");
+
+  // select와 목록 아이템 타입에 supersededAt가 포함된다.
+  assert.match(queries, /supersededAt:\s*true/);
+  assert.match(types, /supersededAt:\s*string\s*\|\s*null/);
+  assert.match(
+    queries,
+    /supersededAt:\s*record\.supersededAt\?\.toISOString\(\)\s*\?\?\s*null/,
+  );
+
+  // overlay 진입점(getLatestCorrectionValueMap)은 superseded 기록을 건너뛴다.
+  assert.match(
+    queries,
+    /if \(record\.supersededAt !== null\) \{\s*continue;\s*\}/,
+  );
+  // 새 정정의 이전 반영값 기준도 superseded 기록을 제외한다.
+  assert.match(
+    queries,
+    /getLatestCorrectionByTargetInTx[\s\S]*?supersededAt:\s*null/,
+  );
+  // 이력 목록 조회는 필터링하지 않는다(기록 보존).
+  const listQuery = queries.slice(
+    queries.indexOf("async function getCorrectionRecordsForLedgerInTx"),
+    queries.indexOf("export async function getCorrectionRecordsForLedger("),
+  );
+  assert.doesNotMatch(listQuery, /supersededAt/);
+
+  // supersede helper는 활성 정정만, 대상 종류별로 supersededAt만 채운다.
+  assert.match(queries, /export async function supersedeCorrectionRecordsInTx/);
+  assert.match(
+    queries,
+    /correctionRecord\.updateMany\(\{[\s\S]*?supersededAt:\s*null,\s*targetType:\s*\{\s*in:\s*\[\.\.\.input\.targetTypes\]\s*\},/,
+  );
+  // 실제 덮어쓴 대상만으로 범위를 좁힐 수 있게 targetIds/fieldKeys를 지원한다.
+  assert.match(
+    queries,
+    /targetId:\s*\{\s*in:\s*\[\.\.\.input\.targetIds\]\s*\}/,
+  );
+  assert.match(
+    queries,
+    /fieldKey:\s*\{\s*in:\s*\[\.\.\.input\.fieldKeys\]\s*\}/,
+  );
+  assert.match(
+    queries,
+    /data:\s*\{\s*supersededAt:\s*input\.supersededAt\s*\?\?\s*new Date\(\)/,
+  );
+  assert.doesNotMatch(queries, /correctionRecord\.delete/);
+});
+
+test("HQ direct saves supersede only the correction target kinds they overwrite", () => {
+  const ledgerActions = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const inventoryActions = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "hq-edit-actions.ts",
+  );
+  const lossesActions = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+
+  for (const [source, targetType, count] of [
+    [ledgerActions, "PAYMENT_FIELD", 1],
+    [ledgerActions, "EXPENSE_ROW", 1],
+    [ledgerActions, "LEDGER_FIELD", 1],
+    [inventoryActions, "INVENTORY_ROW", 2],
+    [lossesActions, "LOSS_ROW", 1],
+  ]) {
+    const matches = source.match(
+      new RegExp(
+        `supersedeCorrectionRecordsInTx\\(tx, \\{[\\s\\S]*?targetTypes: \\["${targetType}"\\]`,
+      ),
+    );
+    assert.ok(matches, `${targetType} supersede should be wired`);
+    assert.equal(
+      source.match(new RegExp(`targetTypes: \\["${targetType}"\\]`, "g"))
+        .length,
+      count,
+      `${targetType} supersede count`,
+    );
+  }
+
+  // 단독 재고 조정은 currentQuantity만 덮어쓴다. 같은 행의 quantity 정정은
+  // DB에서 살아 있어야 하므로 fieldKeys 범위를 반드시 고정한다.
+  const adjustmentSource = inventoryActions.slice(
+    inventoryActions.indexOf(
+      "export async function saveHqLedgerInventoryAdjustment",
+    ),
+  );
+  assert.match(
+    adjustmentSource,
+    /targetTypes: \["INVENTORY_ROW"\][\s\S]*?targetIds: \[inventoryItem\.id\][\s\S]*?fieldKeys: \["currentQuantity"\]/,
+  );
+
+  // 계산 표시값 정정은 직접 저장으로 대체되지 않는다.
+  assert.doesNotMatch(ledgerActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+  assert.doesNotMatch(inventoryActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+  assert.doesNotMatch(lossesActions, /targetTypes: \["CALCULATED_METRIC"\]/);
+
+  // 패널과 읽기 전용 요약은 대체 상태를 텍스트 배지로 표시한다.
+  const panel = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "components",
+    "correction-panel.tsx",
+  );
+  const summary = readProjectFile(
+    "src",
+    "features",
+    "corrections",
+    "components",
+    "correction-readonly-summary.tsx",
+  );
+  assert.match(panel, /record\.supersededAt[\s\S]*직접 수정으로 대체됨/);
+  assert.match(summary, /record\.supersededAt[\s\S]*직접 수정으로 대체됨/);
 });

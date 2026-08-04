@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma, type CorrectionTargetType } from "../../../generated/prisma";
+import { Prisma } from "../../../generated/prisma";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import {
@@ -31,47 +31,22 @@ import {
 import { isOperatingSalesTotalInRange } from "./operating-sales-validation";
 
 const MAX_CORRECTION_INTEGER = 2_147_483_647;
-const CLOSED_LEDGER_DIRECT_EDIT_SUPERSEDE_REASON = "CLOSED_LEDGER_DIRECT_EDIT";
 
-export type ActiveCorrectionSupersedeTarget = {
-  targetType: CorrectionTargetType;
-  targetId: string;
-  fieldKey?: string;
-};
+// DESIGN.md D9: 정정 저장과 직접 저장이 같은 충돌 경계를 공유하도록, 렌더링 시점
+// 장부 토큰이 오래된 정정 요청은 충돌로 거부한다.
+const correctionConflictMessage =
+  "저장 사이에 장부가 변경돼 정정할 수 없습니다. 화면을 새로고침한 뒤 다시 정정해 주세요.";
 
-export async function supersedeActiveCorrectionsForTargetsInTx(
-  tx: Prisma.TransactionClient,
-  input: {
-    dailyLedgerId: string;
-    targets: ActiveCorrectionSupersedeTarget[];
-    supersededById: string;
-    supersededAt?: Date;
-    reason?: string;
-  },
-) {
-  if (input.targets.length === 0) {
-    return 0;
-  }
+function parseCorrectionLedgerToken(value: string): Date | null {
+  const parsed = new Date(value);
 
-  const result = await tx.correctionRecord.updateMany({
-    where: {
-      dailyLedgerId: input.dailyLedgerId,
-      supersededAt: null,
-      OR: input.targets.map((target) => ({
-        targetType: target.targetType,
-        targetId: target.targetId,
-        ...(target.fieldKey ? { fieldKey: target.fieldKey } : {}),
-      })),
-    },
-    data: {
-      supersededAt: input.supersededAt ?? new Date(),
-      supersededById: input.supersededById,
-      supersedeReason:
-        input.reason ?? CLOSED_LEDGER_DIRECT_EDIT_SUPERSEDE_REASON,
-    },
-  });
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-  return result.count;
+function correctionConflictError<T = never>(): ActionResult<T> {
+  // 정정 패널은 구조화 충돌 다이얼로그가 아니라 폼 오류로 안내하므로 기존 오류
+  // UX 경로를 쓴다. 코드만 직접 저장과 동일하게 LEDGER_CONFLICT로 맞춘다.
+  return actionError("LEDGER_CONFLICT", correctionConflictMessage);
 }
 
 const ledgerFieldKinds: Record<string, CorrectionValue["kind"]> = {
@@ -200,6 +175,14 @@ function correctionValueShapeError(): ActionResult<never> {
   });
 }
 
+function lossReasonCorrectionError(
+  message = "손실 사유를 입력해 주세요.",
+): ActionResult<never> {
+  return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+    "correctedValue.value": [message],
+  });
+}
+
 function operatingSalesRangeError(): ActionResult<never> {
   return actionError(
     "VALIDATION_ERROR",
@@ -220,13 +203,6 @@ function ledgerNotClosedError(): ActionResult<never> {
   return actionError(
     "LEDGER_NOT_CLOSED",
     "본사 마감된 장부에만 정정 기록을 추가할 수 있습니다.",
-  );
-}
-
-function ledgerConflictError(): ActionResult<never> {
-  return actionError(
-    "LEDGER_CONFLICT",
-    "장부가 변경되었습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.",
   );
 }
 
@@ -290,6 +266,24 @@ function normalizeCorrectedValueForTarget(
       typeof correctedValue.value !== "string"
     ) {
       return correctionValueShapeError();
+    }
+
+    if (
+      target.targetType === "LOSS_ROW" &&
+      target.fieldKey === "reason" &&
+      (typeof correctedValue.value !== "string" ||
+        correctedValue.value.trim().length === 0)
+    ) {
+      return lossReasonCorrectionError();
+    }
+
+    if (
+      target.targetType === "LOSS_ROW" &&
+      target.fieldKey === "reason" &&
+      typeof correctedValue.value === "string" &&
+      correctedValue.value.length > 500
+    ) {
+      return lossReasonCorrectionError("손실 사유는 500자 이하여야 합니다.");
     }
 
     return actionOk(correctedValue);
@@ -628,6 +622,13 @@ export async function createCorrectionRecord(
 
   const { ledgerId } = parsed.data;
   await requireHeadquartersLedgerScope(ledgerId);
+  const expectedLedgerUpdatedAt = parseCorrectionLedgerToken(
+    parsed.data.ledgerUpdatedAt,
+  );
+
+  if (!expectedLedgerUpdatedAt) {
+    return actionError("LEDGER_CONFLICT", correctionConflictMessage);
+  }
 
   try {
     const result = await db.$transaction<
@@ -661,12 +662,15 @@ export async function createCorrectionRecord(
           return existing ? ledgerNotClosedError() : ledgerNotFoundError();
         }
 
-        if (
-          ledger.updatedAt.getTime() !== parsed.data.expectedUpdatedAt.getTime()
-        ) {
-          return ledgerConflictError();
+        // DESIGN.md D9: 렌더링 이후 직접 저장(또는 다른 정정)이 장부를 바꿨다면
+        // 이 정정은 오래된 요청이라 충돌로 거부한다.
+        if (ledger.updatedAt.getTime() !== expectedLedgerUpdatedAt.getTime()) {
+          return correctionConflictError();
         }
 
+        // 대상·값·합산 검증은 장부 claim 전에 끝낸다. 검증 실패가 반환돼도
+        // 트랜잭션이 커밋되므로, claim이 먼저 실행되면 감사 없는 version/수정자
+        // 변경만 남는다(ghost update). 검증 통과 후 claim으로 직렬화한다.
         const originalValue = await resolveOriginalCorrectionValue(
           tx,
           parsed.data,
@@ -698,6 +702,24 @@ export async function createCorrectionRecord(
           return operatingSalesValidation;
         }
 
+        // 정정도 장부 version을 올려 이후 직접 저장/정정이 같은 토큰으로 충돌 판정하게
+        // 한다. 토큰이 이미 달라졌으면(동시 요청) 여기서 0건이 되어 충돌로 끝난다.
+        const claimed = await tx.dailyLedger.updateMany({
+          where: {
+            id: ledgerId,
+            status: "HEADQUARTERS_CLOSED",
+            updatedAt: expectedLedgerUpdatedAt,
+          },
+          data: {
+            version: { increment: 1 },
+            updatedById: actor.user.id,
+          },
+        });
+
+        if (claimed.count !== 1) {
+          return correctionConflictError();
+        }
+
         await lockCorrectionTargetInTx(tx, {
           dailyLedgerId: ledgerId,
           targetType: parsed.data.targetType,
@@ -717,22 +739,6 @@ export async function createCorrectionRecord(
         );
         const previousAppliedValue =
           latest?.correctedValue ?? originalValue.data;
-        const ledgerUpdate = await tx.dailyLedger.updateMany({
-          where: {
-            id: ledgerId,
-            status: "HEADQUARTERS_CLOSED",
-            updatedAt: parsed.data.expectedUpdatedAt,
-          },
-          data: {
-            updatedById: actor.user.id,
-            version: { increment: 1 },
-          },
-        });
-
-        if (ledgerUpdate.count !== 1) {
-          return ledgerConflictError();
-        }
-
         const correction = await tx.correctionRecord.create({
           data: {
             dailyLedgerId: ledgerId,
@@ -794,11 +800,14 @@ export async function createCorrectionRecord(
 
     return result;
   } catch (error) {
+    // Serializable transactions may surface a concurrent direct-save race as
+    // P2034 instead of returning claimed.count=0. Keep the loser on the same
+    // LEDGER_CONFLICT contract and roll back its audit/correction writes.
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2034"
     ) {
-      return ledgerConflictError();
+      return correctionConflictError();
     }
 
     return mapCorrectionActionError();

@@ -44,17 +44,24 @@ export type DashboardCorrectionState = {
 };
 
 /**
- * threshold와 shortfall은 이상 신호 및 우선순위 계산 계약을 위해 유지한다.
- * 관리자 홈 UI는 currentLabel만 렌더링한다.
+ * 미팅 결정(2026-06-21): 관제판 마진율은 "현재 / 기준" 형태로 읽기 쉽게 보여주고,
+ * 기준 미달 시 미달 금액을 툴팁이 아닌 표/카드에 직접 노출한다.
+ * UI는 이미 계산된 라벨만 렌더링하고 마진 계산을 React에서 중복하지 않는다.
  */
+/**
+ * DESIGN.md D2: 재고금액 표시 상태 분기. `amount`일 때만 금액을 그리고,
+ * 나머지는 상태 문구(마감 전/해당 없음/데이터 부족 등)를 표시한다.
+ */
+export type DashboardInventoryAmountStatus =
+  | "amount"
+  | "before-close"
+  | "not-applicable"
+  | "unavailable";
+
 export type DashboardMarginDisplay = {
   currentLabel: string;
   targetLabel: string | null;
   shortfallAmountLabel: string | null;
-};
-
-export type DashboardInventoryAmount = Omit<LedgerReviewMetric, "label"> & {
-  label?: string;
 };
 
 export type HqDashboardPriority = {
@@ -85,8 +92,10 @@ export type HqDashboardRow = {
   // WO-14 part2(2026-06-29): 분석 매출(판매한 가격 기준 추정 매출, 장부 AE4). 관제판 매출 셀의
   // 장부 매출 바로 아래에 함께 보여준다. 계획 미입력 등으로 계산 불가면 status로 구분한다.
   analysisSalesAmount: LedgerReviewMetric;
-  // Daily meeting report rows reuse this contract but do not render the dashboard sales cell.
-  inventoryAmount?: DashboardInventoryAmount;
+  // DESIGN.md D1: 선택일 장부의 서버 계산 재고 총액(FIFO). 클라이언트에서 다시
+  // 합산하지 않으며 표시 규칙은 inventoryAmountStatus로만 판정한다.
+  inventoryAmount: LedgerReviewMetric;
+  inventoryAmountStatus: DashboardInventoryAmountStatus;
   grossMarginRate: LedgerReviewMetric;
   // 장부 이익률(C17 기준). marginDisplay는 장부 원값 라벨을 담는다.
   marginDisplay: DashboardMarginDisplay;
