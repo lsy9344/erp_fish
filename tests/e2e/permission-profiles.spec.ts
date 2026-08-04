@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import {
   PermissionAction,
   PrismaClient,
@@ -583,6 +583,31 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
       closedAt: new Date("2026-01-02T00:00:00.000Z"),
     },
   });
+  const outOfScopeProduct = await prisma.product.create({
+    data: {
+      name: "범위 밖 재고 민감값",
+      category: "테스트",
+      spec: "1kg",
+      defaultUnitPrice: 987654,
+      updatedById: adminUser.id,
+    },
+  });
+  await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: outOfScopeLedger.id,
+      productId: outOfScopeProduct.id,
+      productName: outOfScopeProduct.name,
+      productCategory: outOfScopeProduct.category,
+      productSpec: outOfScopeProduct.spec,
+      unitPrice: 987654,
+      previousQuantity: 1,
+      currentQuantity: 1,
+      quantity: 1,
+      inventoryAmount: 987654,
+      createdById: adminUser.id,
+      updatedById: adminUser.id,
+    },
+  });
 
   async function snapshotLedger(id: string) {
     return prisma.dailyLedger.findUniqueOrThrow({
@@ -619,6 +644,21 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     await panel
       .locator("form")
       .filter({ has: page.getByLabel("본사 수정 사유") })
+      .evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  }
+
+  async function bypassUiAndSubmitInventory(page: Page, ledgerId: string) {
+    await page.goto(`/app/ledgers/${ledgerId}?tab=inventory`);
+    const panel = page.locator('[data-ledger-detail-panel="inventory"]');
+    await panel
+      .locator("[disabled]")
+      .evaluateAll((elements) =>
+        elements.forEach((element) => element.removeAttribute("disabled")),
+      );
+    await panel.getByLabel("본사 수정 사유").fill("서버 권한 경계 검증");
+    await panel
+      .locator("form")
+      .last()
       .evaluate((form) => (form as HTMLFormElement).requestSubmit());
   }
 
@@ -706,7 +746,50 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
       .poll(async () => (await snapshotLedger(ledger.id)).cashAmount)
       .toBe(4450);
 
-    // 4) 충돌 응답도 실제 장부의 지점 범위를 확인한다. 배정 지점만 볼 수 있는
+    // 4) HQ 재고 충돌도 실제 장부의 지점 범위를 확인하고 최신 메타를 숨긴다.
+    let capturedInventoryActionId: string | null = null;
+    const captureInventoryAction = (request: Request) => {
+      const nextAction = request.headers()["next-action"];
+
+      if (request.method() === "POST" && nextAction) {
+        capturedInventoryActionId = nextAction;
+      }
+    };
+    page.on("request", captureInventoryAction);
+    await bypassUiAndSubmitInventory(page, ledger.id);
+    await page.waitForTimeout(1_000);
+    page.off("request", captureInventoryAction);
+    expect(capturedInventoryActionId).toBeTruthy();
+
+    const outOfScopeInventoryResponse = await page.request.post(
+      `/app/ledgers/${outOfScopeLedger.id}?tab=inventory`,
+      {
+        headers: {
+          "Next-Action": capturedInventoryActionId!,
+          "Content-Type": "text/plain;charset=UTF-8",
+        },
+        data: JSON.stringify([
+          {
+            ledgerId: outOfScopeLedger.id,
+            storeId,
+            closingDate: closingDate.toISOString().slice(0, 10),
+            version: 1,
+            ledgerUpdatedAt: "not-a-date",
+            items: [],
+            reason: "서버 권한 경계 검증",
+          },
+        ]),
+      },
+    );
+    const outOfScopeInventoryBody = await outOfScopeInventoryResponse.text();
+    expect(outOfScopeInventoryResponse.status()).not.toBeGreaterThanOrEqual(
+      500,
+    );
+    expect(outOfScopeInventoryBody).not.toContain("987654");
+    expect(outOfScopeInventoryBody).toContain("unknown");
+    expect(outOfScopeInventoryBody).toContain('"lastModifiedBy":null');
+
+    // 5) 충돌 응답도 실제 장부의 지점 범위를 확인한다. 배정 지점만 볼 수 있는
     // HQ_STAFF가 다른 지점 장부 id와 잘못된 토큰을 보내도 serverValues에
     // 다른 지점의 민감한 금액(987654)을 받지 않는다.
     await login(page, "hq-assigned@example.com");
@@ -756,6 +839,10 @@ test("마감 장부 저장의 서버 권한 경계는 UI 우회 시에도 유지
     ).toBeVisible();
     expect(await snapshotLedger(holidayLedger.id)).toEqual(beforeHoliday);
   } finally {
+    await prisma.ledgerInventoryItem.deleteMany({
+      where: { dailyLedgerId: outOfScopeLedger.id },
+    });
+    await prisma.product.delete({ where: { id: outOfScopeProduct.id } });
     await prisma.dailyLedger.deleteMany({
       where: { storeId: { in: [storeId, outOfScopeStoreId] } },
     });

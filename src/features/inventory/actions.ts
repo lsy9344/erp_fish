@@ -280,18 +280,26 @@ async function mapLedgerConflictError(
     };
   });
 
+  // 충돌 응답은 정상 대상 장부 게이트보다 먼저 실행될 수 있다. ledgerId가 다른
+  // 지점에 속하면 존재 여부와 최신 재고·메타를 모두 숨겨 빈 payload를 반환한다.
+  const scopedData =
+    snapshot.data?.storeId === input.storeId ? snapshot.data : null;
+  const scopedMeta = scopedData ? snapshot.meta : null;
+
   return ledgerConflictErrorFromMeta({
-    meta: snapshot.meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section,
     clientToken: input.version,
+    serverToken: scopedMeta?.version ?? "unknown",
+    lastModifiedAt: scopedMeta?.updatedAt.toISOString() ?? "unknown",
     clientValues:
       section === "inventory"
         ? toInventoryClientValues(input as LedgerStoreManagerInventoryInput)
         : toInventoryAdjustmentClientValues(
             input as LedgerInventoryAdjustmentInput,
           ),
-    serverValues: snapshot.data ? toInventoryConflictValues(snapshot.data) : {},
+    serverValues: scopedData ? toInventoryConflictValues(scopedData) : {},
     reloadRequired: true,
   });
 }

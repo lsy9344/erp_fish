@@ -134,6 +134,51 @@ test("closed and holiday ledgers remain business errors, not conflicts or generi
   assert.match(lossActionSource, /!isLedgerEditable\(before\.status\)/);
 });
 
+test("store and loss conflict responses hide out-of-scope ledger metadata", () => {
+  const ledgerSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "actions.ts",
+  );
+  const inventorySource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "actions.ts",
+  );
+  const lossSource = readProjectFile(
+    "src",
+    "features",
+    "losses",
+    "hq-edit-actions.ts",
+  );
+
+  assert.match(
+    ledgerSource,
+    /snapshot\.ledger\?\.storeId === input\.storeId \? snapshot\.ledger : null/,
+  );
+  assert.match(
+    ledgerSource,
+    /serverToken: scopedMeta\?\.version \?\? "unknown"/,
+  );
+  assert.match(
+    ledgerSource,
+    /lastModifiedAt: scopedMeta\?\.updatedAt\.toISOString\(\) \?\? "unknown"/,
+  );
+  assert.match(
+    inventorySource,
+    /snapshot\.data\?\.storeId === input\.storeId \? snapshot\.data : null/,
+  );
+  assert.match(inventorySource, /serverValues: scopedData/);
+  assert.match(
+    lossSource,
+    /current\?\.storeId === input\.storeId \? current : null/,
+  );
+  assert.match(lossSource, /serverValues: scopedCurrent/);
+  assert.match(lossSource, /lastModifiedAt:[\s\S]*"unknown"/);
+});
+
 test("conflict UI is wired into every editable ledger surface", () => {
   const dialogSource = readProjectFile(
     "src",
@@ -148,6 +193,8 @@ test("conflict UI is wired into every editable ledger surface", () => {
   assert.match(dialogSource, /서버 최신값/);
   assert.match(dialogSource, /마지막 수정자/);
   assert.match(dialogSource, /수정 시각/);
+  assert.match(dialogSource, /Number\.isNaN\(date\.getTime\(\)\)/);
+  assert.match(dialogSource, /확인할 수 없음/);
   assert.match(dialogSource, /본사 수정 중/);
   assert.match(dialogSource, /최신값 다시 불러오기/);
   assert.match(dialogSource, /계속 편집/);

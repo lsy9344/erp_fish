@@ -330,16 +330,26 @@ async function hqLossConflictError<T = never>(
     getLedgerConflictMetaInTx(tx, input.ledgerId),
   ]);
 
+  // 충돌 payload 생성은 정상 대상 장부 게이트보다 먼저 호출될 수 있다. 요청 지점과
+  // 장부 지점이 다르거나 장부가 없으면 존재 여부와 최신 손실·메타를 노출하지 않는다.
+  const scopedCurrent = current?.storeId === input.storeId ? current : null;
+  const scopedMeta = scopedCurrent ? meta : null;
+
   return ledgerConflictErrorFromMeta<T>({
-    meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section: "losses",
     clientToken: input.ledgerUpdatedAt,
     serverToken:
-      current?.updatedAt ?? meta?.updatedAt.toISOString() ?? "unknown",
+      scopedCurrent?.updatedAt ??
+      scopedMeta?.updatedAt.toISOString() ??
+      "unknown",
     clientValues: toLossClientValues(input),
-    serverValues: current ? toLossConflictValues(current) : {},
-    lastModifiedAt: current?.updatedAt,
+    serverValues: scopedCurrent ? toLossConflictValues(scopedCurrent) : {},
+    lastModifiedAt:
+      scopedCurrent?.updatedAt ??
+      scopedMeta?.updatedAt.toISOString() ??
+      "unknown",
     reloadRequired: true,
     hqEditing: true,
   });

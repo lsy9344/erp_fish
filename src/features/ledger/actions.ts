@@ -30,7 +30,6 @@ import {
 import {
   getLedgerConflictMetaInTx,
   ledgerConflictErrorFromMeta,
-  type LedgerConflictMeta,
 } from "./conflicts";
 import { assertStoreManagerClosingDateIsToday } from "./date";
 import {
@@ -425,16 +424,23 @@ async function mapLedgerConflictError(
       meta,
     };
   });
-  const meta: LedgerConflictMeta | null = snapshot.meta;
+  // 충돌 토큰이 잘못됐을 때도 ledgerId만으로 다른 지점 장부의 최신값·메타를
+  // 응답하지 않는다. 정상 대상과 지점이 다르면 존재하지 않는 장부와 동일한
+  // 빈 충돌 payload를 반환한다.
+  const scopedLedger =
+    snapshot.ledger?.storeId === input.storeId ? snapshot.ledger : null;
+  const scopedMeta = scopedLedger ? snapshot.meta : null;
 
   return ledgerConflictErrorFromMeta({
-    meta,
+    meta: scopedMeta,
     ledgerId: input.ledgerId,
     section,
     clientToken: input.version,
+    serverToken: scopedMeta?.version ?? "unknown",
+    lastModifiedAt: scopedMeta?.updatedAt.toISOString() ?? "unknown",
     clientValues: toStoreLedgerClientValues(section, input),
-    serverValues: snapshot.ledger
-      ? toStoreLedgerConflictValues(section, snapshot.ledger)
+    serverValues: scopedLedger
+      ? toStoreLedgerConflictValues(section, scopedLedger)
       : {},
     reloadRequired: true,
   });
