@@ -72,6 +72,8 @@ venv/
 # Local tooling caches and scratch files
 .worktrees/
 .codegraph/
+.pi-subagents/
+.qoder/
 tmp_scan.py
 
 # Large local source media
