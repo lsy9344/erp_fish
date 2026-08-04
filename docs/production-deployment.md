@@ -21,7 +21,7 @@
 | 로컬 Node.js          | 22.16.0                        | 빌드/마이그레이션 실행 환경        |
 | Vercel Node.js 런타임 | 24.x                           | Vercel 프로젝트 기본값             |
 | 패키지 매니저         | pnpm 10.31.0                   | `pnpm-lock.yaml` 기준              |
-| 프레임워크            | Next.js `^15.2.3` (App Router) | Server Components + Server Actions |
+| 프레임워크            | Next.js `15.5.21` (App Router) | Server Components + Server Actions |
 | React                 | `^19.0.0`                      |                                    |
 | 빌드 명령             | `next build`                   | Vercel Framework Preset: Next.js   |
 
@@ -29,8 +29,8 @@
 
 | 영역          | 라이브러리             | 버전                             |
 | ------------- | ---------------------- | -------------------------------- |
-| 인증          | NextAuth.js (Auth.js)  | `5.0.0-beta.25`                  |
-| 인증 어댑터   | `@auth/prisma-adapter` | `2.7.2`                          |
+| 인증          | NextAuth.js (Auth.js)  | `5.0.0-beta.32`                  |
+| 인증 어댑터   | `@auth/prisma-adapter` | `2.11.3`                         |
 | ORM           | Prisma                 | `^6.6.0` (`@prisma/client` 동일) |
 | 환경변수 검증 | `@t3-oss/env-nextjs`   | `^0.12.0` (+ Zod `^3.24.2`)      |
 | 스타일        | Tailwind CSS           | `^4.0.15`                        |
