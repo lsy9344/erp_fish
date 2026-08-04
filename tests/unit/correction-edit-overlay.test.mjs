@@ -25,6 +25,45 @@ function appliedValue(overrides) {
   };
 }
 
+test("derived sales total uses active payment corrections but ignores totalSales correction", async () => {
+  const { getDerivedSalesFormTotal } = await import(overlayUrl.href);
+  const ledger = {
+    id: "ledger-1",
+    totalSalesAmount: 0,
+    carryoverSalesAmount: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: null,
+    workMemo: null,
+  };
+  const values = [
+    appliedValue({
+      dailyLedgerId: "ledger-1",
+      targetType: "PAYMENT_FIELD",
+      targetId: "ledger-1",
+      fieldKey: "cashAmount",
+      latestAppliedValue: { kind: "money", value: 50, label: "현금" },
+    }),
+    appliedValue({
+      dailyLedgerId: "ledger-1",
+      targetType: "PAYMENT_FIELD",
+      targetId: "ledger-1",
+      fieldKey: "totalSalesAmount",
+      latestAppliedValue: { kind: "money", value: 100, label: "총매출" },
+    }),
+  ];
+
+  // 폼을 건드리지 않고 저장하면 활성 현금 정정이 반영된 50과 같으므로
+  // 총매출 정정(100)을 supersede하지 않는다.
+  const untouchedBaseline = getDerivedSalesFormTotal(ledger, values, 0);
+  assert.equal(untouchedBaseline, 50);
+  assert.equal(50 !== untouchedBaseline, false);
+
+  // 현금을 0으로 저장하면 폼의 파생 총매출이 실제로 바뀌므로 정정을 대체한다.
+  assert.equal(0 !== untouchedBaseline, true);
+});
+
 test("ledger edit overlay applies active payment/ledger-field corrections except derived total", async () => {
   const { applyCorrectionOverlayToLedgerFields, applyExpenseRowOverlay } =
     await import(overlayUrl.href);
@@ -96,8 +135,20 @@ test("ledger edit overlay applies active payment/ledger-field corrections except
 
   // 지출 행 overlay는 행 id 기준으로 금액·메모만 교체.
   const rows = [
-    { id: "e1", ledgerInputCodeId: "c", ledgerInputCodeName: "수도", amount: 1000, memo: null },
-    { id: "e2", ledgerInputCodeId: "c", ledgerInputCodeName: "전기", amount: 2000, memo: "원본" },
+    {
+      id: "e1",
+      ledgerInputCodeId: "c",
+      ledgerInputCodeName: "수도",
+      amount: 1000,
+      memo: null,
+    },
+    {
+      id: "e2",
+      ledgerInputCodeId: "c",
+      ledgerInputCodeName: "전기",
+      amount: 2000,
+      memo: "원본",
+    },
   ];
   const expenseValues = [
     appliedValue({
@@ -105,14 +156,22 @@ test("ledger edit overlay applies active payment/ledger-field corrections except
       targetType: "EXPENSE_ROW",
       targetId: "e1",
       fieldKey: "amount",
-      latestAppliedValue: { kind: "money", value: 1500, label: "지출 1 · 금액" },
+      latestAppliedValue: {
+        kind: "money",
+        value: 1500,
+        label: "지출 1 · 금액",
+      },
     }),
     appliedValue({
       dailyLedgerId: "ledger-1",
       targetType: "EXPENSE_ROW",
       targetId: "e2",
       fieldKey: "memo",
-      latestAppliedValue: { kind: "text", value: "정정 메모", label: "지출 2 · 메모" },
+      latestAppliedValue: {
+        kind: "text",
+        value: "정정 메모",
+        label: "지출 2 · 메모",
+      },
     }),
   ];
   const overlaidRows = applyExpenseRowOverlay(rows, "ledger-1", expenseValues);
@@ -140,7 +199,11 @@ test("inventory and loss edit overlays apply row-scoped quantity/amount correcti
       targetType: "INVENTORY_ROW",
       targetId: "row-1",
       fieldKey: "currentQuantity",
-      latestAppliedValue: { kind: "quantity", value: 4.5, label: "재고 1 · 현재고" },
+      latestAppliedValue: {
+        kind: "quantity",
+        value: 4.5,
+        label: "재고 1 · 현재고",
+      },
     }),
   ];
   const overlaidInventory = applyCorrectionOverlayToInventoryEditValues(
@@ -166,20 +229,25 @@ test("inventory and loss edit overlays apply row-scoped quantity/amount correcti
       targetType: "LOSS_ROW",
       targetId: "loss-1",
       fieldKey: "quantity",
-      latestAppliedValue: { kind: "quantity", value: 3, label: "손실 1 · 수량" },
+      latestAppliedValue: {
+        kind: "quantity",
+        value: 3,
+        label: "손실 1 · 수량",
+      },
     }),
     appliedValue({
       dailyLedgerId: "ledger-1",
       targetType: "LOSS_ROW",
       targetId: "loss-1",
       fieldKey: "amount",
-      latestAppliedValue: { kind: "money", value: 5400, label: "손실 1 · 금액" },
+      latestAppliedValue: {
+        kind: "money",
+        value: 5400,
+        label: "손실 1 · 금액",
+      },
     }),
   ];
-  const overlaidLoss = applyCorrectionOverlayToLossEditValues(
-    loss,
-    lossValues,
-  );
+  const overlaidLoss = applyCorrectionOverlayToLossEditValues(loss, lossValues);
   assert.equal(overlaidLoss.lossItems[0].quantity, 3);
   assert.equal(overlaidLoss.lossItems[0].amount, 5400);
 });
@@ -232,7 +300,11 @@ test("text overlays distinguish no-correction from clearing a value to null", as
         targetType: "LEDGER_FIELD",
         targetId: "ledger-1",
         fieldKey: "workMemo",
-        latestAppliedValue: { kind: "text", value: "정정 메모", label: "특이사항" },
+        latestAppliedValue: {
+          kind: "text",
+          value: "정정 메모",
+          label: "특이사항",
+        },
       }),
     ],
     { includeDerivedTotal: false },
@@ -241,19 +313,15 @@ test("text overlays distinguish no-correction from clearing a value to null", as
 
   // 지출 메모: null로 지우는 정정이 행에 반영된다.
   const rows = [{ id: "e1", amount: 1000, memo: "원본 메모" }];
-  const clearedMemoRows = applyExpenseRowOverlay(
-    rows,
-    "ledger-1",
-    [
-      appliedValue({
-        dailyLedgerId: "ledger-1",
-        targetType: "EXPENSE_ROW",
-        targetId: "e1",
-        fieldKey: "memo",
-        latestAppliedValue: { kind: "text", value: null, label: "지출 1 · 메모" },
-      }),
-    ],
-  );
+  const clearedMemoRows = applyExpenseRowOverlay(rows, "ledger-1", [
+    appliedValue({
+      dailyLedgerId: "ledger-1",
+      targetType: "EXPENSE_ROW",
+      targetId: "e1",
+      fieldKey: "memo",
+      latestAppliedValue: { kind: "text", value: null, label: "지출 1 · 메모" },
+    }),
+  ]);
   assert.equal(clearedMemoRows[0].memo, null);
   assert.equal(rows[0].memo, "원본 메모");
 
@@ -272,7 +340,11 @@ test("text overlays distinguish no-correction from clearing a value to null", as
       targetType: "LOSS_ROW",
       targetId: "loss-1",
       fieldKey: "reason",
-      latestAppliedValue: { kind: "text", value: "정정 사유", label: "손실 1 · 사유" },
+      latestAppliedValue: {
+        kind: "text",
+        value: "정정 사유",
+        label: "손실 1 · 사유",
+      },
     }),
     appliedValue({
       dailyLedgerId: "ledger-1",

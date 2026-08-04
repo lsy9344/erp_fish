@@ -15,7 +15,6 @@ import { createCorrectionRecord } from "~/features/corrections/actions";
 import { CorrectionPanel } from "~/features/corrections/components/correction-panel";
 import {
   buildCorrectionTargetKey,
-  getLedgerCostStepDataAndCorrectionRecords,
   getLatestCorrectionValueMap,
 } from "~/features/corrections/queries";
 import {
@@ -56,10 +55,8 @@ import {
   saveHqLedgerInventoryItems,
 } from "~/features/inventory/hq-edit-actions";
 import { InventoryStepClient } from "~/features/inventory/components/inventory-step-client";
-import { getInventoryStepDataByLedgerId } from "~/features/inventory/queries";
 import { saveHqLedgerLosses } from "~/features/losses/hq-edit-actions";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
-import { getLossStepDataByLedgerId } from "~/features/losses/queries";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
 import { getActiveProductOptions } from "~/features/master-data/product-queries";
 import { getActiveEmployeeOptions } from "~/features/labor/employees-queries";
@@ -155,15 +152,19 @@ export default async function LedgerDetailPage({
       Array.isArray(query.filter) ? query.filter[0] : query.filter,
     ),
   });
-  const [detail, ledgerSnapshot, inventoryData, lossData] = await Promise.all([
-    getHqLedgerDetail(ledgerId),
-    getLedgerCostStepDataAndCorrectionRecords(ledgerId),
-    getInventoryStepDataByLedgerId(ledgerId),
-    getLossStepDataByLedgerId(ledgerId),
-  ]);
-  const { ledger, correctionRecords } = ledgerSnapshot;
+  // 요약·충돌 token·정정·재고·손실은 getHqLedgerDetail 내부의 하나의
+  // Repeatable Read snapshot에서 함께 읽는다. 서로 다른 조회를 병렬 실행하면
+  // 조회 사이에 저장된 값이 최신 token과 오래된 폼 값으로 섞일 수 있다.
+  const detail = await getHqLedgerDetail(ledgerId);
 
-  if (!detail || !ledger || !inventoryData || !lossData) {
+  if (!detail) {
+    notFound();
+  }
+
+  const { ledger, correctionRecords, inventoryData, lossData } =
+    detail.editSnapshot;
+
+  if (!ledger || !inventoryData || !lossData) {
     notFound();
   }
 
@@ -601,14 +602,14 @@ function getCorrectionTargetOptions({
   lossData,
 }: {
   ledger: NonNullable<
-    Awaited<
-      ReturnType<typeof getLedgerCostStepDataAndCorrectionRecords>
-    >["ledger"]
-  >;
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["ledger"];
   inventoryData: NonNullable<
-    Awaited<ReturnType<typeof getInventoryStepDataByLedgerId>>
-  >;
-  lossData: NonNullable<Awaited<ReturnType<typeof getLossStepDataByLedgerId>>>;
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["inventoryData"];
+  lossData: NonNullable<
+    Awaited<ReturnType<typeof getHqLedgerDetail>>
+  >["editSnapshot"]["lossData"];
 }): CorrectionTargetOption[] {
   return [
     {

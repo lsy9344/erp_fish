@@ -244,8 +244,11 @@ test("HQ sales saves keep an unchanged derived-total correction active", () => {
   assert.match(source, /paymentFieldKeysToSupersede/);
   assert.match(
     source,
-    /fieldKey !== "totalSalesAmount"[\s\S]*parsed\.data\.totalSalesAmount !== beforeLedger\.totalSalesAmount/,
+    /beforeFormDerivedTotal[\s\S]*?parsed\.data\.totalSalesAmount !== beforeFormDerivedTotal/,
   );
+  assert.match(source, /활성 결제 정정을 반영한/);
+  assert.match(source, /getDerivedSalesFormTotal/);
+  assert.match(source, /carryoverSalesAmount/);
   assert.match(source, /폼에 표시하지 않는 총매출 정정을 유지한다/);
 });
 
@@ -305,14 +308,15 @@ test("HQ detail page renders editable sections with HQ actions", () => {
   assert.match(source, /saveHqLedgerLosses/);
   assert.match(source, /saveHqLedgerWorkInfo/);
   assert.match(source, /showSensitiveAccountingMetrics/);
-  assert.match(source, /getLedgerCostStepDataAndCorrectionRecords/);
-  assert.match(source, /getInventoryStepDataByLedgerId/);
-  assert.match(source, /getLossStepDataByLedgerId/);
+  assert.match(source, /getHqLedgerDetail\(ledgerId\)/);
+  assert.match(source, /detail\.editSnapshot/);
+  assert.match(source, /inventoryData/);
+  assert.match(source, /lossData/);
   assert.match(source, /본사 마감된 장부/);
   assert.match(source, /정정 기록/);
   assert.match(source, /CorrectionPanel/);
-  assert.match(source, /getLedgerCostStepDataAndCorrectionRecords/);
   assert.match(source, /getLatestCorrectionValueMap/);
+  assert.match(source, /detail\.editSnapshot/);
   assert.match(source, /createCorrectionRecord/);
   assert.match(
     source,

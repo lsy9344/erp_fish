@@ -30,12 +30,14 @@ import {
 import {
   applyCorrectionOverlayToLedgerFields,
   applyExpenseRowOverlay,
+  getDerivedSalesFormTotal,
 } from "~/features/corrections/edit-overlay";
 import {
   requireLedgerHqEditContext,
   requireHeadquartersStoreScope,
 } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
+import { calculateExpenseTotal } from "~/server/calculations/ledger";
 import { db } from "~/server/db";
 import {
   revalidateDashboardAndReports,
@@ -509,8 +511,22 @@ export async function saveHqLedgerSalesPayment(
           select: ledgerSelect,
         });
 
-        const beforeAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+        const beforeAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          beforeLedger,
+        );
+        const activeCorrectionValues = getLatestCorrectionValueMap(
+          await getCorrectionRecordsForLedgerInTx(tx, beforeLedger.id),
+        );
+        // SalesPaymentStepClient와 동일한 파생 총매출 기준값을 사용한다. 활성
+        // 결제·이월 정정을 반영하되 총매출 자체 정정은 기준에서 제외한다.
+        const beforeFormDerivedTotal = getDerivedSalesFormTotal(
+          beforeLedger,
+          activeCorrectionValues.values(),
+          calculateExpenseTotal(
+            beforeLedger.ledgerExpenses.map((expense) => expense.amount),
+          ),
+        );
 
         const paymentFieldKeys = [
           "totalSalesAmount",
@@ -519,14 +535,14 @@ export async function saveHqLedgerSalesPayment(
           "cardAmount",
           "otherPaymentAmount",
         ] as const;
-        // 총매출은 결제수단 합계에서 파생되는 값이다. 직접 저장의 파생 총매출이
-        // 기존 원본과 같으면 결제수단을 저장해도 총매출이 실질적으로 바뀐 것이
-        // 아니므로, 폼에 표시하지 않는 총매출 정정을 유지한다. 합계가 달라진
-        // 경우에만 직접 저장이 총매출 정정을 의도적으로 대체한다.
+        // 총매출은 결제수단 합계에서 파생되는 값이다. 활성 결제 정정을 반영한
+        // 폼의 파생 총매출과 같으면 결제수단을 저장해도 총매출이 실질적으로
+        // 바뀐 것이 아니므로, 폼에 표시하지 않는 총매출 정정을 유지한다. 합계가
+        // 달라진 경우에만 직접 저장이 총매출 정정을 의도적으로 대체한다.
         const paymentFieldKeysToSupersede = paymentFieldKeys.filter(
           (fieldKey) =>
             fieldKey !== "totalSalesAmount" ||
-            parsed.data.totalSalesAmount !== beforeLedger.totalSalesAmount,
+            parsed.data.totalSalesAmount !== beforeFormDerivedTotal,
         );
 
         await supersedeCorrectionRecordsInTx(tx, {
@@ -536,8 +552,10 @@ export async function saveHqLedgerSalesPayment(
           fieldKeys: paymentFieldKeysToSupersede,
         });
 
-        const afterAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+        const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          afterLedger,
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.sales_payment.updated",
@@ -649,8 +667,10 @@ export async function saveHqLedgerExpenses(
           select: ledgerSelect,
         });
 
-        const beforeAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+        const beforeAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          beforeLedger,
+        );
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
@@ -660,8 +680,10 @@ export async function saveHqLedgerExpenses(
           targetIds: beforeLedger.ledgerExpenses.map((expense) => expense.id),
         });
 
-        const afterAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+        const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          afterLedger,
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.expenses.saved",
@@ -1120,10 +1142,14 @@ export async function saveHqLedgerPurchases(
           }
         }
 
-        const beforeAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
-        const afterAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+        const beforeAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          beforeLedger,
+        );
+        const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          afterLedger,
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.purchases.saved",
@@ -1245,8 +1271,10 @@ export async function saveHqLedgerWorkInfo(
           select: ledgerSelect,
         });
 
-        const beforeAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
+        const beforeAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          beforeLedger,
+        );
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
@@ -1256,8 +1284,10 @@ export async function saveHqLedgerWorkInfo(
           fieldKeys: ["workerCount", "workMemo"],
         });
 
-        const afterAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+        const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          afterLedger,
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.work_info.saved",
@@ -1369,10 +1399,14 @@ export async function saveHqLedgerLaborInfo(
           select: ledgerSelect,
         });
 
-        const beforeAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, beforeLedger);
-        const afterAuditPayload =
-          await toEffectiveLedgerAuditPayloadInTx(tx, afterLedger);
+        const beforeAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          beforeLedger,
+        );
+        const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
+          tx,
+          afterLedger,
+        );
 
         await writeAuditLog(tx, {
           action: "ledger.hq.labor.saved",

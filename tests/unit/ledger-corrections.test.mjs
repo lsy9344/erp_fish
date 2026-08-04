@@ -467,12 +467,28 @@ test("ledger detail reads its conflict token and corrections in one snapshot", (
     "[ledgerId]",
     "page.tsx",
   );
+  const dashboard = readProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "queries.ts",
+  );
 
   assert.match(queries, /getLedgerCostStepDataAndCorrectionRecords/);
   assert.match(queries, /getLedgerCostStepDataByIdInTx\(tx, ledgerId\)/);
   assert.match(queries, /getCorrectionRecordsForLedgerInTx\(tx, ledgerId\)/);
   assert.match(queries, /Prisma\.TransactionIsolationLevel\.RepeatableRead/);
-  assert.match(page, /getLedgerCostStepDataAndCorrectionRecords\(ledgerId\)/);
+  assert.match(
+    dashboard,
+    /getInventoryStepDataByLedgerIdInTx\(\s*tx,\s*ledgerId,?\s*\)/,
+  );
+  assert.match(
+    dashboard,
+    /getLossStepDataByLedgerIdInTx\(\s*tx,\s*ledgerId\s*\)/,
+  );
+  assert.match(dashboard, /Prisma\.TransactionIsolationLevel\.RepeatableRead/);
+  assert.match(page, /getHqLedgerDetail\(ledgerId\)/);
+  assert.match(page, /detail\.editSnapshot/);
   assert.doesNotMatch(page, /getLedgerCostStepDataById\(ledgerId\)/);
   assert.doesNotMatch(page, /getCorrectionRecordsForLedger\(ledgerId\)/);
 });
@@ -584,8 +600,14 @@ test("overlay map and next-correction baseline skip superseded records while his
     /correctionRecord\.updateMany\(\{[\s\S]*?supersededAt:\s*null,\s*targetType:\s*\{\s*in:\s*\[\.\.\.input\.targetTypes\]\s*\},/,
   );
   // 실제 덮어쓴 대상만으로 범위를 좁힐 수 있게 targetIds/fieldKeys를 지원한다.
-  assert.match(queries, /targetId:\s*\{\s*in:\s*\[\.\.\.input\.targetIds\]\s*\}/);
-  assert.match(queries, /fieldKey:\s*\{\s*in:\s*\[\.\.\.input\.fieldKeys\]\s*\}/);
+  assert.match(
+    queries,
+    /targetId:\s*\{\s*in:\s*\[\.\.\.input\.targetIds\]\s*\}/,
+  );
+  assert.match(
+    queries,
+    /fieldKey:\s*\{\s*in:\s*\[\.\.\.input\.fieldKeys\]\s*\}/,
+  );
   assert.match(
     queries,
     /data:\s*\{\s*supersededAt:\s*input\.supersededAt\s*\?\?\s*new Date\(\)/,

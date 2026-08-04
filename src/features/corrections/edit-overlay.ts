@@ -210,6 +210,29 @@ export function applyCorrectionOverlayToLedgerFields<
 }
 
 /**
+ * 매출/결제 폼이 제출하는 파생 총매출 기준값을 계산한다. 총매출 자체 정정은
+ * 폼의 파생값에 적용하지 않고, 현금·카드·기타 결제수단·이월 매출 정정만
+ * 반영한다. 직접 저장이 총매출 정정을 대체할지 판단할 때 사용한다.
+ */
+export function getDerivedSalesFormTotal<T extends LedgerFieldOverlayTarget>(
+  ledger: T,
+  values: CorrectionOverlayValues,
+  expenseTotal: number,
+) {
+  const formLedger = applyCorrectionOverlayToLedgerFields(ledger, values, {
+    includeDerivedTotal: false,
+  });
+
+  return (
+    formLedger.cashAmount +
+    formLedger.cardAmount +
+    formLedger.otherPaymentAmount +
+    formLedger.carryoverSalesAmount +
+    expenseTotal
+  );
+}
+
+/**
  * 지출 행 목록에 EXPENSE_ROW 활성 정정(금액·메모)을 적용한다. 행 id가 정정
  * 대상과 일치하는 행만 교체되고 나머지는 그대로 반환된다.
  */
