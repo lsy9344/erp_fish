@@ -11,6 +11,8 @@ import { requireLaborViewAccess } from "~/server/authz";
 type HeadquartersLaborReportPageProps = {
   searchParams: Promise<{
     month?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
     storeId?: string | string[];
     status?: string | string[];
     workerName?: string | string[];
@@ -30,11 +32,15 @@ export default async function HeadquartersLaborReportPage({
     getHeadquartersNavigationItems(user.id),
     getHeadquartersLaborReport({
       month: firstParam(params.month),
+      from: firstParam(params.from),
+      to: firstParam(params.to),
       storeId: firstParam(params.storeId),
       status: firstParam(params.status),
       workerName: firstParam(params.workerName),
     }),
   ]);
+  // WO-0806 #2-2: `월 선택`과 `기간 지정` 두 모드. 입력변수가 기간이면 기간 모드로 열어둔다.
+  const isRangeMode = Boolean(firstParam(params.from) ?? firstParam(params.to));
 
   return (
     <HeadquartersShell
@@ -47,24 +53,53 @@ export default async function HeadquartersLaborReportPage({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
           title="인건비 현황"
-          description="지점장이 입력한 근무인원·근무자·메모와 장부에 저장된 인건비 현황을 지점별로 확인합니다."
+          description={`${report.rangeLabel} 지점장이 입력한 근무인원·근무자·메모와 장부에 저장된 인건비 현황을 지점별로 확인합니다.`}
         />
         <form
           action="/app/reports/labor"
           className="flex flex-wrap items-end gap-2"
         >
-          <div className="grid gap-1">
-            <label className="text-muted-foreground text-xs" htmlFor="month">
-              조회 월
-            </label>
-            <Input
-              id="month"
-              name="month"
-              type="month"
-              defaultValue={report.monthInput}
-              className="h-9 w-36"
-            />
-          </div>
+          {isRangeMode ? (
+            <>
+              <div className="grid gap-1">
+                <label className="text-muted-foreground text-xs" htmlFor="from">
+                  시작일
+                </label>
+                <Input
+                  id="from"
+                  name="from"
+                  type="date"
+                  defaultValue={report.startDateInput}
+                  className="h-9 w-36"
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-muted-foreground text-xs" htmlFor="to">
+                  종료일
+                </label>
+                <Input
+                  id="to"
+                  name="to"
+                  type="date"
+                  defaultValue={report.endDateInput}
+                  className="h-9 w-36"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="grid gap-1">
+              <label className="text-muted-foreground text-xs" htmlFor="month">
+                조회 월
+              </label>
+              <Input
+                id="month"
+                name="month"
+                type="month"
+                defaultValue={report.monthInput}
+                className="h-9 w-36"
+              />
+            </div>
+          )}
           <div className="grid gap-1">
             <label className="text-muted-foreground text-xs" htmlFor="storeId">
               지점
@@ -117,6 +152,17 @@ export default async function HeadquartersLaborReportPage({
           </div>
           <Button type="submit" variant="outline" size="sm">
             조회
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <a
+              href={
+                isRangeMode
+                  ? `/app/reports/labor?month=${report.monthInput}`
+                  : `/app/reports/labor?from=${report.startDateInput}&to=${report.endDateInput}`
+              }
+            >
+              {isRangeMode ? "월 선택으로" : "기간 지정으로"}
+            </a>
           </Button>
         </form>
       </div>

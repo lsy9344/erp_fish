@@ -15,8 +15,10 @@ const queryPath = path.join(
 
 const {
   buildHeadquartersLaborReport,
+  getHeadquartersLaborDateRange,
   getHeadquartersLaborMonthRange,
   normalizeHeadquartersLaborStatus,
+  resolveDesiredCash,
   resolveHeadquartersLaborStoreFilter,
 } = await import(pathToFileURL(queryPath).href);
 
@@ -231,6 +233,227 @@ test("headquarters labor month and status filters reject malformed input", () =>
   assert.equal(normalizeHeadquartersLaborStatus("HOLIDAY"), "ALL");
 });
 
+// WO-0806 #2-2: `월 선택`과 `기간 지정` 두 모드. 잘못된 입력은 현재 월로 폴백하고
+// 값을 교환하지 않는다(사용자가 의도하지 않은 기간을 조용히 보여주면 안 된다).
+test("headquarters labor date range supports month and explicit range modes", () => {
+  const now = new Date("2026-07-22T00:00:00.000Z");
+
+  // month만: 기존 계약 그대로 해당 월 전체.
+  const monthOnly = getHeadquartersLaborDateRange({ month: "2026-06" }, now);
+  assert.equal(monthOnly.monthInput, "2026-06");
+  assert.equal(monthOnly.startDateInput, "2026-06-01");
+  assert.equal(monthOnly.endDateInput, "2026-06-30");
+  assert.equal(monthOnly.isSingleMonth, true);
+  assert.deepEqual(monthOnly.errorMessages, []);
+
+  // from/to만: 기간이 우선하며 종료일 23:59까지 포함한다.
+  const rangeOnly = getHeadquartersLaborDateRange(
+    { from: "2026-05-10", to: "2026-06-09" },
+    now,
+  );
+  assert.equal(rangeOnly.rangeLabel, "2026-05-10 ~ 2026-06-09");
+  assert.equal(rangeOnly.isSingleMonth, false);
+  assert.equal(rangeOnly.endDate.toISOString(), "2026-06-09T23:59:59.999Z");
+
+  // 둘 다 있으면 from/to가 이긴다.
+  const both = getHeadquartersLaborDateRange(
+    { month: "2026-01", from: "2026-05-01", to: "2026-05-31" },
+    now,
+  );
+  assert.equal(both.startDateInput, "2026-05-01");
+  // 월 1일~말일 기간은 사실상 월 조회이므로 자동계산을 허용한다.
+  assert.equal(both.isSingleMonth, true);
+
+  // 한쪽만 입력 / 역순 / 상한 초과 / 잘못된 형식 → 현재 월 폴백 + 사유.
+  for (const input of [
+    { from: "2026-05-01" },
+    { from: "2026-06-09", to: "2026-05-10" },
+    { from: "2025-01-01", to: "2026-07-01" },
+    { from: "2026-5-1", to: "2026-05-31" },
+  ]) {
+    const fallback = getHeadquartersLaborDateRange(input, now);
+    assert.equal(fallback.monthInput, "2026-07", JSON.stringify(input));
+    assert.equal(fallback.isSingleMonth, true);
+    assert.equal(fallback.errorMessages.length, 1, JSON.stringify(input));
+  }
+
+  // 정확히 366일은 통과한다(경계값).
+  const maxRange = getHeadquartersLaborDateRange(
+    { from: "2025-07-01", to: "2026-07-01" },
+    now,
+  );
+  assert.deepEqual(maxRange.errorMessages, []);
+});
+
+// WO-0806 #2: 희망 현금 = 월 인건비 합계 − 희망 4대보험.
+test("desired cash is derived from monthly labor total minus insurance", () => {
+  const linkedSingleMonth = {
+    isLinkedEmployee: true,
+    isSingleMonth: true,
+  };
+
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 2_400_000,
+      desiredInsuranceAmount: 300_000,
+      ...linkedSingleMonth,
+    }),
+    { desiredCashAmount: 2_100_000, cashUnavailableReason: null },
+  );
+
+  // 음수를 0으로 자르면 지급 오류를 숨긴다. 그대로 내보낸다.
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 100_000,
+      desiredInsuranceAmount: 300_000,
+      ...linkedSingleMonth,
+    }),
+    { desiredCashAmount: -200_000, cashUnavailableReason: null },
+  );
+
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 2_400_000,
+      desiredInsuranceAmount: null,
+      ...linkedSingleMonth,
+    }),
+    {
+      desiredCashAmount: null,
+      cashUnavailableReason: "계산 불가 (희망 4대보험 미입력)",
+    },
+  );
+
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 2_400_000,
+      desiredInsuranceAmount: 300_000,
+      isLinkedEmployee: false,
+      isSingleMonth: true,
+    }),
+    {
+      desiredCashAmount: null,
+      cashUnavailableReason: "계산 불가 (직원 미연결)",
+    },
+  );
+
+  // 희망 4대보험은 월 고정값이라 다월 조회에서는 차감하지 않는다.
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 5_000_000,
+      desiredInsuranceAmount: 300_000,
+      isLinkedEmployee: true,
+      isSingleMonth: false,
+    }),
+    {
+      desiredCashAmount: null,
+      cashUnavailableReason: "기간 조회에서는 자동계산 미적용",
+    },
+  );
+});
+
+// WO-0806 #2: 근무자 단위 집계는 직원 미연결 근무자도 이름으로 묶어 누락을 막는다.
+test("worker settlements group by employee and keep free-entry workers", () => {
+  const report = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    isSingleMonth: true,
+    selectedStoreId: null,
+    selectedStatus: "ALL",
+    stores: [{ id: "store-a", name: "강남" }],
+    targetStoreIds: ["store-a"],
+    ledgers: [
+      {
+        id: "ledger-1",
+        closingDate: new Date("2026-07-01T00:00:00.000Z"),
+        status: "HEADQUARTERS_CLOSED",
+        workerCount: 2,
+        store: { id: "store-a", name: "강남" },
+        ledgerLaborItems: [
+          {
+            id: "item-1",
+            employeeId: "emp-1",
+            workerName: "김직원",
+            amount: 100_000,
+            lateMemo: null,
+            earlyLeaveMemo: null,
+            specialMemo: null,
+            employee: {
+              position: "팀장",
+              bankAccount: "국민 123456-01-234567",
+              desiredInsuranceAmount: 30_000,
+            },
+          },
+          {
+            id: "item-2",
+            employeeId: null,
+            workerName: "자유근무자",
+            amount: 70_000,
+            lateMemo: null,
+            earlyLeaveMemo: null,
+            specialMemo: null,
+            employee: null,
+          },
+        ],
+      },
+      {
+        id: "ledger-2",
+        closingDate: new Date("2026-07-02T00:00:00.000Z"),
+        status: "HEADQUARTERS_CLOSED",
+        workerCount: 1,
+        store: { id: "store-a", name: "강남" },
+        ledgerLaborItems: [
+          {
+            id: "item-3",
+            employeeId: "emp-1",
+            workerName: "김직원",
+            amount: 120_000,
+            lateMemo: null,
+            earlyLeaveMemo: null,
+            specialMemo: null,
+            employee: {
+              position: "팀장",
+              bankAccount: "국민 123456-01-234567",
+              desiredInsuranceAmount: 30_000,
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(report.workerSettlements, [
+    {
+      key: "emp-1",
+      workerName: "김직원",
+      position: "팀장",
+      bankAccount: "국민 123456-01-234567",
+      workdayCount: 2,
+      laborAmount: 220_000,
+      desiredInsuranceAmount: 30_000,
+      desiredCashAmount: 190_000,
+      cashUnavailableReason: null,
+    },
+    {
+      key: "name:자유근무자",
+      workerName: "자유근무자",
+      position: null,
+      bankAccount: null,
+      workdayCount: 1,
+      laborAmount: 70_000,
+      desiredInsuranceAmount: null,
+      desiredCashAmount: null,
+      cashUnavailableReason: "계산 불가 (직원 미연결)",
+    },
+  ]);
+
+  // 일별 상세 합계 = 근무자별 월 정산 합계 = 지점 요약 합계.
+  const settlementTotal = report.workerSettlements.reduce(
+    (sum, row) => sum + row.laborAmount,
+    0,
+  );
+  assert.equal(settlementTotal, report.totalLaborAmount);
+  assert.equal(settlementTotal, report.storeSummaries[0].laborAmount);
+});
+
 test("headquarters labor store filter fails closed for unauthorized store ids", () => {
   assert.deepEqual(
     resolveHeadquartersLaborStoreFilter({
@@ -382,6 +605,18 @@ test("headquarters labor route and both navigation entries are present", () => {
     reportView.indexOf('aria-labelledby="labor-store-summary"') <
       reportView.indexOf("report.details.length === 0"),
     "store summary must render before the empty-detail branch",
+  );
+  // WO-0806 #2-1: 근무인원 일평균은 합계 ÷ 근무일 수이며 0 나눈셈 가드가 있어야 한다.
+  assert.match(reportView, /근무인원 일평균/);
+  assert.match(reportView, /workdayCount > 0\s*\?/);
+  assert.match(reportView, /workerCount \/ workdayCount/);
+  // WO-0806 #2: 월 단위 금액은 일별 행이 아니라 근무자별 월 정산에서만 보여준다.
+  assert.match(reportView, /근무자별 월 정산/);
+  assert.match(reportView, /인건비 합계 − 희망 4대보험/);
+  assert.ok(
+    reportView.indexOf('aria-labelledby="labor-worker-settlement"') <
+      reportView.indexOf('aria-labelledby="labor-detail"'),
+    "worker settlement must render before the daily detail table",
   );
   assert.match(
     sidebar,
