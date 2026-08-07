@@ -162,11 +162,11 @@ test("회의 0627 본사 전용 관리와 월간 xlsx 5시트 export를 검증�
 }) => {
   await login(page, "hq@example.com");
 
-  // 정책 8.1 승인(2026-07-25, WO-25 CAP-1)으로 직원 관리가 본사에 공개됐다.
-  // 승인 전에는 이 경로가 404였고 롤업도 없어야 했다.
+  // 정책 8.1 승인(2026-07-25, WO-25 CAP-1)으로 직원 관리가 본사에 공개됐으나,
+  // WO-0806 #5에서 다시 대표(LABOR_VIEW) 전용으로 좁혔다.
+  // 접근 매트릭스는 tests/e2e/labor-employees.spec.ts가 고정한다.
   await page.goto("/app/labor/employees");
-  await expect(page.getByRole("heading", { name: "직원 관리" })).toBeVisible();
-  await expect(page.getByText("직원별 월간 급여 롤업")).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/unauthorized/);
 
   await page.goto("/app/master-data/long-stock-thresholds");
   await expect(

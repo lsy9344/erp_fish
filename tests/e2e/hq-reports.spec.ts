@@ -921,10 +921,11 @@ test("본사는 리포트에 들어와 통합 리포트를 열고 차트와 같�
   await expect(page.getByRole("link", { name: /상세/ }).first()).toBeVisible();
 });
 
-test("본사는 인건비 현황에서 미연결 근무자와 지점 합계를 읽기 전용으로 본다", async ({
+// WO-0806 #5: 인건비 현황은 대표(LABOR_VIEW) 전용이다.
+test("대표는 인건비 현황에서 미연결 근무자와 지점 합계를 읽기 전용으로 본다", async ({
   page,
 }) => {
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await page.goto("/app/reports/daily");
 
   const laborLink = page.getByRole("link", { name: "인건비", exact: true });
@@ -939,18 +940,43 @@ test("본사는 인건비 현황에서 미연결 근무자와 지점 합계를 �
   ).toBeVisible();
   await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
   await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
-  await expect(page.getByText("정상 연결 직원", { exact: true })).toBeVisible();
+  // WO-0806 #2: 근무자별 월 정산(월 단위)과 일별 상세(영업일 단위)를 나눠 보여준다.
+  const settlement = page.getByLabel("근무자별 월 정산");
+  const dailyDetail = page.getByLabel("일별 상세");
+
   await expect(
-    page.getByText("복합 미연결 직원", { exact: true }),
+    settlement.getByRole("cell", { name: "정상 연결 직원", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("10분 지각", { exact: true })).toBeVisible();
-  await expect(page.getByText("병원 방문", { exact: true })).toBeVisible();
-  await expect(page.getByText("인수인계 필요", { exact: true })).toBeVisible();
   await expect(
-    page
+    settlement.getByRole("cell", { name: "복합 미연결 직원", exact: true }),
+  ).toBeVisible();
+  // 직원과 연결되지 않은 자유 입력 근무자는 희망 현금을 계산할 수 없다.
+  await expect(
+    settlement.getByRole("row", { name: /복합 미연결 직원/ }),
+  ).toContainText("계산 불가 (직원 미연결)");
+  // 월 단위 금액은 일별 상세에 없어야 한다(단위 불일치가 오류의 원인이었다).
+  await expect(dailyDetail).not.toContainText("희망 4대보험");
+  await expect(dailyDetail).not.toContainText("희망 현금");
+
+  await expect(
+    dailyDetail.getByRole("cell", { name: "10분 지각", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dailyDetail.getByRole("cell", { name: "병원 방문", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dailyDetail.getByRole("cell", { name: "인수인계 필요", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dailyDetail
       .getByRole("row", { name: /정상 연결 직원/ })
       .getByText("본사 마감", { exact: true }),
   ).toBeVisible();
+  // WO-0806 #2-1: 지점 요약에 근무인원 일평균이 붙는다.
+  await expect(page.getByRole("heading", { name: "지점 요약" })).toBeVisible();
+  await expect(page.getByLabel("인건비 요약").locator("..")).toContainText(
+    "근무인원 일평균",
+  );
   await expect(
     page.getByText("조회기간 인건비 합계").locator(".."),
   ).toContainText("1,864,197,540");
@@ -1780,11 +1806,9 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   await login(page, "hq@example.com");
   await page.goto("/app/reports/daily?date=today");
 
-  await page.getByRole("link", { name: "기간 비교" }).click();
+  await page.getByRole("link", { name: "기간 분석" }).click();
   await expect(page).toHaveURL(/\/app\/reports\/comparison/);
-  await expect(
-    page.getByRole("heading", { name: "기간 비교 리포트" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
   await expect(getStoreSelect(page)).toHaveValue("");
 
   await page.getByLabel("시작일").fill("2026-05-31");
@@ -1852,9 +1876,7 @@ test("본사는 기간 비교에서 권한 밖 지점 필터를 데이터 없이
     "/app/reports/comparison?startDate=2026-05-31&endDate=2026-06-02&storeId=missing-store",
   );
 
-  await expect(
-    page.getByRole("heading", { name: "기간 비교 리포트" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
   await expect(page.getByText(/조회 지점을 확인/)).toBeVisible();
   await expect(
     page.getByText(/선택한 조건에 표시할 지점 데이터가 없습니다/),
@@ -1873,9 +1895,7 @@ test("본사는 좁은 화면에서도 기간 비교 핵심 지표와 상태를 
     `/app/reports/comparison?startDate=2026-05-31&endDate=${getTodayKstInput()}&storeId=${STORE_IDS.closed}`,
   );
 
-  await expect(
-    page.getByRole("heading", { name: "기간 비교 리포트" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
 
   const closedCard = page.locator(
     `[data-testid="hq-report-comparison-mobile-row-${STORE_IDS.closed}"]`,
@@ -1925,15 +1945,15 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
     page.getByRole("heading", { name: "냉동/생물 매출 (추정)" }),
   ).toHaveCount(0);
   const kpiSummary = page.getByLabel("월간 핵심 성과", { exact: true });
-  await expect(kpiSummary).toContainText("장부 마감 매출");
+  // WO-0806 #3: 카드 10개 → 2행 테이블. 장부 마감 매출·이월 매출은 화면에서 내렸다.
+  await expect(kpiSummary).not.toContainText("장부 마감 매출");
+  await expect(kpiSummary).toContainText("순이익");
+  await expect(kpiSummary).toContainText("영업이익 − 인건비");
   await expect(kpiSummary).toContainText("마감 장부 숫자만 포함");
   await expect(kpiSummary).toContainText("정정 반영 건수");
   const kpiSales = page.getByTestId("hq-report-monthly-kpi-sales");
   await expect(kpiSales).toContainText("₩45,000");
-  const operatingSalesKpi = kpiSummary
-    .getByText("영업 매출 합계", { exact: true })
-    .locator("..");
-  await expect(operatingSalesKpi).toContainText("정정 반영");
+  await expect(kpiSales).toContainText("정정 반영");
 
   const lossSummary = page.getByTestId("hq-report-monthly-loss-summary");
   await expect(lossSummary).toContainText("손실 유형별 요약");
@@ -2002,7 +2022,7 @@ test("본사는 월간 리포트에서 미마감과 휴무 상태를 텍스트�
 
   const inProgressKpis = page.getByLabel("월간 핵심 성과", { exact: true });
   await expect(inProgressKpis).toContainText("미마감 장부 포함");
-  await expect(inProgressKpis).toContainText("장부 마감 매출");
+  await expect(inProgressKpis).not.toContainText("장부 마감 매출");
   await expect(page.getByTestId("hq-report-monthly-kpi-sales")).toContainText(
     "₩150,000",
   );
