@@ -1,5 +1,15 @@
 import type { DailyLedgerStatus } from "../../../generated/prisma";
 import {
+  buildMetricAxisTrendRows,
+  buildPeriodContrastRows,
+  buildPeriodTrendColumns,
+  buildStoreAxisTrendRows,
+  getPeriodAnalysisMetric,
+  getPreviousComparableRange,
+  PERIOD_ANALYSIS_METRICS,
+  type PeriodTrendUnit,
+} from "./period-analysis.ts";
+import {
   applyCorrectionValuesToLedgerReviewInput,
   calculateExpenseTotal,
   calculateLedgerReviewSummary,
@@ -724,6 +734,120 @@ export async function getMonthlySalesAnalysis(
     currentRows: current.rows,
     previousRows: previous.rows,
   });
+}
+
+// WO-0806 [F]: 모드 B — 두 기간 대조(엑셀 `분석` 시트).
+// 기존 집계를 두 번 호출하고 증감만 계산한다. 새 집계 로직 없음.
+export async function getHqPeriodContrastReport({
+  startDate,
+  endDate,
+  baseStartDate,
+  baseEndDate,
+  storeId,
+}: {
+  startDate?: unknown;
+  endDate?: unknown;
+  baseStartDate?: unknown;
+  baseEndDate?: unknown;
+  storeId?: unknown;
+} = {}) {
+  const current = await getHqStoreComparisonReport({
+    startDate,
+    endDate,
+    storeId,
+  });
+  // 대조 기간을 비우면 직전 동일 길이 기간을 쓴다.
+  const fallbackBase = getPreviousComparableRange(current.range);
+  const base = await getHqStoreComparisonReport({
+    startDate:
+      typeof baseStartDate === "string" && baseStartDate.length > 0
+        ? baseStartDate
+        : fallbackBase.startDateInput,
+    endDate:
+      typeof baseEndDate === "string" && baseEndDate.length > 0
+        ? baseEndDate
+        : fallbackBase.endDateInput,
+    storeId,
+  });
+
+  return {
+    current,
+    base,
+    contrastRows: buildPeriodContrastRows({
+      baseRows: base.rows,
+      currentRows: current.rows,
+    }),
+  };
+}
+
+// WO-0806 [F]: 모드 C — 시계열(엑셀 `매장 별(달)`/`매장 별(년도)`/지표 피벗).
+// 기간별로 같은 집계를 반복 호출한다.
+// ponytail: 기간 수가 더 커지면 단일 범위 쿼리 + in-memory 월별 그룹핑으로 바꾼다.
+export async function getHqPeriodTrendReport({
+  axis,
+  unit,
+  year,
+  years,
+  fromMonth,
+  toMonth,
+  metricKey,
+  storeId,
+}: {
+  axis: "store" | "metric";
+  unit: PeriodTrendUnit;
+  year: number;
+  years?: number[];
+  fromMonth?: number;
+  toMonth?: number;
+  metricKey?: unknown;
+  storeId?: unknown;
+}) {
+  const { columns, errorMessages } = buildPeriodTrendColumns({
+    unit,
+    year,
+    years,
+    fromMonth,
+    toMonth,
+  });
+  const metric =
+    getPeriodAnalysisMetric(metricKey) ?? PERIOD_ANALYSIS_METRICS[0];
+  const reports = await Promise.all(
+    columns.map((column) =>
+      getHqStoreComparisonReport({
+        startDate: column.startDateInput,
+        endDate: column.endDateInput,
+        storeId: axis === "metric" ? storeId : undefined,
+      }),
+    ),
+  );
+  const stores = reports[0]?.stores ?? [];
+  const selectedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const rows =
+    axis === "metric"
+      ? buildMetricAxisTrendRows(
+          reports.map(
+            (report) =>
+              report.rows.find(
+                (row) => !selectedStoreId || row.storeId === selectedStoreId,
+              ) ?? null,
+          ),
+        )
+      : buildStoreAxisTrendRows({
+          metric,
+          rowsByColumn: reports.map((report) => report.rows),
+        });
+
+  return {
+    axis,
+    unit,
+    columns,
+    metric,
+    rows,
+    stores,
+    selectedStoreId,
+    errorMessages,
+  };
 }
 
 export function buildDailyAttendanceReport(

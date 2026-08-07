@@ -5,7 +5,14 @@ import type {
   MonthlyClosingAnomalyReportData,
   ProductSalesPeriodReportData,
   StoreComparisonReportData,
+  StoreComparisonReportRow,
 } from "./types";
+import {
+  PERIOD_ANALYSIS_METRICS,
+  type PeriodContrastRow,
+  type PeriodTrendColumn,
+  type PeriodTrendRow,
+} from "./period-analysis.ts";
 import type { InventoryPositionReportData } from "./inventory-position-types";
 import type { LedgerReviewMetric } from "../../server/calculations/ledger";
 
@@ -713,4 +720,144 @@ function sanitizeFilenamePart(value: string) {
     .slice(0, 2);
 
   return safeParts && safeParts.length > 0 ? safeParts.join("-") : "export";
+}
+
+// WO-0806 [F]: 대표는 엑셀 사용자다. 기간 대조/시계열도 화면 그대로 내보낸다.
+// 컬럼은 PERIOD_ANALYSIS_METRICS 하나에서 오므로 화면과 어긋날 수 없다.
+const PERIOD_ANALYSIS_STORE_COLUMN: ReportExportColumn = {
+  key: "storeName",
+  label: "지점",
+};
+
+function periodMetricColumns(): ReportExportColumn[] {
+  return [
+    PERIOD_ANALYSIS_STORE_COLUMN,
+    ...PERIOD_ANALYSIS_METRICS.map((metric) => ({
+      key: metric.key,
+      label: metric.label,
+    })),
+  ];
+}
+
+function periodMetricRows(rows: StoreComparisonReportRow[]): ReportExportRow[] {
+  return rows.map((row) => ({
+    storeName: row.storeName,
+    ...Object.fromEntries(
+      PERIOD_ANALYSIS_METRICS.map((metric) => [
+        metric.key,
+        formatReviewMetric(row[metric.key]),
+      ]),
+    ),
+  }));
+}
+
+// 모드 B: 엑셀 `분석` 시트와 같은 3블록을 3개 시트로 낸다.
+export function buildPeriodContrastExport({
+  base,
+  current,
+  contrastRows,
+  storeId,
+}: {
+  base: StoreComparisonReportData;
+  current: StoreComparisonReportData;
+  contrastRows: PeriodContrastRow[];
+  storeId: string | null;
+}): { exportData: ReportExportData; extraSheets: ReportExportSheet[] } {
+  const columns = periodMetricColumns();
+  const exportData: ReportExportData = {
+    report: "comparison",
+    period: `${current.range.startDateInput}-${current.range.endDateInput}`,
+    filters: {
+      mode: "contrast",
+      startDate: current.range.startDateInput,
+      endDate: current.range.endDateInput,
+      baseStartDate: base.range.startDateInput,
+      baseEndDate: base.range.endDateInput,
+      storeId,
+    },
+    columns,
+    rows: periodMetricRows(current.rows),
+    scopedStoreIds: current.rows.map((row) => row.storeId),
+  };
+
+  return {
+    exportData,
+    extraSheets: [
+      { name: "대조기간", columns, rows: periodMetricRows(base.rows) },
+      {
+        name: "증감",
+        columns,
+        rows: contrastRows.map((row) => ({
+          storeName: row.storeName,
+          ...Object.fromEntries(
+            PERIOD_ANALYSIS_METRICS.map((metric) => {
+              const delta = row.deltas[metric.key];
+
+              return [
+                metric.key,
+                delta.value === null
+                  ? (delta.unavailableReason ?? "계산 불가")
+                  : // 비율 지표는 %p 차분, 나머지는 % 비율(엑셀 관행).
+                    delta.kind === "point"
+                    ? `${(delta.value * 100).toFixed(1)}%p`
+                    : `${(delta.value * 100).toFixed(1)}%`,
+              ];
+            }),
+          ),
+        })),
+      },
+    ],
+  };
+}
+
+// 모드 C: 화면 표 그대로 한 시트.
+export function buildPeriodTrendExport({
+  axis,
+  columns: periodColumns,
+  rows,
+  metric,
+  storeId,
+}: {
+  axis: "store" | "metric";
+  columns: PeriodTrendColumn[];
+  rows: PeriodTrendRow[];
+  metric: { key: string; label: string };
+  storeId: string | null;
+}): ReportExportData {
+  const columns: ReportExportColumn[] = [
+    { key: "label", label: axis === "metric" ? "지표" : "지점" },
+    ...periodColumns.map((column) => ({
+      key: column.key,
+      label: column.label,
+    })),
+    { key: "total", label: "합계/평균" },
+  ];
+  const first = periodColumns[0];
+  const last = periodColumns[periodColumns.length - 1];
+
+  return {
+    report: "comparison",
+    period:
+      first && last
+        ? `${first.startDateInput}-${last.endDateInput}`
+        : "empty-range",
+    filters: {
+      mode: "trend",
+      axis,
+      metricKey: axis === "store" ? metric.key : null,
+      storeId,
+    },
+    columns,
+    rows: rows.map((row) => ({
+      label: row.label,
+      ...Object.fromEntries(
+        row.cells.map((cell, index) => [
+          periodColumns[index]?.key ?? String(index),
+          formatReviewMetric(cell ?? undefined),
+        ]),
+      ),
+      total: formatReviewMetric(row.total ?? undefined),
+    })),
+    scopedStoreIds: axis === "store" ? rows.map((row) => row.key) : [],
+  };
 }
