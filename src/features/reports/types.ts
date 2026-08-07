@@ -189,6 +189,9 @@ export type StoreComparisonReportRow = {
   grossProfit: LedgerReviewMetric;
   grossMarginRate: LedgerReviewMetric;
   operatingProfit: LedgerReviewMetric;
+  // WO-0806 [F]: 대표 엑셀 8지표 중 유일하게 빠져 있던 `평균 근무인원`.
+  // 입력 필드의 단순 평균이라 별도 정정 근거 위젯을 두지 않는다(값은 correction-aware).
+  averageWorkerCount: LedgerReviewMetric;
   productivity: LedgerReviewMetric;
   averageInventory: LedgerReviewMetric;
   averageSales: LedgerReviewMetric;

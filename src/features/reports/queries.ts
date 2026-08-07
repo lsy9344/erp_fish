@@ -2477,6 +2477,7 @@ function buildMonthlyKpis(
     grossMarginRate: appliedAggregates.grossMarginRate,
     operatingProfit: appliedAggregates.operatingProfit,
     lossTotal: appliedLossTotal,
+    averageWorkerCount: appliedAggregates.averageWorkerCount,
     averageInventory: appliedAggregates.averageInventory,
     averageSales: appliedAggregates.averageSales,
     inventoryToSalesRatio: appliedAggregates.inventoryToSalesRatio,
@@ -3555,6 +3556,7 @@ export function buildStoreComparisonReportRowForTest({
     grossProfit: appliedAggregates.grossProfit,
     grossMarginRate: appliedAggregates.grossMarginRate,
     operatingProfit: appliedAggregates.operatingProfit,
+    averageWorkerCount: appliedAggregates.averageWorkerCount,
     productivity: appliedAggregates.productivity,
     averageInventory: appliedAggregates.averageInventory,
     averageSales: appliedAggregates.averageSales,
@@ -3857,6 +3859,12 @@ function aggregateStoreComparisonMetrics(
   });
   const averageInventory = averageMetric(inventoryMetrics);
   const averageSales = averageMetric(salesMetrics);
+  // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 영업일수로 나눈 소수값이며
+  // averageSales와 같은 분모(ledgerSummaries.length)를 쓴다.
+  const averageWorkerCount =
+    ledgerSummaries.length > 0
+      ? available(workerTotal / ledgerSummaries.length)
+      : unavailable("계산 불가");
 
   return {
     salesAmount,
@@ -3877,6 +3885,7 @@ function aggregateStoreComparisonMetrics(
       !hasSalesDayWithoutWorkers
         ? available(salesAmount.value / workerTotal)
         : unavailable("계산 불가"),
+    averageWorkerCount,
     averageInventory,
     averageSales,
     inventoryToSalesRatio:

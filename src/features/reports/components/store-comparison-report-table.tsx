@@ -30,6 +30,11 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
   style: "percent",
   maximumFractionDigits: 1,
 });
+// WO-0806 [F]: 대표 엑셀은 평균 근무인원을 2.88 같은 소수로 적어 왔다.
+const headcountFormatter = new Intl.NumberFormat("ko-KR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 export function StoreComparisonReportTable({
   report,
@@ -47,22 +52,30 @@ export function StoreComparisonReportTable({
   return (
     <section
       className="flex flex-col gap-3"
-      aria-label="기간 비교 리포트 지점 목록"
+      aria-label="기간 분석 리포트 지점 목록"
     >
+      {/* WO-0806 [F]: 앞 8개 컬럼은 대표 엑셀 `분석` 시트와 순서를 맞춴둔다.
+          우리 쪽 추가 지표(영업이익/상태/손실)는 그 뒤에 둔다. */}
       <div className="bg-card hidden overflow-x-auto rounded-lg border shadow-sm md:block">
-        <Table className="min-w-[1280px]">
+        <Table className="min-w-[1440px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">지점</TableHead>
-              <TableHead>상태</TableHead>
-              <TableHead className="text-right">매출 구성</TableHead>
+              <TableHead className="text-right">매출</TableHead>
               <TableHead className="text-right">매출이익</TableHead>
               <TableHead className="text-right">이익률</TableHead>
-              <TableHead className="text-right">영업이익</TableHead>
+              <TableHead className="text-right">평균 근무인원</TableHead>
               <TableHead className="text-right">인당생산성</TableHead>
               <TableHead className="text-right">평균재고</TableHead>
               <TableHead className="text-right">평균매출</TableHead>
-              <TableHead className="text-right">재고비율</TableHead>
+              <TableHead className="text-right">매출대비 재고비율</TableHead>
+              <TableHead className="text-right">
+                영업이익
+                <span className="text-muted-foreground block text-xs font-normal">
+                  매출이익 − 장부지출
+                </span>
+              </TableHead>
+              <TableHead>상태</TableHead>
               <TableHead>손실</TableHead>
             </TableRow>
           </TableHeader>
@@ -73,9 +86,6 @@ export function StoreComparisonReportTable({
                 data-testid={`hq-report-comparison-row-${row.storeId}`}
               >
                 <TableCell className="font-medium">{row.storeName}</TableCell>
-                <TableCell>
-                  <StatusSummary row={row} />
-                </TableCell>
                 <SalesCompositionCell row={row} />
                 <MetricCell
                   value={formatKrwMetric(row.grossProfit)}
@@ -85,10 +95,9 @@ export function StoreComparisonReportTable({
                   value={formatPercentMetric(row.grossMarginRate)}
                   evidence={row.metricEvidence.grossMarginRate}
                 />
-                <MetricCell
-                  value={formatKrwMetric(row.operatingProfit)}
-                  evidence={row.metricEvidence.operatingProfit}
-                />
+                <TableCell className="text-right tabular-nums">
+                  {formatHeadcountMetric(row.averageWorkerCount)}
+                </TableCell>
                 <MetricCell
                   value={formatKrwMetric(row.productivity)}
                   evidence={row.metricEvidence.productivity}
@@ -105,6 +114,13 @@ export function StoreComparisonReportTable({
                   value={formatPercentMetric(row.inventoryToSalesRatio)}
                   evidence={row.metricEvidence.inventoryToSalesRatio}
                 />
+                <MetricCell
+                  value={formatKrwMetric(row.operatingProfit)}
+                  evidence={row.metricEvidence.operatingProfit}
+                />
+                <TableCell>
+                  <StatusSummary row={row} />
+                </TableCell>
                 <TableCell>
                   <MetricValueWithEvidence
                     value={formatLoss(row)}
@@ -139,7 +155,7 @@ export function StoreComparisonReportTable({
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               <div className="col-span-2 min-w-0">
-                <dt className="text-muted-foreground">매출 구성</dt>
+                <dt className="text-muted-foreground">매출</dt>
                 <dd className="font-medium tabular-nums">
                   <SalesComposition row={row} align="left" />
                 </dd>
@@ -149,8 +165,14 @@ export function StoreComparisonReportTable({
                 value={formatPercentMetric(row.grossMarginRate)}
                 evidence={row.metricEvidence.grossMarginRate}
               />
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">평균 근무인원</dt>
+                <dd className="font-medium tabular-nums">
+                  {formatHeadcountMetric(row.averageWorkerCount)}
+                </dd>
+              </div>
               <MobileMetric
-                label="영업이익"
+                label="영업이익 (매출이익 − 장부지출)"
                 value={formatKrwMetric(row.operatingProfit)}
                 evidence={row.metricEvidence.operatingProfit}
               />
@@ -182,7 +204,7 @@ export function StoreComparisonReportTable({
                   evidence={row.metricEvidence.averageSales}
                 />
                 <MobileMetric
-                  label="재고비율"
+                  label="매출대비 재고비율"
                   value={formatPercentMetric(row.inventoryToSalesRatio)}
                   evidence={row.metricEvidence.inventoryToSalesRatio}
                 />
@@ -392,6 +414,14 @@ function formatPercentMetric(
   return metric.value === null
     ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
     : percentFormatter.format(metric.value);
+}
+
+function formatHeadcountMetric(
+  metric: StoreComparisonReportRow["averageWorkerCount"],
+) {
+  return metric.value === null
+    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
+    : `${headcountFormatter.format(metric.value)}명`;
 }
 
 function formatLoss(row: StoreComparisonReportRow) {

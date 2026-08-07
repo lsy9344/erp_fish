@@ -72,8 +72,8 @@ export default async function StoreComparisonReportPage({
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
-          title="기간 비교 리포트"
-          description={`${report.range.startDateInput}부터 ${report.range.endDateInput}까지 ${selectedStoreLabel}의 단일 기간 지점별 실적을 비교합니다.`}
+          title="기간 분석"
+          description={`${report.range.startDateInput}부터 ${report.range.endDateInput}까지 ${selectedStoreLabel}의 지점별 실적을 비교합니다.`}
         />
         <div className="flex flex-col gap-2 md:items-end">
           <form
