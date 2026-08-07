@@ -35,7 +35,8 @@ function formatMargin(value: number | null, reason: string | null) {
 }
 
 // WO-E(2026-06-22): HR 월간 생산성/인력 배치 분석.
-// 직원별 근무일 평균 매출/마진, 근무 인원 수별 평균 매출/마진, 직원 미연결 급여 행 수를 보여준다.
+// 직원별 근무일 평균 매출/마진과 직원 미연결 급여 행 수를 보여준다.
+// WO-0806 #1-13: `근무 인원 수별 평균` 테이블은 삭제했다.
 export function EmployeeProductivityClient({
   initialMonth,
   initialData,
@@ -116,49 +117,6 @@ export function EmployeeProductivityClient({
                   </td>
                   <td className="py-2 pr-3 tabular-nums">
                     {formatKrw(row.avgSalesPerWorkday)}
-                  </td>
-                  <td className="py-2 tabular-nums">
-                    {formatMargin(
-                      row.avgMarginRate,
-                      row.marginUnavailableReason,
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h4 className="text-muted-foreground text-xs font-medium">
-          근무 인원 수별 평균
-        </h4>
-        {data.byHeadcount.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            해당 월에 근무 인원이 입력된 장부가 없습니다.
-          </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-muted-foreground border-b text-left">
-                <th className="pr-3 pb-2 font-normal">근무 인원</th>
-                <th className="pr-3 pb-2 font-normal">장부 수</th>
-                <th className="pr-3 pb-2 font-normal">평균 매출</th>
-                <th className="pb-2 font-normal">평균 마진율</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.byHeadcount.map((row) => (
-                <tr key={row.workerCount} className="border-b last:border-0">
-                  <td className="py-2 pr-3 tabular-nums">
-                    {row.workerCount}명
-                  </td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {row.ledgerCount}건
-                  </td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {formatKrw(row.avgSales)}
                   </td>
                   <td className="py-2 tabular-nums">
                     {formatMargin(

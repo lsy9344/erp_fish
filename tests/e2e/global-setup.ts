@@ -28,6 +28,8 @@ const profileDefinitions = [
       PermissionAction.REPORT_VIEW,
       PermissionAction.EXPORT_CREATE,
       PermissionAction.USER_PERMISSION_MANAGE,
+      // WO-0806 #5: 직원 관리·인건비 현황은 대표(OWNER) 전용이다.
+      PermissionAction.LABOR_VIEW,
     ],
   },
   {
@@ -51,7 +53,14 @@ const profileDefinitions = [
     code: "HQ_STAFF",
     name: "본사 스텝",
     storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
-    actions: [PermissionAction.LEDGER_EDIT, PermissionAction.REPORT_VIEW],
+    actions: [
+      PermissionAction.LEDGER_EDIT,
+      PermissionAction.REPORT_VIEW,
+      // WO-0806 #5 fixture 전용: LABOR_VIEW를 가진 지정 지점 계정이 있어야
+      // 인건비 화면의 지점 범위가 fail-closed인지 검증할 수 있다.
+      // 배포 seed는 OWNER에만 부여한다(tests/unit/labor-employees.test.mjs가 고정).
+      PermissionAction.LABOR_VIEW,
+    ],
   },
   {
     code: "HQ_VIEWER",

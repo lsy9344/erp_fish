@@ -28,10 +28,6 @@ export type HeadquartersLaborDetail = {
   lateMemo: string | null;
   earlyLeaveMemo: string | null;
   specialMemo: string | null;
-  // WO-25(2026-07-25) #8: 등록된 직원의 월 희망 수령액 분해(4대보험/현금). 직원과
-  // 연결되지 않은 자유 입력 근무자는 null로 남는다.
-  desiredInsuranceAmount: number | null;
-  desiredCashAmount: number | null;
 };
 
 export type HeadquartersLaborStoreSummary = {
@@ -42,8 +38,32 @@ export type HeadquartersLaborStoreSummary = {
   laborAmount: number;
 };
 
-export type HeadquartersLaborReport = {
+// WO-0806 #2: 월급 지급 실무용 근무자 단위 집계.
+// 희망 4대보험/현금은 월 단위 금액이라 일별 상세 행에는 넣을 수 없다.
+export type HeadquartersLaborWorkerSettlement = {
+  key: string;
+  workerName: string;
+  position: string | null;
+  bankAccount: string | null;
+  workdayCount: number;
+  laborAmount: number;
+  desiredInsuranceAmount: number | null;
+  // 자동계산: 인건비 합계 − 희망 4대보험. 계산 불가 시 null + 사유.
+  desiredCashAmount: number | null;
+  cashUnavailableReason: string | null;
+};
+
+export type HeadquartersLaborDateRange = {
+  // 기존 `?month=` 계약 호환을 위해 남긴다. 기간 모드에서는 시작일의 월이다.
   monthInput: string;
+  startDateInput: string;
+  endDateInput: string;
+  rangeLabel: string;
+  // 한 달을 온전히 덮는 조회에서만 희망 현금을 자동계산한다.
+  isSingleMonth: boolean;
+};
+
+export type HeadquartersLaborReport = HeadquartersLaborDateRange & {
   selectedStoreId: string | null;
   selectedStatus: HeadquartersLaborStatusFilter;
   selectedWorkerName: string | null;
@@ -52,6 +72,7 @@ export type HeadquartersLaborReport = {
   storeCount: number;
   laborRecordCount: number;
   storeSummaries: HeadquartersLaborStoreSummary[];
+  workerSettlements: HeadquartersLaborWorkerSettlement[];
   details: HeadquartersLaborDetail[];
   errorMessages: string[];
 };

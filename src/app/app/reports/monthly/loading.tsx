@@ -31,22 +31,35 @@ export default function MonthlyClosingAnomalyReportLoading() {
         </div>
       </div>
 
+      {/* WO-0806 #3: 카드 그리드가 아니라 2행 테이블이다. */}
       <section className="space-y-3" aria-label="월간 핵심 성과 불러오기">
         <div className="flex items-center justify-between gap-3">
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-6 w-24" />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 8 }, (_, index) => (
-            <div
-              key={`kpi-${index}`}
-              className="bg-background rounded-lg border p-4"
-            >
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="mt-3 h-8 w-32" />
-              <Skeleton className="mt-2 h-3 w-20" />
-            </div>
-          ))}
+        <div className="bg-background space-y-3 rounded-lg border p-3">
+          <div className="grid grid-cols-5 gap-3 border-b pb-3">
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={`kpi-head-${index}`} className="h-4 w-20" />
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-3">
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={`kpi-cell-${index}`} className="h-8 w-24" />
+            ))}
+          </div>
+        </div>
+        <div className="bg-background space-y-3 rounded-lg border p-3">
+          <div className="grid grid-cols-3 gap-3 border-b pb-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <Skeleton key={`kpi-sub-head-${index}`} className="h-3 w-16" />
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <Skeleton key={`kpi-sub-cell-${index}`} className="h-6 w-20" />
+            ))}
+          </div>
         </div>
       </section>
 

@@ -8,6 +8,8 @@ import {
   buildInventoryPositionReportExport,
   buildMonthlyClosingAnomalyReportExport,
   buildMonthlyProfitLossSheet,
+  buildPeriodContrastExport,
+  buildPeriodTrendExport,
   buildProductSalesSheet,
   buildReportCsv,
   buildReportExportAuditSnapshot,
@@ -24,9 +26,12 @@ import { buildAllMonthsProfitAndLoss } from "~/features/reports/monthly-profit-l
 import {
   getHqDailyMeetingReport,
   getHqMonthlyClosingAnomalyReport,
+  getHqPeriodContrastReport,
+  getHqPeriodTrendReport,
   getHqProductSalesReportForRange,
   getHqStoreComparisonReport,
 } from "~/features/reports/queries";
+import type { ReportExportSheet } from "~/features/reports/export";
 import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
 import { requireExportCreateAccess } from "~/server/authz";
 import { withAuditActorContext, writeAuditLog } from "~/server/audit";
@@ -94,6 +99,14 @@ export async function GET(request: Request) {
     if (parsed.value.report === "monthly") {
       auditSheets = await buildMonthlyBundleSheets(parsed.value, exportData);
       body = await buildBundledReportXlsx(auditSheets);
+    } else if (
+      parsed.value.report === "comparison" &&
+      parsed.value.mode === "contrast"
+    ) {
+      body = await buildReportXlsx(
+        exportData,
+        await buildContrastExtraSheets(parsed.value),
+      );
     } else {
       body = await buildReportXlsx(exportData);
     }
@@ -141,9 +154,20 @@ type ParsedExportRequest =
     }
   | {
       report: "comparison";
+      // WO-0806 [F]: single(기존) / contrast(엑셀 `분석`) / trend(시계열).
+      // single은 기존 출력과 바이트 단위로 같아야 한다.
+      mode: "single" | "contrast" | "trend";
       startDate: string;
       endDate: string;
       storeId: string | null;
+      baseStartDate: string | null;
+      baseEndDate: string | null;
+      axis: "store" | "metric";
+      unit: "month" | "year";
+      year: number;
+      fromMonth: number;
+      toMonth: number;
+      metricKey: string | null;
     }
   | {
       report: "monthly";
@@ -199,13 +223,40 @@ function parseExportRequest(
       return { ok: false, message: "조회 기간을 확인해 주세요." };
     }
 
+    const modeParam = params.get("mode");
+    const mode =
+      modeParam === "contrast" || modeParam === "trend" ? modeParam : "single";
+    const baseStartDate = normalizeOptionalParam(params.get("baseStartDate"));
+    const baseEndDate = normalizeOptionalParam(params.get("baseEndDate"));
+
+    if (
+      (baseStartDate && !isValidDateInput(baseStartDate)) ||
+      (baseEndDate && !isValidDateInput(baseEndDate))
+    ) {
+      return { ok: false, message: "대조 기간을 확인해 주세요." };
+    }
+
     return {
       ok: true,
       value: {
         report,
+        mode,
         startDate,
         endDate,
         storeId: normalizeOptionalParam(params.get("storeId")),
+        baseStartDate,
+        baseEndDate,
+        axis: params.get("axis") === "metric" ? "metric" : "store",
+        unit: params.get("unit") === "year" ? "year" : "month",
+        year: toBoundedInt(
+          params.get("year"),
+          new Date().getUTCFullYear(),
+          2000,
+          2100,
+        ),
+        fromMonth: toBoundedInt(params.get("fromMonth"), 1, 1, 12),
+        toMonth: toBoundedInt(params.get("toMonth"), 12, 1, 12),
+        metricKey: normalizeOptionalParam(params.get("metricKey")),
       },
       format,
     };
@@ -257,6 +308,48 @@ async function loadReportExportData(
         await getHqDailyMeetingReport({ dateQuery: request.date }),
       );
     case "comparison":
+      // mode=single은 기존 출력 그대로. contrast/trend는 엑셀 대응 모양으로 내보낸다.
+      if (request.mode === "contrast") {
+        const contrast = await getHqPeriodContrastReport({
+          startDate: request.startDate,
+          endDate: request.endDate,
+          baseStartDate: request.baseStartDate ?? undefined,
+          baseEndDate: request.baseEndDate ?? undefined,
+          storeId: request.storeId,
+        });
+
+        return buildPeriodContrastExport({
+          base: contrast.base,
+          current: contrast.current,
+          contrastRows: contrast.contrastRows,
+          storeId: request.storeId,
+        }).exportData;
+      }
+
+      if (request.mode === "trend") {
+        const trend = await getHqPeriodTrendReport({
+          axis: request.axis,
+          unit: request.unit,
+          year: request.year,
+          years: Array.from(
+            { length: 7 },
+            (_, index) => request.year - 6 + index,
+          ),
+          fromMonth: request.fromMonth,
+          toMonth: request.toMonth,
+          metricKey: request.metricKey,
+          storeId: request.storeId,
+        });
+
+        return buildPeriodTrendExport({
+          axis: trend.axis,
+          columns: trend.columns,
+          rows: trend.rows,
+          metric: trend.metric,
+          storeId: request.storeId,
+        });
+      }
+
       return buildStoreComparisonReportExport(
         await getHqStoreComparisonReport({
           startDate: request.startDate,
@@ -365,6 +458,40 @@ function isReportExportType(value: string | null): value is ReportExportType {
 
 function normalizeOptionalParam(value: string | null) {
   return value && value.trim().length > 0 ? value : null;
+}
+
+function toBoundedInt(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max
+    ? Math.trunc(parsed)
+    : fallback;
+}
+
+// WO-0806 [F]: 기간 대조 xlsx는 엑셀 `분석` 시트처럼 3개 시트로 낸다.
+// 월별 번들(buildMonthlyBundleSheets)과 같은 재조회 패턴을 따른다.
+async function buildContrastExtraSheets(
+  request: Extract<ParsedExportRequest, { report: "comparison" }>,
+): Promise<ReportExportSheet[]> {
+  const contrast = await getHqPeriodContrastReport({
+    startDate: request.startDate,
+    endDate: request.endDate,
+    baseStartDate: request.baseStartDate ?? undefined,
+    baseEndDate: request.baseEndDate ?? undefined,
+    storeId: request.storeId,
+  });
+
+  return buildPeriodContrastExport({
+    base: contrast.base,
+    current: contrast.current,
+    contrastRows: contrast.contrastRows,
+    storeId: request.storeId,
+  }).extraSheets;
 }
 
 function isValidDateInput(value: string) {

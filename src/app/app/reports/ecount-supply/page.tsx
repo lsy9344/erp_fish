@@ -18,7 +18,8 @@ import {
   getHeadquartersSupplyReport,
   type EcountSupplyReportFilters,
 } from "~/features/reports/ecount-supply-report-queries";
-import { requireReportAccess } from "~/server/authz";
+import { PermissionAction } from "../../../../../generated/prisma";
+import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
@@ -49,6 +50,11 @@ export default async function EcountSupplyReportPage({
   searchParams,
 }: EcountSupplyReportPageProps) {
   const user = await requireReportAccess();
+  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
+  const canViewLabor = await hasActionPermission(
+    user.id,
+    PermissionAction.LABOR_VIEW,
+  );
   const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
 
@@ -104,7 +110,7 @@ export default async function EcountSupplyReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="ecount-supply" />
+      <ReportsNav active="ecount-supply" canViewLabor={canViewLabor} />
 
       <PageHeader
         title="본사 출고 / 지점 입고 내역"

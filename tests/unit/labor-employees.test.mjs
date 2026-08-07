@@ -99,7 +99,7 @@ test("employee form schema validates name and hire date", async () => {
   );
 });
 
-test("employee queries expose active options, list, and monthly payroll rollup", () => {
+test("employee queries expose active options and list", () => {
   const querySource = readProjectFile(
     "src",
     "features",
@@ -114,16 +114,16 @@ test("employee queries expose active options, list, and monthly payroll rollup",
   );
   assert.match(querySource, /isActive:\s*true/);
 
-  // 직원별 월간 롤업: 근무 매장 수, 근무 일수, 급여 합계, 메모 수.
-  assert.match(
+  // WO-0806 #1-10: 급여 롤업은 인건비 리포트가 대체하므로 제거됐다.
+  assert.doesNotMatch(
     querySource,
     /export\s+async\s+function\s+getEmployeeMonthlyPayroll/,
   );
-  assert.match(querySource, /employeeId:\s*{\s*not:\s*null\s*}/);
-  assert.match(querySource, /workedStoreCount/);
-  assert.match(querySource, /workedDayCount/);
-  assert.match(querySource, /payrollTotal/);
-  assert.match(querySource, /memoCount/);
+  // WO-0806 #1: 인사관리 카드 필드를 조회에 싣는다.
+  assert.match(querySource, /bankAccount:\s*true/);
+  assert.match(querySource, /position:\s*true/);
+  // 희망 현금은 자동계산 값이므로 조회 DTO에서 뺀다.
+  assert.doesNotMatch(querySource, /desiredCashAmount/);
 
   // employeeId 검증 헬퍼는 트랜잭션에서 호출된다.
   assert.match(
@@ -133,8 +133,8 @@ test("employee queries expose active options, list, and monthly payroll rollup",
   assert.match(querySource, /tx\.employee\.findMany/);
 });
 
-// WO-D(2026-06-22): 직원 마스터 쓰기(create/update/deactivate)는 SETTINGS_MANAGE,
-// 조회/롤업은 REPORT_VIEW로 분리한다.
+// WO-0806 #5: 직원 마스터 읽기/쓰기 모두 대표 전용(LABOR_VIEW)이다.
+// 읽기만 좁히면 "볼 수 없는데 고칠 수 있는" 상태가 남는다.
 test("employee write actions require manage access, reads stay report-view", () => {
   const actionSource = readProjectFile(
     "src",
@@ -147,12 +147,9 @@ test("employee write actions require manage access, reads stay report-view", () 
   assert.match(actionSource, /export\s+async\s+function\s+createEmployee/);
   assert.match(actionSource, /export\s+async\s+function\s+updateEmployee/);
   assert.match(actionSource, /export\s+async\s+function\s+deactivateEmployee/);
-  assert.match(
-    actionSource,
-    /export\s+async\s+function\s+getEmployeeMonthlyPayrollAction/,
-  );
+  assert.doesNotMatch(actionSource, /getEmployeeMonthlyPayrollAction/);
 
-  // 쓰기 액션은 requireEmployeeManageAccess(SETTINGS_MANAGE)로 보호한다.
+  // 쓰기 액션은 requireEmployeeManageAccess로 보호한다.
   const manageGuards =
     actionSource.match(/requireEmployeeManageAccess\(\)/g) ?? [];
   assert.ok(
@@ -163,7 +160,7 @@ test("employee write actions require manage access, reads stay report-view", () 
   // 쓰기 액션은 더 이상 requireReportAccess를 직접 게이트로 쓰지 않는다.
   assert.doesNotMatch(actionSource, /requireReportAccess\(\)/);
 
-  // authz 헬퍼는 SETTINGS_MANAGE 기반으로 정의된다.
+  // authz 헬퍼는 LABOR_VIEW 기반으로 정의된다.
   const authzSource = readProjectFile("src", "server", "authz.ts");
   assert.match(
     authzSource,
@@ -171,7 +168,11 @@ test("employee write actions require manage access, reads stay report-view", () 
   );
   assert.match(
     authzSource,
-    /requireEmployeeManageAccess[\s\S]*?PermissionAction\.SETTINGS_MANAGE/,
+    /requireLaborViewAccess[\s\S]*?PermissionAction\.LABOR_VIEW/,
+  );
+  assert.match(
+    authzSource,
+    /requireEmployeeManageAccess[\s\S]*?requireLaborViewAccess/,
   );
 });
 
@@ -187,7 +188,7 @@ test("employees page passes write-permission flag to management client", () => {
   );
 
   assert.match(pageSource, /hasActionPermission/);
-  assert.match(pageSource, /PermissionAction\.SETTINGS_MANAGE/);
+  assert.match(pageSource, /PermissionAction\.LABOR_VIEW/);
   assert.match(pageSource, /canManage=/);
 
   const clientSource = readProjectFile(
@@ -199,7 +200,7 @@ test("employees page passes write-permission flag to management client", () => {
   );
 
   assert.match(clientSource, /canManage/);
-  assert.match(clientSource, /if\s*\(!canManage\)/);
+  assert.match(clientSource, /!canManage \?/);
 });
 
 // WO-25(2026-07-25) #6: 정책 8.1이 CAP-1 최소 구현 범위로 승인되어(PM 겸 본사 운영자 권한,
@@ -219,7 +220,10 @@ test("headquarters sidebar exposes employee management after 2026-07-25 policy a
   );
   assert.match(policySource, /승인 상태 \| 승인 완료/);
   // CAP-9(신규 근무 선택 모델)과 지급 확정은 이번 승격 범위 밖임을 문서가 계속 명시해야 한다.
-  assert.match(policySource, /CAP-9\(직원별 근무 선택\/집계\)와 실제 지급 확정은 여전히 별도 승인/);
+  assert.match(
+    policySource,
+    /CAP-9\(직원별 근무 선택\/집계\)와 실제 지급 확정은 여전히 별도 승인/,
+  );
 });
 
 test("employees page is available without a preview flag after policy approval", () => {
@@ -252,11 +256,12 @@ test("employee productivity analysis reuses ledger profit calc and surfaces unli
   );
   // 단순 totalSalesAmount - expense가 아니라 본사 리포트 기준 계산을 재사용한다.
   assert.match(querySource, /getLedgerProfitSummariesForRange/);
-  assert.match(querySource, /requireReportAccess\(\)/);
-  // 최소 지표: 근무일 평균 매출/마진, 근무 인원 수별 평균, 미연결 급여 행 수.
+  assert.match(querySource, /requireLaborViewAccess\(\)/);
+  // 최소 지표: 근무일 평균 매출/마진, 미연결 급여 행 수.
   assert.match(querySource, /avgSalesPerWorkday/);
   assert.match(querySource, /avgMarginRate/);
-  assert.match(querySource, /byHeadcount/);
+  // WO-0806 #1-13: `근무 인원 수별 평균`은 삭제됐다.
+  assert.doesNotMatch(querySource, /byHeadcount/);
   assert.match(querySource, /unlinkedPayrollRowCount/);
   // 계산 불가 사유를 함께 노출한다.
   assert.match(querySource, /marginUnavailableReason/);
@@ -300,13 +305,12 @@ test("employees page renders productivity analysis section", () => {
   assert.match(clientSource, /월간 생산성/);
   assert.match(clientSource, /근무일 평균 매출/);
   assert.match(clientSource, /근무일 평균 마진율/);
-  assert.match(clientSource, /근무 인원 수별 평균/);
   assert.match(clientSource, /계산 불가/);
   // 미연결 급여 행 경고를 사용자에게 노출한다.
   assert.match(clientSource, /직원이 연결되지 않은/);
 });
 
-test("employees page renders management and monthly payroll rollup", () => {
+test("employees page renders the HR card without the payroll rollup", () => {
   const pageSource = readProjectFile(
     "src",
     "app",
@@ -316,25 +320,33 @@ test("employees page renders management and monthly payroll rollup", () => {
     "page.tsx",
   );
 
-  assert.match(pageSource, /requireReportAccess/);
+  assert.match(pageSource, /requireLaborViewAccess/);
   assert.match(pageSource, /getEmployeeList/);
-  assert.match(pageSource, /getEmployeeMonthlyPayroll/);
   assert.match(pageSource, /EmployeeManagementClient/);
-  assert.match(pageSource, /EmployeePayrollRollupClient/);
+  // WO-0806 #1-10: 급여 롤업 섹션은 제거됐다.
+  assert.doesNotMatch(pageSource, /EmployeePayrollRollupClient/);
 
-  const rollupSource = readProjectFile(
+  const clientSource = readProjectFile(
     "src",
     "features",
     "labor",
     "components",
-    "employee-payroll-rollup-client.tsx",
+    "employee-management-client.tsx",
   );
 
-  assert.match(rollupSource, /"use client"/);
-  assert.match(rollupSource, /직원별 월간 급여 롤업/);
-  assert.match(rollupSource, /근무 매장 수/);
-  assert.match(rollupSource, /근무 일수/);
-  assert.match(rollupSource, /급여 합계/);
-  // 자유 입력(직원 미연결) 급여가 롤업에서 제외됨을 사용자에게 안내한다.
-  assert.match(rollupSource, /자유 입력/);
+  // WO-0806 #1: 인사관리 카드 필드와 검색/상세.
+  assert.match(clientSource, /인사관리 카드/);
+  assert.match(clientSource, /직급/);
+  assert.match(clientSource, /연락처/);
+  assert.match(clientSource, /계좌번호/);
+  assert.match(clientSource, /주소/);
+  assert.match(clientSource, /직원 검색/);
+  assert.match(clientSource, /Dialog/);
+  // WO-0806 #1-9: 데이터 포맷 예시는 placeholder로 제공한다.
+  assert.match(clientSource, /010-1234-5678/);
+  assert.match(clientSource, /국민 123456-01-234567/);
+  // WO-0806 #1-5: 희망 현금은 자동계산 값이므로 입력 상태·필드가 없다.
+  // (자동계산임을 알리는 안내 문구는 남아 있어도 된다.)
+  assert.doesNotMatch(clientSource, /desiredCashAmount/);
+  assert.doesNotMatch(clientSource, /희망 현금 금액/);
 });

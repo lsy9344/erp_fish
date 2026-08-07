@@ -6,9 +6,13 @@ import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
+import { DailySalesAnalysis } from "~/features/reports/components/daily-sales-analysis";
 import { MonthlyClosingAnomalyReport } from "~/features/reports/components/monthly-closing-anomaly-report";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
-import { getHqMonthlyClosingAnomalyReport } from "~/features/reports/queries";
+import {
+  getHqMonthlyClosingAnomalyReport,
+  getMonthlySalesAnalysis,
+} from "~/features/reports/queries";
 import { getHeadquartersExpenseReportSummary } from "~/features/headquarters-expenses/queries";
 import type { MonthlyHeadquartersExpenseSummary } from "~/features/reports/types";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
@@ -24,6 +28,11 @@ export default async function MonthlyClosingAnomalyReportPage({
   searchParams,
 }: MonthlyClosingAnomalyReportPageProps) {
   const user = await requireReportAccess();
+  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
+  const canViewLabor = await hasActionPermission(
+    user.id,
+    PermissionAction.LABOR_VIEW,
+  );
   const navigationItems = await getHeadquartersNavigationItems(user.id);
   const canExportReports = await hasActionPermission(
     user.id,
@@ -35,6 +44,10 @@ export default async function MonthlyClosingAnomalyReportPage({
     ? params.storeId[0]
     : params.storeId;
   const report = await getHqMonthlyClosingAnomalyReport({ month, storeId });
+  // WO-0806 #4: 매출분석 3종은 지점 비교가 목적이라 지점 선택과 무관하게 전체를 그린다.
+  const salesAnalysis = await getMonthlySalesAnalysis(
+    report.monthRange.monthInput,
+  );
   const canManageHeadquartersExpenses = await hasActionPermission(
     user.id,
     PermissionAction.SETTINGS_MANAGE,
@@ -73,7 +86,7 @@ export default async function MonthlyClosingAnomalyReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="monthly" />
+      <ReportsNav active="monthly" canViewLabor={canViewLabor} />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader
@@ -163,6 +176,18 @@ export default async function MonthlyClosingAnomalyReportPage({
         report={report}
         headquartersExpense={headquartersExpense}
       />
+
+      <section className="space-y-3" aria-label="월간 매출 분석">
+        <h2 className="text-lg font-semibold tracking-normal">매출 분석</h2>
+        <DailySalesAnalysis data={salesAnalysis} comparisonLabel="전월" />
+        <p className="text-muted-foreground text-xs">
+          기간을 직접 지정해 비교하려면{" "}
+          <a className="text-primary underline" href="/app/reports/comparison">
+            기간 분석
+          </a>
+          을 사용하세요.
+        </p>
+      </section>
     </HeadquartersShell>
   );
 }

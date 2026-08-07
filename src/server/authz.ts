@@ -186,11 +186,14 @@ export async function requireReportAccess() {
   return requireHeadquartersActionPermission(PermissionAction.REPORT_VIEW);
 }
 
-// WO-D(2026-06-22): 직원 마스터 조회는 REPORT_VIEW, 직원 생성/수정/비활성화 등
-// 쓰기 작업은 SETTINGS_MANAGE로 분리한다. REPORT_VIEW만 가진 읽기 전용 본사
-// 사용자가 인사 마스터를 변경하지 못하도록 막는다.
+// WO-0806 #5: 직원 관리·인건비 현황은 계좌번호·주소·급여를 다루므로 대표 전용이다.
+// 읽기만 좁히면 “볼 수 없는데 고칠 수 있는” 상태가 되므로 쓰기도 같은 action을 쓴다.
+export async function requireLaborViewAccess() {
+  return requireHeadquartersActionPermission(PermissionAction.LABOR_VIEW);
+}
+
 export async function requireEmployeeManageAccess() {
-  return requireHeadquartersActionPermission(PermissionAction.SETTINGS_MANAGE);
+  return requireLaborViewAccess();
 }
 
 export async function requireLedgerHqEditAccess() {

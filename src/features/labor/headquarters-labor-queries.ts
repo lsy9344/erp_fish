@@ -2,14 +2,19 @@ import type { Prisma } from "../../../generated/prisma/index.js";
 
 import {
   HEADQUARTERS_LABOR_STATUSES,
+  type HeadquartersLaborDateRange,
   type HeadquartersLaborDetail,
   type HeadquartersLaborLedgerStatus,
   type HeadquartersLaborReport,
   type HeadquartersLaborStatusFilter,
   type HeadquartersLaborStoreOption,
+  type HeadquartersLaborWorkerSettlement,
 } from "./headquarters-labor-types.ts";
 
 const MONTH_QUERY_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/;
+const DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// WO-0806 #2-2: 기간 조회 상한. 더 넘어가면 장부 수가 응답을 무너뜨린다.
+const MAX_RANGE_DAYS = 366;
 
 const headquartersLaborLedgerSelect = {
   id: true,
@@ -32,11 +37,13 @@ const headquartersLaborLedgerSelect = {
       lateMemo: true,
       earlyLeaveMemo: true,
       specialMemo: true,
-      // WO-25(2026-07-25) #8: 직원의 월 희망 수령액 분해(4대보험/현금)를 함께 노출.
+      // WO-0806 #2: 근무자별 월 정산(직급·계좌·희망 4대보험)에 쓴다.
+      // 희망 현금은 저장값을 읽지 않고 인건비 합계에서 계산한다.
       employee: {
         select: {
+          position: true,
+          bankAccount: true,
           desiredInsuranceAmount: true,
-          desiredCashAmount: true,
         },
       },
     },
@@ -71,6 +78,98 @@ export function getHeadquartersLaborMonthRange(
     monthInput,
     startDate: new Date(Date.UTC(year, monthNumber - 1, 1)),
     endDate: new Date(Date.UTC(year, monthNumber, 0, 23, 59, 59, 999)),
+  };
+}
+
+function parseDateInput(value: unknown) {
+  if (typeof value !== "string" || !DATE_QUERY_PATTERN.test(value)) {
+    return null;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// WO-0806 #2-2: `월 선택`(기존 `?month=`)과 `기간 지정`(`?from=&to=`)을 모두 받는다.
+// 잘못된 기간은 값을 교환하지 않고 사유를 남긴 뒤 현재 월로 폴백한다.
+export function getHeadquartersLaborDateRange(
+  { month, from, to }: { month?: unknown; from?: unknown; to?: unknown } = {},
+  inputDate = new Date(),
+): HeadquartersLaborDateRange & {
+  startDate: Date;
+  endDate: Date;
+  errorMessages: string[];
+} {
+  const fallback = () => {
+    const monthRange = getHeadquartersLaborMonthRange(month, inputDate);
+
+    return {
+      ...monthRange,
+      startDateInput: toDateInput(monthRange.startDate),
+      endDateInput: toDateInput(monthRange.endDate),
+      rangeLabel: monthRange.monthInput,
+      isSingleMonth: true,
+      errorMessages: [] as string[],
+    };
+  };
+
+  const start = parseDateInput(from);
+  const end = parseDateInput(to);
+
+  if (start === null && end === null) {
+    return fallback();
+  }
+
+  if (start === null || end === null) {
+    return {
+      ...fallback(),
+      errorMessages: [
+        "기간 조회는 시작일과 종료일을 모두 입력해야 합니다. 현재 월로 조회했습니다.",
+      ],
+    };
+  }
+
+  if (start.getTime() > end.getTime()) {
+    return {
+      ...fallback(),
+      errorMessages: ["시작일이 종료일보다 늦습니다. 현재 월로 조회했습니다."],
+    };
+  }
+
+  const dayCount =
+    Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+
+  if (dayCount > MAX_RANGE_DAYS) {
+    return {
+      ...fallback(),
+      errorMessages: [
+        `조회 기간은 최대 ${MAX_RANGE_DAYS}일까지입니다. 현재 월로 조회했습니다.`,
+      ],
+    };
+  }
+
+  const startDateInput = toDateInput(start);
+  const endDateInput = toDateInput(end);
+  const endOfDay = new Date(end.getTime() + 86_399_999);
+  // 시작일이 1일이고 종료일이 같은 달의 말일이면 사실상 월 조회다.
+  const monthInput = startDateInput.slice(0, 7);
+  const lastDayOfStartMonth = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0),
+  );
+  const isSingleMonth =
+    start.getUTCDate() === 1 &&
+    endDateInput === toDateInput(lastDayOfStartMonth);
+
+  return {
+    monthInput,
+    startDate: start,
+    endDate: endOfDay,
+    startDateInput,
+    endDateInput,
+    rangeLabel: `${startDateInput} ~ ${endDateInput}`,
+    isSingleMonth,
+    errorMessages: [],
   };
 }
 
@@ -128,6 +227,10 @@ function toDateInput(value: Date) {
 
 export function buildHeadquartersLaborReport({
   monthInput,
+  startDateInput = monthInput,
+  endDateInput = monthInput,
+  rangeLabel = monthInput,
+  isSingleMonth = true,
   selectedStoreId,
   selectedStatus,
   selectedWorkerName = null,
@@ -137,6 +240,10 @@ export function buildHeadquartersLaborReport({
   errorMessages = [],
 }: {
   monthInput: string;
+  startDateInput?: string;
+  endDateInput?: string;
+  rangeLabel?: string;
+  isSingleMonth?: boolean;
   selectedStoreId: string | null;
   selectedStatus: HeadquartersLaborStatusFilter;
   selectedWorkerName?: string | null;
@@ -177,9 +284,11 @@ export function buildHeadquartersLaborReport({
       lateMemo: item.lateMemo,
       earlyLeaveMemo: item.earlyLeaveMemo,
       specialMemo: item.specialMemo,
-      desiredInsuranceAmount: item.employee?.desiredInsuranceAmount ?? null,
-      desiredCashAmount: item.employee?.desiredCashAmount ?? null,
     })),
+  );
+  const workerSettlements = buildWorkerSettlements(
+    targetLedgers,
+    isSingleMonth,
   );
   const summaryByStore = new Map<
     string,
@@ -246,6 +355,10 @@ export function buildHeadquartersLaborReport({
 
   return {
     monthInput,
+    startDateInput,
+    endDateInput,
+    rangeLabel,
+    isSingleMonth,
     selectedStoreId,
     selectedStatus,
     selectedWorkerName,
@@ -254,28 +367,130 @@ export function buildHeadquartersLaborReport({
     storeCount: storeSummaries.length,
     laborRecordCount: details.length,
     storeSummaries,
+    workerSettlements,
     details,
     errorMessages,
   };
 }
 
+// WO-0806 #2: 희망 현금 = 월 인건비 합계 − 희망 4대보험.
+// 음수는 0으로 자르지 않고 그대로 내보낸다(화면에서 경고 배지로 드러낸다).
+// 희망 4대보험은 월 고정값이므로 다월 조회에서는 차감하지 않는다.
+function buildWorkerSettlements(
+  ledgers: HeadquartersLaborLedgerRecord[],
+  isSingleMonth: boolean,
+): HeadquartersLaborWorkerSettlement[] {
+  const byWorker = new Map<
+    string,
+    HeadquartersLaborWorkerSettlement & { workdays: Set<string> }
+  >();
+
+  for (const ledger of ledgers) {
+    const businessDate = toDateInput(ledger.closingDate);
+
+    for (const item of ledger.ledgerLaborItems) {
+      // 직원 미연결(자유 입력) 근무자도 이름으로 묶어 누락을 막는다.
+      const key = item.employeeId ?? `name:${item.workerName}`;
+      const existing = byWorker.get(key) ?? {
+        key,
+        workerName: item.workerName,
+        position: item.employee?.position ?? null,
+        bankAccount: item.employee?.bankAccount ?? null,
+        workdays: new Set<string>(),
+        workdayCount: 0,
+        laborAmount: 0,
+        desiredInsuranceAmount: item.employee?.desiredInsuranceAmount ?? null,
+        desiredCashAmount: null,
+        cashUnavailableReason: null,
+      };
+
+      existing.workdays.add(businessDate);
+      existing.laborAmount += item.amount;
+      byWorker.set(key, existing);
+    }
+  }
+
+  return [...byWorker.values()]
+    .map(({ workdays, ...settlement }) => {
+      const cash = resolveDesiredCash({
+        laborAmount: settlement.laborAmount,
+        desiredInsuranceAmount: settlement.desiredInsuranceAmount,
+        isLinkedEmployee: !settlement.key.startsWith("name:"),
+        isSingleMonth,
+      });
+
+      return {
+        ...settlement,
+        workdayCount: workdays.size,
+        ...cash,
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.workerName.localeCompare(right.workerName, "ko") ||
+        left.key.localeCompare(right.key),
+    );
+}
+
+export function resolveDesiredCash({
+  laborAmount,
+  desiredInsuranceAmount,
+  isLinkedEmployee,
+  isSingleMonth,
+}: {
+  laborAmount: number;
+  desiredInsuranceAmount: number | null;
+  isLinkedEmployee: boolean;
+  isSingleMonth: boolean;
+}): { desiredCashAmount: number | null; cashUnavailableReason: string | null } {
+  if (!isLinkedEmployee) {
+    return {
+      desiredCashAmount: null,
+      cashUnavailableReason: "계산 불가 (직원 미연결)",
+    };
+  }
+
+  if (!isSingleMonth) {
+    return {
+      desiredCashAmount: null,
+      cashUnavailableReason: "기간 조회에서는 자동계산 미적용",
+    };
+  }
+
+  if (desiredInsuranceAmount === null) {
+    return {
+      desiredCashAmount: null,
+      cashUnavailableReason: "계산 불가 (희망 4대보험 미입력)",
+    };
+  }
+
+  return {
+    desiredCashAmount: laborAmount - desiredInsuranceAmount,
+    cashUnavailableReason: null,
+  };
+}
+
 export async function getHeadquartersLaborReport({
   month,
+  from,
+  to,
   storeId,
   status,
   workerName,
 }: {
   month?: unknown;
+  from?: unknown;
+  to?: unknown;
   storeId?: unknown;
   status?: unknown;
   workerName?: unknown;
 } = {}): Promise<HeadquartersLaborReport> {
-  const { getHeadquartersStoreScope, requireReportAccess } =
+  const { getHeadquartersStoreScope, requireLaborViewAccess } =
     await import("../../server/authz.ts");
   const { db } = await import("../../server/db.ts");
-  await requireReportAccess();
+  await requireLaborViewAccess();
   const scope = await getHeadquartersStoreScope();
-  const monthRange = getHeadquartersLaborMonthRange(month);
+  const monthRange = getHeadquartersLaborDateRange({ month, from, to });
   const selectedStatus = normalizeHeadquartersLaborStatus(status);
   const selectedWorkerName =
     typeof workerName === "string" && workerName.trim().length > 0
@@ -311,12 +526,16 @@ export async function getHeadquartersLaborReport({
 
   return buildHeadquartersLaborReport({
     monthInput: monthRange.monthInput,
+    startDateInput: monthRange.startDateInput,
+    endDateInput: monthRange.endDateInput,
+    rangeLabel: monthRange.rangeLabel,
+    isSingleMonth: monthRange.isSingleMonth,
     selectedStoreId: storeFilter.selectedStoreId,
     selectedStatus,
     selectedWorkerName,
     stores: scope.stores.map((store) => ({ id: store.id, name: store.name })),
     targetStoreIds: storeFilter.targetStoreIds,
     ledgers,
-    errorMessages: storeFilter.errorMessages,
+    errorMessages: [...monthRange.errorMessages, ...storeFilter.errorMessages],
   });
 }

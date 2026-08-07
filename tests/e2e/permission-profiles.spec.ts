@@ -89,9 +89,7 @@ test("지정 지점 본사 프로파일은 대시보드와 리포트에서 배�
 
   await page.goto("/app/reports/comparison");
 
-  await expect(
-    page.getByRole("heading", { name: "기간 비교 리포트" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
   await expect(
     page.getByTestId("hq-report-comparison-row-store-seocho"),
   ).toBeVisible();

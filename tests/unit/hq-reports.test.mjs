@@ -224,10 +224,7 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
     chartSource,
     /type ViewMode = "salesAmount" \| "grossMarginRate"/,
   );
-  assert.match(
-    chartSource,
-    /variant: "daily" \| "salesReview"/,
-  );
+  assert.match(chartSource, /variant: "daily" \| "salesReview"/);
   assert.match(
     chartSource,
     /variant === "daily"[\s\S]*?<DailyPerformanceViews rows=\{rows\} \/>[\s\S]*?<SalesReviewPerformanceChart rows=\{rows\} \/>/,
@@ -281,7 +278,10 @@ test("HQ daily chart has distinct sales and gross-margin views with shared warni
     chartSource,
     /<table className="hidden w-full table-fixed text-sm sm:table"/,
   );
-  assert.match(chartSource, /data-testid=\{`store-margin-card-\$\{row\.storeId\}`\}/);
+  assert.match(
+    chartSource,
+    /data-testid=\{`store-margin-card-\$\{row\.storeId\}`\}/,
+  );
   assert.match(chartSource, /formatMarginUnavailableReason/);
   assert.match(chartSource, /expectedGrossMarginRate\.reason \?\? null/);
   assert.match(chartSource, /useLayoutEffect/);
@@ -463,7 +463,8 @@ test("daily sales analysis and attendance components are display-only responsive
   );
 
   for (const label of [
-    "전일 대비 매출액 증감률",
+    // WO-0806 #4: 아침 회의(전일)와 월간(전월)이 같은 차트를 쓰므로 비교 기준은 주입값이다.
+    "\\{comparisonLabel\\} 대비 매출액 증감률",
     "재고비율",
     "매장 매출 포지션",
     "계산 불가",
@@ -875,9 +876,13 @@ test("HQ report pages omit the category margin chart while preserving category c
     assert.doesNotMatch(source, /ProductCategoryMarginChart/);
     assert.doesNotMatch(source, /냉동\/생물 매출 \(추정\)/);
   }
-  assert.match(monthlyComponentSource, /장부 마감 매출/);
-  assert.match(monthlyComponentSource, /이월 매출/);
-  assert.match(monthlyComponentSource, /영업 매출 합계/);
+  // WO-0806 #3: 카드 10개 대신 2행 테이블. 장부 마감 매출·이월 매출·매출이익·
+  // 매출대비 재고비율은 화면에서 내렸다(DTO에는 남아 통합 리포트/export가 계속 쓴다).
+  assert.doesNotMatch(monthlyComponentSource, /장부 마감 매출/);
+  assert.doesNotMatch(monthlyComponentSource, /이월 매출/);
+  assert.match(monthlyComponentSource, /순이익/);
+  assert.match(monthlyComponentSource, /영업이익 − 인건비/);
+  assert.match(monthlyComponentSource, /매출이익 − 장부지출/);
   assert.equal(
     existsSync(
       path.join(
@@ -973,7 +978,8 @@ test("HQ store comparison report source files follow story 6.2 boundaries", () =
   assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqStoreComparisonReport\(/);
   assert.match(pageSource, /StoreComparisonReportTable/);
-  assert.match(pageSource, /기간 비교 리포트/);
+  // WO-0806 [F]: 대표가 부르는 이름과 맞춰 `기간 분석`으로 통일했다.
+  assert.match(pageSource, /기간 분석/);
   assert.match(pageSource, /startDate/);
   assert.match(pageSource, /endDate/);
   assert.match(pageSource, /storeId/);
@@ -991,6 +997,10 @@ test("HQ store comparison report source files follow story 6.2 boundaries", () =
   assert.match(tableSource, /평균매출/);
   assert.match(tableSource, /재고비율/);
   assert.match(tableSource, /상태/);
+  // WO-0806 [F]: 대표 엑셀 8지표 중 빠져 있던 평균 근무인원과,
+  // 우리 “영업이익”이 엑셀과 다른 값임을 알리는 계산식 병기.
+  assert.match(tableSource, /평균 근무인원/);
+  assert.match(tableSource, /매출이익 − 장부지출/);
   assert.match(tableSource, /근거 보기/);
   assert.match(tableSource, /tabular-nums/);
   assert.match(tableSource, /break-words/);

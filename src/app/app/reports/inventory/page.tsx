@@ -35,6 +35,11 @@ export default async function InventoryPositionReportPage({
   searchParams,
 }: InventoryPositionReportPageProps) {
   const user = await requireReportAccess();
+  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
+  const canViewLabor = await hasActionPermission(
+    user.id,
+    PermissionAction.LABOR_VIEW,
+  );
   const navigationItems = await getHeadquartersNavigationItems(user.id);
   const canExportReports = await hasActionPermission(
     user.id,
@@ -108,7 +113,7 @@ export default async function InventoryPositionReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="inventory" />
+      <ReportsNav active="inventory" canViewLabor={canViewLabor} />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

@@ -20,6 +20,19 @@ const optionalWonAmount = z
       .nullable(),
   );
 
+// WO-0806 #1: 인사관리 카드의 선택 문자열. 빈 문자열은 미입력(null)로 취급한다.
+function optionalText(max: number, message: string) {
+  return z
+    .string()
+    .optional()
+    .transform((v) => {
+      const trimmed = v?.trim() ?? "";
+
+      return trimmed === "" ? null : trimmed;
+    })
+    .pipe(z.string().max(max, message).nullable());
+}
+
 export const employeeFormSchema = z.object({
   name: z
     .string()
@@ -36,7 +49,16 @@ export const employeeFormSchema = z.object({
   isActive: z.boolean().optional().default(true),
   dailyWage: optionalWonAmount,
   desiredInsuranceAmount: optionalWonAmount,
-  desiredCashAmount: optionalWonAmount,
+  // WO-0806 #1: 연락처는 숫자·하이픈만 허용해 이체/연락 실무에서 바로 쓸 수 있게 한다.
+  phone: optionalText(20, "연락처는 20자 이하여야 합니다.").pipe(
+    z
+      .string()
+      .regex(/^[\d-]{9,20}$/, "연락처는 숫자와 하이픈만 입력해 주세요.")
+      .nullable(),
+  ),
+  bankAccount: optionalText(50, "계좌번호는 50자 이하여야 합니다."),
+  address: optionalText(200, "주소는 200자 이하여야 합니다."),
+  position: optionalText(20, "직급은 20자 이하여야 합니다."),
 });
 
 export type EmployeeFormInput = z.input<typeof employeeFormSchema>;

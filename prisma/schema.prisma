@@ -37,6 +37,8 @@ enum PermissionAction {
   REPORT_VIEW
   EXPORT_CREATE
   USER_PERMISSION_MANAGE
+  // WO-0806 #5: 직원 관리·인건비 현황 전용. 대표(OWNER) 프로필에만 부여한다.
+  LABOR_VIEW
 }
 
 enum DailyLedgerStatus {
@@ -966,6 +968,13 @@ model Employee {
   dailyWage              Int?
   desiredInsuranceAmount Int?
   desiredCashAmount      Int?
+
+  // WO-0806 #1: 인사관리 카드. 급여 지급 실무에 필요한 연락/계좌 정보와 직급.
+  // 직급은 사람의 기본 직급이며, 그날의 근무 역할(팀장/팀원)과는 다르다.
+  phone       String?
+  bankAccount String?
+  address     String?
+  position    String?
 
   laborItems LedgerLaborItem[]
 
