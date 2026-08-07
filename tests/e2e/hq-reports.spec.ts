@@ -1868,6 +1868,70 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   await expect(emptyRow).toHaveCount(0);
 });
 
+test("본사는 기간 대조의 세 블록과 안전한 대조 기간 입력을 본다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto(
+    "/app/reports/comparison?mode=contrast&startDate=2026-06-01&endDate=2026-06-30&baseStartDate=2026-05-01&baseEndDate=2026-05-31",
+  );
+
+  await expect(page.getByLabel("대조 기간", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("현재", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("과거 대비 현재 증감")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Excel" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "CSV" })).toHaveCount(0);
+
+  // 한쪽 날짜만 입력하면 임의의 혼합 기간이 아니라 직전 동일 길이로 폴백한다.
+  await page.goto(
+    "/app/reports/comparison?mode=contrast&startDate=2026-06-01&endDate=2026-06-30&baseStartDate=2026-05-01",
+  );
+  await expect(
+    page.getByText(/대조 기간은 시작일과 종료일을 모두 입력/),
+  ).toBeVisible();
+  await expect(page.getByLabel("대조 시작일")).toHaveValue("2026-05-02");
+  await expect(page.getByLabel("대조 종료일")).toHaveValue("2026-05-31");
+});
+
+test("본사는 시계열에서 지점 선택, 연도 범위, 표와 차트를 함께 사용한다", async ({
+  page,
+}) => {
+  test.slow();
+  const year = getCurrentMonthInput().slice(0, 4);
+  await login(page, "hq@example.com");
+
+  // 지표 축은 전체 지점으로 위장하지 않고 첫 권한 지점을 명시적으로 선택한다.
+  await page.goto(
+    `/app/reports/comparison?mode=trend&axis=metric&unit=month&year=${year}`,
+  );
+  await expect(getStoreSelect(page)).not.toHaveValue("");
+  await expect(
+    page.locator('[data-testid="hq-report-trend-row-salesAmount"]'),
+  ).toBeVisible();
+
+  // 지점 축에서 선택 지점을 실제 데이터 범위에 적용하고 꺾은선 차트를 제공한다.
+  await page.goto(
+    `/app/reports/comparison?mode=trend&axis=store&unit=month&year=${year}&storeId=${STORE_IDS.closed}&metricKey=salesAmount`,
+  );
+  await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
+  await expect(
+    page.locator(`[data-testid="hq-report-trend-row-${STORE_IDS.closed}"]`),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("매출 지점별 기간 추이 꺾은선 차트"),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="hq-report-trend-row-"]'),
+  ).toHaveCount(1);
+
+  // UI 숫자 제한을 우회한 URL도 500이 아니라 안전한 기본 연도로 폴백한다.
+  await page.goto(
+    "/app/reports/comparison?mode=trend&axis=store&unit=month&year=999999",
+  );
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
+  await expect(page.getByText(/연도는 2000년부터 2100년 사이/)).toBeVisible();
+});
+
 test("본사는 기간 비교에서 권한 밖 지점 필터를 데이터 없이 안내받는다", async ({
   page,
 }) => {

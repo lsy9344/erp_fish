@@ -144,6 +144,32 @@ test.describe("Report export API", () => {
         message: "조회 기간을 확인해 주세요.",
       },
       {
+        name: "comparison base range requires both dates",
+        params: {
+          report: "comparison",
+          mode: "contrast",
+          startDate: "2026-06-01",
+          endDate: "2026-06-30",
+          baseStartDate: "2026-05-01",
+          format: "xlsx",
+        },
+        message: "대조 기간을 확인해 주세요.",
+      },
+      {
+        name: "comparison contrast csv is intentionally unavailable",
+        params: {
+          report: "comparison",
+          mode: "contrast",
+          startDate: "2026-06-01",
+          endDate: "2026-06-30",
+          baseStartDate: "2026-05-01",
+          baseEndDate: "2026-05-31",
+          format: "csv",
+        },
+        message:
+          "기간 대조는 3개 시트를 포함하는 Excel 형식으로 내려받아 주세요.",
+      },
+      {
         name: "invalid monthly month",
         params: { report: "monthly", month: "2026-13", format: "csv" },
         message: "조회 월을 확인해 주세요.",
@@ -255,6 +281,28 @@ test.describe("Report export API", () => {
       message: "export 권한이 없습니다.",
     });
     assertSafeForbiddenBody(body);
+
+    // 기간 대조도 요청 원문 storeId가 아니라 실제 적용된 범위로 검사해야 한다.
+    const contrastResponse = await request.get(
+      exportPath({
+        report: "comparison",
+        mode: "contrast",
+        startDate: "2026-06-01",
+        endDate: getTodayKstInput(),
+        baseStartDate: "2026-05-01",
+        baseEndDate: "2026-05-31",
+        storeId: "store-gangnam",
+        format: "xlsx",
+      }),
+    );
+    const contrastBody = (await contrastResponse.json()) as ForbiddenPayload;
+    expect(contrastResponse.status()).toBe(403);
+    expect(contrastResponse.headers()["content-disposition"]).toBeUndefined();
+    expect(contrastBody).toEqual({
+      error: "forbidden",
+      message: "export 권한이 없습니다.",
+    });
+    assertSafeForbiddenBody(contrastBody);
     await expectNoReportExportAudit();
   });
 
@@ -413,6 +461,72 @@ test.describe("Report export API", () => {
     expect(auditLogs).toHaveLength(1);
     const after = auditLogs[0]?.after as { format?: string } | null;
     expect(after?.format).toBe("xlsx");
+  });
+
+  test("[P1] period contrast xlsx has exact base, current, and delta sheets", async ({
+    request,
+  }) => {
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "comparison",
+        mode: "contrast",
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        baseStartDate: "2026-05-01",
+        baseEndDate: "2026-05-31",
+        format: "xlsx",
+      }),
+    );
+    expect(response.status()).toBe(200);
+
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const bytes = new Uint8Array(await response.body());
+    await workbook.xlsx.load(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    );
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "대조기간",
+      "현재",
+      "증감",
+    ]);
+  });
+
+  test("[P1] period trend xlsx mirrors the one-sheet trend table", async ({
+    request,
+  }) => {
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "comparison",
+        mode: "trend",
+        axis: "store",
+        unit: "year",
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        fromYear: "2020",
+        toYear: "2026",
+        fromMonth: "6",
+        toMonth: "6",
+        metricKey: "salesAmount",
+        format: "xlsx",
+      }),
+    );
+    expect(response.status()).toBe(200);
+
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const bytes = new Uint8Array(await response.body());
+    await workbook.xlsx.load(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    );
+    expect(workbook.worksheets).toHaveLength(1);
+    const header = workbook.worksheets[0]?.getRow(1).values as unknown[];
+    expect(header).toContain("2020년");
+    expect(header).toContain("2026년");
   });
 
   // WO-15(2026-06-28) part2: 월별 리포트 xlsx에는 "월별손익" 시트가 함께 들어간다.

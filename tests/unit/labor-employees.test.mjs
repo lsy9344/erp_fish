@@ -97,6 +97,11 @@ test("employee form schema validates name and hire date", async () => {
       .success,
     false,
   );
+  assert.equal(
+    employeeFormSchema.safeParse({ name: "홍길동", hireDate: "2026-02-31" })
+      .success,
+    false,
+  );
 });
 
 test("employee queries expose active options and list", () => {
@@ -122,6 +127,10 @@ test("employee queries expose active options and list", () => {
   // WO-0806 #1: 인사관리 카드 필드를 조회에 싣는다.
   assert.match(querySource, /bankAccount:\s*true/);
   assert.match(querySource, /position:\s*true/);
+  // 상세보기에서 현재 월 근무일수·급여 합계를 실제 연결 급여 행으로 집계한다.
+  assert.match(querySource, /currentMonthWorkdayCount/);
+  assert.match(querySource, /currentMonthLaborAmount/);
+  assert.match(querySource, /laborItems:/);
   // 희망 현금은 자동계산 값이므로 조회 DTO에서 뺀다.
   assert.doesNotMatch(querySource, /desiredCashAmount/);
 
@@ -342,6 +351,8 @@ test("employees page renders the HR card without the payroll rollup", () => {
   assert.match(clientSource, /주소/);
   assert.match(clientSource, /직원 검색/);
   assert.match(clientSource, /Dialog/);
+  assert.match(clientSource, /근무일수/);
+  assert.match(clientSource, /급여 합계/);
   // WO-0806 #1-9: 데이터 포맷 예시는 placeholder로 제공한다.
   assert.match(clientSource, /010-1234-5678/);
   assert.match(clientSource, /국민 123456-01-234567/);

@@ -10,7 +10,10 @@ import { PeriodContrastTable } from "~/features/reports/components/period-contra
 import { PeriodTrendTable } from "~/features/reports/components/period-trend-table";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { StoreComparisonReportTable } from "~/features/reports/components/store-comparison-report-table";
-import { PERIOD_ANALYSIS_METRICS } from "~/features/reports/period-analysis";
+import {
+  PERIOD_ANALYSIS_METRICS,
+  buildPeriodTrendYearRange,
+} from "~/features/reports/period-analysis";
 import {
   getHqPeriodContrastReport,
   getHqPeriodTrendReport,
@@ -32,6 +35,8 @@ type StoreComparisonReportPageProps = {
     axis?: string | string[];
     unit?: string | string[];
     year?: string | string[];
+    fromYear?: string | string[];
+    toYear?: string | string[];
     fromMonth?: string | string[];
     toMonth?: string | string[];
     metricKey?: string | string[];
@@ -43,10 +48,17 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function toPositiveInt(value: string | undefined, fallback: number) {
+function toBoundedInt(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const parsed = Number(value);
 
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max
+    ? Math.trunc(parsed)
+    : fallback;
 }
 
 export default async function StoreComparisonReportPage({
@@ -72,11 +84,21 @@ export default async function StoreComparisonReportPage({
     modeParam === "contrast" || modeParam === "trend" ? modeParam : "single";
   const axis = firstParam(params.axis) === "metric" ? "metric" : "store";
   const unit = firstParam(params.unit) === "year" ? "year" : "month";
-  const currentYear = new Date().getUTCFullYear();
-  const year = toPositiveInt(firstParam(params.year), currentYear);
-  const fromMonth = toPositiveInt(firstParam(params.fromMonth), 1);
-  const toMonth = toPositiveInt(firstParam(params.toMonth), 12);
+  const currentYear = Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+    }).format(new Date()),
+  );
+  const year = toBoundedInt(firstParam(params.year), currentYear, 2000, 2100);
+  const fromMonth = toBoundedInt(firstParam(params.fromMonth), 1, 1, 12);
+  const toMonth = toBoundedInt(firstParam(params.toMonth), 12, 1, 12);
   const metricKey = firstParam(params.metricKey);
+  const trendYearRange = buildPeriodTrendYearRange({
+    fromYear: firstParam(params.fromYear),
+    toYear: firstParam(params.toYear) ?? firstParam(params.year),
+    fallbackYear: currentYear,
+  });
 
   const report = await getHqStoreComparisonReport({
     startDate,
@@ -99,8 +121,8 @@ export default async function StoreComparisonReportPage({
           axis,
           unit,
           year,
-          // 연도 모드는 최근 7년을 기본으로 보여준다(엑셀 `매장 별(년도)`와 같은 폭).
-          years: Array.from({ length: 7 }, (_, index) => year - 6 + index),
+          // 기본은 최근 7년이고, 대표가 시작/종료 연도를 직접 넓힐 수 있다.
+          years: trendYearRange.years,
           fromMonth,
           toMonth,
           metricKey,
@@ -108,6 +130,12 @@ export default async function StoreComparisonReportPage({
         })
       : null;
   const selectedStoreLabel = report.selectedStoreName ?? "전체 활성 지점";
+  const trendErrorMessages = [
+    ...new Set([
+      ...trendYearRange.errorMessages,
+      ...(trend?.errorMessages ?? []),
+    ]),
+  ];
   const exportParams = new URLSearchParams({
     report: "comparison",
     startDate: report.range.startDateInput,
@@ -129,9 +157,15 @@ export default async function StoreComparisonReportPage({
     exportParams.set("axis", trend.axis);
     exportParams.set("unit", trend.unit);
     exportParams.set("year", String(year));
+    exportParams.set("fromYear", String(trendYearRange.fromYear));
+    exportParams.set("toYear", String(trendYearRange.toYear));
     exportParams.set("fromMonth", String(fromMonth));
     exportParams.set("toMonth", String(toMonth));
     exportParams.set("metricKey", trend.metric.key);
+    exportParams.delete("storeId");
+    if (trend.selectedStoreId) {
+      exportParams.set("storeId", trend.selectedStoreId);
+    }
   }
 
   const exportHref = `/api/reports/export?${exportParams.toString()}`;
@@ -225,10 +259,18 @@ export default async function StoreComparisonReportPage({
               <select
                 id="storeId"
                 name="storeId"
-                defaultValue={report.selectedStoreId ?? ""}
+                defaultValue={
+                  mode === "trend" && axis === "metric"
+                    ? (trend?.selectedStoreId ?? "")
+                    : (report.selectedStoreId ?? "")
+                }
                 className="border-input bg-card ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 min-w-40 rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="">전체 활성 지점</option>
+                <option value="">
+                  {mode === "trend" && axis === "metric"
+                    ? "첫 번째 지점 자동 선택"
+                    : "전체 활성 지점"}
+                </option>
                 {report.stores.map((store) => (
                   <option key={store.id} value={store.id}>
                     {store.name}
@@ -308,23 +350,54 @@ export default async function StoreComparisonReportPage({
                     <option value="year">연도</option>
                   </select>
                 </div>
-                <div className="grid gap-1">
-                  <label
-                    className="text-muted-foreground text-xs"
-                    htmlFor="year"
-                  >
-                    기준 연도
-                  </label>
-                  <Input
-                    id="year"
-                    name="year"
-                    type="number"
-                    min={2000}
-                    max={2100}
-                    defaultValue={year}
-                    className="h-9 w-24"
-                  />
-                </div>
+                {unit === "month" ? (
+                  <div className="grid gap-1">
+                    <label
+                      className="text-muted-foreground text-xs"
+                      htmlFor="year"
+                    >
+                      기준 연도
+                    </label>
+                    <Input
+                      id="year"
+                      name="year"
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      defaultValue={year}
+                      className="h-9 w-24"
+                    />
+                  </div>
+                ) : (
+                  <div className="grid gap-1">
+                    <label
+                      className="text-muted-foreground text-xs"
+                      htmlFor="fromYear"
+                    >
+                      연도 범위
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        id="fromYear"
+                        name="fromYear"
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        defaultValue={trendYearRange.fromYear}
+                        className="h-9 w-24"
+                      />
+                      <span className="text-muted-foreground text-xs">~</span>
+                      <Input
+                        name="toYear"
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        defaultValue={trendYearRange.toYear}
+                        className="h-9 w-24"
+                      />
+                    </div>
+                  </div>
+                )}
                 {/* 엑셀 `매장 별(년도)`는 6/1~6/30을 고정하고 연도만 바꾸는 시즌 비교다. */}
                 {unit === "year" ? (
                   <div className="grid gap-1">
@@ -391,12 +464,14 @@ export default async function StoreComparisonReportPage({
                     Excel
                   </a>
                 </Button>
-                <Button asChild variant="outline" size="sm">
-                  <a href={exportHref}>
-                    <DownloadIcon data-icon="inline-start" />
-                    CSV
-                  </a>
-                </Button>
+                {mode !== "contrast" ? (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={exportHref}>
+                      <DownloadIcon data-icon="inline-start" />
+                      CSV
+                    </a>
+                  </Button>
+                ) : null}
               </>
             ) : null}
           </form>
@@ -416,9 +491,22 @@ export default async function StoreComparisonReportPage({
         </div>
       ) : null}
 
-      {trend && trend.errorMessages.length > 0 ? (
+      {contrast && contrast.errorMessages.length > 0 ? (
         <div className="grid gap-2">
-          {trend.errorMessages.map((message) => (
+          {contrast.errorMessages.map((message) => (
+            <p
+              key={message}
+              className="bg-muted text-muted-foreground rounded-lg border px-4 py-3 text-sm break-words"
+            >
+              {message}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {trend && trendErrorMessages.length > 0 ? (
+        <div className="grid gap-2">
+          {trendErrorMessages.map((message) => (
             <p
               key={message}
               className="bg-muted text-muted-foreground rounded-lg border px-4 py-3 text-sm break-words"

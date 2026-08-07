@@ -18,14 +18,17 @@ import { cn } from "~/lib/utils";
 import type {
   DailyMeetingReportMetricEvidence,
   DailyMeetingReportMetricValue,
+  DailySalesAnalysis as DailySalesAnalysisData,
   MonthlyAnomalyItem,
   MonthlyClosingAnomalyDay,
   MonthlyClosingAnomalyReportData,
   MonthlyHeadquartersExpenseSummary,
 } from "../types";
+import { DailySalesAnalysis } from "./daily-sales-analysis";
 
 type MonthlyClosingAnomalyReportProps = {
   report: MonthlyClosingAnomalyReportData;
+  salesAnalysis: DailySalesAnalysisData;
   headquartersExpense?: MonthlyHeadquartersExpenseSummary | null;
 };
 
@@ -41,20 +44,25 @@ const percentFormatter = new Intl.NumberFormat("ko-KR", {
 
 export function MonthlyClosingAnomalyReport({
   report,
+  salesAnalysis,
   headquartersExpense = null,
 }: MonthlyClosingAnomalyReportProps) {
   if (!report.selectedStoreId) {
     return (
-      <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm">
-        표시할 지점 데이터가 없습니다. 권한 있는 활성 지점을 선택하거나
-        기준정보의 지점 상태를 확인해 주세요.
-      </section>
+      <div className="space-y-5">
+        <section className="bg-card text-muted-foreground rounded-lg border p-6 text-sm break-words shadow-sm">
+          표시할 지점 데이터가 없습니다. 권한 있는 활성 지점을 선택하거나
+          기준정보의 지점 상태를 확인해 주세요.
+        </section>
+        <MonthlySalesAnalysisSection data={salesAnalysis} />
+      </div>
     );
   }
 
   return (
     <section className="space-y-5" aria-label="월간 요약 리포트">
       <MonthlyKpiSummary report={report} />
+      <MonthlySalesAnalysisSection data={salesAnalysis} />
       {headquartersExpense ? (
         <HeadquartersExpenseSummary summary={headquartersExpense} />
       ) : null}
@@ -66,6 +74,26 @@ export function MonthlyClosingAnomalyReport({
       <CalculationDaySummary report={report} />
       <DayStatusTable days={report.days} />
       <AnomalyList items={report.anomalyItems} />
+    </section>
+  );
+}
+
+function MonthlySalesAnalysisSection({
+  data,
+}: {
+  data: DailySalesAnalysisData;
+}) {
+  return (
+    <section className="space-y-3" aria-label="월간 매출 분석">
+      <h2 className="text-lg font-semibold tracking-normal">매출 분석</h2>
+      <DailySalesAnalysis data={data} comparisonLabel="전월" />
+      <p className="text-muted-foreground text-xs">
+        기간을 직접 지정해 비교하려면{" "}
+        <a className="text-primary underline" href="/app/reports/comparison">
+          기간 분석
+        </a>
+        을 사용하세요.
+      </p>
     </section>
   );
 }

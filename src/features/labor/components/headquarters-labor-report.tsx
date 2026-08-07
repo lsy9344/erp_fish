@@ -154,10 +154,11 @@ export function HeadquartersLaborReportView({
             )}
           </div>
           <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-            <Table className="min-w-[1000px]">
+            <Table className="min-w-[1120px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>근무자</TableHead>
+                  <TableHead>근무 지점</TableHead>
                   <TableHead>직급</TableHead>
                   <TableHead className="text-right">근무일수</TableHead>
                   <TableHead className="text-right">인건비 합계</TableHead>
@@ -179,6 +180,9 @@ export function HeadquartersLaborReportView({
                   <TableRow key={settlement.key}>
                     <TableCell className="font-medium whitespace-nowrap">
                       {settlement.workerName}
+                    </TableCell>
+                    <TableCell className="max-w-48 whitespace-normal">
+                      {settlement.storeNames.join(", ") || "-"}
                     </TableCell>
                     <TableCell>
                       {formatOptionalText(settlement.position)}

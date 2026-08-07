@@ -10,6 +10,7 @@ const {
   buildMetricAxisTrendRows,
   buildPeriodContrastRows,
   buildPeriodTrendColumns,
+  buildPeriodTrendYearRange,
   buildStoreAxisTrendRows,
   calculatePeriodDelta,
   getPreviousComparableRange,
@@ -167,6 +168,40 @@ test("previous comparable range keeps the same length", () => {
 });
 
 // 엑셀 4개 뷰를 축 2개로 덮는다.
+test("trend year range validates URL input and lets the 36-period guard run", () => {
+  assert.deepEqual(
+    buildPeriodTrendYearRange({
+      fromYear: "2020",
+      toYear: "2026",
+      fallbackYear: 2026,
+    }),
+    {
+      fromYear: 2020,
+      toYear: 2026,
+      years: [2020, 2021, 2022, 2023, 2024, 2025, 2026],
+      errorMessages: [],
+    },
+  );
+
+  const malformed = buildPeriodTrendYearRange({
+    fromYear: "999999",
+    toYear: "2026",
+    fallbackYear: 2026,
+  });
+  assert.equal(malformed.fromYear, 2020);
+  assert.equal(malformed.toYear, 2026);
+  assert.equal(malformed.errorMessages.length, 1);
+
+  const inverted = buildPeriodTrendYearRange({
+    fromYear: "2026",
+    toYear: "2020",
+    fallbackYear: 2026,
+  });
+  assert.equal(inverted.fromYear, 2014);
+  assert.equal(inverted.toYear, 2020);
+  assert.match(inverted.errorMessages[0], /시작 연도/);
+});
+
 test("trend columns cover month, year, and seasonal month ranges", () => {
   const monthly = buildPeriodTrendColumns({ unit: "month", year: 2026 });
   assert.equal(monthly.columns.length, 12);
@@ -223,8 +258,16 @@ test("trend columns cap at the max width with a reason", () => {
 
 test("metric axis rows sum amounts and weight ratios by sales", () => {
   const rows = buildMetricAxisTrendRows([
-    storeRow("a", "강남", { salesAmount: 100, grossMarginRate: 0.3 }),
-    storeRow("a", "강남", { salesAmount: 300, grossMarginRate: 0.1 }),
+    storeRow("a", "강남", {
+      salesAmount: 100,
+      grossMarginRate: 0.3,
+      averageWorkerCount: 2,
+    }),
+    storeRow("a", "강남", {
+      salesAmount: 300,
+      grossMarginRate: 0.1,
+      averageWorkerCount: 4,
+    }),
     null,
   ]);
   const byKey = new Map(rows.map((row) => [row.key, row]));
@@ -233,6 +276,8 @@ test("metric axis rows sum amounts and weight ratios by sales", () => {
   assert.equal(byKey.get("salesAmount").total.value, 400);
   // 비율은 매출 가중평균: (0.3*100 + 0.1*300) / 400 = 0.15
   assert.ok(Math.abs(byKey.get("grossMarginRate").total.value - 0.15) < 1e-12);
+  // 평균 근무인원은 매출로 가중하지 않고 기간별 평균의 단순평균이다.
+  assert.equal(byKey.get("averageWorkerCount").total.value, 3);
   // 데이터 없는 기간은 셀이 null이며 합계에서 빠진다.
   assert.equal(byKey.get("salesAmount").cells[2], null);
 });

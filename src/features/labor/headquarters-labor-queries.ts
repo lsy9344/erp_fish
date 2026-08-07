@@ -88,7 +88,11 @@ function parseDateInput(value: unknown) {
 
   const parsed = new Date(`${value}T00:00:00.000Z`);
 
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  // JavaScript는 2026-02-31을 3월로 자동 보정한다. 급여 기간에서는 이를
+  // 허용하지 않고, 입력한 달력 날짜와 생성된 날짜가 정확히 같아야 한다.
+  return Number.isNaN(parsed.getTime()) || toDateInput(parsed) !== value
+    ? null
+    : parsed;
 }
 
 // WO-0806 #2-2: `월 선택`(기존 `?month=`)과 `기간 지정`(`?from=&to=`)을 모두 받는다.
@@ -286,9 +290,16 @@ export function buildHeadquartersLaborReport({
       specialMemo: item.specialMemo,
     })),
   );
+  // 희망 현금은 월 전체 원장을 볼 때만 지급 근거로 안전하다. 지점·상태·이름
+  // 필터가 하나라도 적용되면 월 급여 일부에서 보험료 전액을 빼는 오류가 생긴다.
+  const hasSettlementFilter =
+    selectedStoreId !== null ||
+    selectedStatus !== "ALL" ||
+    selectedWorkerName !== null;
   const workerSettlements = buildWorkerSettlements(
     targetLedgers,
     isSingleMonth,
+    hasSettlementFilter,
   );
   const summaryByStore = new Map<
     string,
@@ -379,21 +390,29 @@ export function buildHeadquartersLaborReport({
 function buildWorkerSettlements(
   ledgers: HeadquartersLaborLedgerRecord[],
   isSingleMonth: boolean,
+  hasSettlementFilter: boolean,
 ): HeadquartersLaborWorkerSettlement[] {
   const byWorker = new Map<
     string,
-    HeadquartersLaborWorkerSettlement & { workdays: Set<string> }
+    Omit<HeadquartersLaborWorkerSettlement, "storeNames"> & {
+      storeNames: Set<string>;
+      workdays: Set<string>;
+    }
   >();
 
   for (const ledger of ledgers) {
     const businessDate = toDateInput(ledger.closingDate);
 
     for (const item of ledger.ledgerLaborItems) {
-      // 직원 미연결(자유 입력) 근무자도 이름으로 묶어 누락을 막는다.
-      const key = item.employeeId ?? `name:${item.workerName}`;
+      // 연결 직원은 사번으로 전 지점을 합산한다. 미연결 자유 입력은 같은 이름이
+      // 다른 지점에 있을 수 있으므로 지점+정규화 이름으로만 묶는다.
+      const normalizedName = item.workerName.trim().toLocaleLowerCase("ko-KR");
+      const key =
+        item.employeeId ?? `name:${ledger.store.id}:${normalizedName}`;
       const existing = byWorker.get(key) ?? {
         key,
         workerName: item.workerName,
+        storeNames: new Set<string>(),
         position: item.employee?.position ?? null,
         bankAccount: item.employee?.bankAccount ?? null,
         workdays: new Set<string>(),
@@ -404,6 +423,7 @@ function buildWorkerSettlements(
         cashUnavailableReason: null,
       };
 
+      existing.storeNames.add(ledger.store.name);
       existing.workdays.add(businessDate);
       existing.laborAmount += item.amount;
       byWorker.set(key, existing);
@@ -411,16 +431,20 @@ function buildWorkerSettlements(
   }
 
   return [...byWorker.values()]
-    .map(({ workdays, ...settlement }) => {
+    .map(({ workdays, storeNames, ...settlement }) => {
       const cash = resolveDesiredCash({
         laborAmount: settlement.laborAmount,
         desiredInsuranceAmount: settlement.desiredInsuranceAmount,
         isLinkedEmployee: !settlement.key.startsWith("name:"),
         isSingleMonth,
+        hasSettlementFilter,
       });
 
       return {
         ...settlement,
+        storeNames: [...storeNames].sort((left, right) =>
+          left.localeCompare(right, "ko"),
+        ),
         workdayCount: workdays.size,
         ...cash,
       };
@@ -437,11 +461,13 @@ export function resolveDesiredCash({
   desiredInsuranceAmount,
   isLinkedEmployee,
   isSingleMonth,
+  hasSettlementFilter = false,
 }: {
   laborAmount: number;
   desiredInsuranceAmount: number | null;
   isLinkedEmployee: boolean;
   isSingleMonth: boolean;
+  hasSettlementFilter?: boolean;
 }): { desiredCashAmount: number | null; cashUnavailableReason: string | null } {
   if (!isLinkedEmployee) {
     return {
@@ -454,6 +480,13 @@ export function resolveDesiredCash({
     return {
       desiredCashAmount: null,
       cashUnavailableReason: "기간 조회에서는 자동계산 미적용",
+    };
+  }
+
+  if (hasSettlementFilter) {
+    return {
+      desiredCashAmount: null,
+      cashUnavailableReason: "필터 조회에서는 자동계산 미적용",
     };
   }
 
