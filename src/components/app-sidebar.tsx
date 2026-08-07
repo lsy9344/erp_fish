@@ -33,17 +33,18 @@ const headquartersNavigationItems = [
     requiredAction: PermissionAction.REPORT_VIEW,
   },
   {
+    // WO-0806 #5: 인건비·직원 관리는 계좌번호·주소·급여를 다루므로 대표(OWNER) 전용이다.
     label: "인건비 현황",
     href: "/app/reports/labor",
     icon: "reports",
-    requiredAction: PermissionAction.REPORT_VIEW,
+    requiredAction: PermissionAction.LABOR_VIEW,
   },
   {
     // WO-25(2026-07-25) #6: 인건비 메뉴 영역에 직원 관리를 노출(플래그 제거).
     label: "직원 관리",
     href: "/app/labor/employees",
     icon: "master-data",
-    requiredAction: PermissionAction.REPORT_VIEW,
+    requiredAction: PermissionAction.LABOR_VIEW,
   },
   {
     label: "본사 지출",

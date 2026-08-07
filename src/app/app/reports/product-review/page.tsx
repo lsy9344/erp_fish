@@ -10,7 +10,8 @@ import {
   getDailyMeetingReportDateQuery,
   getHqDailyMeetingReport,
 } from "~/features/reports/queries";
-import { requireReportAccess } from "~/server/authz";
+import { PermissionAction } from "../../../../../generated/prisma";
+import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
 type ProductReviewPageProps = {
   searchParams: Promise<{ date?: string | string[] }>;
@@ -22,6 +23,11 @@ export default async function ProductReviewPage({
   searchParams,
 }: ProductReviewPageProps) {
   const user = await requireReportAccess();
+  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
+  const canViewLabor = await hasActionPermission(
+    user.id,
+    PermissionAction.LABOR_VIEW,
+  );
   const navigationItems = await getHeadquartersNavigationItems(user.id);
   const params = await searchParams;
   const dateQuery = getDailyMeetingReportDateQuery(
@@ -35,7 +41,7 @@ export default async function ProductReviewPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="product-review" />
+      <ReportsNav active="product-review" canViewLabor={canViewLabor} />
 
       <PageHeader
         title="품목 검토 (추정)"

@@ -22,6 +22,11 @@ export default async function HqReportOverviewPage({
   searchParams,
 }: PageProps) {
   const user = await requireReportAccess();
+  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
+  const canViewLabor = await hasActionPermission(
+    user.id,
+    PermissionAction.LABOR_VIEW,
+  );
   const params = await searchParams;
   const month = Array.isArray(params.month) ? params.month[0] : params.month;
   const storeId = Array.isArray(params.storeId)
@@ -51,7 +56,7 @@ export default async function HqReportOverviewPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="overview" />
+      <ReportsNav active="overview" canViewLabor={canViewLabor} />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader

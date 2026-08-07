@@ -325,7 +325,8 @@ test("unauthorized store filter produces an empty labor report instead of expand
 test("headquarters labor query is permission and store-scope guarded", () => {
   const source = readFileSync(queryPath, "utf8");
 
-  assert.match(source, /await requireReportAccess\(\)/);
+  // WO-0806 #5: 인건비 현황은 대표(LABOR_VIEW) 전용으로 좁혔다.
+  assert.match(source, /await requireLaborViewAccess\(\)/);
   assert.match(source, /await getHeadquartersStoreScope\(\)/);
   assert.match(source, /resolveHeadquartersLaborStoreFilter\(/);
   assert.match(
@@ -370,7 +371,7 @@ test("headquarters labor route and both navigation entries are present", () => {
     "utf8",
   );
 
-  assert.match(page, /requireReportAccess\(\)/);
+  assert.match(page, /requireLaborViewAccess\(\)/);
   assert.match(page, /ReportsNav active="labor"/);
   assert.match(
     page,
@@ -384,7 +385,7 @@ test("headquarters labor route and both navigation entries are present", () => {
   );
   assert.match(
     sidebar,
-    /label:\s*"인건비 현황"[\s\S]*href:\s*"\/app\/reports\/labor"[\s\S]*PermissionAction\.REPORT_VIEW/,
+    /label:\s*"인건비 현황"[\s\S]*href:\s*"\/app\/reports\/labor"[\s\S]*PermissionAction\.LABOR_VIEW/,
   );
   assert.match(
     reportsNav,

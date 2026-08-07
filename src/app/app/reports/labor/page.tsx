@@ -6,7 +6,7 @@ import { PageHeader } from "~/components/page-header";
 import { HeadquartersLaborReportView } from "~/features/labor/components/headquarters-labor-report";
 import { getHeadquartersLaborReport } from "~/features/labor/headquarters-labor-queries";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
-import { requireReportAccess } from "~/server/authz";
+import { requireLaborViewAccess } from "~/server/authz";
 
 type HeadquartersLaborReportPageProps = {
   searchParams: Promise<{
@@ -24,7 +24,7 @@ function firstParam(value: string | string[] | undefined) {
 export default async function HeadquartersLaborReportPage({
   searchParams,
 }: HeadquartersLaborReportPageProps) {
-  const user = await requireReportAccess();
+  const user = await requireLaborViewAccess();
   const params = await searchParams;
   const [navigationItems, report] = await Promise.all([
     getHeadquartersNavigationItems(user.id),
@@ -42,7 +42,7 @@ export default async function HeadquartersLaborReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="labor" />
+      <ReportsNav active="labor" canViewLabor />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

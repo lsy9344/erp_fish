@@ -270,10 +270,10 @@ export async function getHeadquartersLaborReport({
   status?: unknown;
   workerName?: unknown;
 } = {}): Promise<HeadquartersLaborReport> {
-  const { getHeadquartersStoreScope, requireReportAccess } =
+  const { getHeadquartersStoreScope, requireLaborViewAccess } =
     await import("../../server/authz.ts");
   const { db } = await import("../../server/db.ts");
-  await requireReportAccess();
+  await requireLaborViewAccess();
   const scope = await getHeadquartersStoreScope();
   const monthRange = getHeadquartersLaborMonthRange(month);
   const selectedStatus = normalizeHeadquartersLaborStatus(status);

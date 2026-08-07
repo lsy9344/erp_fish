@@ -18,6 +18,7 @@ type ReportGroup = { label: string; items: ReportLink[] };
 
 // 리포트 하위 메뉴의 단일 출처. 각 리포트 페이지 상단에서 동일하게 렌더링한다.
 // 링크 라벨은 e2e가 클릭 대상으로 참조하므로 바꿀 때 tests/e2e/hq-reports.spec.ts 확인.
+// WO-0806 [F]: 대표가 보던 엑셀 `분석` 시트가 `기간 분석`이므로 그룹 첫 항목으로 올린다.
 const REPORT_GROUPS: ReportGroup[] = [
   {
     label: "일일 운영",
@@ -26,12 +27,12 @@ const REPORT_GROUPS: ReportGroup[] = [
   {
     label: "기간 분석",
     items: [
-      { key: "overview", label: "통합 리포트", href: "/app/reports/overview" },
       {
         key: "comparison",
-        label: "기간 비교",
+        label: "기간 분석",
         href: "/app/reports/comparison",
       },
+      { key: "overview", label: "통합 리포트", href: "/app/reports/overview" },
       { key: "monthly", label: "월간", href: "/app/reports/monthly" },
       { key: "labor", label: "인건비", href: "/app/reports/labor" },
     ],
@@ -64,14 +65,26 @@ const REPORT_GROUPS: ReportGroup[] = [
   },
 ];
 
-export function ReportsNav({ active }: { active: ReportKey }) {
+// WO-0806 #5: 인건비는 대표 전용이므로 LABOR_VIEW가 없는 계정에게는 링크 자체를 감춘다.
+export function ReportsNav({
+  active,
+  canViewLabor = false,
+}: {
+  active: ReportKey;
+  canViewLabor?: boolean;
+}) {
+  const groups = REPORT_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.key !== "labor" || canViewLabor),
+  })).filter((group) => group.items.length > 0);
+
   return (
     <nav
       aria-label="리포트 메뉴"
       className="border-border bg-card rounded-lg border p-2 sm:p-3"
     >
       <ul className="flex flex-wrap items-stretch gap-x-5 gap-y-3">
-        {REPORT_GROUPS.map((group, index) => (
+        {groups.map((group, index) => (
           <li
             key={group.label}
             className={cn(

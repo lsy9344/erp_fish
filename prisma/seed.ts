@@ -25,6 +25,8 @@ const ALL_PERMISSION_ACTIONS = [
   PermissionAction.REPORT_VIEW,
   PermissionAction.EXPORT_CREATE,
   PermissionAction.USER_PERMISSION_MANAGE,
+  // WO-0806 #5: OWNER 외 시스템 프로필에는 의도적으로 부여하지 않는다.
+  PermissionAction.LABOR_VIEW,
 ] as const;
 
 const SYSTEM_PERMISSION_PROFILES = [
