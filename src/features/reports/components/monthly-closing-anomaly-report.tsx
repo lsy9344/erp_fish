@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { calculateMonthlyNetProfit } from "../monthly-kpi";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
 import { formatQuantityValue } from "~/lib/format";
@@ -121,14 +122,16 @@ function MonthlyKpiSummary({
   report: MonthlyClosingAnomalyReportData;
 }) {
   const kpis = report.monthlyKpis;
-  const remainingItems = [
-    ["매출이익", kpis.metricEvidence.grossProfit],
-    ["이익률", kpis.metricEvidence.grossMarginRate],
-    ["영업이익", kpis.metricEvidence.operatingProfit],
-    ["손실 합계", kpis.metricEvidence.lossTotal],
+  const { netProfit, netProfitRate } = calculateMonthlyNetProfit({
+    operatingProfit: kpis.operatingProfit.value,
+    laborAmount: kpis.laborAmount,
+    salesAmount: kpis.salesAmount.value,
+  });
+  // 2행(비강조): 대표 엑셀에서도 보조 지표로 보던 값들.
+  const secondaryItems = [
     ["평균재고", kpis.metricEvidence.averageInventory],
+    ["손실 합계", kpis.metricEvidence.lossTotal],
     ["평균매출", kpis.metricEvidence.averageSales],
-    ["매출대비 재고비율", kpis.metricEvidence.inventoryToSalesRatio],
   ] as const;
 
   return (
@@ -160,55 +163,102 @@ function MonthlyKpiSummary({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div
-          data-testid="hq-report-monthly-kpi-sales"
-          className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
-        >
-          <p className="text-muted-foreground text-sm break-words">
-            장부 마감 매출
-          </p>
-          <p className="mt-2 font-medium break-words tabular-nums">
-            {formatKrwMetric(kpis.closingSalesAmount)}
-          </p>
-        </div>
-        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
-          <p className="text-muted-foreground text-sm break-words">이월 매출</p>
-          <p className="mt-2 font-medium break-words tabular-nums">
-            {formatKrwMetric(kpis.carryoverSalesAmount)}
-          </p>
-        </div>
-        <div className="bg-card min-w-0 rounded-lg border p-4 shadow-sm">
-          <p className="text-muted-foreground text-sm break-words">
-            영업 매출 합계
-          </p>
-          <div className="mt-2 tabular-nums">
-            <MetricValueWithEvidence
-              evidence={kpis.metricEvidence.salesAmount}
-              align="left"
-            />
-          </div>
-        </div>
-        {remainingItems.map(([label, evidence]) => (
-          <div
-            key={label}
-            className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
-          >
-            <p className="text-muted-foreground text-sm break-words">{label}</p>
-            <div className="mt-2 tabular-nums">
-              <MetricValueWithEvidence evidence={evidence} align="left" />
-            </div>
-          </div>
-        ))}
-        <div
-          data-testid="hq-report-monthly-kpi-labor"
-          className="bg-card min-w-0 rounded-lg border p-4 shadow-sm"
-        >
-          <p className="text-muted-foreground text-sm break-words">인건비</p>
-          <p className="mt-2 font-medium break-words tabular-nums">
-            {krwFormatter.format(kpis.laborAmount)}
-          </p>
-        </div>
+      <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
+        <Table className="min-w-[820px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-right">매출</TableHead>
+              <TableHead className="text-right">이익률</TableHead>
+              <TableHead className="text-right">
+                영업이익
+                <span className="text-muted-foreground block text-xs font-normal">
+                  매출이익 − 장부지출
+                </span>
+              </TableHead>
+              <TableHead className="text-right">인건비</TableHead>
+              <TableHead className="text-right">
+                순이익
+                <span className="text-muted-foreground block text-xs font-normal">
+                  영업이익 − 인건비
+                </span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell
+                data-testid="hq-report-monthly-kpi-sales"
+                className="text-right tabular-nums"
+              >
+                <MetricValueWithEvidence
+                  evidence={kpis.metricEvidence.salesAmount}
+                />
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                <MetricValueWithEvidence
+                  evidence={kpis.metricEvidence.grossMarginRate}
+                />
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                <MetricValueWithEvidence
+                  evidence={kpis.metricEvidence.operatingProfit}
+                />
+              </TableCell>
+              <TableCell
+                data-testid="hq-report-monthly-kpi-labor"
+                className="text-right font-medium tabular-nums"
+              >
+                {krwFormatter.format(kpis.laborAmount)}
+              </TableCell>
+              <TableCell
+                data-testid="hq-report-monthly-kpi-net-profit"
+                className="bg-primary/5 text-right tabular-nums"
+              >
+                {netProfit === null ? (
+                  <span className="text-muted-foreground">
+                    {kpis.operatingProfit.label ??
+                      kpis.operatingProfit.unavailableReason ??
+                      "계산 불가"}
+                  </span>
+                ) : (
+                  <span className="font-semibold break-words">
+                    {krwFormatter.format(netProfit)}
+                    <span className="text-muted-foreground ml-1 text-xs font-normal">
+                      (
+                      {netProfitRate === null
+                        ? "-"
+                        : percentFormatter.format(netProfitRate)}
+                      )
+                    </span>
+                  </span>
+                )}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="bg-card text-muted-foreground overflow-x-auto rounded-lg border text-sm shadow-sm">
+        <Table className="min-w-[560px]">
+          <TableHeader>
+            <TableRow>
+              {secondaryItems.map(([label]) => (
+                <TableHead key={label} className="text-right text-xs">
+                  {label}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              {secondaryItems.map(([label, evidence]) => (
+                <TableCell key={label} className="text-right tabular-nums">
+                  <MetricValueWithEvidence evidence={evidence} />
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableBody>
+        </Table>
       </div>
     </section>
   );
@@ -927,16 +977,6 @@ function MetricValueWithEvidence({
       </details>
     </div>
   );
-}
-
-function formatKrwMetric(metric: {
-  value: number | null;
-  label?: string;
-  unavailableReason?: string;
-}) {
-  return metric.value === null
-    ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
-    : krwFormatter.format(metric.value);
 }
 
 function DetailLink({

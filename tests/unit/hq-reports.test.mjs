@@ -463,7 +463,8 @@ test("daily sales analysis and attendance components are display-only responsive
   );
 
   for (const label of [
-    "전일 대비 매출액 증감률",
+    // WO-0806 #4: 아침 회의(전일)와 월간(전월)이 같은 차트를 쓰므로 비교 기준은 주입값이다.
+    "\\{comparisonLabel\\} 대비 매출액 증감률",
     "재고비율",
     "매장 매출 포지션",
     "계산 불가",
@@ -875,9 +876,13 @@ test("HQ report pages omit the category margin chart while preserving category c
     assert.doesNotMatch(source, /ProductCategoryMarginChart/);
     assert.doesNotMatch(source, /냉동\/생물 매출 \(추정\)/);
   }
-  assert.match(monthlyComponentSource, /장부 마감 매출/);
-  assert.match(monthlyComponentSource, /이월 매출/);
-  assert.match(monthlyComponentSource, /영업 매출 합계/);
+  // WO-0806 #3: 카드 10개 대신 2행 테이블. 장부 마감 매출·이월 매출·매출이익·
+  // 매출대비 재고비율은 화면에서 내렸다(DTO에는 남아 통합 리포트/export가 계속 쓴다).
+  assert.doesNotMatch(monthlyComponentSource, /장부 마감 매출/);
+  assert.doesNotMatch(monthlyComponentSource, /이월 매출/);
+  assert.match(monthlyComponentSource, /순이익/);
+  assert.match(monthlyComponentSource, /영업이익 − 인건비/);
+  assert.match(monthlyComponentSource, /매출이익 − 장부지출/);
   assert.equal(
     existsSync(
       path.join(

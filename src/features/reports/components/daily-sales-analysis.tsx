@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import {
   Bar,
   BarChart,
@@ -87,7 +88,7 @@ const inventoryRatioFormatter = new Intl.NumberFormat("ko-KR", {
 });
 
 const salesChangeConfig = {
-  rate: { label: "전일 대비 증감률", color: "var(--chart-1)" },
+  rate: { label: "직전 기간 대비 증감률", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
 const positionConfig = {
@@ -97,6 +98,14 @@ const positionConfig = {
 const inventoryConfig = {
   inventoryRatio: { label: "재고비율", color: "var(--chart-2)" },
 } satisfies ChartConfig;
+
+// WO-0806 #4: 같은 차트를 아침 회의(전일 대비)와 월간(전월 대비)에서 함께 쓴다.
+// 라벨만 다르고 계산은 같아서 컴포넌트를 복제하지 않고 비교 기준 문구만 바꾼다.
+const ComparisonLabelContext = createContext("전일");
+
+function useComparisonLabel() {
+  return useContext(ComparisonLabelContext);
+}
 
 const SIGNED_CHART_CATEGORY_AXIS_WIDTH = 72;
 
@@ -108,7 +117,13 @@ const chartColors = [
   "var(--chart-5)",
 ] as const;
 
-export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
+export function DailySalesAnalysis({
+  data,
+  comparisonLabel = "전일",
+}: {
+  data: DailySalesAnalysisData;
+  comparisonLabel?: string;
+}) {
   if (
     data.salesChanges.length === 0 &&
     data.inventoryRatios.length === 0 &&
@@ -215,87 +230,92 @@ export function DailySalesAnalysis({ data }: { data: DailySalesAnalysisData }) {
     );
 
   return (
-    <div className="grid min-w-0 gap-4 lg:grid-cols-3">
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>전일 대비 매출액 증감률</CardTitle>
-          <CardDescription>
-            0선을 기준으로 지점별 증감률과 증감액을 함께 표시합니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
-          {salesChangeRows.length === 0 ? (
-            <EmptyChartMessage message="계산 가능한 전일 대비 매출이 없습니다." />
-          ) : (
-            <>
-              <SignedChangeChart rows={salesChangeRows} />
-              <SalesChangeLegend rows={salesChangeRows} />
-            </>
-          )}
-          <SalesChangeAccessibleTable data={data} />
-        </CardContent>
-        <AvailabilityFooter
-          availableMessage="증감률과 증감액은 같은 비교 기준을 사용합니다."
-          rows={unavailableSalesChanges}
-        />
-      </Card>
+    <ComparisonLabelContext.Provider value={comparisonLabel}>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>{comparisonLabel} 대비 매출액 증감률</CardTitle>
+            <CardDescription>
+              0선을 기준으로 지점별 증감률과 증감액을 함께 표시합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
+            {salesChangeRows.length === 0 ? (
+              <EmptyChartMessage
+                message={`계산 가능한 ${comparisonLabel} 대비 매출이 없습니다.`}
+              />
+            ) : (
+              <>
+                <SignedChangeChart rows={salesChangeRows} />
+                <SalesChangeLegend rows={salesChangeRows} />
+              </>
+            )}
+            <SalesChangeAccessibleTable data={data} />
+          </CardContent>
+          <AvailabilityFooter
+            availableMessage="증감률과 증감액은 같은 비교 기준을 사용합니다."
+            rows={unavailableSalesChanges}
+          />
+        </Card>
 
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>매장 매출 포지션</CardTitle>
-          <CardDescription>
-            전체 매출 비중과 선택일 매출액을 함께 표시합니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
-          {positionRows.length === 0 ? (
-            <EmptyChartMessage message="표시할 매장 매출 비중이 없습니다." />
-          ) : (
-            <StorePositionDonut rows={positionRows} />
-          )}
-          <PositionAccessibleTable data={data} />
-        </CardContent>
-        <AvailabilityFooter
-          availableMessage="범례에는 매출 비중과 전일 대비 증감을 함께 표시합니다."
-          rows={unavailablePositions}
-          title="포지션 제외 지점"
-        />
-      </Card>
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>매장 매출 포지션</CardTitle>
+            <CardDescription>
+              전체 매출 비중과 조회 기간 매출액을 함께 표시합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
+            {positionRows.length === 0 ? (
+              <EmptyChartMessage message="표시할 매장 매출 비중이 없습니다." />
+            ) : (
+              <StorePositionDonut rows={positionRows} />
+            )}
+            <PositionAccessibleTable data={data} />
+          </CardContent>
+          <AvailabilityFooter
+            availableMessage={`범례에는 매출 비중과 ${comparisonLabel} 대비 증감을 함께 표시합니다.`}
+            rows={unavailablePositions}
+            title="포지션 제외 지점"
+          />
+        </Card>
 
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>재고비율</CardTitle>
-          <CardDescription>
-            재고금액 ÷ 매출액 비율을 표시하며, 동일 금액은 100.0%입니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
-          {inventoryRows.length === 0 ? (
-            <EmptyChartMessage message="계산 가능한 재고비율이 없습니다." />
-          ) : (
-            <>
-              <InventoryRatioChart rows={inventoryRows} />
-              <InventoryRatioLegend rows={inventoryRows} />
-            </>
-          )}
-          <InventoryAccessibleTable data={data} />
-        </CardContent>
-        <AvailabilityFooter
-          availableMessage="100% 기준선은 재고금액과 매출액이 같은 지점을 뜻합니다."
-          rows={unavailableInventoryRows}
-        />
-      </Card>
-    </div>
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>재고비율</CardTitle>
+            <CardDescription>
+              재고금액 ÷ 매출액 비율을 표시하며, 동일 금액은 100.0%입니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
+            {inventoryRows.length === 0 ? (
+              <EmptyChartMessage message="계산 가능한 재고비율이 없습니다." />
+            ) : (
+              <>
+                <InventoryRatioChart rows={inventoryRows} />
+                <InventoryRatioLegend rows={inventoryRows} />
+              </>
+            )}
+            <InventoryAccessibleTable data={data} />
+          </CardContent>
+          <AvailabilityFooter
+            availableMessage="100% 기준선은 재고금액과 매출액이 같은 지점을 뜻합니다."
+            rows={unavailableInventoryRows}
+          />
+        </Card>
+      </div>
+    </ComparisonLabelContext.Provider>
   );
 }
 
 function SignedChangeChart({ rows }: { rows: SalesChangeChartRow[] }) {
+  const comparisonLabel = useComparisonLabel();
   const values = rows.map((row) => row.rate);
   const chartHeight = Math.max(220, rows.length * 52 + 40);
 
   return (
     <ChartContainer
-      aria-label="지점별 전일 대비 매출액 증감률 차트"
+      aria-label={`지점별 ${comparisonLabel} 대비 매출액 증감률 차트`}
       className="min-h-56 w-full min-w-0"
       config={salesChangeConfig}
       style={{ height: chartHeight }}
@@ -362,6 +382,7 @@ function SignedChangeChart({ rows }: { rows: SalesChangeChartRow[] }) {
 }
 
 function StorePositionDonut({ rows }: { rows: PositionChartRow[] }) {
+  const comparisonLabel = useComparisonLabel();
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <ChartContainer
@@ -388,7 +409,7 @@ function StorePositionDonut({ rows }: { rows: PositionChartRow[] }) {
                         </span>
                       </div>
                       <p className="text-muted-foreground text-xs">
-                        전일 대비 {row.changeLabel}
+                        {comparisonLabel} 대비 {row.changeLabel}
                       </p>
                     </div>
                   );
@@ -451,7 +472,10 @@ function StorePositionDonut({ rows }: { rows: PositionChartRow[] }) {
         </PieChart>
       </ChartContainer>
 
-      <ol className="grid gap-2" aria-label="지점별 매출 비중과 전일 대비 증감">
+      <ol
+        className="grid gap-2"
+        aria-label={`지점별 매출 비중과 ${comparisonLabel} 대비 증감`}
+      >
         {rows.map((row) => (
           <li
             className="flex min-w-0 items-start gap-2 text-xs"
@@ -470,7 +494,7 @@ function StorePositionDonut({ rows }: { rows: PositionChartRow[] }) {
                 <span className="shrink-0 tabular-nums">{row.shareLabel}</span>
               </div>
               <p className="text-muted-foreground mt-0.5 break-words">
-                전일 대비 {row.changeLabel}
+                {comparisonLabel} 대비 {row.changeLabel}
               </p>
             </div>
           </li>
@@ -481,8 +505,12 @@ function StorePositionDonut({ rows }: { rows: PositionChartRow[] }) {
 }
 
 function SalesChangeLegend({ rows }: { rows: SalesChangeChartRow[] }) {
+  const comparisonLabel = useComparisonLabel();
   return (
-    <ul className="grid gap-2" aria-label="지점별 전일 대비 증감 상세">
+    <ul
+      className="grid gap-2"
+      aria-label={`지점별 ${comparisonLabel} 대비 증감 상세`}
+    >
       {rows.map((row) => (
         <li
           className="flex min-w-0 items-start justify-between gap-2 text-xs"
@@ -658,10 +686,11 @@ function SalesChangeAccessibleTable({
 }: {
   data: DailySalesAnalysisData;
 }) {
+  const comparisonLabel = useComparisonLabel();
   return (
     <div className="sr-only">
       <table>
-        <caption>지점별 전일 대비 매출액 증감 데이터</caption>
+        <caption>지점별 {comparisonLabel} 대비 매출액 증감 데이터</caption>
         <thead>
           <tr>
             <th>지점</th>
@@ -690,17 +719,18 @@ function SalesChangeAccessibleTable({
 }
 
 function PositionAccessibleTable({ data }: { data: DailySalesAnalysisData }) {
+  const comparisonLabel = useComparisonLabel();
   return (
     <div className="sr-only">
       <table>
-        <caption>지점별 매출 비중과 전일 대비 증감 데이터</caption>
+        <caption>지점별 매출 비중과 {comparisonLabel} 대비 증감 데이터</caption>
         <thead>
           <tr>
             <th>순위</th>
             <th>지점</th>
             <th>전체 매출 비중</th>
-            <th>전일 대비 증감률</th>
-            <th>전일 대비 증감액</th>
+            <th>{comparisonLabel} 대비 증감률</th>
+            <th>{comparisonLabel} 대비 증감액</th>
           </tr>
         </thead>
         <tbody>

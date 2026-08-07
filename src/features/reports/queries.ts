@@ -589,6 +589,143 @@ export function buildDailySalesAnalysis(
   return { salesChanges, inventoryRatios, positions, excludedPositions };
 }
 
+// WO-0806 #4: 아침 회의의 매출분석 3종을 월간 페이지에서 재사용한다.
+// 일간 빌더는 장부 1건의 FIFO inventoryItems에 묶여 있어 그대로 못 쓰고,
+// 월간은 이미 집계된 비교 리포트 행을 같은 DTO로 모양만 바꿔 넣는다.
+// 새 집계 로직은 없고 share/rank/증감만 계산한다.
+export function buildMonthlySalesAnalysis({
+  currentRows,
+  previousRows,
+}: {
+  currentRows: StoreComparisonReportRow[];
+  previousRows: StoreComparisonReportRow[];
+}): DailySalesAnalysis {
+  const previousById = new Map(previousRows.map((row) => [row.storeId, row]));
+
+  const salesChanges = currentRows.map((row) => {
+    const currentSales = row.salesAmount;
+    const previous = previousById.get(row.storeId);
+    const previousSales =
+      previous?.salesAmount ?? dailyUnavailable("전월 장부 없음");
+    const difference =
+      currentSales.value === null || previousSales.value === null
+        ? dailyUnavailable(
+            currentSales.reason ?? previousSales.reason ?? "매출 계산 불가",
+          )
+        : available(currentSales.value - previousSales.value);
+    const rate =
+      difference.value === null
+        ? dailyUnavailable(difference.reason ?? "증감률 계산 불가")
+        : previousSales.value === null || previousSales.value <= 0
+          ? dailyUnavailable("전월 매출 0원")
+          : available(difference.value / previousSales.value);
+
+    return {
+      storeId: row.storeId,
+      storeName: row.storeName,
+      currentSales,
+      previousSales,
+      difference,
+      rate,
+    };
+  });
+
+  // 월간 재고비율은 평균재고 ÷ 평균매출로 이미 계산돼 있다(기간 분석과 같은 값).
+  const inventoryRatios = currentRows.map((row) => ({
+    storeId: row.storeId,
+    storeName: row.storeName,
+    inventoryAmount: row.averageInventory,
+    salesAmount: row.averageSales,
+    inventoryRatio: row.inventoryToSalesRatio,
+  }));
+
+  const salesChangeByStoreId = new Map(
+    salesChanges.map((row) => [row.storeId, row]),
+  );
+  const positionCandidates = currentRows
+    .map((row) => {
+      const salesChange = salesChangeByStoreId.get(row.storeId);
+
+      return {
+        storeId: row.storeId,
+        storeName: row.storeName,
+        salesAmount: row.salesAmount,
+        difference:
+          salesChange?.difference ?? dailyUnavailable("증감액 계산 불가"),
+        rate: salesChange?.rate ?? dailyUnavailable("증감률 계산 불가"),
+      };
+    })
+    .filter((row) => row.salesAmount.value !== null)
+    .sort(
+      (a, b) =>
+        (b.salesAmount.value ?? 0) - (a.salesAmount.value ?? 0) ||
+        koreanStoreNameCollator.compare(a.storeName, b.storeName),
+    );
+  const totalSales = positionCandidates.reduce(
+    (sum, row) => sum + (row.salesAmount.value ?? 0),
+    0,
+  );
+  const positions = positionCandidates.map((row, index) => ({
+    rank: index + 1,
+    ...row,
+    share:
+      totalSales > 0
+        ? available((row.salesAmount.value ?? 0) / totalSales)
+        : dailyUnavailable("순위 대상 매출 합계 0원"),
+  }));
+  const includedStoreIds = new Set(positions.map((row) => row.storeId));
+  const excludedPositions = currentRows
+    .filter((row) => !includedStoreIds.has(row.storeId))
+    .map((row) => ({
+      storeId: row.storeId,
+      storeName: row.storeName,
+      reason:
+        row.salesAmount.reason ?? row.salesAmount.label ?? "매출 계산 불가",
+    }));
+
+  return { salesChanges, inventoryRatios, positions, excludedPositions };
+}
+
+// 기준 월과 직전 월을 같은 집계로 두 번 조회해 월간 매출분석을 만든다.
+// 지점 비교가 목적이므로 storeId로 좁히지 않고 권한 범위 전체를 그린다.
+export async function getMonthlySalesAnalysis(
+  monthInput: string,
+): Promise<DailySalesAnalysis> {
+  const year = Number(monthInput.slice(0, 4));
+  const month = Number(monthInput.slice(5, 7));
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return {
+      salesChanges: [],
+      inventoryRatios: [],
+      positions: [],
+      excludedPositions: [],
+    };
+  }
+
+  const toInput = (date: Date) => date.toISOString().slice(0, 10);
+  const currentStart = new Date(Date.UTC(year, month - 1, 1));
+  const currentEnd = new Date(Date.UTC(year, month, 0));
+  const previousStart = new Date(Date.UTC(year, month - 2, 1));
+  const previousEnd = new Date(Date.UTC(year, month - 1, 0));
+
+  const [current, previous] = await Promise.all([
+    getHqStoreComparisonReport({
+      startDate: toInput(currentStart),
+      endDate: toInput(currentEnd),
+    }),
+    getHqStoreComparisonReport({
+      startDate: toInput(previousStart),
+      endDate: toInput(previousEnd),
+    }),
+  ]);
+
+  return buildMonthlySalesAnalysis({
+    currentRows: current.rows,
+    previousRows: previous.rows,
+  });
+}
+
 export function buildDailyAttendanceReport(
   stores: DailyReportAnalysisStore[],
 ): DailyAttendanceReport {
