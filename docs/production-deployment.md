@@ -201,3 +201,32 @@ curl -X POST "https://erp-fish.vercel.app/api/internal/notifications/morning-sum
 
 > 유지보수·서버비·긴급 대응 범위는 제품 코드가 아니라 위탁 계약/운영 문서 범위다.
 > (월 7~8만 원 위탁 유지보수에 클라우드 호스팅 실비, 텍스트/레이아웃 마이너 수정 포함.)
+
+## 2026-08-07 — WO-0806 대표 전용 인건비 권한 사전 적용 기록
+
+코드 배포 **전에** 프로덕션 DB에 먼저 적용한 항목이다. 추가 컬럼과 enum 값은
+구 코드가 참조하지 않으므로 하위 호환이며, 대표 계정을 먼저 만들어 두어야
+배포 순간에 인건비 화면 접근자가 0명이 되는 공백을 피할 수 있다.
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | `DATABASE_URL`에 unpooled 주입 후 `prisma migrate deploy` | `20260807090000`(Employee 4컬럼 + `LABOR_VIEW` enum), `20260807090100`(OWNER에 `LABOR_VIEW` 부여) 적용 |
+| 2 | 대표 계정 생성 | 로그인 식별자 `owner`, 역할 `HEADQUARTERS`, 프로필 `OWNER` 단독 |
+| 3 | 중복 `OWNER` 프로필 해제 | `admin@example.com`, `dowon`, `본사`, `downsd@naver.com` 4개 계정 |
+
+**3번의 근거** — 네 계정 모두 `OWNER` 외에 `HQ_ADMIN`·`SETTINGS_ADMIN`·
+`UPLOAD_STAFF`·`STORE_MANAGER` 등을 함께 보유해, 해제 전후 실효 action 집합이
+동일함을 사전·사후 쿼리로 확인했다(잃은 권한 0개). `OWNER`를 그대로 두면
+`LABOR_VIEW`가 네 계정에 함께 들어가 "대표 아이디에만 보이게" 요구가 깨진다.
+
+되돌리려면 `UserPermissionProfile`에 해당 (userId, OWNER profileId) 행을 다시
+넣으면 된다.
+
+### 드리프트 주의
+
+`prisma migrate status` 결과, DB에는 로컬 `prisma/migrations`에 없는
+`20260803120000_add_correction_superseded_at`이 기록돼 있다.
+`origin/feat/sales-payment-field-reorder`에서 프로덕션에 직접 적용된 것으로 보인다.
+스키마 실물(`CorrectionRecord.supersededAt`)은 main의
+`20260731112000_add_closed_ledger_edit_and_correction_supersede`와 같은 결과라
+현재 동작에는 영향이 없으나, 이력이 어긋난 상태이므로 정리 여부를 결정해야 한다.
