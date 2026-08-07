@@ -76,6 +76,10 @@ import type {
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
 } from "./types.ts";
+import {
+  mergeHistoricalStoreComparisonRow,
+  type HistoricalFactForReport,
+} from "./historical-integration.ts";
 import { DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS } from "./store-daily-performance.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
@@ -696,6 +700,15 @@ export function buildMonthlySalesAnalysis({
   return { salesChanges, inventoryRatios, positions, excludedPositions };
 }
 
+async function getActiveHistoricalBatchId(): Promise<string | null> {
+  const { db } = await import("../../server/db.ts");
+  const active = await db.historicalExcelImportBatch.findFirst({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+  return active?.id ?? null;
+}
+
 // 기준 월과 직전 월을 같은 집계로 두 번 조회해 월간 매출분석을 만든다.
 // 지점 비교가 목적이므로 storeId로 좁히지 않고 권한 범위 전체를 그린다.
 export async function getMonthlySalesAnalysis(
@@ -719,14 +732,17 @@ export async function getMonthlySalesAnalysis(
   const previousStart = new Date(Date.UTC(year, month - 2, 1));
   const previousEnd = new Date(Date.UTC(year, month - 1, 0));
 
+  const historicalBatchId = await getActiveHistoricalBatchId();
   const [current, previous] = await Promise.all([
     getHqStoreComparisonReport({
       startDate: toInput(currentStart),
       endDate: toInput(currentEnd),
+      internalHistoricalBatchId: historicalBatchId,
     }),
     getHqStoreComparisonReport({
       startDate: toInput(previousStart),
       endDate: toInput(previousEnd),
+      internalHistoricalBatchId: historicalBatchId,
     }),
   ]);
 
@@ -751,10 +767,12 @@ export async function getHqPeriodContrastReport({
   baseEndDate?: unknown;
   storeId?: unknown;
 } = {}) {
+  const historicalBatchId = await getActiveHistoricalBatchId();
   const current = await getHqStoreComparisonReport({
     startDate,
     endDate,
     storeId,
+    internalHistoricalBatchId: historicalBatchId,
   });
   // 대조 기간은 두 날짜를 한 쌍으로만 받는다. 한쪽만 입력된 값을 기본값과
   // 섞으면 사용자가 의도하지 않은 길이의 기간이 조용히 비교된다.
@@ -768,6 +786,7 @@ export async function getHqPeriodContrastReport({
     startDate: useRequestedBase ? baseStartDate : fallbackBase.startDateInput,
     endDate: useRequestedBase ? baseEndDate : fallbackBase.endDateInput,
     storeId,
+    internalHistoricalBatchId: historicalBatchId,
   });
   const errorMessages = [
     ...(hasBaseStart !== hasBaseEnd
@@ -822,6 +841,7 @@ export async function getHqPeriodTrendReport({
     getPeriodAnalysisMetric(metricKey) ?? PERIOD_ANALYSIS_METRICS[0];
   const requestedStoreId =
     typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const historicalBatchId = await getActiveHistoricalBatchId();
   const reports = await Promise.all(
     columns.map((column) =>
       getHqStoreComparisonReport({
@@ -829,6 +849,7 @@ export async function getHqPeriodTrendReport({
         endDate: column.endDateInput,
         // 지점 축에서도 사용자가 지점을 골랐다면 그 한 곳으로 좁힌다.
         storeId: requestedStoreId ?? undefined,
+        internalHistoricalBatchId: historicalBatchId,
       }),
     ),
   );
@@ -1782,10 +1803,13 @@ export async function getHqStoreComparisonReport({
   startDate,
   endDate,
   storeId,
+  internalHistoricalBatchId,
 }: {
   startDate?: unknown;
   endDate?: unknown;
   storeId?: unknown;
+  // 한 화면의 여러 기간이 동일한 ACTIVE snapshot을 쓰도록 내부 래퍼만 전달한다.
+  internalHistoricalBatchId?: string | null;
 } = {}): Promise<StoreComparisonReportData> {
   const { getHeadquartersStoreScope, requireReportAccess } =
     await import("../../server/authz.ts");
@@ -1894,6 +1918,71 @@ export async function getHqStoreComparisonReport({
             },
           },
         });
+  const activeHistoricalBatchId =
+    internalHistoricalBatchId === undefined
+      ? await getActiveHistoricalBatchId()
+      : internalHistoricalBatchId;
+  const historicalRows =
+    activeHistoricalBatchId && storeIds.length > 0
+      ? await db.historicalDailyFact.findMany({
+          where: {
+            batchId: activeHistoricalBatchId,
+            storeId: { in: storeIds },
+            businessDate: { gte: range.startDate, lte: range.endDate },
+          },
+          orderBy: [{ storeId: "asc" }, { businessDate: "asc" }],
+          select: {
+            storeId: true,
+            businessDate: true,
+            salesAmount: true,
+            grossProfit: true,
+            grossMarginRate: true,
+            productivity: true,
+            workerCount: true,
+            metricStatus: true,
+          },
+        })
+      : [];
+  // 같은 지점·일자는 운영 자료가 우선이다. 과거 fact는 삭제하지 않고 이 조회에서만 제외한다.
+  const operationalStoreDates = new Set(
+    rawLedgers.map(
+      (ledger) =>
+        `${ledger.storeId}|${ledger.closingDate.toISOString().slice(0, 10)}`,
+    ),
+  );
+  const historicalByStoreId = new Map<string, HistoricalFactForReport[]>();
+  const excludedHistoricalOverlapByStoreId = new Map<string, number>();
+  for (const fact of historicalRows) {
+    const storeDate = `${fact.storeId}|${fact.businessDate.toISOString().slice(0, 10)}`;
+    if (operationalStoreDates.has(storeDate)) {
+      excludedHistoricalOverlapByStoreId.set(
+        fact.storeId,
+        (excludedHistoricalOverlapByStoreId.get(fact.storeId) ?? 0) + 1,
+      );
+      continue;
+    }
+    const storeFacts = historicalByStoreId.get(fact.storeId) ?? [];
+    storeFacts.push({
+      businessDate: fact.businessDate.toISOString().slice(0, 10),
+      salesAmount:
+        fact.salesAmount === null ? null : Number(fact.salesAmount.toString()),
+      grossProfit:
+        fact.grossProfit === null ? null : Number(fact.grossProfit.toString()),
+      grossMarginRate:
+        fact.grossMarginRate === null
+          ? null
+          : Number(fact.grossMarginRate.toString()),
+      productivity:
+        fact.productivity === null
+          ? null
+          : Number(fact.productivity.toString()),
+      workerCount:
+        fact.workerCount === null ? null : Number(fact.workerCount.toString()),
+      metricStatus: fact.metricStatus,
+    });
+    historicalByStoreId.set(fact.storeId, storeFacts);
+  }
+
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
@@ -1924,13 +2013,27 @@ export async function getHqStoreComparisonReport({
       (message): message is string => Boolean(message),
     ),
     rows: sortStoreComparisonReportRowsForTest(
-      selectedStores.map((store) =>
-        buildStoreComparisonReportRowForTest({
+      selectedStores.map((store) => {
+        const ledgerSummaries = summariesByStoreId.get(store.id) ?? [];
+        const dateCount = getInclusiveDateCount(range.startDate, range.endDate);
+        const operationalRow = buildStoreComparisonReportRowForTest({
           store,
-          dateCount: getInclusiveDateCount(range.startDate, range.endDate),
-          ledgerSummaries: summariesByStoreId.get(store.id) ?? [],
-        }),
-      ),
+          dateCount,
+          ledgerSummaries,
+        });
+
+        return mergeHistoricalStoreComparisonRow({
+          operationalRow,
+          operationalLedgerCount: ledgerSummaries.length,
+          operationalBusinessDayCount: ledgerSummaries.filter(
+            (summary) => summary.status !== "HOLIDAY",
+          ).length,
+          historicalFacts: historicalByStoreId.get(store.id) ?? [],
+          excludedHistoricalOverlapCount:
+            excludedHistoricalOverlapByStoreId.get(store.id) ?? 0,
+          dateCount,
+        });
+      }),
     ),
   };
 }
@@ -3846,6 +3949,14 @@ export function buildStoreComparisonReportRowForTest({
     inventoryToSalesRatio: appliedAggregates.inventoryToSalesRatio,
     hasLoss,
     hasUnappliedCorrections,
+    sourceSummary: {
+      source: ledgerSummaries.length > 0 ? "operational" : "none",
+      operationalDayCount: businessSummaries.length,
+      historicalDayCount: 0,
+      historicalCoverageDayCount: 0,
+      excludedHistoricalOverlapCount: 0,
+      missingMetrics: [],
+    },
     metricEvidence: {
       salesAmount: buildStoreComparisonMetricEvidence({
         label: "영업 매출 합계",

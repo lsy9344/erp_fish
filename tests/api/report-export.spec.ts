@@ -597,6 +597,99 @@ test.describe("Report export API", () => {
       expect(productSalesLabels).toContain(label);
     }
   });
+
+  test("[P1] historical comparison export includes source and missing-data evidence", async ({
+    request,
+  }) => {
+    const batchId = "api-historical-batch";
+    const rawRowId = "api-historical-raw";
+    const factId = "api-historical-fact";
+
+    await prisma.historicalEmployeeDailyRole.deleteMany({
+      where: { batchId },
+    });
+    await prisma.historicalEmployee.deleteMany({ where: { batchId } });
+    await prisma.historicalDailyFact.deleteMany({ where: { batchId } });
+    await prisma.historicalExcelRawRow.deleteMany({ where: { batchId } });
+    await prisma.historicalExcelImportBatch.deleteMany({
+      where: { id: batchId },
+    });
+
+    try {
+      await prisma.historicalExcelImportBatch.create({
+        data: {
+          id: batchId,
+          fileHash: "api-historical-hash",
+          sourceFileName: "approved.xlsx",
+          sourceFileSize: 1,
+          sourceWorkbook: new Uint8Array([1]),
+          status: "ACTIVE",
+          sheetCount: 10,
+          rawRowCount: 14_309,
+          canonicalFactCount: 14_072,
+          roleCount: 52_005,
+          sourceNameCount: 412,
+          duplicateStoreDateCount: 28,
+          validationSummary: { validation: "APPROVED" },
+          stagedAt: new Date(),
+          activatedAt: new Date(),
+        },
+      });
+      await prisma.historicalExcelRawRow.create({
+        data: {
+          id: rawRowId,
+          batchId,
+          sheetIndex: 1,
+          sheetName: "입력",
+          rowNumber: 2,
+          rawCells: { cells: [] },
+        },
+      });
+      await prisma.historicalDailyFact.create({
+        data: {
+          id: factId,
+          batchId,
+          sourceRawRowId: rawRowId,
+          storeId: "store-gangnam",
+          sourceStoreName: "강남점",
+          businessDate: new Date("2020-01-01T00:00:00.000Z"),
+          salesAmount: "1000000",
+          grossProfit: "300000",
+          grossMarginRate: "0.3",
+          sourceOperatingProfit: "200000",
+          productivity: "500000",
+          workerCount: "2",
+          metricStatus: {},
+        },
+      });
+
+      await signInForApi(request, "hq@example.com");
+      const response = await request.get(
+        exportPath({
+          report: "comparison",
+          startDate: "2020-01-01",
+          endDate: "2020-01-01",
+          storeId: "store-gangnam",
+          format: "csv",
+        }),
+      );
+      const csv = await response.text();
+
+      expect(response.status()).toBe(200);
+      expect(response.headers()["cache-control"]).toBe("no-store");
+      expect(csv).toContain("출처");
+      expect(csv).toContain("과거 Excel");
+      expect(csv).toContain("누락/원본 오류");
+      expect(csv).toContain("평균 근무인원");
+      expect(csv).not.toContain("#REF!");
+    } finally {
+      await prisma.historicalDailyFact.deleteMany({ where: { batchId } });
+      await prisma.historicalExcelRawRow.deleteMany({ where: { batchId } });
+      await prisma.historicalExcelImportBatch.deleteMany({
+        where: { id: batchId },
+      });
+    }
+  });
 });
 
 async function signInForApi(request: APIRequestContext, email: string) {

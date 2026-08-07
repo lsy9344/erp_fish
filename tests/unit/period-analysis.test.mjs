@@ -282,6 +282,19 @@ test("metric axis rows sum amounts and weight ratios by sales", () => {
   assert.equal(byKey.get("salesAmount").cells[2], null);
 });
 
+test("trend total does not silently omit a period with unavailable data", () => {
+  const complete = storeRow("store-a", "A", {
+    salesAmount: 100,
+    grossProfit: 30,
+  });
+  const missing = storeRow("store-a", "A", { salesAmount: 200 });
+  missing.grossProfit = metric(null);
+  const rows = buildMetricAxisTrendRows([complete, missing]);
+
+  assert.equal(rows.find((row) => row.key === "grossProfit").total, null);
+  assert.equal(rows.find((row) => row.key === "salesAmount").total.value, 300);
+});
+
 test("store axis rows list every store seen in any period", () => {
   const metricDefinition = PERIOD_ANALYSIS_METRICS[0];
   const rows = buildStoreAxisTrendRows({

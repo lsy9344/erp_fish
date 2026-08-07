@@ -13,6 +13,7 @@ import {
   type PeriodTrendColumn,
   type PeriodTrendRow,
 } from "./period-analysis.ts";
+import { historicalSourceLabel } from "./historical-integration.ts";
 import type { InventoryPositionReportData } from "./inventory-position-types";
 import type { LedgerReviewMetric } from "../../server/calculations/ledger";
 
@@ -153,6 +154,29 @@ export function buildDailyMeetingReportExport(
 export function buildStoreComparisonReportExport(
   report: Pick<StoreComparisonReportData, "range" | "selectedStoreId" | "rows">,
 ): ReportExportData {
+  // 운영 자료만인 기존 모드 A는 컬럼을 그대로 유지한다(기존 export 회귀 방지).
+  // 과거 자료가 포함된 기간에만 출처/누락과 Excel 8지표의 추가 컬럼을 덧붙인다.
+  const hasHistorical = report.rows.some(
+    (row) =>
+      row.sourceSummary?.source === "historical" ||
+      row.sourceSummary?.source === "mixed" ||
+      (row.sourceSummary?.excludedHistoricalOverlapCount ?? 0) > 0,
+  );
+  const historicalColumns: ReportExportColumn[] = hasHistorical
+    ? [
+        { key: "source", label: "출처" },
+        { key: "operationalDayCount", label: "운영 일수" },
+        { key: "historicalDayCount", label: "과거 Excel 영업일수" },
+        { key: "historicalCoverageDayCount", label: "과거 Excel 원본 일수" },
+        { key: "overlapExcludedCount", label: "운영 우선 제외 일수" },
+        { key: "missingMetrics", label: "누락/원본 오류" },
+        { key: "averageWorkerCount", label: "평균 근무인원" },
+        { key: "averageInventory", label: "평균재고" },
+        { key: "averageSales", label: "평균매출" },
+        { key: "inventoryToSalesRatio", label: "매출대비 재고비율" },
+      ]
+    : [];
+
   return {
     report: "comparison",
     period: `${report.range.startDateInput}-${report.range.endDateInput}`,
@@ -161,7 +185,10 @@ export function buildStoreComparisonReportExport(
       endDate: report.range.endDateInput,
       storeId: report.selectedStoreId,
     },
-    columns: [...REPORT_EXPORT_COLUMN_ALLOWLISTS.comparison],
+    columns: [
+      ...REPORT_EXPORT_COLUMN_ALLOWLISTS.comparison,
+      ...historicalColumns,
+    ],
     scopedStoreIds: report.rows.map((row) => row.storeId),
     rows: report.rows.map((row) => ({
       storeName: row.storeName,
@@ -186,6 +213,18 @@ export function buildStoreComparisonReportExport(
       productivity: formatMetricEvidence(row.metricEvidence.productivity),
       productivityStatus: formatMetricStatus(row.metricEvidence.productivity),
       lossStatus: formatMetricStatus(row.metricEvidence.loss),
+      source: historicalSourceLabel(row.sourceSummary?.source ?? "operational"),
+      operationalDayCount: row.sourceSummary?.operationalDayCount ?? 0,
+      historicalDayCount: row.sourceSummary?.historicalDayCount ?? 0,
+      historicalCoverageDayCount:
+        row.sourceSummary?.historicalCoverageDayCount ?? 0,
+      overlapExcludedCount:
+        row.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
+      missingMetrics: row.sourceSummary?.missingMetrics.join("; ") ?? "",
+      averageWorkerCount: formatReviewMetric(row.averageWorkerCount),
+      averageInventory: formatReviewMetric(row.averageInventory),
+      averageSales: formatReviewMetric(row.averageSales),
+      inventoryToSalesRatio: formatReviewMetric(row.inventoryToSalesRatio),
     })),
   };
 }
@@ -729,13 +768,20 @@ const PERIOD_ANALYSIS_STORE_COLUMN: ReportExportColumn = {
   label: "지점",
 };
 
-function periodMetricColumns(): ReportExportColumn[] {
+function periodMetricColumns(includeSource = false): ReportExportColumn[] {
   return [
     PERIOD_ANALYSIS_STORE_COLUMN,
     ...PERIOD_ANALYSIS_METRICS.map((metric) => ({
       key: metric.key,
       label: metric.label,
     })),
+    ...(includeSource
+      ? [
+          { key: "source", label: "출처" },
+          { key: "overlapExcludedCount", label: "운영 우선 제외 일수" },
+          { key: "missingMetrics", label: "누락/원본 오류" },
+        ]
+      : []),
   ];
 }
 
@@ -748,6 +794,10 @@ function periodMetricRows(rows: StoreComparisonReportRow[]): ReportExportRow[] {
         formatReviewMetric(row[metric.key]),
       ]),
     ),
+    source: historicalSourceLabel(row.sourceSummary?.source ?? "operational"),
+    overlapExcludedCount:
+      row.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
+    missingMetrics: row.sourceSummary?.missingMetrics.join("; ") ?? "",
   }));
 }
 
@@ -763,7 +813,17 @@ export function buildPeriodContrastExport({
   contrastRows: PeriodContrastRow[];
   storeId: string | null;
 }): { exportData: ReportExportData; sheets: ReportExportSheet[] } {
-  const columns = periodMetricColumns();
+  const includeSource = [...base.rows, ...current.rows].some(
+    (row) =>
+      row.sourceSummary?.source === "historical" ||
+      row.sourceSummary?.source === "mixed" ||
+      (row.sourceSummary?.excludedHistoricalOverlapCount ?? 0) > 0,
+  );
+  const columns = periodMetricColumns(includeSource);
+  const baseByStoreId = new Map(base.rows.map((row) => [row.storeId, row]));
+  const currentByStoreId = new Map(
+    current.rows.map((row) => [row.storeId, row]),
+  );
   const exportData: ReportExportData = {
     report: "comparison",
     period: `${current.range.startDateInput}-${current.range.endDateInput}`,
@@ -805,6 +865,25 @@ export function buildPeriodContrastExport({
               ];
             }),
           ),
+          source: includeSource
+            ? `대조 ${historicalSourceLabel(baseByStoreId.get(row.storeId)?.sourceSummary.source ?? "none")} / 현재 ${historicalSourceLabel(currentByStoreId.get(row.storeId)?.sourceSummary.source ?? "none")}`
+            : "",
+          overlapExcludedCount: includeSource
+            ? (baseByStoreId.get(row.storeId)?.sourceSummary
+                .excludedHistoricalOverlapCount ?? 0) +
+              (currentByStoreId.get(row.storeId)?.sourceSummary
+                .excludedHistoricalOverlapCount ?? 0)
+            : 0,
+          missingMetrics: includeSource
+            ? [
+                ...(baseByStoreId.get(row.storeId)?.sourceSummary
+                  .missingMetrics ?? []),
+                ...(currentByStoreId.get(row.storeId)?.sourceSummary
+                  .missingMetrics ?? []),
+              ]
+                .filter((value, index, all) => all.indexOf(value) === index)
+                .join("; ")
+            : "",
         })),
       },
     ],
@@ -825,12 +904,26 @@ export function buildPeriodTrendExport({
   metric: { key: string; label: string };
   storeId: string | null;
 }): ReportExportData {
+  const hasHistorical = rows.some((row) =>
+    row.sourceCells.some(
+      (source) =>
+        source.source === "historical" ||
+        source.source === "mixed" ||
+        source.excludedHistoricalOverlapCount > 0,
+    ),
+  );
   const columns: ReportExportColumn[] = [
     { key: "label", label: axis === "metric" ? "지표" : "지점" },
     ...periodColumns.map((column) => ({
       key: column.key,
       label: column.label,
     })),
+    ...(hasHistorical
+      ? periodColumns.map((column) => ({
+          key: `${column.key}:source`,
+          label: `${column.label} 출처/누락`,
+        }))
+      : []),
     { key: "total", label: "합계/평균" },
   ];
   const first = periodColumns[0];
@@ -857,6 +950,14 @@ export function buildPeriodTrendExport({
           formatReviewMetric(cell ?? undefined),
         ]),
       ),
+      ...(hasHistorical
+        ? Object.fromEntries(
+            row.sourceCells.map((source, index) => [
+              `${periodColumns[index]?.key ?? String(index)}:source`,
+              `${historicalSourceLabel(source.source)}${source.excludedHistoricalOverlapCount > 0 ? ` / 운영 우선 ${source.excludedHistoricalOverlapCount}일` : ""}${source.missingMetrics.length > 0 ? ` / 누락: ${source.missingMetrics.join("; ")}` : ""}`,
+            ]),
+          )
+        : {}),
       total: formatReviewMetric(row.total ?? undefined),
     })),
     scopedStoreIds:

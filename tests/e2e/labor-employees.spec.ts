@@ -1,4 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { PrismaClient } from "../../generated/prisma/index.js";
+
+const prisma = new PrismaClient();
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
@@ -48,6 +55,23 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   await page.getByLabel("희망 4대보험 금액").fill("300000");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(page.getByText("직원을 추가했습니다.")).toBeVisible();
+  const createdEmployee = await prisma.employee.findFirstOrThrow({
+    where: { name: employeeName },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const employeeAudit = await prisma.auditLog.findFirstOrThrow({
+    where: {
+      action: "employee.created",
+      targetType: "Employee",
+      targetId: createdEmployee.id,
+    },
+    orderBy: { createdAt: "desc" },
+    select: { after: true },
+  });
+  expect(JSON.stringify(employeeAudit.after)).toContain("changedFields");
+  expect(JSON.stringify(employeeAudit.after)).not.toContain("010-1234-5678");
+  expect(JSON.stringify(employeeAudit.after)).not.toContain("123456-01-234567");
 
   // WO-0806 #1-7: 실제 저장된 이름을 부분 검색하고 지우면 전체 목록이 복원된다.
   const search = page.getByLabel("직원 검색");
@@ -72,6 +96,132 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   await expect(page.getByText("직원별 월간 급여 롤업")).toHaveCount(0);
   await expect(page.getByText("근무 인원 수별 평균")).toHaveCount(0);
   await expect(page.getByText("월간 생산성 / 인력 배치 분석")).toBeVisible();
+});
+
+test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하고 역할 이력을 본다", async ({
+  page,
+}) => {
+  const batchId = "e2e-historical-batch";
+  const rawRowId = "e2e-historical-raw";
+  const factId = "e2e-historical-fact";
+  const employeeId = "e2e-historical-employee";
+
+  await prisma.historicalEmployeeDailyRole.deleteMany({ where: { batchId } });
+  await prisma.historicalEmployee.deleteMany({ where: { batchId } });
+  await prisma.historicalDailyFact.deleteMany({ where: { batchId } });
+  await prisma.historicalExcelRawRow.deleteMany({ where: { batchId } });
+  await prisma.historicalExcelImportBatch.deleteMany({
+    where: { id: batchId },
+  });
+
+  try {
+    await prisma.historicalExcelImportBatch.create({
+      data: {
+        id: batchId,
+        fileHash: "e2e-historical-hash",
+        sourceFileName: "approved.xlsx",
+        sourceFileSize: 1,
+        sourceWorkbook: new Uint8Array([1]),
+        status: "ACTIVE",
+        sheetCount: 10,
+        rawRowCount: 14_309,
+        canonicalFactCount: 14_072,
+        roleCount: 52_005,
+        sourceNameCount: 412,
+        duplicateStoreDateCount: 28,
+        validationSummary: { validation: "APPROVED" },
+        stagedAt: new Date(),
+        activatedAt: new Date(),
+      },
+    });
+    await prisma.historicalExcelRawRow.create({
+      data: {
+        id: rawRowId,
+        batchId,
+        sheetIndex: 1,
+        sheetName: "입력",
+        rowNumber: 2,
+        rawCells: { cells: [] },
+      },
+    });
+    await prisma.historicalDailyFact.create({
+      data: {
+        id: factId,
+        batchId,
+        sourceRawRowId: rawRowId,
+        storeId: "store-gangnam",
+        sourceStoreName: "강남점",
+        businessDate: new Date("2020-01-01T00:00:00.000Z"),
+        salesAmount: "1000000",
+        grossProfit: "300000",
+        grossMarginRate: "0.3",
+        sourceOperatingProfit: "200000",
+        productivity: "500000",
+        workerCount: "2",
+        metricStatus: {},
+      },
+    });
+    await prisma.historicalEmployee.create({
+      data: {
+        id: employeeId,
+        batchId,
+        originalName: "과거테스트직원",
+        reviewStatus: "UNLINKED",
+        firstSeenWorkDate: new Date("2020-01-01T00:00:00.000Z"),
+        lastSeenWorkDate: new Date("2020-01-01T00:00:00.000Z"),
+        leadRoleCount: 1,
+        memberRoleCount: 0,
+        storeNames: ["강남점"],
+      },
+    });
+    await prisma.historicalEmployeeDailyRole.create({
+      data: {
+        id: "e2e-historical-role",
+        batchId,
+        historicalEmployeeId: employeeId,
+        dailyFactId: factId,
+        sourceRawRowId: rawRowId,
+        businessDate: new Date("2020-01-01T00:00:00.000Z"),
+        storeId: "store-gangnam",
+        role: "LEAD",
+        slotNumber: 1,
+        originalName: "과거테스트직원",
+      },
+    });
+
+    await login(page, "owner@example.com");
+    await page.goto("/app/labor/employees");
+    await page.getByLabel("직원 검색").fill("과거테스트");
+    const row = page.getByRole("row", { name: /과거테스트직원/ });
+    await expect(row).toContainText("과거 Excel");
+    await expect(row).toContainText("최초 확인 근무일");
+    await page.getByLabel("직원 선택").selectOption(`historical:${employeeId}`);
+    await expect(row).toContainText("선택됨");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("한 사람으로 확정한 정보가 아닙니다");
+    await expect(dialog).toContainText("2020-01-01");
+    await expect(dialog).toContainText("강남점");
+    await expect(dialog).toContainText("팀장");
+    await page.keyboard.press("Escape");
+
+    await page.goto(
+      "/app/reports/comparison?startDate=2020-01-01&endDate=2020-01-01&storeId=store-gangnam",
+    );
+    const comparisonRow = page.getByTestId(
+      "hq-report-comparison-row-store-gangnam",
+    );
+    await expect(comparisonRow).toContainText("출처: 과거 Excel");
+    await expect(comparisonRow).toContainText("누락:");
+    await expect(comparisonRow).toContainText("1,000,000");
+  } finally {
+    await prisma.historicalEmployeeDailyRole.deleteMany({ where: { batchId } });
+    await prisma.historicalEmployee.deleteMany({ where: { batchId } });
+    await prisma.historicalDailyFact.deleteMany({ where: { batchId } });
+    await prisma.historicalExcelRawRow.deleteMany({ where: { batchId } });
+    await prisma.historicalExcelImportBatch.deleteMany({
+      where: { id: batchId },
+    });
+  }
 });
 
 test("본사 관리자는 직원 관리에 접근할 수 없다", async ({ page }) => {

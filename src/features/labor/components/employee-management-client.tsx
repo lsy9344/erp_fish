@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -12,15 +13,22 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field";
+import { cn } from "~/lib/utils";
 import {
   createEmployee,
   updateEmployee,
   deactivateEmployee,
+  getHistoricalEmployeeDetailAction,
 } from "~/features/labor/employees-actions";
-import type { EmployeeListItem } from "~/features/labor/employees-queries";
+import type {
+  EmployeeListItem,
+  HistoricalEmployeeDetail,
+  HistoricalEmployeeListItem,
+} from "~/features/labor/employees-queries";
 
 type EmployeeManagementClientProps = {
   initialEmployees: EmployeeListItem[];
+  initialHistoricalEmployees: HistoricalEmployeeListItem[];
   // 상세 카드의 최근 근무 요약 기준 월.
   summaryMonth: string;
   // WO-D(2026-06-22): 직원 마스터 쓰기 권한 여부.
@@ -104,8 +112,23 @@ function toOptionalAmount(value: string): number | null {
   return value === "" ? null : Number(value);
 }
 
+type DirectoryEntry =
+  | { source: "current"; employee: EmployeeListItem }
+  | { source: "historical"; employee: HistoricalEmployeeListItem };
+
+function directoryEntryKey(entry: DirectoryEntry) {
+  return `${entry.source}:${entry.employee.id}`;
+}
+
+function directoryEntryLabel(entry: DirectoryEntry) {
+  return entry.source === "current"
+    ? `${entry.employee.name} · 현재${entry.employee.isActive ? "" : " · 비활성"}`
+    : `${entry.employee.originalName} · 과거 Excel · ${entry.employee.firstSeenWorkDate}~${entry.employee.lastSeenWorkDate}`;
+}
+
 export function EmployeeManagementClient({
   initialEmployees,
+  initialHistoricalEmployees,
   summaryMonth,
   canManage,
 }: EmployeeManagementClientProps) {
@@ -118,19 +141,87 @@ export function EmployeeManagementClient({
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(true);
   const [detail, setDetail] = useState<EmployeeListItem | null>(null);
+  const [historicalDetail, setHistoricalDetail] =
+    useState<HistoricalEmployeeDetail | null>(null);
+  const [loadingHistoricalId, setLoadingHistoricalId] = useState<string | null>(
+    null,
+  );
+  const [selectedDirectoryKey, setSelectedDirectoryKey] = useState("");
+  const historicalRequestSequence = useRef(0);
 
-  // WO-0806 #1-7: 직원 수가 수십 명 규모라 서버 왕복 없이 클라이언트에서 거른다.
-  const visibleEmployees = useMemo(() => {
+  // 현재/과거를 한 검색 결과로 보여 주되 source badge와 별도 identity를 유지한다.
+  // 이름이 같아도 하나로 합치지 않으며 상세 선택은 한 번에 1명뿐이다.
+  const visibleEmployees = useMemo<DirectoryEntry[]>(() => {
     const keyword = search.trim().toLowerCase();
+    const current: DirectoryEntry[] = employees
+      .filter((emp) => showInactive || emp.isActive)
+      .map((employee) => ({ source: "current", employee }));
+    const historical: DirectoryEntry[] = initialHistoricalEmployees.map(
+      (employee) => ({ source: "historical", employee }),
+    );
 
-    return employees.filter((emp) => {
-      if (!showInactive && !emp.isActive) {
-        return false;
-      }
-
-      return keyword === "" || emp.name.toLowerCase().includes(keyword);
+    return [...current, ...historical].filter((entry) => {
+      const name =
+        entry.source === "current"
+          ? entry.employee.name
+          : entry.employee.originalName;
+      return keyword === "" || name.toLowerCase().includes(keyword);
     });
-  }, [employees, search, showInactive]);
+  }, [employees, initialHistoricalEmployees, search, showInactive]);
+
+  function openCurrentDetail(employee: EmployeeListItem) {
+    historicalRequestSequence.current += 1;
+    setLoadingHistoricalId(null);
+    setSelectedDirectoryKey(`current:${employee.id}`);
+    setHistoricalDetail(null);
+    setDetail(employee);
+  }
+
+  async function openHistoricalDetail(employee: HistoricalEmployeeListItem) {
+    const requestSequence = historicalRequestSequence.current + 1;
+    historicalRequestSequence.current = requestSequence;
+    setSelectedDirectoryKey(`historical:${employee.id}`);
+    setDetail(null);
+    setHistoricalDetail(null);
+    setLoadingHistoricalId(employee.id);
+
+    try {
+      const loaded = await getHistoricalEmployeeDetailAction(employee.id);
+      if (historicalRequestSequence.current !== requestSequence) return;
+      if (!loaded) {
+        setSelectedDirectoryKey("");
+        toast.error("과거 직원 상세를 찾을 수 없습니다.");
+        return;
+      }
+      setHistoricalDetail(loaded);
+    } catch {
+      if (historicalRequestSequence.current !== requestSequence) return;
+      setSelectedDirectoryKey("");
+      toast.error("과거 직원 상세를 불러오지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      if (historicalRequestSequence.current === requestSequence) {
+        setLoadingHistoricalId(null);
+      }
+    }
+  }
+
+  function handleDirectorySelection(key: string) {
+    setSelectedDirectoryKey(key);
+    if (!key) {
+      historicalRequestSequence.current += 1;
+      setLoadingHistoricalId(null);
+      setDetail(null);
+      setHistoricalDetail(null);
+      return;
+    }
+
+    const selected = visibleEmployees.find(
+      (entry) => directoryEntryKey(entry) === key,
+    );
+    if (!selected) return;
+    if (selected.source === "current") openCurrentDetail(selected.employee);
+    else void openHistoricalDetail(selected.employee);
+  }
 
   function handleEdit(employee: EmployeeListItem) {
     setEditingId(employee.id);
@@ -232,8 +323,29 @@ export function EmployeeManagementClient({
           />
           비활성 직원 포함
         </label>
+        <Field className="w-full sm:w-80">
+          <FieldLabel htmlFor="employee-directory-select">직원 선택</FieldLabel>
+          <select
+            id="employee-directory-select"
+            className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            value={selectedDirectoryKey}
+            onChange={(event) => handleDirectorySelection(event.target.value)}
+            disabled={loadingHistoricalId !== null}
+          >
+            <option value="">검색 결과에서 직원을 선택하세요</option>
+            {visibleEmployees.map((entry) => (
+              <option
+                key={directoryEntryKey(entry)}
+                value={directoryEntryKey(entry)}
+              >
+                {directoryEntryLabel(entry)}
+              </option>
+            ))}
+          </select>
+        </Field>
         <span className="text-muted-foreground h-9 text-sm leading-9">
-          {visibleEmployees.length}명 / 전체 {employees.length}명
+          {visibleEmployees.length}명 / 전체{" "}
+          {employees.length + initialHistoricalEmployees.length}명
         </span>
       </div>
 
@@ -433,9 +545,11 @@ export function EmployeeManagementClient({
           <thead>
             <tr className="text-muted-foreground border-b text-left">
               <th className="pr-3 pb-2 font-normal">이름</th>
-              <th className="pr-3 pb-2 font-normal">직급</th>
-              <th className="pr-3 pb-2 font-normal">입사일</th>
-              <th className="pr-3 pb-2 font-normal">연락처</th>
+              <th className="pr-3 pb-2 font-normal">직급 / 일별 역할</th>
+              <th className="pr-3 pb-2 font-normal">
+                입사일 / 최초 확인 근무일
+              </th>
+              <th className="pr-3 pb-2 font-normal">연락처 / 근무 지점</th>
               <th className="pr-3 pb-2 text-right font-normal">하루 인건비</th>
               <th className="pr-3 pb-2 text-right font-normal">희망 4대보험</th>
               <th className="pr-3 pb-2 font-normal">상태</th>
@@ -453,71 +567,141 @@ export function EmployeeManagementClient({
                 </td>
               </tr>
             ) : (
-              visibleEmployees.map((emp) => (
-                <tr key={emp.id} className="border-b last:border-0">
-                  <td className="py-2 pr-3">{emp.name}</td>
-                  <td className="py-2 pr-3">
-                    {formatOptionalText(emp.position)}
-                  </td>
-                  <td className="text-muted-foreground py-2 pr-3">
-                    {emp.hireDate}
-                  </td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {formatOptionalText(emp.phone)}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {formatOptionalKrw(emp.dailyWage)}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {formatOptionalKrw(emp.desiredInsuranceAmount)}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <span
-                      className={
-                        emp.isActive
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-muted-foreground"
-                      }
+              visibleEmployees.map((entry) => {
+                if (entry.source === "historical") {
+                  const emp = entry.employee;
+                  return (
+                    <tr
+                      key={`historical:${emp.id}`}
+                      className={cn(
+                        "border-b last:border-0",
+                        selectedDirectoryKey === `historical:${emp.id}` &&
+                          "bg-muted/50",
+                      )}
                     >
-                      {emp.isActive ? "활성" : "비활성"}
-                    </span>
-                  </td>
-                  <td className="py-2">
-                    <div className="flex gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDetail(emp)}
+                      <td className="py-2 pr-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{emp.originalName}</span>
+                          <Badge variant="outline">과거 Excel 이름</Badge>
+                          {selectedDirectoryKey === `historical:${emp.id}` ? (
+                            <Badge>선택됨</Badge>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3">일별 역할</td>
+                      <td className="text-muted-foreground py-2 pr-3">
+                        <span className="block">최초 확인 근무일</span>
+                        {emp.firstSeenWorkDate}
+                      </td>
+                      <td className="py-2 pr-3">
+                        {emp.storeNames.join(", ") || "-"}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">-</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">-</td>
+                      <td className="py-2 pr-3">
+                        {emp.reviewStatus === "REVIEW_REQUIRED"
+                          ? "검토 필요"
+                          : "과거"}
+                      </td>
+                      <td className="py-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={loadingHistoricalId === emp.id}
+                          onClick={() => openHistoricalDetail(emp)}
+                        >
+                          {loadingHistoricalId === emp.id
+                            ? "불러오는 중…"
+                            : "상세"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const emp = entry.employee;
+                return (
+                  <tr
+                    key={`current:${emp.id}`}
+                    className={cn(
+                      "border-b last:border-0",
+                      selectedDirectoryKey === `current:${emp.id}` &&
+                        "bg-muted/50",
+                    )}
+                  >
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{emp.name}</span>
+                        <Badge>현재</Badge>
+                        {selectedDirectoryKey === `current:${emp.id}` ? (
+                          <Badge variant="outline">선택됨</Badge>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {formatOptionalText(emp.position)}
+                    </td>
+                    <td className="text-muted-foreground py-2 pr-3">
+                      {emp.hireDate}
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums">
+                      {formatOptionalText(emp.phone)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {formatOptionalKrw(emp.dailyWage)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {formatOptionalKrw(emp.desiredInsuranceAmount)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={
+                          emp.isActive
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-muted-foreground"
+                        }
                       >
-                        상세
-                      </Button>
-                      {canManage && (
-                        <>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(emp)}
-                          >
-                            수정
-                          </Button>
-                          {emp.isActive && (
+                        {emp.isActive ? "활성" : "비활성"}
+                      </span>
+                    </td>
+                    <td className="py-2">
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openCurrentDetail(emp)}
+                        >
+                          상세
+                        </Button>
+                        {canManage && (
+                          <>
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeactivate(emp.id)}
+                              onClick={() => handleEdit(emp)}
                             >
-                              비활성화
+                              수정
                             </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                            {emp.isActive && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeactivate(emp.id)}
+                              >
+                                비활성화
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -565,6 +749,78 @@ export function EmployeeManagementClient({
                 </div>
               ))}
             </dl>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={historicalDetail !== null}
+        onOpenChange={(open) => !open && setHistoricalDetail(null)}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {historicalDetail?.originalName} 과거 이름 그룹 상세
+            </DialogTitle>
+            <DialogDescription>
+              같은 원본 이름의 기록을 묶은 과거 Excel 자료이며 한 사람으로
+              확정한 정보가 아닙니다. 최초 날짜는 입사일이 아니라 최초 확인
+              근무일입니다.
+            </DialogDescription>
+          </DialogHeader>
+          {historicalDetail ? (
+            <div className="grid gap-4">
+              <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+                <dt className="text-muted-foreground">원본 이름</dt>
+                <dd>{historicalDetail.originalName}</dd>
+                <dt className="text-muted-foreground">상태</dt>
+                <dd>
+                  {historicalDetail.reviewStatus === "REVIEW_REQUIRED"
+                    ? "검토 필요"
+                    : "현재 직원과 미연결"}
+                </dd>
+                <dt className="text-muted-foreground">최초 확인 근무일</dt>
+                <dd>{historicalDetail.firstSeenWorkDate}</dd>
+                <dt className="text-muted-foreground">마지막 확인 근무일</dt>
+                <dd>{historicalDetail.lastSeenWorkDate}</dd>
+                <dt className="text-muted-foreground">근무 지점</dt>
+                <dd>{historicalDetail.storeNames.join(", ") || "-"}</dd>
+                <dt className="text-muted-foreground">역할 기록</dt>
+                <dd>
+                  팀장 {historicalDetail.leadRoleCount.toLocaleString("ko-KR")}
+                  건 · 팀원{" "}
+                  {historicalDetail.memberRoleCount.toLocaleString("ko-KR")}건
+                </dd>
+              </dl>
+
+              <div>
+                <h4 className="mb-2 text-sm font-medium">날짜별 역할 이력</h4>
+                <div className="max-h-96 overflow-auto rounded-md border">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead className="bg-card sticky top-0">
+                      <tr className="border-b text-left">
+                        <th className="px-3 py-2 font-normal">근무일</th>
+                        <th className="px-3 py-2 font-normal">지점</th>
+                        <th className="px-3 py-2 font-normal">역할</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historicalDetail.roleHistory.map((role) => (
+                        <tr key={role.id} className="border-b last:border-0">
+                          <td className="px-3 py-2 tabular-nums">
+                            {role.businessDate}
+                          </td>
+                          <td className="px-3 py-2">{role.storeName}</td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline">{role.role}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>

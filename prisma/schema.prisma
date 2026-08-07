@@ -98,6 +98,11 @@ enum CorrectionTargetType {
   CALCULATED_METRIC
 }
 
+enum HistoricalEmployeeRole {
+  LEAD
+  MEMBER
+}
+
 model Post {
   id        Int      @id @default(autoincrement())
   name      String
@@ -119,15 +124,18 @@ model Store {
   updatedAt                   DateTime @updatedAt
   updatedById                 String?
 
-  assignments               UserStoreAssignment[]
-  updatedBy                 User?                       @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  dailyLedgers              DailyLedger[]
-  inventoryOpeningSnapshots InventoryOpeningSnapshot[]
-  ledgerInputCodeAliases    LedgerInputCodeStoreAlias[]
-  salesPricePlans           StoreSalesPricePlan[]
-  headquartersExpenses      HeadquartersExpense[]
-  externalAliases           StoreExternalAlias[]
-  ecountImportLines         EcountImportLine[]
+  assignments                  UserStoreAssignment[]
+  updatedBy                    User?                         @relation("StoreUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  dailyLedgers                 DailyLedger[]
+  inventoryOpeningSnapshots    InventoryOpeningSnapshot[]
+  ledgerInputCodeAliases       LedgerInputCodeStoreAlias[]
+  salesPricePlans              StoreSalesPricePlan[]
+  headquartersExpenses         HeadquartersExpense[]
+  externalAliases              StoreExternalAlias[]
+  ecountImportLines            EcountImportLine[]
+  // 승인된 고객 Excel 과거 실적/역할. 운영 DailyLedger와 의도적으로 분리한다.
+  historicalDailyFacts         HistoricalDailyFact[]
+  historicalEmployeeDailyRoles HistoricalEmployeeDailyRole[]
 
   @@index([isActive])
   @@index([updatedById])
@@ -955,6 +963,132 @@ model ProductExternalAlias {
 
 // WO-08(2026-06-22): 직원 마스터. 일일 장부의 LedgerLaborItem과 선택적으로 연결하여
 // 본사에서 직원별 월간 급여 롤업을 집계할 수 있다. 기존 자유텍스트 workerName 행은 그대로 동작한다.
+// 고객 Excel 원본 전체와 정규화 결과를 묶는 불변 import batch.
+// sourceWorkbook을 함께 보관해 셀 밖 workbook 정보까지 원본 그대로 복구할 수 있다.
+model HistoricalExcelImportBatch {
+  id                      String    @id @default(cuid())
+  fileHash                String    @unique
+  sourceFileName          String
+  sourceFileSize          Int
+  sourceWorkbook          Bytes
+  status                  String    @default("STAGING")
+  sheetCount              Int
+  rawRowCount             Int
+  canonicalFactCount      Int
+  roleCount               Int
+  sourceNameCount         Int
+  duplicateStoreDateCount Int
+  validationSummary       Json
+  previousActiveBatchId   String?
+  stagedAt                DateTime?
+  activatedAt             DateTime?
+  deactivatedAt           DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  rawRows             HistoricalExcelRawRow[]
+  dailyFacts          HistoricalDailyFact[]
+  historicalEmployees HistoricalEmployee[]
+  dailyRoles          HistoricalEmployeeDailyRole[]
+
+  @@index([status])
+  @@index([activatedAt])
+}
+
+// 10개 시트의 실제 사용 행. rawCells에는 주소/type/formula/cache/error/blank를 모두 담는다.
+model HistoricalExcelRawRow {
+  id         String @id @default(cuid())
+  batchId    String
+  sheetIndex Int
+  sheetName  String
+  rowNumber  Int
+  rawCells   Json
+
+  batch      HistoricalExcelImportBatch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  dailyFacts HistoricalDailyFact[]
+  dailyRoles HistoricalEmployeeDailyRole[]
+
+  @@unique([batchId, sheetIndex, rowNumber])
+  @@unique([id, batchId])
+  @@index([batchId, sheetName])
+}
+
+// `입력` 시트에서 지점/일자 중복의 첫 행만 canonical fact로 승격한다.
+model HistoricalDailyFact {
+  id                    String   @id @default(cuid())
+  batchId               String
+  sourceRawRowId        String
+  storeId               String
+  sourceStoreName       String
+  businessDate          DateTime
+  salesAmount           Decimal? @db.Decimal(24, 8)
+  grossProfit           Decimal? @db.Decimal(24, 8)
+  grossMarginRate       Decimal? @db.Decimal(24, 12)
+  sourceOperatingProfit Decimal? @db.Decimal(24, 8)
+  productivity          Decimal? @db.Decimal(24, 8)
+  workerCount           Decimal? @db.Decimal(12, 4)
+  metricStatus          Json
+  createdAt             DateTime @default(now())
+
+  batch        HistoricalExcelImportBatch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  sourceRawRow HistoricalExcelRawRow         @relation(fields: [sourceRawRowId, batchId], references: [id, batchId], onDelete: Restrict)
+  store        Store                         @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  dailyRoles   HistoricalEmployeeDailyRole[]
+
+  @@unique([batchId, storeId, businessDate])
+  @@unique([id, batchId])
+  @@index([batchId, businessDate])
+  @@index([storeId, businessDate])
+}
+
+// 원본 이름 자체가 identity다. 현재 Employee와 이름으로 자동 연결하지 않는다.
+model HistoricalEmployee {
+  id                String   @id @default(cuid())
+  batchId           String
+  originalName      String
+  reviewStatus      String   @default("UNLINKED")
+  firstSeenWorkDate DateTime
+  lastSeenWorkDate  DateTime
+  leadRoleCount     Int      @default(0)
+  memberRoleCount   Int      @default(0)
+  storeNames        Json
+  createdAt         DateTime @default(now())
+
+  batch      HistoricalExcelImportBatch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  dailyRoles HistoricalEmployeeDailyRole[]
+
+  @@unique([batchId, originalName])
+  @@unique([id, batchId])
+  @@index([batchId, firstSeenWorkDate])
+  @@index([originalName])
+}
+
+// 직급이 아니라 해당 날짜/슬롯의 역할 배정이다.
+model HistoricalEmployeeDailyRole {
+  id                   String                 @id @default(cuid())
+  batchId              String
+  historicalEmployeeId String
+  dailyFactId          String
+  sourceRawRowId       String
+  businessDate         DateTime
+  storeId              String
+  role                 HistoricalEmployeeRole
+  slotNumber           Int
+  originalName         String
+  createdAt            DateTime               @default(now())
+
+  batch              HistoricalExcelImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  historicalEmployee HistoricalEmployee         @relation(fields: [historicalEmployeeId, batchId], references: [id, batchId], onDelete: Restrict)
+  dailyFact          HistoricalDailyFact        @relation(fields: [dailyFactId, batchId], references: [id, batchId], onDelete: Restrict)
+  sourceRawRow       HistoricalExcelRawRow      @relation(fields: [sourceRawRowId, batchId], references: [id, batchId], onDelete: Restrict)
+  store              Store                      @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, sourceRawRowId, role, slotNumber])
+  @@index([historicalEmployeeId, businessDate])
+  @@index([storeId, businessDate])
+  @@index([batchId, businessDate])
+}
+
 model Employee {
   id        String   @id @default(cuid())
   name      String

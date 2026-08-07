@@ -2,12 +2,15 @@
 
 import type { ZodError } from "zod";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
+import { writeAuditLog } from "~/server/audit";
 import { requireEmployeeManageAccess } from "~/server/authz";
 import { db } from "~/server/db";
 import { employeeFormSchema } from "./employees-schemas";
 import {
   getEmployeeProductivityAnalysis,
+  getHistoricalEmployeeDetail,
   type EmployeeProductivityAnalysis,
+  type HistoricalEmployeeDetail,
 } from "./employees-queries";
 import type { EmployeeFormData } from "./employees-schemas";
 
@@ -33,6 +36,29 @@ export type EmployeeSaveResult = {
   name: string;
 };
 
+function employeeAuditFields(data: ReturnType<typeof toEmployeeWriteData>) {
+  return Object.entries(data)
+    .filter(([, value]) => value !== null && value !== "")
+    .map(([key]) => key)
+    .sort();
+}
+
+function employeeChangedFields(
+  before: Record<string, unknown>,
+  after: ReturnType<typeof toEmployeeWriteData>,
+) {
+  return Object.entries(after)
+    .filter(([key, value]) => {
+      const previous = before[key];
+      if (previous instanceof Date && value instanceof Date) {
+        return previous.getTime() !== value.getTime();
+      }
+      return previous !== value;
+    })
+    .map(([key]) => key)
+    .sort();
+}
+
 function toFieldErrors(error: ZodError): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
 
@@ -48,7 +74,7 @@ function toFieldErrors(error: ZodError): Record<string, string[]> {
 export async function createEmployee(
   input: unknown,
 ): Promise<ActionResult<EmployeeSaveResult>> {
-  await requireEmployeeManageAccess();
+  const actor = await requireEmployeeManageAccess();
 
   const parsed = employeeFormSchema.safeParse(input);
 
@@ -58,9 +84,22 @@ export async function createEmployee(
     });
   }
 
-  const employee = await db.employee.create({
-    data: toEmployeeWriteData(parsed.data),
-    select: { id: true, name: true },
+  const writeData = toEmployeeWriteData(parsed.data);
+  const employee = await db.$transaction(async (tx) => {
+    const created = await tx.employee.create({
+      data: writeData,
+      select: { id: true, name: true },
+    });
+    await writeAuditLog(tx, {
+      action: "employee.created",
+      targetType: "Employee",
+      targetId: created.id,
+      actorId: actor.id,
+      before: null,
+      // 이름·연락처·주소·계좌·금액 값은 감사 로그에 복제하지 않는다.
+      after: { changedFields: employeeAuditFields(writeData) },
+    });
+    return created;
   });
 
   return actionOk(employee);
@@ -70,7 +109,7 @@ export async function updateEmployee(
   id: string,
   input: unknown,
 ): Promise<ActionResult<EmployeeSaveResult>> {
-  await requireEmployeeManageAccess();
+  const actor = await requireEmployeeManageAccess();
 
   const parsed = employeeFormSchema.safeParse(input);
 
@@ -80,18 +119,30 @@ export async function updateEmployee(
     });
   }
 
-  const existing = await db.employee.findUnique({ where: { id } });
-
-  if (!existing) {
-    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
-  }
-
-  const employee = await db.employee.update({
-    where: { id },
-    data: toEmployeeWriteData(parsed.data),
-    select: { id: true, name: true },
+  const writeData = toEmployeeWriteData(parsed.data);
+  const employee = await db.$transaction(async (tx) => {
+    const existing = await tx.employee.findUnique({ where: { id } });
+    if (!existing) return null;
+    const changedFields = employeeChangedFields(existing, writeData);
+    const updated = await tx.employee.update({
+      where: { id },
+      data: writeData,
+      select: { id: true, name: true },
+    });
+    await writeAuditLog(tx, {
+      action: "employee.updated",
+      targetType: "Employee",
+      targetId: id,
+      actorId: actor.id,
+      before: { changedFields: [] },
+      after: { changedFields },
+    });
+    return updated;
   });
 
+  if (!employee) {
+    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
+  }
   return actionOk(employee);
 }
 
@@ -113,22 +164,40 @@ export async function getEmployeeProductivityAnalysisAction(
   return getEmployeeProductivityAnalysis(normalized);
 }
 
+// 현재/과거 디렉터리에서 과거 직원 1명을 선택했을 때만 일별 역할을 가져온다.
+// active batch 조건과 LABOR_VIEW 게이트는 query 내부에서 다시 확인한다.
+export async function getHistoricalEmployeeDetailAction(
+  id: string,
+): Promise<HistoricalEmployeeDetail | null> {
+  return getHistoricalEmployeeDetail(id);
+}
+
 export async function deactivateEmployee(
   id: string,
 ): Promise<ActionResult<EmployeeSaveResult>> {
-  await requireEmployeeManageAccess();
+  const actor = await requireEmployeeManageAccess();
 
-  const existing = await db.employee.findUnique({ where: { id } });
-
-  if (!existing) {
-    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
-  }
-
-  const employee = await db.employee.update({
-    where: { id },
-    data: { isActive: false },
-    select: { id: true, name: true },
+  const employee = await db.$transaction(async (tx) => {
+    const existing = await tx.employee.findUnique({ where: { id } });
+    if (!existing) return null;
+    const updated = await tx.employee.update({
+      where: { id },
+      data: { isActive: false },
+      select: { id: true, name: true },
+    });
+    await writeAuditLog(tx, {
+      action: "employee.deactivated",
+      targetType: "Employee",
+      targetId: id,
+      actorId: actor.id,
+      before: { isActive: existing.isActive },
+      after: { isActive: false },
+    });
+    return updated;
   });
 
+  if (!employee) {
+    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
+  }
   return actionOk(employee);
 }

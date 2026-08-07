@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { historicalSourceLabel } from "../historical-integration";
 import type {
   DailyMeetingReportMetricEvidence,
   DailyMeetingReportMetricValue,
@@ -85,7 +86,9 @@ export function StoreComparisonReportTable({
                 key={row.storeId}
                 data-testid={`hq-report-comparison-row-${row.storeId}`}
               >
-                <TableCell className="font-medium">{row.storeName}</TableCell>
+                <TableCell className="font-medium">
+                  <StoreIdentity row={row} />
+                </TableCell>
                 <SalesCompositionCell row={row} />
                 <MetricCell
                   value={formatKrwMetric(row.grossProfit)}
@@ -146,6 +149,7 @@ export function StoreComparisonReportTable({
                 <h2 className="truncate text-base font-semibold tracking-normal">
                   {row.storeName}
                 </h2>
+                <SourceBadges row={row} className="mt-1.5" />
                 <StatusSummary row={row} className="mt-2" />
               </div>
               <Badge variant={row.hasLoss ? "destructive" : "outline"}>
@@ -246,6 +250,27 @@ function SalesComposition({
   row: StoreComparisonReportRow;
   align?: "left" | "right";
 }) {
+  if (
+    row.sourceSummary.source === "historical" ||
+    row.sourceSummary.source === "mixed"
+  ) {
+    return (
+      <div className={align === "right" ? "text-right" : "text-left"}>
+        <MetricValueWithEvidence
+          value={formatKrwMetric(row.salesAmount)}
+          evidence={row.metricEvidence.salesAmount}
+          align={align}
+        />
+        <span className="text-muted-foreground block text-xs">
+          {historicalSourceLabel(row.sourceSummary.source)} · 운영{" "}
+          {row.sourceSummary.operationalDayCount}영업일 / 과거{" "}
+          {row.sourceSummary.historicalDayCount}영업일 (원본{" "}
+          {row.sourceSummary.historicalCoverageDayCount}일)
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -290,6 +315,41 @@ function MobileMetric({
           align="left"
         />
       </dd>
+    </div>
+  );
+}
+
+function StoreIdentity({ row }: { row: StoreComparisonReportRow }) {
+  return (
+    <div>
+      <span>{row.storeName}</span>
+      <SourceBadges row={row} className="mt-1.5" />
+    </div>
+  );
+}
+
+function SourceBadges({
+  row,
+  className,
+}: {
+  row: StoreComparisonReportRow;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-wrap gap-1", className)}>
+      <Badge variant="outline">
+        출처: {historicalSourceLabel(row.sourceSummary.source)}
+      </Badge>
+      {row.sourceSummary.missingMetrics.length > 0 ? (
+        <Badge variant="outline">
+          누락: {row.sourceSummary.missingMetrics.join(", ")}
+        </Badge>
+      ) : null}
+      {row.sourceSummary.excludedHistoricalOverlapCount > 0 ? (
+        <Badge variant="outline">
+          운영 우선 {row.sourceSummary.excludedHistoricalOverlapCount}일
+        </Badge>
+      ) : null}
     </div>
   );
 }

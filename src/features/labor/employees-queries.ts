@@ -26,6 +26,29 @@ export type EmployeeOption = {
   name: string;
 };
 
+export type HistoricalEmployeeListItem = {
+  id: string;
+  originalName: string;
+  reviewStatus: string;
+  firstSeenWorkDate: string;
+  lastSeenWorkDate: string;
+  leadRoleCount: number;
+  memberRoleCount: number;
+  storeNames: string[];
+};
+
+export type HistoricalEmployeeRoleHistoryItem = {
+  id: string;
+  businessDate: string;
+  storeName: string;
+  role: "팀장" | "팀원";
+  slotNumber: number;
+};
+
+export type HistoricalEmployeeDetail = HistoricalEmployeeListItem & {
+  roleHistory: HistoricalEmployeeRoleHistoryItem[];
+};
+
 // WO-E(2026-06-22): HR 월간 생산성/인력 배치 분석.
 export type EmployeeProductivityRow = {
   employeeId: string;
@@ -120,6 +143,105 @@ export async function getEmployeeList(
       0,
     ),
   }));
+}
+
+// 승인된 과거 batch의 identity는 현재 Employee와 별도 목록으로 조회한다.
+// 이름이 같아도 join/merge하지 않으며 `최초 확인 근무일`만 제공한다.
+export async function getHistoricalEmployeeList(): Promise<
+  HistoricalEmployeeListItem[]
+> {
+  await requireLaborViewAccess();
+
+  const activeBatch = await db.historicalExcelImportBatch.findFirst({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!activeBatch) return [];
+
+  const employees = await db.historicalEmployee.findMany({
+    where: { batchId: activeBatch.id },
+    orderBy: { originalName: "asc" },
+    select: {
+      id: true,
+      originalName: true,
+      reviewStatus: true,
+      firstSeenWorkDate: true,
+      lastSeenWorkDate: true,
+      leadRoleCount: true,
+      memberRoleCount: true,
+      storeNames: true,
+    },
+  });
+
+  return employees.map((employee) => ({
+    ...employee,
+    firstSeenWorkDate: employee.firstSeenWorkDate.toISOString().slice(0, 10),
+    lastSeenWorkDate: employee.lastSeenWorkDate.toISOString().slice(0, 10),
+    storeNames: Array.isArray(employee.storeNames)
+      ? employee.storeNames.filter(
+          (name): name is string => typeof name === "string",
+        )
+      : [],
+  }));
+}
+
+export async function getHistoricalEmployeeDetail(
+  id: string,
+): Promise<HistoricalEmployeeDetail | null> {
+  await requireLaborViewAccess();
+
+  const activeBatch = await db.historicalExcelImportBatch.findFirst({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!activeBatch) return null;
+
+  const employee = await db.historicalEmployee.findFirst({
+    where: { id, batchId: activeBatch.id },
+    select: {
+      id: true,
+      originalName: true,
+      reviewStatus: true,
+      firstSeenWorkDate: true,
+      lastSeenWorkDate: true,
+      leadRoleCount: true,
+      memberRoleCount: true,
+      storeNames: true,
+      dailyRoles: {
+        orderBy: [{ businessDate: "desc" }, { slotNumber: "asc" }],
+        select: {
+          id: true,
+          businessDate: true,
+          role: true,
+          slotNumber: true,
+          dailyFact: { select: { sourceStoreName: true } },
+        },
+      },
+    },
+  });
+  if (!employee) return null;
+
+  return {
+    id: employee.id,
+    originalName: employee.originalName,
+    reviewStatus: employee.reviewStatus,
+    firstSeenWorkDate: employee.firstSeenWorkDate.toISOString().slice(0, 10),
+    lastSeenWorkDate: employee.lastSeenWorkDate.toISOString().slice(0, 10),
+    leadRoleCount: employee.leadRoleCount,
+    memberRoleCount: employee.memberRoleCount,
+    storeNames: Array.isArray(employee.storeNames)
+      ? employee.storeNames.filter(
+          (name): name is string => typeof name === "string",
+        )
+      : [],
+    roleHistory: employee.dailyRoles.map((role) => ({
+      id: role.id,
+      businessDate: role.businessDate.toISOString().slice(0, 10),
+      storeName: role.dailyFact.sourceStoreName,
+      role: role.role === "LEAD" ? "팀장" : "팀원",
+      slotNumber: role.slotNumber,
+    })),
+  };
 }
 
 // WO-05(2026-06-22): 급여 행 저장 시 선택된 employeeId가 실제 직원 마스터에 존재하는지 검증한다.
