@@ -45,7 +45,14 @@ export const employeeFormSchema = z.object({
     ),
   hireDate: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "입사일 형식이 올바르지 않습니다."),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "입사일 형식이 올바르지 않습니다.")
+    .refine((value) => {
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+      return (
+        !Number.isNaN(parsed.getTime()) &&
+        parsed.toISOString().slice(0, 10) === value
+      );
+    }, "존재하는 입사일을 입력해 주세요."),
   isActive: z.boolean().optional().default(true),
   dailyWage: optionalWonAmount,
   desiredInsuranceAmount: optionalWonAmount,

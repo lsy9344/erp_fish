@@ -33,9 +33,41 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   }
   // WO-0806 #1-5: 희망 현금은 인건비 리포트에서 자동계산하므로 입력란이 없다.
   await expect(page.getByLabel("희망 현금 금액")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "저장" })).toBeVisible();
-  // WO-0806 #1-7: 이름 검색.
-  await expect(page.getByLabel("직원 검색")).toBeVisible();
+  const employeeName = `검토직원-${Date.now()}`;
+  await page.getByLabel("이름", { exact: true }).fill(employeeName);
+  await page.getByLabel("직급", { exact: true }).fill("팀원");
+  await page.getByLabel("입사일", { exact: true }).fill("2026-08-01");
+  await page.getByLabel("연락처", { exact: true }).fill("010-1234-5678");
+  await page
+    .getByLabel("주소", { exact: true })
+    .fill("서울시 강남구 테헤란로 123, 401호");
+  await page
+    .getByLabel("계좌번호", { exact: true })
+    .fill("국민 123456-01-234567");
+  await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
+  await page.getByLabel("희망 4대보험 금액").fill("300000");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(page.getByText("직원을 추가했습니다.")).toBeVisible();
+
+  // WO-0806 #1-7: 실제 저장된 이름을 부분 검색하고 지우면 전체 목록이 복원된다.
+  const search = page.getByLabel("직원 검색");
+  await search.fill(employeeName.slice(0, -2));
+  const employeeRow = page.getByRole("row", { name: new RegExp(employeeName) });
+  await expect(employeeRow).toContainText("팀원");
+  await expect(employeeRow).toContainText("010-1234-5678");
+  await employeeRow.getByRole("button", { name: "상세" }).click();
+
+  const detail = page.getByRole("dialog");
+  await expect(detail).toContainText("서울시 강남구 테헤란로 123, 401호");
+  await expect(detail).toContainText("국민 123456-01-234567");
+  await expect(detail).toContainText(/\d{4}-\d{2} 근무일수/);
+  await expect(detail).toContainText(/\d{4}-\d{2} 급여 합계/);
+  await expect(detail).toContainText("0일");
+  await page.keyboard.press("Escape");
+
+  await search.fill("");
+  await expect(page.getByText(/명 \/ 전체 \d+명/)).toBeVisible();
+
   // WO-0806 #1-10/#1-13: 급여 롤업과 근무 인원 수별 평균은 제거됐다.
   await expect(page.getByText("직원별 월간 급여 롤업")).toHaveCount(0);
   await expect(page.getByText("근무 인원 수별 평균")).toHaveCount(0);

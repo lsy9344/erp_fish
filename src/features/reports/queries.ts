@@ -756,19 +756,27 @@ export async function getHqPeriodContrastReport({
     endDate,
     storeId,
   });
-  // 대조 기간을 비우면 직전 동일 길이 기간을 쓴다.
+  // 대조 기간은 두 날짜를 한 쌍으로만 받는다. 한쪽만 입력된 값을 기본값과
+  // 섞으면 사용자가 의도하지 않은 길이의 기간이 조용히 비교된다.
   const fallbackBase = getPreviousComparableRange(current.range);
+  const hasBaseStart =
+    typeof baseStartDate === "string" && baseStartDate.trim().length > 0;
+  const hasBaseEnd =
+    typeof baseEndDate === "string" && baseEndDate.trim().length > 0;
+  const useRequestedBase = hasBaseStart && hasBaseEnd;
   const base = await getHqStoreComparisonReport({
-    startDate:
-      typeof baseStartDate === "string" && baseStartDate.length > 0
-        ? baseStartDate
-        : fallbackBase.startDateInput,
-    endDate:
-      typeof baseEndDate === "string" && baseEndDate.length > 0
-        ? baseEndDate
-        : fallbackBase.endDateInput,
+    startDate: useRequestedBase ? baseStartDate : fallbackBase.startDateInput,
+    endDate: useRequestedBase ? baseEndDate : fallbackBase.endDateInput,
     storeId,
   });
+  const errorMessages = [
+    ...(hasBaseStart !== hasBaseEnd
+      ? [
+          "대조 기간은 시작일과 종료일을 모두 입력해야 합니다. 직전 동일 길이 기간으로 조회했습니다.",
+        ]
+      : []),
+    ...base.errorMessages,
+  ];
 
   return {
     current,
@@ -777,6 +785,7 @@ export async function getHqPeriodContrastReport({
       baseRows: base.rows,
       currentRows: current.rows,
     }),
+    errorMessages: [...new Set(errorMessages)],
   };
 }
 
@@ -811,26 +820,34 @@ export async function getHqPeriodTrendReport({
   });
   const metric =
     getPeriodAnalysisMetric(metricKey) ?? PERIOD_ANALYSIS_METRICS[0];
+  const requestedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
   const reports = await Promise.all(
     columns.map((column) =>
       getHqStoreComparisonReport({
         startDate: column.startDateInput,
         endDate: column.endDateInput,
-        storeId: axis === "metric" ? storeId : undefined,
+        // 지점 축에서도 사용자가 지점을 골랐다면 그 한 곳으로 좁힌다.
+        storeId: requestedStoreId ?? undefined,
       }),
     ),
   );
   const stores = reports[0]?.stores ?? [];
+  const resolvedRequestedStoreId = reports[0]?.selectedStoreId ?? null;
+  // 지표 축은 지점 1개가 필수다. 선택이 없으면 권한 범위의 첫 지점을 명시적으로
+  // 선택하며, 임의의 첫 행을 "전체 지점"처럼 표시하지 않는다.
   const selectedStoreId =
-    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+    resolvedRequestedStoreId ??
+    (axis === "metric" && requestedStoreId === null
+      ? (stores[0]?.id ?? null)
+      : null);
   const rows =
     axis === "metric"
       ? buildMetricAxisTrendRows(
           reports.map(
             (report) =>
-              report.rows.find(
-                (row) => !selectedStoreId || row.storeId === selectedStoreId,
-              ) ?? null,
+              report.rows.find((row) => row.storeId === selectedStoreId) ??
+              null,
           ),
         )
       : buildStoreAxisTrendRows({
@@ -846,7 +863,12 @@ export async function getHqPeriodTrendReport({
     rows,
     stores,
     selectedStoreId,
-    errorMessages,
+    errorMessages: [
+      ...new Set([
+        ...errorMessages,
+        ...reports.flatMap((report) => report.errorMessages),
+      ]),
+    ],
   };
 }
 

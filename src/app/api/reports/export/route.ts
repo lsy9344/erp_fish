@@ -32,6 +32,7 @@ import {
   getHqStoreComparisonReport,
 } from "~/features/reports/queries";
 import type { ReportExportSheet } from "~/features/reports/export";
+import { buildPeriodTrendYearRange } from "~/features/reports/period-analysis";
 import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
 import { requireExportCreateAccess } from "~/server/authz";
 import { withAuditActorContext, writeAuditLog } from "~/server/audit";
@@ -61,9 +62,35 @@ export async function GET(request: Request) {
   }
 
   let exportData: ReportExportData;
+  let comparisonSheets: ReportExportSheet[] | undefined;
 
   try {
-    exportData = await loadReportExportData(parsed.value);
+    // 기간 대조는 한 번의 조회 결과로 현재 데이터와 3개 시트를 함께 만든다.
+    // 두 번 조회하면 그 사이 장부 정정으로 시트끼리 값이 달라질 수 있다.
+    if (
+      parsed.value.report === "comparison" &&
+      parsed.value.mode === "contrast"
+    ) {
+      const contrast = await getHqPeriodContrastReport({
+        startDate: parsed.value.startDate,
+        endDate: parsed.value.endDate,
+        baseStartDate: parsed.value.baseStartDate ?? undefined,
+        baseEndDate: parsed.value.baseEndDate ?? undefined,
+        storeId: parsed.value.storeId,
+      });
+      const built = buildPeriodContrastExport({
+        base: contrast.base,
+        current: contrast.current,
+        contrastRows: contrast.contrastRows,
+        // 실제 권한 범위에 적용된 지점만 export 필터·감사 기록에 남긴다.
+        // 요청 원문을 넣으면 권한 밖 지점도 범위 검사에서 같다고 오판한다.
+        storeId: contrast.current.selectedStoreId,
+      });
+      exportData = built.exportData;
+      comparisonSheets = built.sheets;
+    } else {
+      exportData = await loadReportExportData(parsed.value);
+    }
   } catch (error) {
     if (isNextRedirectError(error)) {
       return forbiddenResponse(request);
@@ -87,9 +114,7 @@ export async function GET(request: Request) {
   // 번들 xlsx는 실제 포함 시트를 audit snapshot에도 기록한다.
   let body: BodyInit;
   let contentType: string;
-  let auditSheets:
-    | Awaited<ReturnType<typeof buildMonthlyBundleSheets>>
-    | undefined;
+  let auditSheets: ReportExportSheet[] | undefined;
 
   if (format === "xlsx") {
     contentType =
@@ -103,10 +128,8 @@ export async function GET(request: Request) {
       parsed.value.report === "comparison" &&
       parsed.value.mode === "contrast"
     ) {
-      body = await buildReportXlsx(
-        exportData,
-        await buildContrastExtraSheets(parsed.value),
-      );
+      auditSheets = comparisonSheets;
+      body = await buildBundledReportXlsx(comparisonSheets ?? []);
     } else {
       body = await buildReportXlsx(exportData);
     }
@@ -165,6 +188,8 @@ type ParsedExportRequest =
       axis: "store" | "metric";
       unit: "month" | "year";
       year: number;
+      fromYear: number;
+      toYear: number;
       fromMonth: number;
       toMonth: number;
       metricKey: string | null;
@@ -231,10 +256,28 @@ function parseExportRequest(
 
     if (
       (baseStartDate && !isValidDateInput(baseStartDate)) ||
-      (baseEndDate && !isValidDateInput(baseEndDate))
+      (baseEndDate && !isValidDateInput(baseEndDate)) ||
+      Boolean(baseStartDate) !== Boolean(baseEndDate) ||
+      (baseStartDate && baseEndDate && baseStartDate > baseEndDate)
     ) {
       return { ok: false, message: "대조 기간을 확인해 주세요." };
     }
+
+    if (mode === "contrast" && format !== "xlsx") {
+      return {
+        ok: false,
+        message:
+          "기간 대조는 3개 시트를 포함하는 Excel 형식으로 내려받아 주세요.",
+      };
+    }
+
+    const currentYear = getCurrentKstYear();
+    const year = toBoundedInt(params.get("year"), currentYear, 2000, 2100);
+    const yearRange = buildPeriodTrendYearRange({
+      fromYear: normalizeOptionalParam(params.get("fromYear")),
+      toYear: normalizeOptionalParam(params.get("toYear")) ?? year,
+      fallbackYear: currentYear,
+    });
 
     return {
       ok: true,
@@ -248,12 +291,9 @@ function parseExportRequest(
         baseEndDate,
         axis: params.get("axis") === "metric" ? "metric" : "store",
         unit: params.get("unit") === "year" ? "year" : "month",
-        year: toBoundedInt(
-          params.get("year"),
-          new Date().getUTCFullYear(),
-          2000,
-          2100,
-        ),
+        year,
+        fromYear: yearRange.fromYear,
+        toYear: yearRange.toYear,
         fromMonth: toBoundedInt(params.get("fromMonth"), 1, 1, 12),
         toMonth: toBoundedInt(params.get("toMonth"), 12, 1, 12),
         metricKey: normalizeOptionalParam(params.get("metricKey")),
@@ -322,7 +362,7 @@ async function loadReportExportData(
           base: contrast.base,
           current: contrast.current,
           contrastRows: contrast.contrastRows,
-          storeId: request.storeId,
+          storeId: contrast.current.selectedStoreId,
         }).exportData;
       }
 
@@ -332,8 +372,8 @@ async function loadReportExportData(
           unit: request.unit,
           year: request.year,
           years: Array.from(
-            { length: 7 },
-            (_, index) => request.year - 6 + index,
+            { length: request.toYear - request.fromYear + 1 },
+            (_, index) => request.fromYear + index,
           ),
           fromMonth: request.fromMonth,
           toMonth: request.toMonth,
@@ -346,7 +386,7 @@ async function loadReportExportData(
           columns: trend.columns,
           rows: trend.rows,
           metric: trend.metric,
-          storeId: request.storeId,
+          storeId: trend.selectedStoreId,
         });
       }
 
@@ -473,25 +513,13 @@ function toBoundedInt(
     : fallback;
 }
 
-// WO-0806 [F]: 기간 대조 xlsx는 엑셀 `분석` 시트처럼 3개 시트로 낸다.
-// 월별 번들(buildMonthlyBundleSheets)과 같은 재조회 패턴을 따른다.
-async function buildContrastExtraSheets(
-  request: Extract<ParsedExportRequest, { report: "comparison" }>,
-): Promise<ReportExportSheet[]> {
-  const contrast = await getHqPeriodContrastReport({
-    startDate: request.startDate,
-    endDate: request.endDate,
-    baseStartDate: request.baseStartDate ?? undefined,
-    baseEndDate: request.baseEndDate ?? undefined,
-    storeId: request.storeId,
-  });
-
-  return buildPeriodContrastExport({
-    base: contrast.base,
-    current: contrast.current,
-    contrastRows: contrast.contrastRows,
-    storeId: request.storeId,
-  }).extraSheets;
+function getCurrentKstYear() {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+    }).format(new Date()),
+  );
 }
 
 function isValidDateInput(value: string) {

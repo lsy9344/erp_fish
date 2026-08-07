@@ -16,6 +16,9 @@ export type EmployeeListItem = {
   bankAccount: string | null;
   address: string | null;
   position: string | null;
+  // 상세 카드에서 바로 확인하는 현재 월 근무 요약.
+  currentMonthWorkdayCount: number;
+  currentMonthLaborAmount: number;
 };
 
 export type EmployeeOption = {
@@ -55,8 +58,26 @@ export async function getActiveEmployeeOptions(): Promise<EmployeeOption[]> {
   return employees;
 }
 
-export async function getEmployeeList(): Promise<EmployeeListItem[]> {
+export async function getEmployeeList(
+  monthInput = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date()),
+): Promise<EmployeeListItem[]> {
   await requireLaborViewAccess();
+
+  const validMonth = /^\d{4}-(?:0[1-9]|1[0-2])$/.test(monthInput)
+    ? monthInput
+    : new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+      }).format(new Date());
+  const year = Number(validMonth.slice(0, 4));
+  const month = Number(validMonth.slice(5, 7));
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  const endExclusive = new Date(Date.UTC(year, month, 1));
 
   const employees = await db.employee.findMany({
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -71,12 +92,33 @@ export async function getEmployeeList(): Promise<EmployeeListItem[]> {
       bankAccount: true,
       address: true,
       position: true,
+      laborItems: {
+        where: {
+          dailyLedger: {
+            closingDate: { gte: startDate, lt: endExclusive },
+            status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+          },
+        },
+        select: {
+          amount: true,
+          dailyLedger: { select: { closingDate: true } },
+        },
+      },
     },
   });
 
-  return employees.map((emp) => ({
+  return employees.map(({ laborItems, ...emp }) => ({
     ...emp,
     hireDate: emp.hireDate.toISOString().slice(0, 10),
+    currentMonthWorkdayCount: new Set(
+      laborItems.map((item) =>
+        item.dailyLedger.closingDate.toISOString().slice(0, 10),
+      ),
+    ).size,
+    currentMonthLaborAmount: laborItems.reduce(
+      (sum, item) => sum + item.amount,
+      0,
+    ),
   }));
 }
 

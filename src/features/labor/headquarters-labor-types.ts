@@ -43,6 +43,8 @@ export type HeadquartersLaborStoreSummary = {
 export type HeadquartersLaborWorkerSettlement = {
   key: string;
   workerName: string;
+  // 직원 미연결 동명이인을 지점별로 구분하고, 지급 전 근무 지점을 확인한다.
+  storeNames: string[];
   position: string | null;
   bankAccount: string | null;
   workdayCount: number;

@@ -17,7 +17,7 @@ export default async function EmployeesPage() {
   const currentMonth = getKstBusinessDateParam().slice(0, 7);
   const [employees, productivity, navigationItems, canManageEmployees] =
     await Promise.all([
-      getEmployeeList(),
+      getEmployeeList(currentMonth),
       // WO-E(2026-06-22): 월간 생산성/인력 배치 분석.
       getEmployeeProductivityAnalysis(currentMonth),
       getHeadquartersNavigationItems(user.id),
@@ -35,6 +35,7 @@ export default async function EmployeesPage() {
         <EmployeeManagementClient
           initialEmployees={employees}
           canManage={canManageEmployees}
+          summaryMonth={currentMonth}
         />
         <EmployeeProductivityClient
           initialMonth={currentMonth}

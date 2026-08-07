@@ -762,7 +762,7 @@ export function buildPeriodContrastExport({
   current: StoreComparisonReportData;
   contrastRows: PeriodContrastRow[];
   storeId: string | null;
-}): { exportData: ReportExportData; extraSheets: ReportExportSheet[] } {
+}): { exportData: ReportExportData; sheets: ReportExportSheet[] } {
   const columns = periodMetricColumns();
   const exportData: ReportExportData = {
     report: "comparison",
@@ -782,8 +782,9 @@ export function buildPeriodContrastExport({
 
   return {
     exportData,
-    extraSheets: [
+    sheets: [
       { name: "대조기간", columns, rows: periodMetricRows(base.rows) },
+      { name: "현재", columns, rows: periodMetricRows(current.rows) },
       {
         name: "증감",
         columns,
@@ -858,6 +859,7 @@ export function buildPeriodTrendExport({
       ),
       total: formatReviewMetric(row.total ?? undefined),
     })),
-    scopedStoreIds: axis === "store" ? rows.map((row) => row.key) : [],
+    scopedStoreIds:
+      axis === "store" ? rows.map((row) => row.key) : storeId ? [storeId] : [],
   };
 }

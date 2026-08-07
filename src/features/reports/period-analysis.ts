@@ -162,8 +162,64 @@ export function getPreviousComparableRange({
 // WO-0806 [F]/D-8: 시계열 최대 조회 폭. 엑셀은 78개월을 담지만 기간마다 집계
 // 쿼리를 왕복하는 구조라 그대로 두면 응답이 무너진다.
 export const MAX_TREND_COLUMNS = 36;
+const MIN_TREND_YEAR = 2000;
+const MAX_TREND_YEAR = 2100;
 
 export type PeriodTrendUnit = "month" | "year";
+
+export function buildPeriodTrendYearRange({
+  fromYear,
+  toYear,
+  fallbackYear,
+}: {
+  fromYear: unknown;
+  toYear: unknown;
+  fallbackYear: number;
+}) {
+  const errorMessages: string[] = [];
+  const safeFallback = Math.min(
+    Math.max(Math.trunc(fallbackYear), MIN_TREND_YEAR),
+    MAX_TREND_YEAR,
+  );
+  const parse = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) &&
+      parsed >= MIN_TREND_YEAR &&
+      parsed <= MAX_TREND_YEAR
+      ? Math.trunc(parsed)
+      : null;
+  };
+  const parsedTo = parse(toYear);
+  const safeTo = parsedTo ?? safeFallback;
+  const parsedFrom = parse(fromYear);
+  let safeFrom = parsedFrom ?? Math.max(MIN_TREND_YEAR, safeTo - 6);
+
+  if (
+    (toYear !== undefined && toYear !== null && parsedTo === null) ||
+    (fromYear !== undefined && fromYear !== null && parsedFrom === null)
+  ) {
+    errorMessages.push(
+      `연도는 ${MIN_TREND_YEAR}년부터 ${MAX_TREND_YEAR}년 사이로 입력해 주세요. 기본 범위로 조회했습니다.`,
+    );
+  }
+
+  if (safeFrom > safeTo) {
+    errorMessages.push(
+      "시작 연도가 종료 연도보다 늦습니다. 최근 7년으로 조회했습니다.",
+    );
+    safeFrom = Math.max(MIN_TREND_YEAR, safeTo - 6);
+  }
+
+  return {
+    fromYear: safeFrom,
+    toYear: safeTo,
+    years: Array.from(
+      { length: safeTo - safeFrom + 1 },
+      (_, index) => safeFrom + index,
+    ),
+    errorMessages,
+  };
+}
 
 export type PeriodTrendColumn = {
   key: string;
@@ -192,8 +248,12 @@ export function buildPeriodTrendColumns({
   toMonth?: number;
 }): { columns: PeriodTrendColumn[]; errorMessages: string[] } {
   const errorMessages: string[] = [];
-  const safeFrom = Math.min(Math.max(fromMonth, 1), 12);
-  const safeTo = Math.min(Math.max(toMonth, safeFrom), 12);
+  const safeYear = Math.min(
+    Math.max(Math.trunc(year), MIN_TREND_YEAR),
+    MAX_TREND_YEAR,
+  );
+  const safeFrom = Math.min(Math.max(Math.trunc(fromMonth), 1), 12);
+  const safeTo = Math.min(Math.max(Math.trunc(toMonth), safeFrom), 12);
   let columns: PeriodTrendColumn[];
 
   if (unit === "month") {
@@ -201,10 +261,10 @@ export function buildPeriodTrendColumns({
       const month = safeFrom + index;
 
       return {
-        key: `${year}-${String(month).padStart(2, "0")}`,
+        key: `${safeYear}-${String(month).padStart(2, "0")}`,
         label: `${month}월`,
-        startDateInput: toInput(new Date(Date.UTC(year, month - 1, 1))),
-        endDateInput: toInput(new Date(Date.UTC(year, month, 0))),
+        startDateInput: toInput(new Date(Date.UTC(safeYear, month - 1, 1))),
+        endDateInput: toInput(new Date(Date.UTC(safeYear, month, 0))),
       };
     });
   } else {
@@ -255,10 +315,19 @@ function sumOrWeightedAverage(
     return null;
   }
 
-  // 금액은 합계, 비율·인원은 가중평균(가중치가 없으면 단순평균).
+  // 금액은 합계, 평균 근무인원은 기간별 평균의 단순평균, 비율은 매출
+  // 가중평균이다. 인원을 매출로 가중하면 매출이 큰 달의 인력이 과대 반영된다.
   if (kind === "money") {
     return {
       value: usable.reduce((sum, entry) => sum + entry.value, 0),
+      status: "ok",
+    };
+  }
+
+  if (kind === "headcount") {
+    return {
+      value:
+        usable.reduce((sum, entry) => sum + entry.value, 0) / usable.length,
       status: "ok",
     };
   }

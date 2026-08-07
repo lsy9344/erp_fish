@@ -270,6 +270,7 @@ test("headquarters labor date range supports month and explicit range modes", ()
     { from: "2026-06-09", to: "2026-05-10" },
     { from: "2025-01-01", to: "2026-07-01" },
     { from: "2026-5-1", to: "2026-05-31" },
+    { from: "2026-02-31", to: "2026-03-05" },
   ]) {
     const fallback = getHeadquartersLaborDateRange(input, now);
     assert.equal(fallback.monthInput, "2026-07", JSON.stringify(input));
@@ -349,6 +350,21 @@ test("desired cash is derived from monthly labor total minus insurance", () => {
       cashUnavailableReason: "기간 조회에서는 자동계산 미적용",
     },
   );
+
+  // 지점·상태·이름 필터가 적용되면 월 급여 일부에서 보험료 전액을 빼지 않는다.
+  assert.deepEqual(
+    resolveDesiredCash({
+      laborAmount: 1_000_000,
+      desiredInsuranceAmount: 300_000,
+      isLinkedEmployee: true,
+      isSingleMonth: true,
+      hasSettlementFilter: true,
+    }),
+    {
+      desiredCashAmount: null,
+      cashUnavailableReason: "필터 조회에서는 자동계산 미적용",
+    },
+  );
 });
 
 // WO-0806 #2: 근무자 단위 집계는 직원 미연결 근무자도 이름으로 묶어 누락을 막는다.
@@ -424,6 +440,7 @@ test("worker settlements group by employee and keep free-entry workers", () => {
     {
       key: "emp-1",
       workerName: "김직원",
+      storeNames: ["강남"],
       position: "팀장",
       bankAccount: "국민 123456-01-234567",
       workdayCount: 2,
@@ -433,8 +450,9 @@ test("worker settlements group by employee and keep free-entry workers", () => {
       cashUnavailableReason: null,
     },
     {
-      key: "name:자유근무자",
+      key: "name:store-a:자유근무자",
       workerName: "자유근무자",
+      storeNames: ["강남"],
       position: null,
       bankAccount: null,
       workdayCount: 1,
@@ -452,6 +470,92 @@ test("worker settlements group by employee and keep free-entry workers", () => {
   );
   assert.equal(settlementTotal, report.totalLaborAmount);
   assert.equal(settlementTotal, report.storeSummaries[0].laborAmount);
+});
+
+test("worker settlements separate unlinked names by store and disable filtered cash", () => {
+  const sharedItem = {
+    employeeId: null,
+    workerName: "동명이인",
+    amount: 100_000,
+    lateMemo: null,
+    earlyLeaveMemo: null,
+    specialMemo: null,
+    employee: null,
+  };
+  const ledgers = [
+    {
+      id: "ledger-a",
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-a", name: "강남" },
+      ledgerLaborItems: [{ ...sharedItem, id: "item-a" }],
+    },
+    {
+      id: "ledger-b",
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-b", name: "잠실" },
+      ledgerLaborItems: [{ ...sharedItem, id: "item-b", amount: 120_000 }],
+    },
+  ];
+  const report = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    isSingleMonth: true,
+    selectedStoreId: null,
+    selectedStatus: "ALL",
+    stores: [
+      { id: "store-a", name: "강남" },
+      { id: "store-b", name: "잠실" },
+    ],
+    targetStoreIds: ["store-a", "store-b"],
+    ledgers,
+  });
+
+  assert.deepEqual(
+    report.workerSettlements.map((row) => [
+      row.key,
+      row.storeNames,
+      row.laborAmount,
+    ]),
+    [
+      ["name:store-a:동명이인", ["강남"], 100_000],
+      ["name:store-b:동명이인", ["잠실"], 120_000],
+    ],
+  );
+
+  const filtered = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    isSingleMonth: true,
+    selectedStoreId: "store-a",
+    selectedStatus: "ALL",
+    stores: [{ id: "store-a", name: "강남" }],
+    targetStoreIds: ["store-a"],
+    ledgers: [
+      {
+        ...ledgers[0],
+        ledgerLaborItems: [
+          {
+            ...sharedItem,
+            id: "linked-item",
+            employeeId: "employee-a",
+            workerName: "등록 직원",
+            employee: {
+              position: "팀원",
+              bankAccount: "국민 123",
+              desiredInsuranceAmount: 30_000,
+            },
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(filtered.workerSettlements[0].desiredCashAmount, null);
+  assert.equal(
+    filtered.workerSettlements[0].cashUnavailableReason,
+    "필터 조회에서는 자동계산 미적용",
+  );
 });
 
 test("headquarters labor store filter fails closed for unauthorized store ids", () => {

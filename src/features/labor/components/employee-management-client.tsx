@@ -21,6 +21,8 @@ import type { EmployeeListItem } from "~/features/labor/employees-queries";
 
 type EmployeeManagementClientProps = {
   initialEmployees: EmployeeListItem[];
+  // 상세 카드의 최근 근무 요약 기준 월.
+  summaryMonth: string;
   // WO-D(2026-06-22): 직원 마스터 쓰기 권한 여부.
   // 권한이 없으면 추가/수정/비활성화 폼과 버튼을 숨긴다.
   canManage: boolean;
@@ -104,6 +106,7 @@ function toOptionalAmount(value: string): number | null {
 
 export function EmployeeManagementClient({
   initialEmployees,
+  summaryMonth,
   canManage,
 }: EmployeeManagementClientProps) {
   const [employees, setEmployees] =
@@ -178,7 +181,13 @@ export function EmployeeManagementClient({
     } else {
       setEmployees((prev) => [
         ...prev,
-        { id: result.data.id, isActive: true, ...savedFields },
+        {
+          id: result.data.id,
+          isActive: true,
+          currentMonthWorkdayCount: 0,
+          currentMonthLaborAmount: 0,
+          ...savedFields,
+        },
       ]);
     }
 
@@ -538,6 +547,14 @@ export function EmployeeManagementClient({
                   [
                     "희망 4대보험",
                     formatOptionalKrw(detail.desiredInsuranceAmount),
+                  ],
+                  [
+                    `${summaryMonth} 근무일수`,
+                    `${detail.currentMonthWorkdayCount.toLocaleString("ko-KR")}일`,
+                  ],
+                  [
+                    `${summaryMonth} 급여 합계`,
+                    formatOptionalKrw(detail.currentMonthLaborAmount),
                   ],
                   ["상태", detail.isActive ? "활성" : "비활성"],
                 ] as const
