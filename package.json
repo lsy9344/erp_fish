@@ -20,6 +20,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:check:ci-docs": "prettier --check .github/workflows/ci.yml docs/ci.md docs/ci-secrets-checklist.md docs/release-checklist.md _bmad-output/test-artifacts/ci-pipeline-progress.md README.md",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
+    "historical:import": "node --experimental-strip-types scripts/import-historical-direct-sales.mjs",
     "postinstall": "prisma generate",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

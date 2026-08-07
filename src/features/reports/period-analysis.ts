@@ -288,11 +288,18 @@ export function buildPeriodTrendColumns({
 
 export type PeriodTrendCell = LedgerReviewMetric | null;
 
+export type PeriodTrendSourceCell = {
+  source: StoreComparisonReportRow["sourceSummary"]["source"];
+  missingMetrics: string[];
+  excludedHistoricalOverlapCount: number;
+};
+
 export type PeriodTrendRow = {
   key: string;
   label: string;
   kind: PeriodAnalysisMetric["kind"];
   cells: PeriodTrendCell[];
+  sourceCells: PeriodTrendSourceCell[];
   total: PeriodTrendCell;
 };
 
@@ -301,6 +308,9 @@ function sumOrWeightedAverage(
   cells: PeriodTrendCell[],
   weights: number[],
 ): PeriodTrendCell {
+  // 일부 기간이 계산 불가인데 나머지만 합치면 전체 기간 값처럼 오해된다.
+  if (cells.some((cell) => cell?.value === null)) return null;
+
   const usable = cells
     .map((cell, index) => ({
       value: cell?.value ?? null,
@@ -364,6 +374,12 @@ export function buildMetricAxisTrendRows(
       label: metric.label,
       kind: metric.kind,
       cells,
+      sourceCells: rowsByColumn.map((row) => ({
+        source: row?.sourceSummary?.source ?? "none",
+        missingMetrics: row?.sourceSummary?.missingMetrics ?? [],
+        excludedHistoricalOverlapCount:
+          row?.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
+      })),
       total: sumOrWeightedAverage(metric.kind, cells, weights),
     };
   });
@@ -402,6 +418,17 @@ export function buildStoreAxisTrendRows({
         label: storeName,
         kind: metric.kind,
         cells,
+        sourceCells: rowsByColumn.map((rows) => {
+          const source = rows.find(
+            (row) => row.storeId === storeId,
+          )?.sourceSummary;
+          return {
+            source: source?.source ?? "none",
+            missingMetrics: source?.missingMetrics ?? [],
+            excludedHistoricalOverlapCount:
+              source?.excludedHistoricalOverlapCount ?? 0,
+          };
+        }),
         total: sumOrWeightedAverage(metric.kind, cells, weights),
       };
     });

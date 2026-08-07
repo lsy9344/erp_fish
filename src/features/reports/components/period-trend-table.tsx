@@ -1,3 +1,4 @@
+import { Badge } from "~/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -6,16 +7,48 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { historicalSourceLabel } from "../historical-integration";
 import type {
   PeriodAnalysisMetric,
   PeriodTrendColumn,
   PeriodTrendRow,
+  PeriodTrendSourceCell,
 } from "../period-analysis";
 import { formatPeriodMetricValue } from "./period-analysis-format";
 import { PeriodTrendChart } from "./period-trend-chart";
 
 // WO-0806 [F] 모드 C: 엑셀 `매장 별(달)`·`매장 별(년도)`·지표 피벗 시트를
 // 축 토글 하나로 합친 표. 대표가 보던 형태가 차트가 아니라 표다.
+function TrendSource({
+  sourceCell,
+}: {
+  sourceCell: PeriodTrendSourceCell | undefined;
+}) {
+  if (!sourceCell) return null;
+  const showSource =
+    sourceCell.source === "historical" || sourceCell.source === "mixed";
+
+  return (
+    <>
+      {showSource ? (
+        <Badge variant="outline" className="mt-1">
+          {historicalSourceLabel(sourceCell.source)}
+        </Badge>
+      ) : null}
+      {sourceCell.missingMetrics.length > 0 ? (
+        <span className="text-muted-foreground mt-1 block text-xs">
+          누락 있음
+        </span>
+      ) : null}
+      {sourceCell.excludedHistoricalOverlapCount > 0 ? (
+        <span className="text-muted-foreground mt-1 block text-xs">
+          운영 우선 {sourceCell.excludedHistoricalOverlapCount}일
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function PeriodTrendTable({
   axis,
   columns,
@@ -73,7 +106,10 @@ export function PeriodTrendTable({
                     key={columns[index]?.key ?? index}
                     className="text-right tabular-nums"
                   >
-                    {formatPeriodMetricValue(row.kind, cell)}
+                    <span className="block">
+                      {formatPeriodMetricValue(row.kind, cell)}
+                    </span>
+                    <TrendSource sourceCell={row.sourceCells[index]} />
                   </TableCell>
                 ))}
                 <TableCell className="text-right font-semibold tabular-nums">

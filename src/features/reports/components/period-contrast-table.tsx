@@ -1,3 +1,4 @@
+import { Badge } from "~/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -11,7 +12,11 @@ import {
   PERIOD_ANALYSIS_METRICS,
   type PeriodContrastRow,
 } from "../period-analysis";
-import type { StoreComparisonReportData } from "../types";
+import { historicalSourceLabel } from "../historical-integration";
+import type {
+  StoreComparisonReportData,
+  StoreComparisonReportRow,
+} from "../types";
 import {
   formatPeriodDelta,
   formatPeriodMetricValue,
@@ -105,6 +110,22 @@ export function PeriodContrastTable({
   );
 }
 
+function SourceCell({ row }: { row: StoreComparisonReportRow }) {
+  return (
+    <div className="grid gap-1">
+      <span>{row.storeName}</span>
+      <Badge variant="outline" className="w-fit">
+        {historicalSourceLabel(row.sourceSummary.source)}
+      </Badge>
+      {row.sourceSummary.missingMetrics.length > 0 ? (
+        <span className="text-muted-foreground text-xs">
+          누락: {row.sourceSummary.missingMetrics.join(", ")}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function MetricBlock({
   title,
   rangeLabel,
@@ -147,7 +168,9 @@ function MetricBlock({
             ) : (
               report.rows.map((row) => (
                 <TableRow key={row.storeId}>
-                  <TableCell className="font-medium">{row.storeName}</TableCell>
+                  <TableCell className="font-medium">
+                    <SourceCell row={row} />
+                  </TableCell>
                   {PERIOD_ANALYSIS_METRICS.map((metric) => (
                     <TableCell
                       key={metric.key}

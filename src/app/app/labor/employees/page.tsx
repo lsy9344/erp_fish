@@ -6,6 +6,7 @@ import { hasActionPermission, requireLaborViewAccess } from "~/server/authz";
 import {
   getEmployeeList,
   getEmployeeProductivityAnalysis,
+  getHistoricalEmployeeList,
 } from "~/features/labor/employees-queries";
 import { getKstBusinessDateParam } from "~/features/ledger/date";
 import { EmployeeManagementClient } from "~/features/labor/components/employee-management-client";
@@ -15,14 +16,20 @@ export default async function EmployeesPage() {
   // WO-0806 #5: 직원 관리는 대표(LABOR_VIEW) 전용이다.
   const user = await requireLaborViewAccess();
   const currentMonth = getKstBusinessDateParam().slice(0, 7);
-  const [employees, productivity, navigationItems, canManageEmployees] =
-    await Promise.all([
-      getEmployeeList(currentMonth),
-      // WO-E(2026-06-22): 월간 생산성/인력 배치 분석.
-      getEmployeeProductivityAnalysis(currentMonth),
-      getHeadquartersNavigationItems(user.id),
-      hasActionPermission(user.id, PermissionAction.LABOR_VIEW),
-    ]);
+  const [
+    employees,
+    historicalEmployees,
+    productivity,
+    navigationItems,
+    canManageEmployees,
+  ] = await Promise.all([
+    getEmployeeList(currentMonth),
+    getHistoricalEmployeeList(),
+    // WO-E(2026-06-22): 월간 생산성/인력 배치 분석.
+    getEmployeeProductivityAnalysis(currentMonth),
+    getHeadquartersNavigationItems(user.id),
+    hasActionPermission(user.id, PermissionAction.LABOR_VIEW),
+  ]);
 
   return (
     <HeadquartersShell
@@ -34,6 +41,7 @@ export default async function EmployeesPage() {
         <PageHeader title="직원 관리" />
         <EmployeeManagementClient
           initialEmployees={employees}
+          initialHistoricalEmployees={historicalEmployees}
           canManage={canManageEmployees}
           summaryMonth={currentMonth}
         />

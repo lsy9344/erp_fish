@@ -178,6 +178,17 @@ export type StoreComparisonReportMetricEvidenceMap = {
   loss: DailyMeetingReportMetricEvidence;
 };
 
+export type StoreComparisonSourceSummary = {
+  source: "operational" | "historical" | "mixed" | "none";
+  operationalDayCount: number;
+  // 매출이 0/공란이 아닌 Excel 영업일 수. 평균 지표의 분모로 사용한다.
+  historicalDayCount: number;
+  // 휴무·공란을 포함해 원본에 존재한 지점·일자 수. 미입력 일수 판단에 사용한다.
+  historicalCoverageDayCount: number;
+  excludedHistoricalOverlapCount: number;
+  missingMetrics: string[];
+};
+
 export type StoreComparisonReportRow = {
   storeId: string;
   storeName: string;
@@ -198,6 +209,7 @@ export type StoreComparisonReportRow = {
   inventoryToSalesRatio: LedgerReviewMetric;
   hasLoss: boolean | null;
   hasUnappliedCorrections: boolean;
+  sourceSummary: StoreComparisonSourceSummary;
   metricEvidence: StoreComparisonReportMetricEvidenceMap;
 };
 
