@@ -2055,7 +2055,10 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
       `[data-testid="hq-report-monthly-day-${currentMonth}-01"]`,
     );
     await expect(missingRow).toContainText("미입력");
-    await expect(missingRow).toContainText("입력 전");
+    // 미작성 일자는 본사가 바로 장부를 만들 수 있어야 한다.
+    await expect(
+      missingRow.getByRole("button", { name: "장부 작성" }),
+    ).toBeVisible();
   }
 
   const anomalyItem = page

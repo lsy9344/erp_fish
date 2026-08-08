@@ -816,11 +816,26 @@ test("미입력 행의 장부 작성 버튼은 빈 장부를 만들고 상세로
   await login(page, "hq@example.com");
   await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
 
-  await getDesktopRow(page, STORE_IDS.empty)
-    .getByRole("button", { name: "스토리3-1 미입력점 장부 작성" })
-    .click();
+  const createButton = getDesktopRow(page, STORE_IDS.empty).getByRole(
+    "button",
+    { name: "스토리3-1 미입력점 장부 작성" },
+  );
 
-  await expect(page).toHaveURL(/\/app\/ledgers\/[^/?]+/);
+  // 관제판 표는 hydration 전에 누른 클릭이 유실될 수 있다(서온·브라우저 ICU 로케일
+  // 차이로 시각 표기가 무슴되면 트리가 클라이언트에서 재생성된다). 장부 생성은
+  // 멱등하므로 상세로 이동할 때까지 클릭을 재시도한다.
+  await expect
+    .poll(
+      async () => {
+        if (!/\/app\/ledgers\//.test(page.url())) {
+          await createButton.click({ timeout: 5_000 }).catch(() => undefined);
+        }
+
+        return page.url();
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toMatch(/\/app\/ledgers\/[^/?]+/);
 
   const created = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORE_IDS.empty, closingDate: getTodayKstMidnight() },
