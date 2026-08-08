@@ -185,6 +185,8 @@ test("ledger summary falls back when FIFO lot rows are empty", async () => {
         quantity: 8,
         unitPrice: 1_000,
         inventoryAmount: 8_000,
+        fifoConsumedAmount: 0,
+        fifoRemainingAmount: 0,
         fifoLots: [],
       },
     ],
@@ -194,6 +196,107 @@ test("ledger summary falls back when FIFO lot rows are empty", async () => {
 
   assert.deepEqual(summary.costOfGoodsSold, { value: 7_000, status: "ok" });
   assert.deepEqual(summary.inventoryAmount, { value: 8_000, status: "ok" });
+});
+
+test("zero-flow empty FIFO rows do not disable FIFO for other inventory rows", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 8_000,
+    workerCount: 4,
+    expenseTotal: 12_000,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 0,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+        fifoLots: [{ consumedAmount: 1_500, remainingAmount: 8_000 }],
+      },
+      {
+        previousQuantity: 0,
+        purchasedQuantity: 0,
+        currentQuantity: undefined,
+        quantity: 0,
+        unitPrice: 9_999,
+        inventoryAmount: 0,
+        fifoLots: [],
+      },
+      {
+        previousQuantity: 0,
+        purchasedQuantity: 0,
+        currentQuantity: null,
+        quantity: 0,
+        unitPrice: 9_999,
+        inventoryAmount: 0,
+        fifoLots: [],
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  });
+
+  assert.deepEqual(summary.costOfGoodsSold, { value: 1_500, status: "ok" });
+  assert.deepEqual(summary.inventoryAmount, { value: 8_000, status: "ok" });
+});
+
+test("nonzero empty FIFO rows force the complete ledger fallback", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 40_000,
+    cardAmount: 50_000,
+    otherPaymentAmount: 8_000,
+    workerCount: 4,
+    expenseTotal: 12_000,
+    inventoryItems: [
+      {
+        previousQuantity: 10,
+        purchasedQuantity: 0,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 1_000,
+        inventoryAmount: 8_000,
+        fifoLots: [{ consumedAmount: 1_500, remainingAmount: 8_000 }],
+      },
+      {
+        previousQuantity: 3,
+        purchasedQuantity: 0,
+        currentQuantity: 1,
+        quantity: 1,
+        unitPrice: 9_999,
+        inventoryAmount: 9_999,
+        fifoLots: [],
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  });
+
+  assert.deepEqual(summary.costOfGoodsSold, { value: 21_998, status: "ok" });
+  assert.deepEqual(summary.inventoryAmount, { value: 17_999, status: "ok" });
 });
 
 test("one-decimal inventory corrections discard stale FIFO amounts and recalculate inventory", async () => {

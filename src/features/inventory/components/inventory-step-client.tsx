@@ -103,6 +103,7 @@ import {
   toStockQuantitySaveInput,
 } from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
+import { hasAtMostTwoDecimals, MAX_VALIDATION_DECIMAL } from "~/lib/validation";
 import { cn } from "~/lib/utils";
 
 type InventoryStepClientProps = {
@@ -140,6 +141,8 @@ const carryoverLoadedMessage =
   "전일 이월 재고를 불러왔습니다. 변경된 품목만 수정하세요.";
 const carryoverManualMessage =
   "전날 재고를 자동으로 가져오지 못했습니다. 실제 재고를 확인해 입력해 주세요.";
+const adjustmentQuantityContractMessage =
+  "단독 재고 조정은 소수점 첫째 자리까지만 저장할 수 있습니다. 둘째 자리 수량은 일반 저장으로 저장해 주세요.";
 const fifoLotSourceLabels: Record<
   InventoryStepLine["fifoLots"][number]["sourceType"],
   string
@@ -162,8 +165,16 @@ function roundQuantity(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function hasAtMostTwoDecimals(value: number) {
-  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
+function isAdjustmentQuantityWithinServerContract(value: string) {
+  const trimmed = value.trim();
+
+  if (!/^\d+(?:\.\d)?$/.test(trimmed)) {
+    return false;
+  }
+
+  const parsed = Number(trimmed);
+
+  return Number.isFinite(parsed) && parsed <= MAX_VALIDATION_DECIMAL;
 }
 
 function isValidQuantity(value: number) {
@@ -743,11 +754,13 @@ export function InventoryStepClient({
       }
 
       const systemQuantity = getSystemQuantity(item);
+      // HQ bulk 저장도 서버와 같은 둘째 자리 수량 계약을 사용한다. 별도
+      // adjustment action은 서버가 기존 첫째 자리 계약을 계속 검증한다.
       const currentQuantity = parseQuantityInput(
         currentQuantityRefs.current[item.productId]?.value ??
           item.currentQuantityInput,
         item.currentQuantity,
-        isStoreManagerMode,
+        true,
       );
 
       if (
@@ -791,7 +804,7 @@ export function InventoryStepClient({
       currentQuantityRefs.current[firstInvalidItem.productId]?.value ??
         firstInvalidItem.currentQuantityInput,
       firstInvalidItem.currentQuantity,
-      isStoreManagerMode,
+      true,
     );
     const firstMessage =
       firstSystemQuantity !== null && firstCurrentQuantity !== null
@@ -1177,7 +1190,7 @@ export function InventoryStepClient({
     const actualQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
-      isStoreManagerMode,
+      true,
     );
 
     return (
@@ -1229,6 +1242,29 @@ export function InventoryStepClient({
     const actualQuantityInput =
       currentQuantityRefs.current[item.productId]?.value ??
       item.currentQuantityInput;
+
+    if (!isAdjustmentQuantityWithinServerContract(actualQuantityInput)) {
+      const globalIndex = items.findIndex(
+        (candidate) => candidate.productId === item.productId,
+      );
+
+      if (globalIndex >= 0) {
+        setFieldErrors({
+          [`items.${globalIndex}.currentQuantity`]: [
+            adjustmentQuantityContractMessage,
+          ],
+        });
+      }
+
+      setFormError(adjustmentQuantityContractMessage);
+      toast.error(adjustmentQuantityContractMessage);
+      focusInventoryError({
+        productId: item.productId,
+        currentIndex: globalIndex,
+        field: "quantity",
+      });
+      return;
+    }
 
     setSavingAdjustmentProductId(item.productId);
 
@@ -1317,7 +1353,7 @@ export function InventoryStepClient({
     const currentQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
-      isStoreManagerMode,
+      true,
     );
 
     return (
@@ -1427,7 +1463,7 @@ export function InventoryStepClient({
     const actualQuantity = parseQuantityInput(
       item.currentQuantityInput,
       item.currentQuantity,
-      isStoreManagerMode,
+      true,
     );
 
     if (systemQuantity === null || actualQuantity === null) {
@@ -2210,7 +2246,7 @@ export function InventoryStepClient({
                           parseQuantityInput(
                             item.currentQuantityInput,
                             item.currentQuantity,
-                            isStoreManagerMode,
+                            true,
                           ) ?? systemQuantity,
                           item.lossQuantity,
                         ),

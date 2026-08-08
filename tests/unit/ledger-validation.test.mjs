@@ -124,10 +124,10 @@ test("validation helper preserves dotted field paths for nested step errors", as
   assert.equal(inventoryInvalid.success, false);
   assert.deepEqual(toFieldErrors(inventoryInvalid.error), {
     "items.0.currentQuantity": [
-      "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
     ],
     "items.0.quantity": [
-      "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
     ],
   });
 
@@ -163,6 +163,42 @@ test("validation helper preserves dotted field paths for nested step errors", as
       "박스단위 수량 또는 떨이로 실제 판매한 금액 중 하나는 0보다 커야 합니다.",
     ],
   });
+});
+
+test("two-decimal precision uses scale-proportional tolerance for large valid values", async () => {
+  const validationPath = assertProjectFile("src", "lib", "validation.ts");
+  const { hasAtMostTwoDecimals, isNonNegativeTwoDecimalInRange } = await import(
+    pathToFileURL(validationPath).href
+  );
+
+  assert.equal(hasAtMostTwoDecimals(9_000_000_000.03), true);
+  assert.equal(isNonNegativeTwoDecimalInRange(9_000_000_000.03), true);
+  assert.equal(hasAtMostTwoDecimals(1.234), false);
+  assert.equal(isNonNegativeTwoDecimalInRange(1.234), false);
+});
+
+test("Gangseo repair postcondition guards FIFO completeness and approved host", () => {
+  const repairSource = readProjectFile(
+    "scripts",
+    "repair-gangseo-0803-fifo.mjs",
+  );
+
+  assert.match(
+    repairSource,
+    /APPROVED_DATABASE_HOST\s*=\s*\n?\s*"ep-falling-truth-atgi63gf\.c-9\.us-east-1\.aws\.neon\.tech"/,
+  );
+  assert.match(repairSource, /hostname === APPROVED_DATABASE_HOST/);
+  assert.doesNotMatch(repairSource, /isRemoteDatabaseHost/);
+  assert.match(repairSource, /previousQuantity: true/);
+  assert.match(repairSource, /purchasedQuantity: true/);
+  assert.match(repairSource, /currentQuantity: true/);
+  assert.match(repairSource, /quantity: true/);
+  assert.match(repairSource, /fifoLots:\s*\{[\s\S]*?consumedAmount: true/);
+  assert.match(
+    repairSource,
+    /item\.fifoLots\.length > 0 \|\| isZeroInventoryFlow/,
+  );
+  assert.match(repairSource, /assertNumber\(clam\.inventoryAmount, 40_050/);
 });
 
 test("stored decimal quantity resolution requires matching identity and consumes each row once", async () => {

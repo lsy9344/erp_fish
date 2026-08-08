@@ -407,12 +407,29 @@ function getReviewInventoryQuantity(item: LedgerReviewInventoryInput) {
   return item.currentQuantity ?? item.quantity;
 }
 
+function isZeroInventoryFlow(item: LedgerReviewInventoryInput) {
+  const quantities = [item.currentQuantity, item.quantity].filter(
+    (value): value is number => typeof value === "number",
+  );
+
+  return (
+    item.previousQuantity === 0 &&
+    item.purchasedQuantity === 0 &&
+    quantities.length > 0 &&
+    quantities.every((value) => value === 0)
+  );
+}
+
 function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
+  if (item.fifoLots?.length === 0) {
+    return isZeroInventoryFlow(item) ? 0 : null;
+  }
+
   if (isUsableNumber(item.fifoConsumedAmount ?? null)) {
     return item.fifoConsumedAmount!;
   }
 
-  if (!item.fifoLots || item.fifoLots.length === 0) {
+  if (!item.fifoLots) {
     return null;
   }
 
@@ -420,11 +437,15 @@ function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
 }
 
 function getFifoRemainingAmount(item: LedgerReviewInventoryInput) {
+  if (item.fifoLots?.length === 0) {
+    return isZeroInventoryFlow(item) ? 0 : null;
+  }
+
   if (isUsableNumber(item.fifoRemainingAmount ?? null)) {
     return item.fifoRemainingAmount!;
   }
 
-  if (!item.fifoLots || item.fifoLots.length === 0) {
+  if (!item.fifoLots) {
     return null;
   }
 

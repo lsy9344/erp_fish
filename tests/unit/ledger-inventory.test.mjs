@@ -340,7 +340,7 @@ test("inventory schema validates current inventory and quantity separately", asy
     );
   }
 
-  for (const value of [-1, "2.28", "1,000"]) {
+  for (const value of [-1, "2.281", "1,000"]) {
     const parsed = ledgerInventorySchema.safeParse({
       ...payload,
       items: [
@@ -351,7 +351,7 @@ test("inventory schema validates current inventory and quantity separately", asy
     assert.equal(parsed.success, false);
     assert.equal(
       parsed.error.issues[0].message,
-      "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+      "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
     );
   }
 
@@ -370,7 +370,7 @@ test("inventory schema validates current inventory and quantity separately", asy
   assert.equal(blankProduct.success, false);
 });
 
-test("store inventory schema accepts two decimals and requires planned price without widening HQ", async () => {
+test("store and HQ inventory schemas accept two decimals with store planned price requirement", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -436,15 +436,42 @@ test("store inventory schema accepts two decimals and requires planned price wit
     }).success,
     false,
   );
+  const storeBlankQuantity = ledgerStoreManagerInventorySchema.parse({
+    ...base,
+    items: [
+      {
+        productId: "product-1",
+        currentQuantity: "",
+        quantity: "",
+        plannedUnitPrice: "0",
+      },
+    ],
+  });
+  assert.equal(storeBlankQuantity.items[0].currentQuantity, null);
+  assert.equal(storeBlankQuantity.items[0].quantity, null);
+  const storeMissingQuantity = ledgerStoreManagerInventorySchema.parse({
+    ...base,
+    items: [{ productId: "product-1", plannedUnitPrice: "0" }],
+  });
+  assert.equal(storeMissingQuantity.items[0].currentQuantity, null);
+  assert.equal(storeMissingQuantity.items[0].quantity, null);
+  const hqTwoDecimal = ledgerInventorySchema.parse({
+    ...base,
+    items: [
+      { productId: "product-1", currentQuantity: "1.23", quantity: "0.89" },
+    ],
+  });
+  assert.equal(hqTwoDecimal.items[0].currentQuantity, 1.23);
+  assert.equal(hqTwoDecimal.items[0].quantity, 0.89);
   assert.equal(
     ledgerInventorySchema.safeParse({
       ...base,
       items: [
-        { productId: "product-1", currentQuantity: "1.23", quantity: "1.23" },
+        { productId: "product-1", currentQuantity: "1.234", quantity: "1" },
       ],
     }).success,
     false,
-    "shared/HQ schema must keep the one-decimal contract",
+    "HQ schema must reject quantities past two decimals",
   );
 });
 
@@ -3056,6 +3083,21 @@ test("inventory UI is wired to the canonical inventory route", () => {
     componentSource,
     /const actualQuantityInput =\s*currentQuantityRefs\.current\[item\.productId\]\?\.value \?\?\s*item\.currentQuantityInput/,
     "adjustment save should submit the latest visible actual quantity",
+  );
+  assert.match(componentSource, /hasAtMostTwoDecimals/);
+  assert.match(
+    componentSource,
+    /function isAdjustmentQuantityWithinServerContract\(value: string\)/,
+  );
+  assert.match(
+    componentSource,
+    /if \(!isAdjustmentQuantityWithinServerContract\(actualQuantityInput\)\)/,
+    "adjustment save should block values beyond the server's one-decimal contract",
+  );
+  assert.match(
+    componentSource,
+    /단독 재고 조정은 소수점 첫째 자리까지만 저장할 수 있습니다\./,
+    "adjustment save should explain how to save two-decimal quantities",
   );
   assert.match(componentSource, /actualQuantity:\s*actualQuantityInput/);
   assert.match(

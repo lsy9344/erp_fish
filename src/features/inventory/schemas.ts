@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   parseOptionalNonNegativeInteger,
-  parseOptionalNonNegativeDecimal,
+  parseOptionalNonNegativeTwoDecimal,
   parseRequiredNonNegativeDecimal,
   parseRequiredNonNegativeInteger,
   toFieldErrors,
@@ -10,8 +10,6 @@ import {
 
 const productError = "품목을 확인해 주세요.";
 const inventoryQuantityError =
-  "재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
-const storeInventoryQuantityError =
   "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const actualQuantityError =
   "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
@@ -19,44 +17,12 @@ const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합니다.";
 const plannedUnitPriceError = "판매한 가격은 0원 이상의 정수여야 합니다.";
-const maxStoreInventoryQuantity = 9_999_999_999.99;
-
-function parseStoreInventoryQuantity(value: unknown, context: z.RefinementCtx) {
-  if (value === "" || value === null || value === undefined) {
-    return null;
-  }
-
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+(?:\.\d{1,2})?$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
-  const scaled = parsed * 100;
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
-
-  if (
-    Number.isFinite(parsed) &&
-    parsed >= 0 &&
-    parsed <= maxStoreInventoryQuantity &&
-    Math.abs(scaled - Math.round(scaled)) <= tolerance
-  ) {
-    return Math.round(scaled) / 100;
-  }
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: storeInventoryQuantityError,
-  });
-
-  return z.NEVER;
-}
 
 function parseOptionalInventoryQuantity(
   value: unknown,
   context: z.RefinementCtx,
 ) {
-  return parseOptionalNonNegativeDecimal(
+  return parseOptionalNonNegativeTwoDecimal(
     value,
     context,
     inventoryQuantityError,
@@ -159,12 +125,18 @@ const ledgerInventoryItemSchema = z.object({
 });
 
 const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
+  // 지점장 저장도 수량은 입력 전 null/빈칸을 허용한다. 필수 입력 검증은
+  // 저장 단계의 required-entry guard가 담당하고, schema는 기존 optional 계약을 유지한다.
   currentQuantity: z
     .unknown()
-    .transform((value, context) => parseStoreInventoryQuantity(value, context)),
+    .transform((value, context) =>
+      parseOptionalInventoryQuantity(value, context),
+    ),
   quantity: z
     .unknown()
-    .transform((value, context) => parseStoreInventoryQuantity(value, context)),
+    .transform((value, context) =>
+      parseOptionalInventoryQuantity(value, context),
+    ),
   plannedUnitPrice: z
     .unknown()
     .transform((value, context) =>
@@ -176,8 +148,8 @@ export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
 });
 
-// 지점장 재고 저장만 두 자리 수량과 필수 판매한 가격을 받는다. 본사 조정/HQ 저장은
-// 기존 ledgerInventorySchema의 한 자리 계약을 그대로 사용한다.
+// 본사와 지점장 재고 저장은 둘째 자리 수량을 공통으로 허용한다. 지점장 저장은
+// 수량의 null/빈칸 계약을 유지하고 plannedUnitPrice만 필수로 받는다.
 export const ledgerStoreManagerInventorySchema =
   ledgerMutationContextSchema.extend({
     items: z.array(ledgerStoreManagerInventoryItemSchema),

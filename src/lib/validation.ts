@@ -146,11 +146,8 @@ export function isNonNegativeDecimalInRange(
   return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }
 
-export function isNonNegativeTwoDecimalInRange(
-  value: number,
-  max = MAX_VALIDATION_TWO_DECIMAL,
-) {
-  if (!Number.isFinite(value) || value < 0 || value > max) {
+export function hasAtMostTwoDecimals(value: number) {
+  if (!Number.isFinite(value)) {
     return false;
   }
 
@@ -158,6 +155,18 @@ export function isNonNegativeTwoDecimalInRange(
   const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
 
   return Math.abs(scaled - Math.round(scaled)) <= tolerance;
+}
+
+export function isNonNegativeTwoDecimalInRange(
+  value: number,
+  max = MAX_VALIDATION_TWO_DECIMAL,
+) {
+  return (
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= max &&
+    hasAtMostTwoDecimals(value)
+  );
 }
 
 export function parseRequiredNonNegativeInteger(
@@ -282,6 +291,23 @@ export function parseOptionalNonNegativeDecimal(
   }
 
   return parseRequiredNonNegativeDecimal(value, context, errorMessage, max);
+}
+
+export function parseOptionalNonNegativeTwoDecimal(
+  value: unknown,
+  context: z.RefinementCtx,
+  errorMessage: string,
+  max = MAX_VALIDATION_TWO_DECIMAL,
+) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
+
+  return parseRequiredNonNegativeTwoDecimal(value, context, errorMessage, max);
 }
 
 export function toFieldErrors(error: z.ZodError) {
