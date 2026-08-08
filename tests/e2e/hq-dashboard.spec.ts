@@ -827,7 +827,7 @@ test("미입력 행의 장부 작성 버튼은 빈 장부를 만들고 상세로
   await expect
     .poll(
       async () => {
-        if (!/\/app\/ledgers\//.test(page.url())) {
+        if (!page.url().includes("/app/ledgers/")) {
           await createButton.click({ timeout: 5_000 }).catch(() => undefined);
         }
 
