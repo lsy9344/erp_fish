@@ -13,6 +13,7 @@ import {
 import { calculateMonthlyNetProfit } from "../monthly-kpi";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
+import { openHqLedgerForDate } from "~/features/ledger/hq-open-actions";
 import { formatQuantityValue } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import type {
@@ -719,7 +720,12 @@ function CalculationDaySummary({
                 </TableCell>
                 <TableCell className="break-words">{day.reason}</TableCell>
                 <TableCell>
-                  <DetailLink href={day.ledgerDetailHref} compact />
+                  <DetailLink
+                    href={day.ledgerDetailHref}
+                    compact
+                    storeId={report.selectedStoreId}
+                    dateInput={day.dateInput}
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -783,7 +789,11 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
                   />
                 </TableCell>
                 <TableCell>
-                  <DetailLink href={day.ledgerDetailHref} />
+                  <DetailLink
+                    href={day.ledgerDetailHref}
+                    storeId={day.storeId}
+                    dateInput={day.dateInput}
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -830,7 +840,12 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
             </dl>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <DetailLink href={day.ledgerDetailHref} compact />
+              <DetailLink
+                href={day.ledgerDetailHref}
+                compact
+                storeId={day.storeId}
+                dateInput={day.dateInput}
+              />
             </div>
             <DashboardSignalSummary signals={day.signals} className="mt-4" />
           </article>
@@ -1010,11 +1025,28 @@ function MetricValueWithEvidence({
 function DetailLink({
   href,
   compact = false,
+  storeId,
+  dateInput,
 }: {
   href: string | null;
   compact?: boolean;
+  // 장부가 없는 날짜를 본사가 직접 작성하기 위한 식별자.
+  storeId?: string | null;
+  dateInput?: string;
 }) {
   if (!href) {
+    if (storeId && dateInput) {
+      return (
+        <form action={openHqLedgerForDate}>
+          <input type="hidden" name="storeId" value={storeId} />
+          <input type="hidden" name="closingDate" value={dateInput} />
+          <Button type="submit" variant="outline" size="sm">
+            장부 작성
+          </Button>
+        </form>
+      );
+    }
+
     return (
       <span
         className={cn(

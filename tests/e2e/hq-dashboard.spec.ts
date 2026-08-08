@@ -776,9 +776,11 @@ test("관제판 행 전체 클릭은 상세로 이동하지만 미입력 행은 
 
   const emptyRow = getDesktopRow(page, STORE_IDS.empty);
   await expect(emptyRow).not.toHaveAttribute("role", "link");
+  // 미작성 행은 "장부 작성" 버튼으로만 장부를 만들 수 있고(본사 직접 작성 허용),
+  // 행 전체 클릭은 여전히 장부를 생성하지 않는다.
   await expect(
-    emptyRow.getByRole("button", { name: "스토리3-1 미입력점 장부 입력 전" }),
-  ).toBeDisabled();
+    emptyRow.getByRole("button", { name: "스토리3-1 미입력점 장부 작성" }),
+  ).toBeEnabled();
   await emptyRow.click();
   await expect(page).toHaveURL(/\/app\/dashboard\?date=today/);
   await expect(
@@ -804,6 +806,31 @@ test("관제판 행 전체 클릭은 상세로 이동하지만 미입력 행은 
   );
   await expect(
     page.getByRole("heading", { name: "스토리3-1 입력중점 장부 상세" }),
+  ).toBeVisible();
+});
+
+// 지점이 아예 작성하지 않은 날짜도 본사가 작성할 수 있어야 한다(매입 0건 포함).
+test("미입력 행의 장부 작성 버튼은 빈 장부를 만들고 상세로 보낸다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/dashboard?date=today&sort=priority&filter=all");
+
+  await getDesktopRow(page, STORE_IDS.empty)
+    .getByRole("button", { name: "스토리3-1 미입력점 장부 작성" })
+    .click();
+
+  await expect(page).toHaveURL(/\/app\/ledgers\/[^/?]+/);
+
+  const created = await prisma.dailyLedger.findFirstOrThrow({
+    where: { storeId: STORE_IDS.empty, closingDate: getTodayKstMidnight() },
+    select: { id: true, status: true },
+  });
+
+  expect(created.status).toBe("IN_PROGRESS");
+  await expect(page).toHaveURL(new RegExp(`/app/ledgers/${created.id}`));
+  await expect(
+    page.getByRole("heading", { name: "스토리3-1 미입력점 장부 상세" }),
   ).toBeVisible();
 });
 

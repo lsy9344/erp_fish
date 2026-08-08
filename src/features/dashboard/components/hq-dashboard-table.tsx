@@ -25,6 +25,7 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
+import { openHqLedgerForDate } from "~/features/ledger/hq-open-actions";
 import type { HqDashboardData, HqDashboardRow } from "../types.ts";
 import { DashboardSignalSummary } from "./dashboard-signal-summary.tsx";
 import { DashboardStatusBadge } from "./dashboard-status-badge.tsx";
@@ -701,18 +702,26 @@ function DetailLink({
   dashboard: HqDashboardData;
   className?: string;
 }) {
+  // 지점이 작성하지 않은 날짜도 본사가 바로 만들어 열 수 있어야 한다.
   if (!row.ledgerId) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled
-        aria-label={`${row.storeName} 장부 입력 전`}
-        className={className}
-      >
-        입력 전
-      </Button>
+      <form action={openHqLedgerForDate}>
+        <input type="hidden" name="storeId" value={row.storeId} />
+        <input
+          type="hidden"
+          name="closingDate"
+          value={dashboard.closingDate.slice(0, 10)}
+        />
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          aria-label={`${row.storeName} 장부 작성`}
+          className={className}
+        >
+          장부 작성
+        </Button>
+      </form>
     );
   }
 

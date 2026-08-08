@@ -230,6 +230,12 @@ export default async function LedgerDetailPage({
     lossData,
     latestCorrectionValues.values(),
   );
+  // 지점 7단계 상단 카드와 같은 지표를 본사 상세에도 둔다. 손실 금액은 정정
+  // 반영된 행(editLossData)을 합산해야 detail.hasLoss와 같은 기준이 된다.
+  const lossAmountTotal = editLossData.lossItems.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
   const totalSalesCorrection = getAppliedCorrection(latestCorrectionValues, {
     dailyLedgerId: ledger.id,
     targetType: "PAYMENT_FIELD",
@@ -331,7 +337,7 @@ export default async function LedgerDetailPage({
       </section>
 
       <section
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
         aria-label="장부 주요 숫자"
       >
         <MetricCard label="매출" value={totalSalesDisplay}>
@@ -352,12 +358,25 @@ export default async function LedgerDetailPage({
           value={formatPercentMetric(detail.grossMarginRate)}
         />
         <MetricCard
-          label="매출 차이"
-          value={formatKrwMetric(detail.salesDifference)}
+          label="당일 재고 총 금액"
+          value={
+            detail.inventoryAmountStatus === "not-applicable"
+              ? "해당 없음"
+              : formatKrwMetric(detail.inventoryAmount)
+          }
+          description={detail.isHeadquartersClosed ? undefined : "마감 전 값"}
         />
         <MetricCard
-          label="손실"
-          value={detail.hasLoss ? "손실 있음" : "없음"}
+          label="손실 금액"
+          value={
+            editLossData.lossItems.length === 0
+              ? "없음"
+              : formatKrw(lossAmountTotal)
+          }
+        />
+        <MetricCard
+          label="매출 차이"
+          value={formatKrwMetric(detail.salesDifference)}
         />
       </section>
 
