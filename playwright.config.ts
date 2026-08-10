@@ -44,6 +44,10 @@ export default defineConfig({
       LINE_CHANNEL_ACCESS_TOKEN: "test-line-channel-token",
       LINE_MORNING_SUMMARY_RECIPIENT_IDS: "U-test-exec-1,U-test-exec-2",
       LINE_API_BASE_URL: `${baseURL}/api/test/line-stub`,
+      // 챗봇: 실제 OpenAI 키 없이 /api/chat의 도구 루프를 검증한다.
+      // OPENAI_API_BASE_URL이 로컬 스텁을 가리키므로 외부 호출이 나가지 않는다.
+      OPENAI_API_KEY: "test-openai-key",
+      OPENAI_API_BASE_URL: `${baseURL}/api/test/openai-stub`,
     },
   },
   projects: [

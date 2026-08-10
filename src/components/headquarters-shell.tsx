@@ -1,5 +1,6 @@
 import { AppSidebar } from "~/components/app-sidebar";
 import type { AppSidebarNavigationItem } from "~/components/app-sidebar-nav";
+import { ChatWidget } from "~/features/chat/components/chat-widget";
 import {
   SidebarInset,
   SidebarProvider,
@@ -35,6 +36,7 @@ export function HeadquartersShell({
             {children}
           </div>
         </div>
+        <ChatWidget />
       </SidebarInset>
     </SidebarProvider>
   );

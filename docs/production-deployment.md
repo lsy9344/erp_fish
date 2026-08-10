@@ -202,17 +202,41 @@ curl -X POST "https://erp-fish.vercel.app/api/internal/notifications/morning-sum
 > 유지보수·서버비·긴급 대응 범위는 제품 코드가 아니라 위탁 계약/운영 문서 범위다.
 > (월 7~8만 원 위탁 유지보수에 클라우드 호스팅 실비, 텍스트/레이아웃 마이너 수정 포함.)
 
+## 데이터 질의 챗봇 (`POST /api/chat`)
+
+본사 화면 우하단 원형 아이콘으로 열리며, 기존 리포트 함수를 도구로 감싸 답변한다.
+설계·구현 근거는 `docs/rev/2026-08-10_챗봇_설계.md`와
+`docs/rev/2026-08-10_챗봇_구현_작업지시서.md`다.
+
+| 변수                  | 필수   | 용도                                                                        |
+| --------------------- | ------ | --------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`      | 예     | 미설정 시 챗봇은 503과 안내 문구를 반환한다(화면은 그대로 뜼다)             |
+| `OPENAI_CHAT_MODEL`   | 아니오 | 소형(mini) 등급 모델명. 미설정 시 코드 기본값. **배포 전 현행 모델명 확인** |
+| `OPENAI_API_BASE_URL` | 아니오 | 테스트 스텁 전용. **운영에서는 설정하지 않는다**                            |
+
+운영 주의:
+
+- **API 키에 사용량 상한(monthly budget)을 반드시 걸어 둔다.** 질문 1건당 약
+  4,000~11,000 입력 토큰을 쓴다.
+- 질문과 도구 결과(집계 수치, 지점명, 품목명, 근무자 이름)가 OpenAI API로
+  전송된다. 계좌번호·주소·연락처는 도구 출력 allowlist로 차단된다
+  (`src/features/chat/tools.ts`, 회귀 방지는 `tests/unit/chat-tools.test.mjs`).
+- 접근 권한은 `REPORT_VIEW`, 인건비 조회는 `LABOR_VIEW`를 그대로 따른다.
+  별도 권한을 신설하지 않았고 스키마 변경도 없다.
+- 긴급 비용 차단: `OPENAI_API_KEY`를 비우면 된다. 기능 자체 철회는
+  `src/components/headquarters-shell.tsx`의 `<ChatWidget />` 1줄 제거다.
+
 ## 2026-08-07 — WO-0806 대표 전용 인건비 권한 사전 적용 기록
 
 코드 배포 **전에** 프로덕션 DB에 먼저 적용한 항목이다. 추가 컬럼과 enum 값은
 구 코드가 참조하지 않으므로 하위 호환이며, 대표 계정을 먼저 만들어 두어야
 배포 순간에 인건비 화면 접근자가 0명이 되는 공백을 피할 수 있다.
 
-| 순서 | 작업 | 결과 |
-| --- | --- | --- |
-| 1 | `DATABASE_URL`에 unpooled 주입 후 `prisma migrate deploy` | `20260807090000`(Employee 4컬럼 + `LABOR_VIEW` enum), `20260807090100`(OWNER에 `LABOR_VIEW` 부여) 적용 |
-| 2 | 대표 계정 생성 | 로그인 식별자 `owner`, 역할 `HEADQUARTERS`, 프로필 `OWNER` 단독 |
-| 3 | 중복 `OWNER` 프로필 해제 | `admin@example.com`, `dowon`, `본사`, `downsd@naver.com` 4개 계정 |
+| 순서 | 작업                                                      | 결과                                                                                                   |
+| ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1    | `DATABASE_URL`에 unpooled 주입 후 `prisma migrate deploy` | `20260807090000`(Employee 4컬럼 + `LABOR_VIEW` enum), `20260807090100`(OWNER에 `LABOR_VIEW` 부여) 적용 |
+| 2    | 대표 계정 생성                                            | 로그인 식별자 `owner`, 역할 `HEADQUARTERS`, 프로필 `OWNER` 단독                                        |
+| 3    | 중복 `OWNER` 프로필 해제                                  | `admin@example.com`, `dowon`, `본사`, `downsd@naver.com` 4개 계정                                      |
 
 **3번의 근거** — 네 계정 모두 `OWNER` 외에 `HQ_ADMIN`·`SETTINGS_ADMIN`·
 `UPLOAD_STAFF`·`STORE_MANAGER` 등을 함께 보유해, 해제 전후 실효 action 집합이

@@ -148,6 +148,8 @@ type ReportLedgerRecord = {
     id: string;
     productId: string;
     productName: string;
+    // 손실 유형·품목 질의(getHqLossItemsForRange)만 규격을 select한다.
+    productSpec?: string;
     lossTypeName: string;
     quantity: number;
     amount: number;
@@ -2230,6 +2232,9 @@ export type LedgerProfitSummary = {
   grossMarginReason: string | null;
   lossItems: Array<{
     id?: string;
+    productId: string;
+    productName: string;
+    productSpec: string;
     lossTypeName: string;
     quantity: number;
     amount: number;
@@ -2317,6 +2322,7 @@ export async function getLedgerProfitSummariesForRange({
           id: true,
           productId: true,
           productName: true,
+          productSpec: true,
           lossTypeName: true,
           quantity: true,
           amount: true,
@@ -2363,6 +2369,98 @@ export async function getLedgerProfitSummariesForRange({
   }
 
   return result;
+}
+
+export type HqLossItemRow = {
+  storeName: string;
+  dateInput: string;
+  lossTypeName: string;
+  productId: string;
+  productName: string;
+  productSpec: string;
+  quantity: number;
+  amount: number;
+  usedPlannedPrice: boolean;
+};
+
+export type HqLossItemsForRangeData = {
+  startDateInput: string;
+  endDateInput: string;
+  selectedStoreName: string | null;
+  items: HqLossItemRow[];
+  errorMessages: string[];
+};
+
+/**
+ * 기간·지점의 손실 원장 항목을 유형·품목까지 그대로 돌려준다.
+ *
+ * 개요 화면의 lossBreakdown(overview.ts:440)은 도넛 차트용이라 유형을 상위 3개 +
+ * "기타"로 뭉치고 usedPlannedPrice 항목만 합산한다. "떨이·폐기 합계" 같은 유형·품목
+ * 단위 질문은 그 절단본으로 답할 수 없어서 이 함수를 따로 둔다.
+ *
+ * 정정 반영본(correctedLossItems)을 쓰므로 화면 숫자와 어긋나지 않고,
+ * 대상 장부도 IN_REVIEW/HEADQUARTERS_CLOSED로 같다.
+ */
+export async function getHqLossItemsForRange({
+  startDate,
+  endDate,
+  storeId,
+}: {
+  startDate?: unknown;
+  endDate?: unknown;
+  storeId?: unknown;
+} = {}): Promise<HqLossItemsForRangeData> {
+  const { getHeadquartersStoreScope, requireReportAccess } =
+    await import("../../server/authz.ts");
+  await requireReportAccess();
+  const storeScope = await getHeadquartersStoreScope();
+
+  const range = getStoreComparisonReportDateRange({ startDate, endDate });
+  const normalizedStoreId =
+    typeof storeId === "string" && storeId.length > 0 ? storeId : null;
+  const matchedStore = normalizedStoreId
+    ? (storeScope.stores.find((store) => store.id === normalizedStoreId) ??
+      null)
+    : null;
+  const selectedStores = normalizedStoreId
+    ? matchedStore
+      ? [matchedStore]
+      : []
+    : storeScope.stores;
+  const errorMessages = [
+    range.errorMessage,
+    normalizedStoreId && !matchedStore
+      ? "조회 지점을 확인해 주세요. 권한 있는 활성 지점만 조회됩니다."
+      : null,
+  ].filter((message): message is string => Boolean(message));
+  const storeNameById = new Map(
+    storeScope.stores.map((store) => [store.id, store.name]),
+  );
+  const summaries = await getLedgerProfitSummariesForRange({
+    storeIds: selectedStores.map((store) => store.id),
+    startDate: range.startDate,
+    endDate: range.endDate,
+  });
+
+  return {
+    startDateInput: range.startDateInput,
+    endDateInput: range.endDateInput,
+    selectedStoreName: matchedStore?.name ?? null,
+    items: [...summaries.values()].flatMap((summary) =>
+      summary.lossItems.map((item) => ({
+        storeName: storeNameById.get(summary.storeId) ?? "알 수 없는 지점",
+        dateInput: getDailyMeetingReportDateInput(summary.closingDate),
+        lossTypeName: item.lossTypeName.trim() || "유형 미지정",
+        productId: item.productId,
+        productName: item.productName,
+        productSpec: item.productSpec,
+        quantity: item.quantity,
+        amount: item.amount,
+        usedPlannedPrice: item.usedPlannedPrice,
+      })),
+    ),
+    errorMessages,
+  };
 }
 
 export async function getHqMonthlyClosingAnomalyReport({
@@ -3825,6 +3923,7 @@ function toReportLedgerCalculationSummary(
       item.id,
       {
         lossTypeName: item.lossTypeName,
+        productSpec: item.productSpec ?? "",
         usedPlannedPrice: item.usedPlannedPrice ?? false,
       },
     ]),
@@ -3835,6 +3934,7 @@ function toReportLedgerCalculationSummary(
     return {
       ...item,
       lossTypeName: metadata?.lossTypeName ?? "유형 미지정",
+      productSpec: metadata?.productSpec ?? "",
       usedPlannedPrice: metadata?.usedPlannedPrice ?? false,
     };
   });

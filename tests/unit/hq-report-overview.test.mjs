@@ -297,9 +297,12 @@ test("ledger profit summaries retain the saved loss price basis", () => {
     /type\s+ReportLedgerRecord\s*=\s*\{[\s\S]*?ledgerLossItems:\s*\{[\s\S]*?usedPlannedPrice\?:\s*boolean;[\s\S]*?\}\[\];[\s\S]*?\};/,
   );
   assert.match(ledgerProfitSummarySource, /status:\s*DailyLedgerStatus;/);
+  // 필드 집합을 통째로 고정하지 않는다. 지켜야 하는 건 손실 항목이 저장된
+  // 가격 기준(usedPlannedPrice)과 유형·수량·금액을 잃지 않는 것이다.
+  // 유형·품목별 질의(get_loss_breakdown)를 위해 품목명·규격이 뒤에 추가됐다.
   assert.match(
     ledgerProfitSummarySource,
-    /lossItems:\s*Array<\{\s*id\?:\s*string;\s*lossTypeName:\s*string;\s*quantity:\s*number;\s*amount:\s*number;\s*usedPlannedPrice:\s*boolean;\s*\}>;/,
+    /lossItems:\s*Array<\{[\s\S]*?lossTypeName:\s*string;[\s\S]*?quantity:\s*number;[\s\S]*?amount:\s*number;[\s\S]*?usedPlannedPrice:\s*boolean;\s*\}>;/,
   );
   assert.match(
     ledgerProfitSummarySource,
@@ -323,7 +326,7 @@ test("ledger profit summaries retain the saved loss price basis", () => {
   );
   assert.match(
     source,
-    /const\s+lossMetadataById\s*=\s*new\s+Map\(\s*ledger\.ledgerLossItems\.map\(\(item\)\s*=>\s*\[\s*item\.id,\s*\{\s*lossTypeName:\s*item\.lossTypeName,\s*usedPlannedPrice:\s*item\.usedPlannedPrice\s*\?\?\s*false,\s*\},\s*\]\),\s*\);/,
+    /const\s+lossMetadataById\s*=\s*new\s+Map\(\s*ledger\.ledgerLossItems\.map\(\(item\)\s*=>\s*\[\s*item\.id,\s*\{\s*lossTypeName:\s*item\.lossTypeName,[\s\S]*?usedPlannedPrice:\s*item\.usedPlannedPrice\s*\?\?\s*false,\s*\},\s*\]\),\s*\);/,
   );
   assert.match(
     source,
