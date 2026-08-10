@@ -11,20 +11,36 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+function chatLauncher(page: Page) {
+  return page.getByRole("button", { name: "데이터 질문하기" });
+}
+
+/**
+ * 런처는 client component다. 하이드레이션 전에 클릭하면 onClick이 붙지 않아
+ * 아무 일도 일어나지 않는다(CI에서 실제로 그랬다). 열릴 때까지 다시 누른다.
+ * 모달을 여는 다른 e2e와 같은 방식(master-data-stores.spec.ts:19).
+ */
+async function openChatSheet(page: Page) {
+  const heading = page.getByRole("heading", { name: "데이터 질문" });
+
+  await expect(chatLauncher(page)).toBeVisible();
+  await expect(async () => {
+    await chatLauncher(page).click();
+    await expect(heading).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return heading;
+}
+
 test("본사 화면에서 원형 아이콘으로 채팅창을 열고 질문할 수 있다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
   await page.goto("/app/dashboard");
 
-  const launcher = page.getByRole("button", { name: "데이터 질문하기" });
-  await expect(launcher).toBeVisible();
+  const launcher = chatLauncher(page);
 
-  await launcher.click();
-
-  await expect(
-    page.getByRole("heading", { name: "데이터 질문" }),
-  ).toBeVisible();
+  await openChatSheet(page);
   // 열리면 런처는 닫기 버튼과 겹치지 않도록 사라진다.
   await expect(launcher).toBeHidden();
 
@@ -42,15 +58,11 @@ test("ESC로 채팅창을 닫으면 원형 아이콘이 돌아온다", async ({ 
   await login(page, "hq@example.com");
   await page.goto("/app/dashboard");
 
-  const launcher = page.getByRole("button", { name: "데이터 질문하기" });
-  await launcher.click();
-  await expect(
-    page.getByRole("heading", { name: "데이터 질문" }),
-  ).toBeVisible();
+  await openChatSheet(page);
 
   await page.keyboard.press("Escape");
 
-  await expect(launcher).toBeVisible();
+  await expect(chatLauncher(page)).toBeVisible();
 });
 
 test("지점장 화면에는 챗봇 아이콘이 없다", async ({ page }) => {
