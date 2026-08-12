@@ -489,11 +489,13 @@ export async function getOrCreateStoreLedgerInTx(
  * EcountImportLine.ledgerPurchaseItemId back-pointer를 다시 맞춘다.
  *
  * - 재생성된 행이 가리키는 import line은 새 장부 행 id를 가리키게 한다.
- * - 더 이상 어떤 장부 행도 가리키지 않게 된 import line(행 삭제 등)은 back-pointer를 null로 비운다.
+ * - 이 장부가 저장 전에 가리키던 import line 중 삭제된 행만 back-pointer를 null로 비운다.
+ *   같은 업로드 batch에 들어 있는 다른 지점 장부의 연결은 건드리지 않는다.
  */
 export async function syncEcountImportLineBackPointersInTx(
   tx: Prisma.TransactionClient,
   dailyLedgerId: string,
+  previouslyLinkedImportLineIds: readonly string[],
 ): Promise<void> {
   // 재생성된 장부 행이 가리키는 import line(권위 있는 ecountImportLineId 링크).
   const items = await tx.ledgerPurchaseItem.findMany({
@@ -506,30 +508,15 @@ export async function syncEcountImportLineBackPointersInTx(
       : [],
   );
   const linkedImportLineIds = links.map((link) => link.importLineId);
+  const staleImportLineIds = previouslyLinkedImportLineIds.filter(
+    (id) => !linkedImportLineIds.includes(id),
+  );
 
-  // 영향받은 batch 안에서, 더 이상 이 장부의 어떤 행도 가리키지 않게 된
-  // import line의 back-pointer를 정리한다. ledgerPurchaseItemId는 FK가 아닌
-  // 비정규화 컬럼이라 행 삭제만으로는 자동 정리되지 않는다.
-  const affectedBatchIds = [
-    ...new Set(
-      (
-        await tx.ecountImportLine.findMany({
-          where: { id: { in: linkedImportLineIds } },
-          select: { batchId: true },
-        })
-      ).map((line) => line.batchId),
-    ),
-  ];
-
-  if (affectedBatchIds.length > 0) {
+  // ledgerPurchaseItemId는 FK가 아닌 비정규화 컬럼이라 행 삭제만으로 자동
+  // 정리되지 않는다. 현재 장부가 이전에 소유했던 링크만 정확히 비운다.
+  if (staleImportLineIds.length > 0) {
     await tx.ecountImportLine.updateMany({
-      where: {
-        batchId: { in: affectedBatchIds },
-        ledgerPurchaseItemId: { not: null },
-        id: {
-          notIn: linkedImportLineIds.length > 0 ? linkedImportLineIds : [""],
-        },
-      },
+      where: { id: { in: staleImportLineIds } },
       data: { ledgerPurchaseItemId: null },
     });
   }

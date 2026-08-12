@@ -752,6 +752,10 @@ export async function saveHqLedgerPurchases(
         const existingPurchaseItemsById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
         );
+        const previouslyLinkedEcountImportLineIds =
+          beforeLedger.ledgerPurchaseItems.flatMap((item) =>
+            item.ecountImportLineId ? [item.ecountImportLineId] : [],
+          );
         const storedQuantityById = new Map(
           beforeLedger.ledgerPurchaseItems.map((item) => [
             item.id,
@@ -762,30 +766,6 @@ export async function saveHqLedgerPurchases(
           ]),
         );
         const consumedStoredPurchaseIds = new Set<string>();
-        const existingEcountPurchaseIds = new Set(
-          beforeLedger.ledgerPurchaseItems
-            .filter((item) => item.sourceType === "ECOUNT_UPLOAD")
-            .map((item) => item.id),
-        );
-        const incomingExistingIds = new Set(
-          parsed.data.purchases
-            .map((purchase) => purchase.id)
-            .filter((id) => existingPurchaseItemsById.has(id)),
-        );
-        const missingEcountPurchaseIds = [...existingEcountPurchaseIds].filter(
-          (id) => !incomingExistingIds.has(id),
-        );
-
-        if (missingEcountPurchaseIds.length > 0) {
-          return actionError<LedgerCostStepData>(
-            "VALIDATION_ERROR",
-            "입력값을 확인해 주세요.",
-            {
-              purchases: ["이카운트 원본 행은 삭제할 수 없습니다."],
-            },
-          );
-        }
-
         const standardIds = [
           ...new Set(
             parsed.data.purchases
@@ -898,9 +878,9 @@ export async function saveHqLedgerPurchases(
             );
           }
 
-          // WO(2026-06-24) Task 14/15: 본사 보정은 이카운트 원본 행을 직접 바꾸지 않는다.
-          // 적용 단가(unitPrice)만 보정 가능하고, 품목/구분/규격/수량/원본 거래처(referenceInfo)
-          // 등 원본 식별 정보는 기존 행(existing)에서 그대로 가져온다. 입력값이 달라도 무시한다.
+          // 본사 보정은 이카운트 원본 품목 정보를 직접 바꾸지 않는다.
+          // 품목/구분/규격/원본 거래처(referenceInfo)는 기존 행에서 보존하되,
+          // 장부 적용 단가(unitPrice)와 수량(quantity)은 본사 입력값을 반영한다.
           const isEcountUpload = existing?.sourceType === "ECOUNT_UPLOAD";
 
           if (purchase.sourceType === "ECOUNT_UPLOAD" && !isEcountUpload) {
@@ -980,15 +960,12 @@ export async function saveHqLedgerPurchases(
           const sourceUnitPrice = isEcountUpload
             ? (existing?.sourceUnitPrice ?? existing?.unitPrice ?? null)
             : (existing?.sourceUnitPrice ?? null);
-          // 이카운트 행은 수량도 원본 식별 정보이므로 기존 행에서 가져온다.
-          // 그 외 기존 행의 null은 클라이언트가 손대지 않은 레거시 수량을 뜻하며,
-          // 현재 장부에 같은 id가 있을 때만 DB 값을 보존한다.
-          const quantity = isEcountUpload
-            ? decimalToNumber(existing.quantity)
-            : purchase.quantity;
+          // null은 클라이언트가 손대지 않은 레거시 수량을 뜻한다. 현재 장부에
+          // 같은 id와 같은 품목 정보가 있을 때만 DB 값을 보존한다.
+          const quantity = purchase.quantity;
           const resolvedQuantity = consumeStoredPurchaseQuantity(
             purchase.id,
-            isEcountUpload ? null : quantity,
+            quantity,
             purchase,
             storedQuantityById,
             consumedStoredPurchaseIds,
@@ -1095,7 +1072,11 @@ export async function saveHqLedgerPurchases(
 
         // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
         // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
-        await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
+        await syncEcountImportLineBackPointersInTx(
+          tx,
+          beforeLedger.id,
+          previouslyLinkedEcountImportLineIds,
+        );
 
         await syncLedgerInventoryPurchasedQuantitiesInTx(
           tx,

@@ -669,10 +669,9 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
   // WO(2026-06-25): 판매한 가격(StoreSalesPricePlan)은 지점장 매입 화면 전용이므로
   // 본사 매입 저장 경로는 계획을 쓰지 않는다.
   assert.doesNotMatch(hqActionSource, /storeSalesPricePlan/i);
-  // WO(2026-06-24) 검토 #2: 본사 보정은 "적용 단가(unitPrice)"만 바꿀 수 있고,
-  // 이카운트 원본 식별 정보(품목/구분/규격/수량)는 기존 행에서 그대로 가져온다.
-  // 따라서 HQ 저장은 ECOUNT 행에 한해 입력값 quantity/원본필드를 그대로 신뢰하지 않는다.
+  // 본사 보정은 이카운트 원본 품목 정보는 보존하고, 적용 단가와 수량은 바꿀 수 있다.
   assert.match(hqActionSource, /const snapshot = isEcountUpload/);
+  assert.match(hqActionSource, /const quantity = purchase\.quantity/);
   assert.match(hqActionSource, /consumeStoredPurchaseQuantity/);
   assert.match(hqActionSource, /validatePurchaseAmount/);
   assert.match(hqActionSource, /getPurchaseQuantityIdentity/);

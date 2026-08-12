@@ -528,7 +528,7 @@ test("ledger review missing item helper preserves KST links and separates review
   assert.deepEqual(
     missingItems.map((item) => [item.id, item.status]),
     [
-      ["purchases", "missing"],
+      ["purchases", "review"],
       ["losses", "review"],
       ["inventory", "missing"],
       ["expenses", "missing"],
@@ -539,6 +539,10 @@ test("ledger review missing item helper preserves KST links and separates review
   assert.match(missingItems[0].href, /storeId=store-1/);
   assert.match(missingItems[0].href, /date=2026-06-11/);
   assert.match(missingItems[0].href, /step=purchase/);
+  assert.equal(
+    missingItems.find((item) => item.id === "purchases")?.detail,
+    "매입 항목 없음으로 검토할 수 있습니다.",
+  );
   assert.equal(
     missingItems.find((item) => item.id === "losses")?.detail,
     "손실 항목 없음으로 검토할 수 있습니다.",

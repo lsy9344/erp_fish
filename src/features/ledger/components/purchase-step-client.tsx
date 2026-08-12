@@ -643,6 +643,10 @@ export function PurchaseStepClient({
               const isLineEditBlocked =
                 isFormSaving ||
                 isOriginalEditBlocked ||
+                (!hqEditReasonRequired && isUploadedLineLocked(line));
+              const isUploadedIdentityEditBlocked =
+                isFormSaving ||
+                isOriginalEditBlocked ||
                 isUploadedLineLocked(line);
               // 정책 반전(2026-06-28): 적용 단가(unitPrice) 수정 권한은 본사 전용이다. 지점장은
               // 기존 매입 행(이카운트/수동 무관)의 단가를 수정할 수 없고, 신규 수동 행의 최초 단가만
@@ -668,7 +672,7 @@ export function PurchaseStepClient({
                       }}
                       autoComplete="off"
                       value={line.productName}
-                      disabled={isLineEditBlocked}
+                      disabled={isUploadedIdentityEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           productName: event.currentTarget.value,
@@ -702,7 +706,7 @@ export function PurchaseStepClient({
                       }}
                       autoComplete="off"
                       value={line.productCategory}
-                      disabled={isLineEditBlocked}
+                      disabled={isUploadedIdentityEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           productCategory: event.currentTarget.value,
@@ -736,7 +740,7 @@ export function PurchaseStepClient({
                       }}
                       autoComplete="off"
                       value={line.productSpec}
-                      disabled={isLineEditBlocked}
+                      disabled={isUploadedIdentityEditBlocked}
                       onChange={(event) =>
                         updatePurchaseLine(line.id, {
                           productSpec: event.currentTarget.value,
@@ -793,7 +797,7 @@ export function PurchaseStepClient({
                         productRefs.current[index] = node;
                       }}
                       value={line.productId}
-                      disabled={isLineEditBlocked}
+                      disabled={isUploadedIdentityEditBlocked}
                       onChange={(event) =>
                         applyProduct(line.id, event.currentTarget.value)
                       }
@@ -912,8 +916,9 @@ export function PurchaseStepClient({
                       ) : isUploadedLineLocked(line) &&
                         !isUnitPriceEditBlocked ? (
                         <p className="text-muted-foreground text-xs">
-                          이카운트 출고/입고 라인입니다. 원본 정보는 잠겨 있고
-                          장부 적용 단가만 수정할 수 있습니다.
+                          이카운트 출고/입고 라인입니다. 원본 품목 정보는 잠겨
+                          있고, 장부 적용 단가와 수량을 수정하거나 항목을 삭제할
+                          수 있습니다.
                         </p>
                       ) : null}
                       {/* WO-12(2026-06-28): 본사 화면에서 원본 이카운트 단가를 적용 단가와

@@ -93,6 +93,50 @@ test("ledger submit schema accepts the selected ledger boundary", async () => {
   assert.equal(ledgerSubmitSchema.safeParse({ storeId: " " }).success, false);
 });
 
+test("store manager can submit a ledger when there are no purchases today", async () => {
+  const validationPath = assertProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "review-validation.ts",
+  );
+  const { getLedgerReviewMissingItems } = await import(
+    pathToFileURL(validationPath).href
+  );
+
+  const missingItems = getLedgerReviewMissingItems({
+    storeId: "store-1",
+    closingDate: "2026-06-11T00:00:00.000Z",
+    totalSalesAmount: 100_000,
+    paymentTotal: 100_000,
+    expenseCount: 1,
+    purchaseCount: 0,
+    hasInventoryUnavailable: false,
+    inventoryCount: 1,
+    lossCount: 0,
+    workerCount: 1,
+  });
+
+  assert.equal(
+    missingItems.some(
+      (item) => item.id === "purchases" && item.status === "missing",
+    ),
+    false,
+    "zero purchases should not block store manager ledger submission",
+  );
+  assert.deepEqual(
+    missingItems.find((item) => item.id === "purchases"),
+    {
+      id: "purchases",
+      label: "매입",
+      href: "/app/store-entry?storeId=store-1&date=2026-06-11&step=purchase",
+      status: "review",
+      detail: "매입 항목 없음으로 검토할 수 있습니다.",
+    },
+    "review should still show that the day has no purchase rows",
+  );
+});
+
 test("submitLedgerForReview uses guarded server action, idempotent update, audit, and revalidation", () => {
   const actionSource = readProjectFile(
     "src",
@@ -130,8 +174,7 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
   assert.ok(
     submitSource.indexOf(
       "requireStoreManagerLedgerEditAccess(access.data.storeId)",
-    ) <
-      submitSource.indexOf("parseLedgerSubmitInput(input)"),
+    ) < submitSource.indexOf("parseLedgerSubmitInput(input)"),
     "submit should authorize store access before detailed submit validation",
   );
   assert.match(actionSource, /db\.\$transaction/);
@@ -285,10 +328,7 @@ test("ledger save actions keep in-review ledgers editable without reverting stat
     "saveLedgerWorkInfo",
   );
 
-  assert.match(
-    ledgerActionSource,
-    /editableLedgerStatuses/,
-  );
+  assert.match(ledgerActionSource, /editableLedgerStatuses/);
   assert.match(
     ledgerActionSource,
     /status:\s*\{\s*in:\s*\[\.\.\.editableLedgerStatuses\]\s*\}/,

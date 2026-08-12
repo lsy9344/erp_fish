@@ -94,8 +94,8 @@ test("#1 applied unit-price is HQ-only: store-manager existing lines are locked"
   );
 });
 
-// #2 본사 저장은 이카운트 원본 식별 필드를 입력값으로 바꾸지 않는다.
-test("#2 HQ save forces ECOUNT raw fields from existing row", () => {
+// #2 본사 저장은 이카운트 원본 품목은 보존하되 수량 보정은 반영한다.
+test("#2 HQ save preserves ECOUNT product identity and accepts quantity correction", () => {
   const source = hqEditActions();
 
   assert.match(
@@ -103,32 +103,24 @@ test("#2 HQ save forces ECOUNT raw fields from existing row", () => {
     /const snapshot = isEcountUpload/,
     "HQ snapshot should branch on isEcountUpload to preserve raw fields",
   );
-  // 이카운트 행의 수량도 입력이 아닌 기존 행에서 가져온다.
+  // 이카운트 행의 수량은 본사가 입력한 보정값을 반영한다.
   assert.match(
     source,
-    /const quantity = isEcountUpload\s*\?\s*decimalToNumber\(existing\.quantity\)/,
-    "HQ save should keep ECOUNT quantity from existing row",
+    /const quantity = purchase\.quantity;[\s\S]*?consumeStoredPurchaseQuantity\(\s*purchase\.id,\s*quantity,/,
+    "HQ save should use the submitted ECOUNT quantity",
   );
 });
 
-// #2b 본사 저장 서버 정책은 이카운트 행 삭제/위조를 막아 원본 행 추적을 보존한다.
-test("#2b HQ save rejects missing or forged ECOUNT rows", () => {
+// #2b 본사 저장은 이카운트 장부 행 삭제를 허용하되 새 원본 행 위조는 막는다.
+test("#2b HQ save allows deleting ECOUNT rows and rejects forged rows", () => {
   const source = hqEditActions();
 
+  assert.doesNotMatch(source, /missingEcountPurchaseIds/);
+  assert.match(source, /previouslyLinkedEcountImportLineIds/);
   assert.match(
     source,
-    /existingEcountPurchaseIds/,
-    "HQ save should derive the required ECOUNT row ids from the existing ledger",
-  );
-  assert.match(
-    source,
-    /missingEcountPurchaseIds/,
-    "HQ save should detect existing ECOUNT rows omitted from the payload",
-  );
-  assert.match(
-    source,
-    /이카운트 원본 행은 삭제할 수 없습니다\./,
-    "HQ save should reject deleting ECOUNT source rows",
+    /syncEcountImportLineBackPointersInTx\(\s*tx,\s*beforeLedger\.id,\s*previouslyLinkedEcountImportLineIds,/,
+    "HQ save should pass the current ledger's previous links for exact cleanup",
   );
   assert.match(
     source,
@@ -146,13 +138,23 @@ test("#3 back-pointer resync helper exists and is called on both save paths", ()
   );
   assert.match(
     hqEditActions(),
-    /syncEcountImportLineBackPointersInTx\(tx, beforeLedger\.id\)/,
+    /syncEcountImportLineBackPointersInTx\(\s*tx,\s*beforeLedger\.id,\s*previouslyLinkedEcountImportLineIds,/,
     "HQ save should resync ECOUNT back-pointer",
   );
   assert.match(
     storeActions(),
-    /syncEcountImportLineBackPointersInTx\(tx, beforeLedger\.id\)/,
+    /syncEcountImportLineBackPointersInTx\(\s*tx,\s*beforeLedger\.id,\s*previouslyLinkedEcountImportLineIds,/,
     "store save should resync ECOUNT back-pointer",
+  );
+  assert.match(
+    queries(),
+    /where:\s*\{ id:\s*\{ in:\s*staleImportLineIds \} \}/,
+    "cleanup should target only links previously owned by the saved ledger",
+  );
+  assert.doesNotMatch(
+    queries(),
+    /batchId:\s*\{ in:/,
+    "cleanup should not clear other stores from the same import batch",
   );
 });
 

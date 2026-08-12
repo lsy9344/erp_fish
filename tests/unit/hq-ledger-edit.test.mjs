@@ -427,6 +427,109 @@ test("shared entry clients render and submit headquarters edit reason when enabl
   }
 });
 
+test("HQ purchase edit keeps uploaded-line quantity editable", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "purchase-step-client.tsx",
+  );
+
+  // Store managers keep the ECOUNT source row locked, but HQ edits must be
+  // able to correct its quantity. The lock therefore has to be conditional on
+  // the actor mode, not applied to every rendered input.
+  assert.match(
+    source,
+    /const isLineEditBlocked\s*=\s*isFormSaving\s*\|\|\s*isOriginalEditBlocked\s*\|\|\s*\(?\s*!hqEditReasonRequired\s*&&\s*isUploadedLineLocked\(line\)\s*\)?/s,
+    "uploaded-line lock should apply only outside the HQ edit mode",
+  );
+
+  const quantityField = source.match(
+    /<Field data-invalid=\{Boolean\(quantityError\)\}>[\s\S]*?<\/Field>/,
+  )?.[0];
+  assert.ok(quantityField, "purchase quantity field should exist");
+  assert.match(
+    quantityField,
+    /disabled=\{isLineEditBlocked\}/,
+    "quantity should follow the actor-aware line lock",
+  );
+  assert.match(
+    source,
+    /const isUploadedIdentityEditBlocked\s*=\s*isFormSaving\s*\|\|\s*isOriginalEditBlocked\s*\|\|\s*isUploadedLineLocked\(line\)/s,
+    "uploaded product identity should remain locked for every actor",
+  );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  assert.match(
+    actionSource,
+    /const quantity = purchase\.quantity;[\s\S]*?consumeStoredPurchaseQuantity\(\s*purchase\.id,\s*quantity,/,
+    "HQ save should persist the submitted uploaded-line quantity",
+  );
+});
+
+test("HQ purchase edit allows deleting an existing uploaded purchase row", () => {
+  const componentSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "components",
+    "purchase-step-client.tsx",
+  );
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "hq-edit-actions.ts",
+  );
+  const querySource = readProjectFile(
+    "src",
+    "features",
+    "ledger",
+    "queries.ts",
+  );
+
+  const deleteButton = componentSource.match(
+    /<Button[\s\S]*?onClick=\{\(\) => removePurchaseLine\(line\.id\)\}[\s\S]*?aria-label=\{`항목 \$\{index \+ 1\} 삭제`\}[\s\S]*?<\/Button>/,
+  )?.[0];
+  assert.ok(deleteButton, "purchase row delete button should exist");
+  assert.match(
+    deleteButton,
+    /disabled=\{isLineEditBlocked\}/,
+    "delete should use the actor-aware line lock",
+  );
+  assert.match(
+    componentSource,
+    /const isLineEditBlocked\s*=\s*isFormSaving\s*\|\|\s*isOriginalEditBlocked\s*\|\|\s*\(?\s*!hqEditReasonRequired\s*&&\s*isUploadedLineLocked\(line\)\s*\)?/s,
+    "HQ mode must not disable deletion of uploaded rows",
+  );
+
+  assert.doesNotMatch(
+    actionSource,
+    /const missingEcountPurchaseIds[\s\S]*?if\s*\(missingEcountPurchaseIds\.length\s*>\s*0\)[\s\S]*?이카운트 원본 행은 삭제할 수 없습니다/s,
+    "HQ save must not reject an existing ECOUNT row omitted for deletion",
+  );
+  assert.match(
+    actionSource,
+    /previouslyLinkedEcountImportLineIds[\s\S]*?syncEcountImportLineBackPointersInTx\(\s*tx,\s*beforeLedger\.id,\s*previouslyLinkedEcountImportLineIds,/s,
+    "HQ save should identify only the current ledger's previous source links",
+  );
+  assert.match(
+    querySource,
+    /const staleImportLineIds = previouslyLinkedImportLineIds\.filter[\s\S]*?where:\s*\{ id:\s*\{ in:\s*staleImportLineIds \} \}/s,
+    "deleted rows should clear only source links previously owned by this ledger",
+  );
+  assert.doesNotMatch(
+    querySource,
+    /batchId:\s*\{ in:/,
+    "back-pointer cleanup must not affect other stores in the same upload batch",
+  );
+});
+
 test("HQ inventory adjustment shows the shared reason field error before saving", () => {
   const source = readProjectFile(
     "src",

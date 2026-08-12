@@ -202,7 +202,10 @@ async function seedLedger(data: {
   });
 }
 
-async function seedRequiredReviewInputs(ledgerId: string) {
+async function seedRequiredReviewInputs(
+  ledgerId: string,
+  { includePurchase = true }: { includePurchase?: boolean } = {},
+) {
   const suffix = randomUUID().slice(0, 8);
   const actorId = await getHeadquartersUserId();
   const expenseCode = await seedExpenseCode(`스토리2-8 제출 비용 ${suffix}`);
@@ -228,20 +231,22 @@ async function seedRequiredReviewInputs(ledgerId: string) {
       updatedById: actorId,
     },
   });
-  await prisma.ledgerPurchaseItem.create({
-    data: {
-      dailyLedgerId: ledgerId,
-      productId: product.id,
-      productName: product.name,
-      productCategory: product.category,
-      productSpec: product.spec,
-      unitPrice: product.defaultUnitPrice,
-      quantity: 5,
-      amount: 5_000,
-      createdById: actorId,
-      updatedById: actorId,
-    },
-  });
+  if (includePurchase) {
+    await prisma.ledgerPurchaseItem.create({
+      data: {
+        dailyLedgerId: ledgerId,
+        productId: product.id,
+        productName: product.name,
+        productCategory: product.category,
+        productSpec: product.spec,
+        unitPrice: product.defaultUnitPrice,
+        quantity: 5,
+        amount: 5_000,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    });
+  }
   await prisma.ledgerInventoryItem.create({
     data: {
       dailyLedgerId: ledgerId,
@@ -251,7 +256,7 @@ async function seedRequiredReviewInputs(ledgerId: string) {
       productSpec: product.spec,
       unitPrice: product.defaultUnitPrice,
       previousQuantity: 10,
-      purchasedQuantity: 5,
+      purchasedQuantity: includePurchase ? 5 : 0,
       currentQuantity: 8,
       quantity: 8,
       inventoryAmount: 8_000,
@@ -804,7 +809,7 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
     "필수 입력을 완료한 뒤 제출해 주세요.",
   );
   await expect(submitAlert).toContainText("지출");
-  await expect(submitAlert).toContainText("매입");
+  await expect(submitAlert).not.toContainText("매입");
   await expect(submitAlert).toContainText("재고");
   await expect(submitAlert).toContainText("근무인원");
   expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(0);
@@ -823,9 +828,10 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
       submittedAt: null,
     });
 
-  await seedRequiredReviewInputs(ledger.id);
+  await seedRequiredReviewInputs(ledger.id, { includePurchase: false });
   await page.reload();
   await expect(warningSection).toContainText("마감 정산 불일치");
+  await expect(missingSection).toContainText("매입 항목 없음");
 
   await page.getByRole("button", { name: "검토 대기로 제출" }).click();
 
@@ -849,6 +855,11 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
   expect(submitted.submittedById).toBe(managerId);
   expect(submitted.submittedAt).toBeTruthy();
   const firstSubmittedAt = submitted.submittedAt;
+  expect(
+    await prisma.ledgerPurchaseItem.count({
+      where: { dailyLedgerId: ledger.id },
+    }),
+  ).toBe(0);
   const auditLogs = await getLedgerSubmitAuditLogs(ledger.id);
 
   expect(auditLogs).toHaveLength(1);

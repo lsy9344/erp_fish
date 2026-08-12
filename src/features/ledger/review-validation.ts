@@ -63,8 +63,8 @@ export function getLedgerReviewMissingItems({
       id: "purchases",
       label: "매입",
       href: getLedgerReviewStepHref(storeId, closingDate, "purchases"),
-      status: "missing",
-      detail: "매입 항목이 아직 입력되지 않았습니다.",
+      status: "review",
+      detail: "매입 항목 없음으로 검토할 수 있습니다.",
     });
   }
 

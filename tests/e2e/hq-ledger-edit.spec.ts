@@ -4,11 +4,13 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 const prisma = new PrismaClient();
 const STORY_MARKER = "story-4-3-test";
 const STORE_ID = "store-story-4-3-edit";
+const RELATED_STORE_ID = "store-story-4-3-edit-related";
 const CLOSED_STORE_ID = "store-story-4-3-closed";
 const PREFLIGHT_BLOCKED_STORE_ID = "store-story-4-4-preflight-blocked";
 const PRODUCT_NAME = "스토리4-3 광어";
 const EXPENSE_CODE_NAME = "스토리4-3 비용";
 const LOSS_CODE_NAME = "스토리4-3 손실";
+const ECOUNT_FILE_HASH = "story-4-3-hq-purchase-edit";
 
 test.beforeEach(async () => {
   await cleanupStoryFourOneData();
@@ -240,6 +242,115 @@ async function seedEditableStoryData() {
   return { actorId, ledger, product };
 }
 
+async function seedEditableEcountPurchaseData() {
+  const seeded = await seedEditableStoryData();
+  const purchase = await prisma.ledgerPurchaseItem.findFirstOrThrow({
+    where: { dailyLedgerId: seeded.ledger.id, productId: seeded.product.id },
+  });
+  const batch = await prisma.ecountImportBatch.create({
+    data: {
+      fileName: "스토리4-3 이카운트.xlsx",
+      fileHash: ECOUNT_FILE_HASH,
+      sheetName: "Sheet1",
+      businessDate: seeded.ledger.closingDate,
+      status: "COMMITTED",
+      uploadedById: seeded.actorId,
+      committedById: seeded.actorId,
+      committedAt: new Date(),
+    },
+  });
+  const relatedStore = await prisma.store.create({
+    data: {
+      id: RELATED_STORE_ID,
+      name: "스토리4-3 같은업로드 타지점",
+      isActive: true,
+      updatedById: seeded.actorId,
+    },
+  });
+  const relatedLedger = await prisma.dailyLedger.create({
+    data: {
+      storeId: relatedStore.id,
+      closingDate: seeded.ledger.closingDate,
+      status: "IN_REVIEW",
+      createdById: seeded.actorId,
+      updatedById: seeded.actorId,
+    },
+  });
+  const importLine = await prisma.ecountImportLine.create({
+    data: {
+      batchId: batch.id,
+      rowNumber: 1,
+      dateNo: "story-4-3-1",
+      rawStoreName: "스토리4-3 검토대기점",
+      storeId: STORE_ID,
+      rawProductName: PRODUCT_NAME,
+      productId: seeded.product.id,
+      productName: seeded.product.name,
+      productCategory: seeded.product.category,
+      productSpec: seeded.product.spec,
+      quantity: 1,
+      unitPrice: 900,
+      supplyAmount: 900,
+      totalAmount: 900,
+      status: "COMMITTED",
+    },
+  });
+  const relatedImportLine = await prisma.ecountImportLine.create({
+    data: {
+      batchId: batch.id,
+      rowNumber: 2,
+      dateNo: "story-4-3-2",
+      rawStoreName: relatedStore.name,
+      storeId: relatedStore.id,
+      rawProductName: PRODUCT_NAME,
+      productId: seeded.product.id,
+      productName: seeded.product.name,
+      productCategory: seeded.product.category,
+      productSpec: seeded.product.spec,
+      quantity: 2,
+      unitPrice: 900,
+      supplyAmount: 1_800,
+      totalAmount: 1_800,
+      status: "COMMITTED",
+    },
+  });
+  const relatedPurchase = await prisma.ledgerPurchaseItem.create({
+    data: {
+      dailyLedgerId: relatedLedger.id,
+      productId: seeded.product.id,
+      sourceType: "ECOUNT_UPLOAD",
+      productName: seeded.product.name,
+      productCategory: seeded.product.category,
+      productSpec: seeded.product.spec,
+      unitPrice: 900,
+      quantity: 2,
+      amount: 1_800,
+      sourceUnitPrice: 900,
+      ecountImportLineId: relatedImportLine.id,
+      createdById: seeded.actorId,
+      updatedById: seeded.actorId,
+    },
+  });
+
+  await prisma.ledgerPurchaseItem.update({
+    where: { id: purchase.id },
+    data: {
+      sourceType: "ECOUNT_UPLOAD",
+      ecountImportLineId: importLine.id,
+    },
+  });
+  await prisma.ecountImportLine.update({
+    where: { id: importLine.id },
+    data: { ledgerPurchaseItemId: purchase.id },
+  });
+  await prisma.ecountImportLine.update({
+    where: { id: relatedImportLine.id },
+    data: { ledgerPurchaseItemId: relatedPurchase.id },
+  });
+
+  return { ...seeded, importLine, relatedImportLine, relatedPurchase };
+}
+
 async function seedClosedStoryData() {
   const actorId = await getHeadquartersUserId();
   const closedAt = new Date("2026-06-11T06:30:00.000Z");
@@ -300,7 +411,12 @@ async function seedPreflightBlockedStoryData() {
 }
 
 async function cleanupStoryFourOneData() {
-  const stores = [STORE_ID, CLOSED_STORE_ID, PREFLIGHT_BLOCKED_STORE_ID];
+  const stores = [
+    STORE_ID,
+    RELATED_STORE_ID,
+    CLOSED_STORE_ID,
+    PREFLIGHT_BLOCKED_STORE_ID,
+  ];
   const ledgers = await prisma.dailyLedger.findMany({
     where: { storeId: { in: stores } },
     select: { id: true },
@@ -346,6 +462,10 @@ async function cleanupStoryFourOneData() {
       where: { id: { in: ledgerIds } },
     });
   }
+
+  await prisma.ecountImportBatch.deleteMany({
+    where: { fileHash: ECOUNT_FILE_HASH },
+  });
 
   if (productIds.length > 0) {
     await prisma.purchaseStandard.deleteMany({
@@ -671,6 +791,73 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
       "급여 원본 보완",
     ]),
   );
+});
+
+test("본사는 이카운트 매입 수량을 고치고 등록 품목을 삭제할 수 있다", async ({
+  page,
+}) => {
+  const { ledger, product, importLine, relatedImportLine, relatedPurchase } =
+    await seedEditableEcountPurchaseData();
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  await page.getByRole("tab", { name: "매입" }).click();
+
+  const purchasePanel = page
+    .getByRole("tabpanel")
+    .filter({ hasText: "매입 항목" });
+  const quantityInput = purchasePanel.getByLabel("수량");
+  await expect(quantityInput).toBeEnabled();
+  await replaceControlValue(quantityInput, "4");
+  await fillHqEditReason(purchasePanel, "이카운트 수량 보완");
+  await purchasePanel.getByRole("button", { name: "저장" }).click();
+
+  await expect
+    .poll(async () => {
+      const current = await prisma.ledgerPurchaseItem.findFirst({
+        where: { dailyLedgerId: ledger.id, productId: product.id },
+        select: { quantity: true },
+      });
+
+      return current?.quantity.toString();
+    })
+    .toBe("4");
+
+  const deleteButton = purchasePanel.getByRole("button", {
+    name: "항목 1 삭제",
+  });
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.click();
+  await fillHqEditReason(purchasePanel, "잘못 등록된 매입 삭제");
+  await purchasePanel.getByRole("button", { name: "저장" }).click();
+
+  await expect
+    .poll(() =>
+      prisma.ledgerPurchaseItem.count({
+        where: { dailyLedgerId: ledger.id },
+      }),
+    )
+    .toBe(0);
+  await expect
+    .poll(async () => {
+      const source = await prisma.ecountImportLine.findUnique({
+        where: { id: importLine.id },
+        select: { ledgerPurchaseItemId: true },
+      });
+
+      return source?.ledgerPurchaseItemId;
+    })
+    .toBeNull();
+  await expect
+    .poll(async () => {
+      const relatedSource = await prisma.ecountImportLine.findUnique({
+        where: { id: relatedImportLine.id },
+        select: { ledgerPurchaseItemId: true },
+      });
+
+      return relatedSource?.ledgerPurchaseItemId;
+    })
+    .toBe(relatedPurchase.id);
 });
 
 // WO-02(2026-06-28): 본사 장부 상세 탭이 URL ?tab= 과 연결되고, 기존 쿼리를 보존하며,

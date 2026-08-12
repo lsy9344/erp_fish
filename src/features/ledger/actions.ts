@@ -1093,6 +1093,10 @@ export async function saveLedgerPurchases(
       const existingPurchaseItemsById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [item.id, item]),
       );
+      const previouslyLinkedEcountImportLineIds =
+        beforeLedger.ledgerPurchaseItems.flatMap((item) =>
+          item.ecountImportLineId ? [item.ecountImportLineId] : [],
+        );
       const storedQuantityById = new Map(
         beforeLedger.ledgerPurchaseItems.map((item) => [
           item.id,
@@ -1351,7 +1355,11 @@ export async function saveLedgerPurchases(
 
       // WO(2026-06-24) Task 8/9: delete+recreate로 행 id가 바뀌므로 이카운트 원본 행의
       // back-pointer(EcountImportLine.ledgerPurchaseItemId)를 재생성된 장부 행으로 재동기화한다.
-      await syncEcountImportLineBackPointersInTx(tx, beforeLedger.id);
+      await syncEcountImportLineBackPointersInTx(
+        tx,
+        beforeLedger.id,
+        previouslyLinkedEcountImportLineIds,
+      );
 
       await syncLedgerInventoryPurchasedQuantitiesInTx(
         tx,
