@@ -6,6 +6,7 @@ import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
+import { DailySalesAnalysis } from "~/features/reports/components/daily-sales-analysis";
 import { PeriodContrastTable } from "~/features/reports/components/period-contrast-table";
 import { PeriodTrendTable } from "~/features/reports/components/period-trend-table";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
@@ -18,6 +19,7 @@ import {
   getHqPeriodContrastReport,
   getHqPeriodTrendReport,
   getHqStoreComparisonReport,
+  getPeriodSalesAnalysis,
 } from "~/features/reports/queries";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
 
@@ -105,6 +107,14 @@ export default async function StoreComparisonReportPage({
     endDate,
     storeId,
   });
+  // WO-0806 #4: 매출분석 3종은 지점 비교가 목적이라 지점 선택과 무관하게 전체를 그린다.
+  const salesAnalysis =
+    mode === "single"
+      ? await getPeriodSalesAnalysis({
+          startDateInput: report.range.startDateInput,
+          endDateInput: report.range.endDateInput,
+        })
+      : null;
   const contrast =
     mode === "contrast"
       ? await getHqPeriodContrastReport({
@@ -532,6 +542,19 @@ export default async function StoreComparisonReportPage({
           rows={trend.rows}
           metric={trend.metric}
         />
+      ) : null}
+
+      {mode === "single" && salesAnalysis ? (
+        <section className="space-y-3" aria-label="기간 매출 분석">
+          <h2 className="text-lg font-semibold tracking-normal">매출 분석</h2>
+          <DailySalesAnalysis
+            data={salesAnalysis}
+            comparisonLabel="직전 기간"
+          />
+          <p className="text-muted-foreground text-xs">
+            직전 기간은 조회 기간과 길이가 같은 바로 앞 기간입니다.
+          </p>
+        </section>
       ) : null}
 
       {mode === "single" ? (

@@ -1203,6 +1203,14 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
   assert.match(dailyPageSource, /<ReportsNav active="daily"/);
   assert.match(comparisonPageSource, /<ReportsNav active="comparison"/);
   assert.match(reportsNavSource, /href:\s*"\/app\/reports\/monthly"/);
+  // 매출분석 3종은 월간이 아니라 기간 분석에서 기간을 지정해 본다.
+  assert.doesNotMatch(componentSource, /DailySalesAnalysis/);
+  assert.doesNotMatch(pageSource, /SalesAnalysis/);
+  assert.match(comparisonPageSource, /getPeriodSalesAnalysis\(/);
+  assert.match(
+    comparisonPageSource,
+    /<DailySalesAnalysis\s+data=\{salesAnalysis\}\s+comparisonLabel="직전 기간"/,
+  );
 });
 
 test("HQ monthly closing anomaly report query reuses report calculation contracts", () => {
@@ -1278,7 +1286,7 @@ test("HQ monthly closing anomaly report query reuses report calculation contract
   }
 });
 
-test("HQ monthly report surfaces headquarters expenses as a separate line", () => {
+test("HQ monthly report folds headquarters expenses into the net profit row", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1298,14 +1306,22 @@ test("HQ monthly report surfaces headquarters expenses as a separate line", () =
 
   assert.match(typeSource, /export type MonthlyHeadquartersExpenseSummary/);
   assert.match(componentSource, /headquartersExpense/);
-  assert.match(componentSource, /본사 지출/);
+  // 본사지출은 별도 섹션이 아니라 순이익 계산 칸으로 들어간다.
+  assert.match(componentSource, /본사지출/);
+  assert.match(componentSource, /영업이익 − 인건비/);
+  assert.match(
+    componentSource,
+    /headquartersExpenseAmount: headquartersExpense\?\.totalAmount \?\? 0/,
+  );
   assert.match(
     componentSource,
     /data-testid="hq-report-monthly-headquarters-expense"/,
   );
-  // 본사 지출 합계는 본사 설정 권한 사용자에게만 별도 라인으로 노출된다.
+  assert.doesNotMatch(componentSource, /본사 공통 지출/);
+  // 본사지출 칸은 본사 설정 권한 사용자에게만, 선택 지점 귀속분만 노출된다.
   assert.match(pageSource, /getHeadquartersExpenseReportSummary\(/);
   assert.match(pageSource, /PermissionAction\.SETTINGS_MANAGE/);
+  assert.match(pageSource, /storeId: report\.selectedStoreId/);
   assert.match(pageSource, /headquartersExpense=\{headquartersExpense\}/);
 });
 

@@ -38,13 +38,13 @@ export default function MonthlyClosingAnomalyReportLoading() {
           <Skeleton className="h-6 w-24" />
         </div>
         <div className="bg-background space-y-3 rounded-lg border p-3">
-          <div className="grid grid-cols-5 gap-3 border-b pb-3">
-            {Array.from({ length: 5 }, (_, index) => (
+          <div className="grid grid-cols-6 gap-3 border-b pb-3">
+            {Array.from({ length: 6 }, (_, index) => (
               <Skeleton key={`kpi-head-${index}`} className="h-4 w-20" />
             ))}
           </div>
-          <div className="grid grid-cols-5 gap-3">
-            {Array.from({ length: 5 }, (_, index) => (
+          <div className="grid grid-cols-6 gap-3">
+            {Array.from({ length: 6 }, (_, index) => (
               <Skeleton key={`kpi-cell-${index}`} className="h-8 w-24" />
             ))}
           </div>

@@ -175,8 +175,10 @@ export type HeadquartersExpenseReportSummary = {
 // (리포트 페이지에서 호출하며, reports/queries.ts에 쓰기 호출을 추가하지 않는다.)
 export async function getHeadquartersExpenseReportSummary({
   month,
+  storeId,
 }: {
   month?: unknown;
+  storeId?: unknown;
 } = {}): Promise<HeadquartersExpenseReportSummary> {
   const { requireSettingsAccess, getHeadquartersStoreScope } =
     await import("../../server/authz.ts");
@@ -185,8 +187,15 @@ export async function getHeadquartersExpenseReportSummary({
   const scope = await getHeadquartersStoreScope();
   const monthRange = getHeadquartersExpenseMonthRange(month);
 
-  const storeFilter =
-    scope.storeIds.length > 0
+  // 지점 하나를 보는 월간 리포트는 그 지점에 귀속된 지출만 센다. 전사 공통(storeId=null)
+  // 지출은 한 지점 손익에 넣지 않는다(monthly-profit-loss.ts의 "(전사 공통)" 행과 같은 규칙).
+  const scopedStoreId =
+    typeof storeId === "string" && scope.storeIds.includes(storeId)
+      ? storeId
+      : null;
+  const storeFilter = scopedStoreId
+    ? { storeId: scopedStoreId }
+    : scope.storeIds.length > 0
       ? { OR: [{ storeId: { in: scope.storeIds } }, { storeId: null }] }
       : { storeId: null };
 

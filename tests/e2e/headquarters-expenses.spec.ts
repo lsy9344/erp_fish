@@ -125,7 +125,7 @@ test("설정 권한 없는 본사 사용자는 본사 지출 화면에서 차단
   ).toBeVisible();
 });
 
-test("월간 리포트는 본사 설정 권한 사용자에게 본사 지출 라인을 보여준다", async ({
+test("월간 리포트는 본사 설정 권한 사용자에게 순이익 계산의 본사지출을 보여준다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
@@ -135,12 +135,16 @@ test("월간 리포트는 본사 설정 권한 사용자에게 본사 지출 라
   await expect(
     page.getByRole("heading", { name: "월간 요약 리포트" }),
   ).toBeVisible();
+  // 본사지출은 별도 섹션이 아니라 월간 핵심 성과의 순이익 계산 칸으로 들어간다.
   await expect(
     page.getByTestId("hq-report-monthly-headquarters-expense"),
   ).toBeVisible();
   await expect(
-    page
-      .getByTestId("hq-report-monthly-headquarters-expense")
-      .getByText("본사 지출 합계"),
+    page.getByRole("columnheader", { name: "본사지출 이 지점 귀속분" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", {
+      name: "순이익 영업이익 − 인건비 − 본사지출",
+    }),
   ).toBeVisible();
 });

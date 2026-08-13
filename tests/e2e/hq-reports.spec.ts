@@ -1820,6 +1820,14 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   await expect(page).toHaveURL(/startDate=2026-05-31/);
   await expect(page).toHaveURL(/endDate=/);
 
+  // 매출분석 3종은 월간이 아니라 여기서 조회 기간으로 본다(비교 기준은 직전 기간).
+  const salesAnalysis = page
+    .getByRole("heading", { name: "매출 분석", exact: true })
+    .locator("..");
+  await expect(salesAnalysis).toContainText("직전 기간 대비 매출액 증감률");
+  await expect(salesAnalysis).toContainText("매장 매출 포지션");
+  await expect(salesAnalysis).toContainText("재고비율");
+
   const closedRow = page.locator(
     `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
   );

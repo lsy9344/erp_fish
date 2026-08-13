@@ -9,13 +9,13 @@ const { calculateMonthlyNetProfit } = await import(
   pathToFileURL(path.join(root, "src", "features", "reports", "monthly-kpi.ts"))
     .href
 );
-const { buildMonthlySalesAnalysis } = await import(
+const { buildPeriodSalesAnalysis } = await import(
   pathToFileURL(path.join(root, "src", "features", "reports", "queries.ts"))
     .href
 );
 
-// WO-0806 #3: 순이익 = 영업이익 − 인건비, 순이익률 = 순이익 ÷ 매출.
-test("monthly net profit subtracts labor from operating profit", () => {
+// WO-0806 #3: 순이익 = 영업이익 − 인건비 − 본사지출, 순이익률 = 순이익 ÷ 매출.
+test("monthly net profit subtracts labor and headquarters expense", () => {
   assert.deepEqual(
     calculateMonthlyNetProfit({
       operatingProfit: 10_000_000,
@@ -23,6 +23,17 @@ test("monthly net profit subtracts labor from operating profit", () => {
       salesAmount: 100_000_000,
     }),
     { netProfit: 6_000_000, netProfitRate: 0.06 },
+  );
+
+  // 본사 지출은 인건비와 함께 빠진다.
+  assert.deepEqual(
+    calculateMonthlyNetProfit({
+      operatingProfit: 10_000_000,
+      laborAmount: 4_000_000,
+      headquartersExpenseAmount: 1_000_000,
+      salesAmount: 100_000_000,
+    }),
+    { netProfit: 5_000_000, netProfitRate: 0.05 },
   );
 
   // 인건비가 영업이익을 넘으면 적자다. 0으로 자르지 않는다.
@@ -83,9 +94,9 @@ function row({ storeId, storeName, sales, inventory = 0, avgSales = 0 }) {
   };
 }
 
-// WO-0806 #4: 월간 매출분석은 기간 비교 집계를 재사용하고 share/rank/증감만 계산한다.
-test("monthly sales analysis compares against the previous month", () => {
-  const analysis = buildMonthlySalesAnalysis({
+// WO-0806 #4: 기간 매출분석은 기간 비교 집계를 재사용하고 share/rank/증감만 계산한다.
+test("period sales analysis compares against the preceding period", () => {
+  const analysis = buildPeriodSalesAnalysis({
     currentRows: [
       {
         ...row({
@@ -150,14 +161,14 @@ test("monthly sales analysis compares against the previous month", () => {
   );
 });
 
-test("monthly sales analysis degrades with a reason instead of Infinity", () => {
-  const analysis = buildMonthlySalesAnalysis({
+test("period sales analysis degrades with a reason instead of Infinity", () => {
+  const analysis = buildPeriodSalesAnalysis({
     currentRows: [
       row({ storeId: "a", storeName: "강남", sales: 120 }),
       row({ storeId: "b", storeName: "잠실", sales: null }),
       row({ storeId: "c", storeName: "신촌", sales: 50 }),
     ],
-    // 강남은 전월 매출 0원, 신촌은 전월 장부 자체가 없다.
+    // 강남은 직전 기간 매출 0원, 신촌은 직전 기간 장부 자체가 없다.
     previousRows: [row({ storeId: "a", storeName: "강남", sales: 0 })],
   });
 
@@ -165,9 +176,9 @@ test("monthly sales analysis degrades with a reason instead of Infinity", () => 
     analysis.salesChanges.map((change) => [change.storeId, change]),
   );
   assert.equal(byStore.get("a").rate.value, null);
-  assert.equal(byStore.get("a").rate.reason, "전월 매출 0원");
+  assert.equal(byStore.get("a").rate.reason, "직전 기간 매출 0원");
   assert.equal(byStore.get("c").rate.value, null);
-  assert.equal(byStore.get("c").previousSales.reason, "전월 장부 없음");
+  assert.equal(byStore.get("c").previousSales.reason, "직전 기간 장부 없음");
 
   // 매출을 계산할 수 없는 지점은 순위에서 빠지고 사유와 함께 별도 목록에 남는다.
   assert.deepEqual(
@@ -192,16 +203,32 @@ test("monthly sales analysis degrades with a reason instead of Infinity", () => 
   }
 });
 
-test("monthly sales analysis returns empty rows for a malformed month", async () => {
-  const { getMonthlySalesAnalysis } = await import(
+test("period sales analysis returns empty rows for a malformed range", async () => {
+  const { getPeriodSalesAnalysis } = await import(
     pathToFileURL(path.join(root, "src", "features", "reports", "queries.ts"))
       .href
   );
 
-  assert.deepEqual(await getMonthlySalesAnalysis("not-a-month"), {
+  const empty = {
     salesChanges: [],
     inventoryRatios: [],
     positions: [],
     excludedPositions: [],
-  });
+  };
+
+  assert.deepEqual(
+    await getPeriodSalesAnalysis({
+      startDateInput: "not-a-date",
+      endDateInput: "2026-06-30",
+    }),
+    empty,
+  );
+  // 종료일이 시작일보다 빠르면 직전 기간 길이를 정할 수 없다.
+  assert.deepEqual(
+    await getPeriodSalesAnalysis({
+      startDateInput: "2026-06-30",
+      endDateInput: "2026-06-01",
+    }),
+    empty,
+  );
 });

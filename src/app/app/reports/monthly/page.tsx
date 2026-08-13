@@ -8,10 +8,7 @@ import { Input } from "~/components/ui/input";
 import { PageHeader } from "~/components/page-header";
 import { MonthlyClosingAnomalyReport } from "~/features/reports/components/monthly-closing-anomaly-report";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
-import {
-  getHqMonthlyClosingAnomalyReport,
-  getMonthlySalesAnalysis,
-} from "~/features/reports/queries";
+import { getHqMonthlyClosingAnomalyReport } from "~/features/reports/queries";
 import { getHeadquartersExpenseReportSummary } from "~/features/headquarters-expenses/queries";
 import type { MonthlyHeadquartersExpenseSummary } from "~/features/reports/types";
 import { hasActionPermission, requireReportAccess } from "~/server/authz";
@@ -43,10 +40,6 @@ export default async function MonthlyClosingAnomalyReportPage({
     ? params.storeId[0]
     : params.storeId;
   const report = await getHqMonthlyClosingAnomalyReport({ month, storeId });
-  // WO-0806 #4: 매출분석 3종은 지점 비교가 목적이라 지점 선택과 무관하게 전체를 그린다.
-  const salesAnalysis = await getMonthlySalesAnalysis(
-    report.monthRange.monthInput,
-  );
   const canManageHeadquartersExpenses = await hasActionPermission(
     user.id,
     PermissionAction.SETTINGS_MANAGE,
@@ -54,8 +47,10 @@ export default async function MonthlyClosingAnomalyReportPage({
   let headquartersExpense: MonthlyHeadquartersExpenseSummary | null = null;
 
   if (canManageHeadquartersExpenses) {
+    // 선택 지점 하나의 손익을 보는 화면이라 그 지점에 귀속된 본사 지출만 집계한다.
     headquartersExpense = await getHeadquartersExpenseReportSummary({
       month: report.monthRange.monthInput,
+      storeId: report.selectedStoreId,
     });
   }
   const reportTargetDescription = report.selectedStoreName
@@ -173,7 +168,6 @@ export default async function MonthlyClosingAnomalyReportPage({
 
       <MonthlyClosingAnomalyReport
         report={report}
-        salesAnalysis={salesAnalysis}
         headquartersExpense={headquartersExpense}
       />
     </HeadquartersShell>

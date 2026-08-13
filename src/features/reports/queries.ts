@@ -605,11 +605,11 @@ export function buildDailySalesAnalysis(
   return { salesChanges, inventoryRatios, positions, excludedPositions };
 }
 
-// WO-0806 #4: 아침 회의의 매출분석 3종을 월간 페이지에서 재사용한다.
+// WO-0806 #4: 아침 회의의 매출분석 3종을 기간 분석 페이지에서 재사용한다.
 // 일간 빌더는 장부 1건의 FIFO inventoryItems에 묶여 있어 그대로 못 쓰고,
-// 월간은 이미 집계된 비교 리포트 행을 같은 DTO로 모양만 바꿔 넣는다.
+// 기간은 이미 집계된 비교 리포트 행을 같은 DTO로 모양만 바꿔 넣는다.
 // 새 집계 로직은 없고 share/rank/증감만 계산한다.
-export function buildMonthlySalesAnalysis({
+export function buildPeriodSalesAnalysis({
   currentRows,
   previousRows,
 }: {
@@ -622,7 +622,7 @@ export function buildMonthlySalesAnalysis({
     const currentSales = row.salesAmount;
     const previous = previousById.get(row.storeId);
     const previousSales =
-      previous?.salesAmount ?? dailyUnavailable("전월 장부 없음");
+      previous?.salesAmount ?? dailyUnavailable("직전 기간 장부 없음");
     const difference =
       currentSales.value === null || previousSales.value === null
         ? dailyUnavailable(
@@ -633,7 +633,7 @@ export function buildMonthlySalesAnalysis({
       difference.value === null
         ? dailyUnavailable(difference.reason ?? "증감률 계산 불가")
         : previousSales.value === null || previousSales.value <= 0
-          ? dailyUnavailable("전월 매출 0원")
+          ? dailyUnavailable("직전 기간 매출 0원")
           : available(difference.value / previousSales.value);
 
     return {
@@ -646,7 +646,7 @@ export function buildMonthlySalesAnalysis({
     };
   });
 
-  // 월간 재고비율은 평균재고 ÷ 평균매출로 이미 계산돼 있다(기간 분석과 같은 값).
+  // 재고비율은 평균재고 ÷ 평균매출로 이미 계산돼 있다.
   const inventoryRatios = currentRows.map((row) => ({
     storeId: row.storeId,
     storeName: row.storeName,
@@ -711,15 +711,20 @@ async function getActiveHistoricalBatchId(): Promise<string | null> {
   return active?.id ?? null;
 }
 
-// 기준 월과 직전 월을 같은 집계로 두 번 조회해 월간 매출분석을 만든다.
+// 조회 기간과 같은 길이의 직전 기간을 같은 집계로 두 번 조회해 매출분석 3종을 만든다.
 // 지점 비교가 목적이므로 storeId로 좁히지 않고 권한 범위 전체를 그린다.
-export async function getMonthlySalesAnalysis(
-  monthInput: string,
-): Promise<DailySalesAnalysis> {
-  const year = Number(monthInput.slice(0, 4));
-  const month = Number(monthInput.slice(5, 7));
+export async function getPeriodSalesAnalysis({
+  startDateInput,
+  endDateInput,
+}: {
+  startDateInput: string;
+  endDateInput: string;
+}): Promise<DailySalesAnalysis> {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const start = Date.parse(`${startDateInput}T00:00:00.000Z`);
+  const end = Date.parse(`${endDateInput}T00:00:00.000Z`);
 
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
     return {
       salesChanges: [],
       inventoryRatios: [],
@@ -728,27 +733,23 @@ export async function getMonthlySalesAnalysis(
     };
   }
 
-  const toInput = (date: Date) => date.toISOString().slice(0, 10);
-  const currentStart = new Date(Date.UTC(year, month - 1, 1));
-  const currentEnd = new Date(Date.UTC(year, month, 0));
-  const previousStart = new Date(Date.UTC(year, month - 2, 1));
-  const previousEnd = new Date(Date.UTC(year, month - 1, 0));
-
+  const toInput = (time: number) => new Date(time).toISOString().slice(0, 10);
+  const spanMs = end - start + dayMs;
   const historicalBatchId = await getActiveHistoricalBatchId();
   const [current, previous] = await Promise.all([
     getHqStoreComparisonReport({
-      startDate: toInput(currentStart),
-      endDate: toInput(currentEnd),
+      startDate: startDateInput,
+      endDate: endDateInput,
       internalHistoricalBatchId: historicalBatchId,
     }),
     getHqStoreComparisonReport({
-      startDate: toInput(previousStart),
-      endDate: toInput(previousEnd),
+      startDate: toInput(start - spanMs),
+      endDate: toInput(start - dayMs),
       internalHistoricalBatchId: historicalBatchId,
     }),
   ]);
 
-  return buildMonthlySalesAnalysis({
+  return buildPeriodSalesAnalysis({
     currentRows: current.rows,
     previousRows: previous.rows,
   });
