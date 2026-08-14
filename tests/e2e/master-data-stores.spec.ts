@@ -378,3 +378,143 @@ test("설정 권한이 없는 본사 사용자는 지점 관리 화면에서 차
   await expect(page.getByRole("heading", { name: "지점 관리" })).toHaveCount(0);
   await expect(page.getByText("강남점")).toHaveCount(0);
 });
+
+// WO(2026-08-14): 안 쓰거나 잘못 만든 지점 삭제. 전용 삭제 권한
+// (MASTER_DATA_DELETE)이 있어야 하고, 실적 기록이 남은 지점은 사유와 함께 막힌다.
+const DELETE_FIXTURE_PREFIX = "store-delete-fixture";
+const EMPTY_STORE_ID = `${DELETE_FIXTURE_PREFIX}-empty`;
+const EMPTY_STORE_NAME = "스토리삭제 빈지점";
+const IN_USE_STORE_ID = `${DELETE_FIXTURE_PREFIX}-in-use`;
+const IN_USE_STORE_NAME = "스토리삭제 사용중지점";
+
+async function cleanupDeleteFixtures() {
+  await prisma.headquartersExpense.deleteMany({
+    where: { storeId: { startsWith: DELETE_FIXTURE_PREFIX } },
+  });
+  await prisma.auditLog.deleteMany({
+    where: {
+      targetType: "Store",
+      targetId: { startsWith: DELETE_FIXTURE_PREFIX },
+    },
+  });
+  await prisma.store.deleteMany({
+    where: { id: { startsWith: DELETE_FIXTURE_PREFIX } },
+  });
+}
+
+async function seedDeleteFixtures() {
+  await cleanupDeleteFixtures();
+
+  const hqUserId = await getHeadquartersUserId();
+
+  await prisma.store.create({
+    data: { id: EMPTY_STORE_ID, name: EMPTY_STORE_NAME, isActive: true },
+  });
+  await prisma.store.create({
+    data: { id: IN_USE_STORE_ID, name: IN_USE_STORE_NAME, isActive: true },
+  });
+  // 본사 지출은 storeId가 SetNull이라 그냥 지우면 소리 없이 주인을 잃는다.
+  // 삭제가 막혀야 하는 대표 사례다.
+  await prisma.headquartersExpense.create({
+    data: {
+      expenseDate: new Date("2026-01-05T00:00:00.000Z"),
+      storeId: IN_USE_STORE_ID,
+      category: "스토리삭제-임차료",
+      amount: 100000,
+      createdById: hqUserId,
+      updatedById: hqUserId,
+    },
+  });
+}
+
+async function confirmStoreDelete(page: Page, name: string) {
+  const row = storeRow(page, name);
+  const dialog = page.getByRole("dialog", { name: "지점 삭제" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  await dialog.getByTestId("store-delete-confirm").click();
+
+  return dialog;
+}
+
+test("삭제 권한 계정은 기록 없는 지점을 삭제하고, 기록 있는 지점은 사유와 함께 막힌다", async ({
+  page,
+}) => {
+  await seedDeleteFixtures();
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/master-data/stores");
+    await expect(
+      page.getByRole("heading", { name: "지점 관리" }),
+    ).toBeVisible();
+
+    const inUseDialog = await confirmStoreDelete(page, IN_USE_STORE_NAME);
+
+    await expect(inUseDialog.getByRole("alert")).toContainText("본사 지출");
+    await expect(inUseDialog.getByRole("alert")).toContainText("비활성");
+    await inUseDialog.getByRole("button", { name: "취소" }).click();
+    await expect(storeRow(page, IN_USE_STORE_NAME)).toBeVisible();
+    expect(await prisma.store.count({ where: { id: IN_USE_STORE_ID } })).toBe(
+      1,
+    );
+
+    const emptyDialog = await confirmStoreDelete(page, EMPTY_STORE_NAME);
+
+    await expect(emptyDialog).toBeHidden();
+    await expect(storeRow(page, EMPTY_STORE_NAME)).toHaveCount(0);
+    expect(await prisma.store.count({ where: { id: EMPTY_STORE_ID } })).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: "store.deleted", targetId: EMPTY_STORE_ID },
+      }),
+    ).toBe(1);
+  } finally {
+    await cleanupDeleteFixtures();
+  }
+});
+
+test("삭제 권한이 없는 설정 관리자는 지점 삭제 버튼을 볼 수 없다", async ({
+  page,
+}) => {
+  await seedDeleteFixtures();
+
+  try {
+    await login(page, "hq@example.com");
+    await page.goto("/app/master-data/stores");
+
+    const row = storeRow(page, EMPTY_STORE_NAME);
+
+    await expect(row).toBeVisible();
+    await expect(row.getByRole("button", { name: "수정" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(0);
+  } finally {
+    await cleanupDeleteFixtures();
+  }
+});
+
+// 대표 권한 묶음(급여·개인정보 조회 포함) 없이 삭제만 받은 계정도 지울 수 있어야 한다.
+// 운영의 `dowon` 계정과 같은 모양이다.
+test("대표가 아니어도 삭제 권한을 받은 설정 관리자는 지점을 삭제한다", async ({
+  page,
+}) => {
+  await seedDeleteFixtures();
+
+  try {
+    await login(page, "settings-admin@example.com");
+    await page.goto("/app/master-data/stores");
+
+    const dialog = await confirmStoreDelete(page, EMPTY_STORE_NAME);
+
+    await expect(dialog).toBeHidden();
+    await expect(storeRow(page, EMPTY_STORE_NAME)).toHaveCount(0);
+    expect(await prisma.store.count({ where: { id: EMPTY_STORE_ID } })).toBe(0);
+  } finally {
+    await cleanupDeleteFixtures();
+  }
+});

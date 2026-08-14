@@ -2,10 +2,11 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import {
   createUserAccount,
+  deleteUserAccount,
   updateUserAccount,
   updateUserStatus,
 } from "~/features/master-data/user-actions";
@@ -50,6 +51,8 @@ type UserManagementClientProps = {
     role: UserRoleFilter;
     status: UserStatusFilter;
   };
+  // 삭제는 되돌릴 수 없어 대표(OWNER) 계정에만 연다. 서버 action이 다시 검사한다.
+  canDelete?: boolean;
 };
 
 type UserRoleValue = "HEADQUARTERS" | "STORE_MANAGER";
@@ -94,6 +97,7 @@ export function UserManagementClient({
   stores,
   profiles,
   filters,
+  canDelete = false,
 }: UserManagementClientProps) {
   const router = useRouter();
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -116,6 +120,9 @@ export function UserManagementClient({
   >({});
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [rowSavingId, setRowSavingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserListItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   function pushFilters(next: {
     role?: UserRoleFilter;
@@ -307,6 +314,33 @@ export function UserManagementClient({
     }
   }
 
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const result = await deleteUserAccount(deleteTarget.id);
+
+      if (!result.ok) {
+        setDeleteError(result.error.message);
+        return;
+      }
+
+      setDeleteTarget(null);
+      router.refresh();
+    } catch {
+      setDeleteError(
+        "삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const nameError = fieldErrors.name?.[0];
   const emailError = fieldErrors.email?.[0];
   const passwordError = fieldErrors.initialPassword?.[0];
@@ -441,6 +475,20 @@ export function UserManagementClient({
                         <PencilIcon data-icon="inline-start" />
                         수정
                       </Button>
+                      {canDelete ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          data-testid={`user-delete-${user.id}`}
+                          onClick={() => {
+                            setDeleteTarget(user);
+                            setDeleteError(null);
+                          }}
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          삭제
+                        </Button>
+                      ) : null}
                     </div>
                     {rowError ? (
                       <p className="text-destructive mt-2 text-sm" role="alert">
@@ -679,6 +727,44 @@ export function UserManagementClient({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>사용자 삭제</DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.name} 계정을 완전히 삭제합니다. 되돌릴 수 없습니다.
+              장부 작성이나 변경 이력이 있는 계정은 삭제되지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              data-testid="user-delete-confirm"
+              disabled={isDeleting}
+              onClick={() => void handleDeleteConfirm()}
+            >
+              삭제
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

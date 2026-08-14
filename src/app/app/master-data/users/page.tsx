@@ -1,3 +1,4 @@
+import { PermissionAction } from "../../../../../generated/prisma";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
@@ -8,7 +9,10 @@ import {
   normalizeUserRoleFilter,
   normalizeUserStatusFilter,
 } from "~/features/master-data/user-queries";
-import { requireUserPermissionAccess } from "~/server/authz";
+import {
+  hasActionPermission,
+  requireUserPermissionAccess,
+} from "~/server/authz";
 
 type UserManagementPageProps = {
   searchParams: Promise<{
@@ -27,9 +31,12 @@ export default async function UserManagementPage({
     role: normalizeUserRoleFilter(params.role),
     status: normalizeUserStatusFilter(params.status),
   };
-  const [users, options] = await Promise.all([
+  // 사용자 삭제는 MASTER_DATA_DELETE 권한이 있는 계정에만 노출한다.
+  // deleteUserAccount가 서버에서 같은 권한을 다시 검사한다.
+  const [users, options, canDelete] = await Promise.all([
     getUsersForHeadquarters(filters),
     getUserManagementOptions(),
+    hasActionPermission(user.id, PermissionAction.MASTER_DATA_DELETE),
   ]);
 
   return (
@@ -47,6 +54,7 @@ export default async function UserManagementPage({
         stores={options.stores}
         profiles={options.profiles}
         filters={filters}
+        canDelete={canDelete}
       />
     </HeadquartersShell>
   );

@@ -176,6 +176,15 @@ export async function requireSettingsAccess() {
   return requireHeadquartersActionPermission(PermissionAction.SETTINGS_MANAGE);
 }
 
+// WO(2026-08-14): 사용자/지점 영구 삭제. 되돌릴 수 없어 기준정보 수정
+// (SETTINGS_MANAGE)과 분리한 별도 action으로 판정한다. seed 기준으로 대표(OWNER)와
+// `기준정보 삭제` 프로필만 가지며, 다른 본사 프로필에는 부여하지 않는다.
+export async function requireMasterDataDeleteAccess() {
+  return requireHeadquartersActionPermission(
+    PermissionAction.MASTER_DATA_DELETE,
+  );
+}
+
 export async function requireUserPermissionAccess() {
   return requireHeadquartersActionPermission(
     PermissionAction.USER_PERMISSION_MANAGE,

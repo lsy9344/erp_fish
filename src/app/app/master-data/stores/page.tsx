@@ -1,3 +1,4 @@
+import { PermissionAction } from "../../../../../generated/prisma";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
@@ -7,7 +8,7 @@ import {
   normalizeStoreSearch,
   normalizeStoreStatusFilter,
 } from "~/features/master-data/queries";
-import { requireSettingsAccess } from "~/server/authz";
+import { hasActionPermission, requireSettingsAccess } from "~/server/authz";
 
 type StoreManagementPageProps = {
   searchParams: Promise<{
@@ -27,6 +28,12 @@ export default async function StoreManagementPage({
     status: normalizeStoreStatusFilter(params.status),
   };
   const stores = await getStoresForHeadquarters(filters);
+  // 지점 삭제는 MASTER_DATA_DELETE 권한이 있는 계정에만 노출한다.
+  // deleteStore가 서버에서 같은 권한을 다시 검사한다.
+  const canDelete = await hasActionPermission(
+    user.id,
+    PermissionAction.MASTER_DATA_DELETE,
+  );
 
   return (
     <HeadquartersShell
@@ -38,7 +45,11 @@ export default async function StoreManagementPage({
         title="지점 관리"
         description="지점명과 활성 상태를 관리합니다."
       />
-      <StoreManagementClient stores={stores} filters={filters} />
+      <StoreManagementClient
+        stores={stores}
+        filters={filters}
+        canDelete={canDelete}
+      />
     </HeadquartersShell>
   );
 }

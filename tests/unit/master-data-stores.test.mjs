@@ -136,8 +136,33 @@ test("master-data actions enforce headquarters authorization, audit, transaction
     actions,
     /if\s*\(existing\.isActive\s*===\s*parsed\.data\.isActive\)/,
   );
-  assert.doesNotMatch(actions, /export\s+async\s+function\s+deleteStore/);
-  assert.doesNotMatch(actions, /\.delete\(/);
+  // WO(2026-08-14): 잘못 만든 지점 정리를 위해 삭제를 연다. 다만 전용 삭제
+  // 권한(MASTER_DATA_DELETE)이 있어야 하고, 실적이 남은 지점은 사유와 함께 막고 비활성을 권한다.
+  assert.match(actions, /export\s+async\s+function\s+deleteStore/);
+  assert.match(
+    actions,
+    /const\s+actor\s*=\s*await\s+requireMasterDataDeleteAccess\(\)/,
+  );
+  assert.match(actions, /store\.deleted/);
+  assert.match(actions, /STORE_IN_USE/);
+  assert.match(actions, /대신 비활성으로 바꿔 주세요\./);
+  for (const relation of [
+    "dailyLedgers",
+    "inventoryOpeningSnapshots",
+    "salesPricePlans",
+    "headquartersExpenses",
+    "ecountImportLines",
+    "historicalDailyFacts",
+    "historicalEmployeeDailyRoles",
+  ]) {
+    assert.match(actions, new RegExp(`${relation}:\\s*true`));
+  }
+  // DB의 Restrict 위반(P2003)도 같은 안내로 바꿔 담아 원시 오류가 새지 않게 한다.
+  assert.match(actions, /error\.code\s*===\s*"P2003"/);
+  // 삭제는 지점 한 곳만, 그것도 사전 검사를 통과했을 때만 지운다.
+  assert.equal(actions.match(/\.delete\(/g)?.length, 1);
+  assert.match(actions, /tx\.store\.delete\(\{ where: \{ id: storeId \} \}\)/);
+  assert.doesNotMatch(actions, /deleteMany\(/);
 });
 
 test("master-data queries and audit helper use the shared server boundaries", () => {

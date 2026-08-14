@@ -2,10 +2,11 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 
 import {
   createStore,
+  deleteStore,
   updateStore,
   updateStoreStatus,
 } from "~/features/master-data/actions";
@@ -41,6 +42,8 @@ type StoreManagementClientProps = {
     q: string;
     status: StoreStatusFilter;
   };
+  // 삭제는 되돌릴 수 없어 대표(OWNER) 계정에만 연다. 서버 action이 다시 검사한다.
+  canDelete?: boolean;
 };
 
 type EditingState =
@@ -73,10 +76,14 @@ function getStatusValue(isActive: boolean) {
 export function StoreManagementClient({
   stores,
   filters,
+  canDelete = false,
 }: StoreManagementClientProps) {
   const router = useRouter();
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [dialogState, setDialogState] = useState<EditingState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<StoreListItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [name, setName] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -193,6 +200,33 @@ export function StoreManagementClient({
     }
 
     router.refresh();
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const result = await deleteStore(deleteTarget.id);
+
+      if (!result.ok) {
+        setDeleteError(result.error.message);
+        return;
+      }
+
+      setDeleteTarget(null);
+      router.refresh();
+    } catch {
+      setDeleteError(
+        "삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   const nameError = fieldErrors.name?.[0];
@@ -315,6 +349,20 @@ export function StoreManagementClient({
                         <PencilIcon data-icon="inline-start" />
                         수정
                       </Button>
+                      {canDelete ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          data-testid={`store-delete-${store.id}`}
+                          onClick={() => {
+                            setDeleteTarget(store);
+                            setDeleteError(null);
+                          }}
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          삭제
+                        </Button>
+                      ) : null}
                     </div>
                     {rowError ? (
                       <p className="text-destructive mt-2 text-sm" role="alert">
@@ -392,6 +440,44 @@ export function StoreManagementClient({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>지점 삭제</DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.name} 지점을 완전히 삭제합니다. 되돌릴 수 없습니다.
+              장부나 재고 기록이 있는 지점은 삭제되지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              data-testid="store-delete-confirm"
+              disabled={isDeleting}
+              onClick={() => void handleDeleteConfirm()}
+            >
+              삭제
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

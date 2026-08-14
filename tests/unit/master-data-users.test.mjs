@@ -181,8 +181,26 @@ test("user management server actions enforce auth, transactions, audit, hashing,
   assert.match(actions, /user\.deactivated/);
   assert.match(actions, /revalidateMasterDataPaths\("users"\)/);
   assert.match(actions, /SELF_PERMISSION_CHANGE/);
-  assert.doesNotMatch(actions, /export\s+async\s+function\s+deleteUser/);
-  assert.doesNotMatch(actions, /user\.delete/);
+  // WO(2026-08-14): 잘못 만든 계정 정리를 위해 삭제를 연다. 다만 전용 삭제
+  // 권한(MASTER_DATA_DELETE)이 있어야 하고, 이력이 남은 계정과 본인 계정은 막고 비활성을 권한다.
+  assert.match(actions, /export\s+async\s+function\s+deleteUserAccount/);
+  assert.match(
+    actions,
+    /const\s+actor\s*=\s*await\s+requireMasterDataDeleteAccess\(\)/,
+  );
+  assert.match(actions, /if\s*\(actor\.id\s*===\s*userId\)/);
+  assert.match(actions, /SELF_DELETE/);
+  assert.match(actions, /user\.deleted/);
+  assert.match(actions, /USER_IN_USE/);
+  assert.match(actions, /대신 비활성으로 바꿔 주세요\./);
+  assert.match(actions, /auditLogs:\s*true/);
+  assert.match(actions, /createdDailyLedgers:\s*true/);
+  // DB의 Restrict 위반(P2003)도 같은 안내로 바꿔 담아 원시 오류가 새지 않게 한다.
+  assert.match(actions, /error\.code\s*===\s*"P2003"/);
+  // 삭제는 계정 한 건만, 그것도 사전 검사를 통과했을 때만 지운다.
+  assert.equal(actions.match(/tx\.user\.delete\(/g)?.length, 1);
+  assert.match(actions, /tx\.user\.delete\(\{ where: \{ id: userId \} \}\)/);
+  assert.doesNotMatch(actions, /tx\.user\.deleteMany\(/);
 
   const createBlock = actions.match(
     /export\s+async\s+function\s+createUserAccount[\s\S]*?\n}\r?\n\r?\nexport\s+async\s+function\s+updateUserAccount/,
@@ -248,7 +266,10 @@ test("user creation dialog lets operators assign permission profiles immediately
 
   assert.ok(createSubmitBlock, "create user submit block should exist");
   assert.match(createSubmitBlock, /profileIds/);
-  assert.doesNotMatch(client, /dialogState\?\.mode === "edit" \? \(\s*<Field data-invalid=\{Boolean\(profileIdsError\)\}>/);
+  assert.doesNotMatch(
+    client,
+    /dialogState\?\.mode === "edit" \? \(\s*<Field data-invalid=\{Boolean\(profileIdsError\)\}>/,
+  );
   assert.match(client, /<FieldLabel>권한 프로필<\/FieldLabel>/);
 });
 

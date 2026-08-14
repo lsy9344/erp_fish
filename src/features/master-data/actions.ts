@@ -7,7 +7,10 @@ import {
   writeAuditLog,
   type AuditActorContext,
 } from "~/server/audit";
-import { requireSettingsAccess } from "~/server/authz";
+import {
+  requireMasterDataDeleteAccess,
+  requireSettingsAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import { revalidateMasterDataPaths } from "~/server/revalidation";
 import {
@@ -87,6 +90,14 @@ function toSettingsAuditContext(actorRole: string): AuditActorContext {
   };
 }
 
+// 삭제는 SETTINGS_MANAGE가 아니라 전용 action으로 통과한다. 감사 로그에도 그대로 남긴다.
+function toDeleteAuditContext(actorRole: string): AuditActorContext {
+  return {
+    actorRole,
+    requiredAction: PermissionAction.MASTER_DATA_DELETE,
+  };
+}
+
 function toAuditStoreSnapshot(
   store: Pick<StoreActionData, "name" | "isActive">,
   actorContext: AuditActorContext,
@@ -105,6 +116,113 @@ function isPrismaUniqueError(error: unknown) {
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
   );
+}
+
+function isPrismaForeignKeyError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2003"
+  );
+}
+
+// 삭제를 막을 관계. 장부·기초재고·과거 Excel은 스키마가 이미 Restrict로 막지만,
+// 본사 지출과 이카운트 라인은 SetNull이라 그냥 지우면 소리 없이 주인을 잃는다.
+// 그래서 먼저 건수를 세어 사유와 함께 막고, DB Restrict는 마지막 안전망으로 둔다.
+const STORE_DELETE_BLOCKERS = [
+  ["dailyLedgers", "일일 장부"],
+  ["inventoryOpeningSnapshots", "기초 재고"],
+  ["salesPricePlans", "판매가 계획"],
+  ["headquartersExpenses", "본사 지출"],
+  ["ecountImportLines", "이카운트 업로드 라인"],
+  ["historicalDailyFacts", "과거 Excel 실적"],
+  ["historicalEmployeeDailyRoles", "과거 Excel 근무 기록"],
+] as const;
+
+function storeInUseError<T>(reason: string): ActionResult<T> {
+  return actionError(
+    "STORE_IN_USE",
+    `${reason} 삭제할 수 없습니다. 대신 비활성으로 바꿔 주세요.`,
+  );
+}
+
+// WO(2026-08-14): 안 쓰거나 잘못 만든 지점 정리용. 되돌릴 수 없어
+// 기준정보 수정과 분리한 MASTER_DATA_DELETE 권한이 있어야 한다.
+export async function deleteStore(
+  storeId: string,
+): Promise<ActionResult<StoreActionData>> {
+  const actor = await requireMasterDataDeleteAccess();
+
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const existing = await tx.store.findUnique({
+        where: { id: storeId },
+        select: {
+          ...storeSelect,
+          _count: {
+            select: {
+              dailyLedgers: true,
+              inventoryOpeningSnapshots: true,
+              salesPricePlans: true,
+              headquartersExpenses: true,
+              ecountImportLines: true,
+              historicalDailyFacts: true,
+              historicalEmployeeDailyRoles: true,
+            },
+          },
+        },
+      });
+
+      if (!existing) {
+        return { status: "missing" as const };
+      }
+
+      const blockers = STORE_DELETE_BLOCKERS.filter(
+        ([key]) => existing._count[key] > 0,
+      ).map(([, label]) => label);
+
+      if (blockers.length > 0) {
+        return { status: "in-use" as const, blockers };
+      }
+
+      const store: StoreActionData = {
+        id: existing.id,
+        name: existing.name,
+        isActive: existing.isActive,
+      };
+
+      await writeAuditLog(tx, {
+        action: "store.deleted",
+        targetType: "Store",
+        targetId: store.id,
+        actorId: actor.id,
+        before: toAuditStoreSnapshot(store, toDeleteAuditContext(actor.role)),
+        after: null,
+      });
+
+      // 지점장 배정과 코드/외부 별칭은 Cascade라 함께 사라진다(설정값뿐이다).
+      await tx.store.delete({ where: { id: storeId } });
+
+      return { status: "deleted" as const, store };
+    });
+
+    if (result.status === "missing") {
+      return actionError("STORE_NOT_FOUND", "지점을 찾을 수 없습니다.");
+    }
+
+    if (result.status === "in-use") {
+      return storeInUseError(`${result.blockers.join(", ")} 기록이 있어`);
+    }
+
+    revalidateStorePaths();
+
+    return actionOk(result.store);
+  } catch (error) {
+    if (isPrismaForeignKeyError(error)) {
+      return storeInUseError("이 지점을 참조하는 기록이 있어");
+    }
+
+    throw error;
+  }
 }
 
 export async function createStore(

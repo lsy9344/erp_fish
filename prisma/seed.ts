@@ -27,6 +27,8 @@ const ALL_PERMISSION_ACTIONS = [
   PermissionAction.USER_PERMISSION_MANAGE,
   // WO-0806 #5: OWNER 외 시스템 프로필에는 의도적으로 부여하지 않는다.
   PermissionAction.LABOR_VIEW,
+  // WO(2026-08-14): 영구 삭제. OWNER와 `기준정보 삭제` 프로필에만 부여한다.
+  PermissionAction.MASTER_DATA_DELETE,
 ] as const;
 
 const SYSTEM_PERMISSION_PROFILES = [
@@ -106,6 +108,15 @@ const SYSTEM_PERMISSION_PROFILES = [
     description: "배정된 지점의 장부를 생성하고 수정합니다.",
     storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
     actions: [PermissionAction.LEDGER_CREATE, PermissionAction.LEDGER_EDIT],
+  },
+  // WO(2026-08-14): 대표 권한 묶음(급여·개인정보 조회 포함)을 주지 않고 삭제만 여는 프로필.
+  // 조회 범위를 넓히지 않도록 storeAccessMode는 ASSIGNED_STORES로 둔다.
+  {
+    code: "MASTER_DATA_DELETE",
+    name: "기준정보 삭제",
+    description: "안 쓰거나 잘못 만든 사용자와 지점을 영구 삭제합니다.",
+    storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
+    actions: [PermissionAction.MASTER_DATA_DELETE],
   },
 ] as const;
 

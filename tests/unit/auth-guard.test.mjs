@@ -35,6 +35,80 @@ test("server authorization helper protects headquarters-only routes", () => {
   assert.match(authz, /redirect\("\/login/);
 });
 
+// WO(2026-08-14): 사용자/지점 영구 삭제는 되돌릴 수 없어 기준정보 수정
+// (SETTINGS_MANAGE)과 분리한 전용 action으로 판정한다. 대표 권한 묶음을 통째로
+// 주지 않고도 삭제만 특정 담당자에게 열 수 있어야 한다.
+test("permanent delete is gated by its own permission action", () => {
+  const authz = readFileSync(
+    path.join(root, "src", "server", "authz.ts"),
+    "utf8",
+  );
+  const schema = readFileSync(
+    path.join(root, "prisma", "schema.prisma"),
+    "utf8",
+  );
+  const seed = readFileSync(path.join(root, "prisma", "seed.ts"), "utf8");
+  const storesPage = readFileSync(
+    path.join(root, "src", "app", "app", "master-data", "stores", "page.tsx"),
+    "utf8",
+  );
+  const usersPage = readFileSync(
+    path.join(root, "src", "app", "app", "master-data", "users", "page.tsx"),
+    "utf8",
+  );
+
+  assert.match(
+    schema,
+    /enum\s+PermissionAction\s*{[^}]*MASTER_DATA_DELETE[^}]*}/s,
+  );
+  assert.match(
+    authz,
+    /export\s+async\s+function\s+requireMasterDataDeleteAccess/,
+  );
+  assert.match(
+    authz,
+    /requireMasterDataDeleteAccess[\s\S]*?PermissionAction\.MASTER_DATA_DELETE/,
+  );
+
+  // 삭제 action은 대표(OWNER)와 전용 프로필만 갖는다. 다른 본사 프로필에 새면
+  // 설정 관리자 전원이 영구 삭제를 할 수 있게 된다.
+  const deleteProfileBlock = seed.match(
+    /{\s*code:\s*"MASTER_DATA_DELETE"[\s\S]*?},/,
+  )?.[0];
+
+  assert.ok(deleteProfileBlock, "seed should define a delete-only profile");
+  assert.match(
+    deleteProfileBlock,
+    /actions:\s*\[PermissionAction\.MASTER_DATA_DELETE\]/,
+  );
+  assert.match(deleteProfileBlock, /StoreAccessMode\.ASSIGNED_STORES/);
+  for (const code of [
+    "HQ_ADMIN",
+    "HQ_STAFF",
+    "SETTINGS_ADMIN",
+    "CLOSE_MANAGER",
+  ]) {
+    const block = seed.match(
+      new RegExp(`{\\s*code: "${code}"[\\s\\S]*?\\n  },`),
+    )?.[0];
+
+    assert.ok(block, `seed should define the ${code} profile`);
+    assert.doesNotMatch(
+      block,
+      /MASTER_DATA_DELETE/,
+      `${code} must not grant permanent delete`,
+    );
+  }
+
+  for (const page of [storesPage, usersPage]) {
+    assert.match(
+      page,
+      /hasActionPermission\([\s\S]*?PermissionAction\.MASTER_DATA_DELETE/,
+    );
+    assert.match(page, /canDelete=\{canDelete\}/);
+  }
+});
+
 test("app route segment layout enforces server-session protection", () => {
   const appLayout = readFileSync(
     path.join(root, "src", "app", "app", "layout.tsx"),

@@ -11,7 +11,10 @@ import {
   writeAuditLog,
   type AuditActorContext,
 } from "~/server/audit";
-import { requireUserPermissionAccess } from "~/server/authz";
+import {
+  requireMasterDataDeleteAccess,
+  requireUserPermissionAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import { hashPassword } from "~/server/password";
 import { revalidateMasterDataPaths } from "~/server/revalidation";
@@ -148,6 +151,132 @@ function isPrismaUniqueError(error: unknown) {
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
   );
+}
+
+function isPrismaForeignKeyError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2003"
+  );
+}
+
+// 삭제를 막을 관계. 이 앱은 모든 쓰기가 AuditLog를 남기므로 auditLogs 하나가
+// "이 계정이 일한 적 있다"의 사실상 단일 신호다. 장부 관계는 사유를 구체적으로
+// 보여주려고 함께 센다. 나머지 30여 개 Restrict 관계는 스키마가 막고, 여기서는
+// P2003을 같은 메시지로 옮겨 담는다(관계가 늘어도 이 목록을 고칠 필요가 없다).
+const USER_DELETE_BLOCKERS = [
+  ["auditLogs", "변경 이력"],
+  ["createdDailyLedgers", "작성한 장부"],
+  ["updatedDailyLedgers", "수정한 장부"],
+  ["submittedDailyLedgers", "제출한 장부"],
+  ["closedDailyLedgers", "마감한 장부"],
+  ["lossReviewedDailyLedgers", "손실 검토한 장부"],
+] as const;
+
+function userInUseError<T>(reason: string): ActionResult<T> {
+  return actionError(
+    "USER_IN_USE",
+    `${reason} 삭제할 수 없습니다. 대신 비활성으로 바꿔 주세요.`,
+  );
+}
+
+// WO(2026-08-14): 안 쓰거나 잘못 만든 계정 정리용. 되돌릴 수 없어
+// 사용자/권한 수정과 분리한 MASTER_DATA_DELETE 권한이 있어야 한다.
+export async function deleteUserAccount(
+  userId: string,
+): Promise<ActionResult<UserActionData>> {
+  const actor = await requireMasterDataDeleteAccess();
+
+  if (actor.id === userId) {
+    return actionError(
+      "SELF_DELETE",
+      "현재 로그인한 계정은 삭제할 수 없습니다.",
+    );
+  }
+
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const before = await getUserSnapshot(tx, userId);
+
+      if (!before) {
+        return { status: "missing" as const };
+      }
+
+      const counts = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          _count: {
+            select: {
+              auditLogs: true,
+              createdDailyLedgers: true,
+              updatedDailyLedgers: true,
+              submittedDailyLedgers: true,
+              closedDailyLedgers: true,
+              lossReviewedDailyLedgers: true,
+            },
+          },
+        },
+      });
+
+      if (!counts) {
+        return { status: "missing" as const };
+      }
+
+      const blockers = USER_DELETE_BLOCKERS.filter(
+        ([key]) => counts._count[key] > 0,
+      ).map(([, label]) => label);
+
+      if (blockers.length > 0) {
+        return { status: "in-use" as const, blockers };
+      }
+
+      await writeAuditLog(tx, {
+        action: "user.deleted",
+        targetType: "User",
+        targetId: userId,
+        actorId: actor.id,
+        before: toAuditUserSnapshot(
+          before,
+          toUserDeleteAuditContext(actor.role),
+        ),
+        after: null,
+      });
+
+      // 지점 배정·권한 프로필·세션은 Cascade라 함께 사라진다(연결 정보뿐이다).
+      await tx.user.delete({ where: { id: userId } });
+
+      return { status: "deleted" as const, before };
+    }, userManagementTransactionOptions);
+
+    if (result.status === "missing") {
+      return actionError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
+    }
+
+    if (result.status === "in-use") {
+      return userInUseError(`${result.blockers.join(", ")} 기록이 있어`);
+    }
+
+    revalidateUserPaths();
+
+    return actionOk(
+      toActionData(
+        {
+          id: result.before.id,
+          name: result.before.name,
+          email: result.before.email,
+          role: result.before.role,
+          isActive: result.before.isActive,
+        },
+        result.before.storeIds,
+      ),
+    );
+  } catch (error) {
+    if (isPrismaForeignKeyError(error)) {
+      return userInUseError("이 계정을 참조하는 기록이 있어");
+    }
+
+    throw error;
+  }
 }
 
 function uniqueStoreIds(storeIds: string[]) {
@@ -306,6 +435,14 @@ function toUserPermissionAuditContext(actorRole: UserRole) {
   return {
     actorRole,
     requiredAction: PermissionAction.USER_PERMISSION_MANAGE,
+  };
+}
+
+// 삭제는 USER_PERMISSION_MANAGE가 아니라 전용 action으로 통과한다. 감사 로그에도 그대로 남긴다.
+function toUserDeleteAuditContext(actorRole: UserRole) {
+  return {
+    actorRole,
+    requiredAction: PermissionAction.MASTER_DATA_DELETE,
   };
 }
 

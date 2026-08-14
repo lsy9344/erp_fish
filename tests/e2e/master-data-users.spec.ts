@@ -533,3 +533,123 @@ test("사용자/권한 관리 폼은 한국어 검증 오류와 첫 오류 포�
     "user-store-options-error",
   );
 });
+
+// WO(2026-08-14): 안 쓰거나 잘못 만든 계정 삭제. 전용 삭제 권한
+// (MASTER_DATA_DELETE)이 있어야 하고, 변경 이력이나 장부가 남은 계정은 사유와 함께 막힌다.
+const DELETE_FIXTURE_EMAIL = "story14-delete-fixture@example.com";
+
+async function seedDeleteFixtureUser() {
+  await prisma.user.deleteMany({ where: { email: DELETE_FIXTURE_EMAIL } });
+  await prisma.user.create({
+    data: {
+      name: "스토리14 삭제대상",
+      email: DELETE_FIXTURE_EMAIL,
+      role: "STORE_MANAGER",
+      isActive: true,
+    },
+  });
+}
+
+async function confirmUserDelete(page: Page, email: string) {
+  const row = userRow(page, email);
+  const dialog = page.getByRole("dialog", { name: "사용자 삭제" });
+
+  await expect(row).toBeVisible();
+  await expect(async () => {
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  await dialog.getByTestId("user-delete-confirm").click();
+
+  return dialog;
+}
+
+test("삭제 권한 계정은 쓰이지 않은 계정을 삭제하고, 이력이 있는 계정은 사유와 함께 막힌다", async ({
+  page,
+}) => {
+  await seedDeleteFixtureUser();
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/master-data/users");
+    await expect(
+      page.getByRole("heading", { name: "사용자/권한 관리" }),
+    ).toBeVisible();
+
+    // hq@example.com은 다른 테스트에서 감사 이력을 남긴 계정이라 삭제가 막힌다.
+    const inUseDialog = await confirmUserDelete(page, "hq@example.com");
+
+    await expect(inUseDialog.getByRole("alert")).toContainText("비활성");
+    await inUseDialog.getByRole("button", { name: "취소" }).click();
+    expect(
+      await prisma.user.count({ where: { email: "hq@example.com" } }),
+    ).toBe(1);
+
+    const freshDialog = await confirmUserDelete(page, DELETE_FIXTURE_EMAIL);
+
+    await expect(freshDialog).toBeHidden();
+    await expect(userRow(page, DELETE_FIXTURE_EMAIL)).toHaveCount(0);
+    expect(
+      await prisma.user.count({ where: { email: DELETE_FIXTURE_EMAIL } }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: "user.deleted", targetType: "User" },
+      }),
+    ).toBeGreaterThan(0);
+  } finally {
+    await prisma.user.deleteMany({ where: { email: DELETE_FIXTURE_EMAIL } });
+  }
+});
+
+test("삭제 권한이 있어도 자기 계정은 삭제할 수 없다", async ({ page }) => {
+  await login(page, "owner@example.com");
+  await page.goto("/app/master-data/users");
+
+  const selfDialog = await confirmUserDelete(page, "owner@example.com");
+
+  await expect(selfDialog.getByRole("alert")).toContainText(
+    "현재 로그인한 계정은 삭제할 수 없습니다.",
+  );
+  await selfDialog.getByRole("button", { name: "취소" }).click();
+  expect(
+    await prisma.user.count({ where: { email: "owner@example.com" } }),
+  ).toBe(1);
+});
+
+test("삭제 권한이 없는 본사 사용자는 계정 삭제 버튼을 볼 수 없다", async ({
+  page,
+}) => {
+  await login(page, "hq@example.com");
+  await page.goto("/app/master-data/users");
+
+  const row = userRow(page, "owner@example.com");
+
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "수정" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(0);
+});
+
+// 대표 권한 묶음(급여·개인정보 조회 포함) 없이 삭제만 받은 계정도 지울 수 있어야 한다.
+// 운영의 `dowon` 계정과 같은 모양이다.
+test("대표가 아니어도 삭제 권한을 받은 설정 관리자는 계정을 삭제한다", async ({
+  page,
+}) => {
+  await seedDeleteFixtureUser();
+
+  try {
+    await login(page, "settings-admin@example.com");
+    await page.goto("/app/master-data/users");
+
+    const dialog = await confirmUserDelete(page, DELETE_FIXTURE_EMAIL);
+
+    await expect(dialog).toBeHidden();
+    await expect(userRow(page, DELETE_FIXTURE_EMAIL)).toHaveCount(0);
+    expect(
+      await prisma.user.count({ where: { email: DELETE_FIXTURE_EMAIL } }),
+    ).toBe(0);
+  } finally {
+    await prisma.user.deleteMany({ where: { email: DELETE_FIXTURE_EMAIL } });
+  }
+});

@@ -30,6 +30,8 @@ const profileDefinitions = [
       PermissionAction.USER_PERMISSION_MANAGE,
       // WO-0806 #5: 직원 관리·인건비 현황은 대표(OWNER) 전용이다.
       PermissionAction.LABOR_VIEW,
+      // WO(2026-08-14): 사용자/지점 영구 삭제. seed와 동일하게 OWNER는 갖는다.
+      PermissionAction.MASTER_DATA_DELETE,
     ],
   },
   {
@@ -102,6 +104,13 @@ const profileDefinitions = [
     name: "지점장",
     storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
     actions: [PermissionAction.LEDGER_CREATE, PermissionAction.LEDGER_EDIT],
+  },
+  {
+    // WO(2026-08-14): 대표 권한 묶음 없이 삭제만 여는 전용 프로필(배포 seed와 동일).
+    code: "MASTER_DATA_DELETE",
+    name: "기준정보 삭제",
+    storeAccessMode: StoreAccessMode.ASSIGNED_STORES,
+    actions: [PermissionAction.MASTER_DATA_DELETE],
   },
 ] as const;
 
@@ -720,6 +729,12 @@ export default async function globalSetup() {
     prisma,
     settingsAdminUser.id,
     permissionProfiles.get("SETTINGS_ADMIN")?.id,
+  );
+  // WO(2026-08-14): 대표가 아니면서 삭제만 추가로 받은 계정. 운영의 `dowon`과 같은 모양이다.
+  await assignPermissionProfile(
+    prisma,
+    settingsAdminUser.id,
+    permissionProfiles.get("MASTER_DATA_DELETE")?.id,
   );
   await assignPermissionProfile(
     prisma,
