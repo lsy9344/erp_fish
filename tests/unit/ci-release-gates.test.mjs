@@ -153,7 +153,7 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   for (const [scriptName, { spec, grep }] of Object.entries({
     "test:e2e:smoke:ledger": {
       spec: "tests/e2e/store-ledger-inventory.spec.ts",
-      grep: "FIFO 재고금액",
+      grep: "입고별 단가만 보이고",
     },
     "test:e2e:smoke:hq": {
       spec: "tests/e2e/hq-dashboard.spec.ts",

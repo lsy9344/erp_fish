@@ -864,7 +864,7 @@ test("재고 행에 가격이 다른 입고분을 날짜와 단가별로 표시�
   );
 });
 
-test("재고 평균단가는 전일 원천 금액과 당일 매입의 가중평균을 저장 후에도 유지한다", async ({
+test("재고 카드는 전일과 당일 입고 단가를 나누고 저장 후 남은 입고분만 유지한다", async ({
   page,
 }) => {
   await login(page);
@@ -919,7 +919,12 @@ test("재고 평균단가는 전일 원천 금액과 당일 매입의 가중평�
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
   const row = page.locator("tr").filter({ hasText: product.name });
-  await expect(row).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
+  const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
+  await expect(row).toContainText("기존 재고 · 10,000원/1박스 · 1개 남음");
+  await expect(row).toContainText(
+    `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`,
+  );
+  await expect(row).not.toContainText("15,000원/1박스");
 
   await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
   await fillVisiblePlannedUnitPrices(page);
@@ -927,9 +932,12 @@ test("재고 평균단가는 전일 원천 금액과 당일 매입의 가중평�
   await expectInventorySaveSucceeded(page);
   await page.reload();
 
-  await expect(
-    page.locator("tr").filter({ hasText: product.name }),
-  ).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
+  const savedRow = page.locator("tr").filter({ hasText: product.name });
+  await expect(savedRow).toContainText(
+    `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`,
+  );
+  await expect(savedRow).not.toContainText("기존 재고 · 10,000원/1박스");
+  await expect(savedRow).not.toContainText("15,000원/1박스");
 
   const saved = await prisma.ledgerInventoryItem.findUnique({
     where: {
@@ -945,7 +953,7 @@ test("재고 평균단가는 전일 원천 금액과 당일 매입의 가중평�
   expect(saved?.inventoryAmount).toBe(20000);
 });
 
-test("재고 평균단가는 월초 원천을 사용하고 불완전한 전일 근거는 기존 단가로 폴백한다", async ({
+test("재고 카드는 월초·불완전 이월에서도 남은 입고분의 날짜와 단가를 표시한다", async ({
   page,
 }) => {
   await login(page);
@@ -1107,17 +1115,19 @@ test("재고 평균단가는 월초 원천을 사용하고 불완전한 전일 �
   });
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
-  await expect(
-    page.locator("tr").filter({ hasText: openingProduct.name }),
-  ).toContainText("재고 평균단가 · 당일 · 15,000원/1박스");
-
-  const expectedFallback = `당일 매입단가 · ${today.toISOString().slice(0, 10)} · 20,000원/1박스`;
+  const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
+  const expectedRemainingLot = `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`;
+  const openingRow = page
+    .locator("tr")
+    .filter({ hasText: openingProduct.name });
+  await expect(openingRow).toContainText(expectedRemainingLot);
+  await expect(openingRow).not.toContainText("15,000원/1박스");
   await expect(
     page.locator("tr").filter({ hasText: mismatchProduct.name }),
-  ).toContainText(expectedFallback);
+  ).toContainText(expectedRemainingLot);
   await expect(
     page.locator("tr").filter({ hasText: missingAmountProduct.name }),
-  ).toContainText(expectedFallback);
+  ).toContainText(expectedRemainingLot);
 });
 
 test("매입 품목은 당일재고를 빈칸으로 시작하고 손실 검토 전 재고 저장을 막는다", async ({
