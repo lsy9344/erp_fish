@@ -529,7 +529,7 @@ test("report export source keeps sensitive unauthorised paths out of CSV and aud
   assert.doesNotMatch(exportSource, /clientColumns|requestedColumns/);
 });
 
-test("store manager inventory mapper preserves display average without original amounts", async () => {
+test("store manager inventory mapper preserves approved lot prices without original amounts", async () => {
   const mapperPath = assertProjectFile(
     "src",
     "features",
@@ -571,7 +571,23 @@ test("store manager inventory mapper preserves display average without original 
         currentQuantity: 2,
         quantity: 2,
         inventoryAmount: 30_000,
-        fifoLots: [],
+        fifoLots: [
+          {
+            sourceType: "PURCHASE",
+            sourceLedgerId: "ledger-0",
+            sourcePurchaseItemId: "purchase-1",
+            purchaseDate: "2026-08-03T00:00:00.000Z",
+            sourceBusinessDate: "2026-08-03T00:00:00.000Z",
+            unitPrice: 10_000,
+            originalQuantity: 1,
+            consumedQuantity: 0,
+            remainingQuantity: 1,
+            originalAmount: 10_000,
+            consumedAmount: 0,
+            remainingAmount: 10_000,
+            sortOrder: 0,
+          },
+        ],
         carryoverSource: "PREVIOUS_CLOSED_LEDGER",
         carryoverStatus: "PREVIOUS_CARRYOVER",
         carryoverLedgerId: "ledger-0",
@@ -592,6 +608,11 @@ test("store manager inventory mapper preserves display average without original 
   });
   assert.equal(Object.hasOwn(shaped.items[0], "inventoryAmount"), false);
   assert.equal(Object.hasOwn(shaped.items[0], "purchaseAmount"), false);
+  assert.equal(shaped.items[0].fifoLots[0].unitPrice, 10_000);
+  assert.equal(
+    Object.hasOwn(shaped.items[0].fifoLots[0], "remainingAmount"),
+    false,
+  );
 });
 
 test("store manager inventory mapper exposes planned price on item rows and manual options", async () => {
@@ -752,6 +773,7 @@ test("store manager inventory mapper exposes planned price on item rows and manu
     "sourceLedgerId",
     "sourcePurchaseItemId",
     "sourceType",
+    "unitPrice",
   ]);
   assert.deepEqual(Object.keys(shaped.items[0].adjustment).sort(), [
     "afterQuantity",

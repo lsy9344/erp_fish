@@ -1234,16 +1234,20 @@ test("store manager paths do not reuse HQ dashboard row shape or sensitive dashb
     inventoryTypesSource,
     /StoreManagerInventoryAdjustmentView\s*=\s*Omit<[\s\S]*"beforeAmount"\s*\|\s*"afterAmount"\s*\|\s*"differenceAmount"/s,
   );
-  // 정책 반전(2026-06-28, §4): FIFO 재고금액(inventoryAmount)·lot 금액/단가는 본사 전용이다.
-  // 지점장 라인은 inventoryAmount·fifoLots(원본)를 omit하고, fifoLots는 금액 없는 안전 뷰로 교체한다.
+  // 지점장 라인은 inventoryAmount·fifoLots(원본)를 omit하고, fifoLots는
+  // 입고별 단가만 남긴 안전 뷰로 교체한다.
   assert.match(
     inventoryTypesSource,
     /StoreManagerInventoryStepLine\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"purchaseAmount"[\s\S]*"lossAmount"[\s\S]*"inventoryAmount"[\s\S]*"fifoLots"[\s\S]*"adjustment"/s,
   );
-  // 안전 lot 뷰는 단가·금액 필드를 떼어낸다.
+  // 안전 lot 뷰는 단가는 유지하고 금액 필드만 떼어낸다.
   assert.match(
     inventoryTypesSource,
-    /StoreManagerInventoryFifoLotView\s*=\s*Omit<[\s\S]*"unitPrice"[\s\S]*"originalAmount"[\s\S]*"consumedAmount"[\s\S]*"remainingAmount"/s,
+    /StoreManagerInventoryFifoLotView\s*=\s*Omit<[\s\S]*"originalAmount"[\s\S]*"consumedAmount"[\s\S]*"remainingAmount"/s,
+  );
+  assert.doesNotMatch(
+    inventoryTypesSource,
+    /StoreManagerInventoryFifoLotView\s*=\s*Omit<[\s\S]*"unitPrice"\s*\|\s*"originalAmount"/s,
   );
 });
 

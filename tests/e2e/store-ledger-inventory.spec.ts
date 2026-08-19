@@ -223,7 +223,7 @@ test.beforeEach(async () => {
   await cleanupStoryTwoFiveData();
 });
 
-test("지점장 재고 화면은 FIFO 재고금액은 노출하되 단가와 조정 금액은 직렬화하지 않는다", async ({
+test("지점장 재고 화면은 입고별 단가만 보이고 재고·조정 금액은 숨긴다", async ({
   page,
 }) => {
   const inventoryResponseBodies: string[] = [];
@@ -300,17 +300,16 @@ test("지점장 재고 화면은 FIFO 재고금액은 노출하되 단가와 조
   await expect(row.getByText("고침 완료").first()).toBeVisible();
   // 재고금액은 카드에서 제거됐다(2026-06-25). FIFO 금액 텍스트도 더는 노출하지 않는다.
   await expect(row).not.toContainText("8,888,886원");
-  // 단가/조정 금액(고치기 전·고친 후·바뀐 수량)은 계속 차단한다.
-  await expect(row).not.toContainText("987,654원");
+  // 입고별 단가는 작업에 필요하므로 보이고, 원금액과 조정 금액은 계속 숨긴다.
+  await expect(row).toContainText("기존 재고 · 987,654원/1박스");
   await expect(row).not.toContainText("9,876,540원");
-  await expect(row).not.toContainText("987654");
   await expect(row).not.toContainText("9876540");
   await expect(row).not.toContainText(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 
   const responsePayload = inventoryResponseBodies.join("\n");
   // inventoryAmount(FIFO 재고금액)는 노출되므로 차단 목록에서 제외한다.
   expect(responsePayload).not.toMatch(
-    /unitPrice|purchaseAmount|lossAmount|beforeAmount|afterAmount|differenceAmount/,
+    /purchaseAmount|lossAmount|beforeAmount|afterAmount|differenceAmount/,
   );
   expect(responsePayload).not.toMatch(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 });
@@ -751,21 +750,15 @@ test("당일 매입이 있는 품목은 전일 근거가 없어도 기본 표에
   await expect(row).toContainText("6");
 });
 
-test("재고 행에 당일 가중평균과 최근 실제 거래일 매입단가를 표시한다", async ({
+test("재고 행에 가격이 다른 입고분을 날짜와 단가별로 표시한다", async ({
   page,
 }) => {
   await login(page);
   const actorId = await getHeadquartersUserId();
   const today = getTodayKstMidnight();
-  const recentDate = getPreviousKstMidnight();
   const todayProduct = await seedProduct("스토리2-5 당일 단가 고등어");
-  const recentProduct = await seedProduct("스토리2-5 최근 단가 도미");
+  const datedProduct = await seedProduct("스토리2-5 날짜별 단가 오징어3미");
   const todayLedger = await upsertLedger(today, actorId);
-  const recentLedger = await upsertLedger(
-    recentDate,
-    actorId,
-    "HEADQUARTERS_CLOSED",
-  );
 
   await prisma.ledgerPurchaseItem.createMany({
     data: [
@@ -793,44 +786,81 @@ test("재고 행에 당일 가중평균과 최근 실제 거래일 매입단가�
         createdById: actorId,
         updatedById: actorId,
       },
-      {
-        dailyLedgerId: recentLedger.id,
-        productId: recentProduct.id,
-        productName: recentProduct.name,
-        productCategory: recentProduct.category,
-        productSpec: recentProduct.spec,
-        unitPrice: 12_000,
-        quantity: 2,
-        amount: 24_000,
-        createdById: actorId,
-        updatedById: actorId,
-      },
     ],
   });
-  await prisma.inventoryOpeningSnapshot.create({
+  const datedInventoryItem = await prisma.ledgerInventoryItem.create({
     data: {
-      storeId: STORY_STORE_ID,
-      yearMonth: getCurrentKstYearMonth(),
-      productId: recentProduct.id,
-      productName: recentProduct.name,
-      productCategory: recentProduct.category,
-      productSpec: recentProduct.spec,
-      unitPrice: recentProduct.defaultUnitPrice,
-      quantity: 1,
+      dailyLedgerId: todayLedger.id,
+      productId: datedProduct.id,
+      productName: datedProduct.name,
+      productCategory: datedProduct.category,
+      productSpec: datedProduct.spec,
+      unitPrice: 13_000,
+      previousQuantity: 5,
+      purchasedQuantity: 0,
+      currentQuantity: 5,
+      quantity: 5,
+      inventoryAmount: 63_000,
+      isModified: true,
+      createdById: actorId,
+      updatedById: actorId,
     },
+  });
+  await prisma.ledgerInventoryFifoLot.createMany({
+    data: [
+      {
+        dailyLedgerId: todayLedger.id,
+        ledgerInventoryItemId: datedInventoryItem.id,
+        productId: datedProduct.id,
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceBusinessDate: new Date("2026-06-12T00:00:00.000Z"),
+        unitPrice: 12_000,
+        originalQuantity: 2,
+        consumedQuantity: 0,
+        remainingQuantity: 2,
+        originalAmount: 24_000,
+        consumedAmount: 0,
+        remainingAmount: 24_000,
+        sortOrder: 0,
+      },
+      {
+        dailyLedgerId: todayLedger.id,
+        ledgerInventoryItemId: datedInventoryItem.id,
+        productId: datedProduct.id,
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceBusinessDate: new Date("2026-06-13T00:00:00.000Z"),
+        unitPrice: 13_000,
+        originalQuantity: 3,
+        consumedQuantity: 0,
+        remainingQuantity: 3,
+        originalAmount: 39_000,
+        consumedAmount: 0,
+        remainingAmount: 39_000,
+        sortOrder: 1,
+      },
+    ],
   });
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
 
   await expect(
     page.locator("tr").filter({ hasText: todayProduct.name }),
-  ).toContainText(
-    `당일 매입단가 · ${today.toISOString().slice(0, 10)} · 13,000원/1박스`,
+  ).toContainText("입고별 매입단가");
+  const todayRow = page.locator("tr").filter({ hasText: todayProduct.name });
+  const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
+  await expect(todayRow).toContainText(todayArrivalLabel);
+  await expect(todayRow).toContainText("10,000원/1박스");
+  await expect(todayRow).toContainText("15,000원/1박스");
+  await expect(todayRow).toContainText("2개 남음");
+  await expect(todayRow).toContainText("3개 남음");
+  await expect(todayRow).not.toContainText("13,000원/1박스");
+
+  const datedRow = page.locator("tr").filter({ hasText: datedProduct.name });
+  await expect(datedRow).toContainText(
+    "6월 12일 입고 · 12,000원/1박스 · 2개 남음",
   );
-  await expect(
-    page.locator("tr").filter({ hasText: recentProduct.name }),
-  ).toContainText(
-    `최근 매입단가 · ${recentDate.toISOString().slice(0, 10)} · 12,000원/1박스`,
+  await expect(datedRow).toContainText(
+    "6월 13일 입고 · 13,000원/1박스 · 3개 남음",
   );
 });
 

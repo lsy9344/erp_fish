@@ -158,16 +158,15 @@ export type StoreManagerInventoryAdjustmentView = Omit<
   "beforeAmount" | "afterAmount" | "differenceAmount"
 >;
 
-// 정책 반전(2026-06-28, client-review-checklist-2026-06-28.md §4): 지점장 전날재고/재고
-// 화면에는 품목·수량·FIFO 기준일/lot 식별만 노출하고 금액·단가·원가·마진은 제외한다.
-// 따라서 lot 뷰에서 단가/금액 필드(unitPrice·*Amount)를 떼고 수량·입고일·lot 식별만 남긴다.
+// 재고 입력 카드에서 입고일별 매입단가를 확인할 수 있도록 lot 단가는 허용한다.
+// 원수량·소진수량·잔량은 유지하되 원금액·소진금액·잔액은 계속 차단한다.
 export type StoreManagerInventoryFifoLotView = Omit<
   InventoryFifoLotView,
-  "unitPrice" | "originalAmount" | "consumedAmount" | "remainingAmount"
+  "originalAmount" | "consumedAmount" | "remainingAmount"
 >;
 
-// FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
-// 재고 평균단가·당일·최근 실제 매입단가와 승인된 월초 표시 단가만 중첩 purchasePrice 예외로 노출한다.
+// 기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 카드 표시에 필요한
+// lot별 매입단가와 기존 purchasePrice만 제한적으로 노출한다.
 export type StoreManagerInventoryStepLine = Omit<
   InventoryStepLine,
   | "unitPrice"

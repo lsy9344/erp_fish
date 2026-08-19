@@ -37,7 +37,7 @@
     "test:e2e:meeting-0627": "node scripts/run-playwright-clean.mjs tests/e2e/meeting-0627-acceptance.spec.ts",
     "test:e2e:smoke:admin": "node scripts/run-playwright-clean.mjs tests/e2e/permission-profiles.spec.ts --grep \"지점장 입력 화면을 직접 열 수 없다\"",
     "test:e2e:smoke:hq": "node scripts/run-playwright-clean.mjs tests/e2e/hq-dashboard.spec.ts --grep \"활성 지점 전체와 장부 상태\"",
-    "test:e2e:smoke:ledger": "node scripts/run-playwright-clean.mjs tests/e2e/store-ledger-inventory.spec.ts --grep \"FIFO 재고금액\"",
+    "test:e2e:smoke:ledger": "node scripts/run-playwright-clean.mjs tests/e2e/store-ledger-inventory.spec.ts --grep \"입고별 단가만 보이고\"",
     "test:playwright": "node scripts/run-playwright-clean.mjs",
     "test:unit": "node --experimental-strip-types --test tests/unit/*.test.mjs",
     "test:unit:file": "node --experimental-strip-types --test",

@@ -1632,7 +1632,7 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /\["당일재고", "판매한 가격", "바꾼 이유"\]/);
 });
 
-test("inventory uses the approved display price DTO for opening price and keeps planned unit price read-only", () => {
+test("inventory shows remaining lots by arrival date and price and keeps planned unit price read-only", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1643,7 +1643,11 @@ test("inventory uses the approved display price DTO for opening price and keeps 
 
   assert.match(
     componentSource,
-    /item\.purchasePrice\.kind === "OPENING"[\s\S]*월초 재고단가[\s\S]*item\.purchasePrice\.yearMonth[\s\S]*formatKrw\(item\.purchasePrice\.unitPrice\)/,
+    /getInventoryLotArrivalLabel[\s\S]*sourceBusinessDate[\s\S]*purchaseDate/,
+  );
+  assert.match(
+    componentSource,
+    /lot\.remainingQuantity <= 0[\s\S]*입고별 매입단가[\s\S]*formatKrw\(entry\.unitPrice\)[\s\S]*formatQuantity\(entry\.remainingQuantity\)/,
   );
   assert.match(
     componentSource,

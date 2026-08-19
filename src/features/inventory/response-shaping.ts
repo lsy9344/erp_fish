@@ -29,14 +29,7 @@ function shapeStoreManagerInventoryLine(
     previousQuantityDetail: item.previousQuantityDetail,
     isModified: item.isModified,
     fifoLots: item.fifoLots.map(
-      ({
-        unitPrice: _unitPrice,
-        originalAmount,
-        consumedAmount,
-        remainingAmount,
-        ...lot
-      }) => {
-        void _unitPrice;
+      ({ originalAmount, consumedAmount, remainingAmount, ...lot }) => {
         void originalAmount;
         void consumedAmount;
         void remainingAmount;
@@ -108,8 +101,8 @@ export function shapeStoreManagerInventoryStepData(
     // the store's existing sales price are the only price fields exposed here.
     // Carryover fallback is applied only at this store-manager boundary.
     manualProductOptions,
-    // FIFO·기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 고객이 승인한
-    // 당일·최근 실제 매입단가, 월초 표시 단가와 품목별 판매한 가격만 ...item 안의 예외로 유지한다.
+    // 기본·내부 단가와 최상위 금액 필드는 계속 차단한다. 입고별 표시를 위한
+    // fifoLots.unitPrice와 기존 표시용 purchasePrice만 제한적으로 유지한다.
     items,
   };
 }

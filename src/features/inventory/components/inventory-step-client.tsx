@@ -206,6 +206,66 @@ function hasSensitiveInventoryAmounts(
   return "unitPrice" in item;
 }
 
+type InventoryLotPriceEntry = {
+  key: string;
+  arrivalLabel: string;
+  unitPrice: number;
+  remainingQuantity: number;
+};
+
+function getInventoryLotArrivalLabel(
+  lot: InventoryDisplayData["items"][number]["fifoLots"][number],
+) {
+  if (lot.sourceType === "OPENING") {
+    return "월초 재고";
+  }
+
+  if (lot.sourceType === "LEGACY_OPENING") {
+    return "기존 재고";
+  }
+
+  const value = lot.sourceBusinessDate ?? lot.purchaseDate;
+  const [year, month, day] = value?.slice(0, 10).split("-") ?? [];
+
+  if (!year || !month || !day) {
+    return "입고일 미상";
+  }
+
+  return `${Number(month)}월 ${Number(day)}일 입고`;
+}
+
+function getInventoryLotPriceEntries(
+  item: InventoryDisplayData["items"][number],
+): InventoryLotPriceEntry[] {
+  const entries = new Map<string, InventoryLotPriceEntry>();
+
+  for (const lot of item.fifoLots) {
+    if (lot.remainingQuantity <= 0) {
+      continue;
+    }
+
+    const arrivalLabel = getInventoryLotArrivalLabel(lot);
+    const key = `${arrivalLabel}:${lot.unitPrice}`;
+    const existing = entries.get(key);
+
+    if (existing) {
+      existing.remainingQuantity = roundQuantity(
+        existing.remainingQuantity + lot.remainingQuantity,
+      );
+      continue;
+    }
+
+    entries.set(key, {
+      key,
+      arrivalLabel,
+      unitPrice: lot.unitPrice,
+      remainingQuantity: lot.remainingQuantity,
+    });
+  }
+
+  return [...entries.values()];
+}
+
 function hasSensitiveAdjustmentAmounts(
   adjustment: InventoryLineState["adjustment"],
 ): adjustment is InventoryAdjustmentView {
@@ -1992,8 +2052,8 @@ export function InventoryStepClient({
     );
   }
 
-  // WO-25(2026-07-25) #2: 남아있는 재고(기준재고) 클릭 → FIFO 매입 이력 팝업.
-  // 권한 현행 유지(2026-06-28 결정): 본사는 입고일+단가+금액, 지점장은 입고일+잔량만.
+  // 남아있는 재고(기준재고) 클릭 → FIFO 매입 이력 팝업.
+  // 입고일·단가는 공통 표시하고, 원금액·잔액은 본사에만 표시한다.
   function renderFifoLotHistoryDialog() {
     if (!selectedFifoLotItem) {
       return null;
@@ -2028,11 +2088,9 @@ export function InventoryStepClient({
                   <TableRow>
                     <TableHead>{inventoryTerms.fifoLotSource}</TableHead>
                     <TableHead>{inventoryTerms.fifoLotPurchaseDate}</TableHead>
-                    {hasSensitiveInventoryAmounts(item) ? (
-                      <TableHead className="text-right">
-                        {inventoryTerms.fifoLotUnitPrice}
-                      </TableHead>
-                    ) : null}
+                    <TableHead className="text-right">
+                      {inventoryTerms.fifoLotUnitPrice}
+                    </TableHead>
                     <TableHead className="text-right">
                       {inventoryTerms.fifoLotOriginalQuantity}
                     </TableHead>
@@ -2087,6 +2145,9 @@ export function InventoryStepClient({
                             {formatDate(
                               lot.sourceBusinessDate ?? lot.purchaseDate,
                             )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatKrw(lot.unitPrice)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {formatQuantity(lot.originalQuantity)}
@@ -2153,7 +2214,8 @@ export function InventoryStepClient({
           plannedUnitPrice,
         ),
       );
-      const unitPriceSummary = item.purchasePrice
+      const lotPriceEntries = getInventoryLotPriceEntries(item);
+      const fallbackUnitPriceSummary = item.purchasePrice
         ? item.purchasePrice.kind === "AVERAGE"
           ? `재고 평균단가 · 당일 · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
           : item.purchasePrice.kind === "OPENING"
@@ -2281,9 +2343,26 @@ export function InventoryStepClient({
                 ) : null}
               </div>
 
-              <p className="text-muted-foreground text-xs tabular-nums">
-                {unitPriceSummary}
-              </p>
+              {lotPriceEntries.length > 0 ? (
+                <div
+                  aria-label={`${item.productName} 입고별 매입단가`}
+                  className="text-muted-foreground text-xs tabular-nums"
+                >
+                  <p className="text-foreground font-medium">입고별 매입단가</p>
+                  <ul className="mt-1 space-y-1">
+                    {lotPriceEntries.map((entry) => (
+                      <li key={entry.key}>
+                        {entry.arrivalLabel} · {formatKrw(entry.unitPrice)}
+                        /1박스 · {formatQuantity(entry.remainingQuantity)} 남음
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  {fallbackUnitPriceSummary}
+                </p>
+              )}
 
               {/* 2줄: 전일→기준 흐름 요약 (한 줄, 행 높이 고정) */}
               <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums">

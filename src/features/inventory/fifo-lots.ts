@@ -218,6 +218,26 @@ export type InventoryFifoLotView = {
   sortOrder: number;
 };
 
+export function toInventoryFifoLotViews(
+  lots: readonly FifoLotSnapshot[],
+): InventoryFifoLotView[] {
+  return lots.map((lot) => ({
+    sourceType: lot.sourceType,
+    sourceLedgerId: lot.sourceLedgerId,
+    sourcePurchaseItemId: lot.sourcePurchaseItemId,
+    purchaseDate: null,
+    sourceBusinessDate: lot.sourceBusinessDate?.toISOString() ?? null,
+    unitPrice: lot.unitPrice,
+    originalQuantity: lot.originalQuantity,
+    consumedQuantity: lot.consumedQuantity,
+    remainingQuantity: lot.remainingQuantity,
+    originalAmount: lot.originalAmount,
+    consumedAmount: lot.consumedAmount,
+    remainingAmount: lot.remainingAmount,
+    sortOrder: lot.sortOrder,
+  }));
+}
+
 const fifoLotViewSelect = {
   ledgerInventoryItemId: true,
   productId: true,

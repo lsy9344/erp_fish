@@ -10,7 +10,11 @@ import {
   resolveCarryoverRecheckStatus,
   toCarryoverLotSignature,
 } from "~/features/inventory/carryover-cost-recheck";
-import { getLedgerInventoryFifoLotsByProductId } from "~/features/inventory/fifo-lots";
+import {
+  getLedgerInventoryFifoAmountErrorProductIdsInTx,
+  getLedgerInventoryFifoLotsByProductId,
+  toInventoryFifoLotViews,
+} from "~/features/inventory/fifo-lots";
 import {
   resolveInventoryCarryoverWeightedAveragePrices,
   resolveInventoryPurchasePrices,
@@ -1206,6 +1210,54 @@ async function attachFifoLots(
   }));
 }
 
+async function attachProjectedFifoLots(
+  tx: Prisma.TransactionClient,
+  ledger: InventoryLedgerPayload,
+  items: InventoryStepLine[],
+  calculatedClosingProductIds: ReadonlySet<string> = new Set(),
+) {
+  const itemsWithoutLots = items.filter((item) => item.fifoLots.length === 0);
+
+  if (itemsWithoutLots.length === 0) {
+    return items;
+  }
+
+  const { snapshotsByProductId } =
+    await getLedgerInventoryFifoAmountErrorProductIdsInTx(
+      tx,
+      ledger.id,
+      ledger.closingDate,
+      itemsWithoutLots.map((item) => {
+        const useCalculatedClosingQuantity = calculatedClosingProductIds.has(
+          item.productId,
+        );
+
+        return {
+          productId: item.productId,
+          unitPrice: item.unitPrice,
+          previousQuantity: item.previousQuantity,
+          currentQuantity: useCalculatedClosingQuantity
+            ? null
+            : item.currentQuantity,
+          quantity: useCalculatedClosingQuantity ? null : item.quantity,
+          carryoverLedgerId: item.carryoverLedgerId,
+        };
+      }),
+    );
+
+  return items.map((item) => {
+    if (item.fifoLots.length > 0) {
+      return item;
+    }
+
+    const projected = snapshotsByProductId.get(item.productId);
+
+    return projected
+      ? { ...item, fifoLots: toInventoryFifoLotViews(projected.fifo.lots) }
+      : item;
+  });
+}
+
 // WO-25(2026-07-25) #1: 당일/최근 매입행이 없을 때(예: 다음날 조회) 이월된 단가를 fallback으로
 // 표시한다. 월초 스냅샷(OPENING)뿐 아니라 전일 장부 이월(PREVIOUS_*_LEDGER)도 포함한다 —
 // item.unitPrice는 두 경우 모두 원천(엑셀 단가/FIFO 롯트 단가)에서 그대로 이월된 값이다.
@@ -1582,15 +1634,28 @@ async function getInventoryStepDataForLedgerInTx(
       ledger.id,
       itemsWithHistory,
     );
+    const existingProductIds = new Set(
+      existingItems.map((item) => item.productId),
+    );
+    const itemsWithDisplayLots = await attachProjectedFifoLots(
+      tx,
+      ledger,
+      itemsWithFifoLots,
+      new Set(
+        itemsWithFifoLots
+          .filter((item) => !existingProductIds.has(item.productId))
+          .map((item) => item.productId),
+      ),
+    );
     const carryoverStatus = getPrimaryCarryoverStatus(items);
     const manualProductOptions = await getManualProductOptions(
       tx,
-      new Set(itemsWithFifoLots.map((item) => item.productId)),
+      new Set(itemsWithDisplayLots.map((item) => item.productId)),
     );
     const priced = await attachPurchasePrices(
       tx,
       ledger,
-      itemsWithFifoLots,
+      itemsWithDisplayLots,
       manualProductOptions,
     );
 
@@ -1636,14 +1701,20 @@ async function getInventoryStepDataForLedgerInTx(
     ledger.closingDate,
     items,
   );
+  const itemsWithDisplayLots = await attachProjectedFifoLots(
+    tx,
+    ledger,
+    itemsWithHistory,
+    new Set(itemsWithHistory.map((item) => item.productId)),
+  );
   const manualProductOptions = await getManualProductOptions(
     tx,
-    new Set(itemsWithHistory.map((item) => item.productId)),
+    new Set(itemsWithDisplayLots.map((item) => item.productId)),
   );
   const priced = await attachPurchasePrices(
     tx,
     ledger,
-    itemsWithHistory,
+    itemsWithDisplayLots,
     manualProductOptions,
   );
 
