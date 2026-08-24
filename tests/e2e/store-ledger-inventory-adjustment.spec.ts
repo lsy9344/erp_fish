@@ -83,7 +83,9 @@ async function fillVisiblePlannedUnitPrices(page: Page) {
     }
     await tab.click();
 
-    const inputs = page.locator('input[aria-label$=" 판매한 가격"]:visible');
+    const inputs = page.locator(
+      'input[aria-label$=" 판매한 가격"]:visible, input[aria-label$=" 판매가"]:visible',
+    );
     for (
       let inputIndex = 0;
       inputIndex < (await inputs.count());
