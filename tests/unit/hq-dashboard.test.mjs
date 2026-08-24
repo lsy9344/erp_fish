@@ -1303,6 +1303,14 @@ test("WO-14 part2: dashboard row carries analysisSalesAmount from plannedSalesTo
   assert.match(queries, /buildDashboardPlannedSalesItems/);
   assert.match(queries, /getPlannedUnitPriceLookup/);
   assert.match(queries, /plannedSalesItems,/);
+  const detailBody = queries.slice(
+    queries.indexOf("export async function getHqLedgerDetail"),
+  );
+  assert.match(detailBody, /buildDashboardPlannedSalesItems\(\[ledger\]\)/);
+  assert.match(
+    detailBody,
+    /calculateLedgerReviewSummary\([\s\S]*?plannedSalesItems,/,
+  );
   assert.match(
     queries,
     /analysisSalesAmount:\s*(reviewSummary|correctedReviewSummary)\.plannedSalesTotal/,

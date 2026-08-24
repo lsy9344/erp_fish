@@ -164,6 +164,8 @@ model Product {
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
   ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
+  ledgerLotSalesPricePlans   LedgerLotSalesPricePlan[]
+  ledgerLossLotAllocations   LedgerLossLotAllocation[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
   inventoryOpeningSnapshots  InventoryOpeningSnapshot[]
@@ -367,6 +369,8 @@ model User {
   updatedLedgerInputCodeAliases       LedgerInputCodeStoreAlias[] @relation("LedgerInputCodeStoreAliasUpdatedBy")
   createdStoreSalesPricePlans         StoreSalesPricePlan[]       @relation("StoreSalesPricePlanCreatedBy")
   updatedStoreSalesPricePlans         StoreSalesPricePlan[]       @relation("StoreSalesPricePlanUpdatedBy")
+  createdLedgerLotSalesPricePlans     LedgerLotSalesPricePlan[]   @relation("LedgerLotSalesPricePlanCreatedBy")
+  updatedLedgerLotSalesPricePlans     LedgerLotSalesPricePlan[]   @relation("LedgerLotSalesPricePlanUpdatedBy")
   createdHeadquartersExpenses         HeadquartersExpense[]       @relation("HeadquartersExpenseCreatedBy")
   updatedHeadquartersExpenses         HeadquartersExpense[]       @relation("HeadquartersExpenseUpdatedBy")
   unitPriceUpdatedLedgerPurchaseItems LedgerPurchaseItem[]        @relation("LedgerPurchaseItemUnitPriceUpdatedBy")
@@ -458,6 +462,8 @@ model DailyLedger {
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
   ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
+  ledgerLotSalesPricePlans   LedgerLotSalesPricePlan[]
+  ledgerLossLotAllocations   LedgerLossLotAllocation[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
   ledgerLossItems            LedgerLossItem[]
   ledgerLaborItems           LedgerLaborItem[]
@@ -532,6 +538,9 @@ model LedgerExpense {
 
 model LedgerPurchaseItem {
   id                      String               @id @default(cuid())
+  // 매입 행이 수정 과정에서 delete+recreate되어도 같은 입고분임을 식별하는 영구 키.
+  // 기존 행은 migration에서 id를 복사하고, 새 행은 DB UUID 기본값을 사용한다.
+  lotOriginKey            String               @unique @default(dbgenerated("(gen_random_uuid())::text"))
   dailyLedgerId           String
   productId               String?
   // DEPRECATED(2026-06-24): PurchaseStandard 단계적 비활성화. 신규 라인은 연결하지 않는다.
@@ -637,6 +646,8 @@ model LedgerInventoryCarryoverDetail {
 
 model LedgerInventoryFifoLot {
   id                    String             @id @default(cuid())
+  // 전날 이월과 FIFO 재계산을 지나도 바뀌지 않는 입고분 식별자.
+  lotOriginKey          String             @default(dbgenerated("(gen_random_uuid())::text"))
   dailyLedgerId         String
   ledgerInventoryItemId String?
   productId             String
@@ -646,9 +657,13 @@ model LedgerInventoryFifoLot {
   unitPrice             Int
   originalQuantity      Decimal            @db.Decimal(12, 2)
   consumedQuantity      Decimal            @db.Decimal(12, 2)
+  lossQuantity          Decimal            @default(0) @db.Decimal(12, 2)
+  soldQuantity          Decimal            @default(0) @db.Decimal(12, 2)
   remainingQuantity     Decimal            @db.Decimal(12, 2)
   originalAmount        Int
   consumedAmount        Int
+  lossAmount            Int                @default(0)
+  soldAmount            Int                @default(0)
   remainingAmount       Int
   sortOrder             Int
   // WO-G(2026-06-22): lot의 실제 영업 기준일. 장기 체화 재고 판정이 데이터 입력 시각
@@ -665,6 +680,7 @@ model LedgerInventoryFifoLot {
 
   @@unique([dailyLedgerId, productId, sortOrder], map: "ledgerInventoryFifoLot_dailyLedgerId_productId_sortOrder_key")
   @@index([dailyLedgerId, productId])
+  @@index([dailyLedgerId, lotOriginKey])
   @@index([ledgerInventoryItemId])
   @@index([productId])
   @@index([sourceType])
@@ -727,6 +743,8 @@ model LedgerLossItem {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  lotAllocations LedgerLossLotAllocation[]
+
   dailyLedger     DailyLedger     @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
   ledgerInputCode LedgerInputCode @relation(fields: [ledgerInputCodeId], references: [id], onDelete: Restrict)
@@ -738,6 +756,32 @@ model LedgerLossItem {
   @@index([ledgerInputCodeId])
   @@index([createdById])
   @@index([updatedById])
+}
+
+// 당일 손실을 FIFO 입고분에 먼저 나눈 결과. 판매량은 각 lot의 전체 소진량에서
+// 이 수량을 뺀 값으로 확정한다. lot row 자체는 재계산 때 다시 만들어지므로 영구
+// lotOriginKey로 연결하고 직접 FK는 두지 않는다.
+model LedgerLossLotAllocation {
+  id               String   @id @default(cuid())
+  dailyLedgerId    String
+  ledgerLossItemId String
+  productId        String
+  lotOriginKey     String
+  quantity         Decimal  @db.Decimal(12, 2)
+  unitCost         Int
+  plannedUnitPrice Int
+  costAmount       Int
+  grossLossAmount  Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dailyLedger    DailyLedger    @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+  ledgerLossItem LedgerLossItem @relation(fields: [ledgerLossItemId], references: [id], onDelete: Cascade)
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([dailyLedgerId, productId])
+  @@index([ledgerLossItemId])
+  @@index([dailyLedgerId, lotOriginKey])
 }
 
 // WO-05(2026-06-22): 일일 장부에 종속된 라인 단위 인건비/급여 기록.
@@ -812,6 +856,31 @@ model StoreSalesPricePlan {
   @@unique([storeId, businessDate, productId], map: "storeSalesPricePlan_storeId_businessDate_productId_key")
   @@index([storeId, businessDate])
   @@index([productId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+// 장부의 입고분별 판매가. StoreSalesPricePlan은 과거 품목 단위 자료와 새 lot의
+// 기본값으로 남기고, 실제 당일 수정값은 이 모델에 저장한다.
+model LedgerLotSalesPricePlan {
+  id               String   @id @default(cuid())
+  dailyLedgerId    String
+  productId        String
+  lotOriginKey     String
+  plannedUnitPrice Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String
+  updatedById      String
+
+  dailyLedger DailyLedger @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("LedgerLotSalesPricePlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User        @relation("LedgerLotSalesPricePlanUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([dailyLedgerId, lotOriginKey], map: "ledgerLotSalesPricePlan_dailyLedgerId_lotOriginKey_key")
+  @@index([dailyLedgerId, productId])
+  @@index([lotOriginKey])
   @@index([createdById])
   @@index([updatedById])
 }
@@ -895,7 +964,7 @@ model EcountImportBatch {
 
 // WO(2026-06-24): 이카운트 원본 행 1건. 원본(raw*)과 매핑/장부 반영 결과를 함께 보존한다.
 // unitPrice는 원본 이카운트 단가다. 장부 적용 단가는 LedgerPurchaseItem.unitPrice가 별도로 보존한다.
-// status: PREVIEW, MAPPING_REQUIRED, READY, COMMITTED, FAILED, VOIDED
+// status: PREVIEW, MAPPING_REQUIRED, READY, EXCLUDED, COMMITTED, FAILED, VOIDED
 model EcountImportLine {
   id                   String  @id @default(cuid())
   batchId              String

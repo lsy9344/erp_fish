@@ -57,6 +57,8 @@ const reviewInventoryItemSelect = {
     select: {
       sourceType: true,
       consumedAmount: true,
+      soldAmount: true,
+      lossAmount: true,
       remainingAmount: true,
     },
   },
@@ -438,12 +440,48 @@ function buildStoreManagerTopSoldItems(
     currentQuantity: number | null;
     unitPrice: number;
     plannedUnitPrice: number | null;
+    fifoLots?: Array<{
+      soldQuantity: number;
+      unitPrice: number;
+      plannedUnitPrice: number | null;
+    }>;
   }>,
   limit = 5,
 ): StoreManagerTopSoldItem[] {
   const topItems: StoreManagerTopSoldItem[] = [];
 
   for (const item of items) {
+    if (item.fifoLots && item.fifoLots.length > 0) {
+      const soldQuantity = item.fifoLots.reduce(
+        (sum, lot) => sum + lot.soldQuantity,
+        0,
+      );
+      if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) continue;
+
+      const allLotsHavePlannedPrice = item.fifoLots.every(
+        (lot) =>
+          lot.plannedUnitPrice !== null &&
+          Number.isFinite(lot.plannedUnitPrice),
+      );
+      const estimatedSalesAmount = item.fifoLots.reduce(
+        (sum, lot) =>
+          sum +
+          Math.round(
+            lot.soldQuantity * (lot.plannedUnitPrice ?? lot.unitPrice),
+          ),
+        0,
+      );
+
+      topItems.push({
+        productId: item.productId,
+        productName: item.productName,
+        soldQuantity,
+        estimatedSalesAmount,
+        salesBasis: allLotsHavePlannedPrice ? "planned" : "cost",
+      });
+      continue;
+    }
+
     if (item.currentQuantity === null) continue;
 
     // 판매량 = 기준재고(전일+매입-손실) - 당일재고. 손실을 빼지 않으면
@@ -516,28 +554,49 @@ export async function getLedgerReviewStepData(
     const productIdsForPlan = [
       ...new Set(inventory.items.map((item) => item.productId)),
     ];
-    const salesPricePlans =
+    const [salesPricePlans, lotSalesPricePlans] =
       productIdsForPlan.length > 0
-        ? await tx.storeSalesPricePlan.findMany({
-            where: {
-              storeId: ledger.storeId,
-              businessDate: ledger.closingDate,
-              productId: { in: productIdsForPlan },
-            },
-            select: { productId: true, plannedUnitPrice: true },
-          })
-        : [];
+        ? await Promise.all([
+            tx.storeSalesPricePlan.findMany({
+              where: {
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                productId: { in: productIdsForPlan },
+              },
+              select: { productId: true, plannedUnitPrice: true },
+            }),
+            tx.ledgerLotSalesPricePlan.findMany({
+              where: { dailyLedgerId: ledger.id },
+              select: { productId: true, lotOriginKey: true },
+            }),
+          ])
+        : [[], []];
     const plannedUnitPriceByProductId = new Map(
       salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
     );
     const getPlannedUnitPrice = (productId: string): number | null =>
       plannedUnitPriceByProductId.get(productId) ?? null;
+    const currentLotPlanOrigins = new Set(
+      lotSalesPricePlans.map((plan) => plan.lotOriginKey),
+    );
+    const fullyPlannedLotProductIds = inventory.items
+      .filter(
+        (item) =>
+          item.fifoLots.length > 0 &&
+          item.fifoLots.every((lot) =>
+            currentLotPlanOrigins.has(lot.lotOriginKey),
+          ),
+      )
+      .map((item) => item.productId);
     const inventoryGate = getInventoryPlanGate({
       targetProductIds: inventory.items.map((item) => item.productId),
       persistedInventoryProductIds: savedInventoryItems.map(
         (item) => item.productId,
       ),
-      plannedProductIds: salesPricePlans.map((plan) => plan.productId),
+      plannedProductIds: [
+        ...salesPricePlans.map((plan) => plan.productId),
+        ...fullyPlannedLotProductIds,
+      ],
       // 폼이 숨기는 0재고 행은 판매한 가격을 입력할 화면이 없다(같은 정책을 공유한다).
       planExemptProductIds: inventory.items
         .filter(isHiddenZeroStockInventoryItem)
@@ -580,15 +639,29 @@ export async function getLedgerReviewStepData(
         .map((item) => item.adjustment)
         .filter((adjustment) => adjustment !== null),
       lossItems: losses.lossItems,
-      plannedSalesItems: savedInventoryItems.map((item) => ({
-        productId: item.productId,
-        previousQuantity: item.previousQuantity,
-        purchasedQuantity: item.purchasedQuantity,
-        lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
-        currentQuantity: item.currentQuantity,
-        quantity: item.quantity,
-        plannedUnitPrice: getPlannedUnitPrice(item.productId),
-      })),
+      plannedSalesItems: inventory.items.flatMap((item) =>
+        item.fifoLots.length > 0
+          ? item.fifoLots.map((lot) => ({
+              productId: item.productId,
+              previousQuantity: 0,
+              purchasedQuantity: lot.soldQuantity,
+              lossQuantity: 0,
+              currentQuantity: 0,
+              quantity: 0,
+              plannedUnitPrice: lot.plannedUnitPrice,
+            }))
+          : [
+              {
+                productId: item.productId,
+                previousQuantity: item.previousQuantity,
+                purchasedQuantity: item.purchasedQuantity,
+                lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
+                currentQuantity: item.currentQuantity,
+                quantity: item.quantity,
+                plannedUnitPrice: getPlannedUnitPrice(item.productId),
+              },
+            ],
+      ),
     });
     const hasInventoryUnavailable = savedInventoryItems.some(
       (item) =>
@@ -664,6 +737,13 @@ export async function getLedgerReviewStepData(
           currentQuantity: item.currentQuantity,
           unitPrice: item.unitPrice,
           plannedUnitPrice: getPlannedUnitPrice(item.productId),
+          fifoLots: inventory.items
+            .find((inventoryItem) => inventoryItem.productId === item.productId)
+            ?.fifoLots.map((lot) => ({
+              soldQuantity: lot.soldQuantity,
+              unitPrice: lot.unitPrice,
+              plannedUnitPrice: lot.plannedUnitPrice,
+            })),
         })),
       ),
     };

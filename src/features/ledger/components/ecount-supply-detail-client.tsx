@@ -281,7 +281,14 @@ export function EcountSupplyDetailClient({
           <div className="flex flex-col gap-1">
             <dt className="text-muted-foreground text-xs">총 건수</dt>
             <dd className="text-foreground font-medium tabular-nums">
-              {detail.lineCount}건
+              {detail.lineCount}건 (반영 {detail.includedLineCount}건)
+            </dd>
+          </div>
+          <div className="flex flex-col gap-1">
+            <dt className="text-muted-foreground text-xs">제외</dt>
+            <dd className="text-foreground font-medium tabular-nums">
+              {detail.excludedLineCount}건 · 지점 {detail.excludedStores.length}
+              곳
             </dd>
           </div>
           <div className="flex flex-col gap-1">
@@ -495,6 +502,38 @@ export function EcountSupplyDetailClient({
               </Table>
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {detail.excludedStores.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-muted-foreground text-lg font-semibold">
+            제외된 지점
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            비활성 지점이거나 등록되지 않은 거래처의 원본 행은 장부 반영에서
+            제외했습니다.
+          </p>
+          <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>거래처명(이카운트)</TableHead>
+                  <TableHead className="text-right">제외 건수</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detail.excludedStores.map((store) => (
+                  <TableRow key={store.rawStoreName}>
+                    <TableCell>{store.rawStoreName}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {store.lineCount}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </section>
       ) : null}
 

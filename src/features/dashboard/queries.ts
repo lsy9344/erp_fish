@@ -50,6 +50,10 @@ import {
   nullableDecimalToNumber,
   type DecimalNumber,
 } from "../../lib/decimal.ts";
+import {
+  loadResolvedLotSalesPricesInTx,
+  lotSalesPriceKey,
+} from "../inventory/lot-sales-price.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
@@ -77,6 +81,10 @@ async function buildDashboardPlannedSalesItems(
       purchasedQuantity: number;
       currentQuantity: number | null;
       quantity: number | null;
+      fifoLots?: Array<{
+        lotOriginKey: string;
+        soldQuantity: DecimalNumber;
+      }>;
     }>;
     ledgerLossItems: Array<{ productId: string | null; quantity: number }>;
   }>,
@@ -95,6 +103,28 @@ async function buildDashboardPlannedSalesItems(
       businessDate: ledger.closingDate,
     })),
   );
+  const { db } = await import("../../server/db.ts");
+  const lotPriceByLedgerId = new Map(
+    await Promise.all(
+      ledgers.map(async (ledger) => [
+        ledger.id,
+        await loadResolvedLotSalesPricesInTx(
+          db as unknown as Prisma.TransactionClient,
+          {
+            dailyLedgerId: ledger.id,
+            storeId: ledger.storeId,
+            businessDate: ledger.closingDate,
+            lots: ledger.ledgerInventoryItems.flatMap((item) =>
+              (item.fifoLots ?? []).map((lot) => ({
+                productId: item.productId ?? "",
+                lotOriginKey: lot.lotOriginKey,
+              })),
+            ).filter((lot) => lot.productId !== ""),
+          },
+        ),
+      ] as const),
+    ),
+  );
 
   for (const ledger of ledgers) {
     // 손실 수량을 productId별로 합산해 판매량(전일+매입-손실-당일재고)에서 차감한다.
@@ -110,23 +140,43 @@ async function buildDashboardPlannedSalesItems(
 
     result.set(
       ledger.id,
-      ledger.ledgerInventoryItems.map((item) => ({
-        productId: item.productId ?? undefined,
-        previousQuantity: item.previousQuantity,
-        purchasedQuantity: item.purchasedQuantity,
-        lossQuantity: item.productId
-          ? (lossByProductId.get(item.productId) ?? 0)
-          : 0,
-        currentQuantity: item.currentQuantity,
-        quantity: item.quantity,
-        plannedUnitPrice: item.productId
-          ? plannedUnitPriceLookup(
-              ledger.storeId,
-              ledger.closingDate,
-              item.productId,
-            )
-          : null,
-      })),
+      ledger.ledgerInventoryItems.flatMap((item) => {
+        if (item.productId && (item.fifoLots?.length ?? 0) > 0) {
+          return item.fifoLots!.map((lot) => ({
+            productId: item.productId ?? undefined,
+            previousQuantity: 0,
+            purchasedQuantity: decimalToNumber(lot.soldQuantity),
+            lossQuantity: 0,
+            currentQuantity: 0,
+            quantity: 0,
+            plannedUnitPrice:
+              lotPriceByLedgerId
+                .get(ledger.id)
+                ?.get(lotSalesPriceKey(item.productId!, lot.lotOriginKey))
+                ?.plannedUnitPrice ?? null,
+          }));
+        }
+
+        return [
+          {
+            productId: item.productId ?? undefined,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            lossQuantity: item.productId
+              ? (lossByProductId.get(item.productId) ?? 0)
+              : 0,
+            currentQuantity: item.currentQuantity,
+            quantity: item.quantity,
+            plannedUnitPrice: item.productId
+              ? plannedUnitPriceLookup(
+                  ledger.storeId,
+                  ledger.closingDate,
+                  item.productId,
+                )
+              : null,
+          },
+        ];
+      }),
     );
   }
 
@@ -174,7 +224,11 @@ type DashboardLedgerRecord = {
     inventoryAmount: number | null;
     fifoLots?: {
       sourceType: string;
+      lotOriginKey: string;
+      soldQuantity: number;
       consumedAmount: number;
+      soldAmount?: number;
+      lossAmount?: number;
       remainingAmount: number;
     }[];
   }[];
@@ -215,12 +269,24 @@ type DashboardLedgerRecordSource = Omit<
   ledgerInventoryItems: Array<
     Omit<
       DashboardLedgerRecord["ledgerInventoryItems"][number],
-      "previousQuantity" | "purchasedQuantity" | "currentQuantity" | "quantity"
+      | "previousQuantity"
+      | "purchasedQuantity"
+      | "currentQuantity"
+      | "quantity"
+      | "fifoLots"
     > & {
       previousQuantity: DecimalNumber;
       purchasedQuantity: DecimalNumber;
       currentQuantity: DecimalNumber | null;
       quantity: DecimalNumber | null;
+      fifoLots?: Array<
+        Omit<
+          NonNullable<
+            DashboardLedgerRecord["ledgerInventoryItems"][number]["fifoLots"]
+          >[number],
+          "soldQuantity"
+        > & { soldQuantity: DecimalNumber }
+      >;
     }
   >;
   ledgerInventoryAdjustments: Array<
@@ -255,6 +321,10 @@ function toDashboardLedgerRecord<T extends DashboardLedgerRecordSource>(
       purchasedQuantity: decimalToNumber(item.purchasedQuantity),
       currentQuantity: nullableDecimalToNumber(item.currentQuantity),
       quantity: nullableDecimalToNumber(item.quantity),
+      fifoLots: item.fifoLots?.map((lot) => ({
+        ...lot,
+        soldQuantity: decimalToNumber(lot.soldQuantity),
+      })),
     })),
     ledgerInventoryAdjustments: ledger.ledgerInventoryAdjustments.map(
       (adjustment) => ({
@@ -466,7 +536,11 @@ export async function getHqDashboardRows({
                 fifoLots: {
                   select: {
                     sourceType: true,
+                    lotOriginKey: true,
+                    soldQuantity: true,
                     consumedAmount: true,
+                    soldAmount: true,
+                    lossAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -912,7 +986,11 @@ export async function getHqLedgerDetail(ledgerId: string) {
                 fifoLots: {
                   select: {
                     sourceType: true,
+                    lotOriginKey: true,
+                    soldQuantity: true,
                     consumedAmount: true,
+                    soldAmount: true,
+                    lossAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -1002,6 +1080,9 @@ export async function getHqLedgerDetail(ledgerId: string) {
     lossData,
   } = snapshot;
   const ledger = toDashboardLedgerRecord(rawLedger);
+  const plannedSalesItems = (
+    await buildDashboardPlannedSalesItems([ledger])
+  ).get(ledger.id);
 
   const corrections = getLatestCorrectionValueMap(correctionRecords);
   const correctionOverlay = applyCorrectionValuesToLedgerReviewInput({
@@ -1031,6 +1112,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
     ...correctionOverlay.reviewInput,
     inventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
+    plannedSalesItems,
   });
   // DESIGN.md D2: 상세 화면도 마감 장부 재고금액의 FIFO 완전성 계약을 동일하게 적용한다.
   const inventoryAmount = getClosedLedgerFifoInventoryAmount(

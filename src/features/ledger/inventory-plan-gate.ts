@@ -67,29 +67,35 @@ export async function getInventoryPlanGateForLedgerInTx(
   tx: Prisma.TransactionClient,
   ledger: { id: string; storeId: string; closingDate: Date },
 ): Promise<InventoryPlanGate> {
-  const [inventoryItems, purchaseItems, lossItems, plans] = await Promise.all([
-    tx.ledgerInventoryItem.findMany({
-      where: { dailyLedgerId: ledger.id },
-      select: {
-        productId: true,
-        previousQuantity: true,
-        purchasedQuantity: true,
-        currentQuantity: true,
-      },
-    }),
-    tx.ledgerPurchaseItem.findMany({
-      where: { dailyLedgerId: ledger.id, productId: { not: null } },
-      select: { productId: true },
-    }),
-    tx.ledgerLossItem.findMany({
-      where: { dailyLedgerId: ledger.id },
-      select: { productId: true, quantity: true },
-    }),
-    tx.storeSalesPricePlan.findMany({
-      where: { storeId: ledger.storeId, businessDate: ledger.closingDate },
-      select: { productId: true },
-    }),
-  ]);
+  const [inventoryItems, purchaseItems, lossItems, productPlans, lotPlans] =
+    await Promise.all([
+      tx.ledgerInventoryItem.findMany({
+        where: { dailyLedgerId: ledger.id },
+        select: {
+          productId: true,
+          previousQuantity: true,
+          purchasedQuantity: true,
+          currentQuantity: true,
+          fifoLots: { select: { lotOriginKey: true } },
+        },
+      }),
+      tx.ledgerPurchaseItem.findMany({
+        where: { dailyLedgerId: ledger.id, productId: { not: null } },
+        select: { productId: true },
+      }),
+      tx.ledgerLossItem.findMany({
+        where: { dailyLedgerId: ledger.id },
+        select: { productId: true, quantity: true },
+      }),
+      tx.storeSalesPricePlan.findMany({
+        where: { storeId: ledger.storeId, businessDate: ledger.closingDate },
+        select: { productId: true },
+      }),
+      tx.ledgerLotSalesPricePlan.findMany({
+        where: { dailyLedgerId: ledger.id },
+        select: { lotOriginKey: true },
+      }),
+    ]);
 
   const persistedProductIds = inventoryItems.map((item) => item.productId);
   const activityProductIds = [
@@ -146,6 +152,14 @@ export async function getInventoryPlanGateForLedgerInTx(
         decimalToNumber(lossItem.quantity),
     );
   }
+  const plannedLotOrigins = new Set(lotPlans.map((plan) => plan.lotOriginKey));
+  const fullyPlannedLotProductIds = inventoryItems
+    .filter(
+      (item) =>
+        item.fifoLots.length > 0 &&
+        item.fifoLots.every((lot) => plannedLotOrigins.has(lot.lotOriginKey)),
+    )
+    .map((item) => item.productId);
 
   return getInventoryPlanGate({
     targetProductIds: [
@@ -154,7 +168,10 @@ export async function getInventoryPlanGateForLedgerInTx(
       ...activityProductIds,
     ],
     persistedInventoryProductIds: persistedProductIds,
-    plannedProductIds: plans.map((plan) => plan.productId),
+    plannedProductIds: [
+      ...productPlans.map((plan) => plan.productId),
+      ...fullyPlannedLotProductIds,
+    ],
     planExemptProductIds: inventoryItems
       .filter((item) =>
         isHiddenZeroStockInventoryItem({

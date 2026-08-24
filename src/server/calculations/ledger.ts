@@ -115,11 +115,16 @@ export type LedgerReviewInventoryInput = {
   unitPrice: number;
   inventoryAmount: number | null;
   fifoConsumedAmount?: number | null;
+  fifoSoldAmount?: number | null;
   fifoRemainingAmount?: number | null;
   fifoContainsLegacyOpening?: boolean;
   fifoLots?: {
     sourceType?: string;
+    lotOriginKey?: string;
+    soldQuantity?: number;
     consumedAmount: number;
+    soldAmount?: number;
+    lossAmount?: number;
     remainingAmount: number;
   }[];
 };
@@ -425,15 +430,32 @@ function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
     return isZeroInventoryFlow(item) ? 0 : null;
   }
 
+  if (isUsableNumber(item.fifoSoldAmount ?? null)) {
+    return item.fifoSoldAmount!;
+  }
+
+  if (item.fifoLots) {
+    return item.fifoLots.reduce((sum, lot) => {
+      const soldAmount = lot.soldAmount;
+      const lossAmount = lot.lossAmount;
+      const hasCompleteAllocation =
+        isUsableNumber(soldAmount ?? null) &&
+        isUsableNumber(lossAmount ?? null) &&
+        Math.abs(soldAmount! + lossAmount! - lot.consumedAmount) < 0.000001;
+
+      // 마이그레이션 전 FIFO 행은 새 필드가 모두 0으로 채워져 있다. 새 배분 합계가
+      // 기존 소진금액과 맞을 때만 soldAmount를 쓰고, 아니면 과거 consumedAmount를
+      // 판매 원가로 본다.
+      return sum + (hasCompleteAllocation ? soldAmount! : lot.consumedAmount);
+    }, 0);
+  }
+
+  // lot 배열 없이 집계값만 주는 과거 호출자는 기존 consumedAmount를 사용한다.
   if (isUsableNumber(item.fifoConsumedAmount ?? null)) {
     return item.fifoConsumedAmount!;
   }
 
-  if (!item.fifoLots) {
-    return null;
-  }
-
-  return item.fifoLots.reduce((sum, lot) => sum + lot.consumedAmount, 0);
+  return null;
 }
 
 function getFifoRemainingAmount(item: LedgerReviewInventoryInput) {

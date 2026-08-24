@@ -40,6 +40,7 @@ type ProductOption = {
 
 type PurchaseLine = {
   id: string;
+  lotOriginKey: string | null;
   productId: string;
   purchaseStandardId: string;
   sourceType: "MANUAL" | "ECOUNT_UPLOAD";
@@ -104,6 +105,7 @@ function parseQuantity(
 function createLineState(id: string): PurchaseLine {
   return {
     id,
+    lotOriginKey: null,
     productId: "",
     purchaseStandardId: "",
     sourceType: "MANUAL",
@@ -125,6 +127,7 @@ function toPurchaseLines(
 ) {
   return items.map<PurchaseLine>((item) => ({
     id: item.id,
+    lotOriginKey: item.lotOriginKey,
     productId: item.productId ?? "",
     purchaseStandardId: item.purchaseStandardId ?? "",
     sourceType: item.sourceType,
@@ -363,6 +366,7 @@ export function PurchaseStepClient({
           : {}),
         purchases: lines.map((line) => ({
           id: line.id,
+          lotOriginKey: line.lotOriginKey,
           sourceType: line.sourceType,
           productId: line.productId,
           purchaseStandardId: line.purchaseStandardId,

@@ -3699,7 +3699,7 @@ test("HQ comparison and monthly export helpers preserve gated statuses without l
   assert.doesNotMatch(auditJson, /서초점|광어|500000|220000/);
 });
 
-test("monthly report ranks products by estimated sales (sold quantity × planned price, cost fallback)", async () => {
+test("monthly report ranks products by each lot's estimated sales price with cost fallback", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -3709,6 +3709,14 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
   const { buildMonthlyClosingAnomalyReportForTest } = await import(
     pathToFileURL(queryPath).href
   );
+  const monthlyQueryBody = readFileSync(queryPath, "utf8").slice(
+    readFileSync(queryPath, "utf8").indexOf(
+      "export async function getHqMonthlyClosingAnomalyReport",
+    ),
+  );
+  assert.match(monthlyQueryBody, /monthlyLotPriceByLedgerId/);
+  assert.match(monthlyQueryBody, /loadResolvedLotSalesPricesInTx/);
+  assert.match(monthlyQueryBody, /plannedUnitPrice:[\s\S]*?lotSalesPriceKey/);
 
   const inventoryItem = (productId, productName, overrides) => ({
     id: `inv-${productId}`,
@@ -3747,10 +3755,30 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
         metricEvidence: {},
         hasUnappliedCorrections: false,
         inventoryItems: [
-          // 1위: 판매한 가격 2000이 있으므로 매입단가가 아닌 계획가 기준(70 × 2000 = 140,000).
+          // 1위: 같은 품목의 두 입고분 가격을 각각 적용한다(20 × 2000 + 50 × 3000 = 190,000).
           {
             ...soldItem("p1", "1위품목", 70),
-            plannedUnitPrice: 2000,
+            plannedUnitPrice: 999,
+            fifoLots: [
+              {
+                soldQuantity: 20,
+                unitPrice: 1000,
+                plannedUnitPrice: 2000,
+                consumedAmount: 20000,
+                soldAmount: 20000,
+                lossAmount: 0,
+                remainingAmount: 0,
+              },
+              {
+                soldQuantity: 50,
+                unitPrice: 1000,
+                plannedUnitPrice: 3000,
+                consumedAmount: 50000,
+                soldAmount: 50000,
+                lossAmount: 0,
+                remainingAmount: 0,
+              },
+            ],
           },
           // 나머지는 판매한 가격이 없어 매입단가(1000)로 폴백.
           soldItem("p2", "2위품목", 60),
@@ -3779,7 +3807,7 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
   // 판매한 가격이 없어 폴백한 품목 수(p2~p7 = 6건).
   assert.equal(ranking.salesPriceFallbackItemCount, 6);
 
-  // 상위 5는 추정매출 내림차순. 1위는 판매한 가격(2000) 기준이라 140,000.
+  // 상위 5는 추정매출 내림차순. 1위는 두 입고분 가격 합계라 190,000.
   assert.deepEqual(
     ranking.top.map((item) => [
       item.productName,
@@ -3787,7 +3815,7 @@ test("monthly report ranks products by estimated sales (sold quantity × planned
       item.salesBasis,
     ]),
     [
-      ["1위품목", 140000, "planned"],
+      ["1위품목", 190000, "planned"],
       ["2위품목", 60000, "cost"],
       ["3위품목", 50000, "cost"],
       ["4위품목", 40000, "cost"],

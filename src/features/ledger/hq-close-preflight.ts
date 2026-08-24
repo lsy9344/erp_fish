@@ -17,6 +17,11 @@ import {
 } from "~/server/calculations/ledger";
 import { decimalToNumber, nullableDecimalToNumber } from "~/lib/decimal";
 import {
+  loadResolvedLotSalesPricesInTx,
+  lotSalesPriceKey,
+  type ResolvedLotSalesPrice,
+} from "~/features/inventory/lot-sales-price";
+import {
   evaluateInventoryLossAnomalySignals,
   evaluateRevenueAnomalySignals,
   normalizeAnomalyThresholdSignalSettings,
@@ -114,7 +119,11 @@ export const hqLedgerClosePreflightLedgerSelect = {
       fifoLots: {
         select: {
           sourceType: true,
+          lotOriginKey: true,
+          soldQuantity: true,
           consumedAmount: true,
+          soldAmount: true,
+          lossAmount: true,
           remainingAmount: true,
         },
       },
@@ -161,7 +170,10 @@ type HqLedgerClosePreflightLedger = Prisma.DailyLedgerGetPayload<{
 type HqLedgerClosePreflightLedgerView = ReturnType<
   typeof normalizeHqLedgerClosePreflightLedger
 >;
-type PlannedUnitPriceByProductId = Map<string, number>;
+type PlannedSalesPriceContext = {
+  byProductId: Map<string, number>;
+  byLotKey: Map<string, ResolvedLotSalesPrice>;
+};
 
 function normalizeHqLedgerClosePreflightLedger(
   ledger: HqLedgerClosePreflightLedger,
@@ -174,6 +186,10 @@ function normalizeHqLedgerClosePreflightLedger(
       purchasedQuantity: decimalToNumber(item.purchasedQuantity),
       currentQuantity: nullableDecimalToNumber(item.currentQuantity),
       quantity: nullableDecimalToNumber(item.quantity),
+      fifoLots: item.fifoLots.map((lot) => ({
+        ...lot,
+        soldQuantity: decimalToNumber(lot.soldQuantity),
+      })),
     })),
     ledgerInventoryAdjustments: ledger.ledgerInventoryAdjustments.map(
       (adjustment) => ({
@@ -228,7 +244,7 @@ export async function buildHqLedgerClosePreflightInTx(
     return null;
   }
 
-  const plannedUnitPriceByProductId = await getPlannedUnitPriceByProductId(
+  const plannedSalesPriceContext = await getPlannedSalesPriceContext(
     tx,
     ledger,
   );
@@ -238,7 +254,7 @@ export async function buildHqLedgerClosePreflightInTx(
     actor,
     normalizeAnomalyThresholdSignalSettings(thresholdSettings),
     correctionRecords,
-    plannedUnitPriceByProductId,
+    plannedSalesPriceContext,
   );
   const summary = summarizePreflightItems(items);
 
@@ -263,7 +279,7 @@ function buildHqLedgerClosePreflightItems(
     typeof getDashboardSignals
   >[0]["thresholdSettings"],
   correctionRecords: CorrectionRecordListItem[],
-  plannedUnitPriceByProductId: PlannedUnitPriceByProductId,
+  plannedSalesPriceContext: PlannedSalesPriceContext,
 ) {
   const items: HqLedgerClosePreflightItem[] = [
     ...buildAuthorizationItems(actor),
@@ -288,20 +304,52 @@ function buildHqLedgerClosePreflightItems(
     corrections: getLatestCorrectionValueMap(correctionRecords).values(),
   });
   const getPlannedUnitPrice = (productId: string | undefined) =>
-    productId ? (plannedUnitPriceByProductId.get(productId) ?? null) : null;
+    productId
+      ? (plannedSalesPriceContext.byProductId.get(productId) ?? null)
+      : null;
+  const lossQuantityByProductId = new Map<string, number>();
+  for (const loss of correctionOverlay.lossItems) {
+    if (!loss.productId) continue;
+    lossQuantityByProductId.set(
+      loss.productId,
+      (lossQuantityByProductId.get(loss.productId) ?? 0) + loss.quantity,
+    );
+  }
   const reviewSummary = calculateLedgerReviewSummary({
     ...correctionOverlay.reviewInput,
     inventoryAdjustments: ledger.ledgerInventoryAdjustments,
     lossItems: correctionOverlay.lossItems,
-    plannedSalesItems: correctionOverlay.reviewInput.inventoryItems.map(
-      (item) => ({
-        productId: item.productId,
-        previousQuantity: item.previousQuantity,
-        purchasedQuantity: item.purchasedQuantity,
-        currentQuantity: item.currentQuantity,
-        quantity: item.quantity,
-        plannedUnitPrice: getPlannedUnitPrice(item.productId),
-      }),
+    plannedSalesItems: correctionOverlay.reviewInput.inventoryItems.flatMap(
+      (item) => {
+        if (item.productId && (item.fifoLots?.length ?? 0) > 0) {
+          return item.fifoLots!.map((lot) => ({
+            productId: item.productId,
+            previousQuantity: 0,
+            purchasedQuantity: lot.soldQuantity ?? 0,
+            lossQuantity: 0,
+            currentQuantity: 0,
+            quantity: 0,
+            plannedUnitPrice:
+              plannedSalesPriceContext.byLotKey.get(
+                lotSalesPriceKey(item.productId!, lot.lotOriginKey!),
+              )?.plannedUnitPrice ?? null,
+          }));
+        }
+
+        return [
+          {
+            productId: item.productId,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            lossQuantity: item.productId
+              ? (lossQuantityByProductId.get(item.productId) ?? 0)
+              : 0,
+            currentQuantity: item.currentQuantity,
+            quantity: item.quantity,
+            plannedUnitPrice: getPlannedUnitPrice(item.productId),
+          },
+        ];
+      },
     ),
   });
   const missingItems = getLedgerReviewMissingItems({
@@ -459,33 +507,49 @@ function buildStatusItems(ledger: HqLedgerClosePreflightLedgerView) {
   ];
 }
 
-async function getPlannedUnitPriceByProductId(
+async function getPlannedSalesPriceContext(
   tx: Prisma.TransactionClient,
   ledger: HqLedgerClosePreflightLedger,
-): Promise<PlannedUnitPriceByProductId> {
+): Promise<PlannedSalesPriceContext> {
   const productIds = [
     ...new Set(ledger.ledgerInventoryItems.map((item) => item.productId)),
   ];
 
   if (productIds.length === 0) {
-    return new Map();
+    return { byProductId: new Map(), byLotKey: new Map() };
   }
 
-  const salesPricePlans = await tx.storeSalesPricePlan.findMany({
-    where: {
+  const [salesPricePlans, byLotKey] = await Promise.all([
+    tx.storeSalesPricePlan.findMany({
+      where: {
+        storeId: ledger.storeId,
+        businessDate: ledger.closingDate,
+        productId: { in: productIds },
+      },
+      select: {
+        productId: true,
+        plannedUnitPrice: true,
+      },
+    }),
+    loadResolvedLotSalesPricesInTx(tx, {
+      dailyLedgerId: ledger.id,
       storeId: ledger.storeId,
       businessDate: ledger.closingDate,
-      productId: { in: productIds },
-    },
-    select: {
-      productId: true,
-      plannedUnitPrice: true,
-    },
-  });
+      lots: ledger.ledgerInventoryItems.flatMap((item) =>
+        item.fifoLots.map((lot) => ({
+          productId: item.productId,
+          lotOriginKey: lot.lotOriginKey,
+        })),
+      ),
+    }),
+  ]);
 
-  return new Map(
-    salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
-  );
+  return {
+    byProductId: new Map(
+      salesPricePlans.map((plan) => [plan.productId, plan.plannedUnitPrice]),
+    ),
+    byLotKey,
+  };
 }
 
 function buildCalculationItems(

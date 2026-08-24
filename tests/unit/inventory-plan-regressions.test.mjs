@@ -135,6 +135,9 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
         createdLots.push(...data);
       },
     },
+    ledgerLossLotAllocation: {
+      deleteMany: async () => undefined,
+    },
     ledgerPurchaseItem: { findMany: unexpectedRead },
     ledgerLossItem: { findMany: unexpectedRead },
     // 품목 금액은 왕복 수를 품목 수와 분리하려고 벌크 UPDATE 한 번으로 쓴다.
@@ -146,6 +149,7 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
   const fifo = {
     lots: [
       {
+        lotOriginKey: "lot-1",
         sourceType: "PREVIOUS_CARRYOVER",
         sourceLedgerId: "previous-ledger",
         sourcePurchaseItemId: null,
@@ -153,14 +157,21 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
         unitPrice: 100,
         originalQuantity: 2,
         consumedQuantity: 1,
+        lossQuantity: 0,
+        soldQuantity: 1,
         remainingQuantity: 1,
         originalAmount: 200,
         consumedAmount: 100,
+        lossAmount: 0,
+        soldAmount: 100,
         remainingAmount: 100,
         sortOrder: 0,
       },
     ],
     consumedAmount: 100,
+    lossAmount: 0,
+    soldAmount: 100,
+    lossAllocations: [],
     remainingAmount: 100,
     containsLegacyOpening: false,
   };
@@ -168,7 +179,7 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
   await refreshLedgerInventoryFifoLots(
     tx,
     "ledger-1",
-    new Map([["product-1", { purchasedQuantity: 0, fifo }]]),
+    new Map([["product-1", { purchasedQuantity: 0, lossItems: [], fifo }]]),
   );
 
   assert.equal(inventoryUpdates.length, 1);

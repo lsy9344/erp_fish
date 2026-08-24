@@ -834,8 +834,11 @@ test("HQ close preflight wires planned sales inputs into ledger calculations", (
   );
 
   assert.match(source, /storeSalesPricePlan\.findMany/);
-  assert.match(source, /plannedUnitPriceByProductId/);
+  assert.match(source, /loadResolvedLotSalesPricesInTx/);
+  assert.match(source, /plannedSalesPriceContext\.byLotKey/);
+  assert.match(source, /lotSalesPriceKey/);
   assert.match(source, /plannedSalesItems:/);
+  assert.match(source, /plannedUnitPrice:\s*[\s\S]*?byLotKey\.get/);
   assert.match(source, /plannedUnitPrice:\s*getPlannedUnitPrice/);
 });
 

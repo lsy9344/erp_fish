@@ -125,15 +125,13 @@ function isPrismaForeignKeyError(error: unknown) {
   );
 }
 
-// 삭제를 막을 관계. 장부·기초재고·과거 Excel은 스키마가 이미 Restrict로 막지만,
-// 본사 지출과 이카운트 라인은 SetNull이라 그냥 지우면 소리 없이 주인을 잃는다.
-// 그래서 먼저 건수를 세어 사유와 함께 막고, DB Restrict는 마지막 안전망으로 둔다.
+// 삭제를 막을 관계. 원본 이카운트 라인은 storeId를 null로 바꿔 원본을 보존한다.
+// 나머지 운영/과거 기록은 먼저 건수를 세어 사유와 함께 막고, DB Restrict는 마지막 안전망으로 둔다.
 const STORE_DELETE_BLOCKERS = [
   ["dailyLedgers", "일일 장부"],
   ["inventoryOpeningSnapshots", "기초 재고"],
   ["salesPricePlans", "판매가 계획"],
   ["headquartersExpenses", "본사 지출"],
-  ["ecountImportLines", "이카운트 업로드 라인"],
   ["historicalDailyFacts", "과거 Excel 실적"],
   ["historicalEmployeeDailyRoles", "과거 Excel 근무 기록"],
 ] as const;
@@ -164,7 +162,6 @@ export async function deleteStore(
               inventoryOpeningSnapshots: true,
               salesPricePlans: true,
               headquartersExpenses: true,
-              ecountImportLines: true,
               historicalDailyFacts: true,
               historicalEmployeeDailyRoles: true,
             },
@@ -197,6 +194,12 @@ export async function deleteStore(
         actorId: actor.id,
         before: toAuditStoreSnapshot(store, toDeleteAuditContext(actor.role)),
         after: null,
+      });
+
+      // 이카운트 원본(raw*)은 지점을 지워도 보존한다. 매핑만 끊는다.
+      await tx.ecountImportLine.updateMany({
+        where: { storeId },
+        data: { storeId: null },
       });
 
       // 지점장 배정과 코드/외부 별칭은 Cascade라 함께 사라진다(설정값뿐이다).

@@ -29,10 +29,23 @@ function shapeStoreManagerInventoryLine(
     previousQuantityDetail: item.previousQuantityDetail,
     isModified: item.isModified,
     fifoLots: item.fifoLots.map(
-      ({ originalAmount, consumedAmount, remainingAmount, ...lot }) => {
+      ({
+        originalAmount,
+        consumedAmount,
+        lossAmount,
+        soldAmount,
+        remainingAmount,
+        expectedRevenue,
+        expectedProfit,
+        ...lot
+      }) => {
         void originalAmount;
         void consumedAmount;
+        void lossAmount;
+        void soldAmount;
         void remainingAmount;
+        void expectedRevenue;
+        void expectedProfit;
         return lot;
       },
     ),

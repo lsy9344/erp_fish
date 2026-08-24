@@ -19,7 +19,7 @@ const hqInventoryActionUrl = new URL(
   import.meta.url,
 );
 
-test("inventory save owns one CAS and atomically patches plans before derived loss sync", async () => {
+test("inventory save owns one CAS and atomically patches lot plans before FIFO loss allocation", async () => {
   const source = await readFile(inventoryActionUrl, "utf8");
   const transaction = source.slice(
     source.indexOf("const result = await db.$transaction"),
@@ -39,7 +39,8 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
     1,
   );
   assert.match(transaction, /upsertInventorySalesPricePlansInTx\(/);
-  assert.match(transaction, /syncLedgerLossItemsWithSalesPricePlansInTx\(/);
+  assert.match(transaction, /upsertLedgerLotSalesPricePlansInTx\(/);
+  assert.match(transaction, /refreshLedgerInventoryFifoLots\(/);
   assert.match(transaction, /dailyLedgerId:\s*before\.id/);
   assert.match(transaction, /action:\s*"ledger\.inventory\.saved"/);
   assert.ok(
@@ -58,9 +59,9 @@ test("inventory save owns one CAS and atomically patches plans before derived lo
     "FIFO amount bounds must be validated before the CAS mutation",
   );
   assert.ok(
-    transaction.indexOf("upsertInventorySalesPricePlansInTx(") <
-      transaction.indexOf("syncLedgerLossItemsWithSalesPricePlansInTx("),
-    "loss snapshots must read the newly upserted planned prices",
+    transaction.indexOf("upsertLedgerLotSalesPricePlansInTx(") <
+      transaction.indexOf("refreshLedgerInventoryFifoLots("),
+    "loss allocations must read the newly upserted lot prices",
   );
 });
 
@@ -145,9 +146,7 @@ test("inventory plan save revalidates every consumer path", async () => {
   assert.match(source, /revalidateLedgerDetailPath\(parsed\.data\.ledgerId\)/);
 });
 
-test("sales price write gate allows only closed-edit masters on closed ledgers", async () => {
-  // DESIGN.md D6: 판매한 가격 쓰기는 마감 편집 권한 + HEADQUARTERS_CLOSED 상태의
-  // 마스터만 허용한다. 행동 테스트로 판정 함수를 직접 검증한다.
+test("sales price write gate follows the shared HQ ledger status policy", async () => {
   const { getSalesPriceWriteGateDecision, salesPriceWriteForbiddenMessage } =
     await import(salesPricePersistenceUrl.href);
 
@@ -161,7 +160,19 @@ test("sales price write gate allows only closed-edit masters on closed ledgers",
     { ok: true },
   );
 
-  // 마감 편집 권한 + 마감 장부만 통과.
+  // 진행·검토 장부는 기본 장부 수정 권한으로 통과한다.
+  for (const ledgerStatus of ["IN_PROGRESS", "IN_REVIEW"]) {
+    assert.deepEqual(
+      getSalesPriceWriteGateDecision({
+        hasPlannedPriceInput: true,
+        closedEditAllowed: false,
+        ledgerStatus,
+      }),
+      { ok: true },
+    );
+  }
+
+  // 마감 편집 권한 + 마감 장부도 통과.
   assert.deepEqual(
     getSalesPriceWriteGateDecision({
       hasPlannedPriceInput: true,
@@ -181,12 +192,12 @@ test("sales price write gate allows only closed-edit masters on closed ledgers",
   assert.equal(forbidden.code, "LEDGER_NOT_EDITABLE");
   assert.equal(forbidden.message, salesPriceWriteForbiddenMessage);
 
-  // 마스터여도 미마감/검토 중 장부에서는 거부.
-  const notClosed = getSalesPriceWriteGateDecision({
+  // 휴무 장부는 추가 권한이 있어도 거부.
+  const holiday = getSalesPriceWriteGateDecision({
     hasPlannedPriceInput: true,
     closedEditAllowed: true,
-    ledgerStatus: "IN_REVIEW",
+    ledgerStatus: "HOLIDAY",
   });
-  assert.equal(notClosed.ok, false);
-  assert.equal(notClosed.code, "LEDGER_NOT_EDITABLE");
+  assert.equal(holiday.ok, false);
+  assert.equal(holiday.code, "LEDGER_NOT_EDITABLE");
 });

@@ -128,6 +128,7 @@ type InventoryLineState = InventoryDisplayData["items"][number] & {
   currentQuantityInput: string;
   manualUnitPriceInput: string;
   plannedUnitPriceInput: string;
+  lotPriceInputs: Record<string, string>;
   adjustmentReasonInput: string;
 };
 
@@ -208,9 +209,15 @@ function hasSensitiveInventoryAmounts(
 
 type InventoryLotPriceEntry = {
   key: string;
+  lotOriginKey: string;
   arrivalLabel: string;
   unitPrice: number;
   remainingQuantity: number;
+  soldQuantity: number;
+  lossQuantity: number;
+  plannedUnitPrice: number | null;
+  plannedUnitPriceSource: InventoryDisplayData["items"][number]["fifoLots"][number]["plannedUnitPriceSource"];
+  expectedMarginRate: number | null;
 };
 
 function getInventoryLotArrivalLabel(
@@ -237,33 +244,48 @@ function getInventoryLotArrivalLabel(
 function getInventoryLotPriceEntries(
   item: InventoryDisplayData["items"][number],
 ): InventoryLotPriceEntry[] {
-  const entries = new Map<string, InventoryLotPriceEntry>();
+  const baseLabels = item.fifoLots.map(getInventoryLotArrivalLabel);
+  const labelTotals = new Map<string, number>();
+  const labelIndexes = new Map<string, number>();
+  for (const label of baseLabels) {
+    labelTotals.set(label, (labelTotals.get(label) ?? 0) + 1);
+  }
 
-  for (const lot of item.fifoLots) {
-    if (lot.remainingQuantity <= 0) {
-      continue;
-    }
+  return item.fifoLots.map((lot, index) => {
+    const baseLabel = baseLabels[index]!;
+    const occurrence = (labelIndexes.get(baseLabel) ?? 0) + 1;
+    labelIndexes.set(baseLabel, occurrence);
+    const arrivalLabel =
+      (labelTotals.get(baseLabel) ?? 0) > 1
+        ? `${baseLabel} #${occurrence}`
+        : baseLabel;
 
-    const arrivalLabel = getInventoryLotArrivalLabel(lot);
-    const key = `${arrivalLabel}:${lot.unitPrice}`;
-    const existing = entries.get(key);
-
-    if (existing) {
-      existing.remainingQuantity = roundQuantity(
-        existing.remainingQuantity + lot.remainingQuantity,
-      );
-      continue;
-    }
-
-    entries.set(key, {
-      key,
+    return {
+      key: lot.lotOriginKey,
+      lotOriginKey: lot.lotOriginKey,
       arrivalLabel,
       unitPrice: lot.unitPrice,
       remainingQuantity: lot.remainingQuantity,
-    });
-  }
+      soldQuantity: lot.soldQuantity,
+      lossQuantity: lot.lossQuantity,
+      plannedUnitPrice: lot.plannedUnitPrice,
+      plannedUnitPriceSource: lot.plannedUnitPriceSource,
+      expectedMarginRate: lot.expectedMarginRate,
+    };
+  });
+}
 
-  return [...entries.values()];
+function toLotPriceInputs(
+  item: InventoryDisplayData["items"][number],
+): Record<string, string> {
+  return Object.fromEntries(
+    item.fifoLots.map((lot) => [
+      lot.lotOriginKey,
+      lot.plannedUnitPrice === null
+        ? ""
+        : formatKrwInput(String(lot.plannedUnitPrice)),
+    ]),
+  );
 }
 
 function hasSensitiveAdjustmentAmounts(
@@ -301,6 +323,7 @@ function toLineState(data: InventoryDisplayData): InventoryLineState[] {
       item.plannedUnitPrice === null
         ? ""
         : formatKrwInput(String(item.plannedUnitPrice)),
+    lotPriceInputs: toLotPriceInputs(item),
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   }));
 }
@@ -359,6 +382,7 @@ function toManualLineState(
       option.plannedUnitPrice === null
         ? ""
         : formatKrwInput(String(option.plannedUnitPrice)),
+    lotPriceInputs: {},
     adjustmentReasonInput: "",
   };
 }
@@ -379,6 +403,7 @@ function toRestoredHiddenZeroStockLineState(
       item.plannedUnitPrice === null
         ? ""
         : formatKrwInput(String(item.plannedUnitPrice)),
+    lotPriceInputs: toLotPriceInputs(item),
     adjustmentReasonInput: item.adjustment?.reason ?? "",
   };
 }
@@ -407,6 +432,7 @@ function mergeAdjustedLineState(
       ...item,
       currentQuantityInput: current.currentQuantityInput,
       plannedUnitPriceInput: current.plannedUnitPriceInput,
+      lotPriceInputs: current.lotPriceInputs,
       adjustmentReasonInput: current.adjustmentReasonInput,
     };
   });
@@ -445,6 +471,7 @@ export function InventoryStepClient({
   const plannedUnitPriceRefs = useRef<Record<string, HTMLInputElement | null>>(
     {},
   );
+  const lotPriceRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const reasonRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const pendingFocusTargetRef = useRef<InventoryErrorFocusTarget | null>(null);
   const pendingFocusOriginRef = useRef<Element | null>(null);
@@ -538,9 +565,9 @@ export function InventoryStepClient({
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   const isStoreManagerMode = !hqEditReasonRequired;
-  // DESIGN.md D6: 판매한 가격 입력은 지점장 모드 또는 마감 편집이 허용된 본사
-  // 마스터 모드에서 노출한다. 읽기 전용 output과 동시에는 표시하지 않는다.
-  const plannedUnitPriceEditable = isStoreManagerMode || closedEditAllowed;
+  // 판매가는 다른 장부 값과 같은 상태/권한 판정을 쓴다. 진행·검토는 편집 가능하고,
+  // 본사 마감은 마감 편집 권한이 있을 때만 가능하며, 휴무는 항상 읽기 전용이다.
+  const plannedUnitPriceEditable = !isOriginalEditBlocked;
   // Contract: disabled={isClosed || savingAdjustmentProductId !== null}
   // WO-03(2026-06-28): 미입력 필수 수량은 "사용자가 값을 바꾼 상태(dirty)"가 아니라
   // "저장 전에 막아야 하는 validation 상태"다. 둘을 분리한다. 예전엔 이걸 dirty에 섞어
@@ -773,6 +800,24 @@ export function InventoryStepClient({
     const blockedItems: BlockedEntryItem[] = [];
 
     items.forEach((item, index) => {
+      if (item.fifoLots.length > 0) {
+        for (const lot of item.fifoLots) {
+          const raw =
+            lotPriceRefs.current[lot.lotOriginKey]?.value ??
+            item.lotPriceInputs[lot.lotOriginKey] ??
+            "";
+
+          if (toRawKrwInputValue(raw) === "") {
+            nextErrors[`items.${index}.plannedUnitPrice`] = [
+              "입고분별 판매가를 입력해 주세요.",
+            ];
+            blockedItems.push({ ...item, index });
+            break;
+          }
+        }
+        return;
+      }
+
       const raw =
         plannedUnitPriceRefs.current[item.productId]?.value ??
         item.plannedUnitPriceInput;
@@ -947,7 +992,7 @@ export function InventoryStepClient({
         // 있을 때만 전송하고 빈칸은 키 자체를 보내지 않는다(변경 없음, 삭제 아님).
         ...(isStoreManagerMode
           ? { plannedUnitPrice: rawPlannedUnitPrice }
-          : closedEditAllowed && rawPlannedUnitPrice !== ""
+          : plannedUnitPriceEditable && rawPlannedUnitPrice !== ""
             ? { plannedUnitPrice: rawPlannedUnitPrice }
             : {}),
         unitPrice: addedManualIds.has(item.productId)
@@ -961,6 +1006,25 @@ export function InventoryStepClient({
           item.adjustmentReasonInput,
       };
     });
+    const submittedLotPrices = items.flatMap((item) =>
+      item.fifoLots.flatMap((lot) => {
+        const raw = toRawKrwInputValue(
+          lotPriceRefs.current[lot.lotOriginKey]?.value ??
+            item.lotPriceInputs[lot.lotOriginKey] ??
+            "",
+        );
+
+        return raw === ""
+          ? []
+          : [
+              {
+                productId: item.productId,
+                lotOriginKey: lot.lotOriginKey,
+                plannedUnitPrice: raw,
+              },
+            ];
+      }),
+    );
     const pendingReceipt = buildInventorySaveReceipt({
       baselineItems: data.items.map((item) => ({
         productId: item.productId,
@@ -989,6 +1053,7 @@ export function InventoryStepClient({
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
         items: submittedItems,
+        lotPrices: submittedLotPrices,
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
 
@@ -1103,6 +1168,31 @@ export function InventoryStepClient({
     );
   }
 
+  function updateLotPlannedUnitPrice(
+    productId: string,
+    lotOriginKey: string,
+    value: string,
+  ) {
+    pendingFocusTargetRef.current = null;
+    pendingFocusOriginRef.current = null;
+    setFieldErrors({});
+    setFormError(null);
+    clearRecentlySavedProduct(productId);
+    setItems((current) =>
+      current.map((item) =>
+        item.productId === productId
+          ? {
+              ...item,
+              lotPriceInputs: {
+                ...item.lotPriceInputs,
+                [lotOriginKey]: formatKrwInput(value),
+              },
+            }
+          : item,
+      ),
+    );
+  }
+
   const visibleProductIds = new Set(items.map((item) => item.productId));
   const availableManualOptions = data.manualProductOptions.filter(
     (option) => !visibleProductIds.has(option.productId),
@@ -1142,6 +1232,8 @@ export function InventoryStepClient({
       return;
     }
 
+    const target = items.find((item) => item.productId === productId);
+
     setItems((current) =>
       current.filter((item) => item.productId !== productId),
     );
@@ -1156,6 +1248,9 @@ export function InventoryStepClient({
     delete currentQuantityRefs.current[productId];
     delete manualUnitPriceRefs.current[productId];
     delete plannedUnitPriceRefs.current[productId];
+    for (const lot of target?.fifoLots ?? []) {
+      delete lotPriceRefs.current[lot.lotOriginKey];
+    }
     delete reasonRefs.current[productId];
   }
 
@@ -2345,18 +2440,92 @@ export function InventoryStepClient({
 
               {lotPriceEntries.length > 0 ? (
                 <div
-                  aria-label={`${item.productName} 입고별 매입단가`}
-                  className="text-muted-foreground text-xs tabular-nums"
+                  aria-label={`${item.productName} 입고분별 판매가`}
+                  className="space-y-2 text-xs tabular-nums"
                 >
-                  <p className="text-foreground font-medium">입고별 매입단가</p>
-                  <ul className="mt-1 space-y-1">
-                    {lotPriceEntries.map((entry) => (
-                      <li key={entry.key}>
-                        {entry.arrivalLabel} · {formatKrw(entry.unitPrice)}
-                        /1박스 · {formatQuantity(entry.remainingQuantity)} 남음
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-foreground font-medium">입고분별 판매가</p>
+                  {lotPriceEntries.map((entry) => {
+                    const inputValue =
+                      item.lotPriceInputs[entry.lotOriginKey] ?? "";
+                    const rawValue = toRawKrwInputValue(inputValue);
+                    const salePrice = rawValue === "" ? null : Number(rawValue);
+                    const margin = formatPlannedMarginRate(
+                      calculatePlannedMarginRate(entry.unitPrice, salePrice),
+                    );
+                    const sourceLabel =
+                      entry.plannedUnitPriceSource === "CARRYOVER"
+                        ? "전날 값"
+                        : entry.plannedUnitPriceSource === "LEGACY_PRODUCT"
+                          ? "기존 품목값"
+                          : entry.plannedUnitPriceSource === "CURRENT"
+                            ? "오늘 값"
+                            : "미입력";
+
+                    return (
+                      <div
+                        key={entry.key}
+                        className="bg-muted/40 grid gap-2 rounded-md p-2 sm:grid-cols-[minmax(0,1fr)_8rem_7rem] sm:items-end"
+                      >
+                        <div className="text-muted-foreground leading-5">
+                          <p className="text-foreground font-medium">
+                            {entry.arrivalLabel}
+                          </p>
+                          <p>
+                            매입 {formatKrw(entry.unitPrice)} · 남음{" "}
+                            {formatQuantity(entry.remainingQuantity)} · 판매{" "}
+                            {formatQuantity(entry.soldQuantity)} · 손실{" "}
+                            {formatQuantity(entry.lossQuantity)}
+                          </p>
+                        </div>
+                        {plannedUnitPriceEditable ? (
+                          <Field className="gap-1">
+                            <FieldLabel
+                              htmlFor={`inventory-lot-price-${entry.lotOriginKey}`}
+                            >
+                              판매가
+                            </FieldLabel>
+                            <Input
+                              id={`inventory-lot-price-${entry.lotOriginKey}`}
+                              ref={(node) => {
+                                lotPriceRefs.current[entry.lotOriginKey] = node;
+                              }}
+                              aria-label={`${item.productName} ${entry.arrivalLabel} 판매가`}
+                              inputMode="numeric"
+                              autoComplete="off"
+                              value={inputValue}
+                              onChange={(event) =>
+                                updateLotPlannedUnitPrice(
+                                  item.productId,
+                                  entry.lotOriginKey,
+                                  event.currentTarget.value,
+                                )
+                              }
+                              disabled={
+                                isSaving || isClosed || isAdjustmentSavePending
+                              }
+                              className="h-10 tabular-nums"
+                            />
+                          </Field>
+                        ) : (
+                          <div>
+                            <p className="text-muted-foreground">판매가</p>
+                            <p className="text-foreground font-medium">
+                              {entry.plannedUnitPrice === null
+                                ? "미입력"
+                                : formatKrw(entry.plannedUnitPrice)}
+                            </p>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-muted-foreground">마진율</p>
+                          <p className="text-foreground font-medium">
+                            {margin}
+                          </p>
+                          <p className="text-muted-foreground">{sourceLabel}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-muted-foreground text-xs tabular-nums">
@@ -2503,7 +2672,7 @@ export function InventoryStepClient({
                     />
                   </Field>
                 ) : null}
-                {plannedUnitPriceEditable ? (
+                {plannedUnitPriceEditable && lotPriceEntries.length === 0 ? (
                   <Field
                     data-invalid={Boolean(plannedUnitPriceError)}
                     className="w-auto gap-1"
@@ -2540,6 +2709,7 @@ export function InventoryStepClient({
                   </Field>
                 ) : null}
                 {!plannedUnitPriceEditable &&
+                lotPriceEntries.length === 0 &&
                 hasSensitiveInventoryAmounts(item) &&
                 !addedManualIds.has(item.productId) ? (
                   <div className="flex flex-col gap-1 pb-2.5">
@@ -2553,7 +2723,7 @@ export function InventoryStepClient({
                     </output>
                   </div>
                 ) : null}
-                {isStoreManagerMode ? (
+                {isStoreManagerMode && lotPriceEntries.length === 0 ? (
                   <div className="flex flex-col gap-1 pb-2.5">
                     <span className="text-muted-foreground text-xs">
                       판매가 기준 마진율

@@ -32,6 +32,7 @@ export const ECOUNT_LINE_STATUS = {
   COMMITTED: "COMMITTED",
   FAILED: "FAILED",
   VOIDED: "VOIDED",
+  EXCLUDED: "EXCLUDED",
 } as const;
 
 export type EcountLineStatus =
@@ -46,6 +47,7 @@ export const ECOUNT_STATUS_LABELS = {
   COMMITTED: "반영됨",
   FAILED: "오류",
   VOIDED: "취소됨",
+  EXCLUDED: "제외됨",
 } as const;
 
 export const ECOUNT_BATCH_STATUS_LABELS: Record<EcountBatchStatus, string> =
@@ -108,6 +110,7 @@ export type EcountMappingLineInput = {
   storeId: string | null;
   productId: string | null;
   error: string | null;
+  storeExcluded?: boolean;
 };
 
 export type EcountLineResolution = {
@@ -132,6 +135,15 @@ export function resolveEcountLine(
     return {
       status: ECOUNT_LINE_STATUS.FAILED,
       errorMessage: line.error,
+      unmappedStoreName: null,
+      unmappedProduct: null,
+    };
+  }
+
+  if (line.storeExcluded) {
+    return {
+      status: ECOUNT_LINE_STATUS.EXCLUDED,
+      errorMessage: null,
       unmappedStoreName: null,
       unmappedProduct: null,
     };
@@ -174,12 +186,20 @@ export function resolveBatchStatus(
     return ECOUNT_BATCH_STATUS.FAILED;
   }
 
-  if (lineStatuses.some((status) => status === ECOUNT_LINE_STATUS.FAILED)) {
+  const includedStatuses = lineStatuses.filter(
+    (status) => status !== ECOUNT_LINE_STATUS.EXCLUDED,
+  );
+
+  if (includedStatuses.length === 0) {
+    return ECOUNT_BATCH_STATUS.READY;
+  }
+
+  if (includedStatuses.some((status) => status === ECOUNT_LINE_STATUS.FAILED)) {
     return ECOUNT_BATCH_STATUS.FAILED;
   }
 
   if (
-    lineStatuses.some(
+    includedStatuses.some(
       (status) => status === ECOUNT_LINE_STATUS.MAPPING_REQUIRED,
     )
   ) {

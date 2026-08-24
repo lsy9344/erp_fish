@@ -151,7 +151,6 @@ test("master-data actions enforce headquarters authorization, audit, transaction
     "inventoryOpeningSnapshots",
     "salesPricePlans",
     "headquartersExpenses",
-    "ecountImportLines",
     "historicalDailyFacts",
     "historicalEmployeeDailyRoles",
   ]) {
@@ -163,6 +162,28 @@ test("master-data actions enforce headquarters authorization, audit, transaction
   assert.equal(actions.match(/\.delete\(/g)?.length, 1);
   assert.match(actions, /tx\.store\.delete\(\{ where: \{ id: storeId \} \}\)/);
   assert.doesNotMatch(actions, /deleteMany\(/);
+  assert.match(actions, /ecountImportLine\.updateMany/);
+  assert.match(actions, /data:\s*\{\s*storeId:\s*null\s*\}/);
+});
+
+test("store cleanup script has an exact, guarded, idempotent target list", () => {
+  const script = readProjectFile("scripts", "cleanup-target-stores.mjs");
+
+  for (const name of ["리얼수산", "샘플 지점", "정수산", "진수산(수산물)"]) {
+    assert.match(script, new RegExp(name.replace(/[()]/g, "\\$&")));
+  }
+  assert.match(script, /--dry-run/);
+  assert.match(script, /--apply/);
+  assert.match(script, /ALLOW_PRODUCTION_STORE_CLEANUP/);
+  assert.match(script, /ecountImportLine\.updateMany/);
+  assert.match(script, /blockers\.length\s*===\s*0/);
+  assert.match(script, /latest\.blockers\.length/);
+});
+
+test("production seed opts into the sample store explicitly", () => {
+  const seed = readProjectFile("prisma", "seed.ts");
+  assert.match(seed, /SEED_SAMPLE_STORE.*===\s*[\"']true[\"']/);
+  assert.match(seed, /if\s*\(seedSampleStore\)/);
 });
 
 test("master-data queries and audit helper use the shared server boundaries", () => {

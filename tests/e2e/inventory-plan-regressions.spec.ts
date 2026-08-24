@@ -35,6 +35,14 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
+function getFirstLotPriceInput(page: Page, productName: string) {
+  return page
+    .locator("tr")
+    .filter({ hasText: productName })
+    .locator('input[aria-label$=" 판매가"]')
+    .first();
+}
+
 async function getActorId() {
   const actor = await prisma.user.findUnique({
     where: { email: "hq@example.com" },
@@ -287,7 +295,7 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toHaveCount(0);
-  await page.getByLabel(`${product.name} 판매한 가격`).fill("2000");
+  await getFirstLotPriceInput(page, product.name).fill("2000");
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
 
   await expect(
@@ -301,10 +309,9 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
     }),
   ).toBe(1);
   expect(
-    await prisma.storeSalesPricePlan.count({
+    await prisma.ledgerLotSalesPricePlan.count({
       where: {
-        storeId: STORE_ID,
-        businessDate: getTodayKstMidnight(),
+        dailyLedgerId: ledger.id,
         productId: product.id,
       },
     }),
@@ -323,7 +330,7 @@ test("재고를 명시 저장한 뒤 다음 단계 이동은 버전과 감사로
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
   await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
-  await page.getByLabel(`${product.name} 판매한 가격`).fill("2000");
+  await getFirstLotPriceInput(page, product.name).fill("2000");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
@@ -428,7 +435,7 @@ test("최근 제출 장부의 판매한 가격은 조회만 이월되고 저장 
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  const plannedPrice = page.getByLabel(`${product.name} 판매한 가격`);
+  const plannedPrice = getFirstLotPriceInput(page, product.name);
   await expect(plannedPrice).toHaveValue("2,000");
   expect(
     await prisma.storeSalesPricePlan.count({
@@ -457,23 +464,15 @@ test("최근 제출 장부의 판매한 가격은 조회만 이월되고 저장 
         },
       },
     }),
-    prisma.storeSalesPricePlan.findUniqueOrThrow({
-      where: {
-        storeId_businessDate_productId: {
-          storeId: STORE_ID,
-          businessDate: getTodayKstMidnight(),
-          productId: product.id,
-        },
-      },
+    prisma.ledgerLotSalesPricePlan.findFirstOrThrow({
+      where: { dailyLedgerId: currentLedger.id, productId: product.id },
     }),
   ]);
   expect(previousPlan.plannedUnitPrice).toBe(2_000);
   expect(currentPlan.plannedUnitPrice).toBe(2_500);
 
   await page.reload();
-  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
-    "2,500",
-  );
+  await expect(getFirstLotPriceInput(page, product.name)).toHaveValue("2,500");
 });
 
 // 2026-07-27 정책 변경: 제출 전(IN_PROGRESS) 장부의 판매한 가격도 이월한다.
@@ -526,9 +525,7 @@ test("IN_PROGRESS 장부의 판매한 가격은 이월하고 HOLIDAY만 건너�
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
-    "9,999",
-  );
+  await expect(getFirstLotPriceInput(page, product.name)).toHaveValue("9,999");
 });
 
 test("HOLIDAY 장부만 있으면 판매한 가격을 이월하지 않는다", async ({
@@ -565,7 +562,7 @@ test("HOLIDAY 장부만 있으면 판매한 가격을 이월하지 않는다", a
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue("");
+  await expect(getFirstLotPriceInput(page, product.name)).toHaveValue("");
 });
 
 test("전월 제출 장부의 판매한 가격도 월 경계를 넘어 이월된다", async ({
@@ -605,9 +602,7 @@ test("전월 제출 장부의 판매한 가격도 월 경계를 넘어 이월된
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  await expect(page.getByLabel(`${product.name} 판매한 가격`)).toHaveValue(
-    "3,300",
-  );
+  await expect(getFirstLotPriceInput(page, product.name)).toHaveValue("3,300");
   expect(
     await prisma.storeSalesPricePlan.count({
       where: {
@@ -667,10 +662,10 @@ test("stale version 재고 충돌은 당일·이월 판매가격 출처를 serve
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
   await expect(
-    page.getByLabel(`${currentProduct.name} 판매한 가격`),
+    getFirstLotPriceInput(page, currentProduct.name),
   ).toHaveValue("2,500");
   await expect(
-    page.getByLabel(`${carryoverProduct.name} 판매한 가격`),
+    getFirstLotPriceInput(page, carryoverProduct.name),
   ).toHaveValue("2,000");
 
   await page

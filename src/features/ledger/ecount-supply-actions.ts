@@ -16,11 +16,14 @@ import {
   type EcountLineStatus,
 } from "~/features/ledger/ecount-supply-mapping";
 import {
+  loadEcountResolutionMapsInTx,
+  recomputeEcountBatchMappingInTx,
+} from "~/features/ledger/ecount-supply-resolution";
+import {
   getEcountSupplyImportDetail,
   type EcountImportBatchDetail,
 } from "~/features/ledger/ecount-supply-queries";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
-import type { Prisma } from "~/../generated/prisma";
 import { writeAuditLog } from "~/server/audit";
 import {
   requireEcountUploadPreviewAccess,
@@ -40,98 +43,6 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
     "arrayBuffer" in value &&
     typeof value.arrayBuffer === "function"
   );
-}
-
-type AliasMaps = {
-  storeByRaw: Map<string, string>;
-  productByRaw: Map<string, string>;
-};
-
-async function loadAliasMaps(tx: Prisma.TransactionClient): Promise<AliasMaps> {
-  const [storeAliases, productAliases] = await Promise.all([
-    tx.storeExternalAlias.findMany({
-      where: { provider: ECOUNT_PROVIDER },
-      select: { rawName: true, storeId: true },
-    }),
-    tx.productExternalAlias.findMany({
-      where: { provider: ECOUNT_PROVIDER },
-      select: { rawName: true, rawSpec: true, productId: true },
-    }),
-  ]);
-
-  const storeByRaw = new Map<string, string>();
-  for (const alias of storeAliases) {
-    storeByRaw.set(storeAliasKey(alias.rawName), alias.storeId);
-  }
-
-  const productByRaw = new Map<string, string>();
-  for (const alias of productAliases) {
-    productByRaw.set(
-      productAliasKey(alias.rawName, alias.rawSpec),
-      alias.productId,
-    );
-  }
-
-  return { storeByRaw, productByRaw };
-}
-
-/**
- * batch의 모든 line에 현재 alias 매핑을 적용하고 line/batch 상태를 재계산한다.
- * COMMITTED/VOIDED batch는 건드리지 않는다.
- */
-async function recomputeBatchMappingInTx(
-  tx: Prisma.TransactionClient,
-  batchId: string,
-): Promise<void> {
-  const batch = await tx.ecountImportBatch.findUnique({
-    where: { id: batchId },
-    include: { lines: true },
-  });
-
-  if (!batch || batch.status === "COMMITTED" || batch.status === "VOIDED") {
-    return;
-  }
-
-  const aliases = await loadAliasMaps(tx);
-  const lineStatuses: EcountLineStatus[] = [];
-
-  for (const line of batch.lines) {
-    const storeId =
-      aliases.storeByRaw.get(storeAliasKey(line.rawStoreName)) ?? null;
-    const productId =
-      aliases.productByRaw.get(
-        productAliasKey(line.rawProductName, line.productSpec),
-      ) ?? null;
-
-    // FAILED 라인은 파싱 단계의 영구 오류(수량 x 단가 불일치)다. 재매핑으로 지우지 않는다.
-    const parseError = line.status === "FAILED" ? line.errorMessage : null;
-
-    const resolution = resolveEcountLine({
-      rawStoreName: line.rawStoreName,
-      rawProductName: line.rawProductName,
-      productSpec: line.productSpec,
-      storeId,
-      productId,
-      error: parseError,
-    });
-
-    lineStatuses.push(resolution.status);
-
-    await tx.ecountImportLine.update({
-      where: { id: line.id },
-      data: {
-        storeId,
-        productId,
-        status: resolution.status,
-        errorMessage: resolution.errorMessage,
-      },
-    });
-  }
-
-  await tx.ecountImportBatch.update({
-    where: { id: batchId },
-    data: { status: resolveBatchStatus(lineStatuses) },
-  });
 }
 
 export async function previewEcountSupplyUpload(formData: FormData): Promise<
@@ -196,6 +107,9 @@ export async function previewEcountSupplyUpload(formData: FormData): Promise<
   });
 
   if (existing) {
+    await db.$transaction((tx) =>
+      recomputeEcountBatchMappingInTx(tx, existing.id),
+    );
     const detail = await getEcountSupplyImportDetail(existing.id);
 
     if (detail) {
@@ -224,7 +138,7 @@ export async function previewEcountSupplyUpload(formData: FormData): Promise<
   );
 
   const batchId = await db.$transaction(async (tx) => {
-    const aliases = await loadAliasMaps(tx);
+    const aliases = await loadEcountResolutionMapsInTx(tx);
     const lineStatuses: EcountLineStatus[] = [];
 
     const batch = await tx.ecountImportBatch.create({
@@ -253,6 +167,7 @@ export async function previewEcountSupplyUpload(formData: FormData): Promise<
         storeId,
         productId,
         error: line.error,
+        storeExcluded: !storeId,
       });
 
       lineStatuses.push(resolution.status);
@@ -342,7 +257,9 @@ export async function saveEcountStoreAlias(input: {
   }
 
   await db.$transaction(async (tx) => {
-    const store = await tx.store.findUnique({ where: { id: storeId } });
+    const store = await tx.store.findFirst({
+      where: { id: storeId, isActive: true },
+    });
 
     if (!store) {
       throw new EcountSupplyImportError("선택한 지점을 찾을 수 없습니다.");
@@ -376,7 +293,7 @@ export async function saveEcountStoreAlias(input: {
       after: { rawName, storeId },
     });
 
-    await recomputeBatchMappingInTx(tx, String(input.batchId));
+    await recomputeEcountBatchMappingInTx(tx, String(input.batchId));
   });
 
   revalidateEcountImportPaths(String(input.batchId));
@@ -536,7 +453,7 @@ export async function createEcountProductFromLine(input: {
         after: { rawName, rawSpec, productId: product.id },
       });
 
-      await recomputeBatchMappingInTx(tx, batchId);
+      await recomputeEcountBatchMappingInTx(tx, batchId);
     });
   } catch (error) {
     if (error instanceof EcountSupplyImportError) {
@@ -628,7 +545,7 @@ export async function saveEcountProductAlias(input: {
       after: { rawName, rawSpec, productId },
     });
 
-    await recomputeBatchMappingInTx(tx, String(input.batchId));
+    await recomputeEcountBatchMappingInTx(tx, String(input.batchId));
   });
 
   revalidateEcountImportPaths(String(input.batchId));

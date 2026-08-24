@@ -1027,6 +1027,8 @@ export async function saveHqLedgerPurchases(
 
           purchaseRows.push({
             dailyLedgerId: beforeLedger.id,
+            lotOriginKey:
+              existing?.lotOriginKey ?? purchase.lotOriginKey ?? undefined,
             productId: snapshot.productId,
             purchaseStandardId: snapshot.purchaseStandardId,
             sourceType: snapshot.sourceType,

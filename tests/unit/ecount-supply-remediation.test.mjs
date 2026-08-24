@@ -34,6 +34,10 @@ const commit = () =>
   readProjectFile("src", "features", "ledger", "ecount-supply-commit.ts");
 const supplyActions = () =>
   readProjectFile("src", "features", "ledger", "ecount-supply-actions.ts");
+const supplyResolution = () =>
+  readProjectFile("src", "features", "ledger", "ecount-supply-resolution.ts");
+const supplyQueries = () =>
+  readProjectFile("src", "features", "ledger", "ecount-supply-queries.ts");
 const detailClient = () =>
   readProjectFile(
     "src",
@@ -315,19 +319,18 @@ test("#8 e2e uploads an ECOUNT workbook and commits it through the UI", () => {
 // 별도 "품목묭도"·"모두 적용" UI는 만들지 않는다(업로드 자동 등록/자동 매핑으로 정리).
 test("WO-08: alias save recomputes whole batch with consistent raw keys and audits", () => {
   const source = supplyActions();
+  const resolutionSource = supplyResolution();
 
   // 두 저장 액션 모두 batch 전체 재계산 + 감사 로그를 호출한다.
   assert.match(source, /export async function saveEcountStoreAlias/);
   assert.match(source, /export async function saveEcountProductAlias/);
-  assert.match(source, /async function recomputeBatchMappingInTx/);
+  assert.match(source, /recomputeEcountBatchMappingInTx/);
   assert.match(source, /store_external_alias\.(created|updated)/);
   assert.match(source, /product_external_alias\.(created|updated)/);
 
   // recompute는 batch의 "모든" 라인을 돌며 같은 정규화 키(storeAliasKey/productAliasKey)로
   // 매핑을 다시 적용한다 → 같은 raw key 라인이 한 번에 갱신된다.
-  const recompute =
-    source.match(/async function recomputeBatchMappingInTx[\s\S]*?\n}/)?.[0] ??
-    "";
+  const recompute = resolutionSource;
   assert.match(recompute, /for \(const line of batch\.lines\)/);
   assert.match(recompute, /storeAliasKey\(line\.rawStoreName\)/);
   assert.match(
@@ -343,9 +346,12 @@ test("WO-08: alias save recomputes whole batch with consistent raw keys and audi
   );
 
   // loadAliasMaps도 같은 정규화 키를 써서 저장과 조회가 어긋나지 않게 한다.
-  assert.match(source, /storeByRaw\.set\(storeAliasKey\(alias\.rawName\)/);
   assert.match(
-    source,
+    resolutionSource,
+    /storeByRaw\.set\(storeAliasKey\(alias\.rawName\)/,
+  );
+  assert.match(
+    resolutionSource,
     /productByRaw\.set\(\s*productAliasKey\(alias\.rawName,\s*alias\.rawSpec\)/,
   );
 });
@@ -355,4 +361,29 @@ test("WO-08: no '품목묭도'/'모두 적용' UI remains", () => {
   const supply = supplyActions();
   assert.doesNotMatch(detail, /품목묭도|모두 적용/);
   assert.doesNotMatch(supply, /품목묭도|모두 적용/);
+});
+
+test("all Ecount batch remapping and commit requests are serialized", () => {
+  const resolutionSource = supplyResolution();
+  const recomputeBody = resolutionSource.slice(
+    resolutionSource.indexOf("export async function recomputeEcountBatchMappingInTx"),
+  );
+  const commitSource = commit();
+
+  assert.match(recomputeBody, /pg_advisory_xact_lock\(hashtext\(/);
+  assert.ok(
+    recomputeBody.indexOf("pg_advisory_xact_lock") <
+      recomputeBody.indexOf("ecountImportBatch.findUnique"),
+  );
+  assert.match(commitSource, /recomputeEcountBatchMappingInTx\(tx, batchId\)/);
+});
+
+test("unfinished Ecount batches are refreshed before list and detail reads", () => {
+  const source = supplyQueries();
+
+  assert.match(source, /listEcountImportBatches[\s\S]*recomputeEcountBatchMappingInTx/);
+  assert.match(
+    source,
+    /getEcountSupplyImportDetail[\s\S]*recomputeEcountBatchMappingInTx/,
+  );
 });

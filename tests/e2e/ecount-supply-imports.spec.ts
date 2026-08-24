@@ -571,7 +571,11 @@ test("재고 업로드는 소수 둘째 자리 수량을 월초 스냅샷과 지
     exact: true,
   });
   await expect(currentQuantity).toHaveValue("0.71");
-  await page.getByLabel(`${productName} 판매한 가격`).fill("12000");
+  await page
+    .locator("tr")
+    .filter({ hasText: productName })
+    .locator('input[aria-label$=" 판매가"]')
+    .fill("12000");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
@@ -833,7 +837,7 @@ test("본사는 새 이카운트 파일을 업로드하고 commit 후 리포트�
   await expect(uploadedRow.first()).toBeVisible();
 });
 
-test("본사는 두 번째 미매핑 거래처 지점 드롭다운을 선택하고 저장할 수 있다", async ({
+test("미등록 이카운트 거래처는 원문을 남기고 자동 제외한다", async ({
   page,
 }) => {
   const pageErrors: string[] = [];
@@ -851,28 +855,26 @@ test("본사는 두 번째 미매핑 거래처 지점 드롭다운을 선택하�
   await page.getByRole("button", { name: "업로드", exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
-  await expect(page.getByRole("heading", { name: "매핑 필요" })).toBeVisible();
-
-  const firstStoreSelect = page.getByLabel(
-    `${ECOUNT_STORE_MAPPING_UPLOAD.firstRawStoreName} 지점 매핑`,
-  );
-  const secondStoreSelect = page.getByLabel(
-    `${ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName} 지점 매핑`,
-  );
-  await expect(firstStoreSelect).toBeVisible();
-  await expect(secondStoreSelect).toBeVisible();
-
-  pageErrors.length = 0;
-  await secondStoreSelect.selectOption({ label: "강남점" });
-  expect(pageErrors).toEqual([]);
-  await expect(secondStoreSelect).toHaveValue("store-gangnam");
-
-  const secondStoreRow = page
-    .getByRole("row")
-    .filter({ hasText: ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName });
-  await secondStoreRow.getByRole("button", { name: "저장" }).click();
-  await expect(page.getByText("지점 매핑을 저장했습니다.")).toBeVisible();
-  await expect(secondStoreSelect).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "제외된 지점" })).toBeVisible();
+  await expect(
+    page.getByRole("row").filter({
+      hasText: ECOUNT_STORE_MAPPING_UPLOAD.firstRawStoreName,
+    }),
+  ).toContainText("1");
+  await expect(
+    page.getByRole("row").filter({
+      hasText: ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName,
+    }),
+  ).toContainText("1");
+  await expect(page.getByText("2건 · 지점 2곳")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "본사 장부에 반영" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByLabel(
+      `${ECOUNT_STORE_MAPPING_UPLOAD.secondRawStoreName} 지점 매핑`,
+    ),
+  ).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 

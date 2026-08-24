@@ -5,7 +5,6 @@ import {
   assertStoreManagerClosingDateIsToday,
   getKstBusinessDate,
 } from "~/features/ledger/date";
-import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import {
@@ -39,6 +38,7 @@ import {
   getManualInventoryUnitPriceErrors,
 } from "./manual-inventory-rows";
 import { upsertInventorySalesPricePlansInTx } from "./sales-price-persistence";
+import { upsertLedgerLotSalesPricePlansInTx } from "./lot-sales-price";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
   getInventorySaveAdjustmentErrors,
@@ -179,6 +179,96 @@ function getInventoryAmountErrors(
   });
 
   return errors;
+}
+
+function getLotPriceTargetErrors(
+  snapshotsByProductId: ReadonlyMap<
+    string,
+    { fifo: { lots: Array<{ lotOriginKey: string }> } }
+  >,
+  submittedProductIds: ReadonlySet<string>,
+  lotPrices: LedgerStoreManagerInventoryInput["lotPrices"],
+) {
+  const targetByOrigin = new Map<string, string>();
+  for (const [productId, snapshot] of snapshotsByProductId) {
+    if (!submittedProductIds.has(productId)) continue;
+    for (const lot of snapshot.fifo.lots) {
+      targetByOrigin.set(lot.lotOriginKey, productId);
+    }
+  }
+
+  const errors: Record<string, string[]> = {};
+  const submittedOrigins = new Set<string>();
+  lotPrices.forEach((price, index) => {
+    if (submittedOrigins.has(price.lotOriginKey)) {
+      errors[`lotPrices.${index}.lotOriginKey`] = [
+        "같은 입고분 판매가를 두 번 저장할 수 없습니다.",
+      ];
+      return;
+    }
+    submittedOrigins.add(price.lotOriginKey);
+
+    if (targetByOrigin.get(price.lotOriginKey) !== price.productId) {
+      errors[`lotPrices.${index}.lotOriginKey`] = [
+        "판매가를 저장할 입고분을 확인해 주세요.",
+      ];
+    }
+  });
+
+  for (const lotOriginKey of targetByOrigin.keys()) {
+    if (!submittedOrigins.has(lotOriginKey)) {
+      errors.lotPrices = ["모든 입고분의 판매가를 입력해 주세요."];
+      break;
+    }
+  }
+
+  return errors;
+}
+
+function completeGeneratedLotPrices(
+  snapshotsByProductId: ReadonlyMap<
+    string,
+    { fifo: { lots: Array<{ lotOriginKey: string }> } }
+  >,
+  submittedProductIds: ReadonlySet<string>,
+  items: LedgerStoreManagerInventoryInput["items"],
+  lotPrices: LedgerStoreManagerInventoryInput["lotPrices"],
+) {
+  const completed = [...lotPrices];
+  const priceByOrigin = new Map(
+    completed.map((price) => [price.lotOriginKey, price.plannedUnitPrice]),
+  );
+  const productPriceById = new Map(
+    items.flatMap((item) =>
+      item.plannedUnitPrice === null || item.plannedUnitPrice === undefined
+        ? []
+        : [[item.productId, item.plannedUnitPrice] as const],
+    ),
+  );
+
+  for (const [productId, snapshot] of snapshotsByProductId) {
+    if (!submittedProductIds.has(productId)) continue;
+
+    for (const lot of snapshot.fifo.lots) {
+      if (
+        priceByOrigin.has(lot.lotOriginKey) ||
+        !lot.lotOriginKey.endsWith(":adjustment")
+      ) {
+        continue;
+      }
+
+      const baseOrigin = lot.lotOriginKey.slice(0, -":adjustment".length);
+      const plannedUnitPrice =
+        priceByOrigin.get(baseOrigin) ?? productPriceById.get(productId);
+
+      if (plannedUnitPrice === undefined) continue;
+
+      completed.push({ productId, lotOriginKey: lot.lotOriginKey, plannedUnitPrice });
+      priceByOrigin.set(lot.lotOriginKey, plannedUnitPrice);
+    }
+  }
+
+  return completed;
 }
 
 function parseLedgerInventoryInput(
@@ -591,6 +681,26 @@ export async function saveLedgerInventoryItems(
           );
         }
 
+        const completedLotPrices = completeGeneratedLotPrices(
+          fifoPreflight.snapshotsByProductId,
+          new Set(inputItems.map((item) => item.productId)),
+          inputItems,
+          parsed.data.lotPrices,
+        );
+        const lotPriceTargetErrors = getLotPriceTargetErrors(
+          fifoPreflight.snapshotsByProductId,
+          new Set(inputItems.map((item) => item.productId)),
+          completedLotPrices,
+        );
+
+        if (Object.keys(lotPriceTargetErrors).length > 0) {
+          return actionError<StoreManagerInventoryStepData>(
+            "VALIDATION_ERROR",
+            "입고분별 판매가를 확인해 주세요.",
+            lotPriceTargetErrors,
+          );
+        }
+
         const editableLedger = await tx.dailyLedger.updateMany({
           where: {
             id: before.id,
@@ -636,26 +746,35 @@ export async function saveLedgerInventoryItems(
 
         await reconcileLedgerInventoryAdjustments(tx, before.id, actor.user.id);
 
-        // WO-02(2026-06-22): 재고 마감 저장 후 FIFO lot snapshot과 inventoryAmount를 최신화한다.
+        const legacyProductPrices = inputItems.flatMap((item) =>
+          item.plannedUnitPrice == null
+            ? []
+            : [
+                {
+                  productId: item.productId,
+                  plannedUnitPrice: item.plannedUnitPrice,
+                },
+              ],
+        );
+        await upsertInventorySalesPricePlansInTx(tx, {
+          storeId: parsed.data.storeId,
+          businessDate,
+          items: legacyProductPrices,
+          actorId: actor.user.id,
+        });
+        await upsertLedgerLotSalesPricePlansInTx(tx, {
+          dailyLedgerId: before.id,
+          lotPrices: completedLotPrices,
+          actorId: actor.user.id,
+        });
+
+        // 판매가를 먼저 저장한 뒤 FIFO/손실 배분을 다시 만들면 손실액도 같은
+        // 입고분 가격을 한 번의 트랜잭션 안에서 사용한다.
         await refreshLedgerInventoryFifoLots(
           tx,
           before.id,
           fifoPreflight.snapshotsByProductId,
         );
-
-        await upsertInventorySalesPricePlansInTx(tx, {
-          storeId: parsed.data.storeId,
-          businessDate,
-          items: inputItems,
-          actorId: actor.user.id,
-        });
-        await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
-          storeId: parsed.data.storeId,
-          businessDate,
-          dailyLedgerId: before.id,
-          productIds: inputItems.map((item) => item.productId),
-          actorId: actor.user.id,
-        });
 
         const after = await getInventoryStepDataInTx(
           tx,

@@ -38,6 +38,7 @@ export type LedgerExpenseLine = {
 
 export type LedgerPurchaseLine = {
   id: string;
+  lotOriginKey: string;
   productId: string | null;
   purchaseStandardId: string | null;
   sourceType: LedgerPurchaseSource;

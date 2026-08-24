@@ -370,7 +370,7 @@ test("inventory schema validates current inventory and quantity separately", asy
   assert.equal(blankProduct.success, false);
 });
 
-test("store and HQ inventory schemas accept two decimals with store planned price requirement", async () => {
+test("store and HQ inventory schemas accept two decimals with separate lot prices", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -433,8 +433,15 @@ test("store and HQ inventory schemas accept two decimals with store planned pric
     ledgerStoreManagerInventorySchema.safeParse({
       ...base,
       items: [{ productId: "product-1", currentQuantity: "1", quantity: "1" }],
+      lotPrices: [
+        {
+          productId: "product-1",
+          lotOriginKey: "lot-1",
+          plannedUnitPrice: "7000",
+        },
+      ],
     }).success,
-    false,
+    true,
   );
   const storeBlankQuantity = ledgerStoreManagerInventorySchema.parse({
     ...base,
@@ -1632,7 +1639,7 @@ test("inventory client owns planned price drafts, margin output, raw payload, an
   assert.match(componentSource, /\["당일재고", "판매한 가격", "바꾼 이유"\]/);
 });
 
-test("inventory shows remaining lots by arrival date and price and keeps planned unit price read-only", () => {
+test("inventory shows every lot with its own editable sales price", () => {
   const componentSource = readProjectFile(
     "src",
     "features",
@@ -1647,16 +1654,14 @@ test("inventory shows remaining lots by arrival date and price and keeps planned
   );
   assert.match(
     componentSource,
-    /lot\.remainingQuantity <= 0[\s\S]*입고별 매입단가[\s\S]*formatKrw\(entry\.unitPrice\)[\s\S]*formatQuantity\(entry\.remainingQuantity\)/,
+    /labelTotals[\s\S]*#\$\{occurrence\}[\s\S]*입고분별 판매가[\s\S]*formatKrw\(entry\.unitPrice\)[\s\S]*formatQuantity\(entry\.remainingQuantity\)/,
   );
   assert.match(
     componentSource,
-    /판매한 가격[\s\S]*item\.plannedUnitPrice === null[\s\S]*미입력[\s\S]*formatKrw\(item\.plannedUnitPrice\)/,
+    /formatQuantity\(entry\.soldQuantity\)[\s\S]*formatQuantity\(entry\.lossQuantity\)/,
   );
-  assert.match(
-    componentSource,
-    /\.\.\.\(isStoreManagerMode[\s\S]*plannedUnitPrice:/,
-  );
+  assert.doesNotMatch(componentSource, /lot\.remainingQuantity <= 0/);
+  assert.match(componentSource, /lotPrices:\s*submittedLotPrices/);
 });
 
 test("inventory save receipt reports changed rows and Enter targets only the next quantity", async () => {
@@ -3205,6 +3210,9 @@ test("FIFO lot refresh writes item amounts in one bulk statement, not one query 
     ledgerInventoryFifoLot: {
       deleteMany: async () => ({ count: 0 }),
       createMany: async () => ({ count: 0 }),
+    },
+    ledgerLossLotAllocation: {
+      deleteMany: async () => ({ count: 0 }),
     },
     $executeRawUnsafe: async (sql, ...params) => {
       rawCalls.push({ sql, params });

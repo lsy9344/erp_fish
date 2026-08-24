@@ -57,7 +57,9 @@ async function fillVisiblePlannedUnitPrices(page: Page) {
     }
     await tab.click();
 
-    const inputs = page.locator('input[aria-label$=" 판매한 가격"]:visible');
+    const inputs = page.locator(
+      'input[aria-label$=" 판매가"]:visible, input[aria-label$=" 판매한 가격"]:visible',
+    );
     for (
       let inputIndex = 0;
       inputIndex < (await inputs.count());
@@ -301,7 +303,8 @@ test("지점장 재고 화면은 입고별 단가만 보이고 재고·조정 �
   // 재고금액은 카드에서 제거됐다(2026-06-25). FIFO 금액 텍스트도 더는 노출하지 않는다.
   await expect(row).not.toContainText("8,888,886원");
   // 입고별 단가는 작업에 필요하므로 보이고, 원금액과 조정 금액은 계속 숨긴다.
-  await expect(row).toContainText("기존 재고 · 987,654원/1박스");
+  await expect(row).toContainText("기존 재고");
+  await expect(row).toContainText("매입 987,654원");
   await expect(row).not.toContainText("9,876,540원");
   await expect(row).not.toContainText("9876540");
   await expect(row).not.toContainText(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
@@ -843,25 +846,20 @@ test("재고 행에 가격이 다른 입고분을 날짜와 단가별로 표시�
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
 
-  await expect(
-    page.locator("tr").filter({ hasText: todayProduct.name }),
-  ).toContainText("입고별 매입단가");
   const todayRow = page.locator("tr").filter({ hasText: todayProduct.name });
+  await expect(todayRow).toContainText("입고분별 판매가");
   const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
-  await expect(todayRow).toContainText(todayArrivalLabel);
-  await expect(todayRow).toContainText("10,000원/1박스");
-  await expect(todayRow).toContainText("15,000원/1박스");
-  await expect(todayRow).toContainText("2개 남음");
-  await expect(todayRow).toContainText("3개 남음");
-  await expect(todayRow).not.toContainText("13,000원/1박스");
+  await expect(todayRow).toContainText(`${todayArrivalLabel} #1`);
+  await expect(todayRow).toContainText(`${todayArrivalLabel} #2`);
+  await expect(todayRow).toContainText("매입 10,000원 · 남음 2개");
+  await expect(todayRow).toContainText("매입 15,000원 · 남음 3개");
+  await expect(todayRow).not.toContainText("매입 13,000원");
 
   const datedRow = page.locator("tr").filter({ hasText: datedProduct.name });
-  await expect(datedRow).toContainText(
-    "6월 12일 입고 · 12,000원/1박스 · 2개 남음",
-  );
-  await expect(datedRow).toContainText(
-    "6월 13일 입고 · 13,000원/1박스 · 3개 남음",
-  );
+  await expect(datedRow).toContainText("6월 12일 입고");
+  await expect(datedRow).toContainText("매입 12,000원 · 남음 2개");
+  await expect(datedRow).toContainText("6월 13일 입고");
+  await expect(datedRow).toContainText("매입 13,000원 · 남음 3개");
 });
 
 test("재고 카드는 전일과 당일 입고 단가를 나누고 저장 후 남은 입고분만 유지한다", async ({
@@ -920,11 +918,11 @@ test("재고 카드는 전일과 당일 입고 단가를 나누고 저장 후 �
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
   const row = page.locator("tr").filter({ hasText: product.name });
   const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
-  await expect(row).toContainText("기존 재고 · 10,000원/1박스 · 1개 남음");
-  await expect(row).toContainText(
-    `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`,
-  );
-  await expect(row).not.toContainText("15,000원/1박스");
+  await expect(row).toContainText("기존 재고");
+  await expect(row).toContainText("매입 10,000원 · 남음 1개");
+  await expect(row).toContainText(todayArrivalLabel);
+  await expect(row).toContainText("매입 20,000원 · 남음 1개");
+  await expect(row).not.toContainText("매입 15,000원");
 
   await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
   await fillVisiblePlannedUnitPrices(page);
@@ -933,11 +931,11 @@ test("재고 카드는 전일과 당일 입고 단가를 나누고 저장 후 �
   await page.reload();
 
   const savedRow = page.locator("tr").filter({ hasText: product.name });
-  await expect(savedRow).toContainText(
-    `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`,
-  );
-  await expect(savedRow).not.toContainText("기존 재고 · 10,000원/1박스");
-  await expect(savedRow).not.toContainText("15,000원/1박스");
+  await expect(savedRow).toContainText(todayArrivalLabel);
+  await expect(savedRow).toContainText("매입 20,000원 · 남음 1개");
+  await expect(savedRow).toContainText("기존 재고");
+  await expect(savedRow).toContainText("매입 10,000원 · 남음 0개");
+  await expect(savedRow).not.toContainText("매입 15,000원");
 
   const saved = await prisma.ledgerInventoryItem.findUnique({
     where: {
@@ -1116,18 +1114,18 @@ test("재고 카드는 월초·불완전 이월에서도 남은 입고분의 날
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
   const todayArrivalLabel = `${today.getUTCMonth() + 1}월 ${today.getUTCDate()}일 입고`;
-  const expectedRemainingLot = `${todayArrivalLabel} · 20,000원/1박스 · 1개 남음`;
   const openingRow = page
     .locator("tr")
     .filter({ hasText: openingProduct.name });
-  await expect(openingRow).toContainText(expectedRemainingLot);
-  await expect(openingRow).not.toContainText("15,000원/1박스");
+  await expect(openingRow).toContainText(todayArrivalLabel);
+  await expect(openingRow).toContainText("매입 20,000원 · 남음 1개");
+  await expect(openingRow).not.toContainText("매입 15,000원");
   await expect(
     page.locator("tr").filter({ hasText: mismatchProduct.name }),
-  ).toContainText(expectedRemainingLot);
+  ).toContainText("매입 20,000원 · 남음 1개");
   await expect(
     page.locator("tr").filter({ hasText: missingAmountProduct.name }),
-  ).toContainText(expectedRemainingLot);
+  ).toContainText("매입 20,000원 · 남음 1개");
 });
 
 test("매입 품목은 당일재고를 빈칸으로 시작하고 손실 검토 전 재고 저장을 막는다", async ({

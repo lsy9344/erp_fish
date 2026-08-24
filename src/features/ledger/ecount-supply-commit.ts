@@ -7,6 +7,7 @@ import {
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
 import { getOrCreateStoreLedgerInTx } from "~/features/ledger/queries";
 import { ecountDateNoToDate } from "~/features/ledger/ecount-supply-mapping";
+import { recomputeEcountBatchMappingInTx } from "~/features/ledger/ecount-supply-resolution";
 import {
   getEcountSupplyImportDetail,
   type EcountImportBatchDetail,
@@ -33,6 +34,10 @@ export async function commitEcountSupplyImport(
 
   try {
     const committedLineCount = await db.$transaction(async (tx) => {
+      // 업로드 뒤 지점이 바뀌었을 수 있으므로 반영 직전에 현재 상태로 다시 판정한다.
+      // 재판정 함수가 조회/반영 모두에 같은 batch 잠금을 걸어 중복 반영과 상태 되돌림을 막는다.
+      await recomputeEcountBatchMappingInTx(tx, batchId);
+
       const batch = await tx.ecountImportBatch.findUnique({
         where: { id: batchId },
         include: { lines: { orderBy: { rowNumber: "asc" } } },
@@ -53,9 +58,24 @@ export async function commitEcountSupplyImport(
       let lineCount = 0;
 
       for (const line of batch.lines) {
+        if (line.status === "EXCLUDED") {
+          continue;
+        }
+
         if (!line.storeId || !line.productId) {
           throw new EcountCommitError(
             `${line.rowNumber}행: 지점/품목 매핑이 끝나지 않았습니다.`,
+          );
+        }
+
+        const activeStore = await tx.store.findFirst({
+          where: { id: line.storeId, isActive: true },
+          select: { id: true },
+        });
+
+        if (!activeStore) {
+          throw new EcountCommitError(
+            `${line.rowNumber}행: 비활성화되었거나 존재하지 않는 지점입니다. 업로드를 다시 확인해 주세요.`,
           );
         }
 
@@ -116,6 +136,10 @@ export async function commitEcountSupplyImport(
         });
 
         lineCount += 1;
+      }
+
+      if (lineCount === 0) {
+        throw new EcountCommitError("반영할 수 있는 지점이 없습니다.");
       }
 
       // 영향받은 장부별로 재고 purchased quantity, 조정 정합, FIFO lot을 갱신한다.

@@ -1,9 +1,9 @@
 import type { Prisma } from "../../../generated/prisma";
 
-// DESIGN.md D6: 판매한 가격 수정은 마감 장부의 마스터 편집 전용이다. 서버 최종
-// 판정을 순수 함수로 분리해 단위 테스트가 action 파일 없이 검증할 수 있게 한다.
+// 판매가도 장부의 공통 편집 정책을 따른다. 서버 최종 판정을 순수 함수로 분리해
+// 단위 테스트가 action 파일 없이 상태/권한 조합을 검증할 수 있게 한다.
 export const salesPriceWriteForbiddenMessage =
-  "판매한 가격은 마감 장부에서 마감 편집 권한을 가진 사용자만 수정할 수 있습니다.";
+  "이 장부 상태에서는 판매한 가격을 수정할 수 없습니다.";
 
 export function getSalesPriceWriteGateDecision(input: {
   hasPlannedPriceInput: boolean;
@@ -14,10 +14,12 @@ export function getSalesPriceWriteGateDecision(input: {
     return { ok: true };
   }
 
-  if (
-    !input.closedEditAllowed ||
-    input.ledgerStatus !== "HEADQUARTERS_CLOSED"
-  ) {
+  const editable =
+    input.ledgerStatus === "IN_PROGRESS" ||
+    input.ledgerStatus === "IN_REVIEW" ||
+    (input.ledgerStatus === "HEADQUARTERS_CLOSED" && input.closedEditAllowed);
+
+  if (!editable) {
     return {
       ok: false,
       code: "LEDGER_NOT_EDITABLE",

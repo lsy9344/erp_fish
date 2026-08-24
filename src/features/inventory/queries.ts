@@ -20,6 +20,10 @@ import {
   resolveInventoryPurchasePrices,
 } from "~/features/inventory/purchase-price";
 import { SALES_PRICE_CARRYOVER_LEDGER_STATUSES } from "~/features/inventory/sales-price-carryover.ts";
+import {
+  loadResolvedLotSalesPricesInTx,
+  lotSalesPriceKey,
+} from "~/features/inventory/lot-sales-price.ts";
 import { resolveInventoryPreviousQuantitySource } from "~/features/inventory/inventory-previous-quantity-source.ts";
 import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
@@ -1258,6 +1262,52 @@ async function attachProjectedFifoLots(
   });
 }
 
+async function attachLotSalesPrices(
+  tx: Prisma.TransactionClient,
+  ledger: Pick<InventoryLedgerPayload, "id" | "storeId" | "closingDate">,
+  items: InventoryStepLine[],
+) {
+  const lots = items.flatMap((item) =>
+    item.fifoLots.map((lot) => ({
+      productId: item.productId,
+      lotOriginKey: lot.lotOriginKey,
+    })),
+  );
+  const prices = await loadResolvedLotSalesPricesInTx(tx, {
+    dailyLedgerId: ledger.id,
+    storeId: ledger.storeId,
+    businessDate: ledger.closingDate,
+    lots,
+  });
+
+  return items.map((item) => ({
+    ...item,
+    fifoLots: item.fifoLots.map((lot) => {
+      const price = prices.get(
+        lotSalesPriceKey(item.productId, lot.lotOriginKey),
+      ) ?? { plannedUnitPrice: null, plannedUnitPriceSource: null };
+      const expectedRevenue =
+        price.plannedUnitPrice === null
+          ? null
+          : calculateInventoryAmount(lot.soldQuantity, price.plannedUnitPrice);
+      const expectedProfit =
+        expectedRevenue === null ? null : expectedRevenue - lot.soldAmount;
+      const expectedMarginRate =
+        expectedRevenue === null || expectedRevenue <= 0
+          ? null
+          : expectedProfit! / expectedRevenue;
+
+      return {
+        ...lot,
+        ...price,
+        expectedRevenue,
+        expectedProfit,
+        expectedMarginRate,
+      };
+    }),
+  }));
+}
+
 // WO-25(2026-07-25) #1: 당일/최근 매입행이 없을 때(예: 다음날 조회) 이월된 단가를 fallback으로
 // 표시한다. 월초 스냅샷(OPENING)뿐 아니라 전일 장부 이월(PREVIOUS_*_LEDGER)도 포함한다 —
 // item.unitPrice는 두 경우 모두 원천(엑셀 단가/FIFO 롯트 단가)에서 그대로 이월된 값이다.
@@ -1647,15 +1697,20 @@ async function getInventoryStepDataForLedgerInTx(
           .map((item) => item.productId),
       ),
     );
+    const itemsWithLotPrices = await attachLotSalesPrices(
+      tx,
+      ledger,
+      itemsWithDisplayLots,
+    );
     const carryoverStatus = getPrimaryCarryoverStatus(items);
     const manualProductOptions = await getManualProductOptions(
       tx,
-      new Set(itemsWithDisplayLots.map((item) => item.productId)),
+      new Set(itemsWithLotPrices.map((item) => item.productId)),
     );
     const priced = await attachPurchasePrices(
       tx,
       ledger,
-      itemsWithDisplayLots,
+      itemsWithLotPrices,
       manualProductOptions,
     );
 
@@ -1707,14 +1762,19 @@ async function getInventoryStepDataForLedgerInTx(
     itemsWithHistory,
     new Set(itemsWithHistory.map((item) => item.productId)),
   );
+  const itemsWithLotPrices = await attachLotSalesPrices(
+    tx,
+    ledger,
+    itemsWithDisplayLots,
+  );
   const manualProductOptions = await getManualProductOptions(
     tx,
-    new Set(itemsWithDisplayLots.map((item) => item.productId)),
+    new Set(itemsWithLotPrices.map((item) => item.productId)),
   );
   const priced = await attachPurchasePrices(
     tx,
     ledger,
-    itemsWithDisplayLots,
+    itemsWithLotPrices,
     manualProductOptions,
   );
 

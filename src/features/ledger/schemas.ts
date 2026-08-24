@@ -256,6 +256,11 @@ const ledgerPurchaseItemSchema = z.object({
   id: z
     .unknown()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
+  lotOriginKey: z
+    .unknown()
+    .transform((value) =>
+      typeof value === "string" && value.trim() ? value.trim() : null,
+    ),
   // 구 클라이언트가 보내는 carryover 가상 행이 실제 매입으로 저장되지 않도록 구분한다.
   // 빈 값/누락은 일반 매입 행으로 본다.
   kind: z.preprocess(

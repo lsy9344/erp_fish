@@ -253,16 +253,7 @@ test("parseEcountSupplyWorkbook preserves decimal quantities up to one place", a
       null,
       451000,
     ],
-    [
-      "2026/06/17 -1",
-      "진수산",
-      "갈치 [31-35미]",
-      0.5,
-      10000,
-      5000,
-      null,
-      5000,
-    ],
+    ["2026/06/17 -1", "진수산", "갈치 [31-35미]", 0.5, 10000, 5000, null, 5000],
   ]);
 
   const result = parseEcountSupplyWorkbook(workbook);
@@ -342,6 +333,84 @@ test("resolveEcountLine reports mapping-required and ready states", async () => 
     error: "수량 x 단가와 공급가액이 일치하지 않습니다.",
   });
   assert.equal(failed.status, ECOUNT_LINE_STATUS.FAILED);
+});
+
+test("resolveEcountLine excludes rows whose store is unavailable without requiring product mapping", async () => {
+  const { ECOUNT_LINE_STATUS, resolveEcountLine, resolveBatchStatus } =
+    await importMapping();
+
+  const result = resolveEcountLine({
+    rawStoreName: "폐점 지점",
+    rawProductName: "새 품목",
+    productSpec: "",
+    storeId: null,
+    productId: null,
+    error: null,
+    storeExcluded: true,
+  });
+
+  assert.equal(result.status, ECOUNT_LINE_STATUS.EXCLUDED);
+  assert.equal(result.unmappedStoreName, null);
+  assert.equal(result.unmappedProduct, null);
+  assert.equal(resolveBatchStatus([ECOUNT_LINE_STATUS.EXCLUDED]), "READY");
+  assert.equal(
+    resolveBatchStatus([ECOUNT_LINE_STATUS.READY, ECOUNT_LINE_STATUS.EXCLUDED]),
+    "READY",
+  );
+});
+
+test("Ecount store resolution prefers an active alias, then an active exact name", async () => {
+  const { loadEcountResolutionMapsInTx } = await import(
+    pathToFileURL(
+      path.join(
+        root,
+        "src",
+        "features",
+        "ledger",
+        "ecount-supply-resolution.ts",
+      ),
+    ).href
+  );
+  const tx = {
+    storeExternalAlias: {
+      findMany: async () => [
+        { rawName: "정상 지점", storeId: "active-alias" },
+        { rawName: "폐점 별칭", storeId: "inactive-store" },
+      ],
+    },
+    store: {
+      findMany: async () => [
+        { id: "active-exact", name: "정상 지점" },
+        { id: "active-alias", name: "별칭 대상" },
+      ],
+    },
+    productExternalAlias: { findMany: async () => [] },
+  };
+
+  const maps = await loadEcountResolutionMapsInTx(tx);
+  assert.equal(maps.storeByRaw.get("정상 지점"), "active-alias");
+  assert.equal(maps.storeByRaw.get("별칭 대상"), "active-alias");
+  assert.equal(maps.storeByRaw.has("폐점 별칭"), false);
+  assert.equal(maps.storeByRaw.has("미등록 지점"), false);
+});
+
+test("Ecount commit re-evaluates unfinished rows immediately before writing", () => {
+  const commitSource = readFileSync(
+    path.join(root, "src", "features", "ledger", "ecount-supply-commit.ts"),
+    "utf8",
+  );
+  const recomputeIndex = commitSource.indexOf(
+    "recomputeEcountBatchMappingInTx(tx, batchId)",
+  );
+  const batchReadIndex = commitSource.indexOf(
+    "tx.ecountImportBatch.findUnique",
+    recomputeIndex,
+  );
+
+  assert.ok(recomputeIndex >= 0);
+  assert.ok(batchReadIndex > recomputeIndex);
+  assert.match(commitSource, /if \(line\.status === "EXCLUDED"\)/);
+  assert.match(commitSource, /if \(lineCount === 0\)/);
 });
 
 test("productAliasKey uses a non-whitespace separator so name/spec splits don't collide", async () => {

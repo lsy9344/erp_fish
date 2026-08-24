@@ -9,6 +9,7 @@ import {
 } from "~/features/ledger/ecount-supply-mapping";
 import { db } from "~/server/db";
 import { decimalToNumber } from "~/lib/decimal";
+import { recomputeEcountBatchMappingInTx } from "~/features/ledger/ecount-supply-resolution";
 
 export type EcountImportBatchListItem = {
   id: string;
@@ -85,10 +86,13 @@ export type EcountImportBatchDetail = {
   voidReason: string | null;
   errorMessage: string | null;
   lineCount: number;
+  includedLineCount: number;
+  excludedLineCount: number;
   totalQuantity: number;
   totalSupplyAmount: number;
   storeGroups: EcountStoreGroupDetail[];
   unmappedStores: EcountUnmappedStore[];
+  excludedStores: EcountUnmappedStore[];
   unmappedProducts: EcountUnmappedProduct[];
   amountMismatchLines: EcountImportLineDetail[];
   canCommit: boolean;
@@ -106,13 +110,28 @@ function toDateString(value: Date | null): string | null {
 export async function listEcountImportBatches(
   limit = 50,
 ): Promise<EcountImportBatchListItem[]> {
+  const unfinishedBatchIds = await db.ecountImportBatch.findMany({
+    where: { status: { notIn: ["COMMITTED", "VOIDED"] } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: { id: true },
+  });
+
+  if (unfinishedBatchIds.length > 0) {
+    await db.$transaction(async (tx) => {
+      for (const batch of unfinishedBatchIds) {
+        await recomputeEcountBatchMappingInTx(tx, batch.id);
+      }
+    });
+  }
+
   const batches = await db.ecountImportBatch.findMany({
     orderBy: { createdAt: "desc" },
     take: limit,
     include: {
       uploadedBy: { select: { name: true } },
       _count: { select: { lines: true } },
-      lines: { select: { supplyAmount: true } },
+      lines: { select: { supplyAmount: true, status: true } },
     },
   });
 
@@ -125,7 +144,7 @@ export async function listEcountImportBatches(
     businessDate: toDateString(batch.businessDate),
     lineCount: batch._count.lines,
     totalSupplyAmount: batch.lines.reduce(
-      (sum, line) => sum + line.supplyAmount,
+      (sum, line) => sum + (line.status === "EXCLUDED" ? 0 : line.supplyAmount),
       0,
     ),
     uploadedByName: batch.uploadedBy?.name ?? null,
@@ -137,6 +156,10 @@ export async function listEcountImportBatches(
 export async function getEcountSupplyImportDetail(
   batchId: string,
 ): Promise<EcountImportBatchDetail | null> {
+  await db.$transaction((tx) =>
+    recomputeEcountBatchMappingInTx(tx, batchId),
+  );
+
   const batch = await db.ecountImportBatch.findUnique({
     where: { id: batchId },
     include: {
@@ -179,6 +202,8 @@ export async function getEcountSupplyImportDetail(
   const storeGroupMap = new Map<string, EcountStoreGroupDetail>();
 
   for (const line of lines) {
+    if (line.status === "EXCLUDED") continue;
+
     const existing = storeGroupMap.get(line.rawStoreName);
 
     if (existing) {
@@ -209,9 +234,21 @@ export async function getEcountSupplyImportDetail(
   );
 
   const unmappedStoreMap = new Map<string, EcountUnmappedStore>();
+  const excludedStoreMap = new Map<string, EcountUnmappedStore>();
   const unmappedProductMap = new Map<string, EcountUnmappedProduct>();
 
   for (const line of lines) {
+    if (line.status === "EXCLUDED") {
+      const existing = excludedStoreMap.get(line.rawStoreName);
+      if (existing) existing.lineCount += 1;
+      else {
+        excludedStoreMap.set(line.rawStoreName, {
+          rawStoreName: line.rawStoreName,
+          lineCount: 1,
+        });
+      }
+      continue;
+    }
     if (!line.storeId) {
       const existing = unmappedStoreMap.get(line.rawStoreName);
       if (existing) {
@@ -259,13 +296,25 @@ export async function getEcountSupplyImportDetail(
     voidReason: batch.voidReason,
     errorMessage: batch.errorMessage,
     lineCount: lines.length,
-    totalQuantity: lines.reduce((sum, line) => sum + line.quantity, 0),
-    totalSupplyAmount: lines.reduce((sum, line) => sum + line.supplyAmount, 0),
+    includedLineCount: lines.filter((line) => line.status !== "EXCLUDED")
+      .length,
+    excludedLineCount: lines.filter((line) => line.status === "EXCLUDED")
+      .length,
+    totalQuantity: lines.reduce(
+      (sum, line) => sum + (line.status === "EXCLUDED" ? 0 : line.quantity),
+      0,
+    ),
+    totalSupplyAmount: lines.reduce(
+      (sum, line) => sum + (line.status === "EXCLUDED" ? 0 : line.supplyAmount),
+      0,
+    ),
     storeGroups,
     unmappedStores: [...unmappedStoreMap.values()],
+    excludedStores: [...excludedStoreMap.values()],
     unmappedProducts: [...unmappedProductMap.values()],
     amountMismatchLines: lines.filter((line) => line.errorMessage),
-    canCommit: status === "READY",
+    canCommit:
+      status === "READY" && lines.some((line) => line.status !== "EXCLUDED"),
     canVoid: status !== "COMMITTED" && status !== "VOIDED",
   };
 }

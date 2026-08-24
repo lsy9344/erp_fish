@@ -162,7 +162,13 @@ export type StoreManagerInventoryAdjustmentView = Omit<
 // 원수량·소진수량·잔량은 유지하되 원금액·소진금액·잔액은 계속 차단한다.
 export type StoreManagerInventoryFifoLotView = Omit<
   InventoryFifoLotView,
-  "originalAmount" | "consumedAmount" | "remainingAmount"
+  | "originalAmount"
+  | "consumedAmount"
+  | "lossAmount"
+  | "soldAmount"
+  | "remainingAmount"
+  | "expectedRevenue"
+  | "expectedProfit"
 >;
 
 // 기본·내부 단가와 최상위 unitPrice/금액 필드는 계속 차단한다. 카드 표시에 필요한

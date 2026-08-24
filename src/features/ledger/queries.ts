@@ -41,6 +41,7 @@ const ledgerExpenseSelect = {
 
 const ledgerPurchaseSelect = {
   id: true,
+  lotOriginKey: true,
   productId: true,
   purchaseStandardId: true,
   sourceType: true,
@@ -239,6 +240,7 @@ function getLedgerPurchaseItems(ledger: {
 }): LedgerCostStepData["purchaseItems"] {
   return ledger.ledgerPurchaseItems.map((item: LedgerPurchasePayload) => ({
     id: item.id,
+    lotOriginKey: item.lotOriginKey,
     productId: item.productId,
     purchaseStandardId: item.purchaseStandardId,
     sourceType: item.sourceType,
@@ -265,6 +267,7 @@ function getLedgerAuditPurchaseItems(ledger: {
 }): LedgerAuditPurchaseItem[] {
   return ledger.ledgerPurchaseItems.map((item: LedgerPurchasePayload) => ({
     id: item.id,
+    lotOriginKey: item.lotOriginKey,
     productId: item.productId,
     purchaseStandardId: item.purchaseStandardId,
     sourceType: item.sourceType,

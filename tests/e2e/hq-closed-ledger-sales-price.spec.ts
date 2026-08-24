@@ -252,22 +252,27 @@ async function seedClosedLedgerForDashboardRecalc() {
     },
   });
   // 저장 시 FIFO 재계산과 동일한 lot 구성을 심어 저장 전후 재고금액/COGS가
-  // 달라지지 않게 한다: 기초 10개 중 8개 소진 + 매입 5개 미소진(잔존 7개 = 7,000원,
-  // COGS 8,000원).
+  // 달라지지 않게 한다: 기초 10개 중 손실 3개·판매 5개 + 매입 5개 미소진
+  // (잔존 7개 = 7,000원, 판매분 COGS 5,000원).
   await prisma.ledgerInventoryFifoLot.createMany({
     data: [
       {
         dailyLedgerId: ledger.id,
         ledgerInventoryItemId: inventoryItem.id,
         productId: productA.id,
+        lotOriginKey: `legacy:${ledger.id}:${productA.id}`,
         sourceType: "LEGACY_OPENING",
         sourceBusinessDate: closingDate,
         unitPrice: 1000,
         originalQuantity: 10,
         consumedQuantity: 8,
+        lossQuantity: 3,
+        soldQuantity: 5,
         remainingQuantity: 2,
         originalAmount: 10000,
         consumedAmount: 8000,
+        lossAmount: 3000,
+        soldAmount: 5000,
         remainingAmount: 2000,
         sortOrder: 0,
       },
@@ -275,6 +280,7 @@ async function seedClosedLedgerForDashboardRecalc() {
         dailyLedgerId: ledger.id,
         ledgerInventoryItemId: inventoryItem.id,
         productId: productA.id,
+        lotOriginKey: "d6-dashboard-purchase",
         sourceType: "PURCHASE",
         sourceBusinessDate: closingDate,
         unitPrice: 1000,
@@ -293,6 +299,7 @@ async function seedClosedLedgerForDashboardRecalc() {
     data: {
       dailyLedgerId: ledger.id,
       productId: productA.id,
+      lotOriginKey: "d6-dashboard-purchase",
       sourceType: "MANUAL",
       productName: productA.name,
       productCategory: productA.category,
@@ -394,12 +401,17 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
   // 다른 탭의 수정 사유/저장 버튼이 forceMount로 함께 존재하므로 재고 패널로 한정한다.
   const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
 
-  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  const productAPriceInputs = inventoryPanel.locator(
+    `input[aria-label^="${PRODUCT_A_NAME} "][aria-label$=" 판매가"]`,
+  );
+  const priceInput = productAPriceInputs.first();
   await expect(priceInput).toBeVisible();
   await expect(priceInput).toBeEnabled();
   // 판매가가 없는 품목도 같은 행 목록에 입력 없이 함께 보인다.
   await expect(
-    inventoryPanel.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`),
+    inventoryPanel
+      .locator(`input[aria-label^="${PRODUCT_B_NAME} "][aria-label$=" 판매가"]`)
+      .first(),
   ).toBeVisible();
 
   await priceInput.click();
@@ -414,18 +426,17 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
 
   await expect
     .poll(async () => {
-      const plan = await prisma.storeSalesPricePlan.findFirst({
+      const plans = await prisma.ledgerLotSalesPricePlan.findMany({
         where: {
-          storeId: STORE_ID,
-          businessDate: getKstMidnight(),
+          dailyLedgerId: ledger.id,
           productId: productA.id,
         },
         select: { plannedUnitPrice: true },
       });
 
-      return plan?.plannedUnitPrice;
+      return plans.map((plan) => plan.plannedUnitPrice);
     })
-    .toBe(1800);
+    .toContain(1800);
 
   // 다른 날짜의 같은 품목 가격은 변하지 않는다.
   for (const offsetDays of [-1, 1]) {
@@ -468,8 +479,12 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
 
   const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
 
-  const priceA = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
-  const priceB = inventoryPanel.getByLabel(`${PRODUCT_B_NAME} 판매한 가격`);
+  const priceA = inventoryPanel
+    .locator(`input[aria-label^="${PRODUCT_A_NAME} "][aria-label$=" 판매가"]`)
+    .first();
+  const priceB = inventoryPanel
+    .locator(`input[aria-label^="${PRODUCT_B_NAME} "][aria-label$=" 판매가"]`)
+    .first();
 
   // 품목 A 가격을 비우고(변경 없음), 품목 B에 0원을 저장한다.
   await priceA.click();
@@ -487,7 +502,7 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
 
   await expect
     .poll(async () => {
-      const [planA, planB] = await Promise.all([
+      const [legacyPlanA, lotPlanB] = await Promise.all([
         prisma.storeSalesPricePlan.findFirst({
           where: {
             storeId: STORE_ID,
@@ -496,19 +511,21 @@ test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 �
           },
           select: { plannedUnitPrice: true },
         }),
-        prisma.storeSalesPricePlan.findFirst({
+        prisma.ledgerLotSalesPricePlan.findFirst({
           where: {
-            storeId: STORE_ID,
-            businessDate: getKstMidnight(),
+            dailyLedgerId: ledger.id,
             productId: productB.id,
           },
           select: { plannedUnitPrice: true },
         }),
       ]);
 
-      return { planA: planA?.plannedUnitPrice, planB: planB?.plannedUnitPrice };
+      return {
+        legacyPlanA: legacyPlanA?.plannedUnitPrice,
+        lotPlanB: lotPlanB?.plannedUnitPrice,
+      };
     })
-    .toEqual({ planA: 1500, planB: 0 });
+    .toEqual({ legacyPlanA: 1500, lotPlanB: 0 });
 });
 
 // DESIGN.md D8: 마감 재고/판매가격 저장도 오래된 화면 저장은 충돌로 거부된다.
@@ -524,16 +541,18 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
   const dashboardRow = page.getByTestId(`hq-dashboard-row-${STORE_ID}`);
 
   // 수정 전: 판매수량 5개 × 2,000원 = 예상매출 10,000원,
-  // 예상 마진율 (10,000 - COGS 8,000) / 10,000 = 20%.
+  // 예상 마진율 (10,000 - 판매분 COGS 5,000) / 10,000 = 50%.
   await page.goto("/app/dashboard?date=today");
   await expect(dashboardRow).toContainText("예상매출 ₩10,000");
-  await expect(dashboardRow).toContainText("예상 20.0%");
+  await expect(dashboardRow).toContainText("예상 50.0%");
 
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
 
   const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
-  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  const priceInput = inventoryPanel
+    .locator(`input[aria-label^="${PRODUCT_A_NAME} "][aria-label$=" 판매가"]`)
+    .first();
   await priceInput.click();
   await priceInput.press("Control+A");
   await priceInput.pressSequentially("1800");
@@ -546,11 +565,11 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
 
   await expect
     .poll(async () => {
-      const plan = await prisma.storeSalesPricePlan.findFirst({
+      const plan = await prisma.ledgerLotSalesPricePlan.findFirst({
         where: {
-          storeId: STORE_ID,
-          businessDate: getKstMidnight(),
+          dailyLedgerId: ledger.id,
           productId: productA.id,
+          plannedUnitPrice: 1800,
         },
         select: { plannedUnitPrice: true },
       });
@@ -560,10 +579,10 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
     .toBe(1800);
 
   // 수정 후: 판매수량 5개 × 1,800원 = 예상매출 9,000원,
-  // 예상 마진율 (9,000 - COGS 8,000) / 9,000 = 11.1%.
+  // 예상 마진율 (9,000 - 판매분 COGS 5,000) / 9,000 = 44.4%.
   await page.goto("/app/dashboard?date=today");
   await expect(dashboardRow).toContainText("예상매출 ₩9,000");
-  await expect(dashboardRow).toContainText("예상 11.1%");
+  await expect(dashboardRow).toContainText("예상 44.4%");
 });
 
 test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로 거부된다", async ({
@@ -583,7 +602,9 @@ test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로
     data: { workerCount: 3, updatedById: actorId, version: { increment: 1 } },
   });
 
-  const priceInput = inventoryPanel.getByLabel(`${PRODUCT_A_NAME} 판매한 가격`);
+  const priceInput = inventoryPanel
+    .locator(`input[aria-label^="${PRODUCT_A_NAME} "][aria-label$=" 판매가"]`)
+    .first();
   await priceInput.click();
   await priceInput.press("Control+A");
   await priceInput.pressSequentially("1900");

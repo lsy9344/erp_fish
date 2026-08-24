@@ -1331,6 +1331,8 @@ export async function saveLedgerPurchases(
 
             return {
               dailyLedgerId: beforeLedger.id,
+              lotOriginKey:
+                existing?.lotOriginKey ?? purchase.lotOriginKey ?? undefined,
               productId: snapshot.productId,
               purchaseStandardId: snapshot.purchaseStandardId,
               sourceType: snapshot.sourceType,

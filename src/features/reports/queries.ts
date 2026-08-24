@@ -1,4 +1,4 @@
-import type { DailyLedgerStatus } from "../../../generated/prisma";
+import type { DailyLedgerStatus, Prisma } from "../../../generated/prisma";
 import {
   buildMetricAxisTrendRows,
   buildPeriodContrastRows,
@@ -46,6 +46,10 @@ import {
   nullableDecimalToNumber,
   type DecimalNumber,
 } from "../../lib/decimal.ts";
+import {
+  loadResolvedLotSalesPricesInTx,
+  lotSalesPriceKey,
+} from "../inventory/lot-sales-price.ts";
 import type {
   DailyAttendanceReport,
   DailyAttendanceStatus,
@@ -123,7 +127,12 @@ type ReportLedgerRecord = {
     inventoryAmount: number | null;
     fifoLots?: {
       sourceType: string;
+      lotOriginKey: string;
+      soldQuantity: number;
+      unitPrice: number;
       consumedAmount: number;
+      soldAmount?: number;
+      lossAmount?: number;
       remainingAmount: number;
     }[];
   }[];
@@ -178,6 +187,10 @@ type InventoryQuantityFields = {
   purchasedQuantity: DecimalNumber;
   currentQuantity: DecimalNumber | null;
   quantity: DecimalNumber | null;
+  fifoLots?: Array<{
+    soldQuantity: DecimalNumber;
+    [key: string]: unknown;
+  }>;
 };
 
 type LossQuantityFields = {
@@ -193,12 +206,25 @@ type AdjustmentQuantityFields = {
 type NormalizedInventoryQuantityFields<T extends InventoryQuantityFields> =
   Omit<
     T,
-    "previousQuantity" | "purchasedQuantity" | "currentQuantity" | "quantity"
+    | "previousQuantity"
+    | "purchasedQuantity"
+    | "currentQuantity"
+    | "quantity"
+    | "fifoLots"
   > & {
     previousQuantity: number;
     purchasedQuantity: number;
     currentQuantity: number | null;
     quantity: number | null;
+    fifoLots: T["fifoLots"] extends
+      | Array<{ soldQuantity: DecimalNumber }>
+      | undefined
+      ? Array<
+          Omit<NonNullable<T["fifoLots"]>[number], "soldQuantity"> & {
+            soldQuantity: number;
+          }
+        >
+      : never;
   };
 
 type NormalizedLossQuantityFields<T extends LossQuantityFields> = Omit<
@@ -222,6 +248,10 @@ function normalizeInventoryQuantityFields<T extends InventoryQuantityFields>(
     purchasedQuantity: decimalToNumber(item.purchasedQuantity),
     currentQuantity: nullableDecimalToNumber(item.currentQuantity),
     quantity: nullableDecimalToNumber(item.quantity),
+    fifoLots: item.fifoLots?.map((lot) => ({
+      ...lot,
+      soldQuantity: decimalToNumber(lot.soldQuantity),
+    })) as NormalizedInventoryQuantityFields<T>["fifoLots"],
   };
 }
 
@@ -307,6 +337,8 @@ function normalizeReportLedgerQuantities<
 function buildDailyMeetingPlannedSalesItems(
   ledgers: Array<{
     id: string;
+    storeId: string;
+    closingDate: Date;
     ledgerInventoryItems: Array<{
       productId?: string | null;
       previousQuantity: number;
@@ -315,6 +347,11 @@ function buildDailyMeetingPlannedSalesItems(
       currentQuantity: number | null;
       quantity: number | null;
       plannedUnitPrice?: number | null;
+      fifoLots?: Array<{
+        lotOriginKey: string;
+        soldQuantity: DecimalNumber;
+        plannedUnitPrice?: number | null;
+      }>;
     }>;
   }>,
 ): Map<string, LedgerReviewPlannedSalesInput[]> {
@@ -323,15 +360,31 @@ function buildDailyMeetingPlannedSalesItems(
   for (const ledger of ledgers) {
     result.set(
       ledger.id,
-      ledger.ledgerInventoryItems.map((item) => ({
-        productId: item.productId ?? undefined,
-        previousQuantity: item.previousQuantity,
-        purchasedQuantity: item.purchasedQuantity,
-        lossQuantity: item.lossQuantity ?? 0,
-        currentQuantity: item.currentQuantity,
-        quantity: item.quantity,
-        plannedUnitPrice: item.plannedUnitPrice ?? null,
-      })),
+      ledger.ledgerInventoryItems.flatMap((item) => {
+        if (item.productId && (item.fifoLots?.length ?? 0) > 0) {
+          return item.fifoLots!.map((lot) => ({
+            productId: item.productId ?? undefined,
+            previousQuantity: 0,
+            purchasedQuantity: decimalToNumber(lot.soldQuantity),
+            lossQuantity: 0,
+            currentQuantity: 0,
+            quantity: 0,
+            plannedUnitPrice: lot.plannedUnitPrice ?? null,
+          }));
+        }
+
+        return [
+          {
+            productId: item.productId ?? undefined,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            lossQuantity: item.lossQuantity ?? 0,
+            currentQuantity: item.currentQuantity,
+            quantity: item.quantity,
+            plannedUnitPrice: item.plannedUnitPrice ?? null,
+          },
+        ];
+      }),
     );
   }
 
@@ -1088,7 +1141,14 @@ type CategoryPerformanceItem = {
   unitPrice: number;
   // 지점장 판매한 가격. 없으면 null(매입단가로 폴백).
   plannedUnitPrice?: number | null;
-  fifoLots?: Array<{ consumedAmount: number }>;
+  fifoLots?: Array<{
+    soldQuantity?: number;
+    unitPrice?: number;
+    plannedUnitPrice?: number | null;
+    consumedAmount: number;
+    soldAmount?: number;
+    lossAmount?: number;
+  }>;
 };
 
 // ledgerLossItems(품목별 손실 행)를 productId별 합계 수량으로 집계한다.
@@ -1121,14 +1181,27 @@ function getItemSoldQuantity(item: CategoryPerformanceItem) {
 
 function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
   if (item.fifoLots && item.fifoLots.length > 0) {
-    return item.fifoLots.reduce((sum, lot) => sum + lot.consumedAmount, 0);
+    return item.fifoLots.reduce((sum, lot) => {
+      const hasCompleteAllocation =
+        lot.soldAmount !== undefined &&
+        lot.lossAmount !== undefined &&
+        Math.abs(lot.soldAmount + lot.lossAmount - lot.consumedAmount) <
+          0.000001;
+
+      return sum + (hasCompleteAllocation ? lot.soldAmount! : lot.consumedAmount);
+    }, 0);
   }
 
   return Math.round(soldQuantity * item.unitPrice);
 }
 
+type EstimatedSalesPriceItem = Pick<
+  CategoryPerformanceItem,
+  "unitPrice" | "plannedUnitPrice" | "fifoLots"
+>;
+
 // 추정 매출 단가: 판매한 가격이 있으면 그 값, 없으면 매입단가로 폴백.
-function getItemSalesUnitPrice(item: CategoryPerformanceItem): {
+function getItemSalesUnitPrice(item: EstimatedSalesPriceItem): {
   unitPrice: number;
   usedPlannedPrice: boolean;
 } {
@@ -1141,6 +1214,45 @@ function getItemSalesUnitPrice(item: CategoryPerformanceItem): {
   }
 
   return { unitPrice: item.unitPrice, usedPlannedPrice: false };
+}
+
+function getItemEstimatedSales(
+  item: EstimatedSalesPriceItem,
+  soldQuantity: number,
+): { amount: number; usedPlannedPrice: boolean } {
+  const lotSoldQuantity = item.fifoLots?.reduce(
+    (sum, lot) => sum + (lot.soldQuantity ?? 0),
+    0,
+  );
+
+  if (
+    item.fifoLots &&
+    item.fifoLots.length > 0 &&
+    lotSoldQuantity !== undefined &&
+    Math.abs(lotSoldQuantity - soldQuantity) < 0.000001
+  ) {
+    let usedPlannedPrice = true;
+    const amount = item.fifoLots.reduce((sum, lot) => {
+      const quantity = lot.soldQuantity ?? 0;
+      const plannedUnitPrice = lot.plannedUnitPrice;
+      if (plannedUnitPrice === null || plannedUnitPrice === undefined) {
+        usedPlannedPrice = false;
+      }
+
+      return (
+        sum +
+        Math.round(quantity * (plannedUnitPrice ?? lot.unitPrice ?? item.unitPrice))
+      );
+    }, 0);
+
+    return { amount, usedPlannedPrice };
+  }
+
+  const { unitPrice, usedPlannedPrice } = getItemSalesUnitPrice(item);
+  return {
+    amount: Math.round(soldQuantity * unitPrice),
+    usedPlannedPrice,
+  };
 }
 
 export function buildProductCategoryPerformance(
@@ -1175,9 +1287,9 @@ export function buildProductCategoryPerformance(
         soldItemCount: 0,
         fallbackCount: 0,
       };
-      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
-        getItemSalesUnitPrice(item);
-      stats.sales += Math.round(soldQuantity * salesUnitPrice);
+      const { amount: salesAmount, usedPlannedPrice } =
+        getItemEstimatedSales(item, soldQuantity);
+      stats.sales += salesAmount;
       stats.cogs += getItemCogs(item, soldQuantity);
       stats.soldItemCount += 1;
       if (!usedPlannedPrice) {
@@ -1241,8 +1353,8 @@ export function buildProductProfitability(
 
       // 같은 품목이 여러 지점에 있으면 합산한다. productId가 없으면 품목명으로 묶는다.
       const key = item.productId ?? `name:${item.productName ?? ""}`;
-      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
-        getItemSalesUnitPrice(item);
+      const { amount: salesAmount, usedPlannedPrice } =
+        getItemEstimatedSales(item, soldQuantity);
 
       const stats = byProduct.get(key) ?? {
         productId: item.productId ?? key,
@@ -1255,7 +1367,7 @@ export function buildProductProfitability(
         usedCostFallback: false,
       };
       stats.soldQuantity += soldQuantity;
-      stats.sales += Math.round(soldQuantity * salesUnitPrice);
+      stats.sales += salesAmount;
       stats.cogs += getItemCogs(item, soldQuantity);
       if (!usedPlannedPrice) stats.usedCostFallback = true;
       byProduct.set(key, stats);
@@ -1396,7 +1508,12 @@ export async function getHqDailyMeetingReport({
                 fifoLots: {
                   select: {
                     sourceType: true,
+                    lotOriginKey: true,
+                    soldQuantity: true,
+                    unitPrice: true,
                     consumedAmount: true,
+                    soldAmount: true,
+                    lossAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -1481,6 +1598,27 @@ export async function getHqDailyMeetingReport({
       businessDate: ledger.closingDate,
     })),
   );
+  const lotPriceByLedgerId = new Map(
+    await Promise.all(
+      currentLedgers.map(async (ledger) => [
+        ledger.id,
+        await loadResolvedLotSalesPricesInTx(
+          db as unknown as Prisma.TransactionClient,
+          {
+            dailyLedgerId: ledger.id,
+            storeId: ledger.storeId,
+            businessDate: ledger.closingDate,
+            lots: ledger.ledgerInventoryItems.flatMap((item) =>
+              item.fifoLots?.map((lot) => ({
+                productId: item.productId,
+                lotOriginKey: lot.lotOriginKey,
+              })) ?? [],
+            ),
+          },
+        ),
+      ] as const),
+    ),
+  );
   const ledgersWithPlannedPrice = currentLedgers.map((ledger) => {
     const lossQuantityByProductId = aggregateLossQuantityByProductId(
       ledger.ledgerLossItems,
@@ -1489,6 +1627,14 @@ export async function getHqDailyMeetingReport({
       ...ledger,
       ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
         ...item,
+        fifoLots: item.fifoLots?.map((lot) => ({
+          ...lot,
+          plannedUnitPrice:
+            lotPriceByLedgerId
+              .get(ledger.id)
+              ?.get(lotSalesPriceKey(item.productId, lot.lotOriginKey))
+              ?.plannedUnitPrice ?? null,
+        })),
         lossQuantity: item.productId
           ? (lossQuantityByProductId.get(item.productId) ?? 0)
           : 0,
@@ -1632,7 +1778,16 @@ export async function getHqProductSalesReportForRange({
           currentQuantity: true,
           quantity: true,
           unitPrice: true,
-          fifoLots: { select: { consumedAmount: true } },
+          fifoLots: {
+            select: {
+              lotOriginKey: true,
+              soldQuantity: true,
+              unitPrice: true,
+              consumedAmount: true,
+              soldAmount: true,
+              lossAmount: true,
+            },
+          },
         },
       },
       ledgerLossItems: {
@@ -1645,6 +1800,27 @@ export async function getHqProductSalesReportForRange({
     },
   });
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
+  const lotPriceByLedgerId = new Map(
+    await Promise.all(
+      ledgers.map(async (ledger) => [
+        ledger.id,
+        await loadResolvedLotSalesPricesInTx(
+          db as unknown as Prisma.TransactionClient,
+          {
+            dailyLedgerId: ledger.id,
+            storeId: ledger.storeId,
+            businessDate: ledger.closingDate,
+            lots: ledger.ledgerInventoryItems.flatMap((item) =>
+              item.fifoLots.map((lot) => ({
+                productId: item.productId,
+                lotOriginKey: lot.lotOriginKey,
+              })),
+            ),
+          },
+        ),
+      ] as const),
+    ),
+  );
 
   const { getPlannedUnitPriceLookup } =
     await import("../sales-plan/queries.ts");
@@ -1687,6 +1863,14 @@ export async function getHqProductSalesReportForRange({
       // 냉동/생물만 거르던 category 필터를 두지 않고, 판매수량이 잡히는 모든 행을 합산한다.
       const enrichedItem = {
         ...item,
+        fifoLots: item.fifoLots.map((lot) => ({
+          ...lot,
+          plannedUnitPrice:
+            lotPriceByLedgerId
+              .get(ledger.id)
+              ?.get(lotSalesPriceKey(item.productId, lot.lotOriginKey))
+              ?.plannedUnitPrice ?? null,
+        })),
         lossQuantity: item.productId
           ? (lossQuantityByProductId.get(item.productId) ?? 0)
           : 0,
@@ -1705,8 +1889,8 @@ export async function getHqProductSalesReportForRange({
         item.productId ??
         `name:${item.productName}:${item.productSpec}:${item.productCategory}`;
       const key = `${ledger.storeId}|${productKey}`;
-      const { unitPrice: salesUnitPrice, usedPlannedPrice } =
-        getItemSalesUnitPrice(enrichedItem);
+      const { amount: salesAmount, usedPlannedPrice } =
+        getItemEstimatedSales(enrichedItem, soldQuantity);
       const existing = byStoreProduct.get(key);
       const bucket =
         existing ??
@@ -1729,7 +1913,7 @@ export async function getHqProductSalesReportForRange({
         } satisfies ProductSalesBucket);
 
       bucket.soldQuantity += soldQuantity;
-      bucket.estimatedSalesAmount += Math.round(soldQuantity * salesUnitPrice);
+      bucket.estimatedSalesAmount += salesAmount;
       bucket.estimatedCogsAmount += getItemCogs(enrichedItem, soldQuantity);
       bucket.lossQuantity += enrichedItem.lossQuantity;
       bucket.lossAmount += item.productId
@@ -1882,7 +2066,12 @@ export async function getHqStoreComparisonReport({
                 fifoLots: {
                   select: {
                     sourceType: true,
+                    lotOriginKey: true,
+                    soldQuantity: true,
+                    unitPrice: true,
                     consumedAmount: true,
+                    soldAmount: true,
+                    lossAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -2109,7 +2298,12 @@ export async function getStoreProfitSummariesForRange({
           fifoLots: {
             select: {
               sourceType: true,
+              lotOriginKey: true,
+              soldQuantity: true,
+              unitPrice: true,
               consumedAmount: true,
+              soldAmount: true,
+              lossAmount: true,
               remainingAmount: true,
             },
           },
@@ -2296,7 +2490,12 @@ export async function getLedgerProfitSummariesForRange({
           fifoLots: {
             select: {
               sourceType: true,
+              lotOriginKey: true,
+              soldQuantity: true,
+              unitPrice: true,
               consumedAmount: true,
+              soldAmount: true,
+              lossAmount: true,
               remainingAmount: true,
             },
           },
@@ -2570,7 +2769,12 @@ export async function getHqMonthlyClosingAnomalyReport({
           fifoLots: {
             select: {
               sourceType: true,
+              lotOriginKey: true,
+              soldQuantity: true,
+              unitPrice: true,
               consumedAmount: true,
+              soldAmount: true,
+              lossAmount: true,
               remainingAmount: true,
             },
           },
@@ -2623,10 +2827,39 @@ export async function getHqMonthlyClosingAnomalyReport({
       businessDate: ledger.closingDate,
     })),
   );
+  const monthlyLotPriceByLedgerId = new Map(
+    await Promise.all(
+      ledgers.map(async (ledger) => [
+        ledger.id,
+        await loadResolvedLotSalesPricesInTx(
+          db as unknown as Prisma.TransactionClient,
+          {
+            dailyLedgerId: ledger.id,
+            storeId: ledger.storeId,
+            businessDate: ledger.closingDate,
+            lots: ledger.ledgerInventoryItems.flatMap((item) =>
+              item.fifoLots.map((lot) => ({
+                productId: item.productId,
+                lotOriginKey: lot.lotOriginKey,
+              })),
+            ),
+          },
+        ),
+      ] as const),
+    ),
+  );
   const ledgersWithPlannedPrice = ledgers.map((ledger) => ({
     ...ledger,
     ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
       ...item,
+      fifoLots: item.fifoLots.map((lot) => ({
+        ...lot,
+        plannedUnitPrice:
+          monthlyLotPriceByLedgerId
+            .get(ledger.id)
+            ?.get(lotSalesPriceKey(item.productId, lot.lotOriginKey))
+            ?.plannedUnitPrice ?? null,
+      })),
       plannedUnitPrice: item.productId
         ? monthlyPlannedUnitPriceLookup(
             ledger.storeId,
@@ -2682,6 +2915,20 @@ export async function getHqMonthlyClosingAnomalyReport({
         );
         return calculationSummary.inventoryItems.map((item) => ({
           ...item,
+          fifoLots: item.fifoLots?.map((lot) => ({
+            ...lot,
+            unitPrice:
+              "unitPrice" in lot && typeof lot.unitPrice === "number"
+                ? lot.unitPrice
+                : item.unitPrice,
+            plannedUnitPrice:
+              item.productId && lot.lotOriginKey
+                ? (monthlyLotPriceByLedgerId
+                    .get(ledger.id)
+                    ?.get(lotSalesPriceKey(item.productId, lot.lotOriginKey))
+                    ?.plannedUnitPrice ?? null)
+                : null,
+          })),
           lossQuantity: item.productId
             ? (lossQuantityByProductId.get(item.productId) ?? 0)
             : 0,
@@ -2776,6 +3023,12 @@ type MonthlyReportInventoryItem = LedgerReviewInventoryInput & {
   plannedUnitPrice?: number | null;
   // 판매량 추정(전일+매입-손실-당일)을 위한 품목별 손실 합계 수량.
   lossQuantity?: number;
+  fifoLots?: Array<
+    NonNullable<LedgerReviewInventoryInput["fifoLots"]>[number] & {
+      unitPrice?: number;
+      plannedUnitPrice?: number | null;
+    }
+  >;
 };
 
 type MonthlyReportInventoryAdjustment = {
@@ -3462,20 +3715,15 @@ function buildMonthlyRevenueRanking(
         continue;
       }
 
-      const usePlannedPrice =
-        item.plannedUnitPrice !== null &&
-        item.plannedUnitPrice !== undefined &&
-        Number.isFinite(item.plannedUnitPrice);
-      const salesUnitPrice = usePlannedPrice
-        ? item.plannedUnitPrice!
-        : item.unitPrice;
-      const estimatedSalesAmount = Math.round(soldQuantity * salesUnitPrice);
+      const { amount: estimatedSalesAmount, usedPlannedPrice } =
+        getItemEstimatedSales(item, soldQuantity);
       const current = aggregates.get(item.productId);
 
       if (current) {
         current.soldQuantity += soldQuantity;
         current.estimatedSalesAmount += estimatedSalesAmount;
-        current.usedCostFallback = current.usedCostFallback || !usePlannedPrice;
+        current.usedCostFallback =
+          current.usedCostFallback || !usedPlannedPrice;
         continue;
       }
 
@@ -3483,7 +3731,7 @@ function buildMonthlyRevenueRanking(
         productName: item.productName ?? "이름 미상 품목",
         soldQuantity,
         estimatedSalesAmount,
-        usedCostFallback: !usePlannedPrice,
+        usedCostFallback: !usedPlannedPrice,
       });
     }
   }

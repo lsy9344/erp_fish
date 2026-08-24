@@ -38,11 +38,11 @@ import {
 } from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
-import { syncLedgerLossItemsWithSalesPricePlansInTx } from "~/features/losses/planned-price-sync";
 import {
   getSalesPriceWriteGateDecision,
   upsertInventorySalesPricePlansInTx,
 } from "./sales-price-persistence";
+import { upsertLedgerLotSalesPricePlansInTx } from "./lot-sales-price";
 import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
@@ -409,7 +409,7 @@ export async function saveHqLedgerInventoryItems(
               ],
         );
 
-        if (plannedPriceItems.length > 0) {
+        if (plannedPriceItems.length > 0 || parsed.data.lotPrices.length > 0) {
           const priceGate = getSalesPriceWriteGateDecision({
             hasPlannedPriceInput: true,
             closedEditAllowed: actor.closedEditAllowed,
@@ -433,6 +433,38 @@ export async function saveHqLedgerInventoryItems(
                       ],
                 ),
               ),
+            );
+          }
+
+          const lotTargetByOrigin = new Map(
+            before.items.flatMap((item) =>
+              item.fifoLots.map(
+                (lot) => [lot.lotOriginKey, item.productId] as const,
+              ),
+            ),
+          );
+          const seenLotOrigins = new Set<string>();
+          const lotPriceErrors: Record<string, string[]> = {};
+          parsed.data.lotPrices.forEach((price, index) => {
+            if (seenLotOrigins.has(price.lotOriginKey)) {
+              lotPriceErrors[`lotPrices.${index}.lotOriginKey`] = [
+                "같은 입고분 판매가를 두 번 저장할 수 없습니다.",
+              ];
+            } else if (
+              lotTargetByOrigin.get(price.lotOriginKey) !== price.productId
+            ) {
+              lotPriceErrors[`lotPrices.${index}.lotOriginKey`] = [
+                "판매가를 저장할 입고분을 확인해 주세요.",
+              ];
+            }
+            seenLotOrigins.add(price.lotOriginKey);
+          });
+
+          if (Object.keys(lotPriceErrors).length > 0) {
+            return actionError<InventoryStepData>(
+              "VALIDATION_ERROR",
+              "입고분별 판매가를 확인해 주세요.",
+              lotPriceErrors,
             );
           }
 
@@ -576,7 +608,7 @@ export async function saveHqLedgerInventoryItems(
 
         // DESIGN.md D6: 가격 대상은 앞에서 게이트·품목 검증을 통과했다. 날짜 키는
         // 장부 closingDate라 다른 날짜 가격은 변하지 않는다.
-        if (plannedPriceItems.length > 0) {
+        if (plannedPriceItems.length > 0 || parsed.data.lotPrices.length > 0) {
           const businessDate = new Date(before.closingDate);
 
           await upsertInventorySalesPricePlansInTx(tx, {
@@ -586,15 +618,10 @@ export async function saveHqLedgerInventoryItems(
             actorId: actor.user.id,
           });
 
-          // 판매가 기준 손실금액을 같은 날짜·같은 트랜잭션에서 재산정한다. 마감
-          // 편집 문맥에서는 HEADQUARTERS_CLOSED도 손실 재산정 대상에 포함한다.
-          await syncLedgerLossItemsWithSalesPricePlansInTx(tx, {
-            storeId: before.storeId,
-            businessDate,
+          await upsertLedgerLotSalesPricePlansInTx(tx, {
             dailyLedgerId: before.id,
-            productIds: plannedPriceItems.map((item) => item.productId),
+            lotPrices: parsed.data.lotPrices,
             actorId: actor.user.id,
-            ledgerStatuses: getEditableLedgerStatusesForActor(actor),
           });
         }
 

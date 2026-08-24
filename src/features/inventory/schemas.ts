@@ -114,15 +114,35 @@ const ledgerInventoryItemSchema = z.object({
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
-  // DESIGN.md D6: 본사 재고 편집에서만 전송하는 판매한 가격. 빈칸/미전송은
-  // "변경 없음"(null)이며 삭제가 아니고, 0원은 유효한 값이다. 지점장 스키마는
-  // 이 필드를 required 파서로 덮어써 기존 필수 계약을 유지한다.
+  // 과거 품목 단위 판매가. 새 화면은 lotPrices를 권위 값으로 보내며, 이 값은
+  // 기존 자료와 입고분이 없는 예외 행을 위한 선택적 기본값으로만 남긴다.
   plannedUnitPrice: z
     .unknown()
     .transform((value, context) =>
       parseOptionalNonNegativeInteger(value, context, plannedUnitPriceError),
     ),
 });
+
+const ledgerLotSalesPriceSchema = z.object({
+  productId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, productError)),
+  lotOriginKey: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, "입고분을 확인해 주세요.")),
+  plannedUnitPrice: z
+    .unknown()
+    .transform((value, context) =>
+      parseRequiredNonNegativeInteger(value, context, plannedUnitPriceError),
+    ),
+});
+
+function arrayOrEmpty(value: unknown): unknown[] {
+  const values: unknown[] = Array.isArray(value) ? value : [];
+  return values;
+}
 
 const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
   // 지점장 저장도 수량은 입력 전 null/빈칸을 허용한다. 필수 입력 검증은
@@ -137,22 +157,18 @@ const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
     ),
-  plannedUnitPrice: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredNonNegativeInteger(value, context, plannedUnitPriceError),
-    ),
 });
 
 export const ledgerInventorySchema = ledgerMutationContextSchema.extend({
   items: z.array(ledgerInventoryItemSchema),
+  lotPrices: z.preprocess(arrayOrEmpty, z.array(ledgerLotSalesPriceSchema)),
 });
 
-// 본사와 지점장 재고 저장은 둘째 자리 수량을 공통으로 허용한다. 지점장 저장은
-// 수량의 null/빈칸 계약을 유지하고 plannedUnitPrice만 필수로 받는다.
+// 본사와 지점장 재고 저장은 둘째 자리 수량과 별도 lotPrices 배열을 공통으로 받는다.
 export const ledgerStoreManagerInventorySchema =
   ledgerMutationContextSchema.extend({
     items: z.array(ledgerStoreManagerInventoryItemSchema),
+    lotPrices: z.preprocess(arrayOrEmpty, z.array(ledgerLotSalesPriceSchema)),
   });
 
 export const ledgerInventoryAdjustmentSchema =

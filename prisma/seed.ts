@@ -232,6 +232,7 @@ async function main() {
     process.env.SEED_STORE_MANAGER_PASSWORD ?? password;
   const storeManagerName = getStoreManagerName();
   const sampleStoreName = getSampleStoreName();
+  const seedSampleStore = process.env.SEED_SAMPLE_STORE === "true";
   const allowProductionSeed = process.env.ALLOW_PRODUCTION_SEED === "true";
   const allowPasswordRotation =
     process.env.ALLOW_SEED_PASSWORD_ROTATION === "true";
@@ -352,30 +353,32 @@ async function main() {
 
   await assignPermissionProfile(storeManager.id, storeManagerProfile.id);
 
-  const sampleStore = await prisma.store.upsert({
-    where: { name: sampleStoreName },
-    create: {
-      name: sampleStoreName,
-      isActive: true,
-    },
-    update: {
-      isActive: true,
-    },
-  });
+  if (seedSampleStore) {
+    const sampleStore = await prisma.store.upsert({
+      where: { name: sampleStoreName },
+      create: {
+        name: sampleStoreName,
+        isActive: true,
+      },
+      update: {
+        isActive: true,
+      },
+    });
 
-  await prisma.userStoreAssignment.upsert({
-    where: {
-      userId_storeId: {
+    await prisma.userStoreAssignment.upsert({
+      where: {
+        userId_storeId: {
+          userId: storeManager.id,
+          storeId: sampleStore.id,
+        },
+      },
+      create: {
         userId: storeManager.id,
         storeId: sampleStore.id,
       },
-    },
-    create: {
-      userId: storeManager.id,
-      storeId: sampleStore.id,
-    },
-    update: {},
-  });
+      update: {},
+    });
+  }
 }
 
 void main()
