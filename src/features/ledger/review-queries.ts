@@ -20,6 +20,7 @@ import {
 } from "./review-validation";
 import { getStoreEntryStepCompletion } from "./step-completion";
 import { getInventoryPlanGate } from "./inventory-plan-gate";
+import { hasCompleteLotSalesAllocation } from "~/features/inventory/lot-sales-allocation";
 import type {
   LedgerReviewMissingItem,
   LedgerReviewStepId,
@@ -640,7 +641,7 @@ export async function getLedgerReviewStepData(
         .filter((adjustment) => adjustment !== null),
       lossItems: losses.lossItems,
       plannedSalesItems: inventory.items.flatMap((item) =>
-        item.fifoLots.length > 0
+        hasCompleteLotSalesAllocation(item, item.fifoLots)
           ? item.fifoLots.map((lot) => ({
               productId: item.productId,
               previousQuantity: 0,
@@ -728,23 +729,32 @@ export async function getLedgerReviewStepData(
         payrollTotal,
       }),
       topSoldItems: buildStoreManagerTopSoldItems(
-        savedInventoryItems.map((item) => ({
-          productId: item.productId,
-          productName: item.productName,
-          previousQuantity: item.previousQuantity,
-          purchasedQuantity: item.purchasedQuantity,
-          lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
-          currentQuantity: item.currentQuantity,
-          unitPrice: item.unitPrice,
-          plannedUnitPrice: getPlannedUnitPrice(item.productId),
-          fifoLots: inventory.items
-            .find((inventoryItem) => inventoryItem.productId === item.productId)
-            ?.fifoLots.map((lot) => ({
-              soldQuantity: lot.soldQuantity,
-              unitPrice: lot.unitPrice,
-              plannedUnitPrice: lot.plannedUnitPrice,
-            })),
-        })),
+        savedInventoryItems.map((item) => {
+          const inventoryItem = inventory.items.find(
+            (candidate) => candidate.productId === item.productId,
+          );
+          const fifoLots =
+            inventoryItem &&
+            hasCompleteLotSalesAllocation(inventoryItem, inventoryItem.fifoLots)
+              ? inventoryItem.fifoLots.map((lot) => ({
+                  soldQuantity: lot.soldQuantity,
+                  unitPrice: lot.unitPrice,
+                  plannedUnitPrice: lot.plannedUnitPrice,
+                }))
+              : undefined;
+
+          return {
+            productId: item.productId,
+            productName: item.productName,
+            previousQuantity: item.previousQuantity,
+            purchasedQuantity: item.purchasedQuantity,
+            lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
+            currentQuantity: item.currentQuantity,
+            unitPrice: item.unitPrice,
+            plannedUnitPrice: getPlannedUnitPrice(item.productId),
+            fifoLots,
+          };
+        }),
       ),
     };
   });

@@ -54,6 +54,7 @@ import {
   loadResolvedLotSalesPricesInTx,
   lotSalesPriceKey,
 } from "../inventory/lot-sales-price.ts";
+import { hasCompleteLotSalesAllocation } from "../inventory/lot-sales-allocation.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 type HqDashboardRowWithoutPriority = Omit<HqDashboardRow, "priority">;
@@ -146,8 +147,20 @@ async function buildDashboardPlannedSalesItems(
     result.set(
       ledger.id,
       ledger.ledgerInventoryItems.flatMap((item) => {
-        if (item.productId && (item.fifoLots?.length ?? 0) > 0) {
-          return item.fifoLots!.map((lot) => ({
+        const itemLossQuantity = item.productId
+          ? (lossByProductId.get(item.productId) ?? 0)
+          : 0;
+        if (
+          item.productId &&
+          item.fifoLots &&
+          hasCompleteLotSalesAllocation(
+            { ...item, lossQuantity: itemLossQuantity },
+            item.fifoLots.map((lot) => ({
+              soldQuantity: decimalToNumber(lot.soldQuantity),
+            })),
+          )
+        ) {
+          return item.fifoLots.map((lot) => ({
             productId: item.productId ?? undefined,
             previousQuantity: 0,
             purchasedQuantity: decimalToNumber(lot.soldQuantity),
@@ -167,9 +180,7 @@ async function buildDashboardPlannedSalesItems(
             productId: item.productId ?? undefined,
             previousQuantity: item.previousQuantity,
             purchasedQuantity: item.purchasedQuantity,
-            lossQuantity: item.productId
-              ? (lossByProductId.get(item.productId) ?? 0)
-              : 0,
+            lossQuantity: itemLossQuantity,
             currentQuantity: item.currentQuantity,
             quantity: item.quantity,
             plannedUnitPrice: item.productId

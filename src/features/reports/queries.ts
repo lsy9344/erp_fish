@@ -50,6 +50,7 @@ import {
   loadResolvedLotSalesPricesInTx,
   lotSalesPriceKey,
 } from "../inventory/lot-sales-price.ts";
+import { hasCompleteLotSalesAllocation } from "../inventory/lot-sales-allocation.ts";
 import type {
   DailyAttendanceReport,
   DailyAttendanceStatus,
@@ -361,8 +362,17 @@ function buildDailyMeetingPlannedSalesItems(
     result.set(
       ledger.id,
       ledger.ledgerInventoryItems.flatMap((item) => {
-        if (item.productId && (item.fifoLots?.length ?? 0) > 0) {
-          return item.fifoLots!.map((lot) => ({
+        if (
+          item.productId &&
+          item.fifoLots &&
+          hasCompleteLotSalesAllocation(
+            item,
+            item.fifoLots.map((lot) => ({
+              soldQuantity: decimalToNumber(lot.soldQuantity),
+            })),
+          )
+        ) {
+          return item.fifoLots.map((lot) => ({
             productId: item.productId ?? undefined,
             previousQuantity: 0,
             purchasedQuantity: decimalToNumber(lot.soldQuantity),

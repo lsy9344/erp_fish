@@ -8,6 +8,33 @@ import {
 } from "../../src/features/inventory/lot-sales-price.ts";
 import { calculateLedgerReviewSummary } from "../../src/server/calculations/ledger.ts";
 import { buildProductCategoryPerformance } from "../../src/features/reports/queries.ts";
+import {
+  getInventoryFlowSoldQuantity,
+  hasCompleteLotSalesAllocation,
+} from "../../src/features/inventory/lot-sales-allocation.ts";
+
+test("pre-migration lots fall back to the legacy product sales calculation", () => {
+  const item = {
+    previousQuantity: 10,
+    purchasedQuantity: 5,
+    lossQuantity: 0,
+    currentQuantity: 7,
+    quantity: 7,
+  };
+
+  assert.equal(getInventoryFlowSoldQuantity(item), 8);
+  assert.equal(
+    hasCompleteLotSalesAllocation(item, [{ soldQuantity: 0 }]),
+    false,
+  );
+  assert.equal(
+    hasCompleteLotSalesAllocation(item, [
+      { soldQuantity: 3 },
+      { soldQuantity: 5 },
+    ]),
+    true,
+  );
+});
 
 test("same-day lots keep separate origins while loss and sales both cross FIFO lots", () => {
   const result = calculateFifoLotSnapshots({
