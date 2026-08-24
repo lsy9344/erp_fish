@@ -465,6 +465,15 @@ export type ProductProfitabilityReportItem = {
   salesBasis: "planned" | "cost";
   // 추정/판매가 미반영(폴백)/계산 불가(매출 0) 상태.
   statusLabel: "추정" | "판매가 미반영" | "계산 불가";
+  // 아침 리포트에서 품목 합계를 눌렀을 때 보여줄 지점별 추정 판매수량.
+  // 판매수량이 있는 지점만 포함하며, 품목의 soldQuantity 합계와 일치한다.
+  storeSales: ProductStoreSalesItem[];
+};
+
+export type ProductStoreSalesItem = {
+  storeId: string;
+  storeName: string;
+  soldQuantity: number;
 };
 
 // WO(2026-06-25): 당일 전체 판매분 합산 요약. 품목 행을 합산해 만들며 냉동/생물

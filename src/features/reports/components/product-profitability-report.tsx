@@ -17,6 +17,15 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "~/components/ui/chart";
+import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog";
 import { Field, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import {
@@ -262,7 +271,7 @@ export function ProductProfitabilityReport({
                   visibleItems.map((item) => (
                     <TableRow key={item.productId}>
                       <TableCell className="max-w-48 font-medium break-words whitespace-normal">
-                        {item.productName}
+                        <ProductStoreSalesDialog item={item} />
                       </TableCell>
                       <TableCell className="max-w-32 break-words whitespace-normal">
                         {item.productSpec || "-"}
@@ -299,7 +308,7 @@ export function ProductProfitabilityReport({
               {data.items.map((item) => (
                 <TableRow key={item.productId}>
                   <TableCell className="font-medium">
-                    {item.productName}
+                    <ProductStoreSalesDialog item={item} />
                   </TableCell>
                   <TableCell>{item.productSpec || "-"}</TableCell>
                   <TableCell>{item.productCategory}</TableCell>
@@ -381,5 +390,71 @@ export function ProductProfitabilityReport({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function ProductStoreSalesDialog({
+  item,
+}: {
+  item: ProductProfitabilityReportItem;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="link"
+          className="h-auto min-h-0 max-w-full justify-start gap-1.5 p-0 text-left font-medium whitespace-normal"
+          aria-label={`${item.productName} 매장별 판매수량 상세 보기`}
+        >
+          <span className="break-words">{item.productName}</span>
+          <span className="text-muted-foreground shrink-0 text-xs">상세</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{item.productName} 매장별 판매수량</DialogTitle>
+          <DialogDescription>
+            {item.productSpec ? `${item.productSpec} · ` : ""}전체 판매수량{" "}
+            {quantityFormatter.format(item.soldQuantity)} · 판매 매장{" "}
+            {item.storeSales.length.toLocaleString("ko-KR")}곳
+          </DialogDescription>
+        </DialogHeader>
+
+        {item.storeSales.length === 0 ? (
+          <p className="bg-muted/40 text-muted-foreground rounded-md border p-4 text-sm">
+            매장별 판매 자료가 없습니다.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <Table aria-label={`${item.productName} 매장별 판매수량 목록`}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>매장</TableHead>
+                  <TableHead className="text-right">판매수량</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {item.storeSales.map((store) => (
+                  <TableRow key={store.storeId}>
+                    <TableCell className="font-medium break-words">
+                      {store.storeName}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {quantityFormatter.format(store.soldQuantity)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <p className="text-muted-foreground text-xs">
+          판매수량이 있는 매장만 표시합니다. POS 실제 판매가 아니라 재고
+          흐름으로 계산한 추정값입니다.
+        </p>
+      </DialogContent>
+    </Dialog>
   );
 }

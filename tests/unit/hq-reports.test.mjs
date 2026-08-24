@@ -658,6 +658,8 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
   // 일치하는지 본다. 같은 품목(productId)이 두 지점에 나뉘어 있어도 합산해야 한다.
   const ledgers = [
     {
+      storeId: "store-a",
+      storeName: "가락점",
       ledgerInventoryItems: [
         {
           productId: "p-gal",
@@ -706,6 +708,8 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
       ],
     },
     {
+      storeId: "store-b",
+      storeName: "노량진점",
       ledgerInventoryItems: [
         {
           // 같은 갈치를 다른 지점에서 4개 더 판매(판매한 가격 1,500 → 6,000원,
@@ -740,12 +744,23 @@ test("buildProductProfitability returns per-item rows that reconcile with catego
   assert.equal(gal.estimatedGrossMarginRate, 0.5);
   assert.equal(gal.salesBasis, "planned");
   assert.equal(gal.statusLabel, "추정");
+  assert.deepEqual(gal.storeSales, [
+    { storeId: "store-a", storeName: "가락점", soldQuantity: 12 },
+    { storeId: "store-b", storeName: "노량진점", soldQuantity: 4 },
+  ]);
+  assert.equal(
+    gal.storeSales.reduce((sum, store) => sum + store.soldQuantity, 0),
+    gal.soldQuantity,
+  );
 
   const saewoo = summary.items[1];
   assert.equal(saewoo.productName, "새우");
   assert.equal(saewoo.estimatedSalesAmount, 10_000);
   assert.equal(saewoo.salesBasis, "cost");
   assert.equal(saewoo.statusLabel, "판매가 미반영");
+  assert.deepEqual(saewoo.storeSales, [
+    { storeId: "store-a", storeName: "가락점", soldQuantity: 5 },
+  ]);
 
   // 인수 조건: 품목 합계 = 냉동/생물 카테고리 합계.
   const categorySales = category.reduce((sum, c) => sum + c.salesAmount, 0);

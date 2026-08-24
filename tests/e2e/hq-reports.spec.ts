@@ -1627,13 +1627,35 @@ test.describe("일별 차트와 품목 순위 전용 데이터", () => {
     await expect(rows).toHaveCount(10);
     // WO-25(2026-07-25) #5: 차트가 렌더링했던 "이름 · 규격" 합침 라벨은 사라졌다.
     // 표는 품목명과 규격을 별도 셀로 내려주므로 셀 단위로 확인한다.
-    await expect(rows.first().locator("td")).toHaveText([
+    await expect(rows.first().locator("td").nth(0)).toContainText(
       "검색전용품목01",
-      "숨은규격01",
-      /\d/,
-    ]);
+    );
+    await expect(rows.first().locator("td").nth(1)).toHaveText("숨은규격01");
+    await expect(rows.first().locator("td").nth(2)).toHaveText(/\d/);
     await expect(rows.last()).toContainText("검색전용품목10");
     await expect(section.getByText("검색전용품목11")).toHaveCount(0);
+
+    await rows
+      .first()
+      .getByRole("button", {
+        name: "검색전용품목01 매장별 판매수량 상세 보기",
+      })
+      .click();
+    const storeSalesDialog = page.getByRole("dialog");
+    await expect(storeSalesDialog).toContainText(
+      "검색전용품목01 매장별 판매수량",
+    );
+    await expect(storeSalesDialog).toContainText("전체 판매수량 12");
+    await expect(storeSalesDialog).toContainText("품목 순위점");
+    await expect(
+      storeSalesDialog.getByRole("table", {
+        name: "검색전용품목01 매장별 판매수량 목록",
+      }),
+    ).toContainText("12");
+    await expect(storeSalesDialog).toContainText(
+      "POS 실제 판매가 아니라 재고 흐름으로 계산한 추정값입니다.",
+    );
+    await page.keyboard.press("Escape");
 
     const search = section.getByLabel("품목 검색");
     await expect(search).toHaveAttribute("type", "search");

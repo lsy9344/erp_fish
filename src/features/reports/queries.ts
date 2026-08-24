@@ -77,6 +77,7 @@ import type {
   ProductProfitabilitySummary,
   ProductSalesPeriodItem,
   ProductSalesPeriodReportData,
+  ProductStoreSalesItem,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -1341,6 +1342,8 @@ export function buildProductCategoryPerformance(
 // 기타 카테고리는 카테고리 차트와 동일하게 제외한다.
 export function buildProductProfitability(
   ledgers: Array<{
+    storeId?: string;
+    storeName?: string;
     ledgerInventoryItems: CategoryPerformanceItem[];
   }>,
 ): ProductProfitabilitySummary {
@@ -1355,6 +1358,7 @@ export function buildProductProfitability(
       sales: number;
       cogs: number;
       usedCostFallback: boolean;
+      storeSales: Map<string, ProductStoreSalesItem>;
     }
   >();
 
@@ -1383,10 +1387,20 @@ export function buildProductProfitability(
         sales: 0,
         cogs: 0,
         usedCostFallback: false,
+        storeSales: new Map<string, ProductStoreSalesItem>(),
       };
       stats.soldQuantity += soldQuantity;
       stats.sales += salesAmount;
       stats.cogs += getItemCogs(item, soldQuantity);
+      if (ledger.storeId && ledger.storeName) {
+        const storeStats = stats.storeSales.get(ledger.storeId) ?? {
+          storeId: ledger.storeId,
+          storeName: ledger.storeName,
+          soldQuantity: 0,
+        };
+        storeStats.soldQuantity += soldQuantity;
+        stats.storeSales.set(ledger.storeId, storeStats);
+      }
       if (!usedPlannedPrice) stats.usedCostFallback = true;
       byProduct.set(key, stats);
     }
@@ -1417,6 +1431,11 @@ export function buildProductProfitability(
         estimatedGrossMarginRate: grossMarginRate,
         salesBasis: stats.usedCostFallback ? "cost" : "planned",
         statusLabel,
+        storeSales: Array.from(stats.storeSales.values()).sort(
+          (left, right) =>
+            right.soldQuantity - left.soldQuantity ||
+            left.storeName.localeCompare(right.storeName, "ko-KR"),
+        ),
       };
     })
     // 추정 판매액 내림차순(시인성: 큰 매출 품목이 위로).
@@ -1616,6 +1635,9 @@ export async function getHqDailyMeetingReport({
       businessDate: ledger.closingDate,
     })),
   );
+  const reportStoreNameById = new Map(
+    stores.map((store) => [store.id, store.name]),
+  );
   const lotPriceByLedgerId = new Map(
     await Promise.all(
       currentLedgers.map(
@@ -1647,6 +1669,7 @@ export async function getHqDailyMeetingReport({
     );
     return {
       ...ledger,
+      storeName: reportStoreNameById.get(ledger.storeId) ?? ledger.storeId,
       ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
         ...item,
         fifoLots: item.fifoLots?.map((lot) => ({
