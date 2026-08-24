@@ -1188,7 +1188,9 @@ function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
         Math.abs(lot.soldAmount + lot.lossAmount - lot.consumedAmount) <
           0.000001;
 
-      return sum + (hasCompleteAllocation ? lot.soldAmount! : lot.consumedAmount);
+      return (
+        sum + (hasCompleteAllocation ? lot.soldAmount! : lot.consumedAmount)
+      );
     }, 0);
   }
 
@@ -1241,7 +1243,9 @@ function getItemEstimatedSales(
 
       return (
         sum +
-        Math.round(quantity * (plannedUnitPrice ?? lot.unitPrice ?? item.unitPrice))
+        Math.round(
+          quantity * (plannedUnitPrice ?? lot.unitPrice ?? item.unitPrice),
+        )
       );
     }, 0);
 
@@ -1287,8 +1291,10 @@ export function buildProductCategoryPerformance(
         soldItemCount: 0,
         fallbackCount: 0,
       };
-      const { amount: salesAmount, usedPlannedPrice } =
-        getItemEstimatedSales(item, soldQuantity);
+      const { amount: salesAmount, usedPlannedPrice } = getItemEstimatedSales(
+        item,
+        soldQuantity,
+      );
       stats.sales += salesAmount;
       stats.cogs += getItemCogs(item, soldQuantity);
       stats.soldItemCount += 1;
@@ -1353,8 +1359,10 @@ export function buildProductProfitability(
 
       // 같은 품목이 여러 지점에 있으면 합산한다. productId가 없으면 품목명으로 묶는다.
       const key = item.productId ?? `name:${item.productName ?? ""}`;
-      const { amount: salesAmount, usedPlannedPrice } =
-        getItemEstimatedSales(item, soldQuantity);
+      const { amount: salesAmount, usedPlannedPrice } = getItemEstimatedSales(
+        item,
+        soldQuantity,
+      );
 
       const stats = byProduct.get(key) ?? {
         productId: item.productId ?? key,
@@ -1600,23 +1608,27 @@ export async function getHqDailyMeetingReport({
   );
   const lotPriceByLedgerId = new Map(
     await Promise.all(
-      currentLedgers.map(async (ledger) => [
-        ledger.id,
-        await loadResolvedLotSalesPricesInTx(
-          db as unknown as Prisma.TransactionClient,
-          {
-            dailyLedgerId: ledger.id,
-            storeId: ledger.storeId,
-            businessDate: ledger.closingDate,
-            lots: ledger.ledgerInventoryItems.flatMap((item) =>
-              item.fifoLots?.map((lot) => ({
-                productId: item.productId,
-                lotOriginKey: lot.lotOriginKey,
-              })) ?? [],
+      currentLedgers.map(
+        async (ledger) =>
+          [
+            ledger.id,
+            await loadResolvedLotSalesPricesInTx(
+              db as unknown as Prisma.TransactionClient,
+              {
+                dailyLedgerId: ledger.id,
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                lots: ledger.ledgerInventoryItems.flatMap(
+                  (item) =>
+                    item.fifoLots?.map((lot) => ({
+                      productId: item.productId,
+                      lotOriginKey: lot.lotOriginKey,
+                    })) ?? [],
+                ),
+              },
             ),
-          },
-        ),
-      ] as const),
+          ] as const,
+      ),
     ),
   );
   const ledgersWithPlannedPrice = currentLedgers.map((ledger) => {
@@ -1802,23 +1814,26 @@ export async function getHqProductSalesReportForRange({
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const lotPriceByLedgerId = new Map(
     await Promise.all(
-      ledgers.map(async (ledger) => [
-        ledger.id,
-        await loadResolvedLotSalesPricesInTx(
-          db as unknown as Prisma.TransactionClient,
-          {
-            dailyLedgerId: ledger.id,
-            storeId: ledger.storeId,
-            businessDate: ledger.closingDate,
-            lots: ledger.ledgerInventoryItems.flatMap((item) =>
-              item.fifoLots.map((lot) => ({
-                productId: item.productId,
-                lotOriginKey: lot.lotOriginKey,
-              })),
+      ledgers.map(
+        async (ledger) =>
+          [
+            ledger.id,
+            await loadResolvedLotSalesPricesInTx(
+              db as unknown as Prisma.TransactionClient,
+              {
+                dailyLedgerId: ledger.id,
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                lots: ledger.ledgerInventoryItems.flatMap((item) =>
+                  item.fifoLots.map((lot) => ({
+                    productId: item.productId,
+                    lotOriginKey: lot.lotOriginKey,
+                  })),
+                ),
+              },
             ),
-          },
-        ),
-      ] as const),
+          ] as const,
+      ),
     ),
   );
 
@@ -1889,8 +1904,10 @@ export async function getHqProductSalesReportForRange({
         item.productId ??
         `name:${item.productName}:${item.productSpec}:${item.productCategory}`;
       const key = `${ledger.storeId}|${productKey}`;
-      const { amount: salesAmount, usedPlannedPrice } =
-        getItemEstimatedSales(enrichedItem, soldQuantity);
+      const { amount: salesAmount, usedPlannedPrice } = getItemEstimatedSales(
+        enrichedItem,
+        soldQuantity,
+      );
       const existing = byStoreProduct.get(key);
       const bucket =
         existing ??
@@ -2829,23 +2846,26 @@ export async function getHqMonthlyClosingAnomalyReport({
   );
   const monthlyLotPriceByLedgerId = new Map(
     await Promise.all(
-      ledgers.map(async (ledger) => [
-        ledger.id,
-        await loadResolvedLotSalesPricesInTx(
-          db as unknown as Prisma.TransactionClient,
-          {
-            dailyLedgerId: ledger.id,
-            storeId: ledger.storeId,
-            businessDate: ledger.closingDate,
-            lots: ledger.ledgerInventoryItems.flatMap((item) =>
-              item.fifoLots.map((lot) => ({
-                productId: item.productId,
-                lotOriginKey: lot.lotOriginKey,
-              })),
+      ledgers.map(
+        async (ledger) =>
+          [
+            ledger.id,
+            await loadResolvedLotSalesPricesInTx(
+              db as unknown as Prisma.TransactionClient,
+              {
+                dailyLedgerId: ledger.id,
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                lots: ledger.ledgerInventoryItems.flatMap((item) =>
+                  item.fifoLots.map((lot) => ({
+                    productId: item.productId,
+                    lotOriginKey: lot.lotOriginKey,
+                  })),
+                ),
+              },
             ),
-          },
-        ),
-      ] as const),
+          ] as const,
+      ),
     ),
   );
   const ledgersWithPlannedPrice = ledgers.map((ledger) => ({

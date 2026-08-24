@@ -855,7 +855,9 @@ test("미등록 이카운트 거래처는 원문을 남기고 자동 제외한�
   await page.getByRole("button", { name: "업로드", exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/ecount-imports\/[^/]+$/);
-  await expect(page.getByRole("heading", { name: "제외된 지점" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "제외된 지점" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("row").filter({
       hasText: ECOUNT_STORE_MAPPING_UPLOAD.firstRawStoreName,

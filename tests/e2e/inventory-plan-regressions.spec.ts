@@ -661,12 +661,12 @@ test("stale version 재고 충돌은 당일·이월 판매가격 출처를 serve
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  await expect(
-    getFirstLotPriceInput(page, currentProduct.name),
-  ).toHaveValue("2,500");
-  await expect(
-    getFirstLotPriceInput(page, carryoverProduct.name),
-  ).toHaveValue("2,000");
+  await expect(getFirstLotPriceInput(page, currentProduct.name)).toHaveValue(
+    "2,500",
+  );
+  await expect(getFirstLotPriceInput(page, carryoverProduct.name)).toHaveValue(
+    "2,000",
+  );
 
   await page
     .getByLabel(`${currentProduct.name} 당일재고`, { exact: true })

@@ -106,23 +106,28 @@ async function buildDashboardPlannedSalesItems(
   const { db } = await import("../../server/db.ts");
   const lotPriceByLedgerId = new Map(
     await Promise.all(
-      ledgers.map(async (ledger) => [
-        ledger.id,
-        await loadResolvedLotSalesPricesInTx(
-          db as unknown as Prisma.TransactionClient,
-          {
-            dailyLedgerId: ledger.id,
-            storeId: ledger.storeId,
-            businessDate: ledger.closingDate,
-            lots: ledger.ledgerInventoryItems.flatMap((item) =>
-              (item.fifoLots ?? []).map((lot) => ({
-                productId: item.productId ?? "",
-                lotOriginKey: lot.lotOriginKey,
-              })),
-            ).filter((lot) => lot.productId !== ""),
-          },
-        ),
-      ] as const),
+      ledgers.map(
+        async (ledger) =>
+          [
+            ledger.id,
+            await loadResolvedLotSalesPricesInTx(
+              db as unknown as Prisma.TransactionClient,
+              {
+                dailyLedgerId: ledger.id,
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                lots: ledger.ledgerInventoryItems
+                  .flatMap((item) =>
+                    (item.fifoLots ?? []).map((lot) => ({
+                      productId: item.productId ?? "",
+                      lotOriginKey: lot.lotOriginKey,
+                    })),
+                  )
+                  .filter((lot) => lot.productId !== ""),
+              },
+            ),
+          ] as const,
+      ),
     ),
   );
 

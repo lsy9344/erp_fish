@@ -156,9 +156,7 @@ export async function listEcountImportBatches(
 export async function getEcountSupplyImportDetail(
   batchId: string,
 ): Promise<EcountImportBatchDetail | null> {
-  await db.$transaction((tx) =>
-    recomputeEcountBatchMappingInTx(tx, batchId),
-  );
+  await db.$transaction((tx) => recomputeEcountBatchMappingInTx(tx, batchId));
 
   const batch = await db.ecountImportBatch.findUnique({
     where: { id: batchId },

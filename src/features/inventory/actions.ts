@@ -263,7 +263,11 @@ function completeGeneratedLotPrices(
 
       if (plannedUnitPrice === undefined) continue;
 
-      completed.push({ productId, lotOriginKey: lot.lotOriginKey, plannedUnitPrice });
+      completed.push({
+        productId,
+        lotOriginKey: lot.lotOriginKey,
+        plannedUnitPrice,
+      });
       priceByOrigin.set(lot.lotOriginKey, plannedUnitPrice);
     }
   }
