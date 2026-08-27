@@ -473,6 +473,13 @@ test("daily sales analysis and attendance components are display-only responsive
     assert.match(salesSource, new RegExp(label));
   }
   assert.match(salesSource, /from "~\/components\/ui\/card"/);
+  assert.match(salesSource, /from "~\/components\/ui\/table"/);
+  assert.match(salesSource, /<TableCaption className="sr-only">/);
+  assert.match(salesSource, /<Badge[^>]*variant="outline"/);
+  assert.match(salesSource, /개 표시/);
+  assert.match(salesSource, /개 제외/);
+  assert.match(salesSource, /className="sr-only"/);
+  assert.match(salesSource, /ChartErrorBoundary/);
   assert.match(salesSource, /BarChart/);
   assert.match(salesSource, /PieChart/);
   assert.match(salesSource, /ReferenceLine/);
@@ -2448,6 +2455,67 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
     analysis.salesChanges.find((row) => row.storeId === "store-zero").rate
       .reason,
     "전일 매출 0원",
+  );
+
+  const inProgressAnalysis = buildDailySalesAnalysis([
+    {
+      storeId: "in-progress-current",
+      storeName: "입력 중 선택일점",
+      current: ledger({
+        id: "in-progress-current-ledger",
+        status: "IN_PROGRESS",
+        sales: 120_000,
+      }),
+      previous: ledger({
+        id: "in-progress-current-previous",
+        status: "HEADQUARTERS_CLOSED",
+        sales: 100_000,
+      }),
+    },
+    {
+      storeId: "in-progress-previous",
+      storeName: "입력 중 전일점",
+      current: ledger({
+        id: "in-progress-previous-current",
+        status: "HEADQUARTERS_CLOSED",
+        sales: 120_000,
+      }),
+      previous: ledger({
+        id: "in-progress-previous-ledger",
+        status: "IN_PROGRESS",
+        sales: 100_000,
+      }),
+    },
+  ]).salesChanges;
+  assert.equal(
+    inProgressAnalysis.find((row) => row.storeId === "in-progress-current").rate
+      .reason,
+    "선택일 입력 중",
+  );
+  assert.equal(
+    inProgressAnalysis.find((row) => row.storeId === "in-progress-previous")
+      .rate.reason,
+    "전일 입력 중",
+  );
+
+  const sevenNegativeChanges = buildDailySalesAnalysis(
+    Array.from({ length: 7 }, (_, index) => ({
+      storeId: `negative-${index}`,
+      storeName: `${index + 1}번 지점`,
+      current: ledger({
+        id: `negative-current-${index}`,
+        sales: 0,
+      }),
+      previous: ledger({
+        id: `negative-previous-${index}`,
+        sales: 100,
+      }),
+    })),
+  ).salesChanges;
+  assert.equal(sevenNegativeChanges.length, 7);
+  assert.deepEqual(
+    sevenNegativeChanges.map((row) => row.rate.value),
+    Array(7).fill(-1),
   );
 
   const inventoryRatio = analysis.inventoryRatios.find(

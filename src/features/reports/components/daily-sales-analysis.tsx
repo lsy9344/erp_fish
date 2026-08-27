@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { Component, createContext, useContext, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -30,6 +30,16 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "~/components/ui/chart";
+import { Badge } from "~/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
 import type { DailySalesAnalysis as DailySalesAnalysisData } from "~/features/reports/types";
 import type { LedgerReviewMetric } from "~/server/calculations/ledger";
 
@@ -238,6 +248,10 @@ export function DailySalesAnalysis({
             <CardDescription>
               0선을 기준으로 지점별 증감률과 증감액을 함께 표시합니다.
             </CardDescription>
+            <Badge className="mt-2" variant="outline">
+              {salesChangeRows.length}개 표시 · {unavailableSalesChanges.length}
+              개 제외
+            </Badge>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-1 flex-col gap-4">
             {salesChangeRows.length === 0 ? (
@@ -246,11 +260,20 @@ export function DailySalesAnalysis({
               />
             ) : (
               <>
-                <SignedChangeChart rows={salesChangeRows} />
+                <ChartErrorBoundary
+                  key={salesChangeRows
+                    .map((row) => `${row.storeId}:${row.rate}`)
+                    .join("|")}
+                  fallback={
+                    <EmptyChartMessage message="차트를 그릴 수 없어 표로 표시합니다." />
+                  }
+                >
+                  <SignedChangeChart rows={salesChangeRows} />
+                </ChartErrorBoundary>
                 <SalesChangeLegend rows={salesChangeRows} />
               </>
             )}
-            <SalesChangeAccessibleTable data={data} />
+            <SalesChangeTable data={data} />
           </CardContent>
           <AvailabilityFooter
             availableMessage="증감률과 증감액은 같은 비교 기준을 사용합니다."
@@ -306,6 +329,26 @@ export function DailySalesAnalysis({
       </div>
     </ComparisonLabelContext.Provider>
   );
+}
+
+type ChartErrorBoundaryProps = {
+  children: ReactNode;
+  fallback: ReactNode;
+};
+
+class ChartErrorBoundary extends Component<
+  ChartErrorBoundaryProps,
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
 }
 
 function SignedChangeChart({ rows }: { rows: SalesChangeChartRow[] }) {
@@ -681,39 +724,49 @@ function EmptyChartMessage({ message }: { message: string }) {
   );
 }
 
-function SalesChangeAccessibleTable({
-  data,
-}: {
-  data: DailySalesAnalysisData;
-}) {
+function SalesChangeTable({ data }: { data: DailySalesAnalysisData }) {
   const comparisonLabel = useComparisonLabel();
+
   return (
-    <div className="sr-only">
-      <table>
-        <caption>지점별 {comparisonLabel} 대비 매출액 증감 데이터</caption>
-        <thead>
-          <tr>
-            <th>지점</th>
-            <th>증감률</th>
-            <th>증감액</th>
-            <th>계산 상태</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.salesChanges.map((row) => (
-            <tr key={row.storeId}>
-              <td>{row.storeName}</td>
-              <td>{formatPercent(row.rate)}</td>
-              <td>{formatMoney(row.difference)}</td>
-              <td>
-                {row.rate.value === null || row.difference.value === null
-                  ? getUnavailableReason(row.rate, row.difference)
-                  : "계산 가능"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="min-w-0">
+      <Table>
+        <TableCaption className="sr-only">
+          지점별 {comparisonLabel} 대비 매출액 증감 데이터
+        </TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead>지점</TableHead>
+            <TableHead className="text-right">증감률</TableHead>
+            <TableHead className="text-right">증감액</TableHead>
+            <TableHead>상태</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.salesChanges.map((row) => {
+            const isAvailable =
+              row.rate.value !== null && row.difference.value !== null;
+
+            return (
+              <TableRow key={row.storeId}>
+                <TableCell className="font-medium">{row.storeName}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatPercent(row.rate)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatMoney(row.difference)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={isAvailable ? "secondary" : "outline"}>
+                    {isAvailable
+                      ? "계산 가능"
+                      : getUnavailableReason(row.rate, row.difference)}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
     </div>
   );
 }

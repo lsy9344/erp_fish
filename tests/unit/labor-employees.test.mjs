@@ -88,6 +88,26 @@ test("employee form schema validates name and hire date", async () => {
   assert.equal(parsed.hireDate, "2026-01-02");
   assert.equal(parsed.isActive, true);
 
+  const parsedAmounts = employeeFormSchema.parse({
+    name: "홍길동",
+    hireDate: "2026-01-02",
+    dailyWage: "120,000",
+    desiredInsuranceAmount: "2,500,000",
+  });
+  assert.equal(parsedAmounts.dailyWage, 120000);
+  assert.equal(parsedAmounts.desiredInsuranceAmount, 2500000);
+
+  const parsedWithoutStore = employeeFormSchema.parse({
+    name: "여러매장 직원",
+    hireDate: "2026-01-02",
+    storeId: "   ",
+    dailyWage: null,
+    desiredInsuranceAmount: null,
+  });
+  assert.equal(parsedWithoutStore.storeId, null);
+  assert.equal(parsedWithoutStore.dailyWage, null);
+  assert.equal(parsedWithoutStore.desiredInsuranceAmount, null);
+
   assert.equal(
     employeeFormSchema.safeParse({ name: "", hireDate: "2026-01-02" }).success,
     false,
@@ -140,6 +160,45 @@ test("employee queries expose active options and list", () => {
     /export\s+async\s+function\s+resolveValidEmployeeIdsInTx/,
   );
   assert.match(querySource, /tx\.employee\.findMany/);
+  assert.match(querySource, /preserveEmployeeIds/);
+  assert.match(querySource, /preservedIds/);
+});
+
+test("employee store assignment and safe lifecycle contracts are present", () => {
+  const schema = readProjectFile("prisma", "schema.prisma");
+  const employeeSchemas = readProjectFile(
+    "src",
+    "features",
+    "labor",
+    "employees-schemas.ts",
+  );
+  const actions = readProjectFile(
+    "src",
+    "features",
+    "labor",
+    "employees-actions.ts",
+  );
+  const queries = readProjectFile(
+    "src",
+    "features",
+    "labor",
+    "employees-queries.ts",
+  );
+  assert.match(
+    schema,
+    /model\s+Employee\s*\{[^}]*storeId\s+String\?[^}]*store\s+Store\?/s,
+  );
+  assert.match(schema, /model\s+Store\s*\{[^}]*employees\s+Employee\[\]/s);
+  assert.match(employeeSchemas, /storeId/);
+  assert.match(actions, /export\s+async\s+function\s+activateEmployee/);
+  assert.match(actions, /employee\.delete/);
+  assert.match(actions, /ledgerLaborItem\.count/);
+  assert.match(queries, /store:\s*\{\s*select:/);
+  assert.match(queries, /position/);
+  assert.match(queries, /hireDate/);
+  const optionType =
+    queries.match(/export type EmployeeOption[\s\S]*?};/)?.[0] ?? "";
+  assert.doesNotMatch(optionType, /dailyWage/);
 });
 
 // WO-0806 #5: 직원 마스터 읽기/쓰기 모두 대표 전용(LABOR_VIEW)이다.

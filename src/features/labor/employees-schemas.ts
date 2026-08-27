@@ -3,14 +3,20 @@ import { z } from "zod";
 // WO-25(2026-07-25) #6/#8: 등록 상세 — 하루 인건비 · 월 희망 수령액(4대보험/현금).
 // 빈 문자열은 "미입력"(null)로 취급하고, 입력 시에는 0 이상 정수 원 단위만 허용한다.
 const optionalWonAmount = z
-  .union([z.string(), z.number()])
+  .union([z.string(), z.number(), z.null()])
   .optional()
   .transform((v) => {
-    if (v === undefined || v === "") {
+    if (v === undefined || v === null) {
       return null;
     }
 
-    return typeof v === "number" ? v : Number(v);
+    if (typeof v === "number") {
+      return v;
+    }
+
+    const normalized = v.replaceAll(",", "").trim();
+
+    return normalized === "" ? null : Number(normalized);
   })
   .pipe(
     z
@@ -54,6 +60,15 @@ export const employeeFormSchema = z.object({
       );
     }, "존재하는 입사일을 입력해 주세요."),
   isActive: z.boolean().optional().default(true),
+  storeId: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim() ?? "";
+      return trimmed === "" ? null : trimmed;
+    })
+    .pipe(z.string().max(100).nullable()),
   dailyWage: optionalWonAmount,
   desiredInsuranceAmount: optionalWonAmount,
   // WO-0806 #1: 연락처는 숫자·하이픈만 허용해 이체/연락 실무에서 바로 쓸 수 있게 한다.

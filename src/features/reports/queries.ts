@@ -516,6 +516,9 @@ function getUsableSales(
 ) {
   if (!ledger) return dailyUnavailable(`${dateLabel} 장부 미입력`);
   if (ledger.status === "HOLIDAY") return dailyUnavailable(`${dateLabel} 휴무`);
+  if (ledger.status === "IN_PROGRESS") {
+    return dailyUnavailable(`${dateLabel} 입력 중`);
+  }
   if (ledger.totalSales.value === null) {
     return dailyUnavailable(
       ledger.totalSales.reason ?? `${dateLabel} 매출 계산 불가`,
@@ -538,11 +541,17 @@ export function buildDailySalesAnalysis(
             )
           : available(currentSales.value - previousSales.value);
       const rate =
-        difference.value === null
-          ? dailyUnavailable(difference.reason ?? "증감률 계산 불가")
-          : previousSales.value === null || previousSales.value <= 0
-            ? dailyUnavailable("전일 매출 0원")
-            : available(difference.value / previousSales.value);
+        previousSales.value !== null && previousSales.value <= 0
+          ? dailyUnavailable(
+              difference.value === null && difference.reason
+                ? `${difference.reason} · 전일 매출 0원`
+                : "전일 매출 0원",
+            )
+          : difference.value === null
+            ? dailyUnavailable(difference.reason ?? "증감률 계산 불가")
+            : previousSales.value === null
+              ? dailyUnavailable(previousSales.reason ?? "전일 매출 계산 불가")
+              : available(difference.value / previousSales.value);
 
       return {
         storeId,

@@ -28,6 +28,7 @@ function toEmployeeWriteData(data: EmployeeFormData) {
     bankAccount: data.bankAccount,
     address: data.address,
     position: data.position,
+    storeId: data.storeId ?? null,
   };
 }
 
@@ -71,6 +72,23 @@ function toFieldErrors(error: ZodError): Record<string, string[]> {
   return errors;
 }
 
+async function validateEmployeeStore(
+  storeId: string | null | undefined,
+): Promise<ActionResult<null>> {
+  if (!storeId) return actionOk(null);
+
+  const store = await db.store.findUnique({
+    where: { id: storeId },
+    select: { id: true },
+  });
+
+  return store
+    ? actionOk(null)
+    : actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
+        storeId: ["선택한 근무매장을 찾을 수 없습니다."],
+      });
+}
+
 export async function createEmployee(
   input: unknown,
 ): Promise<ActionResult<EmployeeSaveResult>> {
@@ -83,6 +101,9 @@ export async function createEmployee(
       ...toFieldErrors(parsed.error),
     });
   }
+
+  const storeValidation = await validateEmployeeStore(parsed.data.storeId);
+  if (!storeValidation.ok) return storeValidation;
 
   const writeData = toEmployeeWriteData(parsed.data);
   const employee = await db.$transaction(async (tx) => {
@@ -119,14 +140,20 @@ export async function updateEmployee(
     });
   }
 
+  const storeValidation = await validateEmployeeStore(parsed.data.storeId);
+  if (!storeValidation.ok) return storeValidation;
+
   const writeData = toEmployeeWriteData(parsed.data);
   const employee = await db.$transaction(async (tx) => {
     const existing = await tx.employee.findUnique({ where: { id } });
     if (!existing) return null;
-    const changedFields = employeeChangedFields(existing, writeData);
+    // 활성 상태는 별도 activate/deactivate 액션으로만 바꾼다. 특히 비활성 직원
+    // 편집이 실수로 다시 활성화되지 않도록 항상 현재 상태를 유지한다.
+    const safeWriteData = { ...writeData, isActive: existing.isActive };
+    const changedFields = employeeChangedFields(existing, safeWriteData);
     const updated = await tx.employee.update({
       where: { id },
-      data: writeData,
+      data: safeWriteData,
       select: { id: true, name: true },
     });
     await writeAuditLog(tx, {
@@ -200,4 +227,77 @@ export async function deactivateEmployee(
     return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
   }
   return actionOk(employee);
+}
+
+export async function activateEmployee(
+  id: string,
+): Promise<ActionResult<EmployeeSaveResult>> {
+  const actor = await requireEmployeeManageAccess();
+  const employee = await db.$transaction(async (tx) => {
+    const existing = await tx.employee.findUnique({ where: { id } });
+    if (!existing) return null;
+    const updated = await tx.employee.update({
+      where: { id },
+      data: { isActive: true },
+      select: { id: true, name: true },
+    });
+    await writeAuditLog(tx, {
+      action: "employee.activated",
+      targetType: "Employee",
+      targetId: id,
+      actorId: actor.id,
+      before: { isActive: existing.isActive },
+      after: { isActive: true },
+    });
+    return updated;
+  });
+  return employee
+    ? actionOk(employee)
+    : actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
+}
+
+// 근무 기록이 있는 직원은 이력 보존을 위해 비활성화만 허용한다.
+export async function deleteEmployee(
+  id: string,
+): Promise<ActionResult<EmployeeSaveResult>> {
+  const actor = await requireEmployeeManageAccess();
+  const result = await db.$transaction(async (tx) => {
+    const existing = await tx.employee.findUnique({
+      where: { id },
+      select: { id: true, name: true, isActive: true },
+    });
+    if (!existing) return { kind: "missing" as const };
+    const laborCount = await tx.ledgerLaborItem.count({
+      where: { employeeId: id },
+    });
+    if (laborCount > 0) {
+      await writeAuditLog(tx, {
+        action: "employee.delete_blocked",
+        targetType: "Employee",
+        targetId: id,
+        actorId: actor.id,
+        before: { isActive: existing.isActive, laborCount },
+        after: { isActive: existing.isActive, laborCount },
+      });
+      return { kind: "linked" as const, employee: existing };
+    }
+    await tx.employee.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      action: "employee.deleted",
+      targetType: "Employee",
+      targetId: id,
+      actorId: actor.id,
+      before: { isActive: existing.isActive, laborCount: 0 },
+      after: null,
+    });
+    return { kind: "deleted" as const, employee: existing };
+  });
+  if (result.kind === "missing")
+    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
+  if (result.kind === "linked")
+    return actionError(
+      "CONFLICT",
+      "근무 기록이 있어 삭제할 수 없습니다. 퇴사·사용중지로 바꿔 주세요.",
+    );
+  return actionOk(result.employee);
 }

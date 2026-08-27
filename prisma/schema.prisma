@@ -139,6 +139,7 @@ model Store {
   // 승인된 고객 Excel 과거 실적/역할. 운영 DailyLedger와 의도적으로 분리한다.
   historicalDailyFacts         HistoricalDailyFact[]
   historicalEmployeeDailyRoles HistoricalEmployeeDailyRole[]
+  employees                    Employee[]
 
   @@index([isActive])
   @@index([updatedById])
@@ -1168,6 +1169,7 @@ model Employee {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  storeId   String?
 
   // WO-25(2026-07-25) #6/#8: 등록 시 상세 설정. 하루 인건비와 월 희망 수령액(4대보험/현금)
   // 분해. 기존 직원은 미입력 상태(null)로 남아 값이 있는 직원만 화면에 표시된다.
@@ -1183,8 +1185,10 @@ model Employee {
   position    String?
 
   laborItems LedgerLaborItem[]
+  store      Store?            @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([isActive])
+  @@index([storeId])
 }
 
 // WO-10(2026-06-22): LINE 아침 요약 알림 전송 로그.

@@ -211,13 +211,18 @@ export default async function StoreEntryPage({
   const { user, store } = access;
 
   // WO-09: 지점장 활성 지점 화면에서도 비용 항목 표시명에 지점별 alias를 적용한다.
-  const [expenseCodeOptions, productOptions, employeeOptions, initialLedger] =
-    await Promise.all([
+  const [expenseCodeOptions, productOptions, initialLedger] = await Promise.all(
+    [
       getActiveLedgerInputCodeOptions("EXPENSE_ITEM", store.id),
       getActiveProductOptions(),
-      getActiveEmployeeOptions(),
       getStoreLedger(store.id, closingDate, user.id),
-    ]);
+    ],
+  );
+  const employeeOptions = await getActiveEmployeeOptions(
+    initialLedger.laborItems.flatMap((item) =>
+      item.employeeId ? [item.employeeId] : [],
+    ),
+  );
 
   if (
     isLedgerEditable(initialLedger.status) &&

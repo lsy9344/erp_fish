@@ -8,7 +8,11 @@ import {
   syncLedgerInventoryPurchasedQuantitiesInTx,
 } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
-import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
+import {
+  resolveEmployeeDailyWagesInTx,
+  resolveValidEmployeeIdsInTx,
+} from "~/features/labor/employees-queries";
+import { getHqLaborSnapshotAmount } from "~/features/labor/labor-amount-snapshot";
 import {
   actionError,
   actionOk,
@@ -144,6 +148,34 @@ function revalidateHqLedgerPaths(ledgerId: string) {
   revalidateLedgerDetailPath(ledgerId);
   revalidateStoreEntryPaths();
   revalidateDashboardAndReports();
+}
+
+function laborIdentity(employeeId: string | null, workerName: string) {
+  return employeeId ? `id:${employeeId}` : `name:${workerName}`;
+}
+
+function buildExistingLaborAmounts(
+  items: Array<{
+    employeeId: string | null;
+    workerName: string;
+    amount: number;
+  }>,
+) {
+  const queues = new Map<string, number[]>();
+  for (const item of items) {
+    const key = laborIdentity(item.employeeId, item.workerName);
+    queues.set(key, [...(queues.get(key) ?? []), item.amount]);
+  }
+  return queues;
+}
+
+function takeExistingLaborAmount(
+  queues: Map<string, number[]>,
+  employeeId: string | null,
+  workerName: string,
+) {
+  const queue = queues.get(laborIdentity(employeeId, workerName));
+  return queue?.length ? queue.shift() : undefined;
 }
 
 function mapHqActionError(): ActionResult<never> {
@@ -1357,6 +1389,16 @@ export async function saveHqLedgerLaborInfo(
           const validEmployeeIds = await resolveValidEmployeeIdsInTx(
             tx,
             parsed.data.labor,
+            beforeLedger.ledgerLaborItems.flatMap((item) =>
+              item.employeeId ? [item.employeeId] : [],
+            ),
+          );
+          const dailyWages = await resolveEmployeeDailyWagesInTx(
+            tx,
+            validEmployeeIds,
+          );
+          const existingLaborAmounts = buildExistingLaborAmounts(
+            beforeLedger.ledgerLaborItems,
           );
 
           await tx.ledgerLaborItem.createMany({
@@ -1367,7 +1409,25 @@ export async function saveHqLedgerLaborInfo(
                   ? item.employeeId
                   : null,
               workerName: item.workerName,
-              amount: item.amount,
+              // HQ가 새 연결행을 0원으로 보낼 때만 직원 기본 일급을 스냅샷한다.
+              // 0이 아닌 명시 금액은 그대로 유지한다.
+              amount: (() => {
+                const employeeId =
+                  item.employeeId && validEmployeeIds.has(item.employeeId)
+                    ? item.employeeId
+                    : null;
+                const existingAmount = takeExistingLaborAmount(
+                  existingLaborAmounts,
+                  employeeId,
+                  item.workerName,
+                );
+                return getHqLaborSnapshotAmount({
+                  hasExistingRow: existingAmount !== undefined,
+                  enteredAmount: item.amount,
+                  employeeId,
+                  dailyWage: employeeId ? dailyWages.get(employeeId) : null,
+                });
+              })(),
               lateMemo: item.lateMemo,
               earlyLeaveMemo: item.earlyLeaveMemo,
               specialMemo: item.specialMemo,

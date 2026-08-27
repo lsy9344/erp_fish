@@ -172,7 +172,11 @@ export default async function LedgerDetailPage({
     ? await Promise.all([
         getActiveLedgerInputCodeOptions("EXPENSE_ITEM"),
         getActiveProductOptions(),
-        getActiveEmployeeOptions(),
+        getActiveEmployeeOptions(
+          ledger.laborItems.flatMap((item) =>
+            item.employeeId ? [item.employeeId] : [],
+          ),
+        ),
       ])
     : [[], [], []];
   // DESIGN.md D4/D5: 마감 편집 허용은 LEDGER_EDIT + LEDGER_CLOSED_EDIT를 모두 가진

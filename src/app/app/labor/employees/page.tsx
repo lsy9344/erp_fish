@@ -6,6 +6,7 @@ import { hasActionPermission, requireLaborViewAccess } from "~/server/authz";
 import {
   getEmployeeList,
   getEmployeeProductivityAnalysis,
+  getEmployeeStoreOptions,
   getHistoricalEmployeeList,
 } from "~/features/labor/employees-queries";
 import { getKstBusinessDateParam } from "~/features/ledger/date";
@@ -20,6 +21,7 @@ export default async function EmployeesPage() {
     employees,
     historicalEmployees,
     productivity,
+    storeOptions,
     navigationItems,
     canManageEmployees,
   ] = await Promise.all([
@@ -27,6 +29,7 @@ export default async function EmployeesPage() {
     getHistoricalEmployeeList(),
     // WO-E(2026-06-22): 월간 생산성/인력 배치 분석.
     getEmployeeProductivityAnalysis(currentMonth),
+    getEmployeeStoreOptions(),
     getHeadquartersNavigationItems(user.id),
     hasActionPermission(user.id, PermissionAction.LABOR_VIEW),
   ]);
@@ -42,6 +45,7 @@ export default async function EmployeesPage() {
         <EmployeeManagementClient
           initialEmployees={employees}
           initialHistoricalEmployees={historicalEmployees}
+          storeOptions={storeOptions}
           canManage={canManageEmployees}
           summaryMonth={currentMonth}
         />

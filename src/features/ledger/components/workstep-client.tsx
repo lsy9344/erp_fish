@@ -5,8 +5,21 @@ import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
-import { Field, FieldError, FieldLabel } from "~/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import {
   saveLedgerLaborInfo,
   saveLedgerWorkInfo,
@@ -54,6 +67,8 @@ type LaborLine = {
 export type WorkStepEmployeeOption = {
   id: string;
   name: string;
+  label: string;
+  isActive: boolean;
 };
 
 type WorkStepClientProps = {
@@ -763,16 +778,14 @@ export function WorkStepClient({
                         <FieldLabel htmlFor={`labor-employee-${line.id}`}>
                           직원 연결 (선택)
                         </FieldLabel>
-                        <select
-                          id={`labor-employee-${line.id}`}
+                        <Select
                           value={line.employeeId}
                           disabled={
                             !isHydrated ||
                             isLaborSaving ||
                             isOriginalEditBlocked
                           }
-                          onChange={(event) => {
-                            const employeeId = event.currentTarget.value;
+                          onValueChange={(employeeId) => {
                             const selected = employeeOptions.find(
                               (option) => option.id === employeeId,
                             );
@@ -785,21 +798,38 @@ export function WorkStepClient({
                                 : {}),
                             });
                           }}
-                          className="border-input focus-visible:border-ring focus-visible:ring-ring/50 min-h-11 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
                         >
-                          <option value="">연결 안 함 (자유 입력)</option>
-                          {employeeOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.name}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger
+                            id={`labor-employee-${line.id}`}
+                            className="min-h-11 w-full"
+                          >
+                            <SelectValue placeholder="직원을 선택하세요" />
+                          </SelectTrigger>
+                          <SelectContent position="popper">
+                            <SelectGroup>
+                              {employeeOptions.map((option) => (
+                                <SelectItem
+                                  key={option.id}
+                                  value={option.id}
+                                  disabled={!option.isActive}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldDescription>
+                          이름이 같으면 기본 근무매장·직급·입사일을 함께 확인해
+                          주세요. 연결을 해제하려면 해당 직원을 삭제한 뒤 다시
+                          추가하세요.
+                        </FieldDescription>
                         {showSensitiveAccountingMetrics ? (
-                          <p className="text-muted-foreground mt-1 text-xs">
+                          <FieldDescription>
                             직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다.
                             연결하지 않으면 “미연결” 합계로만 집계되어 직원별
                             분석에서 빠집니다.
-                          </p>
+                          </FieldDescription>
                         ) : null}
                       </Field>
                     ) : null}

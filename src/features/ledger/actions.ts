@@ -12,7 +12,11 @@ import {
   syncLedgerInventoryPurchasedQuantitiesInTx,
 } from "~/features/inventory/adjustment-reconciliation";
 import { refreshLedgerInventoryFifoLots } from "~/features/inventory/fifo-lots";
-import { resolveValidEmployeeIdsInTx } from "~/features/labor/employees-queries";
+import {
+  resolveEmployeeDailyWagesInTx,
+  resolveValidEmployeeIdsInTx,
+} from "~/features/labor/employees-queries";
+import { getStoreManagerLaborSnapshotAmount } from "~/features/labor/labor-amount-snapshot";
 import { writeAuditLog } from "~/server/audit";
 import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
 import { calculateInventoryAmount } from "~/server/calculations/inventory";
@@ -203,7 +207,8 @@ function parseLedgerWorkInfoInput(
 
 // WO-10(2026-06-28): 지점장 근무 저장 시 본사가 입력한 급여액을 보존하기 위한 이월 큐.
 // 근무자 키(employeeId 우선, 없으면 `name:${workerName}`)별로 기존 amount를 입력 순서대로
-// 쌓아두고, 같은 키의 새 행에 순서대로 다시 배정한다. 매칭이 끝나면 0원(본사 미입력)으로 둔다.
+// 쌓아두고, 같은 키의 새 행에 순서대로 다시 배정한다. 매칭되지 않은 신규 연결행은
+// 직원 카드의 하루 인건비를 저장 시점 금액으로 기록한다.
 function laborCarryForwardKey(
   employeeId: string | null,
   workerName: string,
@@ -234,10 +239,10 @@ function takeCarriedLaborAmount(
   queues: Map<string, number[]>,
   employeeId: string | null,
   workerName: string,
-): number {
+): number | undefined {
   const queue = queues.get(laborCarryForwardKey(employeeId, workerName));
 
-  return queue && queue.length > 0 ? (queue.shift() ?? 0) : 0;
+  return queue && queue.length > 0 ? (queue.shift() ?? 0) : undefined;
 }
 
 function parseLedgerLaborInput(
@@ -1585,7 +1590,7 @@ export async function saveLedgerLaborInfo(
       // WO-10(2026-06-28): 급여액은 본사 전용이다. 지점장 저장은 amount를 받지 않고,
       // 기존 행의 급여액을 이월(carry-forward)해 본사가 입력한 금액이 지워지지 않게 한다.
       // 같은 근무자 키(employeeId 우선, 없으면 workerName)의 기존 금액을 순서대로 소비하고,
-      // 매칭되지 않는 새 행은 0원으로 둔다(본사가 이후 금액을 입력).
+      // 매칭되지 않는 새 연결행은 직원 카드의 하루 인건비를 저장 시점 금액으로 기록한다.
       const existingLaborAmounts = buildLaborCarryForwardQueues(
         beforeLedger.ledgerLaborItems,
       );
@@ -1599,6 +1604,13 @@ export async function saveLedgerLaborInfo(
         const validEmployeeIds = await resolveValidEmployeeIdsInTx(
           tx,
           parsed.data.labor,
+          beforeLedger.ledgerLaborItems.flatMap((item) =>
+            item.employeeId ? [item.employeeId] : [],
+          ),
+        );
+        const dailyWages = await resolveEmployeeDailyWagesInTx(
+          tx,
+          validEmployeeIds,
         );
 
         await tx.ledgerLaborItem.createMany({
@@ -1612,11 +1624,15 @@ export async function saveLedgerLaborInfo(
               dailyLedgerId: beforeLedger.id,
               employeeId,
               workerName: item.workerName,
-              amount: takeCarriedLaborAmount(
-                existingLaborAmounts,
+              amount: getStoreManagerLaborSnapshotAmount({
+                carriedAmount: takeCarriedLaborAmount(
+                  existingLaborAmounts,
+                  employeeId,
+                  item.workerName,
+                ),
                 employeeId,
-                item.workerName,
-              ),
+                dailyWage: employeeId ? dailyWages.get(employeeId) : null,
+              }),
               lateMemo: item.lateMemo,
               earlyLeaveMemo: item.earlyLeaveMemo,
               specialMemo: item.specialMemo,

@@ -19,12 +19,31 @@ export type EmployeeListItem = {
   // 상세 카드에서 바로 확인하는 현재 월 근무 요약.
   currentMonthWorkdayCount: number;
   currentMonthLaborAmount: number;
+  store: { id: string; name: string } | null;
 };
 
 export type EmployeeOption = {
   id: string;
   name: string;
+  label: string;
+  isActive: boolean;
+  store: { id: string; name: string } | null;
+  position: string | null;
+  hireDate: string;
 };
+
+export type EmployeeStoreOption = { id: string; name: string };
+
+export async function getEmployeeStoreOptions(): Promise<
+  EmployeeStoreOption[]
+> {
+  await requireLaborViewAccess();
+  return db.store.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+}
 
 export type HistoricalEmployeeListItem = {
   id: string;
@@ -69,16 +88,47 @@ export type EmployeeProductivityAnalysis = {
 };
 
 // WO-05(2026-06-22): 장부 급여 입력 화면의 직원 선택용 활성 직원 목록.
-// 본사·지점장 모두 급여 행을 직원과 연결할 수 있어야 하므로 id/name만 노출하고
+// 본사·지점장 모두 동명이인을 구분해 급여 행을 직원과 연결할 수 있도록
+// 매장·직급·입사일을 합친 표시명도 제공하고,
 // 권한 게이트는 호출하는 장부 편집 페이지(편집 권한 확인 완료)에 위임한다.
-export async function getActiveEmployeeOptions(): Promise<EmployeeOption[]> {
+export async function getActiveEmployeeOptions(
+  includeInactiveIds: Iterable<string> = [],
+): Promise<EmployeeOption[]> {
+  const preservedIds = [...new Set(includeInactiveIds)];
   const employees = await db.employee.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
+    where: {
+      OR: [
+        { isActive: true },
+        ...(preservedIds.length > 0 ? [{ id: { in: preservedIds } }] : []),
+      ],
+    },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      isActive: true,
+      position: true,
+      hireDate: true,
+      store: { select: { id: true, name: true } },
+    },
   });
 
-  return employees;
+  return employees.map((employee) => {
+    const hireDate = employee.hireDate.toISOString().slice(0, 10);
+    const details = [
+      employee.store?.name,
+      employee.position,
+      hireDate,
+      employee.isActive ? null : "퇴사·사용중지",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      ...employee,
+      hireDate,
+      label: `${employee.name}${details ? ` (${details})` : ""}`,
+    };
+  });
 }
 
 export async function getEmployeeList(
@@ -115,6 +165,7 @@ export async function getEmployeeList(
       bankAccount: true,
       address: true,
       position: true,
+      store: { select: { id: true, name: true } },
       laborItems: {
         where: {
           dailyLedger: {
@@ -244,11 +295,13 @@ export async function getHistoricalEmployeeDetail(
   };
 }
 
-// WO-05(2026-06-22): 급여 행 저장 시 선택된 employeeId가 실제 직원 마스터에 존재하는지 검증한다.
+// WO-05(2026-06-22): 신규 연결은 재직 직원만 허용한다. 이미 장부에 연결된 직원은
+// 나중에 퇴사 처리되어도 과거 연결이 끊기지 않도록 보존 목록에 있을 때만 허용한다.
 // 트랜잭션 내부에서 호출하여 장부 저장과 동일한 일관성 경계를 유지한다.
 export async function resolveValidEmployeeIdsInTx(
   tx: Prisma.TransactionClient,
   labor: Array<{ employeeId?: string | null }>,
+  preserveEmployeeIds: Iterable<string> = [],
 ): Promise<Set<string>> {
   const requestedIds = [
     ...new Set(
@@ -262,12 +315,34 @@ export async function resolveValidEmployeeIdsInTx(
     return new Set<string>();
   }
 
+  const preservedIds = [...new Set(preserveEmployeeIds)];
   const employees = await tx.employee.findMany({
-    where: { id: { in: requestedIds } },
+    where: {
+      id: { in: requestedIds },
+      OR: [
+        { isActive: true },
+        ...(preservedIds.length > 0 ? [{ id: { in: preservedIds } }] : []),
+      ],
+    },
     select: { id: true },
   });
 
   return new Set(employees.map((employee) => employee.id));
+}
+
+export async function resolveEmployeeDailyWagesInTx(
+  tx: Prisma.TransactionClient,
+  employeeIds: Iterable<string>,
+): Promise<Map<string, number | null>> {
+  const ids = [...new Set(employeeIds)];
+  if (ids.length === 0) return new Map();
+  const employees = await tx.employee.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, dailyWage: true },
+  });
+  return new Map(
+    employees.map((employee) => [employee.id, employee.dailyWage]),
+  );
 }
 
 // WO-E(2026-06-22): HR 월간 생산성/인력 배치 분석.

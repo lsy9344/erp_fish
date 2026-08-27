@@ -2,6 +2,16 @@
 
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -12,16 +22,37 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
-import { Field, FieldError, FieldLabel } from "~/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "~/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { cn } from "~/lib/utils";
 import {
+  activateEmployee,
   createEmployee,
-  updateEmployee,
   deactivateEmployee,
+  deleteEmployee,
   getHistoricalEmployeeDetailAction,
+  updateEmployee,
 } from "~/features/labor/employees-actions";
+import {
+  formatWonInput,
+  parseWonInput,
+} from "~/features/labor/employee-form-values";
 import type {
   EmployeeListItem,
+  EmployeeStoreOption,
   HistoricalEmployeeDetail,
   HistoricalEmployeeListItem,
 } from "~/features/labor/employees-queries";
@@ -29,10 +60,11 @@ import type {
 type EmployeeManagementClientProps = {
   initialEmployees: EmployeeListItem[];
   initialHistoricalEmployees: HistoricalEmployeeListItem[];
+  storeOptions: EmployeeStoreOption[];
   // 상세 카드의 최근 근무 요약 기준 월.
   summaryMonth: string;
   // WO-D(2026-06-22): 직원 마스터 쓰기 권한 여부.
-  // 권한이 없으면 추가/수정/비활성화 폼과 버튼을 숨긴다.
+  // 권한이 없으면 추가/수정/재직 상태 변경 폼과 버튼을 숨긴다.
   canManage: boolean;
 };
 
@@ -43,6 +75,7 @@ type FormState = {
   phone: string;
   address: string;
   bankAccount: string;
+  storeId: string;
   dailyWage: string;
   desiredInsuranceAmount: string;
 };
@@ -54,6 +87,7 @@ const emptyForm: FormState = {
   phone: "",
   address: "",
   bankAccount: "",
+  storeId: "",
   dailyWage: "",
   desiredInsuranceAmount: "",
 };
@@ -65,7 +99,7 @@ const PLACEHOLDERS = {
   phone: "010-1234-5678",
   address: "서울시 강남구 테헤란로 123, 401호",
   bankAccount: "국민 123456-01-234567",
-  amount: "원 (숫자만)",
+  amount: "120,000원",
 } as const;
 
 // WO-0806 #1-11: 실데이터상 직급은 사실상 팀장/팀원 2값이라 datalist로 좁히고
@@ -94,11 +128,15 @@ function toFormState(employee: EmployeeListItem): FormState {
     phone: employee.phone ?? "",
     address: employee.address ?? "",
     bankAccount: employee.bankAccount ?? "",
-    dailyWage: employee.dailyWage === null ? "" : String(employee.dailyWage),
+    storeId: employee.store?.id ?? "",
+    dailyWage:
+      employee.dailyWage === null
+        ? ""
+        : formatWonInput(String(employee.dailyWage)),
     desiredInsuranceAmount:
       employee.desiredInsuranceAmount === null
         ? ""
-        : String(employee.desiredInsuranceAmount),
+        : formatWonInput(String(employee.desiredInsuranceAmount)),
   };
 }
 
@@ -109,7 +147,7 @@ function toOptionalText(value: string): string | null {
 }
 
 function toOptionalAmount(value: string): number | null {
-  return value === "" ? null : Number(value);
+  return parseWonInput(value);
 }
 
 type DirectoryEntry =
@@ -122,13 +160,20 @@ function directoryEntryKey(entry: DirectoryEntry) {
 
 function directoryEntryLabel(entry: DirectoryEntry) {
   return entry.source === "current"
-    ? `${entry.employee.name} · 현재${entry.employee.isActive ? "" : " · 비활성"}`
+    ? [
+        entry.employee.name,
+        entry.employee.store?.name ?? "근무매장 미지정",
+        entry.employee.position ?? "직급 미지정",
+        entry.employee.hireDate,
+        entry.employee.isActive ? "재직" : "퇴사·사용중지",
+      ].join(" · ")
     : `${entry.employee.originalName} · 과거 Excel · ${entry.employee.firstSeenWorkDate}~${entry.employee.lastSeenWorkDate}`;
 }
 
 export function EmployeeManagementClient({
   initialEmployees,
   initialHistoricalEmployees,
+  storeOptions,
   summaryMonth,
   canManage,
 }: EmployeeManagementClientProps) {
@@ -147,6 +192,9 @@ export function EmployeeManagementClient({
     null,
   );
   const [selectedDirectoryKey, setSelectedDirectoryKey] = useState("");
+  const [employeeToDelete, setEmployeeToDelete] =
+    useState<EmployeeListItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const historicalRequestSequence = useRef(0);
 
   // 현재/과거를 한 검색 결과로 보여 주되 source badge와 별도 identity를 유지한다.
@@ -239,7 +287,12 @@ export function EmployeeManagementClient({
     setIsSaving(true);
     setFieldErrors({});
 
-    const payload = { ...form, isActive: true };
+    const payload = {
+      ...form,
+      storeId: form.storeId || null,
+      dailyWage: toOptionalAmount(form.dailyWage),
+      desiredInsuranceAmount: toOptionalAmount(form.desiredInsuranceAmount),
+    };
     const result = editingId
       ? await updateEmployee(editingId, payload)
       : await createEmployee(payload);
@@ -259,6 +312,7 @@ export function EmployeeManagementClient({
       phone: toOptionalText(form.phone),
       address: toOptionalText(form.address),
       bankAccount: toOptionalText(form.bankAccount),
+      store: storeOptions.find((store) => store.id === form.storeId) ?? null,
       dailyWage: toOptionalAmount(form.dailyWage),
       desiredInsuranceAmount: toOptionalAmount(form.desiredInsuranceAmount),
     };
@@ -292,7 +346,9 @@ export function EmployeeManagementClient({
     const result = await deactivateEmployee(id);
 
     if (!result.ok) {
-      toast.error(result.error.message ?? "비활성화에 실패했습니다.");
+      toast.error(
+        result.error.message ?? "퇴사·사용중지 상태로 바꾸지 못했습니다.",
+      );
       return;
     }
 
@@ -300,7 +356,49 @@ export function EmployeeManagementClient({
       prev.map((emp) => (emp.id === id ? { ...emp, isActive: false } : emp)),
     );
 
-    toast.success("직원을 비활성화했습니다.");
+    toast.success("직원을 퇴사·사용중지 상태로 바꿨습니다.");
+  }
+
+  async function handleActivate(id: string) {
+    const result = await activateEmployee(id);
+
+    if (!result.ok) {
+      toast.error(result.error.message ?? "재직 상태로 바꾸지 못했습니다.");
+      return;
+    }
+
+    setEmployees((prev) =>
+      prev.map((emp) => (emp.id === id ? { ...emp, isActive: true } : emp)),
+    );
+
+    toast.success("직원을 다시 재직 상태로 바꿨습니다.");
+  }
+
+  async function handleDelete() {
+    if (!employeeToDelete) return;
+
+    setIsDeleting(true);
+    const result = await deleteEmployee(employeeToDelete.id);
+    setIsDeleting(false);
+
+    if (!result.ok) {
+      toast.error(
+        result.error.message ??
+          "직원을 삭제하지 못했습니다. 근무 기록이 있으면 사용중지해 주세요.",
+      );
+      return;
+    }
+
+    setEmployees((prev) =>
+      prev.filter((employee) => employee.id !== employeeToDelete.id),
+    );
+    if (editingId === employeeToDelete.id) handleCancel();
+    if (detail?.id === employeeToDelete.id) setDetail(null);
+    if (selectedDirectoryKey === `current:${employeeToDelete.id}`) {
+      setSelectedDirectoryKey("");
+    }
+    setEmployeeToDelete(null);
+    toast.success("잘못 등록한 직원을 삭제했습니다.");
   }
 
   return (
@@ -321,7 +419,7 @@ export function EmployeeManagementClient({
             checked={showInactive}
             onChange={(e) => setShowInactive(e.target.checked)}
           />
-          비활성 직원 포함
+          퇴사·사용중지 직원 포함
         </label>
         <Field className="w-full sm:w-80">
           <FieldLabel htmlFor="employee-directory-select">직원 선택</FieldLabel>
@@ -351,8 +449,8 @@ export function EmployeeManagementClient({
 
       {!canManage ? (
         <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
-          직원 정보는 조회만 가능합니다. 추가/수정/비활성화는 인건비 열람
-          권한(LABOR_VIEW)이 필요합니다.
+          직원 정보는 조회만 가능합니다. 추가·수정과 재직 상태 변경은 인건비
+          열람 권한(LABOR_VIEW)이 필요합니다.
         </p>
       ) : (
         <div className="flex flex-col gap-4 rounded-md border p-4">
@@ -360,8 +458,8 @@ export function EmployeeManagementClient({
             {editingId ? "인사관리 카드 수정" : "인사관리 카드 등록"}
           </h3>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field>
+          <FieldGroup className="grid gap-3 sm:grid-cols-3">
+            <Field data-invalid={Boolean(fieldErrors.name?.length)}>
               <FieldLabel htmlFor="employee-name">이름</FieldLabel>
               <Input
                 id="employee-name"
@@ -371,12 +469,13 @@ export function EmployeeManagementClient({
                 }
                 placeholder={PLACEHOLDERS.name}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.name?.length)}
               />
               <FieldError
                 errors={fieldErrors.name?.map((msg) => ({ message: msg }))}
               />
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(fieldErrors.position?.length)}>
               <FieldLabel htmlFor="employee-position">직급</FieldLabel>
               <Input
                 id="employee-position"
@@ -387,6 +486,7 @@ export function EmployeeManagementClient({
                 }
                 placeholder={PLACEHOLDERS.position}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.position?.length)}
               />
               <datalist id="employee-position-options">
                 {POSITION_OPTIONS.map((option) => (
@@ -397,7 +497,7 @@ export function EmployeeManagementClient({
                 errors={fieldErrors.position?.map((msg) => ({ message: msg }))}
               />
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(fieldErrors.hireDate?.length)}>
               <FieldLabel htmlFor="employee-hire-date">입사일</FieldLabel>
               <Input
                 id="employee-hire-date"
@@ -407,15 +507,16 @@ export function EmployeeManagementClient({
                   setForm((prev) => ({ ...prev, hireDate: e.target.value }))
                 }
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.hireDate?.length)}
               />
               <FieldError
                 errors={fieldErrors.hireDate?.map((msg) => ({ message: msg }))}
               />
             </Field>
-          </div>
+          </FieldGroup>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field>
+          <FieldGroup className="grid gap-3 sm:grid-cols-3">
+            <Field data-invalid={Boolean(fieldErrors.phone?.length)}>
               <FieldLabel htmlFor="employee-phone">연락처</FieldLabel>
               <Input
                 id="employee-phone"
@@ -427,12 +528,16 @@ export function EmployeeManagementClient({
                 }
                 placeholder={PLACEHOLDERS.phone}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.phone?.length)}
               />
               <FieldError
                 errors={fieldErrors.phone?.map((msg) => ({ message: msg }))}
               />
             </Field>
-            <Field className="sm:col-span-2">
+            <Field
+              className="sm:col-span-2"
+              data-invalid={Boolean(fieldErrors.address?.length)}
+            >
               <FieldLabel htmlFor="employee-address">주소</FieldLabel>
               <Input
                 id="employee-address"
@@ -442,16 +547,17 @@ export function EmployeeManagementClient({
                 }
                 placeholder={PLACEHOLDERS.address}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.address?.length)}
               />
               <FieldError
                 errors={fieldErrors.address?.map((msg) => ({ message: msg }))}
               />
             </Field>
-          </div>
+          </FieldGroup>
 
           {/* WO-0806 #1-5: 희망 현금은 인건비 리포트에서 자동계산하므로 입력란이 없다. */}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field>
+          <FieldGroup className="grid gap-3 sm:grid-cols-3">
+            <Field data-invalid={Boolean(fieldErrors.bankAccount?.length)}>
               <FieldLabel htmlFor="employee-bank-account">계좌번호</FieldLabel>
               <Input
                 id="employee-bank-account"
@@ -461,6 +567,7 @@ export function EmployeeManagementClient({
                 }
                 placeholder={PLACEHOLDERS.bankAccount}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.bankAccount?.length)}
               />
               <FieldError
                 errors={fieldErrors.bankAccount?.map((msg) => ({
@@ -468,44 +575,53 @@ export function EmployeeManagementClient({
                 }))}
               />
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(fieldErrors.dailyWage?.length)}>
               <FieldLabel htmlFor="employee-daily-wage">하루 인건비</FieldLabel>
               <Input
                 id="employee-daily-wage"
-                type="number"
-                min={0}
-                step={1}
                 inputMode="numeric"
                 value={form.dailyWage}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, dailyWage: e.target.value }))
+                  setForm((prev) => ({
+                    ...prev,
+                    dailyWage: formatWonInput(e.target.value),
+                  }))
                 }
                 placeholder={PLACEHOLDERS.amount}
                 disabled={isSaving}
+                aria-invalid={Boolean(fieldErrors.dailyWage?.length)}
+                className="tabular-nums"
               />
               <FieldError
                 errors={fieldErrors.dailyWage?.map((msg) => ({ message: msg }))}
               />
+              <FieldDescription>
+                새 근무 기록에 이 직원을 연결할 때 기본 금액으로 저장됩니다.
+                이미 저장된 장부 금액은 바뀌지 않습니다.
+              </FieldDescription>
             </Field>
-            <Field>
+            <Field
+              data-invalid={Boolean(fieldErrors.desiredInsuranceAmount?.length)}
+            >
               <FieldLabel htmlFor="employee-insurance-amount">
                 희망 4대보험 금액
               </FieldLabel>
               <Input
                 id="employee-insurance-amount"
-                type="number"
-                min={0}
-                step={1}
                 inputMode="numeric"
                 value={form.desiredInsuranceAmount}
                 onChange={(e) =>
                   setForm((prev) => ({
                     ...prev,
-                    desiredInsuranceAmount: e.target.value,
+                    desiredInsuranceAmount: formatWonInput(e.target.value),
                   }))
                 }
                 placeholder={PLACEHOLDERS.amount}
                 disabled={isSaving}
+                aria-invalid={Boolean(
+                  fieldErrors.desiredInsuranceAmount?.length,
+                )}
+                className="tabular-nums"
               />
               <FieldError
                 errors={fieldErrors.desiredInsuranceAmount?.map((msg) => ({
@@ -513,7 +629,48 @@ export function EmployeeManagementClient({
                 }))}
               />
             </Field>
-          </div>
+          </FieldGroup>
+
+          <FieldGroup>
+            <Field data-invalid={Boolean(fieldErrors.storeId?.length)}>
+              <FieldLabel htmlFor="employee-store">기본 근무매장</FieldLabel>
+              <Select
+                value={form.storeId || "unassigned"}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    storeId: value === "unassigned" ? "" : value,
+                  }))
+                }
+                disabled={isSaving}
+              >
+                <SelectTrigger
+                  id="employee-store"
+                  className="w-full sm:w-80"
+                  aria-invalid={Boolean(fieldErrors.storeId?.length)}
+                >
+                  <SelectValue placeholder="근무매장을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectGroup>
+                    <SelectItem value="unassigned">미지정</SelectItem>
+                    {storeOptions.map((store) => (
+                      <SelectItem key={store.id} value={store.id}>
+                        {store.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                선택 입력입니다. 여러 매장을 다니는 직원은 미지정으로 저장해도
+                됩니다.
+              </FieldDescription>
+              <FieldError
+                errors={fieldErrors.storeId?.map((msg) => ({ message: msg }))}
+              />
+            </Field>
+          </FieldGroup>
 
           <div className="flex gap-2">
             <Button
@@ -646,7 +803,12 @@ export function EmployeeManagementClient({
                       {emp.hireDate}
                     </td>
                     <td className="py-2 pr-3 tabular-nums">
-                      {formatOptionalText(emp.phone)}
+                      <span className="block">
+                        {formatOptionalText(emp.phone)}
+                      </span>
+                      <span className="text-muted-foreground block">
+                        {emp.store?.name ?? "근무매장 미지정"}
+                      </span>
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
                       {formatOptionalKrw(emp.dailyWage)}
@@ -655,15 +817,9 @@ export function EmployeeManagementClient({
                       {formatOptionalKrw(emp.desiredInsuranceAmount)}
                     </td>
                     <td className="py-2 pr-3">
-                      <span
-                        className={
-                          emp.isActive
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {emp.isActive ? "활성" : "비활성"}
-                      </span>
+                      <Badge variant={emp.isActive ? "default" : "secondary"}>
+                        {emp.isActive ? "재직" : "퇴사·사용중지"}
+                      </Badge>
                     </td>
                     <td className="py-2">
                       <div className="flex gap-1">
@@ -692,9 +848,27 @@ export function EmployeeManagementClient({
                                 size="sm"
                                 onClick={() => handleDeactivate(emp.id)}
                               >
-                                비활성화
+                                퇴사·사용중지
                               </Button>
                             )}
+                            {!emp.isActive && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleActivate(emp.id)}
+                              >
+                                다시 재직
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setEmployeeToDelete(emp)}
+                            >
+                              삭제
+                            </Button>
                           </>
                         )}
                       </div>
@@ -723,6 +897,7 @@ export function EmployeeManagementClient({
               {(
                 [
                   ["직급", formatOptionalText(detail.position)],
+                  ["기본 근무매장", detail.store?.name ?? "미지정"],
                   ["입사일", detail.hireDate],
                   ["연락처", formatOptionalText(detail.phone)],
                   ["주소", formatOptionalText(detail.address)],
@@ -740,7 +915,7 @@ export function EmployeeManagementClient({
                     `${summaryMonth} 급여 합계`,
                     formatOptionalKrw(detail.currentMonthLaborAmount),
                   ],
-                  ["상태", detail.isActive ? "활성" : "비활성"],
+                  ["상태", detail.isActive ? "재직" : "퇴사·사용중지"],
                 ] as const
               ).map(([label, value]) => (
                 <div key={label} className="contents">
@@ -824,6 +999,37 @@ export function EmployeeManagementClient({
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={employeeToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setEmployeeToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>직원 정보를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {employeeToDelete?.name ?? "선택한 직원"} 정보를 완전히
+              삭제합니다. 근무 기록이 하나라도 있으면 삭제하지 않고 안내만
+              표시합니다. 퇴사자는 삭제 대신 퇴사·사용중지를 사용해 주세요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {isDeleting ? "삭제 중…" : "완전히 삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

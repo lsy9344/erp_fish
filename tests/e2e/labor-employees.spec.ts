@@ -21,6 +21,12 @@ async function login(page: Page, email: string) {
 test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색할 수 있다", async ({
   page,
 }) => {
+  const defaultStore = await prisma.store.findFirstOrThrow({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+
   await login(page, "owner@example.com");
   await page.goto("/app/labor/employees");
 
@@ -35,6 +41,7 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
     "계좌번호",
     "하루 인건비",
     "희망 4대보험 금액",
+    "기본 근무매장",
   ]) {
     await expect(page.getByLabel(fieldLabel)).toBeVisible();
   }
@@ -53,13 +60,29 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
     .fill("국민 123456-01-234567");
   await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
   await page.getByLabel("희망 4대보험 금액").fill("300000");
+  await expect(page.getByLabel("하루 인건비", { exact: true })).toHaveValue(
+    "120,000",
+  );
+  await expect(page.getByLabel("희망 4대보험 금액")).toHaveValue("300,000");
+  await page.getByLabel("기본 근무매장").click();
+  await page
+    .getByRole("option", { name: defaultStore.name, exact: true })
+    .click();
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(page.getByText("직원을 추가했습니다.")).toBeVisible();
   const createdEmployee = await prisma.employee.findFirstOrThrow({
     where: { name: employeeName },
     orderBy: { createdAt: "desc" },
-    select: { id: true },
+    select: {
+      id: true,
+      dailyWage: true,
+      desiredInsuranceAmount: true,
+      storeId: true,
+    },
   });
+  expect(createdEmployee.dailyWage).toBe(120_000);
+  expect(createdEmployee.desiredInsuranceAmount).toBe(300_000);
+  expect(createdEmployee.storeId).toBe(defaultStore.id);
   const employeeAudit = await prisma.auditLog.findFirstOrThrow({
     where: {
       action: "employee.created",
@@ -79,6 +102,7 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   const employeeRow = page.getByRole("row", { name: new RegExp(employeeName) });
   await expect(employeeRow).toContainText("팀원");
   await expect(employeeRow).toContainText("010-1234-5678");
+  await expect(employeeRow).toContainText(defaultStore.name);
   await employeeRow.getByRole("button", { name: "상세" }).click();
 
   const detail = page.getByRole("dialog");
@@ -96,6 +120,66 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   await expect(page.getByText("직원별 월간 급여 롤업")).toHaveCount(0);
   await expect(page.getByText("근무 인원 수별 평균")).toHaveCount(0);
   await expect(page.getByText("월간 생산성 / 인력 배치 분석")).toBeVisible();
+
+  await employeeRow.getByRole("button", { name: "퇴사·사용중지" }).click();
+  await expect(employeeRow).toContainText("퇴사·사용중지");
+  await employeeRow.getByRole("button", { name: "다시 재직" }).click();
+  await expect(employeeRow).toContainText("재직");
+
+  await employeeRow.getByRole("button", { name: "삭제" }).click();
+  const deleteDialog = page.getByRole("alertdialog");
+  await expect(deleteDialog).toContainText(
+    "근무 기록이 하나라도 있으면 삭제하지 않고 안내만 표시합니다.",
+  );
+  await deleteDialog
+    .getByRole("button", { name: "완전히 삭제", exact: true })
+    .click();
+  await expect(
+    page.getByText("잘못 등록한 직원을 삭제했습니다."),
+  ).toBeVisible();
+  await expect(employeeRow).toHaveCount(0);
+});
+
+test("대표는 여러 매장을 다니는 직원을 근무매장 미지정으로 저장할 수 있다", async ({
+  page,
+}) => {
+  await login(page, "owner@example.com");
+  await page.goto("/app/labor/employees");
+
+  const roamingEmployeeName = `순회직원-${Date.now()}`;
+  await page.getByLabel("이름", { exact: true }).fill(roamingEmployeeName);
+  await page.getByLabel("입사일", { exact: true }).fill("2026-08-02");
+  await expect(page.getByLabel("기본 근무매장")).toHaveText(/미지정/);
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        prisma.employee.count({
+          where: { name: roamingEmployeeName },
+        }),
+      { message: "근무매장 미지정 직원 저장 완료" },
+    )
+    .toBe(1);
+
+  const roamingEmployee = await prisma.employee.findFirstOrThrow({
+    where: { name: roamingEmployeeName },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, storeId: true },
+  });
+  expect(roamingEmployee.storeId).toBeNull();
+
+  const search = page.getByLabel("직원 검색");
+  await search.fill(roamingEmployeeName);
+  const roamingEmployeeRow = page.getByRole("row", {
+    name: new RegExp(roamingEmployeeName),
+  });
+  await expect(roamingEmployeeRow).toContainText("근무매장 미지정");
+  await roamingEmployeeRow.getByRole("button", { name: "삭제" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "완전히 삭제", exact: true })
+    .click();
+  await expect(roamingEmployeeRow).toHaveCount(0);
 });
 
 test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하고 역할 이력을 본다", async ({
