@@ -236,3 +236,42 @@ test("inventory save reuses its validated FIFO snapshot after CAS", async () => 
       transaction.indexOf("dailyLedger.updateMany("),
   );
 });
+
+test("입고분 판매가 검사는 화면 DOM이 아닌 React 입력 상태를 기준으로 한다", async () => {
+  const source = await readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+  const validation = source.slice(
+    source.indexOf("function validateRequiredPlannedUnitPrices"),
+    source.indexOf("function validateInventorySaveAdjustments"),
+  );
+  const submission = source.slice(
+    source.indexOf("const submittedLotPrices"),
+    source.indexOf("const pendingReceipt"),
+  );
+
+  assert.doesNotMatch(validation, /lotPriceRefs\.current/);
+  assert.doesNotMatch(submission, /lotPriceRefs\.current/);
+  assert.match(validation, /item\.lotPriceInputs\[lot\.lotOriginKey\]/);
+  assert.match(submission, /item\.lotPriceInputs\[lot\.lotOriginKey\]/);
+});
+
+test("입고날짜별 판매가 칸은 입고 정보 바로 옆에 고정한다", async () => {
+  const source = await readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(
+    source,
+    /sm:grid-cols-\[minmax\(12rem,15rem\)_8rem_7rem\][^"\n]*sm:justify-start/,
+  );
+  assert.doesNotMatch(source, /sm:grid-cols-\[minmax\(0,1fr\)_8rem_7rem\]/);
+});

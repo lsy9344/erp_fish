@@ -802,10 +802,10 @@ export function InventoryStepClient({
     items.forEach((item, index) => {
       if (item.fifoLots.length > 0) {
         for (const lot of item.fifoLots) {
-          const raw =
-            lotPriceRefs.current[lot.lotOriginKey]?.value ??
-            item.lotPriceInputs[lot.lotOriginKey] ??
-            "";
+          // 판매가 input은 React 상태가 화면에 보이는 값의 기준이다. 탭 전환이나
+          // 재렌더 뒤 남아 있는 DOM ref를 먼저 읽으면, 화면에는 값이 있어도 이전
+          // 빈 input을 읽어 저장을 막을 수 있다.
+          const raw = item.lotPriceInputs[lot.lotOriginKey] ?? "";
 
           if (toRawKrwInputValue(raw) === "") {
             nextErrors[`items.${index}.plannedUnitPrice`] = [
@@ -1009,9 +1009,7 @@ export function InventoryStepClient({
     const submittedLotPrices = items.flatMap((item) =>
       item.fifoLots.flatMap((lot) => {
         const raw = toRawKrwInputValue(
-          lotPriceRefs.current[lot.lotOriginKey]?.value ??
-            item.lotPriceInputs[lot.lotOriginKey] ??
-            "",
+          item.lotPriceInputs[lot.lotOriginKey] ?? "",
         );
 
         return raw === ""
@@ -2464,7 +2462,7 @@ export function InventoryStepClient({
                     return (
                       <div
                         key={entry.key}
-                        className="bg-muted/40 grid gap-2 rounded-md p-2 sm:grid-cols-[minmax(0,1fr)_8rem_7rem] sm:items-end"
+                        className="bg-muted/40 grid gap-2 rounded-md p-2 sm:grid-cols-[minmax(12rem,15rem)_8rem_7rem] sm:items-end sm:justify-start"
                       >
                         <div className="text-muted-foreground leading-5">
                           <p className="text-foreground font-medium">

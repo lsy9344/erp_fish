@@ -262,18 +262,19 @@ test("재고 계획 미완료 직접 URL은 명시 지점과 자동 선택 지�
   await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
 });
 
-test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 뒤에만 진행한다", async ({
+test("여러 입고분 판매가와 당일재고를 모두 쓰면 후속 단계로 진행한다", async ({
   page,
 }) => {
   const actorId = await getActorId();
   const product = await seedProduct();
   const ledger = await createTodayLedger(actorId);
   await seedPurchase(ledger.id, product, actorId);
+  await seedPurchase(ledger.id, product, actorId, 1_500);
   await markLossesReviewed(ledger.id, actorId);
   await login(page);
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
-  await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("1");
+  await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("2");
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
   await expect(page).toHaveURL(/\/app\/store-entry\/inventory/);
   // 이동이 막힌 이유와 대상 품목을 경고 모달로 알린다.
@@ -295,7 +296,24 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toHaveCount(0);
-  await getFirstLotPriceInput(page, product.name).fill("2000");
+  const lotPriceInputs = page
+    .locator("tr")
+    .filter({ hasText: product.name })
+    .locator('input[aria-label$=" 판매가"]');
+  await expect(lotPriceInputs).toHaveCount(2);
+  const [rowBox, firstPriceBox] = await Promise.all([
+    page.locator("tr").filter({ hasText: product.name }).boundingBox(),
+    lotPriceInputs.first().boundingBox(),
+  ]);
+  expect(rowBox).not.toBeNull();
+  expect(firstPriceBox).not.toBeNull();
+  expect(firstPriceBox!.x - rowBox!.x).toBeLessThan(360);
+  await lotPriceInputs.nth(0).fill("2000");
+  await lotPriceInputs.nth(1).fill("2500");
+  await page.getByRole("tab", { name: "냉동" }).click();
+  await page.getByRole("tab", { name: "전체" }).click();
+  await expect(lotPriceInputs.nth(0)).toHaveValue("2,000");
+  await expect(lotPriceInputs.nth(1)).toHaveValue("2,500");
   await page.getByRole("link", { name: /4단계: 지출/ }).click();
 
   await expect(
@@ -309,13 +327,15 @@ test("재고에서 후속 단계 이동은 discard 선택 없이 저장 성공 �
     }),
   ).toBe(1);
   expect(
-    await prisma.ledgerLotSalesPricePlan.count({
+    await prisma.ledgerLotSalesPricePlan.findMany({
       where: {
         dailyLedgerId: ledger.id,
         productId: product.id,
       },
+      orderBy: { plannedUnitPrice: "asc" },
+      select: { plannedUnitPrice: true },
     }),
-  ).toBe(1);
+  ).toEqual([{ plannedUnitPrice: 2_000 }, { plannedUnitPrice: 2_500 }]);
 });
 
 test("재고를 명시 저장한 뒤 다음 단계 이동은 버전과 감사로그를 다시 증가시키지 않는다", async ({
