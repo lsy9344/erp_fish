@@ -242,42 +242,45 @@ async function main() {
   const linkedDailyLedgerIds = new Set();
 
   for (const candidate of candidates) {
-    const result = await db.$transaction(async (tx) => {
-      await lockEmployeeNamesInTx(tx, [candidate.employee.name]);
-      const currentEmployee = await tx.employee.findUnique({
-        where: { id: candidate.employee.id },
-        select: {
-          id: true,
-          name: true,
-          hireDate: true,
-          isActive: true,
-          dailyWage: true,
-        },
-      });
-      if (
-        !currentEmployee ||
-        !currentEmployee.isActive ||
-        currentEmployee.name !== candidate.employee.name ||
-        currentEmployee.hireDate.getTime() !==
-          candidate.employee.hireDate.getTime() ||
-        currentEmployee.dailyWage !== candidate.employee.dailyWage
-      ) {
-        throw new Error(
-          `직원 정보가 점검 후 변경됐습니다: ${candidate.employee.name}`,
-        );
-      }
+    const result = await db.$transaction(
+      async (tx) => {
+        await lockEmployeeNamesInTx(tx, [candidate.employee.name]);
+        const currentEmployee = await tx.employee.findUnique({
+          where: { id: candidate.employee.id },
+          select: {
+            id: true,
+            name: true,
+            hireDate: true,
+            isActive: true,
+            dailyWage: true,
+          },
+        });
+        if (
+          !currentEmployee ||
+          !currentEmployee.isActive ||
+          currentEmployee.name !== candidate.employee.name ||
+          currentEmployee.hireDate.getTime() !==
+            candidate.employee.hireDate.getTime() ||
+          currentEmployee.dailyWage !== candidate.employee.dailyWage
+        ) {
+          throw new Error(
+            `직원 정보가 점검 후 변경됐습니다: ${candidate.employee.name}`,
+          );
+        }
 
-      return linkExistingLaborItemsInTx({
-        tx,
-        employee: currentEmployee,
-        actorId: actor.id,
-        canEditLedgers: true,
-        includeClosedLedgers: options.includeClosed,
-        storeIds: [store.id],
-        fillLinkedZeroAmounts: true,
-        auditReason: options.reason,
-      });
-    });
+        return linkExistingLaborItemsInTx({
+          tx,
+          employee: currentEmployee,
+          actorId: actor.id,
+          canEditLedgers: true,
+          includeClosedLedgers: options.includeClosed,
+          storeIds: [store.id],
+          fillLinkedZeroAmounts: true,
+          auditReason: options.reason,
+        });
+      },
+      { maxWait: 30_000, timeout: 120_000 },
+    );
     linkedLaborItemCount += result.linkedLaborItemCount;
     filledLinkedZeroAmountCount += result.filledLinkedZeroAmountCount;
     for (const dailyLedgerId of result.linkedDailyLedgerIds) {
