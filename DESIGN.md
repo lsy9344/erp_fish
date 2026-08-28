@@ -3,7 +3,7 @@
 ## Source of truth
 
 - Status: Draft
-- Last refreshed: 2026-07-31
+- Last refreshed: 2026-08-27
 - Primary product surfaces:
   - 본사 관리자 홈 `/app/dashboard`
   - 본사 장부 상세 `/app/ledgers/[ledgerId]`
@@ -426,6 +426,8 @@ CorrectionRecord.supersedeReason    String?
 - Reduced motion and sensory considerations:
   - 새 motion 없음
   - 자동 갱신 후 값 변화는 기존 새로고침 상태 텍스트로 전달한다.
+  - 관제판 자동 갱신은 서울 시간 05:00 이상 20:00 미만에만 동작한다.
+  - 화면이 숨겨졌거나 영업시간 밖이면 자동 갱신 중지 안내를 표시하고, 수동 새로고침은 계속 제공한다.
 
 ## Responsive behavior
 

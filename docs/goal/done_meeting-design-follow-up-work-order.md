@@ -1,4 +1,4 @@
-# done_미팅 설계 적용 검토 후속 작업지시서
+# done\_미팅 설계 적용 검토 후속 작업지시서
 
 적용 상태: 2026-06-20 적용 완료
 
@@ -12,11 +12,11 @@
 
 지점장 지표 정책:
 
-| 구분 | 지표 |
-| --- | --- |
-| 승인 전 허용 | 작성자 표시명, 장부 상태, 직접 입력한 매출/결제/비용/매입 수량, 재고 수량, 손실/폐기/떨이 입력값 |
-| 승인 전 차단 | 매출 마진율, 재고금액, 매출차액, 매출원가, 매출총이익, 영업이익, 생산성, FIFO 매출원가, FIFO 재고금액, lot 근거, 본사 고정비, 타 지점 비교값 |
-| 승인 후 예외 가능 | 본사 운영자 승인 문서에 field allowlist, surface, rollback, 테스트 기준이 남은 지표만 허용 |
+| 구분              | 지표                                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 승인 전 허용      | 작성자 표시명, 장부 상태, 직접 입력한 매출/결제/비용/매입 수량, 재고 수량, 손실/폐기/떨이 입력값                                             |
+| 승인 전 차단      | 매출 마진율, 재고금액, 매출차액, 매출원가, 매출총이익, 영업이익, 생산성, FIFO 매출원가, FIFO 재고금액, lot 근거, 본사 고정비, 타 지점 비교값 |
+| 승인 후 예외 가능 | 본사 운영자 승인 문서에 field allowlist, surface, rollback, 테스트 기준이 남은 지표만 허용                                                   |
 
 적용 후 검증:
 
@@ -29,7 +29,7 @@
 
 ## 검토 결론
 
-`docs/meeting/change.md`의 핵심 MVP 흐름인 본사 관제, 지점 장부 입력, 본사 수정/마감, 감사 로그, 지점장 민감 지표 차단은 현재 코드에 대체로 반영되어 있다. 최근 보완 항목인 본사 관제판 컬럼 리사이징, 30초 자동 갱신, 초기 계정/10개 이상 지점 운영 매뉴얼도 코드와 테스트 증거가 있다.
+`docs/meeting/change.md`의 핵심 MVP 흐름인 본사 관제, 지점 장부 입력, 본사 수정/마감, 감사 로그, 지점장 민감 지표 차단은 현재 코드에 대체로 반영되어 있다. 최근 보완 항목인 본사 관제판 컬럼 리사이징, 영업시간·화면 가시성으로 보호되는 30초 자동 갱신, 초기 계정/10개 이상 지점 운영 매뉴얼도 코드와 테스트 증거가 있다.
 
 다만 다음 항목은 "구현 완료"로 닫으면 안 된다. 일부는 정책 승인 전이라 제품 기능을 열면 위험하고, 일부는 테스트/릴리스 검증 범위가 부족하다.
 
@@ -44,18 +44,18 @@
 
 ## 확인된 적용 항목
 
-| 항목 | 판단 | 근거 |
-| --- | --- | --- |
-| 본사 관제판 4단계 상태 | 적용됨 | `src/features/dashboard/types.ts`, `src/features/dashboard/queries.ts`, `tests/e2e/hq-dashboard.spec.ts` |
-| 관제판 컬럼 리사이징 | 적용됨 | `src/features/dashboard/components/hq-dashboard-table.tsx`의 `dashboardColumnWidthConfig`, `localStorage`, resizer handle |
-| 관제판 자동 갱신 | 적용됨 | `src/features/dashboard/components/hq-dashboard-table.tsx`의 `dashboardRefreshIntervalMs = 30_000`, `router.refresh()` |
-| 초기 계정/지점 운영 문서 | 적용됨 | `docs/first-run-accounts-and-store-management.md`, `prisma/seed.ts` |
-| 10개 이상 지점 검색/상태 운영 테스트 | 적용됨 | `tests/e2e/master-data-stores.spec.ts` |
-| ECOUNT 지점/마감일 검증 | 적용됨 | `src/features/ledger/ecount-purchase-import.ts`의 `validateLedgerScope` 기본 활성 경로 |
-| ECOUNT 장부 자동 생성 | 미완료/정책 대기 | 장부 업로드 action은 열려 있지 않고, 살아있는 import는 `src/features/master-data/purchase-standard-import-actions.ts` 중심 |
-| FIFO 정책 gate | 부분 적용 | `src/server/calculations/ledger.ts`, `src/server/calculations/policy-gates.ts`, `tests/unit/calculation-policy-gates.test.mjs` |
-| 매입 행 정정 위험 차단 | 적용됨 | `src/features/corrections/actions.ts`에서 `PURCHASE_ROW` unsupported 처리, `src/features/reports/queries.ts`의 미반영 correction matcher |
-| 지점장 민감 지표 차단 | 적용됨, 정책 충돌 있음 | `src/server/sensitive-fields.ts`, `src/features/ledger/response-shaping.ts`, `tests/unit/sensitive-response-shaping.test.mjs` |
+| 항목                                 | 판단                   | 근거                                                                                                                                                                                  |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 본사 관제판 4단계 상태               | 적용됨                 | `src/features/dashboard/types.ts`, `src/features/dashboard/queries.ts`, `tests/e2e/hq-dashboard.spec.ts`                                                                              |
+| 관제판 컬럼 리사이징                 | 적용됨                 | `src/features/dashboard/components/hq-dashboard-table.tsx`의 `dashboardColumnWidthConfig`, `localStorage`, resizer handle                                                             |
+| 관제판 자동 갱신                     | 적용됨                 | `src/features/dashboard/dashboard-refresh.ts`의 서울 시간 05:00~20:00 정책, `src/features/dashboard/components/hq-dashboard-table.tsx`의 화면 가시성 게이트와 30초 `router.refresh()` |
+| 초기 계정/지점 운영 문서             | 적용됨                 | `docs/first-run-accounts-and-store-management.md`, `prisma/seed.ts`                                                                                                                   |
+| 10개 이상 지점 검색/상태 운영 테스트 | 적용됨                 | `tests/e2e/master-data-stores.spec.ts`                                                                                                                                                |
+| ECOUNT 지점/마감일 검증              | 적용됨                 | `src/features/ledger/ecount-purchase-import.ts`의 `validateLedgerScope` 기본 활성 경로                                                                                                |
+| ECOUNT 장부 자동 생성                | 미완료/정책 대기       | 장부 업로드 action은 열려 있지 않고, 살아있는 import는 `src/features/master-data/purchase-standard-import-actions.ts` 중심                                                            |
+| FIFO 정책 gate                       | 부분 적용              | `src/server/calculations/ledger.ts`, `src/server/calculations/policy-gates.ts`, `tests/unit/calculation-policy-gates.test.mjs`                                                        |
+| 매입 행 정정 위험 차단               | 적용됨                 | `src/features/corrections/actions.ts`에서 `PURCHASE_ROW` unsupported 처리, `src/features/reports/queries.ts`의 미반영 correction matcher                                              |
+| 지점장 민감 지표 차단                | 적용됨, 정책 충돌 있음 | `src/server/sensitive-fields.ts`, `src/features/ledger/response-shaping.ts`, `tests/unit/sensitive-response-shaping.test.mjs`                                                         |
 
 ## P0. 정책 충돌을 먼저 닫는다
 

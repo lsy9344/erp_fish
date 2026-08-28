@@ -26,6 +26,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import { openHqLedgerForDate } from "~/features/ledger/hq-open-actions";
+import { isWithinDashboardRefreshWindow } from "../dashboard-refresh.ts";
 import type { HqDashboardData, HqDashboardRow } from "../types.ts";
 import { DashboardSignalSummary } from "./dashboard-signal-summary.tsx";
 import { DashboardStatusBadge } from "./dashboard-status-badge.tsx";
@@ -171,6 +172,14 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   );
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshClockAt, setRefreshClockAt] = useState(() => Date.now());
+  const [isDocumentVisible, setIsDocumentVisible] = useState(true);
+  const wasAutoRefreshPausedRef = useRef(false);
+
+  const isOutsideBusinessHours = !isWithinDashboardRefreshWindow(
+    new Date(refreshClockAt),
+  );
+  const isAutoRefreshPaused = isOutsideBusinessHours || !isDocumentVisible;
 
   useEffect(() => {
     const storedWidths = window.localStorage.getItem(
@@ -208,6 +217,29 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
     };
   }, []);
 
+  useEffect(() => {
+    setLastRefreshAttemptAt(new Date());
+
+    const intervalId = window.setInterval(() => {
+      setRefreshClockAt(Date.now());
+    }, dashboardRefreshIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const syncVisibility = () => {
+      setIsDocumentVisible(document.visibilityState === "visible");
+      setRefreshClockAt(Date.now());
+    };
+
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
+
+    return () =>
+      document.removeEventListener("visibilitychange", syncVisibility);
+  }, []);
+
   const triggerDashboardRefresh = useCallback(() => {
     setLastRefreshAttemptAt(new Date());
     setIsAutoRefreshing(true);
@@ -229,14 +261,29 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   }, [router]);
 
   useEffect(() => {
-    setLastRefreshAttemptAt(new Date());
-    const intervalId = window.setInterval(
-      triggerDashboardRefresh,
-      dashboardRefreshIntervalMs,
-    );
+    if (isAutoRefreshPaused) {
+      wasAutoRefreshPausedRef.current = true;
+      return;
+    }
+
+    // 서버 렌더 직후인 최초 마운트는 건너뛰고, 화면 숨김이나 영업시간 외 상태에서
+    // 돌아온 경우에만 그동안 쌓인 변경을 즉시 한 번 반영한다.
+    if (wasAutoRefreshPausedRef.current) {
+      wasAutoRefreshPausedRef.current = false;
+      triggerDashboardRefresh();
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (
+        document.visibilityState === "visible" &&
+        isWithinDashboardRefreshWindow(new Date())
+      ) {
+        triggerDashboardRefresh();
+      }
+    }, dashboardRefreshIntervalMs);
 
     return () => window.clearInterval(intervalId);
-  }, [triggerDashboardRefresh]);
+  }, [isAutoRefreshPaused, triggerDashboardRefresh]);
 
   const tableWidth = useMemo(
     () =>
@@ -338,9 +385,13 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               ? "갱신 중"
               : refreshError
                 ? "갱신 실패"
-                : "자동 갱신 대기"}
+                : isOutsideBusinessHours
+                  ? "영업 시간 외 · 자동 갱신 중지"
+                  : !isDocumentVisible
+                    ? "화면 숨김 · 자동 갱신 중지"
+                    : "자동 갱신 대기"}
           </span>
-          <span>주기 30초</span>
+          {!isAutoRefreshPaused ? <span>주기 30초</span> : null}
           <span className="tabular-nums">
             마지막 갱신{" "}
             {lastRefreshAttemptAt
@@ -348,15 +399,25 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
               : "확인 중"}
           </span>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="hidden md:inline-flex"
-          onClick={resetColumnWidths}
-        >
-          컬럼 폭 초기화
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={triggerDashboardRefresh}
+          >
+            지금 새로고침
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="hidden md:inline-flex"
+            onClick={resetColumnWidths}
+          >
+            컬럼 폭 초기화
+          </Button>
+        </div>
       </div>
 
       {dashboard.rows.length === 0 ? (

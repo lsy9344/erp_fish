@@ -1099,7 +1099,80 @@ test("HQ dashboard desktop table supports persisted column resizing", () => {
   assert.match(tableSource, /md:hidden/);
 });
 
-test("HQ dashboard auto-refreshes on an operational interval with status feedback", () => {
+test("HQ dashboard refresh window uses fixed Seoul time and exact boundaries", async () => {
+  const refreshPolicyPath = assertProjectFile(
+    "src",
+    "features",
+    "dashboard",
+    "dashboard-refresh.ts",
+  );
+  const {
+    DASHBOARD_REFRESH_END_MINUTE,
+    DASHBOARD_REFRESH_START_MINUTE,
+    getLocalMinuteOfDay,
+    isWithinDashboardRefreshWindow,
+    isWithinRefreshWindow,
+  } = await import(pathToFileURL(refreshPolicyPath).href);
+
+  assert.equal(DASHBOARD_REFRESH_START_MINUTE, 5 * 60);
+  assert.equal(DASHBOARD_REFRESH_END_MINUTE, 20 * 60);
+
+  assert.equal(
+    isWithinDashboardRefreshWindow(new Date("2026-08-26T19:59:00.000Z")),
+    false,
+    "KST 04:59 is before opening",
+  );
+  assert.equal(
+    isWithinDashboardRefreshWindow(new Date("2026-08-26T20:00:00.000Z")),
+    true,
+    "KST 05:00 is the inclusive opening boundary",
+  );
+  assert.equal(
+    isWithinDashboardRefreshWindow(new Date("2026-08-27T10:59:00.000Z")),
+    true,
+    "KST 19:59 remains within the refresh window",
+  );
+  assert.equal(
+    isWithinDashboardRefreshWindow(new Date("2026-08-27T11:00:00.000Z")),
+    false,
+    "KST 20:00 is the exclusive closing boundary",
+  );
+
+  const overnightWindow = {
+    startMinute: 22 * 60,
+    endMinute: 2 * 60,
+    timeZone: "Asia/Seoul",
+  };
+  assert.equal(
+    isWithinRefreshWindow(
+      new Date("2026-08-27T23:00:00+09:00"),
+      overnightWindow,
+    ),
+    true,
+  );
+  assert.equal(
+    isWithinRefreshWindow(
+      new Date("2026-08-28T01:00:00+09:00"),
+      overnightWindow,
+    ),
+    true,
+  );
+  assert.equal(
+    isWithinRefreshWindow(
+      new Date("2026-08-28T02:00:00+09:00"),
+      overnightWindow,
+    ),
+    false,
+  );
+
+  assert.equal(
+    getLocalMinuteOfDay(new Date("2026-08-26T20:00:00.000Z")),
+    5 * 60,
+    "the same instant is always interpreted as KST 05:00",
+  );
+});
+
+test("HQ dashboard auto-refresh pauses safely and keeps manual refresh", () => {
   const tableSource = readProjectFile(
     "src",
     "features",
@@ -1109,16 +1182,23 @@ test("HQ dashboard auto-refreshes on an operational interval with status feedbac
   );
 
   assert.match(tableSource, /dashboardRefreshIntervalMs\s*=\s*30_000/);
-  assert.match(
-    tableSource,
-    /window\.setInterval\(\s*triggerDashboardRefresh,\s*dashboardRefreshIntervalMs/s,
-  );
+  assert.match(tableSource, /isWithinDashboardRefreshWindow/);
+  assert.match(tableSource, /document\.visibilityState\s*===\s*"visible"/);
+  assert.match(tableSource, /addEventListener\("visibilitychange"/);
+  assert.match(tableSource, /removeEventListener\("visibilitychange"/);
+  assert.match(tableSource, /wasAutoRefreshPausedRef/);
+  assert.match(tableSource, /if \(isAutoRefreshPaused\)/);
+  assert.match(tableSource, /triggerDashboardRefresh\(\)/);
   assert.match(tableSource, /window\.clearInterval\(intervalId\)/);
   assert.match(tableSource, /router\.refresh\(\)/);
   assert.match(tableSource, /hq-dashboard-refresh-status/);
   assert.match(tableSource, /갱신 중/);
   assert.match(tableSource, /마지막 갱신/);
   assert.match(tableSource, /갱신 실패/);
+  assert.match(tableSource, /영업 시간 외 · 자동 갱신 중지/);
+  assert.match(tableSource, /화면 숨김 · 자동 갱신 중지/);
+  assert.match(tableSource, /지금 새로고침/);
+  assert.doesNotMatch(tableSource, /갱신 지연/);
 });
 
 test("HQ ledger detail supports direct navigation to the purchases tab", () => {

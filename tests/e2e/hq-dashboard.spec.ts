@@ -724,10 +724,13 @@ test("본사 관제판 데스크톱 컬럼 폭은 저장되고 초기화할 수 
     .toBeNull();
 });
 
-test("본사 관제판은 자동 갱신 주기 후 상태 변경을 반영한다", async ({
+test("본사 관제판 자동 갱신은 숨김·영업시간 밖에서 멈추고 안전하게 재개한다", async ({
   page,
 }) => {
-  test.setTimeout(70_000);
+  const businessDate = getTodayKstMidnight().toISOString().slice(0, 10);
+  await page.clock.install({
+    time: new Date(`${businessDate}T12:00:00+09:00`),
+  });
 
   const progressLedger = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORE_IDS.progress },
@@ -753,7 +756,52 @@ test("본사 관제판은 자동 갱신 주기 후 상태 변경을 반영한다
     },
   });
 
-  await page.waitForTimeout(31_000);
+  await page.clock.runFor(31_000);
+  await expect(progressRow).toContainText("검토 대기");
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await prisma.dailyLedger.update({
+    where: { id: progressLedger.id },
+    data: {
+      status: "IN_PROGRESS",
+      updatedAt: new Date(),
+      updatedById: actorId,
+    },
+  });
+
+  await page.clock.runFor(31_000);
+  await expect(progressRow).toContainText("검토 대기");
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(progressRow).toContainText("입력 중");
+
+  await page.clock.setSystemTime(new Date(`${businessDate}T20:00:00+09:00`));
+  await page.clock.runFor(30_000);
+  await expect(page.getByTestId("hq-dashboard-refresh-status")).toContainText(
+    "영업 시간 외 · 자동 갱신 중지",
+  );
+
+  await prisma.dailyLedger.update({
+    where: { id: progressLedger.id },
+    data: {
+      status: "IN_REVIEW",
+      updatedAt: new Date(),
+      updatedById: actorId,
+    },
+  });
+  await page.getByRole("button", { name: "지금 새로고침" }).click();
   await expect(progressRow).toContainText("검토 대기");
 });
 
