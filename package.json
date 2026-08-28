@@ -16,6 +16,7 @@
     "db:reset:neon": "node --experimental-strip-types scripts/reset-neon-data.mjs",
     "db:reset:branch-operational": "node scripts/reset-branch-operational-data.mjs",
     "db:repair:opening-inventory": "node --experimental-strip-types scripts/repair-opening-inventory-carryover.mjs",
+    "db:repair:employee-labor-links": "node --experimental-strip-types scripts/repair-employee-labor-links.mjs",
     "db:cleanup:stores": "node scripts/cleanup-target-stores.mjs",
     "dev": "next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",

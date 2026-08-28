@@ -336,9 +336,16 @@ export function EmployeeManagementClient({
       ]);
     }
 
-    toast.success(
-      editingId ? "직원 정보를 수정했습니다." : "직원을 추가했습니다.",
-    );
+    const baseMessage = editingId
+      ? "직원 정보를 수정했습니다."
+      : "직원을 추가했습니다.";
+    const reflectedLaborItemCount =
+      (result.data.linkedLaborItemCount ?? 0) +
+      (result.data.filledLinkedZeroAmountCount ?? 0);
+    const linkedMessage = reflectedLaborItemCount
+      ? ` 기존 근무기록 ${reflectedLaborItemCount}건을 반영했습니다.`
+      : "";
+    toast.success(`${baseMessage}${linkedMessage}`);
     handleCancel();
   }
 

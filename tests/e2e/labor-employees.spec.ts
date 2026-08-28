@@ -182,6 +182,380 @@ test("대표는 여러 매장을 다니는 직원을 근무매장 미지정으�
   await expect(roamingEmployeeRow).toHaveCount(0);
 });
 
+test("직원을 나중에 등록하면 같은 이름의 기존 미연결 근무기록을 안전하게 연결한다", async ({
+  page,
+}) => {
+  const marker = crypto.randomUUID().slice(0, 8);
+  const employeeName = `사후등록직원-${marker}`;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "owner@example.com" },
+    select: { id: true },
+  });
+  const store = await prisma.store.create({
+    data: {
+      name: `사후등록지점-${marker}`,
+      updatedById: actor.id,
+    },
+    select: { id: true, name: true },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "IN_REVIEW",
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  await prisma.ledgerLaborItem.createMany({
+    data: [
+      {
+        dailyLedgerId: ledger.id,
+        workerName: employeeName,
+        amount: 0,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        workerName: employeeName,
+        amount: 77_000,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+    ],
+  });
+
+  let createdEmployeeId: string | null = null;
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/labor/employees");
+    await page.getByLabel("이름", { exact: true }).fill(employeeName);
+    await page.getByLabel("입사일", { exact: true }).fill("2026-07-01");
+    await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
+    await page.getByLabel("기본 근무매장").click();
+    await page.getByRole("option", { name: store.name, exact: true }).click();
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+
+    await expect(
+      page.getByText("기존 근무기록 2건을 반영했습니다."),
+    ).toBeVisible();
+
+    const createdEmployee = await prisma.employee.findFirstOrThrow({
+      where: { name: employeeName },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    createdEmployeeId = createdEmployee.id;
+
+    const laborItems = await prisma.ledgerLaborItem.findMany({
+      where: { dailyLedgerId: ledger.id },
+      orderBy: { amount: "asc" },
+      select: { employeeId: true, amount: true },
+    });
+    expect(laborItems).toEqual([
+      { employeeId: createdEmployee.id, amount: 77_000 },
+      { employeeId: createdEmployee.id, amount: 120_000 },
+    ]);
+    const ledgerAudit = await prisma.auditLog.findFirstOrThrow({
+      where: {
+        action: "ledger.employee_link.backfilled",
+        targetType: "DailyLedger",
+        targetId: ledger.id,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { before: true, after: true, reason: true },
+    });
+    expect(ledgerAudit.reason).toBe("직원 등록 후 기존 근무기록 자동 연결");
+    expect(JSON.stringify(ledgerAudit.before)).toContain('"employeeId":null');
+    expect(JSON.stringify(ledgerAudit.after)).toContain(
+      '"ledgerStatusAtEdit":"IN_REVIEW"',
+    );
+  } finally {
+    if (createdEmployeeId) {
+      await prisma.auditLog.deleteMany({
+        where: { targetType: "Employee", targetId: createdEmployeeId },
+      });
+    }
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: ledger.id },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: ledger.id },
+    });
+    await prisma.dailyLedger.delete({ where: { id: ledger.id } });
+    if (createdEmployeeId) {
+      await prisma.employee.delete({ where: { id: createdEmployeeId } });
+    }
+    await prisma.store.delete({ where: { id: store.id } });
+  }
+});
+
+test("직원 저장 자동 연결은 본사 마감 장부를 변경하지 않는다", async ({
+  page,
+}) => {
+  const marker = crypto.randomUUID().slice(0, 8);
+  const employeeName = `마감보호직원-${marker}`;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "owner@example.com" },
+    select: { id: true },
+  });
+  const store = await prisma.store.create({
+    data: {
+      name: `마감보호지점-${marker}`,
+      updatedById: actor.id,
+    },
+    select: { id: true, name: true },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: new Date("2026-07-04T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      closedById: actor.id,
+      closedAt: new Date("2026-07-05T00:00:00.000Z"),
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  const laborItem = await prisma.ledgerLaborItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      workerName: employeeName,
+      amount: 0,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  let createdEmployeeId: string | null = null;
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/labor/employees");
+    await page.getByLabel("이름", { exact: true }).fill(employeeName);
+    await page.getByLabel("입사일", { exact: true }).fill("2026-07-01");
+    await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
+    await page.getByLabel("기본 근무매장").click();
+    await page.getByRole("option", { name: store.name, exact: true }).click();
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(page.getByText("직원을 추가했습니다.")).toBeVisible();
+
+    const createdEmployee = await prisma.employee.findFirstOrThrow({
+      where: { name: employeeName },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    createdEmployeeId = createdEmployee.id;
+    await expect
+      .poll(() =>
+        prisma.ledgerLaborItem.findUnique({
+          where: { id: laborItem.id },
+          select: { employeeId: true, amount: true },
+        }),
+      )
+      .toEqual({ employeeId: null, amount: 0 });
+  } finally {
+    if (createdEmployeeId) {
+      await prisma.auditLog.deleteMany({
+        where: { targetType: "Employee", targetId: createdEmployeeId },
+      });
+    }
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: ledger.id },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: ledger.id },
+    });
+    await prisma.dailyLedger.delete({ where: { id: ledger.id } });
+    if (createdEmployeeId) {
+      await prisma.employee.delete({ where: { id: createdEmployeeId } });
+    }
+    await prisma.store.delete({ where: { id: store.id } });
+  }
+});
+
+test("동명이인이 있으면 기존 미연결 근무기록을 자동 연결하지 않는다", async ({
+  page,
+}) => {
+  const marker = crypto.randomUUID().slice(0, 8);
+  const employeeName = `동명이인-${marker}`;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "owner@example.com" },
+    select: { id: true },
+  });
+  const store = await prisma.store.create({
+    data: {
+      name: `동명이인지점-${marker}`,
+      updatedById: actor.id,
+    },
+    select: { id: true, name: true },
+  });
+  const existingEmployee = await prisma.employee.create({
+    data: {
+      name: employeeName,
+      hireDate: new Date("2026-07-01T00:00:00.000Z"),
+      storeId: store.id,
+    },
+    select: { id: true },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: new Date("2026-07-02T00:00:00.000Z"),
+      status: "IN_REVIEW",
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  const laborItem = await prisma.ledgerLaborItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      workerName: employeeName,
+      amount: 0,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+
+  let createdEmployeeId: string | null = null;
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/labor/employees");
+    await page.getByLabel("이름", { exact: true }).fill(employeeName);
+    await page.getByLabel("입사일", { exact: true }).fill("2026-07-01");
+    await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
+    await page.getByLabel("기본 근무매장").click();
+    await page.getByRole("option", { name: store.name, exact: true }).click();
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(page.getByText("직원을 추가했습니다.")).toBeVisible();
+
+    const createdEmployee = await prisma.employee.findFirstOrThrow({
+      where: { name: employeeName, id: { not: existingEmployee.id } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    createdEmployeeId = createdEmployee.id;
+
+    await expect
+      .poll(() =>
+        prisma.ledgerLaborItem.findUnique({
+          where: { id: laborItem.id },
+          select: { employeeId: true, amount: true },
+        }),
+      )
+      .toEqual({ employeeId: null, amount: 0 });
+  } finally {
+    if (createdEmployeeId) {
+      await prisma.auditLog.deleteMany({
+        where: { targetType: "Employee", targetId: createdEmployeeId },
+      });
+    }
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: ledger.id },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: ledger.id },
+    });
+    await prisma.dailyLedger.delete({ where: { id: ledger.id } });
+    if (createdEmployeeId) {
+      await prisma.employee.delete({ where: { id: createdEmployeeId } });
+    }
+    await prisma.employee.delete({ where: { id: existingEmployee.id } });
+    await prisma.store.delete({ where: { id: store.id } });
+  }
+});
+
+test("나중에 하루 인건비를 입력하면 연결된 0원 근무기록을 보완한다", async ({
+  page,
+}) => {
+  const marker = crypto.randomUUID().slice(0, 8);
+  const employeeName = `후입력일급-${marker}`;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "owner@example.com" },
+    select: { id: true },
+  });
+  const store = await prisma.store.create({
+    data: {
+      name: `후입력일급지점-${marker}`,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  const employee = await prisma.employee.create({
+    data: {
+      name: employeeName,
+      hireDate: new Date("2026-07-01T00:00:00.000Z"),
+      storeId: store.id,
+    },
+    select: { id: true },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate: new Date("2026-07-03T00:00:00.000Z"),
+      status: "IN_REVIEW",
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+  const laborItem = await prisma.ledgerLaborItem.create({
+    data: {
+      dailyLedgerId: ledger.id,
+      employeeId: employee.id,
+      workerName: employeeName,
+      amount: 0,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+    select: { id: true },
+  });
+
+  try {
+    await login(page, "owner@example.com");
+    await page.goto("/app/labor/employees");
+    await page.getByLabel("직원 검색").fill(employeeName);
+    const employeeRow = page.getByRole("row", {
+      name: new RegExp(employeeName),
+    });
+    await employeeRow.getByRole("button", { name: "수정" }).click();
+    await page.getByLabel("하루 인건비", { exact: true }).fill("120000");
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+
+    await expect(
+      page.getByText("기존 근무기록 1건을 반영했습니다."),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        prisma.ledgerLaborItem.findUnique({
+          where: { id: laborItem.id },
+          select: { employeeId: true, amount: true },
+        }),
+      )
+      .toEqual({ employeeId: employee.id, amount: 120_000 });
+  } finally {
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "Employee", targetId: employee.id },
+    });
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: ledger.id },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { targetType: "DailyLedger", targetId: ledger.id },
+    });
+    await prisma.dailyLedger.delete({ where: { id: ledger.id } });
+    await prisma.employee.delete({ where: { id: employee.id } });
+    await prisma.store.delete({ where: { id: store.id } });
+  }
+});
+
 test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하고 역할 이력을 본다", async ({
   page,
 }) => {

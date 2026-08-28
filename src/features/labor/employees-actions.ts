@@ -1,11 +1,20 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { PermissionAction } from "../../../generated/prisma";
 import type { ZodError } from "zod";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireEmployeeManageAccess } from "~/server/authz";
+import {
+  hasActionPermission,
+  requireEmployeeManageAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import { employeeFormSchema } from "./employees-schemas";
+import {
+  linkExistingLaborItemsInTx,
+  lockEmployeeNamesInTx,
+} from "./employee-labor-linking";
 import {
   getEmployeeProductivityAnalysis,
   getHistoricalEmployeeDetail,
@@ -35,7 +44,16 @@ function toEmployeeWriteData(data: EmployeeFormData) {
 export type EmployeeSaveResult = {
   id: string;
   name: string;
+  linkedLaborItemCount?: number;
+  filledLinkedZeroAmountCount?: number;
 };
+
+function revalidateEmployeeLaborPaths() {
+  revalidatePath("/app/labor/employees");
+  revalidatePath("/app/reports/labor");
+  revalidatePath("/app/reports/monthly");
+  revalidatePath("/app/dashboard");
+}
 
 function employeeAuditFields(data: ReturnType<typeof toEmployeeWriteData>) {
   return Object.entries(data)
@@ -93,6 +111,10 @@ export async function createEmployee(
   input: unknown,
 ): Promise<ActionResult<EmployeeSaveResult>> {
   const actor = await requireEmployeeManageAccess();
+  const canEditLedgers = await hasActionPermission(
+    actor.id,
+    PermissionAction.LEDGER_EDIT,
+  );
 
   const parsed = employeeFormSchema.safeParse(input);
 
@@ -107,9 +129,23 @@ export async function createEmployee(
 
   const writeData = toEmployeeWriteData(parsed.data);
   const employee = await db.$transaction(async (tx) => {
+    await lockEmployeeNamesInTx(tx, [writeData.name]);
     const created = await tx.employee.create({
       data: writeData,
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        hireDate: true,
+        isActive: true,
+        dailyWage: true,
+      },
+    });
+    const linkResult = await linkExistingLaborItemsInTx({
+      tx,
+      employee: created,
+      actorId: actor.id,
+      canEditLedgers,
+      auditReason: "직원 등록 후 기존 근무기록 자동 연결",
     });
     await writeAuditLog(tx, {
       action: "employee.created",
@@ -118,11 +154,22 @@ export async function createEmployee(
       actorId: actor.id,
       before: null,
       // 이름·연락처·주소·계좌·금액 값은 감사 로그에 복제하지 않는다.
-      after: { changedFields: employeeAuditFields(writeData) },
+      after: {
+        changedFields: employeeAuditFields(writeData),
+        linkedLaborItemCount: linkResult.linkedLaborItemCount,
+        filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
+        linkedDailyLedgerCount: linkResult.linkedDailyLedgerCount,
+      },
     });
-    return created;
+    return {
+      id: created.id,
+      name: created.name,
+      linkedLaborItemCount: linkResult.linkedLaborItemCount,
+      filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
+    };
   });
 
+  revalidateEmployeeLaborPaths();
   return actionOk(employee);
 }
 
@@ -131,6 +178,10 @@ export async function updateEmployee(
   input: unknown,
 ): Promise<ActionResult<EmployeeSaveResult>> {
   const actor = await requireEmployeeManageAccess();
+  const canEditLedgers = await hasActionPermission(
+    actor.id,
+    PermissionAction.LEDGER_EDIT,
+  );
 
   const parsed = employeeFormSchema.safeParse(input);
 
@@ -145,8 +196,10 @@ export async function updateEmployee(
 
   const writeData = toEmployeeWriteData(parsed.data);
   const employee = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Employee" WHERE "id" = ${id} FOR UPDATE`;
     const existing = await tx.employee.findUnique({ where: { id } });
     if (!existing) return null;
+    await lockEmployeeNamesInTx(tx, [existing.name, writeData.name]);
     // 활성 상태는 별도 activate/deactivate 액션으로만 바꾼다. 특히 비활성 직원
     // 편집이 실수로 다시 활성화되지 않도록 항상 현재 상태를 유지한다.
     const safeWriteData = { ...writeData, isActive: existing.isActive };
@@ -154,7 +207,22 @@ export async function updateEmployee(
     const updated = await tx.employee.update({
       where: { id },
       data: safeWriteData,
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        hireDate: true,
+        isActive: true,
+        dailyWage: true,
+      },
+    });
+    const linkResult = await linkExistingLaborItemsInTx({
+      tx,
+      employee: updated,
+      actorId: actor.id,
+      canEditLedgers,
+      fillLinkedZeroAmounts:
+        (existing.dailyWage ?? 0) === 0 && (updated.dailyWage ?? 0) > 0,
+      auditReason: "직원 정보 수정 후 기존 근무기록 자동 연결",
     });
     await writeAuditLog(tx, {
       action: "employee.updated",
@@ -162,14 +230,25 @@ export async function updateEmployee(
       targetId: id,
       actorId: actor.id,
       before: { changedFields: [] },
-      after: { changedFields },
+      after: {
+        changedFields,
+        linkedLaborItemCount: linkResult.linkedLaborItemCount,
+        filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
+        linkedDailyLedgerCount: linkResult.linkedDailyLedgerCount,
+      },
     });
-    return updated;
+    return {
+      id: updated.id,
+      name: updated.name,
+      linkedLaborItemCount: linkResult.linkedLaborItemCount,
+      filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
+    };
   });
 
   if (!employee) {
     return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
   }
+  revalidateEmployeeLaborPaths();
   return actionOk(employee);
 }
 
