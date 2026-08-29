@@ -186,7 +186,8 @@ test("직원을 나중에 등록하면 같은 이름의 기존 미연결 근무�
   page,
 }) => {
   const marker = crypto.randomUUID().slice(0, 8);
-  const employeeName = `사후등록직원-${marker}`;
+  const employeeName = `사후등록직원-${marker}-b`;
+  const differentlyCasedWorkerName = employeeName.replace(/b$/, "B");
   const actor = await prisma.user.findUniqueOrThrow({
     where: { email: "owner@example.com" },
     select: { id: true },
@@ -212,7 +213,7 @@ test("직원을 나중에 등록하면 같은 이름의 기존 미연결 근무�
     data: [
       {
         dailyLedgerId: ledger.id,
-        workerName: employeeName,
+        workerName: differentlyCasedWorkerName,
         amount: 0,
         createdById: actor.id,
         updatedById: actor.id,
@@ -253,11 +254,19 @@ test("직원을 나중에 등록하면 같은 이름의 기존 미연결 근무�
     const laborItems = await prisma.ledgerLaborItem.findMany({
       where: { dailyLedgerId: ledger.id },
       orderBy: { amount: "asc" },
-      select: { employeeId: true, amount: true },
+      select: { employeeId: true, workerName: true, amount: true },
     });
     expect(laborItems).toEqual([
-      { employeeId: createdEmployee.id, amount: 77_000 },
-      { employeeId: createdEmployee.id, amount: 120_000 },
+      {
+        employeeId: createdEmployee.id,
+        workerName: employeeName,
+        amount: 77_000,
+      },
+      {
+        employeeId: createdEmployee.id,
+        workerName: employeeName,
+        amount: 120_000,
+      },
     ]);
     const ledgerAudit = await prisma.auditLog.findFirstOrThrow({
       where: {

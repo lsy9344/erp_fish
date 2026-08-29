@@ -11,6 +11,10 @@ const applyConfirmation = "LINK_EMPLOYEE_LABOR";
 const valueOptions = ["--store-name", "--actor-email", "--reason", "--confirm"];
 const flagOptions = new Set(["--apply", "--include-closed"]);
 
+function normalizedEmployeeName(name) {
+  return name.trim().toLocaleLowerCase("ko-KR");
+}
+
 function argumentValue(name) {
   const prefix = `${name}=`;
   return process.argv
@@ -140,10 +144,11 @@ async function loadCandidates(storeId, includeClosed) {
   ]);
   const nameCounts = new Map();
   for (const employee of allEmployeeNames) {
-    nameCounts.set(employee.name, (nameCounts.get(employee.name) ?? 0) + 1);
+    const normalizedName = normalizedEmployeeName(employee.name);
+    nameCounts.set(normalizedName, (nameCounts.get(normalizedName) ?? 0) + 1);
   }
   const uniqueEmployees = employees.filter(
-    (employee) => nameCounts.get(employee.name) === 1,
+    (employee) => nameCounts.get(normalizedEmployeeName(employee.name)) === 1,
   );
 
   const candidates = [];
@@ -157,7 +162,7 @@ async function loadCandidates(storeId, includeClosed) {
       db.ledgerLaborItem.findMany({
         where: {
           employeeId: null,
-          workerName: employee.name,
+          workerName: { equals: employee.name, mode: "insensitive" },
           dailyLedger: ledgerWhere,
         },
         select: { id: true, dailyLedgerId: true, amount: true },

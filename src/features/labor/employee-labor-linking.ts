@@ -14,11 +14,15 @@ const noLinkedLaborItems: EmployeeLaborLinkResult = {
   linkedDailyLedgerIds: [],
 };
 
+function normalizedEmployeeName(name: string) {
+  return name.trim().toLocaleLowerCase("ko-KR");
+}
+
 export async function lockEmployeeNamesInTx(
   tx: Prisma.TransactionClient,
   names: readonly string[],
 ) {
-  const normalizedNames = [...new Set(names.map((name) => name.trim()))]
+  const normalizedNames = [...new Set(names.map(normalizedEmployeeName))]
     .filter(Boolean)
     .sort((left, right) => left.localeCompare(right, "ko"));
 
@@ -70,14 +74,16 @@ export async function linkExistingLaborItemsInTx({
   // 이름만 같은 다른 직원이 한 명이라도 있으면 미연결 행은 자동 연결하지 않는다.
   // 이미 employeeId로 연결된 행의 0원 보완은 동명이인과 무관하게 안전하다.
   let sameNameEmployeeCount = await tx.employee.count({
-    where: { name: employee.name },
+    where: {
+      name: { equals: employee.name, mode: "insensitive" },
+    },
   });
   async function loadTargetItems(allowUnlinked: boolean) {
     const unlinkedItems = allowUnlinked
       ? await tx.ledgerLaborItem.findMany({
           where: {
             employeeId: null,
-            workerName: employee.name,
+            workerName: { equals: employee.name, mode: "insensitive" },
             dailyLedger: ledgerWhere,
           },
           select: {
@@ -121,7 +127,9 @@ export async function linkExistingLaborItemsInTx({
     )}) ORDER BY "id" FOR UPDATE`,
   );
   sameNameEmployeeCount = await tx.employee.count({
-    where: { name: employee.name },
+    where: {
+      name: { equals: employee.name, mode: "insensitive" },
+    },
   });
   const { unlinkedItems, linkedZeroItems } = await loadTargetItems(
     sameNameEmployeeCount === 1,
@@ -154,6 +162,7 @@ export async function linkExistingLaborItemsInTx({
       },
       data: {
         employeeId: employee.id,
+        workerName: employee.name,
         amount: employee.dailyWage ?? 0,
         updatedById: actorId,
       },
@@ -172,6 +181,7 @@ export async function linkExistingLaborItemsInTx({
       },
       data: {
         employeeId: employee.id,
+        workerName: employee.name,
         updatedById: actorId,
       },
     });
@@ -189,6 +199,7 @@ export async function linkExistingLaborItemsInTx({
         dailyLedger: ledgerWhere,
       },
       data: {
+        workerName: employee.name,
         amount: employee.dailyWage ?? 0,
         updatedById: actorId,
       },
