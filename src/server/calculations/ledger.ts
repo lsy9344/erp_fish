@@ -1184,7 +1184,7 @@ function applyInventoryCorrection(
       const value = getCorrectionNumber(
         correction.latestAppliedValue,
         "quantity",
-        "one-decimal",
+        "two-decimal",
       );
 
       if (value === null) {

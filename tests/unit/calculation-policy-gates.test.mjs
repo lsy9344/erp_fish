@@ -299,7 +299,7 @@ test("nonzero empty FIFO rows force the complete ledger fallback", async () => {
   assert.deepEqual(summary.inventoryAmount, { value: 17_999, status: "ok" });
 });
 
-test("one-decimal inventory corrections discard stale FIFO amounts and recalculate inventory", async () => {
+test("two-decimal inventory corrections discard stale FIFO amounts and recalculate inventory", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -349,7 +349,7 @@ test("one-decimal inventory corrections discard stale FIFO amounts and recalcula
         targetType: "INVENTORY_ROW",
         targetId: "inventory-1",
         fieldKey: "currentQuantity",
-        latestAppliedValue: { kind: "quantity", value: 4.5 },
+        latestAppliedValue: { kind: "quantity", value: 4.25 },
       },
     ],
   });
@@ -359,8 +359,8 @@ test("one-decimal inventory corrections discard stale FIFO amounts and recalcula
     id: "inventory-1",
     previousQuantity: 10,
     purchasedQuantity: 0,
-    currentQuantity: 4.5,
-    quantity: 4.5,
+    currentQuantity: 4.25,
+    quantity: 4.25,
     unitPrice: 100,
     inventoryAmount: 800,
     fifoConsumedAmount: null,
@@ -371,8 +371,8 @@ test("one-decimal inventory corrections discard stale FIFO amounts and recalcula
 
   const summary = calculateLedgerReviewSummary(overlay.reviewInput);
 
-  assert.deepEqual(summary.costOfGoodsSold, { value: 550, status: "ok" });
-  assert.deepEqual(summary.inventoryAmount, { value: 450, status: "ok" });
+  assert.deepEqual(summary.costOfGoodsSold, { value: 575, status: "ok" });
+  assert.deepEqual(summary.inventoryAmount, { value: 425, status: "ok" });
 });
 
 test("two-decimal loss corrections apply while finer precision remains unapplied", async () => {
@@ -440,7 +440,7 @@ test("two-decimal loss corrections apply while finer precision remains unapplied
   assert.equal(rejected.correctionState.hasUnappliedCorrections, true);
 });
 
-test("inventory correction quantities remain limited to one decimal", async () => {
+test("inventory correction quantities accept two decimals", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -481,9 +481,9 @@ test("inventory correction quantities remain limited to one decimal", async () =
     ],
   });
 
-  assert.equal(overlay.reviewInput.inventoryItems[0].currentQuantity, 2);
-  assert.equal(overlay.correctionState.appliedCorrectionCount, 0);
-  assert.equal(overlay.correctionState.hasUnappliedCorrections, true);
+  assert.equal(overlay.reviewInput.inventoryItems[0].currentQuantity, 1.25);
+  assert.equal(overlay.correctionState.appliedCorrectionCount, 1);
+  assert.equal(overlay.correctionState.hasUnappliedCorrections, false);
 });
 
 test("fractional worker-count and money corrections remain unapplied", async () => {

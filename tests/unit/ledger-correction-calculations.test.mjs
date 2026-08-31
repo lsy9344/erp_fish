@@ -166,6 +166,64 @@ test("ledger review correction overlay exposes loss quantity product ids for adj
   assert.deepEqual([...result.appliedLossProductIds], ["product-1"]);
 });
 
+test("ledger review correction overlay accepts two-decimal inventory quantities and rejects finer precision", async () => {
+  const ledgerPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { applyCorrectionValuesToLedgerReviewInput } = await import(
+    pathToFileURL(ledgerPath).href
+  );
+  const createInput = (fieldKey, value) => ({
+    ledgerId: "ledger-1",
+    reviewInput: {
+      totalSalesAmount: 100000,
+      cashAmount: 40000,
+      cardAmount: 50000,
+      otherPaymentAmount: 10000,
+      workerCount: 4,
+      expenseTotal: 0,
+      inventoryItems: [
+        {
+          id: "inventory-1",
+          productName: "광어",
+          previousQuantity: 10,
+          purchasedQuantity: 5,
+          currentQuantity: 8,
+          quantity: 8,
+          unitPrice: 1000,
+          inventoryAmount: 8000,
+        },
+      ],
+    },
+    lossItems: [],
+    corrections: [
+      {
+        targetType: "INVENTORY_ROW",
+        targetId: "inventory-1",
+        fieldKey,
+        latestAppliedValue: quantity(value),
+      },
+    ],
+  });
+
+  for (const fieldKey of ["currentQuantity", "quantity"]) {
+    const accepted = applyCorrectionValuesToLedgerReviewInput(
+      createInput(fieldKey, 1.23),
+    );
+    const rejected = applyCorrectionValuesToLedgerReviewInput(
+      createInput(fieldKey, 1.234),
+    );
+
+    assert.equal(accepted.reviewInput.inventoryItems[0].currentQuantity, 1.23);
+    assert.equal(accepted.correctionState.hasUnappliedCorrections, false);
+    assert.equal(rejected.reviewInput.inventoryItems[0].currentQuantity, 8);
+    assert.equal(rejected.correctionState.hasUnappliedCorrections, true);
+  }
+});
+
 test("ledger review correction overlay marks unsupported calculated metric corrections for review", async () => {
   const ledgerPath = assertProjectFile(
     "src",

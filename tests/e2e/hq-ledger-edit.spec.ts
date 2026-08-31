@@ -649,7 +649,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await expect(inventoryPanel).toBeVisible();
   const inventoryInput = page.getByLabel(`${product.name} 당일재고`);
   await expect(inventoryInput).toBeVisible();
-  await replaceControlValue(inventoryInput, "14");
+  await replaceControlValue(inventoryInput, "14.25");
   await fillHqEditReason(inventoryPanel, "재고 원본 보완");
   await inventoryPanel
     .getByLabel(`${product.name} 재고 조정 이유`)
@@ -678,7 +678,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
 
       return current?.currentQuantity?.toString();
     })
-    .toBe("14");
+    .toBe("14.25");
 
   await page.getByRole("tab", { name: "근무" }).click();
   const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
@@ -761,7 +761,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   expect(savedLedger.ledgerExpenses[0]?.amount).toBe(3000);
   expect(savedLedger.ledgerPurchaseItems[0]?.quantity.toString()).toBe("3");
   expect(savedLedger.ledgerInventoryItems[0]?.currentQuantity?.toString()).toBe(
-    "14",
+    "14.25",
   );
   expect(savedLedger.ledgerLossItems[0]?.reason).toBe("본사 손실 확인");
   expect(savedLedger.ledgerLaborItems[0]?.workerName).toBe("본사 직원");

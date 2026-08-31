@@ -414,7 +414,7 @@ test("총매출과 이월 매출 동시 정정은 영업 매출 상한을 직렬
   await carryoverPage.close();
 });
 
-test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산에 반영한다", async ({
+test("본사는 재고 수량을 소수점 둘째 자리로 정정하고 계산에 반영한다", async ({
   page,
 }) => {
   const { ledger, inventoryItem } = await seedClosedLedger();
@@ -432,7 +432,7 @@ test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산�
     .getByLabel("정정 대상")
     .selectOption({ label: `재고 1 · ${PRODUCT_NAME} · 현재고` });
   await expect(correctedValueInput).toHaveAttribute("inputmode", "decimal");
-  await replaceControlValue(correctedValueInput, "1.5");
+  await replaceControlValue(correctedValueInput, "1.23");
   await replaceControlValue(
     correctionPanel.getByLabel("정정 사유"),
     "재고 소수 수량 반영",
@@ -442,8 +442,8 @@ test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산�
   await expect(
     correctionPanel.getByText("정정 기록이 저장됐습니다."),
   ).toBeVisible();
-  await expect(correctionPanel).toContainText("1.5");
-  await expect(metricArea).toContainText("91.5%");
+  await expect(correctionPanel).toContainText("1.23");
+  await expect(metricArea).toContainText("91.2%");
 
   await expect
     .poll(async () => {
@@ -460,7 +460,7 @@ test("본사는 재고 수량을 소수점 첫째 자리로 정정하고 계산�
 
       return correction?.correctedValue;
     })
-    .toMatchObject({ kind: "quantity", value: 1.5 });
+    .toMatchObject({ kind: "quantity", value: 1.23 });
 });
 
 test("단독 재고 조정은 현재고 정정만 대체하고 표시재고 정정은 보존한다", async ({
@@ -514,7 +514,7 @@ test("단독 재고 조정은 현재고 정정만 대체하고 표시재고 정�
     `${PRODUCT_NAME} 당일재고`,
     { exact: true },
   );
-  await currentQuantity.fill("12");
+  await currentQuantity.fill("12.25");
   await inventoryPanel
     .getByLabel("본사 수정 사유")
     .fill("단독 재고 조정 범위 검증");
@@ -544,6 +544,16 @@ test("단독 재고 조정은 현재고 정정만 대체하고 표시재고 정�
       }),
       expect.objectContaining({ fieldKey: "quantity", supersededAt: null }),
     ]);
+  await expect
+    .poll(async () => {
+      const item = await prisma.ledgerInventoryItem.findUnique({
+        where: { id: inventoryItem.id },
+        select: { currentQuantity: true },
+      });
+
+      return item?.currentQuantity?.toString();
+    })
+    .toBe("12.25");
 });
 
 test("직접 저장과 정정의 동시 제출은 한 건만 성공하고 패배 요청은 충돌로 끝난다", async ({

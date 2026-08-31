@@ -382,7 +382,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   const currentQuantityInput = page.getByLabel(`${product.name} 당일재고`, {
     exact: true,
   });
-  await currentQuantityInput.fill("9.5");
+  await currentQuantityInput.fill("9.25");
   await page
     .getByLabel(`${product.name} 재고 조정 이유`)
     .fill("실사 재고 차이");
@@ -394,7 +394,7 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
 
   await expect(
     page.getByLabel(`${product.name} 당일재고`, { exact: true }),
-  ).toHaveValue("9.5");
+  ).toHaveValue("9.25");
   await expect(
     page.getByLabel(`${untouchedProduct.name} 당일재고`, { exact: true }),
   ).toHaveValue("5");
@@ -418,8 +418,8 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
       },
     },
   });
-  expect(savedProductRow?.currentQuantity?.toString()).toBe("9.5");
-  expect(savedProductRow?.quantity?.toString()).toBe("9.5");
+  expect(savedProductRow?.currentQuantity?.toString()).toBe("9.25");
+  expect(savedProductRow?.quantity?.toString()).toBe("9.25");
 
   const productRow = page.locator("tr").filter({ hasText: product.name });
   await expect(productRow.getByText("수정됨").first()).toBeVisible();

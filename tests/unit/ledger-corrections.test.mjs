@@ -275,7 +275,7 @@ test("correction schema rejects inventory amount corrections until all calculati
   });
 });
 
-test("correction schema accepts one-decimal inventory quantities and rejects finer precision", async () => {
+test("correction schema accepts two-decimal inventory quantities and rejects finer precision", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
@@ -285,32 +285,34 @@ test("correction schema accepts one-decimal inventory quantities and rejects fin
   const { correctionRecordSchema, toFieldErrors } = await import(
     pathToFileURL(schemaPath).href
   );
-  const input = {
-    ledgerId: "ledger-1",
-    ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
-    targetType: "INVENTORY_ROW",
-    targetId: "inventory-1",
-    fieldKey: "currentQuantity",
-    correctedValue: { kind: "quantity", value: "1.5" },
-    reason: "재고 실사 반영",
-  };
+  for (const fieldKey of ["currentQuantity", "quantity"]) {
+    const input = {
+      ledgerId: "ledger-1",
+      ledgerUpdatedAt: "2026-08-03T00:00:00.000Z",
+      targetType: "INVENTORY_ROW",
+      targetId: "inventory-1",
+      fieldKey,
+      correctedValue: { kind: "quantity", value: "1.23" },
+      reason: "재고 실사 반영",
+    };
 
-  const accepted = correctionRecordSchema.safeParse(input);
+    const accepted = correctionRecordSchema.safeParse(input);
 
-  assert.equal(accepted.success, true);
-  assert.equal(accepted.data.correctedValue.value, 1.5);
+    assert.equal(accepted.success, true);
+    assert.equal(accepted.data.correctedValue.value, 1.23);
 
-  const rejected = correctionRecordSchema.safeParse({
-    ...input,
-    correctedValue: { kind: "quantity", value: "1.25" },
-  });
+    const rejected = correctionRecordSchema.safeParse({
+      ...input,
+      correctedValue: { kind: "quantity", value: "1.234" },
+    });
 
-  assert.equal(rejected.success, false);
-  assert.deepEqual(toFieldErrors(rejected.error), {
-    "correctedValue.value": [
-      "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.",
-    ],
-  });
+    assert.equal(rejected.success, false);
+    assert.deepEqual(toFieldErrors(rejected.error), {
+      "correctedValue.value": [
+        "정정 수량은 0 이상이고 소수점 둘째 자리까지 입력해 주세요.",
+      ],
+    });
+  }
 });
 
 test("correction schema accepts two-decimal loss quantities and rejects finer precision", async () => {
@@ -432,7 +434,6 @@ test("correction action and panel keep decimal quantities target-aware", () => {
     "correction-panel.tsx",
   );
 
-  assert.match(actions, /isNonNegativeDecimalInRange/);
   assert.match(actions, /isNonNegativeTwoDecimalInRange/);
   assert.match(
     actions,

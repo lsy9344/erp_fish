@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import {
-  isNonNegativeDecimalInRange,
+  isNonNegativeTwoDecimalInRange,
   parseRequiredNonNegativeTwoDecimal,
 } from "../../lib/validation.ts";
 
@@ -25,8 +25,6 @@ const unsupportedInventoryAmountCorrectionMessage =
   "재고 금액 정정은 아직 지원하지 않습니다. 수량 정정으로 반영해 주세요.";
 const correctionQuantityError =
   "정정 수량은 0 이상이고 소수점 둘째 자리까지 입력해 주세요.";
-const inventoryQuantityError =
-  "정정 수량은 0 이상이고 소수점 첫째 자리까지 입력해 주세요.";
 const lossReasonRequiredError = "손실 사유를 입력해 주세요.";
 const lossReasonTooLongError = "손실 사유는 500자 이하여야 합니다.";
 
@@ -239,11 +237,11 @@ export const correctionRecordSchema = z
       (value.fieldKey === "currentQuantity" || value.fieldKey === "quantity") &&
       value.correctedValue.kind === "quantity" &&
       typeof value.correctedValue.value === "number" &&
-      !isNonNegativeDecimalInRange(value.correctedValue.value)
+      !isNonNegativeTwoDecimalInRange(value.correctedValue.value)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: inventoryQuantityError,
+        message: correctionQuantityError,
         path: ["correctedValue", "value"],
       });
     }

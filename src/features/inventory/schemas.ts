@@ -3,8 +3,8 @@ import { z } from "zod";
 import {
   parseOptionalNonNegativeInteger,
   parseOptionalNonNegativeTwoDecimal,
-  parseRequiredNonNegativeDecimal,
   parseRequiredNonNegativeInteger,
+  parseRequiredNonNegativeTwoDecimal,
   toFieldErrors,
 } from "../../lib/validation.ts";
 
@@ -12,7 +12,7 @@ const productError = "품목을 확인해 주세요.";
 const inventoryQuantityError =
   "재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const actualQuantityError =
-  "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
+  "실제 재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
 const inventoryUnitPriceError = "매입단가는 0원 이상의 정수여야 합니다.";
@@ -33,7 +33,11 @@ function parseRequiredInventoryQuantity(
   value: unknown,
   context: z.RefinementCtx,
 ) {
-  return parseRequiredNonNegativeDecimal(value, context, actualQuantityError);
+  return parseRequiredNonNegativeTwoDecimal(
+    value,
+    context,
+    actualQuantityError,
+  );
 }
 
 const storeSchema = z

@@ -547,11 +547,11 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
 
   const decimal = ledgerInventoryAdjustmentSchema.parse({
     ...payload,
-    actualQuantity: "1.5",
+    actualQuantity: "1.25",
   });
-  assert.equal(decimal.actualQuantity, 1.5);
+  assert.equal(decimal.actualQuantity, 1.25);
 
-  for (const actualQuantity of [-1, "2.28", "1,000", ""]) {
+  for (const actualQuantity of [-1, "2.281", "1,000", ""]) {
     const invalid = ledgerInventoryAdjustmentSchema.safeParse({
       ...payload,
       actualQuantity,
@@ -559,7 +559,7 @@ test("inventory adjustment schema requires reason and safe actual quantity", asy
     assert.equal(invalid.success, false);
     assert.equal(
       invalid.error.issues[0].message,
-      "실제 재고 수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+      "실제 재고 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
     );
   }
 
@@ -3101,12 +3101,16 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(
     componentSource,
     /if \(!isAdjustmentQuantityWithinServerContract\(actualQuantityInput\)\)/,
-    "adjustment save should block values beyond the server's one-decimal contract",
+    "adjustment save should block values beyond the server's two-decimal contract",
   );
   assert.match(
     componentSource,
-    /단독 재고 조정은 소수점 첫째 자리까지만 저장할 수 있습니다\./,
-    "adjustment save should explain how to save two-decimal quantities",
+    /단독 재고 조정은 소수점 둘째 자리까지만 저장할 수 있습니다\./,
+    "adjustment save should explain the two-decimal limit",
+  );
+  assert.match(
+    componentSource,
+    /return parseStoreInventoryQuantityDraft\(value\) !== null;/,
   );
   assert.match(componentSource, /actualQuantity:\s*actualQuantityInput/);
   assert.match(
