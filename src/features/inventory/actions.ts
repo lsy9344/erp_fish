@@ -39,6 +39,11 @@ import {
 } from "./manual-inventory-rows";
 import { upsertInventorySalesPricePlansInTx } from "./sales-price-persistence";
 import { upsertLedgerLotSalesPricePlansInTx } from "./lot-sales-price";
+import {
+  completeGeneratedLotPrices,
+  getLotPriceTargetErrors,
+  getLotPriceValidationMessage,
+} from "./lot-price-save-validation";
 import { shouldPersistInventoryLine } from "./inventory-persist-policy";
 import {
   getInventorySaveAdjustmentErrors,
@@ -179,100 +184,6 @@ function getInventoryAmountErrors(
   });
 
   return errors;
-}
-
-function getLotPriceTargetErrors(
-  snapshotsByProductId: ReadonlyMap<
-    string,
-    { fifo: { lots: Array<{ lotOriginKey: string }> } }
-  >,
-  submittedProductIds: ReadonlySet<string>,
-  lotPrices: LedgerStoreManagerInventoryInput["lotPrices"],
-) {
-  const targetByOrigin = new Map<string, string>();
-  for (const [productId, snapshot] of snapshotsByProductId) {
-    if (!submittedProductIds.has(productId)) continue;
-    for (const lot of snapshot.fifo.lots) {
-      targetByOrigin.set(lot.lotOriginKey, productId);
-    }
-  }
-
-  const errors: Record<string, string[]> = {};
-  const submittedOrigins = new Set<string>();
-  lotPrices.forEach((price, index) => {
-    if (submittedOrigins.has(price.lotOriginKey)) {
-      errors[`lotPrices.${index}.lotOriginKey`] = [
-        "같은 입고분 판매가를 두 번 저장할 수 없습니다.",
-      ];
-      return;
-    }
-    submittedOrigins.add(price.lotOriginKey);
-
-    if (targetByOrigin.get(price.lotOriginKey) !== price.productId) {
-      errors[`lotPrices.${index}.lotOriginKey`] = [
-        "판매가를 저장할 입고분을 확인해 주세요.",
-      ];
-    }
-  });
-
-  for (const lotOriginKey of targetByOrigin.keys()) {
-    if (!submittedOrigins.has(lotOriginKey)) {
-      errors.lotPrices = ["모든 입고분의 판매가를 입력해 주세요."];
-      break;
-    }
-  }
-
-  return errors;
-}
-
-function completeGeneratedLotPrices(
-  snapshotsByProductId: ReadonlyMap<
-    string,
-    { fifo: { lots: Array<{ lotOriginKey: string }> } }
-  >,
-  submittedProductIds: ReadonlySet<string>,
-  items: LedgerStoreManagerInventoryInput["items"],
-  lotPrices: LedgerStoreManagerInventoryInput["lotPrices"],
-) {
-  const completed = [...lotPrices];
-  const priceByOrigin = new Map(
-    completed.map((price) => [price.lotOriginKey, price.plannedUnitPrice]),
-  );
-  const productPriceById = new Map(
-    items.flatMap((item) =>
-      item.plannedUnitPrice === null || item.plannedUnitPrice === undefined
-        ? []
-        : [[item.productId, item.plannedUnitPrice] as const],
-    ),
-  );
-
-  for (const [productId, snapshot] of snapshotsByProductId) {
-    if (!submittedProductIds.has(productId)) continue;
-
-    for (const lot of snapshot.fifo.lots) {
-      if (
-        priceByOrigin.has(lot.lotOriginKey) ||
-        !lot.lotOriginKey.endsWith(":adjustment")
-      ) {
-        continue;
-      }
-
-      const baseOrigin = lot.lotOriginKey.slice(0, -":adjustment".length);
-      const plannedUnitPrice =
-        priceByOrigin.get(baseOrigin) ?? productPriceById.get(productId);
-
-      if (plannedUnitPrice === undefined) continue;
-
-      completed.push({
-        productId,
-        lotOriginKey: lot.lotOriginKey,
-        plannedUnitPrice,
-      });
-      priceByOrigin.set(lot.lotOriginKey, plannedUnitPrice);
-    }
-  }
-
-  return completed;
 }
 
 function parseLedgerInventoryInput(
@@ -685,22 +596,31 @@ export async function saveLedgerInventoryItems(
           );
         }
 
+        const persistedRowByProductId = new Map(
+          rowsToPersist.map((row) => [row.productId, row]),
+        );
+        const lotPriceItems = inputItems.map((item) => ({
+          productId: item.productId,
+          productName:
+            persistedRowByProductId.get(item.productId)?.productName ??
+            item.productId,
+          plannedUnitPrice: item.plannedUnitPrice,
+        }));
         const completedLotPrices = completeGeneratedLotPrices(
           fifoPreflight.snapshotsByProductId,
-          new Set(inputItems.map((item) => item.productId)),
-          inputItems,
+          lotPriceItems,
           parsed.data.lotPrices,
         );
         const lotPriceTargetErrors = getLotPriceTargetErrors(
           fifoPreflight.snapshotsByProductId,
-          new Set(inputItems.map((item) => item.productId)),
+          lotPriceItems,
           completedLotPrices,
         );
 
         if (Object.keys(lotPriceTargetErrors).length > 0) {
           return actionError<StoreManagerInventoryStepData>(
             "VALIDATION_ERROR",
-            "입고분별 판매가를 확인해 주세요.",
+            getLotPriceValidationMessage(lotPriceItems, lotPriceTargetErrors),
             lotPriceTargetErrors,
           );
         }

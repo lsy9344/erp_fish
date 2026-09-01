@@ -44,6 +44,10 @@ import {
 } from "./sales-price-persistence";
 import { upsertLedgerLotSalesPricePlansInTx } from "./lot-sales-price";
 import {
+  getLotPriceTargetErrors,
+  getLotPriceValidationMessage,
+} from "./lot-price-save-validation";
+import {
   buildManualInventoryRows,
   getManualInventoryUnitPriceErrors,
 } from "./manual-inventory-rows";
@@ -436,34 +440,30 @@ export async function saveHqLedgerInventoryItems(
             );
           }
 
-          const lotTargetByOrigin = new Map(
-            before.items.flatMap((item) =>
-              item.fifoLots.map(
-                (lot) => [lot.lotOriginKey, item.productId] as const,
-              ),
-            ),
+          const lotPriceSnapshots = new Map(
+            before.items.map((item) => [
+              item.productId,
+              { fifo: { lots: item.fifoLots } },
+            ]),
           );
-          const seenLotOrigins = new Set<string>();
-          const lotPriceErrors: Record<string, string[]> = {};
-          parsed.data.lotPrices.forEach((price, index) => {
-            if (seenLotOrigins.has(price.lotOriginKey)) {
-              lotPriceErrors[`lotPrices.${index}.lotOriginKey`] = [
-                "같은 입고분 판매가를 두 번 저장할 수 없습니다.",
-              ];
-            } else if (
-              lotTargetByOrigin.get(price.lotOriginKey) !== price.productId
-            ) {
-              lotPriceErrors[`lotPrices.${index}.lotOriginKey`] = [
-                "판매가를 저장할 입고분을 확인해 주세요.",
-              ];
-            }
-            seenLotOrigins.add(price.lotOriginKey);
-          });
+          const lotPriceItems = parsed.data.items.map((item) => ({
+            productId: item.productId,
+            productName:
+              beforeByProductId.get(item.productId)?.productName ??
+              item.productId,
+            plannedUnitPrice: item.plannedUnitPrice,
+          }));
+          const lotPriceErrors = getLotPriceTargetErrors(
+            lotPriceSnapshots,
+            lotPriceItems,
+            parsed.data.lotPrices,
+            false,
+          );
 
           if (Object.keys(lotPriceErrors).length > 0) {
             return actionError<InventoryStepData>(
               "VALIDATION_ERROR",
-              "입고분별 판매가를 확인해 주세요.",
+              getLotPriceValidationMessage(lotPriceItems, lotPriceErrors),
               lotPriceErrors,
             );
           }

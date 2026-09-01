@@ -94,6 +94,174 @@ test("FIFO rejects an Int-overflowing consumed aggregate when the remainder fits
   );
 });
 
+test("inventory save ignores a visible adjustment lot removed by the submitted quantity", async () => {
+  const fifoPath = path.join(
+    root,
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const validationPath = path.join(
+    root,
+    "src",
+    "features",
+    "inventory",
+    "lot-price-save-validation.ts",
+  );
+  const { calculateFifoLotSnapshots } = await import(
+    pathToFileURL(fifoPath).href
+  );
+  const { completeGeneratedLotPrices, getLotPriceTargetErrors } = await import(
+    pathToFileURL(validationPath).href
+  );
+  const productId = "flower-crab-male";
+  const legacyOrigin = `legacy:ledger-0901:${productId}`;
+  const purchase = {
+    id: "purchase-1",
+    lotOriginKey: "purchase-lot-1",
+    unitPrice: 12_500,
+    quantity: 50,
+  };
+  const losses = [
+    { id: "loss-1", quantity: 5 },
+    { id: "loss-2", quantity: 10 },
+  ];
+  const visibleFifo = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: {
+      lotOriginKey: legacyOrigin,
+      unitPrice: 9_800,
+      quantity: 0,
+    },
+    purchases: [purchase],
+    losses,
+    closingQuantity: 50,
+    businessDate: new Date("2026-09-01T00:00:00.000Z"),
+  });
+  const targetFifo = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: {
+      lotOriginKey: legacyOrigin,
+      unitPrice: 9_800,
+      quantity: 0,
+    },
+    purchases: [purchase],
+    losses,
+    closingQuantity: 35,
+    businessDate: new Date("2026-09-01T00:00:00.000Z"),
+  });
+  const submittedPrices = [
+    {
+      productId,
+      lotOriginKey: purchase.lotOriginKey,
+      plannedUnitPrice: 18_000,
+    },
+    {
+      productId,
+      lotOriginKey: `${legacyOrigin}:adjustment`,
+      plannedUnitPrice: 18_000,
+    },
+  ];
+  const snapshots = new Map([[productId, { fifo: targetFifo }]]);
+  const completed = completeGeneratedLotPrices(
+    snapshots,
+    [{ productId, productName: "꽃게 / 숫", plannedUnitPrice: null }],
+    submittedPrices,
+  );
+
+  assert.deepEqual(
+    visibleFifo.lots.map((lot) => lot.lotOriginKey),
+    [purchase.lotOriginKey, `${legacyOrigin}:adjustment`],
+  );
+  assert.deepEqual(
+    targetFifo.lots.map((lot) => lot.lotOriginKey),
+    [purchase.lotOriginKey],
+  );
+  assert.deepEqual(
+    getLotPriceTargetErrors(
+      snapshots,
+      [{ productId, productName: "꽃게 / 숫", plannedUnitPrice: null }],
+      completed,
+    ),
+    {},
+  );
+  assert.deepEqual(completed, [submittedPrices[0]]);
+});
+
+test("lot price validation names the affected product and maps it to the row", async () => {
+  const validationPath = path.join(
+    root,
+    "src",
+    "features",
+    "inventory",
+    "lot-price-save-validation.ts",
+  );
+  const errorMapPath = path.join(
+    root,
+    "src",
+    "features",
+    "inventory",
+    "inventory-save-errors.ts",
+  );
+  const { getLotPriceTargetErrors, getLotPriceValidationMessage } =
+    await import(pathToFileURL(validationPath).href);
+  const { mapInventorySaveErrors } = await import(
+    pathToFileURL(errorMapPath).href
+  );
+  const item = {
+    productId: "flower-crab-male",
+    productName: "꽃게 / 숫",
+    plannedUnitPrice: null,
+  };
+  const snapshots = new Map([
+    [
+      item.productId,
+      { fifo: { lots: [{ lotOriginKey: "current-purchase-lot" }] } },
+    ],
+  ]);
+  const errors = getLotPriceTargetErrors(
+    snapshots,
+    [item],
+    [
+      {
+        productId: item.productId,
+        lotOriginKey: "outdated-purchase-lot",
+        plannedUnitPrice: 18_000,
+      },
+    ],
+  );
+  const detail =
+    "꽃게 / 숫: 화면의 입고분 목록과 저장할 목록이 다릅니다. 새로고침 후 다시 입력해 주세요.";
+  const missingDetail =
+    "꽃게 / 숫: 저장할 입고분의 판매가가 빠졌습니다. 화면의 입고분 판매가를 모두 확인해 주세요.";
+
+  assert.deepEqual(errors, {
+    "items.0.plannedUnitPrice": [detail, missingDetail],
+  });
+  assert.equal(
+    getLotPriceValidationMessage([item], errors),
+    "입고분별 판매가를 확인해 주세요. 문제 품목: 꽃게 / 숫",
+  );
+  assert.deepEqual(
+    getLotPriceTargetErrors(snapshots, [item], [], false),
+    {},
+    "HQ partial price edits must not require every lot price",
+  );
+  assert.deepEqual(
+    mapInventorySaveErrors(errors, [item.productId], [item.productId]),
+    {
+      fieldErrors: { "items.0.plannedUnitPrice": [detail, missingDetail] },
+      adjustmentErrors: {},
+      firstFocusTarget: {
+        productId: item.productId,
+        currentIndex: 0,
+        field: "plannedUnitPrice",
+      },
+    },
+  );
+});
+
 test("FIFO persistence reuses a prepared snapshot without rereading its sources", async () => {
   const fifoPath = path.join(
     root,
