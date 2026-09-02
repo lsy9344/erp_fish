@@ -454,7 +454,9 @@ test("HQ_STAFF는 마감 장부 상세에서 원본 입력을 수정할 수 없�
     await expect(page.getByText("마감 상태 유지 · 마스터 수정")).toHaveCount(0);
     await expect(page.getByLabel("총매출", { exact: true })).toBeDisabled();
     await page.getByRole("tab", { name: "근무" }).click();
-    await expect(page.getByLabel("근무인원", { exact: true })).toBeDisabled();
+    await expect(
+      page.getByLabel("특이사항 메모", { exact: true }),
+    ).toBeDisabled();
   } finally {
     await prisma.dailyLedger.deleteMany({
       where: { storeId: closedStoreId },

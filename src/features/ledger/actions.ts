@@ -397,7 +397,6 @@ function toStoreLedgerClientValues(
     case "work": {
       const work = input as LedgerWorkInfoInput;
       return {
-        근무인원: work.workerCount,
         특이사항: work.workMemo,
       };
     }
@@ -1483,7 +1482,6 @@ export async function saveLedgerWorkInfo(
         beforeLedger.id,
         parsed.data.version,
         {
-          workerCount: parsed.data.workerCount,
           workMemo: parsed.data.workMemo,
           updatedById: actor.user.id,
         },
@@ -1578,11 +1576,13 @@ export async function saveLedgerLaborInfo(
 
       await assertInventoryPlanCompleteInTx(tx, beforeLedger);
 
+      // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 직원 연결을 마친 급여 행 수로 정한다.
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
         parsed.data.version,
         {
+          workerCount: parsed.data.labor.length || null,
           updatedById: actor.user.id,
         },
       );

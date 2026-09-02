@@ -60,7 +60,7 @@ export type HistoricalEmployeeRoleHistoryItem = {
   id: string;
   businessDate: string;
   storeName: string;
-  role: "팀장" | "팀원";
+  role: "매니저" | "팀원";
   slotNumber: number;
 };
 
@@ -289,7 +289,7 @@ export async function getHistoricalEmployeeDetail(
       id: role.id,
       businessDate: role.businessDate.toISOString().slice(0, 10),
       storeName: role.dailyFact.sourceStoreName,
-      role: role.role === "LEAD" ? "팀장" : "팀원",
+      role: role.role === "LEAD" ? "매니저" : "팀원",
       slotNumber: role.slotNumber,
     })),
   };

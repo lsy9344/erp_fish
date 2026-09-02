@@ -12,7 +12,7 @@ import {
   resolveEmployeeDailyWagesInTx,
   resolveValidEmployeeIdsInTx,
 } from "~/features/labor/employees-queries";
-import { getHqLaborSnapshotAmount } from "~/features/labor/labor-amount-snapshot";
+import { getStoreManagerLaborSnapshotAmount } from "~/features/labor/labor-amount-snapshot";
 import {
   actionError,
   actionOk,
@@ -276,7 +276,6 @@ function toHqLedgerServerConflictValues(
       );
     case "work":
       return {
-        근무인원: data.workerCount,
         특이사항: data.workMemo,
       };
     case "labor":
@@ -323,7 +322,6 @@ function toHqLedgerClientConflictValues(
     case "work": {
       const work = input as LedgerWorkInfoInput;
       return {
-        근무인원: work.workerCount,
         특이사항: work.workMemo,
       };
     }
@@ -331,7 +329,7 @@ function toHqLedgerClientConflictValues(
       return Object.fromEntries(
         (input as LedgerLaborInput).labor.map((item, index) => [
           `급여 ${index + 1}`,
-          `${item.workerName} ${item.amount}원`,
+          item.workerName,
         ]),
       );
   }
@@ -1271,7 +1269,6 @@ export async function saveHqLedgerWorkInfo(
           parsed.data.version,
           actor,
           {
-            workerCount: parsed.data.workerCount,
             workMemo: parsed.data.workMemo,
             updatedById: actor.user.id,
           },
@@ -1293,10 +1290,10 @@ export async function saveHqLedgerWorkInfo(
 
         await supersedeCorrectionRecordsInTx(tx, {
           dailyLedgerId: beforeLedger.id,
-          // 근무 저장은 근무인원과 특이사항만 덮어쓴다. 해당 필드 정정만 대체한다.
+          // 근무 저장은 특이사항만 덮어쓴다(근무인원은 급여 행에서 자동 기록된다).
           targetTypes: ["LEDGER_FIELD"],
           targetIds: [beforeLedger.id],
-          fieldKeys: ["workerCount", "workMemo"],
+          fieldKeys: ["workMemo"],
         });
 
         const afterAuditPayload = await toEffectiveLedgerAuditPayloadInTx(
@@ -1380,6 +1377,12 @@ export async function saveHqLedgerLaborInfo(
           return await hqConflictError(tx, "labor", parsed.data);
         }
 
+        // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 직원 연결을 마친 급여 행 수로 정한다.
+        await tx.dailyLedger.update({
+          where: { id: beforeLedger.id },
+          data: { workerCount: parsed.data.labor.length || null },
+        });
+
         await tx.ledgerLaborItem.deleteMany({
           where: { dailyLedgerId: beforeLedger.id },
         });
@@ -1409,21 +1412,20 @@ export async function saveHqLedgerLaborInfo(
                   ? item.employeeId
                   : null,
               workerName: item.workerName,
-              // HQ가 새 연결행을 0원으로 보낼 때만 직원 기본 일급을 스냅샷한다.
-              // 0이 아닌 명시 금액은 그대로 유지한다.
+              // 급여 금액 입력 칸이 없으므로 기존 금액을 이월하고, 새 연결행은
+              // 직원 카드의 하루 인건비를 저장 시점 금액으로 스냅샷한다.
               amount: (() => {
                 const employeeId =
                   item.employeeId && validEmployeeIds.has(item.employeeId)
                     ? item.employeeId
                     : null;
-                const existingAmount = takeExistingLaborAmount(
-                  existingLaborAmounts,
-                  employeeId,
-                  item.workerName,
-                );
-                return getHqLaborSnapshotAmount({
-                  hasExistingRow: existingAmount !== undefined,
-                  enteredAmount: item.amount,
+
+                return getStoreManagerLaborSnapshotAmount({
+                  carriedAmount: takeExistingLaborAmount(
+                    existingLaborAmounts,
+                    employeeId,
+                    item.workerName,
+                  ),
                   employeeId,
                   dailyWage: employeeId ? dailyWages.get(employeeId) : null,
                 });

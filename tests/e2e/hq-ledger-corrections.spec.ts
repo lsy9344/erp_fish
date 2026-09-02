@@ -204,7 +204,7 @@ test("본사는 본사 마감 장부에 정정 기록을 추가하고 원본 값
   // 가능하고 정정 기록 경로는 그대로 함께 제공된다.
   await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
+  await expect(page.getByLabel("특이사항 메모", { exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "매출/결제" }).click();
 
   await replaceControlValue(correctionPanel.getByLabel("정정값"), "45000");

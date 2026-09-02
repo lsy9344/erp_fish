@@ -304,7 +304,7 @@ test("ledger review summary helper does not calculate sales difference without a
   assert.deepEqual(summary.salesDifference.oqIds, ["OQ-14"]);
 });
 
-test("ledger review summary helper calculates sales difference with loss and inventory adjustment amounts", async () => {
+test("ledger review summary helper excludes loss from sales difference and subtracts loss quantity from fallback cogs", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -324,6 +324,7 @@ test("ledger review summary helper calculates sales difference with loss and inv
     expenseTotal: 0,
     inventoryItems: [
       {
+        productId: "product-1",
         previousQuantity: 20,
         purchasedQuantity: 0,
         currentQuantity: 10,
@@ -339,13 +340,16 @@ test("ledger review summary helper calculates sales difference with loss and inv
     ],
     lossItems: [
       {
+        productId: "product-1",
+        quantity: 2,
         amount: 5_000,
       },
     ],
   });
 
-  assert.deepEqual(summary.costOfGoodsSold, ok(50_000));
-  assert.deepEqual(summary.salesDifference, ok(65_000));
+  // 손실 2개(10,000원)는 매출원가에서 빠지고, 매출차액에서 다시 빼지 않는다.
+  assert.deepEqual(summary.costOfGoodsSold, ok(40_000));
+  assert.deepEqual(summary.salesDifference, ok(70_000));
 });
 
 test("ledger review summary helper does not expose divide by zero or hidden inventory calculations", async () => {

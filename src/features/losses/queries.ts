@@ -128,6 +128,16 @@ async function getLossStepDataForLedgerInTx(
     quantity: decimalToNumber(item.quantity),
   }));
   const summary = summarizeLossItems(mappedLossItems);
+  // 2026-09-02 요청: 손실 품목은 그 지점에 재고가 있는 품목에서만 고른다.
+  // 재고에 없는 품목은 당일 판매한 가격도 없어 손실 단가가 0으로 잡힌다.
+  // (본사 편집 화면도 같은 목록을 쓴다. 이미 저장된 행은 폼이 따로 살려 둔다.)
+  const availableProductIds = getAvailableLossProductIds(
+    await getLossInventoryAvailabilityLinesInTx(tx, {
+      id: ledger.id,
+      storeId: ledger.storeId,
+      closingDate: ledger.closingDate.toISOString(),
+    }),
+  );
 
   return {
     id: ledger.id,
@@ -142,7 +152,9 @@ async function getLossStepDataForLedgerInTx(
       inventoryComplete: inventoryGate.complete,
       lossItemCount: mappedLossItems.length,
     }),
-    productOptions,
+    productOptions: productOptions.filter((option) =>
+      availableProductIds.has(option.id),
+    ),
     lossTypeOptions: lossTypeOptionsWithAlias,
     lossItems: mappedLossItems,
     summary,
@@ -184,21 +196,11 @@ export async function getLossStepData(
   closingDate: string | Date,
   actorId: string,
 ): Promise<StoreManagerLossStepData> {
-  const { data, availableProductIds } = await db.$transaction(async (tx) => {
-    const data = await getLossStepDataInTx(tx, storeId, closingDate, actorId);
-    const availabilityLines = await getLossInventoryAvailabilityLinesInTx(tx, {
-      id: data.id,
-      storeId: data.storeId,
-      closingDate: data.closingDate,
-    });
+  const data = await db.$transaction((tx) =>
+    getLossStepDataInTx(tx, storeId, closingDate, actorId),
+  );
 
-    return {
-      data,
-      availableProductIds: getAvailableLossProductIds(availabilityLines),
-    };
-  });
-
-  return toStoreManagerLossStepData(data, availableProductIds);
+  return toStoreManagerLossStepData(data);
 }
 
 export async function getLossStepDataByLedgerId(

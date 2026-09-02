@@ -628,6 +628,7 @@ export async function getLedgerReviewStepData(
       workerCount: ledger.workerCount,
       expenseTotal,
       inventoryItems: savedInventoryItems.map((item) => ({
+        productId: item.productId,
         previousQuantity: item.previousQuantity,
         purchasedQuantity: item.purchasedQuantity,
         currentQuantity: item.currentQuantity,

@@ -668,7 +668,7 @@ test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하
     await expect(dialog).toContainText("한 사람으로 확정한 정보가 아닙니다");
     await expect(dialog).toContainText("2020-01-01");
     await expect(dialog).toContainText("강남점");
-    await expect(dialog).toContainText("팀장");
+    await expect(dialog).toContainText("매니저");
     await page.keyboard.press("Escape");
 
     await page.goto(

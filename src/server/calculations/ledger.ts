@@ -174,7 +174,8 @@ export type LedgerReviewSummaryInput = {
   expenseTotal: number;
   inventoryItems: LedgerReviewInventoryInput[];
   inventoryAdjustments?: LedgerReviewInventoryAdjustmentInput[];
-  lossItems?: Pick<LedgerReviewLossInput, "amount">[];
+  lossItems?: (Pick<LedgerReviewLossInput, "amount"> &
+    Partial<LedgerReviewLossInput>)[];
   // 판매한 가격 기반 비교 입력. 미제공 시 비교 지표는 "기준 확인 필요"로 노출한다.
   plannedSalesItems?: LedgerReviewPlannedSalesInput[];
 };
@@ -506,7 +507,13 @@ export function hasCompleteFifoRemainingBasis(
   return canUseFifoRemainingAmounts(items);
 }
 
-function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
+// FIFO lot 근거가 있으면 lot의 판매분 금액만 쓰므로 손실은 이미 빠져 있다.
+// lot 근거가 없어 수량 흐름으로 되돌아갈 때도 손실 수량을 빼야 손실 원가가
+// 매출원가(=마진율)에 섞이지 않는다.
+function calculateCostOfGoodsSold(
+  items: LedgerReviewInventoryInput[],
+  lossQuantityByProductId: ReadonlyMap<string, number>,
+) {
   if (items.length === 0) {
     return null;
   }
@@ -526,8 +533,15 @@ function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
       return null;
     }
 
+    const lossQuantity = item.productId
+      ? (lossQuantityByProductId.get(item.productId) ?? 0)
+      : 0;
+
     total += Math.round(
-      (item.previousQuantity + item.purchasedQuantity - currentQuantity) *
+      (item.previousQuantity +
+        item.purchasedQuantity -
+        lossQuantity -
+        currentQuantity) *
         item.unitPrice,
     );
   }
@@ -562,15 +576,6 @@ function calculateInventoryTotal(items: LedgerReviewInventoryInput[]) {
   return total;
 }
 
-function calculateLossTotal(
-  items: Pick<LedgerReviewLossInput, "amount">[] = [],
-) {
-  return items.reduce(
-    (sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0),
-    0,
-  );
-}
-
 function calculateInventoryAdjustmentTotal(
   items: LedgerReviewInventoryAdjustmentInput[] = [],
 ) {
@@ -582,21 +587,19 @@ function calculateInventoryAdjustmentTotal(
   );
 }
 
+// 2026-09-02 요청: 매출원가는 이미 손실분을 빼고 계산된다. 여기서 손실금액을 또 빼면
+// 매출차액이 손실만큼 부풀려져 같은 손실이 두 번 반영된다(손실 금액 카드와 이중).
 function calculateSalesDifference({
   totalSalesAmount,
   costOfGoodsSold,
   inventoryAdjustments,
-  lossItems,
 }: {
   totalSalesAmount: number;
   costOfGoodsSold: number;
   inventoryAdjustments: LedgerReviewInventoryAdjustmentInput[];
-  lossItems: Pick<LedgerReviewLossInput, "amount">[];
 }) {
   const productSalesAmount =
-    costOfGoodsSold +
-    calculateInventoryAdjustmentTotal(inventoryAdjustments) -
-    calculateLossTotal(lossItems);
+    costOfGoodsSold + calculateInventoryAdjustmentTotal(inventoryAdjustments);
 
   return totalSalesAmount - productSalesAmount;
 }
@@ -661,8 +664,22 @@ export function calculateLedgerReviewSummary({
   lossItems,
   plannedSalesItems,
 }: LedgerReviewSummaryInput): LedgerReviewSummary {
+  const lossQuantityByProductId = new Map<string, number>();
+
+  for (const lossItem of lossItems ?? []) {
+    if (!lossItem.productId || !Number.isFinite(lossItem.quantity ?? NaN)) {
+      continue;
+    }
+
+    lossQuantityByProductId.set(
+      lossItem.productId,
+      (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
+        lossItem.quantity!,
+    );
+  }
+
   const costOfGoodsSoldResult = safelyCalculateNumber("costOfGoodsSold", () =>
-    calculateCostOfGoodsSold(inventoryItems),
+    calculateCostOfGoodsSold(inventoryItems, lossQuantityByProductId),
   );
   const inventoryAmountResult = safelyCalculateNumber("inventoryAmount", () =>
     calculateInventoryTotal(inventoryItems),
@@ -724,7 +741,6 @@ export function calculateLedgerReviewSummary({
               totalSalesAmount: operatingSalesAmount,
               costOfGoodsSold,
               inventoryAdjustments,
-              lossItems,
             }),
           );
   const salesDifference =

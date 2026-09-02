@@ -5,6 +5,39 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
 const FIXTURE_PRODUCT_PREFIX = "장부 비용근무 재고 gate";
+// 2026-09-02 요청: 급여 행은 인사관리에 등록된 직원 카드에서만 고른다.
+const EMPLOYEE_MANAGER_ID = "employee-story-2-8-manager";
+const EMPLOYEE_MEMBER_ID = "employee-story-2-8-member";
+const EMPLOYEE_MANAGER_NAME = "스토리2-8 홍길동";
+const EMPLOYEE_MEMBER_NAME = "스토리2-8 김철수";
+
+async function seedWorkStepEmployees() {
+  for (const employee of [
+    {
+      id: EMPLOYEE_MANAGER_ID,
+      name: EMPLOYEE_MANAGER_NAME,
+      position: "매니저",
+    },
+    { id: EMPLOYEE_MEMBER_ID, name: EMPLOYEE_MEMBER_NAME, position: "팀원" },
+  ]) {
+    await prisma.employee.upsert({
+      where: { id: employee.id },
+      update: { isActive: true, position: employee.position, dailyWage: null },
+      create: {
+        id: employee.id,
+        name: employee.name,
+        hireDate: new Date("2026-01-02T00:00:00.000Z"),
+        isActive: true,
+        position: employee.position,
+      },
+    });
+  }
+}
+
+async function selectWorkStepEmployee(page: Page, index: number, name: string) {
+  await page.getByLabel("직원 (매니저 / 팀원)").nth(index).click();
+  await page.getByRole("option", { name: new RegExp(name) }).click();
+}
 
 // WO-A(2026-06-22): 지점장 저장/제출은 KST 오늘 날짜만 허용하므로 동적 오늘 날짜를 사용한다.
 function getTodayKstMidnight(inputDate = new Date()) {
@@ -34,6 +67,9 @@ function costSaveButton(page: Page) {
 test.afterAll(async () => {
   await cleanupStory2TwoLedger();
   await cleanupStory2TwoCodes();
+  await prisma.employee.deleteMany({
+    where: { id: { in: [EMPLOYEE_MANAGER_ID, EMPLOYEE_MEMBER_ID] } },
+  });
   await prisma.$disconnect();
 });
 
@@ -247,6 +283,7 @@ test.beforeEach(async () => {
   await cleanupStory2TwoLedger();
   await cleanupStory2TwoCodes();
   await seedCompleteInventoryPlanGate();
+  await seedWorkStepEmployees();
 });
 
 test("지점장은 지출 항목을 여러 건 저장하고 재방문 시 유지한다", async ({
@@ -530,7 +567,7 @@ test("지출 저장 실패 시 한국어 오류와 재시도 동작이 표시된
   ).toBeVisible();
 });
 
-test("지점장은 근무인원과 특이사항을 저장하고 민감 회계 지표를 보지 않는다", async ({
+test("지점장은 특이사항을 저장하고 민감 회계 지표를 보지 않는다", async ({
   page,
 }) => {
   await login(page);
@@ -569,7 +606,6 @@ test("지점장은 근무인원과 특이사항을 저장하고 민감 회계 �
   await expect(summary).toContainText("3,000원");
   await expect(page.getByText("영업이익")).toHaveCount(0);
   await expect(page.getByText("인당생산성")).toHaveCount(0);
-  await page.getByRole("textbox", { name: "근무인원" }).fill("2");
   await page
     .getByRole("textbox", { name: "특이사항 메모" })
     .fill("오전 피크타임 확인");
@@ -592,15 +628,16 @@ test("지점장은 근무자 명단을 저장하되 급여 금액 입력란과 �
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
 
-  // 지점장 화면에는 급여 금액 입력란이 없다.
+  // 지점장 화면에는 급여 금액 입력란이 없다(직원명 자유 입력 칸도 없다).
   await page.getByRole("button", { name: "직원 추가" }).click();
   await expect(page.getByLabel("급여 금액")).toHaveCount(0);
+  await expect(page.getByLabel("직원명")).toHaveCount(0);
 
-  await page.getByLabel("직원명").nth(0).fill("홍길동");
+  await selectWorkStepEmployee(page, 0, EMPLOYEE_MANAGER_NAME);
   await page.getByLabel("지각 (선택)").nth(0).fill("10분 지각");
 
   await page.getByRole("button", { name: "직원 추가" }).click();
-  await page.getByLabel("직원명").nth(1).fill("김철수");
+  await selectWorkStepEmployee(page, 1, EMPLOYEE_MEMBER_NAME);
   await page.getByLabel("조퇴 (선택)").nth(1).fill("조기 퇴근");
 
   await page.getByRole("button", { name: "근무자 저장" }).click();
@@ -610,14 +647,11 @@ test("지점장은 근무자 명단을 저장하되 급여 금액 입력란과 �
 
   await page.reload();
 
-  await expect(page.getByLabel("직원명")).toHaveCount(2);
-  await expect(page.getByLabel("직원명").nth(0)).toHaveValue("홍길동");
-  await expect(page.getByLabel("직원명").nth(1)).toHaveValue("김철수");
+  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
   const laborSection = page.locator("section").filter({ hasText: "근무자" });
   await expect(laborSection).toContainText("근무자");
   await expect(laborSection).not.toContainText("급여 / 인건비");
   await expect(laborSection).not.toContainText("급여 합계");
-  await expect(laborSection).not.toContainText("급여 행 기준 참고 인원");
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORY_STORE_ID },
@@ -625,11 +659,13 @@ test("지점장은 근무자 명단을 저장하되 급여 금액 입력란과 �
     include: { ledgerLaborItems: { orderBy: { createdAt: "asc" } } },
   });
   expect(ledger.ledgerLaborItems).toHaveLength(2);
-  expect(ledger.ledgerLaborItems[0]?.workerName).toBe("홍길동");
-  // 지점장이 금액을 입력하지 않았으므로 신규 행은 0원으로 저장된다(본사가 이후 입력).
+  // 근무인원은 급여 행 수로 자동 기록된다.
+  expect(ledger.workerCount).toBe(2);
+  expect(ledger.ledgerLaborItems[0]?.workerName).toBe(EMPLOYEE_MANAGER_NAME);
+  // 직원 카드에 하루 인건비가 없으면 0원으로 기록된다(본사가 이후 관리).
   expect(ledger.ledgerLaborItems[0]?.amount).toBe(0);
   expect(ledger.ledgerLaborItems[0]?.lateMemo).toBe("10분 지각");
-  expect(ledger.ledgerLaborItems[1]?.workerName).toBe("김철수");
+  expect(ledger.ledgerLaborItems[1]?.workerName).toBe(EMPLOYEE_MEMBER_NAME);
   expect(ledger.ledgerLaborItems[1]?.earlyLeaveMemo).toBe("조기 퇴근");
 });
 
@@ -645,35 +681,27 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
     page.getByRole("link", { name: /5단계: 근무인원\/이름/ }),
   ).toHaveAttribute("aria-current", "step");
   await expect(page.getByText("근무 요약")).toBeVisible();
+  // 2026-09-02 요청: 근무인원 입력 칸 대신 직원 연결 결과를 보여준다.
   await expect(
-    page.getByText(
-      "근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다.",
-    ),
+    page.getByText("근무인원은 아래 직원 연결을 저장하면 자동으로 정해집니다."),
   ).toBeVisible();
-
-  // 근무인원과 근무자 명단은 별도 저장 경계를 유지한다.
-  await page.getByRole("textbox", { name: "근무인원" }).fill("3");
+  await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveCount(0);
 
   // WO-10(2026-06-28): 지점장은 급여 금액 없이 근무자만 추가한다.
   await page.getByRole("button", { name: "직원 추가" }).click();
-  await page.getByLabel("직원명").nth(0).fill("홍길동");
+  await selectWorkStepEmployee(page, 0, EMPLOYEE_MANAGER_NAME);
 
   await page.getByRole("button", { name: "직원 추가" }).click();
-  await page.getByLabel("직원명").nth(1).fill("김철수");
+  await selectWorkStepEmployee(page, 1, EMPLOYEE_MEMBER_NAME);
 
-  await expect(page.getByLabel("직원명")).toHaveCount(2);
+  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
   await expect(page.getByLabel("지각 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("조퇴 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("특이사항 (선택)")).toHaveCount(2);
   await expect(page.getByText("급여 / 인건비")).toHaveCount(0);
-  await expect(page.getByText("급여 행 기준 참고 인원")).toHaveCount(0);
-  await expect(
-    page.getByText("근무인원과 급여 행 기준 참고 인원이 다릅니다.", {
-      exact: false,
-    }),
-  ).toHaveCount(0);
+  await expect(page.getByText("저장하면 반영될 총 근무인원")).toBeVisible();
 
-  // 근무정보 저장과 근무자 저장이 모두 성공한다.
+  // 특이사항 저장과 근무자 저장이 모두 성공한다.
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
@@ -686,12 +714,8 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
 
   // 재방문 후 근무인원과 근무자 행이 유지된다.
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveValue(
-    "3",
-  );
-  await expect(page.getByLabel("직원명")).toHaveCount(2);
-  await expect(page.getByLabel("직원명").nth(0)).toHaveValue("홍길동");
-  await expect(page.getByLabel("직원명").nth(1)).toHaveValue("김철수");
+  await expect(page.getByText("총 근무인원", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
   await expect(page.getByText("급여 / 인건비")).toHaveCount(0);
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
@@ -699,26 +723,22 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
     orderBy: { updatedAt: "desc" },
     include: { ledgerLaborItems: true },
   });
-  expect(ledger.workerCount).toBe(3);
+  expect(ledger.workerCount).toBe(2);
   expect(ledger.ledgerLaborItems).toHaveLength(2);
 });
 
-test("근무자 이름이 비어 있으면 서버 검증 오류를 보여준다", async ({
-  page,
-}) => {
+test("직원을 고르지 않으면 서버 검증 오류를 보여준다", async ({ page }) => {
   await login(page);
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  // WO-10(2026-06-28): 직원명을 비운 채 저장하면 서버 검증 오류가 난다(급여 금액 입력란 없음).
+  // 직원을 고르지 않은 채 저장하면 서버 검증 오류가 난다.
   await page.getByRole("button", { name: "직원 추가" }).click();
   await page.getByRole("button", { name: "근무자 저장" }).click();
 
   await expect(
     page.getByRole("alert").filter({ hasText: "입력값을 확인해 주세요." }),
   ).toBeVisible();
-  await expect(
-    page.getByText("직원명을 1~50자로 입력해 주세요."),
-  ).toBeVisible();
+  await expect(page.getByText("직원을 선택해 주세요.")).toBeVisible();
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORY_STORE_ID },
@@ -728,13 +748,12 @@ test("근무자 이름이 비어 있으면 서버 검증 오류를 보여준다"
   expect(ledger.ledgerLaborItems).toHaveLength(0);
 });
 
-test("근무인원 0이어도 인당생산성 라벨은 지점장에게 노출되지 않는다", async ({
+test("근무자를 등록하지 않아도 인당생산성 라벨은 지점장에게 노출되지 않는다", async ({
   page,
 }) => {
   await login(page);
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  await page.getByRole("textbox", { name: "근무인원" }).fill("0");
   await page
     .getByRole("textbox", { name: "특이사항 메모" })
     .fill("안내 테스트");
@@ -745,55 +764,6 @@ test("근무인원 0이어도 인당생산성 라벨은 지점장에게 노출�
     page.getByRole("status").filter({ hasText: "저장됐습니다." }),
   ).toBeVisible();
   await expect(page.getByText("인당생산성")).toHaveCount(0);
-});
-
-test("근무인원은 콤마나 소수 입력을 조용히 보정하지 않고 서버 검증 오류를 보여준다", async ({
-  page,
-}) => {
-  await login(page);
-
-  await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  const workerInput = page.getByRole("textbox", { name: "근무인원" });
-
-  await workerInput.fill("1,000");
-  await page
-    .getByRole("textbox", { name: "특이사항 메모" })
-    .fill("검증 오류 확인");
-  // 근무 단계에는 "저장"과 "근무자 저장"이 함께 있으므로 근무정보 저장은 exact로 한정한다.
-  await page.getByRole("button", { name: "저장", exact: true }).click();
-
-  await expect(workerInput).toHaveValue("1,000");
-  await expect(
-    page.getByRole("alert").filter({ hasText: "입력값을 확인해 주세요." }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("근무인원은 0 이상의 정수여야 합니다."),
-  ).toBeVisible();
-  await expect(workerInput).toBeFocused();
-  await expect(workerInput).toHaveAttribute("aria-invalid", "true");
-  await expect(workerInput).toHaveAttribute(
-    "aria-describedby",
-    "worker-count-error",
-  );
-  await expect(page.locator("#worker-count-error")).toContainText(
-    "근무인원은 0 이상의 정수여야 합니다.",
-  );
-
-  const ledgerAfterComma = await prisma.dailyLedger.findFirstOrThrow({
-    where: { storeId: STORY_STORE_ID },
-    orderBy: { updatedAt: "desc" },
-    select: { workerCount: true, workMemo: true },
-  });
-  expect(ledgerAfterComma.workerCount).toBeNull();
-  expect(ledgerAfterComma.workMemo).toBeNull();
-
-  await workerInput.fill("3.2");
-  await page.getByRole("button", { name: "저장", exact: true }).click();
-
-  await expect(workerInput).toHaveValue("3.2");
-  await expect(
-    page.getByText("근무인원은 0 이상의 정수여야 합니다."),
-  ).toBeVisible();
 });
 
 test("지출 단계 검증 실패 시 첫 오류 필드로 포커스가 이동한다", async ({
@@ -866,12 +836,11 @@ test("390px에서 지출/근무 단계는 숫자 키패드 및 터치 타깃이 
   );
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  const workerInput = page.getByRole("textbox", { name: "근무인원" });
+  const workMemoInput = page.getByRole("textbox", { name: "특이사항 메모" });
   const saveWorkButton = page.getByRole("button", { name: "저장" }).first();
-  await expect(workerInput).toHaveAttribute("inputmode", "numeric");
 
-  const workerBox = await workerInput.boundingBox();
+  const workMemoBox = await workMemoInput.boundingBox();
   const saveWorkBox = await saveWorkButton.boundingBox();
-  expect(workerBox?.height).toBeGreaterThanOrEqual(44);
+  expect(workMemoBox?.height).toBeGreaterThanOrEqual(44);
   expect(saveWorkBox?.height).toBeGreaterThanOrEqual(44);
 });

@@ -516,7 +516,7 @@ test("step clients keep field errors connected to accessible descriptions and fo
     assert.match(source, /FieldError|role="alert"/);
     assert.match(
       source,
-      /focusFirstError|workerCountError/,
+      /focusFirstError|workMemoError/,
       `${fileName} should focus the first visible server field error`,
     );
   }

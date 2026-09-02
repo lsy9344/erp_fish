@@ -544,13 +544,6 @@ export async function saveLedgerLosses(
         parsed.data.closingDate,
         actor.user.id,
       );
-      const afterAvailabilityLines =
-        await getLossInventoryAvailabilityLinesInTx(tx, {
-          id: after.id,
-          storeId: after.storeId,
-          closingDate: after.closingDate,
-        });
-
       await writeAuditLog(tx, {
         action: "ledger.losses.saved",
         targetType: "DailyLedger",
@@ -560,12 +553,7 @@ export async function saveLedgerLosses(
         after,
       });
 
-      return actionOk(
-        toStoreManagerLossStepData(
-          after,
-          getAvailableLossProductIds(afterAvailabilityLines),
-        ),
-      );
+      return actionOk(toStoreManagerLossStepData(after));
     });
 
     if (!result.ok) {

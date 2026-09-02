@@ -47,8 +47,9 @@ test("employee daily wage is snapshotted only for a new linked labor row", async
   );
   assert.ok(existsSync(snapshotPath), "labor snapshot helper should exist");
 
-  const { getHqLaborSnapshotAmount, getStoreManagerLaborSnapshotAmount } =
-    await import(pathToFileURL(snapshotPath).href);
+  const { getStoreManagerLaborSnapshotAmount } = await import(
+    pathToFileURL(snapshotPath).href
+  );
 
   assert.equal(
     getStoreManagerLaborSnapshotAmount({
@@ -66,23 +67,22 @@ test("employee daily wage is snapshotted only for a new linked labor row", async
     }),
     0,
   );
+  // 급여 금액 입력 칸을 없앤 뒤 본사 저장도 같은 규칙을 쓴다.
   assert.equal(
-    getHqLaborSnapshotAmount({
-      hasExistingRow: false,
-      enteredAmount: 0,
-      employeeId: "employee-b",
-      dailyWage: 150_000,
-    }),
-    150_000,
-  );
-  assert.equal(
-    getHqLaborSnapshotAmount({
-      hasExistingRow: true,
-      enteredAmount: 130_000,
+    getStoreManagerLaborSnapshotAmount({
+      carriedAmount: 130_000,
       employeeId: "employee-b",
       dailyWage: 150_000,
     }),
     130_000,
+  );
+  assert.equal(
+    getStoreManagerLaborSnapshotAmount({
+      carriedAmount: undefined,
+      employeeId: null,
+      dailyWage: 150_000,
+    }),
+    0,
   );
 });
 
@@ -132,5 +132,6 @@ test("ledger employee choices display a disambiguating label", () => {
   assert.match(workStepSource, /isActive: boolean/);
   assert.match(workStepSource, /\{option\.label\}/);
   assert.match(workStepSource, /disabled=\{!option\.isActive\}/);
-  assert.match(workStepSource, /기본 근무매장/);
+  // 2026-09-02 요청: 직원명/급여 금액은 직원 카드에서만 가져온다.
+  assert.match(workStepSource, /인사관리에 등록된 직원 카드에서/);
 });

@@ -133,7 +133,6 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
     ledgerId: "ledger-1",
     closingDate: "2026-06-11",
     version: 1,
-    workerCount: 4,
     workMemo: "메모",
   };
 
@@ -141,46 +140,17 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
 
   const normalizedWork = ledgerWorkInfoSchema.parse({
     ...workBase,
-    workerCount: " 4 ",
     workMemo: "  오전 피크타임 확인  ",
   });
-  assert.equal(normalizedWork.workerCount, 4);
   assert.equal(normalizedWork.workMemo, "오전 피크타임 확인");
+  // 근무인원은 더 이상 근무 저장 입력이 아니다(급여 행 수로 자동 기록된다).
+  assert.equal("workerCount" in normalizedWork, false);
 
   const emptyWork = ledgerWorkInfoSchema.parse({
     ...workBase,
-    workerCount: "",
     workMemo: "   ",
   });
-  assert.equal(emptyWork.workerCount, null);
   assert.equal(emptyWork.workMemo, null);
-
-  const workNegative = ledgerWorkInfoSchema.safeParse({
-    ...workBase,
-    workerCount: -3,
-  });
-  assert.equal(workNegative.success, false);
-  assert.deepEqual(workNegative.error.flatten().fieldErrors.workerCount, [
-    "근무인원은 0 이상의 정수여야 합니다.",
-  ]);
-
-  const workDecimal = ledgerWorkInfoSchema.safeParse({
-    ...workBase,
-    workerCount: 3.2,
-  });
-  assert.equal(workDecimal.success, false);
-  assert.deepEqual(workDecimal.error.flatten().fieldErrors.workerCount, [
-    "근무인원은 0 이상의 정수여야 합니다.",
-  ]);
-
-  const workFormatted = ledgerWorkInfoSchema.safeParse({
-    ...workBase,
-    workerCount: "1,000",
-  });
-  assert.equal(workFormatted.success, false);
-  assert.deepEqual(workFormatted.error.flatten().fieldErrors.workerCount, [
-    "근무인원은 0 이상의 정수여야 합니다.",
-  ]);
 
   const workMemoOverflow = ledgerWorkInfoSchema.safeParse({
     ...workBase,
@@ -192,14 +162,16 @@ test("ledger cost and work schemas validate expense/work input edge cases", asyn
   ]);
 });
 
-test("ledger labor schema validates worker name, amount, and memo edge cases", async () => {
+test("ledger labor schema validates worker name and memo edge cases and rejects salary amounts", async () => {
   const schemaPath = assertProjectFile(
     "src",
     "features",
     "ledger",
     "schemas.ts",
   );
-  const { ledgerLaborSchema } = await import(pathToFileURL(schemaPath).href);
+  const { ledgerLaborSchema, storeManagerLedgerLaborSchema } = await import(
+    pathToFileURL(schemaPath).href
+  );
 
   const laborBase = {
     storeId: "store-gangnam",
@@ -209,7 +181,6 @@ test("ledger labor schema validates worker name, amount, and memo edge cases", a
     labor: [
       {
         workerName: "홍길동",
-        amount: "1200000",
         lateMemo: "10분 지각",
         earlyLeaveMemo: "",
         specialMemo: "   ",
@@ -223,7 +194,6 @@ test("ledger labor schema validates worker name, amount, and memo edge cases", a
       {
         employeeId: "  employee-1  ",
         workerName: "  김철수  ",
-        amount: "1000",
         lateMemo: "  지각  ",
         earlyLeaveMemo: "   ",
         specialMemo: "특이",
@@ -231,29 +201,26 @@ test("ledger labor schema validates worker name, amount, and memo edge cases", a
     ],
   });
   assert.equal(normalized.labor[0].workerName, "김철수");
-  assert.equal(normalized.labor[0].amount, 1000);
   assert.equal(normalized.labor[0].lateMemo, "지각");
   assert.equal(normalized.labor[0].earlyLeaveMemo, null);
   assert.equal(normalized.labor[0].specialMemo, "특이");
   // WO-05(2026-06-22): employeeId는 트림되며, 빈 값/누락 시 null로 정규화된다.
   assert.equal(normalized.labor[0].employeeId, "employee-1");
+  // 2026-09-02 요청: 급여 금액 입력 칸을 없앴다. 금액은 저장 입력에 없다.
+  assert.equal("amount" in normalized.labor[0], false);
+  assert.equal(
+    storeManagerLedgerLaborSchema.safeParse({
+      ...laborBase,
+      labor: [{ workerName: "홍길동", amount: 1000 }],
+    }).success,
+    false,
+  );
 
   const withoutEmployee = ledgerLaborSchema.parse({
     ...laborBase,
-    labor: [{ workerName: "홍길동", amount: "1000" }],
+    labor: [{ workerName: "홍길동" }],
   });
   assert.equal(withoutEmployee.labor[0].employeeId, null);
-  // 콤마가 포함된 금액은 조용히 보정하지 않고 거부되어야 한다.
-  const formattedAmount = ledgerLaborSchema.safeParse({
-    ...laborBase,
-    labor: [{ workerName: "홍길동", amount: "1,000" }],
-  });
-  assert.equal(formattedAmount.success, false);
-  const amountIssue = formattedAmount.error.issues.find((issue) =>
-    issue.path.includes("amount"),
-  );
-  assert.equal(amountIssue?.message, "급여 금액은 0원 이상의 정수여야 합니다.");
-  assert.deepEqual(amountIssue?.path, ["labor", 0, "amount"]);
 
   const trimmedMemos = ledgerLaborSchema.parse(laborBase);
   assert.equal(trimmedMemos.labor[0].lateMemo, "10분 지각");
@@ -262,7 +229,7 @@ test("ledger labor schema validates worker name, amount, and memo edge cases", a
 
   const emptyName = ledgerLaborSchema.safeParse({
     ...laborBase,
-    labor: [{ workerName: "  ", amount: 1000 }],
+    labor: [{ workerName: "  " }],
   });
   assert.equal(emptyName.success, false);
   assert.equal(
@@ -274,31 +241,17 @@ test("ledger labor schema validates worker name, amount, and memo edge cases", a
 
   const longName = ledgerLaborSchema.safeParse({
     ...laborBase,
-    labor: [{ workerName: "a".repeat(51), amount: 1000 }],
+    labor: [{ workerName: "a".repeat(51) }],
   });
   assert.equal(longName.success, false);
 
-  const negativeAmount = ledgerLaborSchema.safeParse({
-    ...laborBase,
-    labor: [{ workerName: "홍길동", amount: -1 }],
-  });
-  assert.equal(negativeAmount.success, false);
-
-  const decimalAmount = ledgerLaborSchema.safeParse({
-    ...laborBase,
-    labor: [{ workerName: "홍길동", amount: 12.5 }],
-  });
-  assert.equal(decimalAmount.success, false);
-
   const memoOverflow = ledgerLaborSchema.safeParse({
     ...laborBase,
-    labor: [
-      { workerName: "홍길동", amount: 1000, specialMemo: "a".repeat(501) },
-    ],
+    labor: [{ workerName: "홍길동", specialMemo: "a".repeat(501) }],
   });
   assert.equal(memoOverflow.success, false);
 
-  // 빈 급여 배열도 유효해야 한다(근무인원 입력이 최소 요건).
+  // 빈 급여 배열도 유효해야 한다(근무인원 0명으로 기록된다).
   assert.equal(
     ledgerLaborSchema.safeParse({ ...laborBase, labor: [] }).success,
     true,
@@ -393,10 +346,12 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
 
   // 두 저장 경계는 유지하되 하나의 카드 안에서 근무 정보와 근무자 행을 입력한다.
   assert.match(componentSource, /근무 요약/);
+  // 2026-09-02 요청: 근무인원 입력 칸을 없애고 직원 연결 결과로 자동 표시한다.
   assert.match(
     componentSource,
-    /showSensitiveAccountingMetrics\s*\?\s*"급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다\."\s*:\s*"근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다\."/,
+    /근무인원은 아래 직원 연결을 저장하면 자동으로 정해집니다\./,
   );
+  assert.doesNotMatch(componentSource, /id="worker-count"/);
   assert.match(
     componentSource,
     /stepLabel=\{\s*showSensitiveAccountingMetrics\s*\?\s*"5단계 근무\/인건비"\s*:\s*"5단계: 근무인원\/이름"\s*\}/,
@@ -426,41 +381,26 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
     /showSensitiveAccountingMetrics\s*\?\s*"급여 저장"\s*:\s*"근무자 저장"/,
   );
 
-  // Task 3: employeeId 우선 중복 제거 helper와 참고 인원 표시.
-  assert.match(componentSource, /function getDraftLaborHeadcount/);
-  assert.match(componentSource, /keys\.add\(`employee:\$\{employeeId\}`\)/);
-  assert.match(componentSource, /keys\.add\(`name:\$\{workerName\}`\)/);
-  assert.match(componentSource, /급여 행 기준 참고 인원/);
-  assert.match(componentSource, /\{draftLaborHeadcount\}명/);
-
-  // Task 4: 비차단 불일치 안내(파싱된 근무인원 기준).
-  assert.match(componentSource, /const showLaborHeadcountHint =/);
-  assert.match(
-    componentSource,
-    /근무인원과 급여 행 기준 참고 인원이 다릅니다\./,
-  );
-  // 안내는 오류 색상(text-destructive)을 쓰지 않는다(안내 <p>만 검사).
-  const hintBlock = componentSource.slice(
-    componentSource.indexOf("showLaborHeadcountHint ? ("),
-    componentSource.indexOf("있으면 그대로 저장할 수 있습니다."),
-  );
-  assert.ok(hintBlock.length > 0);
-  assert.doesNotMatch(hintBlock, /text-destructive/);
+  // 총 근무인원은 급여 행 수로 정해지고, 직원명/급여 금액 입력 칸은 없다.
+  assert.match(componentSource, /const draftWorkerCount = laborItems\.length;/);
+  assert.match(componentSource, /저장하면 반영될 총 근무인원/);
+  assert.match(componentSource, /\{draftWorkerCount\}명/);
+  assert.doesNotMatch(componentSource, /id=\{`labor-name-\$\{line\.id\}`\}/);
+  assert.doesNotMatch(componentSource, /id=\{`labor-amount-\$\{line\.id\}`\}/);
+  // 직원 선택은 매니저 / 팀원 그룹으로 묶는다.
+  assert.match(componentSource, /직원 \(매니저 \/ 팀원\)/);
+  assert.match(componentSource, /function groupEmployeeOptions/);
+  assert.match(componentSource, /employeeOptionGroups\.map\(\(group\)/);
 
   const hqSalaryHelperBlock = componentSource.slice(
-    componentSource.lastIndexOf(
-      "{showSensitiveAccountingMetrics ? (",
-      componentSource.indexOf("입력 중 급여 합계"),
-    ),
+    componentSource.indexOf("저장하면 반영될 총 근무인원"),
     componentSource.indexOf(
       "{hqEditReasonRequired ? (",
-      componentSource.indexOf("입력 중 급여 합계"),
+      componentSource.indexOf("저장하면 반영될 총 근무인원"),
     ),
   );
-  assert.match(hqSalaryHelperBlock, /입력 중 급여 합계/);
+  assert.match(hqSalaryHelperBlock, /직원 카드 기준 급여 합계/);
   assert.match(hqSalaryHelperBlock, /마지막 서버 저장 합계/);
-  assert.match(hqSalaryHelperBlock, /급여 행 기준 참고 인원/);
-  assert.match(hqSalaryHelperBlock, /showLaborHeadcountHint/);
 
   // Task 2/3 경계: 근무정보 저장 payload에는 laborItems/payrollTotal을 넣지 않는다.
   const workSavePayload = componentSource.slice(
@@ -470,7 +410,7 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
   assert.ok(workSavePayload.length > 0);
   assert.doesNotMatch(workSavePayload, /laborItems/);
   assert.doesNotMatch(workSavePayload, /payrollTotal/);
-  assert.match(workSavePayload, /workerCount:/);
+  assert.doesNotMatch(workSavePayload, /workerCount/);
   assert.match(workSavePayload, /workMemo:/);
 
   // 급여 저장 payload에는 workerCount를 넣지 않는다.
@@ -480,6 +420,8 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
   );
   assert.ok(laborSavePayload.length > 0);
   assert.doesNotMatch(laborSavePayload, /workerCount/);
+  // 급여 금액도 더 이상 전송하지 않는다(서버가 직원 카드 기준으로 기록).
+  assert.doesNotMatch(laborSavePayload, /amount:/);
   assert.match(laborSavePayload, /labor:\s*laborItems\.map/);
 });
 
@@ -507,23 +449,6 @@ test("ledger labor migration exists and creates the LedgerLaborItem table", () =
     migration.includes('"amount" INTEGER NOT NULL'),
     "Migration should add amount column",
   );
-});
-
-test("work step client preserves invalid worker count text for server validation", () => {
-  const componentSource = readProjectFile(
-    "src",
-    "features",
-    "ledger",
-    "components",
-    "workstep-client.tsx",
-  );
-
-  assert.match(
-    componentSource,
-    /onChange=\{\(event\)\s*=>\s*setWorkerCount\(event\.currentTarget\.value\)\}/,
-  );
-  assert.doesNotMatch(componentSource, /replace\(\s*\/\[\^\\d\]\//);
-  assert.doesNotMatch(componentSource, /sanitizeAmount/);
 });
 
 test("work step client keeps form controls disabled until hydration", () => {

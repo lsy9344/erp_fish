@@ -5,7 +5,6 @@ import {
   isNonNegativeDecimalInRange,
   isNonNegativeIntegerInRange,
   parseRequiredNonNegativeDecimal,
-  parseOptionalNonNegativeInteger,
   parseRequiredNonNegativeInteger,
   toFieldErrors,
 } from "../../lib/validation.ts";
@@ -27,11 +26,9 @@ const purchaseUnitPriceError = "단가는 0원 이상의 정수여야 합니다.
 const purchaseQuantityError =
   "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.";
 const purchaseAmountError = "매입금액은 저장 가능한 범위 이하여야 합니다.";
-const workerCountError = "근무인원은 0 이상의 정수여야 합니다.";
 const laborWorkerNameError = "직원명을 1~50자로 입력해 주세요.";
-const laborAmountError = "급여 금액은 0원 이상의 정수여야 합니다.";
 const laborAmountForbiddenError =
-  "급여 금액은 본사만 입력할 수 있습니다. 지점장은 근무자만 선택해 주세요.";
+  "급여 금액은 직원 카드의 하루 인건비로 자동 기록됩니다.";
 const laborMemoError = "메모는 0~500자 사이여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
@@ -43,14 +40,6 @@ function parseRequiredKrwAmount(
   errorMessage: string,
 ) {
   return parseRequiredNonNegativeInteger(value, context, errorMessage);
-}
-
-function parseOptionalKrwAmount(
-  value: unknown,
-  context: z.RefinementCtx,
-  errorMessage: string,
-) {
-  return parseOptionalNonNegativeInteger(value, context, errorMessage);
 }
 
 function parseOptionalMemo(value: unknown, context: z.RefinementCtx) {
@@ -405,12 +394,9 @@ export const ledgerPurchaseSchema = z
 
 export type LedgerPurchasesInput = z.infer<typeof ledgerPurchaseSchema>;
 
+// 2026-09-02 요청: 근무인원은 더 이상 직접 쓰지 않는다. 급여/인건비 직원 연결을
+// 저장할 때 연결된 직원 수로 자동 기록된다(saveLedgerLaborInfo 참고).
 export const ledgerWorkInfoSchema = ledgerMutationContextSchema.extend({
-  workerCount: z
-    .unknown()
-    .transform((value, context) =>
-      parseOptionalKrwAmount(value, context, workerCountError),
-    ),
   workMemo: z
     .unknown()
     .transform((value, context) => parseOptionalMemo(value, context)),
@@ -432,6 +418,7 @@ const ledgerLaborItemSchema = z.object({
 
     return null;
   }),
+  // 직원명은 선택한 직원 카드의 이름을 그대로 보관한다(직접 입력 칸은 삭제됨).
   workerName: z.unknown().transform((value, context) => {
     if (typeof value === "string") {
       const workerName = value.trim();
@@ -448,11 +435,6 @@ const ledgerLaborItemSchema = z.object({
 
     return z.NEVER;
   }),
-  amount: z
-    .unknown()
-    .transform((value, context) =>
-      parseRequiredNonNegativeInteger(value, context, laborAmountError),
-    ),
   lateMemo: z
     .unknown()
     .transform((value, context) => parseOptionalLaborMemo(value, context)),
@@ -470,12 +452,12 @@ export const ledgerLaborSchema = ledgerMutationContextSchema.extend({
 
 export type LedgerLaborInput = z.infer<typeof ledgerLaborSchema>;
 
-// WO-10(2026-06-28): 급여액은 본사만 등록/수정한다. 지점장 근무 저장은 근무자 명단과
-// 메모만 받고, amount 입력은 무시가 아니라 거부한다(조작된 POST로 급여액이 저장되는 경로 차단).
-// 금액은 본사가 별도로 관리하고, 지점장 저장 시 기존 amount는 이월(carry-forward)한다.
-const storeManagerLaborItemSchema = ledgerLaborItemSchema
-  .omit({ amount: true })
-  .strict(laborAmountForbiddenError);
+// WO-10(2026-06-28) + 2026-09-02 요청: 급여액 입력 칸을 없앴다. 금액은 직원 카드의
+// 하루 인건비를 저장 시점에 스냅샷하거나 기존 금액을 이월해서만 정해진다.
+// 조작된 POST로 급여액이 들어오는 경로는 그대로 거부한다.
+const storeManagerLaborItemSchema = ledgerLaborItemSchema.strict(
+  laborAmountForbiddenError,
+);
 
 export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema.extend(
   {

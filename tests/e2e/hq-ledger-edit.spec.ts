@@ -11,6 +11,9 @@ const PRODUCT_NAME = "스토리4-3 광어";
 const EXPENSE_CODE_NAME = "스토리4-3 비용";
 const LOSS_CODE_NAME = "스토리4-3 손실";
 const ECOUNT_FILE_HASH = "story-4-3-hq-purchase-edit";
+const EMPLOYEE_ID = "employee-story-4-3";
+const EMPLOYEE_NAME = "스토리4-3 본사 직원";
+const EMPLOYEE_DAILY_WAGE = 150_000;
 
 test.beforeEach(async () => {
   await cleanupStoryFourOneData();
@@ -239,6 +242,23 @@ async function seedEditableStoryData() {
     },
   });
 
+  await prisma.employee.upsert({
+    where: { id: EMPLOYEE_ID },
+    update: {
+      isActive: true,
+      position: "매니저",
+      dailyWage: EMPLOYEE_DAILY_WAGE,
+    },
+    create: {
+      id: EMPLOYEE_ID,
+      name: EMPLOYEE_NAME,
+      hireDate: new Date("2026-01-02T00:00:00.000Z"),
+      isActive: true,
+      position: "매니저",
+      dailyWage: EMPLOYEE_DAILY_WAGE,
+    },
+  });
+
   return { actorId, ledger, product };
 }
 
@@ -354,6 +374,22 @@ async function seedEditableEcountPurchaseData() {
 async function seedClosedStoryData() {
   const actorId = await getHeadquartersUserId();
   const closedAt = new Date("2026-06-11T06:30:00.000Z");
+  await prisma.employee.upsert({
+    where: { id: EMPLOYEE_ID },
+    update: {
+      isActive: true,
+      position: "매니저",
+      dailyWage: EMPLOYEE_DAILY_WAGE,
+    },
+    create: {
+      id: EMPLOYEE_ID,
+      name: EMPLOYEE_NAME,
+      hireDate: new Date("2026-01-02T00:00:00.000Z"),
+      isActive: true,
+      position: "매니저",
+      dailyWage: EMPLOYEE_DAILY_WAGE,
+    },
+  });
   const store = await prisma.store.create({
     data: {
       id: CLOSED_STORE_ID,
@@ -488,6 +524,7 @@ async function cleanupStoryFourOneData() {
   await prisma.store.deleteMany({
     where: { id: { in: stores } },
   });
+  await prisma.employee.deleteMany({ where: { id: EMPLOYEE_ID } });
 }
 
 test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹션을 보완 저장한다", async ({
@@ -681,9 +718,8 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
     .toBe("14.25");
 
   await page.getByRole("tab", { name: "근무" }).click();
-  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
+  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무 요약" });
   await expect(workPanel).toBeVisible();
-  await replaceControlValue(workPanel.getByLabel("근무인원"), "5");
   await replaceControlValue(workPanel.getByLabel("특이사항 메모"), "본사 보완");
   await replaceControlValue(
     workPanel.locator("#work-hq-edit-reason"),
@@ -693,20 +729,11 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   await expect(
     workPanel.getByRole("status").filter({ hasText: "저장됐습니다." }),
   ).toBeVisible();
-  await expect
-    .poll(async () => {
-      const current = await prisma.dailyLedger.findUnique({
-        where: { id: ledger.id },
-        select: { workerCount: true },
-      });
 
-      return current?.workerCount;
-    })
-    .toBe(5);
-
+  // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 급여 행(직원 연결) 수로 정해진다.
   await workPanel.getByRole("button", { name: "직원 추가" }).click();
-  await replaceControlValue(workPanel.getByLabel("직원명"), "본사 직원");
-  await replaceKrwControlValue(workPanel.getByLabel("급여 금액"), "1500000");
+  await workPanel.getByLabel("직원 (매니저 / 팀원)").click();
+  await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await replaceControlValue(workPanel.getByLabel("특이사항 (선택)"), "야근");
   await replaceControlValue(
     workPanel.locator("#labor-hq-edit-reason"),
@@ -753,7 +780,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   expect(savedLedger.cashAmount).toBe(12000);
   expect(savedLedger.cardAmount).toBe(25000);
   expect(savedLedger.otherPaymentAmount).toBe(5000);
-  expect(savedLedger.workerCount).toBe(5);
+  expect(savedLedger.workerCount).toBe(1);
   expect(savedLedger.workMemo).toBe("본사 보완");
   expect(savedLedger.updatedById).toBe(actorId);
   expect(savedLedger.submittedById).toBeNull();
@@ -764,8 +791,8 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
     "14.25",
   );
   expect(savedLedger.ledgerLossItems[0]?.reason).toBe("본사 손실 확인");
-  expect(savedLedger.ledgerLaborItems[0]?.workerName).toBe("본사 직원");
-  expect(savedLedger.ledgerLaborItems[0]?.amount).toBe(1500000);
+  expect(savedLedger.ledgerLaborItems[0]?.workerName).toBe(EMPLOYEE_NAME);
+  expect(savedLedger.ledgerLaborItems[0]?.amount).toBe(EMPLOYEE_DAILY_WAGE);
   expect(savedLedger.ledgerLaborItems[0]?.specialMemo).toBe("야근");
   expect(auditActions.map((entry) => entry.action)).toEqual(
     expect.arrayContaining([
@@ -969,7 +996,7 @@ test("HQ_ADMIN은 마감 장부 상세에서 마감 상태 유지 안내와 함�
   await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
+  await expect(page.getByLabel("특이사항 메모", { exact: true })).toBeEnabled();
 
   // Non-goal: 재마감 절차는 없으므로 마감 다이얼로그 버튼이 다시 노출되지 않는다.
   await expect(page.getByRole("button", { name: "본사 마감" })).toHaveCount(0);
@@ -1150,10 +1177,9 @@ test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 
   await loginAsHq(page);
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "근무" }).click();
-  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무인원" });
+  const workPanel = page.getByRole("tabpanel").filter({ hasText: "근무 요약" });
 
-  // 근무인원·특이사항 수정(기존 근무 저장 경로 재사용).
-  await replaceControlValue(workPanel.getByLabel("근무인원"), "3");
+  // 특이사항 수정(기존 근무 저장 경로 재사용).
   await replaceControlValue(
     workPanel.getByLabel("특이사항 메모"),
     "마감 후 근무 보완",
@@ -1183,7 +1209,6 @@ test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 
       }),
     )
     .toMatchObject({
-      workerCount: 3,
       workMemo: "마감 후 근무 보완",
       status: "HEADQUARTERS_CLOSED",
       closedAt: beforeClosed.closedAt,
@@ -1192,8 +1217,8 @@ test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 
 
   // 급여 행 추가(기존 급여 저장 경로 재사용) 후에도 마감 상태가 유지된다.
   await workPanel.getByRole("button", { name: "직원 추가" }).click();
-  await replaceControlValue(workPanel.getByLabel("직원명"), "마감 급여 직원");
-  await replaceKrwControlValue(workPanel.getByLabel("급여 금액"), "1200000");
+  await workPanel.getByLabel("직원 (매니저 / 팀원)").click();
+  await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await replaceControlValue(
     workPanel.locator("#labor-hq-edit-reason"),
     "마감 장부 급여 수정",
@@ -1217,13 +1242,18 @@ test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 
         prisma.ledgerLaborItem.count({ where: { dailyLedgerId: ledger.id } }),
         prisma.dailyLedger.findUniqueOrThrow({
           where: { id: ledger.id },
-          select: { status: true },
+          select: { status: true, workerCount: true },
         }),
       ]);
 
-      return { count, status: current.status };
+      return {
+        count,
+        status: current.status,
+        workerCount: current.workerCount,
+      };
     })
-    .toMatchObject({ count: 1, status: "HEADQUARTERS_CLOSED" });
+    // 급여 행을 저장하면 근무인원도 그 수만큼 자동으로 맞춰진다.
+    .toMatchObject({ count: 1, status: "HEADQUARTERS_CLOSED", workerCount: 1 });
 });
 
 test("마감 장부의 오래된 화면 저장은 충돌로 거부되고 서버 최신값이 유지된다", async ({
@@ -1488,7 +1518,7 @@ test("본사는 마감 버튼으로 장부를 본사 마감하고 이후 마스�
   await expect(page.getByLabel("총매출", { exact: true })).toBeEnabled();
 
   await page.getByRole("tab", { name: "근무" }).click();
-  await expect(page.getByLabel("근무인원", { exact: true })).toBeEnabled();
+  await expect(page.getByLabel("특이사항 메모", { exact: true })).toBeEnabled();
   const correctionPanel = page.getByRole("region", { name: "정정 기록" });
   await expect(correctionPanel).toBeVisible();
   await expect(

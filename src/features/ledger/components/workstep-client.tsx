@@ -17,6 +17,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
@@ -30,7 +31,6 @@ import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-statu
 import {
   formatKrwInput,
   parseKrwInputValue,
-  toRawKrwInputValue,
 } from "~/features/ledger/components/krw-input-format";
 import { SaveConflictDialog } from "~/features/ledger/components/save-conflict-dialog";
 import { UnsavedChangeDialog } from "~/features/ledger/components/unsaved-change-dialog";
@@ -69,7 +69,32 @@ export type WorkStepEmployeeOption = {
   name: string;
   label: string;
   isActive: boolean;
+  position?: string | null;
 };
+
+// 2026-09-02 요청: 근무 단계에서도 직원을 매니저 / 팀원으로 나눠 고른다.
+// 직원 카드에 직급이 없으면 마지막 그룹으로 모은다.
+const EMPLOYEE_POSITION_GROUPS = ["매니저", "팀원"] as const;
+
+function groupEmployeeOptions(options: WorkStepEmployeeOption[]) {
+  const groups: { label: string; options: WorkStepEmployeeOption[] }[] = [
+    ...EMPLOYEE_POSITION_GROUPS.map((label) => ({
+      label,
+      options: options.filter((option) => option.position === label),
+    })),
+    {
+      label: "직급 미지정",
+      options: options.filter(
+        (option) =>
+          !EMPLOYEE_POSITION_GROUPS.includes(
+            option.position as (typeof EMPLOYEE_POSITION_GROUPS)[number],
+          ),
+      ),
+    },
+  ];
+
+  return groups.filter((group) => group.options.length > 0);
+}
 
 type WorkStepClientProps = {
   storeName: string;
@@ -159,28 +184,6 @@ function getDraftPayrollTotal(lines: LaborLine[]) {
   return lines.reduce((sum, line) => sum + parseKrwInputValue(line.amount), 0);
 }
 
-// 급여 행 기준 참고 인원: 직원이 연결된 행은 employeeId, 그 외에는 trim한 이름으로
-// 중복 제거한다. 권위 있는 값이 아니라 사용자 확인을 돕는 표시값이다.
-function getDraftLaborHeadcount(lines: LaborLine[]) {
-  const keys = new Set<string>();
-
-  for (const line of lines) {
-    const employeeId = line.employeeId.trim();
-    const workerName = line.workerName.trim();
-
-    if (employeeId.length > 0) {
-      keys.add(`employee:${employeeId}`);
-      continue;
-    }
-
-    if (workerName.length > 0) {
-      keys.add(`name:${workerName}`);
-    }
-  }
-
-  return keys.size;
-}
-
 export function WorkStepClient({
   storeName,
   initialLedger,
@@ -195,16 +198,12 @@ export function WorkStepClient({
   closedEditAllowed = false,
 }: WorkStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
-  const workerCountInputRef = useRef<HTMLInputElement>(null);
   const workMemoInputRef = useRef<HTMLTextAreaElement>(null);
   const hqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const laborHqEditReasonInputRef = useRef<HTMLInputElement>(null);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const [ledger, setLedger] = useState(initialLedger);
-  const [workerCount, setWorkerCount] = useState(
-    initialLedger.workerCount === null ? "" : String(initialLedger.workerCount),
-  );
   const [workMemo, setWorkMemo] = useState(initialLedger.workMemo ?? "");
   const [hqEditReason, setHqEditReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -224,14 +223,10 @@ export function WorkStepClient({
   const [laborFormError, setLaborFormError] = useState<string | null>(null);
 
   const saveConflict = useSaveConflictDialog();
-  const workerCountError = fieldErrors.workerCount?.[0];
   const workMemoError = fieldErrors.workMemo?.[0];
   const hqEditReasonError = fieldErrors.reason?.[0];
   const laborHqEditReasonError = laborFieldErrors.reason?.[0];
-  const isDirty =
-    workerCount !==
-      (ledger.workerCount === null ? "" : String(ledger.workerCount)) ||
-    workMemo !== (ledger.workMemo ?? "");
+  const isDirty = workMemo !== (ledger.workMemo ?? "");
   const isLaborDirty = !areLaborLinesEqual(
     laborItems,
     toLaborLines(ledger.laborItems),
@@ -257,21 +252,10 @@ export function WorkStepClient({
 
   useEffect(() => {
     const previousInitialLedger = previousInitialLedgerRef.current;
-    const previousWorkerCount =
-      previousInitialLedger.workerCount === null
-        ? ""
-        : String(previousInitialLedger.workerCount);
     const previousLaborItems = toLaborLines(previousInitialLedger.laborItems);
     const nextLaborItems = toLaborLines(initialLedger.laborItems);
 
     setLedger(initialLedger);
-    setWorkerCount((current) =>
-      current === previousWorkerCount
-        ? initialLedger.workerCount === null
-          ? ""
-          : String(initialLedger.workerCount)
-        : current,
-    );
     setWorkMemo((current) =>
       current === (previousInitialLedger.workMemo ?? "")
         ? (initialLedger.workMemo ?? "")
@@ -286,19 +270,11 @@ export function WorkStepClient({
   }, [initialLedger]);
 
   useEffect(() => {
-    if (
-      isSaving ||
-      (!workerCountError && !workMemoError && !hqEditReasonError)
-    ) {
+    if (isSaving || (!workMemoError && !hqEditReasonError)) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      if (workerCountError) {
-        workerCountInputRef.current?.focus();
-        return;
-      }
-
       if (workMemoError) {
         workMemoInputRef.current?.focus();
         return;
@@ -310,15 +286,14 @@ export function WorkStepClient({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [isSaving, workerCountError, workMemoError, hqEditReasonError]);
+  }, [isSaving, workMemoError, hqEditReasonError]);
 
   function fillLedger(next: WorkLedgerData) {
     setLedger(next);
-    setWorkerCount(next.workerCount === null ? "" : String(next.workerCount));
     setWorkMemo(next.workMemo ?? "");
     notifyLedgerUpdated(next);
     setResultMessage("저장됐습니다.");
-    toast.success("근무인원 정보를 저장했습니다.");
+    toast.success("특이사항 메모를 저장했습니다.");
   }
 
   function fillLaborLedger(next: WorkLedgerData) {
@@ -355,7 +330,6 @@ export function WorkStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
-        workerCount: workerCountInputRef.current?.value ?? workerCount,
         workMemo: workMemoInputRef.current?.value ?? workMemo,
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
@@ -401,14 +375,11 @@ export function WorkStepClient({
         closingDate: getKstLedgerDateParam(ledger.closingDate),
         version: ledger.version,
         ledgerUpdatedAt: ledger.updatedAt,
-        // WO-10(2026-06-28): 급여액은 본사만 입력한다. 지점장 저장 payload에는 amount를
-        // 넣지 않는다(서버 스키마가 amount 키를 거부하고 기존 금액을 이월한다).
+        // 2026-09-02 요청: 급여 금액 입력 칸을 없앴다. 금액은 서버가 직원 카드의
+        // 하루 인건비를 스냅샷하거나 기존 금액을 이월해서 정한다.
         labor: laborItems.map((line) => ({
           employeeId: line.employeeId || null,
           workerName: line.workerName,
-          ...(showSensitiveAccountingMetrics
-            ? { amount: toRawKrwInputValue(line.amount) }
-            : {}),
           lateMemo: line.lateMemo,
           earlyLeaveMemo: line.earlyLeaveMemo,
           specialMemo: line.specialMemo,
@@ -491,15 +462,9 @@ export function WorkStepClient({
   const canShowSensitiveAccountingMetrics =
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);
-  const draftLaborHeadcount = getDraftLaborHeadcount(laborItems);
-  const parsedWorkerCount = /^\d+$/.test(workerCount.trim())
-    ? Number(workerCount.trim())
-    : null;
-  const showLaborHeadcountHint =
-    parsedWorkerCount !== null &&
-    parsedWorkerCount > 0 &&
-    draftLaborHeadcount > 0 &&
-    parsedWorkerCount !== draftLaborHeadcount;
+  // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 직원 연결을 마친 급여 행 수로 정한다.
+  const draftWorkerCount = laborItems.length;
+  const employeeOptionGroups = groupEmployeeOptions(employeeOptions);
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "sales");
   const guard = useUnsavedStepGuard({
     isDirty: isDirty || isLaborDirty,
@@ -560,7 +525,7 @@ export function WorkStepClient({
         isSaving={isSaving}
         errorMessage={formError}
         successMessage={resultMessage}
-        unsavedFields={["근무인원", "특이사항 메모"]}
+        unsavedFields={["특이사항 메모"]}
         onRetry={handleRetry}
         retryDisabled={!isHydrated || isSaving || isOriginalEditBlocked}
         closedEditRetained={closedEditAllowed}
@@ -576,34 +541,16 @@ export function WorkStepClient({
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">근무 요약</p>
             <p className="text-muted-foreground text-sm">
-              {showSensitiveAccountingMetrics
-                ? "급여 행에 없는 근무자도 포함해 실제 근무한 인원을 입력합니다."
-                : "근무자 명단에 없는 사람도 포함해 실제 근무한 인원을 입력합니다."}
+              근무인원은 아래 직원 연결을 저장하면 자동으로 정해집니다.
             </p>
           </div>
 
-          <Field data-invalid={Boolean(workerCountError)}>
-            <FieldLabel htmlFor="worker-count">근무인원</FieldLabel>
-            <Input
-              ref={workerCountInputRef}
-              id="worker-count"
-              inputMode="numeric"
-              autoComplete="off"
-              value={workerCount}
-              disabled={!isHydrated || isSaving || isOriginalEditBlocked}
-              onChange={(event) => setWorkerCount(event.currentTarget.value)}
-              className="min-h-11 tabular-nums"
-              aria-invalid={Boolean(workerCountError)}
-              aria-describedby={
-                workerCountError ? "worker-count-error" : undefined
-              }
-            />
-            {workerCountError ? (
-              <FieldError id="worker-count-error">
-                {workerCountError}
-              </FieldError>
-            ) : null}
-          </Field>
+          <div className="bg-muted/40 flex justify-between gap-2 rounded-md p-3 text-sm">
+            <span className="text-muted-foreground">총 근무인원</span>
+            <span className="font-semibold tabular-nums">
+              {ledger.workerCount === null ? "0명" : `${ledger.workerCount}명`}
+            </span>
+          </div>
 
           <Field data-invalid={Boolean(workMemoError)}>
             <FieldLabel htmlFor="work-memo">특이사항 메모</FieldLabel>
@@ -736,8 +683,6 @@ export function WorkStepClient({
               {laborItems.map((line, index) => {
                 const nameError =
                   laborFieldErrors[`labor.${index}.workerName`]?.[0];
-                const amountError =
-                  laborFieldErrors[`labor.${index}.amount`]?.[0];
                 const lateError =
                   laborFieldErrors[`labor.${index}.lateMemo`]?.[0];
                 const earlyError =
@@ -745,7 +690,6 @@ export function WorkStepClient({
                 const specialError =
                   laborFieldErrors[`labor.${index}.specialMemo`]?.[0];
                 const nameErrorId = `labor-name-${line.id}-error`;
-                const amountErrorId = `labor-amount-${line.id}-error`;
                 const lateErrorId = `labor-late-${line.id}-error`;
                 const earlyErrorId = `labor-early-${line.id}-error`;
                 const specialErrorId = `labor-special-${line.id}-error`;
@@ -774,9 +718,9 @@ export function WorkStepClient({
                     </div>
 
                     {employeeOptions.length > 0 ? (
-                      <Field>
+                      <Field data-invalid={Boolean(nameError)}>
                         <FieldLabel htmlFor={`labor-employee-${line.id}`}>
-                          직원 연결 (선택)
+                          직원 (매니저 / 팀원)
                         </FieldLabel>
                         <Select
                           value={line.employeeId}
@@ -790,12 +734,10 @@ export function WorkStepClient({
                               (option) => option.id === employeeId,
                             );
 
+                            // 직원명 입력 칸을 없앴으므로 이름은 선택한 직원 카드에서만 온다.
                             updateLaborLine(line.id, {
                               employeeId,
-                              // 직원을 선택하면 이름을 자동 채우되, 자유 텍스트 수정은 그대로 허용한다.
-                              ...(selected
-                                ? { workerName: selected.name }
-                                : {}),
+                              workerName: selected?.name ?? "",
                             });
                           }}
                         >
@@ -806,101 +748,39 @@ export function WorkStepClient({
                             <SelectValue placeholder="직원을 선택하세요" />
                           </SelectTrigger>
                           <SelectContent position="popper">
-                            <SelectGroup>
-                              {employeeOptions.map((option) => (
-                                <SelectItem
-                                  key={option.id}
-                                  value={option.id}
-                                  disabled={!option.isActive}
-                                >
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
+                            {employeeOptionGroups.map((group) => (
+                              <SelectGroup key={group.label}>
+                                <SelectLabel>{group.label}</SelectLabel>
+                                {group.options.map((option) => (
+                                  <SelectItem
+                                    key={option.id}
+                                    value={option.id}
+                                    disabled={!option.isActive}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FieldDescription>
-                          이름이 같으면 기본 근무매장·직급·입사일을 함께 확인해
-                          주세요. 연결을 해제하려면 해당 직원을 삭제한 뒤 다시
-                          추가하세요.
+                          직원명과 급여 금액은 인사관리에 등록된 직원 카드에서
+                          자동으로 가져옵니다. 바꾸려면 해당 직원을 삭제한 뒤
+                          다시 추가하세요.
                         </FieldDescription>
-                        {showSensitiveAccountingMetrics ? (
-                          <FieldDescription>
-                            직원을 연결하면 월간 직원별 급여 롤업에 합산됩니다.
-                            연결하지 않으면 “미연결” 합계로만 집계되어 직원별
-                            분석에서 빠집니다.
-                          </FieldDescription>
-                        ) : null}
-                      </Field>
-                    ) : null}
-
-                    <Field data-invalid={Boolean(nameError)}>
-                      <FieldLabel htmlFor={`labor-name-${line.id}`}>
-                        직원명
-                      </FieldLabel>
-                      <Input
-                        id={`labor-name-${line.id}`}
-                        inputMode="text"
-                        autoComplete="off"
-                        maxLength={50}
-                        value={line.workerName}
-                        disabled={
-                          !isHydrated || isLaborSaving || isOriginalEditBlocked
-                        }
-                        onChange={(event) =>
-                          updateLaborLine(line.id, {
-                            workerName: event.currentTarget.value,
-                          })
-                        }
-                        className="min-h-11"
-                        aria-invalid={Boolean(nameError)}
-                        aria-describedby={nameError ? nameErrorId : undefined}
-                      />
-                      {nameError ? (
-                        <FieldError id={nameErrorId}>{nameError}</FieldError>
-                      ) : null}
-                    </Field>
-
-                    {/* WO-10(2026-06-28): 급여 금액 입력/표시는 본사 전용이다. */}
-                    {showSensitiveAccountingMetrics ? (
-                      <Field data-invalid={Boolean(amountError)}>
-                        <FieldLabel htmlFor={`labor-amount-${line.id}`}>
-                          급여 금액
-                        </FieldLabel>
-                        <Input
-                          id={`labor-amount-${line.id}`}
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={line.amount}
-                          disabled={
-                            !isHydrated ||
-                            isLaborSaving ||
-                            isOriginalEditBlocked
-                          }
-                          onChange={(event) =>
-                            updateLaborLine(line.id, {
-                              amount: formatKrwInput(event.currentTarget.value),
-                            })
-                          }
-                          className="min-h-11 tabular-nums"
-                          aria-invalid={Boolean(amountError)}
-                          aria-describedby={
-                            amountError ? amountErrorId : undefined
-                          }
-                        />
-                        <p
-                          id={`labor-amount-${line.id}-preview`}
-                          className="text-muted-foreground mt-1 text-xs tabular-nums"
-                        >
-                          표시: {formatKrw(parseKrwInputValue(line.amount))}
-                        </p>
-                        {amountError ? (
-                          <FieldError id={amountErrorId}>
-                            {amountError}
+                        {nameError ? (
+                          <FieldError id={nameErrorId}>
+                            직원을 선택해 주세요.
                           </FieldError>
                         ) : null}
                       </Field>
-                    ) : null}
+                    ) : (
+                      <p className="text-muted-foreground text-sm">
+                        인사관리에 등록된 직원이 없습니다. 먼저 직원을 등록해
+                        주세요.
+                      </p>
+                    )}
 
                     <Field data-invalid={Boolean(lateError)}>
                       <FieldLabel htmlFor={`labor-late-${line.id}`}>
@@ -986,40 +866,38 @@ export function WorkStepClient({
             </div>
           )}
 
-          {showSensitiveAccountingMetrics ? (
-            <div className="bg-muted/40 rounded-md p-3">
-              <div className="flex justify-between gap-2 text-sm">
-                <span className="text-muted-foreground">입력 중 급여 합계</span>
-                <span className="font-semibold tabular-nums">
-                  {formatKrw(draftPayrollTotal)}
-                </span>
-              </div>
-              <div className="mt-2 flex justify-between gap-2 text-sm">
-                <span className="text-muted-foreground">
-                  마지막 서버 저장 합계
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {formatKrw(
-                    "payrollTotal" in ledger ? ledger.payrollTotal : 0,
-                  )}
-                </span>
-              </div>
-              <div className="mt-2 flex justify-between gap-2 text-sm">
-                <span className="text-muted-foreground">
-                  급여 행 기준 참고 인원
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {draftLaborHeadcount}명
-                </span>
-              </div>
-              {showLaborHeadcountHint ? (
-                <p className="text-muted-foreground mt-2 text-sm">
-                  근무인원과 급여 행 기준 참고 인원이 다릅니다. 급여 미등록
-                  근무자가 있으면 그대로 저장할 수 있습니다.
-                </p>
-              ) : null}
+          <div className="bg-muted/40 rounded-md p-3">
+            <div className="flex justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">
+                저장하면 반영될 총 근무인원
+              </span>
+              <span className="font-semibold tabular-nums">
+                {draftWorkerCount}명
+              </span>
             </div>
-          ) : null}
+            {showSensitiveAccountingMetrics ? (
+              <>
+                <div className="mt-2 flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">
+                    직원 카드 기준 급여 합계
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatKrw(draftPayrollTotal)}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">
+                    마지막 서버 저장 합계
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatKrw(
+                      "payrollTotal" in ledger ? ledger.payrollTotal : 0,
+                    )}
+                  </span>
+                </div>
+              </>
+            ) : null}
+          </div>
 
           {hqEditReasonRequired ? (
             <HqEditReasonField

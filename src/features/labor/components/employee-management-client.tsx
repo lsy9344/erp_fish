@@ -95,16 +95,16 @@ const emptyForm: FormState = {
 // WO-0806 #1-9: 데이터 포맷 예시는 별도 안내 박스 없이 placeholder로만 보여준다.
 const PLACEHOLDERS = {
   name: "홍길동",
-  position: "팀장 / 팀원",
+  position: "매니저 / 팀원",
   phone: "010-1234-5678",
   address: "서울시 강남구 테헤란로 123, 401호",
   bankAccount: "국민 123456-01-234567",
   amount: "120,000원",
 } as const;
 
-// WO-0806 #1-11: 실데이터상 직급은 사실상 팀장/팀원 2값이라 datalist로 좁히고
-// 예외 직급은 직접 입력할 수 있게 둔다.
-const POSITION_OPTIONS = ["팀장", "팀원"] as const;
+// WO-0806 #1-11 + 2026-09-02 요청: 직급 분류는 매니저/팀원 2값이다. 근무 단계의
+// 직원 선택도 이 두 값으로 묶이므로 datalist 값을 그대로 맞춘다.
+const POSITION_OPTIONS = ["매니저", "팀원"] as const;
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
@@ -969,8 +969,9 @@ export function EmployeeManagementClient({
                 <dd>{historicalDetail.storeNames.join(", ") || "-"}</dd>
                 <dt className="text-muted-foreground">역할 기록</dt>
                 <dd>
-                  팀장 {historicalDetail.leadRoleCount.toLocaleString("ko-KR")}
-                  건 · 팀원{" "}
+                  매니저{" "}
+                  {historicalDetail.leadRoleCount.toLocaleString("ko-KR")}건 ·
+                  팀원{" "}
                   {historicalDetail.memberRoleCount.toLocaleString("ko-KR")}건
                 </dd>
               </dl>
