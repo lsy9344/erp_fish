@@ -2,7 +2,7 @@ import type { LedgerReviewMetric } from "../../server/calculations/ledger.ts";
 import type { StoreComparisonReportRow } from "./types.ts";
 
 // WO-0806 [F]: 대표 엑셀 `분석` 시트의 8지표를 순서까지 그대로 옮긴다.
-// 이 배열이 기간 대조·시계열 두 모드의 단일 출처다.
+// 이 배열은 단일 기간·월별 추이의 지표 선택과 시계열 계산에 사용한다.
 export const PERIOD_ANALYSIS_METRICS = [
   { key: "salesAmount", label: "매출", kind: "money" },
   { key: "grossProfit", label: "매출이익", kind: "money" },
@@ -22,8 +22,35 @@ export const PERIOD_ANALYSIS_METRICS = [
   kind: "money" | "percent" | "headcount";
 }[];
 
+// 기간 대조 화면은 운영 요청에 따라 매출이익을 제외한다. 월별 추이와
+// 단일 기간 화면은 위의 전체 지표를 그대로 유지한다.
+export const PERIOD_CONTRAST_METRICS = PERIOD_ANALYSIS_METRICS.filter(
+  (metric) => metric.key !== "grossProfit",
+) as readonly Exclude<
+  (typeof PERIOD_ANALYSIS_METRICS)[number],
+  { key: "grossProfit" }
+>[];
+
 export type PeriodAnalysisMetric = (typeof PERIOD_ANALYSIS_METRICS)[number];
 export type PeriodAnalysisMetricKey = PeriodAnalysisMetric["key"];
+export type PeriodContrastMetric = Exclude<
+  PeriodAnalysisMetric,
+  { key: "grossProfit" }
+>;
+export type PeriodContrastMetricKey = Exclude<
+  PeriodAnalysisMetricKey,
+  "grossProfit"
+>;
+
+const signedHeadcountDeltaFormatter = new Intl.NumberFormat("ko-KR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+  signDisplay: "exceptZero",
+});
+
+export function formatPeriodAbsoluteDelta(value: number) {
+  return `${signedHeadcountDeltaFormatter.format(value)}명`;
+}
 
 export function getPeriodAnalysisMetric(
   key: unknown,
@@ -35,7 +62,7 @@ export function getPeriodAnalysisMetric(
 //   매출 82,652,900 → 115,377,000 = 0.395922  (비율)
 //   이익률 0.2589592 → 0.2546863 = -0.0042728 (차분, %p)
 // 대표 눈에 값이 달라 보이면 신뢰를 잃으므로 이 관행을 그대로 따른다.
-export type PeriodContrastDeltaKind = "rate" | "point";
+export type PeriodContrastDeltaKind = "rate" | "point" | "absolute";
 
 export type PeriodContrastDelta = {
   kind: PeriodContrastDeltaKind;
@@ -53,7 +80,7 @@ export function calculatePeriodDelta({
   current: LedgerReviewMetric | undefined;
 }): PeriodContrastDelta {
   const deltaKind: PeriodContrastDeltaKind =
-    kind === "percent" ? "point" : "rate";
+    kind === "percent" ? "point" : kind === "headcount" ? "absolute" : "rate";
 
   if (base?.value === null || base?.value === undefined) {
     return {
@@ -81,6 +108,14 @@ export function calculatePeriodDelta({
     };
   }
 
+  if (deltaKind === "absolute") {
+    return {
+      kind: deltaKind,
+      value: current.value - base.value,
+      unavailableReason: null,
+    };
+  }
+
   // 과거가 0이면 증감률은 정의되지 않는다. Infinity를 화면에 내보내지 않는다.
   if (base.value === 0) {
     return {
@@ -100,7 +135,7 @@ export function calculatePeriodDelta({
 export type PeriodContrastRow = {
   storeId: string;
   storeName: string;
-  deltas: Record<PeriodAnalysisMetricKey, PeriodContrastDelta>;
+  deltas: Record<PeriodContrastMetricKey, PeriodContrastDelta>;
 };
 
 export function buildPeriodContrastRows({
@@ -124,7 +159,7 @@ export function buildPeriodContrastRows({
     storeId: row.storeId,
     storeName: row.storeName,
     deltas: Object.fromEntries(
-      PERIOD_ANALYSIS_METRICS.map((metric) => [
+      PERIOD_CONTRAST_METRICS.map((metric) => [
         metric.key,
         calculatePeriodDelta({
           kind: metric.kind,
@@ -132,7 +167,7 @@ export function buildPeriodContrastRows({
           current: currentById.get(row.storeId)?.[metric.key],
         }),
       ]),
-    ) as Record<PeriodAnalysisMetricKey, PeriodContrastDelta>,
+    ) as Record<PeriodContrastMetricKey, PeriodContrastDelta>,
   }));
 }
 

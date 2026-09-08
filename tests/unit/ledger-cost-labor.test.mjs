@@ -258,6 +258,25 @@ test("ledger labor schema validates worker name and memo edge cases and rejects 
   );
 });
 
+test("labor amount restore is audit-bound and preserves the employee link", () => {
+  const source = readProjectFile(
+    "scripts",
+    "restore-labor-amount-from-audit.mjs",
+  );
+  const updateBlock = source.slice(
+    source.indexOf("await tx.ledgerLaborItem.update"),
+    source.indexOf("await tx.dailyLedger.update"),
+  );
+
+  assert.match(source, /--source-audit-id/);
+  assert.match(source, /--confirm=\$\{confirmation\}/);
+  assert.match(source, /ALLOW_REMOTE_LABOR_AMOUNT_RESTORE !== "yes"/);
+  assert.match(source, /labor\.amount !== after\.amount/);
+  assert.match(source, /ledger\.labor_amount\.restored_from_audit/);
+  assert.match(updateBlock, /amount: current\.restoreAmount/);
+  assert.doesNotMatch(updateBlock, /employeeId:/);
+});
+
 test("ledger labor model, query payload, and save actions follow expected contracts", () => {
   const schema = readProjectFile("prisma", "schema.prisma");
   assert.match(
@@ -328,7 +347,7 @@ test("ledger labor model, query payload, and save actions follow expected contra
     "workstep-client.tsx",
   );
   assert.match(componentSource, /급여 저장/);
-  assert.match(componentSource, /직원 추가|직원 연결/);
+  assert.match(componentSource, /직원 선택|직원 연결/);
   assert.match(componentSource, /laborSaveAction/);
   // WO-05(2026-06-22): 작업 단계에 직원 선택 드롭다운과 employeeId 전달이 있어야 한다.
   assert.match(componentSource, /employeeOptions/);
@@ -381,14 +400,17 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
     /showSensitiveAccountingMetrics\s*\?\s*"급여 저장"\s*:\s*"근무자 저장"/,
   );
 
-  // 총 근무인원은 급여 행 수로 정해지고, 직원명/급여 금액 입력 칸은 없다.
-  assert.match(componentSource, /const draftWorkerCount = laborItems\.length;/);
+  // 총 근무인원은 직원이 연결된 행 수로 정해지고, 직원명/급여 금액 입력 칸은 없다.
+  assert.match(
+    componentSource,
+    /const draftWorkerCount = laborItems\.filter\(\s*\(line\) => line\.employeeId\.trim\(\)\.length > 0,\s*\)\.length;/s,
+  );
   assert.match(componentSource, /저장하면 반영될 총 근무인원/);
   assert.match(componentSource, /\{draftWorkerCount\}명/);
   assert.doesNotMatch(componentSource, /id=\{`labor-name-\$\{line\.id\}`\}/);
   assert.doesNotMatch(componentSource, /id=\{`labor-amount-\$\{line\.id\}`\}/);
   // 직원 선택은 매니저 / 팀원 그룹으로 묶는다.
-  assert.match(componentSource, /직원 \(매니저 \/ 팀원\)/);
+  assert.match(componentSource, /매니저|팀원/);
   assert.match(componentSource, /function groupEmployeeOptions/);
   assert.match(componentSource, /employeeOptionGroups\.map\(\(group\)/);
 

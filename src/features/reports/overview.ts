@@ -514,6 +514,8 @@ function buildRankings(input: {
   for (const store of input.stores) {
     const businessLedgers: LedgerProfitSummary[] = [];
     let coverageComplete = true;
+    let missingCount = 0;
+    let inProgressCount = 0;
 
     for (const dateInput of input.dateInputs) {
       const status = statuses.get(statusKey(store.id, dateInput));
@@ -521,6 +523,11 @@ function buildRankings(input: {
       const ledger = ledgers.get(statusKey(store.id, dateInput));
       if (!status || !includedStatuses.has(status) || !ledger) {
         coverageComplete = false;
+        if (status === "IN_PROGRESS") {
+          inProgressCount += 1;
+        } else {
+          missingCount += 1;
+        }
         continue;
       }
       businessLedgers.push(ledger);
@@ -528,7 +535,7 @@ function buildRankings(input: {
 
     for (const metric of ["sales", "grossProfit", "grossMarginRate"] as const) {
       let value: number | null = null;
-      let reason = "월 범위가 완전하지 않습니다.";
+      let reason = formatRankingExclusionReason(missingCount, inProgressCount);
 
       if (coverageComplete && businessLedgers.length > 0) {
         const salesValues = businessLedgers.map((ledger) => ledger.totalSales);
@@ -546,7 +553,9 @@ function buildRankings(input: {
             }
           }
         }
-        if (value === null) reason = "계산 가능한 값이 없습니다.";
+        if (value === null) {
+          reason = "계산 가능한 값이 없습니다.";
+        }
       }
 
       addRankingValue(
@@ -600,6 +609,23 @@ function buildRankings(input: {
   }
 
   return result;
+}
+
+function formatRankingExclusionReason(
+  missingCount: number,
+  inProgressCount: number,
+) {
+  const parts: string[] = [];
+
+  if (missingCount > 0) {
+    parts.push(`미입력 ${missingCount}일`);
+  }
+
+  if (inProgressCount > 0) {
+    parts.push(`진행 중 ${inProgressCount}일`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "월 범위가 완전하지 않습니다.";
 }
 
 function addRankingValue(

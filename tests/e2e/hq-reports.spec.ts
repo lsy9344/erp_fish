@@ -940,6 +940,12 @@ test("대표는 인건비 현황에서 미연결 근무자와 지점 합계를 �
   ).toBeVisible();
   await expect(page.getByLabel("조회 월")).toHaveValue(getCurrentMonthInput());
   await expect(getStoreSelect(page)).toHaveValue(STORE_IDS.closed);
+  await expect(page.getByRole("link", { name: "Excel" })).toHaveAttribute(
+    "href",
+    new RegExp(
+      `/api/reports/export\\?report=labor&format=xlsx&month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
+    ),
+  );
   // WO-0806 #2: 근무자별 월 정산(월 단위)과 일별 상세(영업일 단위)를 나눠 보여준다.
   const settlement = page.getByLabel("근무자별 월 정산");
   const dailyDetail = page.getByLabel("일별 상세");

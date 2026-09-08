@@ -775,6 +775,21 @@ test("overview sorts all four rankings and excludes incomplete values instead of
     report.rankings.loss.excluded.map((row) => row.storeId),
     ["store-4", "store-5"],
   );
+  assert.equal(
+    report.rankings.sales.excluded.find((row) => row.storeId === "store-3")
+      ?.reason,
+    "진행 중 1일",
+  );
+  assert.equal(
+    report.rankings.sales.excluded.find((row) => row.storeId === "store-5")
+      ?.reason,
+    "미입력 1일",
+  );
+  assert.equal(
+    report.rankings.sales.excluded.find((row) => row.storeId === "store-4")
+      ?.reason,
+    "계산 가능한 값이 없습니다.",
+  );
   assert.ok(
     ["sales", "grossProfit", "grossMarginRate"].every((metric) =>
       report.rankings[metric].rows.every((row) => row.value !== 0),

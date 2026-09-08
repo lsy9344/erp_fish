@@ -77,6 +77,8 @@ type LedgerRecord = Awaited<ReturnType<typeof getStoreLedgerInTx>>;
 
 class InventoryPlanIncompleteError extends Error {}
 
+class InvalidLaborEmployeeError extends Error {}
+
 async function assertInventoryPlanCompleteInTx(
   tx: Prisma.TransactionClient,
   ledger: Pick<LedgerRecord, "id" | "storeId" | "closingDate">,
@@ -1608,6 +1610,12 @@ export async function saveLedgerLaborInfo(
             item.employeeId ? [item.employeeId] : [],
           ),
         );
+        if (
+          validEmployeeIds.size !==
+          new Set(parsed.data.labor.map((item) => item.employeeId)).size
+        ) {
+          throw new InvalidLaborEmployeeError();
+        }
         const dailyWages = await resolveEmployeeDailyWagesInTx(
           tx,
           validEmployeeIds,
@@ -1681,6 +1689,13 @@ export async function saveLedgerLaborInfo(
 
     if (error instanceof OriginalLedgerBlockedError) {
       return actionError(error.code, error.message);
+    }
+
+    if (error instanceof InvalidLaborEmployeeError) {
+      return actionError(
+        "VALIDATION_ERROR",
+        "선택한 직원 정보를 다시 확인해 주세요.",
+      );
     }
 
     return mapStoreActionError();

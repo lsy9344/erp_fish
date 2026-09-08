@@ -67,7 +67,7 @@ export function LedgerContextHeader({
             <LedgerStatusBadge status={status} />
           </div>
           <p className="text-muted-foreground mt-1 text-sm break-words">
-            작성자 표시명: {formatAuthorDisplayName(authorDisplayName)}
+            장부 작성자: {formatAuthorDisplayName(authorDisplayName)}
           </p>
         </div>
 

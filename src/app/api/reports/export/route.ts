@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { PermissionAction } from "../../../../../generated/prisma";
+import { env } from "~/env";
 import {
   buildBundledReportXlsx,
   buildDailyMeetingReportExport,
   buildForbiddenReportExportResponsePayload,
+  buildHeadquartersLaborReportExport,
   buildInventoryPositionReportExport,
   buildMonthlyClosingAnomalyReportExport,
   buildMonthlyProfitLossSheet,
@@ -31,10 +33,15 @@ import {
   getHqProductSalesReportForRange,
   getHqStoreComparisonReport,
 } from "~/features/reports/queries";
+import { getHeadquartersLaborReport } from "~/features/labor/headquarters-labor-queries";
+import { HEADQUARTERS_LABOR_STATUSES } from "~/features/labor/headquarters-labor-types";
 import type { ReportExportSheet } from "~/features/reports/export";
 import { buildPeriodTrendYearRange } from "~/features/reports/period-analysis";
 import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
-import { requireExportCreateAccess } from "~/server/authz";
+import {
+  requireExportCreateAccess,
+  requireLaborViewAccess,
+} from "~/server/authz";
 import { withAuditActorContext, writeAuditLog } from "~/server/audit";
 import { db } from "~/server/db";
 
@@ -61,10 +68,24 @@ export async function GET(request: Request) {
     );
   }
 
+  if (parsed.value.report === "labor" && env.ENABLE_LABOR_EXPORT !== "true") {
+    return NextResponse.json(
+      {
+        error: "not_found",
+        message: "현재 사용할 수 없는 내보내기입니다.",
+      },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   let exportData: ReportExportData;
-  let comparisonSheets: ReportExportSheet[] | undefined;
+  let bundledSheets: ReportExportSheet[] | undefined;
 
   try {
+    if (parsed.value.report === "labor") {
+      await requireLaborViewAccess();
+    }
+
     // 기간 대조는 한 번의 조회 결과로 현재 데이터와 3개 시트를 함께 만든다.
     // 두 번 조회하면 그 사이 장부 정정으로 시트끼리 값이 달라질 수 있다.
     if (
@@ -87,7 +108,19 @@ export async function GET(request: Request) {
         storeId: contrast.current.selectedStoreId,
       });
       exportData = built.exportData;
-      comparisonSheets = built.sheets;
+      bundledSheets = built.sheets;
+    } else if (parsed.value.report === "labor") {
+      const laborReport = await getHeadquartersLaborReport({
+        month: parsed.value.month ?? undefined,
+        from: parsed.value.from ?? undefined,
+        to: parsed.value.to ?? undefined,
+        storeId: parsed.value.storeId,
+        status: parsed.value.status,
+        workerName: parsed.value.workerName,
+      });
+      const built = buildHeadquartersLaborReportExport(laborReport);
+      exportData = built.exportData;
+      bundledSheets = built.sheets;
     } else {
       exportData = await loadReportExportData(parsed.value);
     }
@@ -125,11 +158,12 @@ export async function GET(request: Request) {
       auditSheets = await buildMonthlyBundleSheets(parsed.value, exportData);
       body = await buildBundledReportXlsx(auditSheets);
     } else if (
-      parsed.value.report === "comparison" &&
-      parsed.value.mode === "contrast"
+      (parsed.value.report === "comparison" &&
+        parsed.value.mode === "contrast") ||
+      parsed.value.report === "labor"
     ) {
-      auditSheets = comparisonSheets;
-      body = await buildBundledReportXlsx(comparisonSheets ?? []);
+      auditSheets = bundledSheets;
+      body = await buildBundledReportXlsx(bundledSheets ?? []);
     } else {
       body = await buildReportXlsx(exportData);
     }
@@ -205,6 +239,15 @@ type ParsedExportRequest =
       storeId: string | null;
       category: string | null;
       product: string | null;
+    }
+  | {
+      report: "labor";
+      month: string | null;
+      from: string | null;
+      to: string | null;
+      storeId: string | null;
+      status: string | null;
+      workerName: string | null;
     };
 
 function parseExportRequest(
@@ -322,6 +365,50 @@ function parseExportRequest(
     };
   }
 
+  if (report === "labor") {
+    if (format !== "xlsx") {
+      return {
+        ok: false,
+        message: "인건비는 Excel 형식으로만 내려받을 수 있습니다.",
+      };
+    }
+
+    const month = normalizeOptionalParam(params.get("month"));
+    const from = normalizeOptionalParam(params.get("from"));
+    const to = normalizeOptionalParam(params.get("to"));
+    const status = normalizeOptionalParam(params.get("status"));
+    const hasMonth = month !== null;
+    const hasRange = from !== null || to !== null;
+
+    if (
+      hasMonth === hasRange ||
+      (month !== null && !isValidMonthInput(month)) ||
+      (from !== null && !isValidDateInput(from)) ||
+      (to !== null && !isValidDateInput(to)) ||
+      (from === null) !== (to === null) ||
+      (from !== null && to !== null && !isValidLaborDateRange(from, to)) ||
+      (status !== null &&
+        status !== "ALL" &&
+        !HEADQUARTERS_LABOR_STATUSES.some((candidate) => candidate === status))
+    ) {
+      return { ok: false, message: "인건비 조회 기간을 확인해 주세요." };
+    }
+
+    return {
+      ok: true,
+      value: {
+        report,
+        month,
+        from,
+        to,
+        storeId: normalizeOptionalParam(params.get("storeId")),
+        status,
+        workerName: normalizeOptionalParam(params.get("workerName")),
+      },
+      format,
+    };
+  }
+
   const month = params.get("month");
 
   if (!month || !isValidMonthInput(month)) {
@@ -414,6 +501,8 @@ async function loadReportExportData(
         }),
       );
   }
+
+  throw new Error("인건비 export는 전용 Excel 경로에서 처리해야 합니다.");
 }
 
 // 월(YYYY-MM)을 시작일/종료일(YYYY-MM-DD)로 바꾼다. 종료일은 그 달의 마지막 날.
@@ -492,7 +581,8 @@ function isReportExportType(value: string | null): value is ReportExportType {
     value === "daily" ||
     value === "comparison" ||
     value === "monthly" ||
-    value === "inventory"
+    value === "inventory" ||
+    value === "labor"
   );
 }
 
@@ -551,6 +641,14 @@ function isValidMonthInput(value: string) {
   const month = Number(match[2]);
 
   return month >= 1 && month <= 12;
+}
+
+function isValidLaborDateRange(from: string, to: string) {
+  const start = Date.parse(`${from}T00:00:00.000Z`);
+  const end = Date.parse(`${to}T00:00:00.000Z`);
+  const maximumRangeMilliseconds = 365 * 86_400_000;
+
+  return start <= end && end - start <= maximumRangeMilliseconds;
 }
 
 function isRequestedStoreOutsideResolvedScope(

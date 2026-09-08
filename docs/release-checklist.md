@@ -62,6 +62,9 @@ Use this checklist before production deployment.
   management scope expands beyond that approval (CAP-9 per-employee work
   selection, payroll export, or actual payment confirmation) without a new
   policy approval record.
+- Keep `ENABLE_LABOR_EXPORT` unset until the CAP-9 aggregation, export-field,
+  retention, and audit rules have a new written approval record. The UI and API
+  must both remain unavailable while the flag is unset.
 
 ## Go/No-Go
 

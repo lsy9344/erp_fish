@@ -380,7 +380,7 @@ test("ledger sales schema rejects blank, negative, decimal, and formatted values
   });
   assert.equal(longAuthor.success, false);
   assert.deepEqual(longAuthor.error.flatten().fieldErrors.authorDisplayName, [
-    "작성자 표시명은 50자 이하여야 합니다.",
+    "장부 작성자는 50자 이하여야 합니다.",
   ]);
 });
 

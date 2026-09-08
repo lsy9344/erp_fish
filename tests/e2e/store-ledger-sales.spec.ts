@@ -496,7 +496,7 @@ test("지점장은 선택 날짜 장부를 열고 재방문 시 같은 장부를
   ).toHaveAttribute("href", new RegExp(`date=${SELECTED_LEDGER_DATE}`));
 });
 
-test("작성자 표시명은 저장 후 2~7단계와 재방문에서도 유지되고 audit actor와 분리된다", async ({
+test("장부 작성자는 저장 후 2~7단계와 재방문에서도 유지되고 audit actor와 분리된다", async ({
   page,
 }) => {
   await loginAsStoreManager(page);
@@ -506,12 +506,12 @@ test("작성자 표시명은 저장 후 2~7단계와 재방문에서도 유지�
   );
 
   await page
-    .getByRole("textbox", { name: "작성자 표시명", exact: true })
+    .getByRole("textbox", { name: "장부 작성자", exact: true })
     .fill("  현장 김팀장  ");
   await page.getByRole("button", { name: "저장" }).click();
 
   await expect(
-    page.getByLabel("장부 저장 상태").getByText("작성자 표시명: 현장 김팀장"),
+    page.getByLabel("장부 저장 상태").getByText("장부 작성자: 현장 김팀장"),
   ).toBeVisible();
 
   const closingDate = new Date(`${SELECTED_LEDGER_DATE}T00:00:00.000Z`);
@@ -552,7 +552,7 @@ test("작성자 표시명은 저장 후 2~7단계와 재방문에서도 유지�
   ]) {
     await page.goto(href);
     await expect(
-      page.getByText("작성자 표시명: 현장 김팀장").first(),
+      page.getByText("장부 작성자: 현장 김팀장").first(),
     ).toBeVisible();
     await expect(page.getByText("마지막 저장:").first()).toBeVisible();
   }
@@ -561,7 +561,7 @@ test("작성자 표시명은 저장 후 2~7단계와 재방문에서도 유지�
     `/app/store-entry?storeId=${STORE_ID}&date=${SELECTED_LEDGER_DATE}`,
   );
   await expect(
-    page.getByRole("textbox", { name: "작성자 표시명", exact: true }),
+    page.getByRole("textbox", { name: "장부 작성자", exact: true }),
   ).toHaveValue("현장 김팀장");
 });
 
@@ -958,7 +958,7 @@ test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족�
   expect(dateInputBox?.height).toBeGreaterThanOrEqual(36);
   expect(dateInputBox?.width).toBeGreaterThanOrEqual(120);
   await expect(page.getByText("상태 입력 중")).toBeVisible();
-  await expect(page.getByText("작성자 표시명:").first()).toBeVisible();
+  await expect(page.getByText("장부 작성자:").first()).toBeVisible();
   await expect(page.getByText("마지막 저장:").first()).toBeVisible();
 
   const viewportWidths = await page.evaluate(() => ({

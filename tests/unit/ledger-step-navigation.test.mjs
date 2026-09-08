@@ -65,7 +65,7 @@ test("ledger-backed store entry steps share saved status for every step", () => 
   );
   assert.match(saveStatusSource, /장부 저장 상태/);
   assert.match(saveStatusSource, /마지막 저장/);
-  assert.match(saveStatusSource, /작성자 표시명/);
+  assert.match(saveStatusSource, /장부 작성자/);
   assert.match(saveStatusSource, /저장되지 않았을 수 있는 항목/);
   assert.match(saveStatusSource, /formatKstDateTime\(updatedAt\)/);
   assert.match(saveStatusSource, /onRetry/);

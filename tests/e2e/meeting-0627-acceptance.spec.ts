@@ -8,6 +8,8 @@ const prisma = new PrismaClient();
 
 const STORE_ID = "store-meeting-0627-acceptance";
 const PRODUCT_ID = "product-meeting-0627-acceptance";
+const EMPLOYEE_ID = "employee-meeting-0627-acceptance";
+const EMPLOYEE_NAME = "미팅0627 검증 직원";
 const LONG_STOCK_CATEGORY = "미팅0627생물";
 const ECOUNT_COLD_UPLOAD_FILE = "meeting-0627-cold-category.xlsx";
 const ECOUNT_COLD_RAW_PRODUCT = "냉)미팅0627동태";
@@ -136,7 +138,8 @@ test("회의 0627 지점장 화면은 급여액과 전날재고 민감 금액을
   await login(page, "manager@example.com");
 
   await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=work`);
-  await page.getByRole("button", { name: "직원 추가" }).click();
+  await page.getByLabel("팀원 직원 선택").click();
+  await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await expect(page.getByLabel("급여 금액")).toHaveCount(0);
   const laborSection = page.locator("section").filter({ hasText: "근무자" });
   await expect(laborSection).not.toContainText("급여 / 인건비");
@@ -297,6 +300,16 @@ async function seedMeetingAcceptanceData() {
   await prisma.userStoreAssignment.create({
     data: {
       userId: managerId,
+      storeId: store.id,
+    },
+  });
+  await prisma.employee.create({
+    data: {
+      id: EMPLOYEE_ID,
+      name: EMPLOYEE_NAME,
+      hireDate: new Date("2026-01-02T00:00:00.000Z"),
+      isActive: true,
+      position: "팀원",
       storeId: store.id,
     },
   });
@@ -518,6 +531,9 @@ async function cleanupMeetingAcceptanceData() {
   });
   await prisma.userStoreAssignment.deleteMany({
     where: { storeId: STORE_ID },
+  });
+  await prisma.employee.deleteMany({
+    where: { id: EMPLOYEE_ID },
   });
   await prisma.store.deleteMany({
     where: { id: STORE_ID },

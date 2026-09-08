@@ -53,6 +53,10 @@ import {
 } from "~/features/losses/availability";
 import { applyInventoryFormDisplayPolicy } from "./inventory-zero-stock-display.ts";
 import { shapeStoreManagerInventoryStepData } from "./response-shaping";
+import {
+  calculatePreviousDaySalesQuantity,
+  getLatestArrivalDate,
+} from "./previous-stock";
 
 export const inventoryCarryoverDetailSelect = {
   source: true,
@@ -289,6 +293,8 @@ function toCarryoverDetailView(
       detail.sourceCurrentQuantity,
     ),
     sourceQuantity: nullableDecimalToNumber(detail.sourceQuantity),
+    sourceSalesQuantity: null,
+    sourceLastArrivalDate: null,
     sourceLedgerClosingDate:
       detail.sourceLedgerClosingDate?.toISOString() ?? null,
     history: [],
@@ -330,6 +336,8 @@ function buildCarryoverDetail({
   sourceLossQuantity = null,
   sourceCurrentQuantity = null,
   sourceQuantity = null,
+  sourceSalesQuantity = null,
+  sourceLastArrivalDate = null,
 }: {
   source: InventoryCarryoverSource;
   status: InventoryCarryoverStatus;
@@ -345,6 +353,8 @@ function buildCarryoverDetail({
   sourceLossQuantity?: number | null;
   sourceCurrentQuantity?: number | null;
   sourceQuantity?: number | null;
+  sourceSalesQuantity?: number | null;
+  sourceLastArrivalDate?: string | null;
 }): InventoryCarryoverDetailView {
   return {
     source,
@@ -363,6 +373,8 @@ function buildCarryoverDetail({
     sourceLossQuantity,
     sourceCurrentQuantity,
     sourceQuantity,
+    sourceSalesQuantity,
+    sourceLastArrivalDate,
     message,
     history: [],
   };
@@ -1189,11 +1201,64 @@ async function attachCarryoverHistories(
     }
   }
 
+  const sourceLedgerIds = [
+    ...new Set(
+      items
+        .map((item) => item.previousQuantityDetail.sourceLedgerId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const sourceLots =
+    sourceLedgerIds.length === 0
+      ? []
+      : await tx.ledgerInventoryFifoLot.findMany({
+          where: {
+            dailyLedgerId: { in: sourceLedgerIds },
+            productId: { in: productIds },
+            remainingQuantity: { gt: 0 },
+          },
+          select: {
+            dailyLedgerId: true,
+            productId: true,
+            sourceBusinessDate: true,
+            remainingQuantity: true,
+          },
+        });
+  const arrivalDatesBySource = new Map<string, Date[]>();
+
+  for (const lot of sourceLots) {
+    if (
+      decimalToNumber(lot.remainingQuantity) <= 0 ||
+      !lot.sourceBusinessDate
+    ) {
+      continue;
+    }
+
+    const key = `${lot.dailyLedgerId}:${lot.productId}`;
+    const dates = arrivalDatesBySource.get(key) ?? [];
+    dates.push(lot.sourceBusinessDate);
+    arrivalDatesBySource.set(key, dates);
+  }
+
   return items.map((item) => ({
     ...item,
     previousQuantityDetail: {
       ...item.previousQuantityDetail,
       history: historyByProductId.get(item.productId) ?? [],
+      sourceSalesQuantity: calculatePreviousDaySalesQuantity({
+        previousQuantity: item.previousQuantityDetail.sourcePreviousQuantity,
+        purchasedQuantity: item.previousQuantityDetail.sourcePurchasedQuantity,
+        lossQuantity: item.previousQuantityDetail.sourceLossQuantity,
+        closingQuantity:
+          item.previousQuantityDetail.sourceCurrentQuantity ??
+          item.previousQuantityDetail.sourceQuantity,
+      }),
+      sourceLastArrivalDate:
+        getLatestArrivalDate(
+          arrivalDatesBySource.get(
+            `${item.previousQuantityDetail.sourceLedgerId}:${item.productId}`,
+          ) ?? [],
+        )?.toISOString() ?? null,
     },
   }));
 }

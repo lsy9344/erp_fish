@@ -13,6 +13,11 @@ import {
 const prisma = new PrismaClient();
 const PASSWORD = "correct-password";
 const API_EXPORT_PROFILE_CODE = "API_EXPORT_ASSIGNED";
+const LABOR_EXPORT_STORE_ID = "store-api-labor-export";
+const LABOR_EXPORT_EMPLOYEE_NAME = "API 인건비 연결 직원";
+const LABOR_EXPORT_UNLINKED_NAME = "API 인건비 미연결 직원";
+const PERIOD_CONTRAST_STORE_ID = "store-api-period-contrast";
+const PERIOD_CONTRAST_STORE_NAME = "API 기간대조 테스트 지점";
 const CSV_ESCAPE_STORE_ID = "store-api-export-csv-escaping";
 const CSV_ESCAPE_STORE_NAME = '=SUM(1,1), "quoted"';
 const THIRTY_PERCENT_EXPORT_PATTERN =
@@ -99,10 +104,14 @@ const INVENTORY_HEADER = [
 test.describe("Report export API", () => {
   test.beforeEach(async () => {
     await cleanupApiExportArtifacts();
+    await cleanupLaborExportFixture();
+    await cleanupPeriodContrastFixture();
     await seedCsvEscapingStore();
   });
 
   test.afterAll(async () => {
+    await cleanupPeriodContrastFixture();
+    await cleanupLaborExportFixture();
     await cleanupApiExportArtifacts();
     await prisma.$disconnect();
   });
@@ -178,6 +187,57 @@ test.describe("Report export API", () => {
         name: "invalid inventory date",
         params: { report: "inventory", date: "2026-02-30", format: "csv" },
         message: "조회 날짜를 확인해 주세요.",
+      },
+      {
+        name: "labor is xlsx only",
+        params: { report: "labor", month: "2026-09", format: "csv" },
+        message: "인건비는 Excel 형식으로만 내려받을 수 있습니다.",
+      },
+      {
+        name: "labor requires exactly one period mode",
+        params: { report: "labor", format: "xlsx" },
+        message: "인건비 조회 기간을 확인해 주세요.",
+      },
+      {
+        name: "labor rejects mixed month and range",
+        params: {
+          report: "labor",
+          month: "2026-09",
+          from: "2026-09-01",
+          to: "2026-09-30",
+          format: "xlsx",
+        },
+        message: "인건비 조회 기간을 확인해 주세요.",
+      },
+      {
+        name: "labor rejects reversed range",
+        params: {
+          report: "labor",
+          from: "2026-09-30",
+          to: "2026-09-01",
+          format: "xlsx",
+        },
+        message: "인건비 조회 기간을 확인해 주세요.",
+      },
+      {
+        name: "labor rejects ranges over 366 days",
+        params: {
+          report: "labor",
+          from: "2025-01-01",
+          to: "2026-01-02",
+          format: "xlsx",
+        },
+        message: "인건비 조회 기간을 확인해 주세요.",
+      },
+      {
+        name: "labor rejects unknown status",
+        params: {
+          report: "labor",
+          month: "2026-09",
+          status: "UNKNOWN",
+          format: "xlsx",
+        },
+        message: "인건비 조회 기간을 확인해 주세요.",
       },
     ];
 
@@ -466,6 +526,7 @@ test.describe("Report export API", () => {
   test("[P1] period contrast xlsx has exact base, current, and delta sheets", async ({
     request,
   }) => {
+    await seedPeriodContrastFixture();
     await signInForApi(request, "hq@example.com");
 
     const response = await request.get(
@@ -492,6 +553,152 @@ test.describe("Report export API", () => {
       "현재",
       "증감",
     ]);
+    for (const sheet of workbook.worksheets) {
+      expect(sheet.getRow(1).values).not.toContain("매출이익");
+    }
+    const deltaSheet = workbook.getWorksheet("증감");
+    const deltaHeader = deltaSheet?.getRow(1).values as unknown[];
+    const headcountColumn = deltaHeader.indexOf("평균 근무인원");
+    expect(headcountColumn).toBeGreaterThan(0);
+    const fixtureRow = deltaSheet
+      ?.getRows(2, Math.max(0, (deltaSheet?.rowCount ?? 1) - 1))
+      ?.find((row) => row.getCell(1).value === PERIOD_CONTRAST_STORE_NAME);
+    expect(fixtureRow?.getCell(headcountColumn).value).toBe("+1.0명");
+    const headcountValues = (
+      deltaSheet?.getColumn(headcountColumn).values ?? []
+    )
+      .slice(2)
+      .map(String);
+    expect(headcountValues.every((value) => !value.includes("%"))).toBe(true);
+  });
+
+  test("[P1] labor xlsx applies store/status/worker filters and settlement fields", async ({
+    request,
+  }) => {
+    const fixture = await seedLaborExportFixture();
+    await signInForApi(request, "owner@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "labor",
+        month: "2026-09",
+        storeId: fixture.storeId,
+        status: "IN_REVIEW",
+        format: "xlsx",
+      }),
+    );
+    expect(response.status()).toBe(200);
+
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const bytes = new Uint8Array(await response.body());
+    await workbook.xlsx.load(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    );
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "조회조건",
+      "지점요약",
+      "근무자월정산",
+      "근무상세",
+    ]);
+    expect(
+      JSON.stringify(workbook.getWorksheet("조회조건")?.getSheetValues() ?? []),
+    ).toContain("급여 확정 전 참고 자료");
+
+    const settlement = workbook.getWorksheet("근무자월정산");
+    const settlementHeader = (settlement?.getRow(1).values as unknown[]).filter(
+      (value) => typeof value === "string",
+    );
+    expect(settlementHeader).toContain("희망 현금");
+    expect(settlementHeader).toContain("희망 현금 사유");
+    expect(settlementHeader).not.toContain("계좌번호");
+    const settlementText = JSON.stringify(settlement?.getSheetValues() ?? []);
+    expect(settlementText).toContain(LABOR_EXPORT_EMPLOYEE_NAME);
+    expect(settlementText).toContain("70000");
+    expect(settlementText).toContain("계산 불가 (직원 미연결)");
+    expect(settlementText).not.toContain("123-456");
+    expect(settlementText).not.toContain("store-gangnam");
+
+    const detailText = JSON.stringify(
+      workbook.getWorksheet("근무상세")?.getSheetValues() ?? [],
+    );
+    expect(detailText).toContain(LABOR_EXPORT_EMPLOYEE_NAME);
+    expect(detailText).toContain(LABOR_EXPORT_UNLINKED_NAME);
+
+    const filteredResponse = await request.get(
+      exportPath({
+        report: "labor",
+        month: "2026-09",
+        storeId: fixture.storeId,
+        status: "IN_REVIEW",
+        workerName: LABOR_EXPORT_EMPLOYEE_NAME,
+        format: "xlsx",
+      }),
+    );
+    expect(filteredResponse.status()).toBe(200);
+    const filteredWorkbook = new ExcelJS.Workbook();
+    const filteredBytes = new Uint8Array(await filteredResponse.body());
+    await filteredWorkbook.xlsx.load(
+      filteredBytes.buffer.slice(
+        filteredBytes.byteOffset,
+        filteredBytes.byteOffset + filteredBytes.byteLength,
+      ),
+    );
+    const filteredDetailText = JSON.stringify(
+      filteredWorkbook.getWorksheet("근무상세")?.getSheetValues() ?? [],
+    );
+    expect(filteredDetailText).toContain(LABOR_EXPORT_EMPLOYEE_NAME);
+    expect(filteredDetailText).not.toContain(LABOR_EXPORT_UNLINKED_NAME);
+  });
+
+  test("[P1] labor export rejects users without labor permission", async ({
+    request,
+  }) => {
+    await seedAssignedExporterProfile({
+      userEmail: "hq-readonly@example.com",
+    });
+    await signInForApi(request, "hq-readonly@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "labor",
+        month: "2026-09",
+        format: "xlsx",
+      }),
+    );
+    const body = (await response.json()) as ForbiddenPayload;
+
+    expect(response.status()).toBe(403);
+    expect(body).toEqual({
+      error: "forbidden",
+      message: "export 권한이 없습니다.",
+    });
+    await expectNoReportExportAudit();
+  });
+
+  test("[P1] labor export blocks a store outside an assigned headquarters scope", async ({
+    request,
+  }) => {
+    const fixture = await seedLaborExportFixture();
+    await seedAssignedExporterProfile({ includeLaborView: true });
+    await signInForApi(request, "hq-assigned@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "labor",
+        month: "2026-09",
+        storeId: fixture.storeId,
+        format: "xlsx",
+      }),
+    );
+    const body = (await response.json()) as ForbiddenPayload;
+
+    expect(response.status()).toBe(403);
+    expect(body).toEqual({
+      error: "forbidden",
+      message: "export 권한이 없습니다.",
+    });
+    await expectNoReportExportAudit();
   });
 
   test("[P1] period trend xlsx mirrors the one-sheet trend table", async ({
@@ -836,9 +1043,12 @@ async function seedCsvEscapingStore() {
   });
 }
 
-async function seedAssignedExporterProfile() {
+async function seedAssignedExporterProfile({
+  includeLaborView = false,
+  userEmail = "hq-assigned@example.com",
+} = {}) {
   const user = await prisma.user.findUnique({
-    where: { email: "hq-assigned@example.com" },
+    where: { email: userEmail },
     select: { id: true },
   });
 
@@ -864,6 +1074,7 @@ async function seedAssignedExporterProfile() {
   for (const action of [
     PermissionAction.REPORT_VIEW,
     PermissionAction.EXPORT_CREATE,
+    ...(includeLaborView ? [PermissionAction.LABOR_VIEW] : []),
   ]) {
     await prisma.permissionProfileAction.upsert({
       where: { profileId_action: { profileId: profile.id, action } },
@@ -876,6 +1087,109 @@ async function seedAssignedExporterProfile() {
     where: { userId_profileId: { userId: user!.id, profileId: profile.id } },
     create: { userId: user!.id, profileId: profile.id },
     update: {},
+  });
+}
+
+async function seedLaborExportFixture() {
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  const closingDate = new Date("2026-09-05T00:00:00.000Z");
+
+  const store = await prisma.store.upsert({
+    where: { id: LABOR_EXPORT_STORE_ID },
+    create: {
+      id: LABOR_EXPORT_STORE_ID,
+      name: "API 인건비 테스트 지점",
+      isActive: true,
+      updatedById: actor.id,
+    },
+    update: {
+      name: "API 인건비 테스트 지점",
+      isActive: true,
+      updatedById: actor.id,
+    },
+  });
+  const employee = await prisma.employee.create({
+    data: {
+      name: LABOR_EXPORT_EMPLOYEE_NAME,
+      hireDate: new Date("2026-01-01T00:00:00.000Z"),
+      storeId: store.id,
+      position: "팀원",
+      bankAccount: "123-456",
+      desiredInsuranceAmount: 30_000,
+    },
+  });
+  const ledger = await prisma.dailyLedger.create({
+    data: {
+      storeId: store.id,
+      closingDate,
+      status: "IN_REVIEW",
+      workerCount: 2,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+  await prisma.ledgerLaborItem.createMany({
+    data: [
+      {
+        dailyLedgerId: ledger.id,
+        employeeId: employee.id,
+        workerName: LABOR_EXPORT_EMPLOYEE_NAME,
+        amount: 100_000,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+      {
+        dailyLedgerId: ledger.id,
+        workerName: LABOR_EXPORT_UNLINKED_NAME,
+        amount: 50_000,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+    ],
+  });
+
+  return { storeId: store.id };
+}
+
+async function seedPeriodContrastFixture() {
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  await prisma.store.create({
+    data: {
+      id: PERIOD_CONTRAST_STORE_ID,
+      name: PERIOD_CONTRAST_STORE_NAME,
+      isActive: true,
+      updatedById: actor.id,
+    },
+  });
+  await prisma.dailyLedger.createMany({
+    data: [
+      {
+        storeId: PERIOD_CONTRAST_STORE_ID,
+        closingDate: new Date("2026-05-15T00:00:00.000Z"),
+        status: "HEADQUARTERS_CLOSED",
+        totalSalesAmount: 100_000,
+        cashAmount: 100_000,
+        workerCount: 2,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+      {
+        storeId: PERIOD_CONTRAST_STORE_ID,
+        closingDate: new Date("2026-06-15T00:00:00.000Z"),
+        status: "HEADQUARTERS_CLOSED",
+        totalSalesAmount: 120_000,
+        cashAmount: 120_000,
+        workerCount: 3,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+    ],
   });
 }
 
@@ -903,4 +1217,31 @@ async function cleanupApiExportArtifacts() {
     });
     await prisma.permissionProfile.delete({ where: { id: profile.id } });
   }
+}
+
+async function cleanupLaborExportFixture() {
+  const ledgers = await prisma.dailyLedger.findMany({
+    where: { storeId: LABOR_EXPORT_STORE_ID },
+    select: { id: true },
+  });
+  const ledgerIds = ledgers.map((ledger) => ledger.id);
+
+  if (ledgerIds.length > 0) {
+    await prisma.ledgerLaborItem.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
+    await prisma.dailyLedger.deleteMany({ where: { id: { in: ledgerIds } } });
+  }
+
+  await prisma.employee.deleteMany({
+    where: { storeId: LABOR_EXPORT_STORE_ID },
+  });
+  await prisma.store.deleteMany({ where: { id: LABOR_EXPORT_STORE_ID } });
+}
+
+async function cleanupPeriodContrastFixture() {
+  await prisma.dailyLedger.deleteMany({
+    where: { storeId: PERIOD_CONTRAST_STORE_ID },
+  });
+  await prisma.store.deleteMany({ where: { id: PERIOD_CONTRAST_STORE_ID } });
 }

@@ -83,7 +83,7 @@ export function LedgerSaveStatus({
             마지막 저장: {formatKstDateTime(updatedAt)}
           </p>
           <p className="text-muted-foreground text-sm break-words">
-            작성자 표시명: {formatAuthorDisplayName(authorDisplayName)}
+            장부 작성자: {formatAuthorDisplayName(authorDisplayName)}
           </p>
           {successMessage ? (
             <p className="text-sm text-emerald-700 dark:text-emerald-300">

@@ -57,7 +57,7 @@ test("store alias schema trims display name and allows empty (clear) values", as
   assert.equal(missingStore.success, false);
 });
 
-test("store alias action is scoped to the store manager's own store and audited", () => {
+test("store alias action keeps expense scope and protects loss aliases", () => {
   const actionSource = readProjectFile(
     "src",
     "features",
@@ -65,13 +65,19 @@ test("store alias action is scoped to the store manager's own store and audited"
     "code-alias-actions.ts",
   );
 
-  // 지점장 본인 지점만 수정 가능하도록 store 범위 가드를 탄다.
+  // 지출 항목은 지점장 본인 지점만 수정 가능하도록 store 범위 가드를 탄다.
   assert.match(
     actionSource,
     /requireStoreManagerLedgerEditAccess\(parsed\.data\.storeId\)/,
   );
-  // 본사 전용 코드 등록/수정 권한(requireSettingsAccess)을 쓰지 않는다.
-  assert.doesNotMatch(actionSource, /requireSettingsAccess/);
+  // 손실 유형은 같은 action을 직접 호출해도 본사 설정 권한을 탄다.
+  assert.match(actionSource, /requireSettingsAccess/);
+  assert.match(actionSource, /authorizedCode\.group === "LOSS_TYPE"/);
+  // 권한 검사 뒤 코드 종류가 바뀌는 틈을 막도록, 저장 트랜잭션에서 행을
+  // 잠그고 처음 권한을 판정한 종류와 다시 비교한다.
+  assert.match(actionSource, /FROM "LedgerInputCode"[\s\S]*FOR UPDATE/);
+  assert.match(actionSource, /code\.group !== authorizedCode\.group/);
+  assert.match(actionSource, /LEDGER_INPUT_CODE_CHANGED/);
   // 생성/수정/삭제 모두 audit log를 남긴다.
   assert.match(actionSource, /ledger_input_code_store_alias\.created/);
   assert.match(actionSource, /ledger_input_code_store_alias\.updated/);
@@ -98,7 +104,7 @@ test("code registration stays headquarters only", () => {
   );
 });
 
-test("loss query applies per-store alias to loss type display names", () => {
+test("loss query keeps canonical names even when an old alias row exists", () => {
   const querySource = readProjectFile(
     "src",
     "features",
@@ -106,14 +112,16 @@ test("loss query applies per-store alias to loss type display names", () => {
     "queries.ts",
   );
 
-  // 지점별 alias를 조회해 표시명에 우선 적용한다.
-  assert.match(querySource, /ledgerInputCodeStoreAlias\.findMany/);
-  assert.match(querySource, /storeId:\s*ledger\.storeId/);
-  assert.match(querySource, /lossTypeAliasByCodeId\.get\(option\.id\)\s*\?\?/);
-  assert.match(querySource, /lossTypeOptions:\s*lossTypeOptionsWithAlias/);
+  // 기존 alias 행은 지우지 않지만 손실 유형 조회에는 적용하지 않는다.
+  assert.doesNotMatch(querySource, /ledgerInputCodeStoreAlias\.findMany/);
+  assert.doesNotMatch(querySource, /lossTypeAliasByCodeId/);
+  assert.match(querySource, /\blossTypeOptions\s*,/);
+  // 기존 행은 저장 당시 이름을 보존하고, 새 선택지만 canonical 목록을 쓴다.
+  assert.match(querySource, /lossTypeName:\s*true/);
+  assert.match(querySource, /이미 저장된 손실 행의/);
 });
 
-test("store manager loss page renders the alias editor", () => {
+test("store manager loss page does not render an alias editor", () => {
   const pageSource = readProjectFile(
     "src",
     "app",
@@ -122,7 +130,7 @@ test("store manager loss page renders the alias editor", () => {
     "losses",
     "page.tsx",
   );
-  // WO-09: 손실 유형 편집기는 일반화된 InputCodeAliasEditor의 얇은 래퍼다.
+  // 손실 유형 alias 편집기는 지점장 화면에서 제거됐다.
   const wrapperSource = readProjectFile(
     "src",
     "features",
@@ -138,27 +146,9 @@ test("store manager loss page renders the alias editor", () => {
     "input-code-alias-editor.tsx",
   );
 
-  assert.match(pageSource, /LossTypeAliasEditor/);
-  assert.match(pageSource, /storeId=\{initialData\.storeId\}/);
-  // 래퍼는 손실 유형 그룹으로 일반화 편집기에 위임한다.
-  assert.match(wrapperSource, /InputCodeAliasEditor/);
-  assert.match(wrapperSource, /groupKey="lossType"/);
-  // 일반화 편집기가 alias 저장 action과 본사 등록명 fallback 안내를 담당한다.
+  assert.doesNotMatch(pageSource, /LossTypeAliasEditor/);
+  assert.ok(wrapperSource.length > 0);
   assert.match(editorSource, /setLedgerInputCodeStoreAlias/);
-  assert.match(editorSource, /codeAliasTerms\.fallbackPlaceholder/);
-  assert.match(editorSource, /isHydrated/);
-  assert.match(editorSource, /setIsHydrated\(true\)/);
-  assert.match(
-    editorSource,
-    /disabled=\{!isHydrated \|\| pendingId === option\.id\}/,
-  );
-  const aliasTermsSource = readProjectFile(
-    "src",
-    "features",
-    "master-data",
-    "code-alias-terms.ts",
-  );
-  assert.match(aliasTermsSource, /fallbackPlaceholder:\s*"본사 등록명 사용"/);
 });
 
 test("WO-09 input code alias editor and terms generalize loss type and expense item display names", () => {

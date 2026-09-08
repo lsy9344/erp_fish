@@ -34,6 +34,9 @@ const lossItemSelect = {
   reason: true,
 } as const;
 
+// 손실 유형 선택지는 본사 등록명을 사용한다. 이미 저장된 손실 행의
+// `lossTypeName`은 당시 입력한 이력 보존을 위해 저장 스냅샷을 유지한다.
+
 const defaultLossSignalThresholds: LossSignalThresholds = {
   quantity: 0,
   amount: 0,
@@ -104,25 +107,8 @@ async function getLossStepDataForLedgerInTx(
       }),
       getInventoryPlanGateForLedgerInTx(tx, ledger),
     ]);
-  // 미팅 결정(2026-06-21): 코드 표시명은 지점별 덮어쓰기(alias)가 있으면
-  // 해당 지점 화면에서 우선 적용한다. 코드 자체는 본사 등록값을 유지한다.
-  const lossTypeAliases = await tx.ledgerInputCodeStoreAlias.findMany({
-    where: {
-      storeId: ledger.storeId,
-      ledgerInputCode: { group: "LOSS_TYPE" },
-    },
-    select: { ledgerInputCodeId: true, displayName: true },
-  });
-  const lossTypeAliasByCodeId = new Map(
-    lossTypeAliases.map((alias) => [
-      alias.ledgerInputCodeId,
-      alias.displayName,
-    ]),
-  );
-  const lossTypeOptionsWithAlias = lossTypeOptions.map((option) => ({
-    ...option,
-    name: lossTypeAliasByCodeId.get(option.id) ?? option.name,
-  }));
+  // 손실 유형은 지점별 별칭을 쓰지 않고 본사 등록명을 그대로 보여준다.
+  // 기존 alias 행은 보존하되, 입력 화면과 저장 조회에서 의미를 바꾸지 않는다.
   const mappedLossItems = lossItems.map((item) => ({
     ...item,
     quantity: decimalToNumber(item.quantity),
@@ -155,7 +141,7 @@ async function getLossStepDataForLedgerInTx(
     productOptions: productOptions.filter((option) =>
       availableProductIds.has(option.id),
     ),
-    lossTypeOptions: lossTypeOptionsWithAlias,
+    lossTypeOptions,
     lossItems: mappedLossItems,
     summary,
     signalCandidates: getLossSignalCandidates(summary.byProduct, thresholds),

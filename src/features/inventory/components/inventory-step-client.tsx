@@ -7,12 +7,13 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, SnowflakeIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent } from "~/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
@@ -267,6 +269,16 @@ function getInventoryLotPriceEntries(
   });
 }
 
+function getLatestInventoryArrivalDate(
+  item: InventoryDisplayData["items"][number],
+) {
+  return item.fifoLots.reduce<string | null>((latest, lot) => {
+    const value = (lot.sourceBusinessDate ?? lot.purchaseDate)?.slice(0, 10);
+
+    return value && (!latest || value > latest) ? value : latest;
+  }, null);
+}
+
 function toLotPriceInputs(
   item: InventoryDisplayData["items"][number],
 ): Record<string, string> {
@@ -362,6 +374,8 @@ function toManualLineState(
       sourceLossQuantity: null,
       sourceCurrentQuantity: null,
       sourceQuantity: null,
+      sourceSalesQuantity: null,
+      sourceLastArrivalDate: null,
       message:
         "직접 추가한 품목입니다. 전일/매입/손실 근거가 없으니 실제 재고를 입력해 주세요.",
       history: [],
@@ -489,6 +503,8 @@ export function InventoryStepClient({
     useState<InventoryLineState | null>(null);
   // WO-11(2026-06-28): 상단 "전날 재고 보기" 전체 목록 모달.
   const [isPreviousStockOpen, setIsPreviousStockOpen] = useState(false);
+  const [previousStockCategory, setPreviousStockCategory] =
+    useState<(typeof categories)[number]>("전체");
   // 직접 추가했지만 아직 저장하지 않은 행. 상태 배지를 "이월 공백" 대신 "직접 입력"으로
   // 보여줘 0개 재고로 오해하지 않게 한다. 저장 후에는 실제 저장 행이 되므로 비운다.
   const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
@@ -1842,20 +1858,43 @@ export function InventoryStepClient({
 
   const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
 
-  // WO-11(2026-06-28): 전날 재고 전체 보기. 품목명/규격/수량/FIFO 기준일/전일 장부
-  // 상태만 보여준다. 금액·단가·원가·마진·FIFO 금액은 노출하지 않는다(지점장 민감값 차단).
+  // WO-11(2026-06-28): 전날 재고 전체 보기. 수량·판매량·마지막 입고일과
+  // 전일 장부 상태만 보여준다. 금액·단가·원가·마진은 노출하지 않는다.
   function renderPreviousStockDialog() {
+    const visibleItems =
+      previousStockCategory === "전체"
+        ? items
+        : items.filter(
+            (item) => item.productCategory === previousStockCategory,
+          );
+
     return (
       <Dialog open={isPreviousStockOpen} onOpenChange={setIsPreviousStockOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>전날 재고 보기</DialogTitle>
             <DialogDescription>
-              전날 기준 재고 수량입니다. 금액·단가는 표시하지 않으며, 전날
-              장부는 여기서 수정할 수 없습니다.
+              전날 재고 수량·판매량·마지막 입고일입니다. 금액·단가는 표시하지
+              않으며, 전날 장부는 여기서 수정할 수 없습니다.
             </DialogDescription>
           </DialogHeader>
-          {items.length === 0 ? (
+          <ToggleGroup
+            type="single"
+            value={previousStockCategory}
+            onValueChange={(value) => {
+              if (value) {
+                setPreviousStockCategory(normalizeCategory(value));
+              }
+            }}
+            aria-label="전날 재고 분류"
+          >
+            {categories.map((category) => (
+              <ToggleGroupItem key={category} value={category}>
+                {category}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          {visibleItems.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center text-sm">
               전날 재고 항목이 없습니다.
             </p>
@@ -1866,13 +1905,16 @@ export function InventoryStepClient({
                   <TableRow>
                     <TableHead>품목</TableHead>
                     <TableHead>규격</TableHead>
-                    <TableHead className="text-right">수량</TableHead>
-                    <TableHead>FIFO 기준일</TableHead>
+                    <TableHead className="text-right">전날 재고</TableHead>
+                    <TableHead className="text-right">
+                      전날 기준 판매량
+                    </TableHead>
+                    <TableHead>마지막 입고일</TableHead>
                     <TableHead>전일 장부</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
+                  {visibleItems.map((item) => (
                     <TableRow key={item.productId}>
                       <TableCell className="font-medium">
                         {item.productName}
@@ -1881,8 +1923,28 @@ export function InventoryStepClient({
                       <TableCell className="text-right tabular-nums">
                         {formatQuantity(item.previousQuantity)}
                       </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {item.previousQuantityDetail.sourceSalesQuantity ===
+                        null ? (
+                          <span title="전일 장부의 시작·매입·마감 수량 근거가 없어 계산할 수 없습니다.">
+                            계산 불가
+                          </span>
+                        ) : (
+                          formatQuantity(
+                            item.previousQuantityDetail.sourceSalesQuantity,
+                          )
+                        )}
+                      </TableCell>
                       <TableCell className="tabular-nums">
-                        {formatCarryoverBasisDate(item.previousQuantityDetail)}
+                        {item.previousQuantityDetail.sourceLastArrivalDate ? (
+                          formatDate(
+                            item.previousQuantityDetail.sourceLastArrivalDate,
+                          )
+                        ) : (
+                          <span title="남아 있는 FIFO 입고 근거가 없습니다.">
+                            계산 불가
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {formatLedgerStatus(
@@ -2265,7 +2327,7 @@ export function InventoryStepClient({
 
     if (visibleItems.length === 0) {
       return (
-        <TableRow>
+        <TableRow className="lg:col-span-2">
           <TableCell className="text-muted-foreground h-24 text-center">
             표시할 품목이 없습니다.
           </TableCell>
@@ -2300,6 +2362,7 @@ export function InventoryStepClient({
         ),
       );
       const lotPriceEntries = getInventoryLotPriceEntries(item);
+      const latestArrivalDate = getLatestInventoryArrivalDate(item);
       const fallbackUnitPriceSummary = item.purchasePrice
         ? item.purchasePrice.kind === "AVERAGE"
           ? `재고 평균단가 · 당일 · ${formatKrw(item.purchasePrice.unitPrice)}/1박스`
@@ -2325,16 +2388,15 @@ export function InventoryStepClient({
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
 
-      // 카드형 레이아웃: 품목당 1행(<tr>)을 유지하되 셀 1개 안에 카드를 그린다.
-      // 한 화면에서 입력·조정 버튼이 가로 스크롤 없이 바로 보이고, 조정 상세는
-      // 펼침(details)으로 빼서 셀 내용이 바뀌어도 행이 늘어나지 않게 한다.
+      // 품목당 1행(<tr>)을 유지해 입력 포커스와 테스트 범위를 섞지 않는다.
+      // tbody가 행을 순서대로 2열에 놓으므로 화면과 Enter 이동 순서도 같다.
       return (
         <TableRow
           key={item.productId}
           aria-label={`${item.productName} 재고 행${modified ? ", 수정됨" : ""}${recentlySaved ? ", 방금 저장됨" : ""}${editingAfterSave ? ", 수정 중" : ""}${adjusted ? ", 고침 완료" : ""}`}
           data-focused={focusedProductId === item.productId || undefined}
           className={cn(
-            "transition-colors",
+            "h-full min-w-0 transition-colors lg:odd:border-r",
             (modified || adjusted) && "border-primary bg-primary/5 border-l-4",
             // 편집 중인 행: 강한 ring + 배경으로 "지금 이 행"임을 분명히 한다.
             // 모든 카드가 비슷해 포커스 이동 시 어디로 갔는지 헷갈리던 문제 해결.
@@ -2342,7 +2404,7 @@ export function InventoryStepClient({
               "ring-primary bg-primary/10 relative z-10 rounded-sm shadow-sm ring-2 ring-inset",
           )}
         >
-          <TableCell className="p-3 align-top whitespace-normal">
+          <TableCell className="block h-full min-w-0 p-3 align-top whitespace-normal">
             <div className="flex flex-col gap-2.5">
               {/* 1줄: 행 번호 + 품목명 + 규격 + 상태 뱃지 */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2352,7 +2414,7 @@ export function InventoryStepClient({
                 >
                   {rowNumber}
                 </span>
-                <span className="font-medium break-keep">
+                <span className="min-w-0 font-medium break-words">
                   {item.productName}
                 </span>
                 {item.productSpec ? (
@@ -2360,11 +2422,12 @@ export function InventoryStepClient({
                     {item.productSpec}
                   </span>
                 ) : null}
+                <Badge variant="secondary">{item.productCategory}</Badge>
                 <div className="flex flex-wrap gap-1">
                   {modified ? (
                     <Badge
                       variant="outline"
-                      className="border-primary text-primary text-[10px]"
+                      className="border-primary text-primary"
                     >
                       수정됨
                     </Badge>
@@ -2413,19 +2476,51 @@ export function InventoryStepClient({
                     : null}
                   {sourceBadges.map(renderBadgeWithTooltip)}
                 </div>
-                {addedManualIds.has(item.productId) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`${item.productName} 추가 행 제거`}
-                    onClick={() => handleRemoveManualProduct(item.productId)}
-                    disabled={isSaving || isAdjustmentSavePending}
-                    className="ml-auto h-9 w-9"
-                  >
-                    <Trash2Icon aria-hidden className="size-4" />
-                  </Button>
-                ) : null}
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {item.productCategory === "생물" ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={0}
+                          aria-label={`${item.productName} 냉동 전환은 준비 중입니다`}
+                          className="focus-visible:ring-ring inline-flex rounded-md outline-none focus-visible:ring-2"
+                        >
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`${item.productName} 냉동 전환은 준비 중입니다`}
+                            disabled
+                            tabIndex={-1}
+                            className="h-11 px-2.5 text-xs"
+                          >
+                            <SnowflakeIcon
+                              data-icon="inline-start"
+                              aria-hidden
+                            />
+                            냉동 전환
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-64 leading-relaxed">
+                        재고와 원가를 안전하게 옮기는 저장 기능을 준비 중입니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                  {addedManualIds.has(item.productId) ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${item.productName} 추가 행 제거`}
+                      onClick={() => handleRemoveManualProduct(item.productId)}
+                      disabled={isSaving || isAdjustmentSavePending}
+                      className="h-9 w-9"
+                    >
+                      <Trash2Icon aria-hidden className="size-4" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
 
               {lotPriceEntries.length > 0 ? (
@@ -2454,7 +2549,7 @@ export function InventoryStepClient({
                     return (
                       <div
                         key={entry.key}
-                        className="bg-muted/40 grid gap-2 rounded-md p-2 sm:grid-cols-[minmax(12rem,15rem)_8rem_7rem] sm:items-end sm:justify-start"
+                        className="bg-muted/40 grid min-w-0 gap-2 rounded-md p-2 sm:grid-cols-[minmax(0,1fr)_8rem_7rem] sm:items-end"
                       >
                         <div className="text-muted-foreground leading-5">
                           <p className="text-foreground font-medium">
@@ -2493,7 +2588,7 @@ export function InventoryStepClient({
                               disabled={
                                 isSaving || isClosed || isAdjustmentSavePending
                               }
-                              className="h-10 tabular-nums"
+                              className="h-11 tabular-nums"
                             />
                           </Field>
                         ) : (
@@ -2552,6 +2647,14 @@ export function InventoryStepClient({
                   {hasSensitiveInventoryAmounts(item) && item.lossQuantity > 0
                     ? ` (${formatKrw(item.lossAmount)})`
                     : ""}
+                </span>
+                <span>
+                  마지막 입고일{" "}
+                  <span className="text-foreground font-medium">
+                    {latestArrivalDate
+                      ? formatDate(latestArrivalDate)
+                      : "계산 불가"}
+                  </span>
                 </span>
                 <span aria-hidden>→</span>
                 <span>
@@ -3152,17 +3255,18 @@ export function InventoryStepClient({
             {categories.map((category) => (
               <TabsContent key={category} value={category}>
                 {renderPagingControls(category)}
-                <div className="bg-card overflow-hidden rounded-lg border shadow-sm">
-                  {/* 카드 리스트: 품목당 1행. 가로 스크롤이 사라져 입력·저장
-                      버튼이 한 화면에 보이고, 셀 내용 변화로 칸 폭이 흔들리지
-                      않는다(컬럼이 1개라 auto-layout 재계산 영향 없음). */}
-                  <Table
-                    aria-label="재고 품목"
-                    className="[&_td]:border-b [&_tr:last-child_td]:border-0"
-                  >
-                    <TableBody>{renderRows(category)}</TableBody>
-                  </Table>
-                </div>
+                <Card size="sm" className="gap-0 py-0">
+                  <CardContent className="p-0">
+                    {/* 가로 카드 안에 품목을 왼쪽부터 두 칸씩 놓는다. 실제 입력,
+                      보조 설명, 오류 문구는 각 품목 행 안에 그대로 유지한다. */}
+                    <Table
+                      aria-label="재고 품목"
+                      className="block min-w-0 [&_tbody]:grid [&_tbody]:grid-cols-1 lg:[&_tbody]:grid-cols-2 [&_td]:w-full [&_tr]:block"
+                    >
+                      <TableBody>{renderRows(category)}</TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
               </TabsContent>
             ))}
           </Tabs>

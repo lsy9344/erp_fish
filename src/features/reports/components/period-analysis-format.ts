@@ -3,6 +3,7 @@ import type {
   PeriodAnalysisMetric,
   PeriodContrastDelta,
 } from "../period-analysis";
+import { formatPeriodAbsoluteDelta } from "../period-analysis";
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
@@ -42,7 +43,7 @@ export function formatPeriodMetricValue(
   return krwFormatter.format(metric.value);
 }
 
-// 비율 지표는 %p 차분, 나머지는 % 비율. 엑셀 `과거 대비 현재 증감율` 관행.
+// 비율 지표는 %p 차분, 평균 근무인원은 사람 수 차이, 나머지는 % 비율이다.
 export function formatPeriodDelta(delta: PeriodContrastDelta) {
   if (delta.value === null) {
     return delta.unavailableReason ?? "-";
@@ -52,6 +53,10 @@ export function formatPeriodDelta(delta: PeriodContrastDelta) {
     const points = delta.value * 100;
 
     return `${points > 0 ? "+" : ""}${points.toFixed(1)}%p`;
+  }
+
+  if (delta.kind === "absolute") {
+    return formatPeriodAbsoluteDelta(delta.value);
   }
 
   return signedPercentFormatter.format(delta.value);

@@ -1,8 +1,13 @@
 "use server";
 
+import { Prisma } from "../../../generated/prisma/index.js";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
-import { requireStoreManagerLedgerEditAccess } from "~/server/authz";
+import {
+  requireAppUser,
+  requireSettingsAccess,
+  requireStoreManagerLedgerEditAccess,
+} from "~/server/authz";
 import { db } from "~/server/db";
 import { revalidateStoreEntryPaths } from "~/server/revalidation";
 import {
@@ -11,8 +16,8 @@ import {
   type LedgerInputCodeStoreAliasInput,
 } from "./code-schemas";
 
-// 미팅 결정(2026-06-21): 코드 등록/수정은 본사 전용([[code-actions]]).
-// 지점장은 자기 지점 화면에 보이는 표시명만 덮어쓸 수 있다.
+// 코드 등록/수정은 본사 전용이다. 지출 항목 별칭은 지점장 정책을 유지하되,
+// 손실 유형 별칭은 손실 입력의 의미가 바뀌므로 본사만 수정할 수 있다.
 export type LedgerInputCodeStoreAliasData = {
   ledgerInputCodeId: string;
   storeId: string;
@@ -45,19 +50,44 @@ export async function setLedgerInputCodeStoreAlias(
     return parsed;
   }
 
-  // 지점장이 자기 지점에 대해서만 표시명을 바꿀 수 있도록 강제한다.
-  const access = await requireStoreManagerLedgerEditAccess(parsed.data.storeId);
+  // 코드 존재 여부도 로그인 전에는 알려주지 않는다.
+  await requireAppUser();
+  const authorizedCode = await db.ledgerInputCode.findUnique({
+    where: { id: codeId },
+    select: { group: true },
+  });
+
+  if (!authorizedCode) {
+    return actionError(
+      "LEDGER_INPUT_CODE_NOT_FOUND",
+      "코드를 찾을 수 없습니다.",
+    );
+  }
+
+  // 손실 유형은 지점장 직접 호출도 막고, 다른 별칭 정책은 그대로 둔다.
+  const access =
+    authorizedCode.group === "LOSS_TYPE"
+      ? await requireSettingsAccess()
+      : await requireStoreManagerLedgerEditAccess(parsed.data.storeId);
   const { storeId, displayName } = parsed.data;
-  const actorId = access.user.id;
+  const actorId = "user" in access ? access.user.id : access.id;
 
   const result = await db.$transaction(async (tx) => {
-    const code = await tx.ledgerInputCode.findUnique({
-      where: { id: codeId },
-      select: { id: true, name: true },
-    });
+    const [code] = await tx.$queryRaw<
+      Array<{ id: string; name: string; group: string }>
+    >(Prisma.sql`
+      SELECT "id", "name", "group"::text AS "group"
+      FROM "LedgerInputCode"
+      WHERE "id" = ${codeId}
+      FOR UPDATE
+    `);
 
     if (!code) {
       return { status: "missing" as const };
+    }
+
+    if (code.group !== authorizedCode.group) {
+      return { status: "group-changed" as const };
     }
 
     const existing = await tx.ledgerInputCodeStoreAlias.findUnique({
@@ -149,6 +179,13 @@ export async function setLedgerInputCodeStoreAlias(
     return actionError(
       "LEDGER_INPUT_CODE_NOT_FOUND",
       "코드를 찾을 수 없습니다.",
+    );
+  }
+
+  if (result.status === "group-changed") {
+    return actionError(
+      "LEDGER_INPUT_CODE_CHANGED",
+      "코드 종류가 변경되었습니다. 새로고침 후 다시 시도해 주세요.",
     );
   }
 

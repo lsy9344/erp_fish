@@ -351,7 +351,7 @@ test("desired cash is derived from monthly labor total minus insurance", () => {
     },
   );
 
-  // 지점·상태·이름 필터가 적용되면 월 급여 일부에서 보험료 전액을 빼지 않는다.
+  // 월 전체 기준으로 계산하므로 지점·상태·이름 필터 여부와 무관하다.
   assert.deepEqual(
     resolveDesiredCash({
       laborAmount: 1_000_000,
@@ -360,10 +360,7 @@ test("desired cash is derived from monthly labor total minus insurance", () => {
       isSingleMonth: true,
       hasSettlementFilter: true,
     }),
-    {
-      desiredCashAmount: null,
-      cashUnavailableReason: "필터 조회에서는 자동계산 미적용",
-    },
+    { desiredCashAmount: 700_000, cashUnavailableReason: null },
   );
 });
 
@@ -472,7 +469,7 @@ test("worker settlements group by employee and keep free-entry workers", () => {
   assert.equal(settlementTotal, report.storeSummaries[0].laborAmount);
 });
 
-test("worker settlements separate unlinked names by store and disable filtered cash", () => {
+test("worker settlements separate unlinked names by store and keep filtered cash", () => {
   const sharedItem = {
     employeeId: null,
     workerName: "동명이인",
@@ -551,11 +548,8 @@ test("worker settlements separate unlinked names by store and disable filtered c
       },
     ],
   });
-  assert.equal(filtered.workerSettlements[0].desiredCashAmount, null);
-  assert.equal(
-    filtered.workerSettlements[0].cashUnavailableReason,
-    "필터 조회에서는 자동계산 미적용",
-  );
+  assert.equal(filtered.workerSettlements[0].desiredCashAmount, 70_000);
+  assert.equal(filtered.workerSettlements[0].cashUnavailableReason, null);
 });
 
 test("headquarters labor store filter fails closed for unauthorized store ids", () => {
@@ -697,6 +691,15 @@ test("headquarters labor route and both navigation entries are present", () => {
     ),
     "utf8",
   );
+  const exportRoute = readFileSync(
+    path.join(root, "src", "app", "api", "reports", "export", "route.ts"),
+    "utf8",
+  );
+  const envSource = readFileSync(path.join(root, "src", "env.js"), "utf8");
+  const playwrightConfig = readFileSync(
+    path.join(root, "playwright.config.ts"),
+    "utf8",
+  );
 
   assert.match(page, /requireLaborViewAccess\(\)/);
   assert.match(page, /ReportsNav active="labor"/);
@@ -705,6 +708,15 @@ test("headquarters labor route and both navigation entries are present", () => {
     /지점장이 입력한 근무인원·근무자·메모와 장부에 저장된 인건비 현황/,
   );
   assert.doesNotMatch(page, /지점장이 입력한 근무자별 인건비/);
+  // CAP-9 추가 승인 전에는 화면과 직접 API 호출을 모두 닫는다.
+  assert.match(page, /env\.ENABLE_LABOR_EXPORT === "true"/);
+  assert.match(exportRoute, /env\.ENABLE_LABOR_EXPORT !== "true"/);
+  assert.match(exportRoute, /error: "not_found"/);
+  assert.match(
+    envSource,
+    /ENABLE_LABOR_EXPORT: z\.enum\(\["true"\]\)\.optional\(\)/,
+  );
+  assert.match(playwrightConfig, /ENABLE_LABOR_EXPORT: "true"/);
   assert.ok(
     reportView.indexOf('aria-labelledby="labor-store-summary"') <
       reportView.indexOf("report.details.length === 0"),

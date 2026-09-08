@@ -12,6 +12,7 @@ export default tseslint.config(
       ".omx",
       ".next",
       ".tmp",
+      "tmp",
       "generated",
       "next-env.d.ts",
       "src/components/ui",

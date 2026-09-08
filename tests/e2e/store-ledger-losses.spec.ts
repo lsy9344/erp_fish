@@ -6,8 +6,7 @@ const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
 const STORY_MARKER = "story-2-7-test";
 
-// 손실 입력 폼의 저장 버튼만 선택한다. 같은 페이지의 손실 유형 표시명 편집기는
-// type="button" 저장 버튼을 별도로 두므로, 폼 제출 버튼(type="submit")으로 한정한다.
+// 손실 입력 폼의 저장 버튼만 선택한다.
 function lossSaveButton(page: Page) {
   return page.locator('button[type="submit"]').filter({ hasText: "저장" });
 }
@@ -385,7 +384,7 @@ test("손실 항목 여러 건을 저장하고 재방문 시 목록과 합계를
   ).toHaveCount(0);
 });
 
-test("지점장이 손실 유형 표시명(alias)을 바꾸면 처리 유형 선택지에 반영되고, 비우면 본사 등록명으로 되돌아간다", async ({
+test("기존 손실 유형 alias 행이 있어도 지점장 화면은 본사 등록명을 사용한다", async ({
   page,
 }) => {
   await login(page);
@@ -396,69 +395,43 @@ test("지점장이 손실 유형 표시명(alias)을 바꾸면 처리 유형 선
   await seedOpeningSnapshot(product, 1, fixtureDate);
   await seedInventoryItem(ledger.id, product, 1);
 
-  const aliasName = `지점표시 ${randomUUID().slice(0, 6)}`;
+  const aliasName = `기존 지점표시 ${randomUUID().slice(0, 6)}`;
+  const actorId = await getHeadquartersUserId();
+  await prisma.ledgerInputCodeStoreAlias.create({
+    data: {
+      ledgerInputCodeId: lossType.id,
+      storeId: STORY_STORE_ID,
+      displayName: aliasName,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
 
   await page.goto(`/app/store-entry/losses?storeId=${STORY_STORE_ID}`);
 
-  // 처리 유형 드롭다운에는 본사 등록명이 보인다.
+  // 지점장 화면에는 손실 유형 별칭 편집기가 없다.
   await expect(
     page.getByRole("heading", { name: "손실 유형 표시명" }),
-  ).toBeVisible();
-  const aliasInput = page.getByLabel(`${lossType.name} 표시명`);
-  await expect(aliasInput).toBeEnabled();
-  await aliasInput.fill(aliasName);
-  const saveAliasButton = aliasInput
-    .locator("xpath=ancestor::li[1]")
-    .getByRole("button", { name: "저장" });
-  await expect(saveAliasButton).toBeEnabled();
-  await saveAliasButton.click();
-  await expect(page.getByText("표시명을 저장했습니다.")).toBeVisible();
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  const lossTypeSelect = page.getByLabel("처리 유형").nth(0);
+  await expect(
+    lossTypeSelect.locator("option", { hasText: lossType.name }),
+  ).toHaveCount(1);
+  await expect(
+    lossTypeSelect.locator("option", { hasText: aliasName }),
+  ).toHaveCount(0);
 
-  // 저장된 alias는 DB에 지점 범위로 남고, 본사 등록명은 그대로다.
-  const savedAlias = await prisma.ledgerInputCodeStoreAlias.findFirst({
+  // 기존 alias 행은 삭제하지 않고 보존한다.
+  const preservedAlias = await prisma.ledgerInputCodeStoreAlias.findFirst({
     where: { ledgerInputCodeId: lossType.id, storeId: STORY_STORE_ID },
   });
-  expect(savedAlias?.displayName).toBe(aliasName);
+  expect(preservedAlias?.displayName).toBe(aliasName);
   const canonical = await prisma.ledgerInputCode.findUniqueOrThrow({
     where: { id: lossType.id },
     select: { name: true },
   });
   expect(canonical.name).toBe(lossType.name);
-
-  // 재방문 시 처리 유형 선택지에 alias 표시명이 보인다.
-  await page.reload();
-  await page.getByRole("button", { name: "항목 추가" }).click();
-  await expect(
-    page
-      .getByLabel("처리 유형")
-      .nth(0)
-      .locator("option", { hasText: aliasName }),
-  ).toHaveCount(1);
-
-  // 표시명을 비우고 저장하면 본사 등록명으로 되돌아간다(alias 삭제).
-  const aliasInputAfter = page.getByLabel(`${aliasName} 표시명`);
-  await expect(aliasInputAfter).toBeEnabled();
-  await aliasInputAfter.fill("");
-  const clearAliasButton = aliasInputAfter
-    .locator("xpath=ancestor::li[1]")
-    .getByRole("button", { name: "저장" });
-  await expect(clearAliasButton).toBeEnabled();
-  await clearAliasButton.click();
-  await expect(page.getByText("표시명을 저장했습니다.")).toBeVisible();
-
-  const clearedAlias = await prisma.ledgerInputCodeStoreAlias.findFirst({
-    where: { ledgerInputCodeId: lossType.id, storeId: STORY_STORE_ID },
-  });
-  expect(clearedAlias).toBeNull();
-
-  await page.reload();
-  await page.getByRole("button", { name: "항목 추가" }).click();
-  await expect(
-    page
-      .getByLabel("처리 유형")
-      .nth(0)
-      .locator("option", { hasText: lossType.name }),
-  ).toHaveCount(1);
 });
 
 test("사유가 비어 있으면 저장을 막고 390px 모바일 입력 상태를 제공한다", async ({

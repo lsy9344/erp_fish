@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import {
   Field,
   FieldDescription,
@@ -150,11 +157,13 @@ function createLaborLineId() {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function createLaborLine(): LaborLine {
+function createLaborLine(
+  employee?: Pick<WorkStepEmployeeOption, "id" | "name">,
+): LaborLine {
   return {
     id: createLaborLineId(),
-    employeeId: "",
-    workerName: "",
+    employeeId: employee?.id ?? "",
+    workerName: employee?.name ?? "",
     amount: "",
     lateMemo: "",
     earlyLeaveMemo: "",
@@ -439,9 +448,21 @@ export function WorkStepClient({
     setLaborResultMessage(null);
   }
 
-  function addLaborLine() {
+  function addEmployeeLaborLine(employeeId: string) {
+    const selected = employeeOptions.find((option) => option.id === employeeId);
+
+    if (!selected) {
+      return;
+    }
+
     clearLaborRowState();
-    setLaborItems((current) => [...current, createLaborLine()]);
+    setLaborItems((current) => {
+      if (current.some((line) => line.employeeId === selected.id)) {
+        return current;
+      }
+
+      return [...current, createLaborLine(selected)];
+    });
   }
 
   function removeLaborLine(lineId: string) {
@@ -463,8 +484,15 @@ export function WorkStepClient({
     showSensitiveAccountingMetrics && hasSensitiveAccountingMetrics(ledger);
   const draftPayrollTotal = getDraftPayrollTotal(laborItems);
   // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 직원 연결을 마친 급여 행 수로 정한다.
-  const draftWorkerCount = laborItems.length;
+  const draftWorkerCount = laborItems.filter(
+    (line) => line.employeeId.trim().length > 0,
+  ).length;
   const employeeOptionGroups = groupEmployeeOptions(employeeOptions);
+  const selectedEmployeeIds = new Set(
+    laborItems
+      .map((line) => line.employeeId)
+      .filter((employeeId) => employeeId.length > 0),
+  );
   const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "sales");
   const guard = useUnsavedStepGuard({
     isDirty: isDirty || isLaborDirty,
@@ -660,17 +688,63 @@ export function WorkStepClient({
             <p className="text-sm font-medium">
               {showSensitiveAccountingMetrics ? "급여 / 인건비" : "근무자"}
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={addLaborLine}
-              disabled={!isHydrated || isLaborSaving || isOriginalEditBlocked}
-              className="min-h-11 gap-2"
-            >
-              <PlusIcon data-icon="inline-start" />
-              직원 추가
-            </Button>
           </div>
+
+          {employeeOptionGroups.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {employeeOptionGroups.map((group) => {
+                const availableOptions = group.options.filter(
+                  (option) => !selectedEmployeeIds.has(option.id),
+                );
+
+                return (
+                  <Card key={group.label}>
+                    <CardHeader className="gap-1 p-3">
+                      <CardTitle className="text-sm">{group.label}</CardTitle>
+                      <CardDescription>
+                        {availableOptions.length > 0
+                          ? "직원을 고르면 아래 목록에 바로 추가됩니다."
+                          : "모두 선택했습니다."}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                      <Select
+                        value=""
+                        disabled={
+                          !isHydrated ||
+                          isLaborSaving ||
+                          isOriginalEditBlocked ||
+                          availableOptions.length === 0
+                        }
+                        onValueChange={addEmployeeLaborLine}
+                      >
+                        <SelectTrigger
+                          className="min-h-11 w-full"
+                          aria-label={`${group.label} 직원 선택`}
+                        >
+                          <SelectValue placeholder="직원 선택" />
+                        </SelectTrigger>
+                        <SelectContent position="popper">
+                          <SelectGroup>
+                            <SelectLabel>{group.label}</SelectLabel>
+                            {availableOptions.map((option) => (
+                              <SelectItem
+                                key={option.id}
+                                value={option.id}
+                                disabled={!option.isActive}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : null}
 
           {laborItems.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -720,7 +794,7 @@ export function WorkStepClient({
                     {employeeOptions.length > 0 ? (
                       <Field data-invalid={Boolean(nameError)}>
                         <FieldLabel htmlFor={`labor-employee-${line.id}`}>
-                          직원 (매니저 / 팀원)
+                          직원
                         </FieldLabel>
                         <Select
                           value={line.employeeId}
@@ -755,7 +829,11 @@ export function WorkStepClient({
                                   <SelectItem
                                     key={option.id}
                                     value={option.id}
-                                    disabled={!option.isActive}
+                                    disabled={
+                                      !option.isActive ||
+                                      (selectedEmployeeIds.has(option.id) &&
+                                        option.id !== line.employeeId)
+                                    }
                                   >
                                     {option.label}
                                   </SelectItem>

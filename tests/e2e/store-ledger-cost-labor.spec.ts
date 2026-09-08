@@ -34,8 +34,12 @@ async function seedWorkStepEmployees() {
   }
 }
 
-async function selectWorkStepEmployee(page: Page, index: number, name: string) {
-  await page.getByLabel("직원 (매니저 / 팀원)").nth(index).click();
+async function selectWorkStepEmployee(
+  page: Page,
+  position: "매니저" | "팀원",
+  name: string,
+) {
+  await page.getByLabel(`${position} 직원 선택`).click();
   await page.getByRole("option", { name: new RegExp(name) }).click();
 }
 
@@ -337,9 +341,26 @@ test("지점장이 지출 항목 표시명(alias)을 바꾸면 선택지에 반�
     `스토리2-8 alias 비용 ${randomUUID().slice(0, 6)}`,
     15,
   );
+  const lossCode = await seedExpenseCode(
+    `스토리2-8 alias 손실 ${randomUUID().slice(0, 6)}`,
+    16,
+    { group: "LOSS_TYPE" },
+  );
   const aliasName = `지점비용 ${randomUUID().slice(0, 6)}`;
+  let capturedActionId: string | null = null;
+  const captureAliasAction = (request: {
+    method(): string;
+    headers(): Record<string, string>;
+  }) => {
+    const nextAction = request.headers()["next-action"];
+
+    if (request.method() === "POST" && nextAction) {
+      capturedActionId = nextAction;
+    }
+  };
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=cost`);
+  page.on("request", captureAliasAction);
 
   // 지출 항목 표시명 편집기가 지출 단계에 함께 렌더링된다.
   await expect(
@@ -352,6 +373,8 @@ test("지점장이 지출 항목 표시명(alias)을 바꾸면 선택지에 반�
     .getByRole("button", { name: "저장" })
     .click();
   await expect(page.getByText("표시명을 저장했습니다.")).toBeVisible();
+  page.off("request", captureAliasAction);
+  expect(capturedActionId).toBeTruthy();
 
   // alias는 지점 범위로 저장되고 본사 등록명은 그대로다.
   const savedAlias = await prisma.ledgerInputCodeStoreAlias.findFirst({
@@ -363,6 +386,33 @@ test("지점장이 지출 항목 표시명(alias)을 바꾸면 선택지에 반�
     select: { name: true },
   });
   expect(canonical.name).toBe(code.name);
+
+  // 같은 서버 action 주소를 직접 호출해도 지점장은 손실 유형 이름을 바꿀 수 없다.
+  const deniedAlias = `차단 대상 ${randomUUID().slice(0, 6)}`;
+  const deniedResponse = await page.request.post(
+    `/app/store-entry?storeId=${STORY_STORE_ID}&step=cost`,
+    {
+      headers: {
+        "Next-Action": capturedActionId!,
+        "Content-Type": "text/plain;charset=UTF-8",
+      },
+      data: JSON.stringify([
+        lossCode.id,
+        { storeId: STORY_STORE_ID, displayName: deniedAlias },
+      ]),
+    },
+  );
+  expect(deniedResponse.status()).toBeLessThan(500);
+  await expect
+    .poll(() =>
+      prisma.ledgerInputCodeStoreAlias.count({
+        where: {
+          ledgerInputCodeId: lossCode.id,
+          storeId: STORY_STORE_ID,
+        },
+      }),
+    )
+    .toBe(0);
 
   // 재방문 시 지출 항목 선택지에 alias 표시명이 보인다.
   await page.reload();
@@ -629,15 +679,13 @@ test("지점장은 근무자 명단을 저장하되 급여 금액 입력란과 �
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
 
   // 지점장 화면에는 급여 금액 입력란이 없다(직원명 자유 입력 칸도 없다).
-  await page.getByRole("button", { name: "직원 추가" }).click();
   await expect(page.getByLabel("급여 금액")).toHaveCount(0);
   await expect(page.getByLabel("직원명")).toHaveCount(0);
 
-  await selectWorkStepEmployee(page, 0, EMPLOYEE_MANAGER_NAME);
+  await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);
   await page.getByLabel("지각 (선택)").nth(0).fill("10분 지각");
 
-  await page.getByRole("button", { name: "직원 추가" }).click();
-  await selectWorkStepEmployee(page, 1, EMPLOYEE_MEMBER_NAME);
+  await selectWorkStepEmployee(page, "팀원", EMPLOYEE_MEMBER_NAME);
   await page.getByLabel("조퇴 (선택)").nth(1).fill("조기 퇴근");
 
   await page.getByRole("button", { name: "근무자 저장" }).click();
@@ -647,7 +695,7 @@ test("지점장은 근무자 명단을 저장하되 급여 금액 입력란과 �
 
   await page.reload();
 
-  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
   const laborSection = page.locator("section").filter({ hasText: "근무자" });
   await expect(laborSection).toContainText("근무자");
   await expect(laborSection).not.toContainText("급여 / 인건비");
@@ -688,13 +736,11 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
   await expect(page.getByRole("textbox", { name: "근무인원" })).toHaveCount(0);
 
   // WO-10(2026-06-28): 지점장은 급여 금액 없이 근무자만 추가한다.
-  await page.getByRole("button", { name: "직원 추가" }).click();
-  await selectWorkStepEmployee(page, 0, EMPLOYEE_MANAGER_NAME);
+  await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);
 
-  await page.getByRole("button", { name: "직원 추가" }).click();
-  await selectWorkStepEmployee(page, 1, EMPLOYEE_MEMBER_NAME);
+  await selectWorkStepEmployee(page, "팀원", EMPLOYEE_MEMBER_NAME);
 
-  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
   await expect(page.getByLabel("지각 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("조퇴 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("특이사항 (선택)")).toHaveCount(2);
@@ -715,7 +761,7 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
   // 재방문 후 근무인원과 근무자 행이 유지된다.
   await page.reload();
   await expect(page.getByText("총 근무인원", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("직원 (매니저 / 팀원)")).toHaveCount(2);
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
   await expect(page.getByText("급여 / 인건비")).toHaveCount(0);
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
@@ -727,24 +773,23 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
   expect(ledger.ledgerLaborItems).toHaveLength(2);
 });
 
-test("직원을 고르지 않으면 서버 검증 오류를 보여준다", async ({ page }) => {
+test("근무자를 고르지 않아도 빈 목록을 저장할 수 있다", async ({ page }) => {
   await login(page);
 
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  // 직원을 고르지 않은 채 저장하면 서버 검증 오류가 난다.
-  await page.getByRole("button", { name: "직원 추가" }).click();
+  // 직원 카드에서 고르지 않은 빈 상태도 유효한 근무자 목록이다.
   await page.getByRole("button", { name: "근무자 저장" }).click();
 
   await expect(
-    page.getByRole("alert").filter({ hasText: "입력값을 확인해 주세요." }),
+    page.getByRole("status").filter({ hasText: "근무자를 저장했습니다." }),
   ).toBeVisible();
-  await expect(page.getByText("직원을 선택해 주세요.")).toBeVisible();
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORY_STORE_ID },
     orderBy: { updatedAt: "desc" },
     include: { ledgerLaborItems: true },
   });
+  expect(ledger.workerCount).toBeNull();
   expect(ledger.ledgerLaborItems).toHaveLength(0);
 });
 

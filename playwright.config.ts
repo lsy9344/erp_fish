@@ -36,6 +36,7 @@ export default defineConfig({
       AUTH_SECRET: "test-auth-secret-at-least-32-characters",
       AUTH_URL: baseURL,
       DATABASE_URL: databaseURL,
+      ENABLE_LABOR_EXPORT: "true",
       SKIP_ENV_VALIDATION: "1",
       // WO-10(2026-06-22): LINE 아침 요약 알림 API 테스트 구성.
       // INTERNAL_CRON_SECRET로 인증을 검증하고, LINE 전송은 로컬 스텁(/api/test/line-stub)으로

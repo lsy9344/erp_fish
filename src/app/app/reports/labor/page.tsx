@@ -1,3 +1,6 @@
+import { DownloadIcon } from "lucide-react";
+
+import { PermissionAction } from "../../../../../generated/prisma";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { Button } from "~/components/ui/button";
@@ -6,7 +9,8 @@ import { PageHeader } from "~/components/page-header";
 import { HeadquartersLaborReportView } from "~/features/labor/components/headquarters-labor-report";
 import { getHeadquartersLaborReport } from "~/features/labor/headquarters-labor-queries";
 import { ReportsNav } from "~/features/reports/components/reports-nav";
-import { requireLaborViewAccess } from "~/server/authz";
+import { env } from "~/env";
+import { hasActionPermission, requireLaborViewAccess } from "~/server/authz";
 
 type HeadquartersLaborReportPageProps = {
   searchParams: Promise<{
@@ -28,7 +32,7 @@ export default async function HeadquartersLaborReportPage({
 }: HeadquartersLaborReportPageProps) {
   const user = await requireLaborViewAccess();
   const params = await searchParams;
-  const [navigationItems, report] = await Promise.all([
+  const [navigationItems, report, canExportReports] = await Promise.all([
     getHeadquartersNavigationItems(user.id),
     getHeadquartersLaborReport({
       month: firstParam(params.month),
@@ -38,9 +42,30 @@ export default async function HeadquartersLaborReportPage({
       status: firstParam(params.status),
       workerName: firstParam(params.workerName),
     }),
+    hasActionPermission(user.id, PermissionAction.EXPORT_CREATE),
   ]);
   // WO-0806 #2-2: `월 선택`과 `기간 지정` 두 모드. 입력변수가 기간이면 기간 모드로 열어둔다.
   const isRangeMode = Boolean(firstParam(params.from) ?? firstParam(params.to));
+  const exportParams = new URLSearchParams({
+    report: "labor",
+    format: "xlsx",
+  });
+  if (isRangeMode) {
+    exportParams.set("from", report.startDateInput);
+    exportParams.set("to", report.endDateInput);
+  } else {
+    exportParams.set("month", report.monthInput);
+  }
+  if (report.selectedStoreId) {
+    exportParams.set("storeId", report.selectedStoreId);
+  }
+  if (report.selectedStatus !== "ALL") {
+    exportParams.set("status", report.selectedStatus);
+  }
+  if (report.selectedWorkerName) {
+    exportParams.set("workerName", report.selectedWorkerName);
+  }
+  const exportHref = `/api/reports/export?${exportParams.toString()}`;
 
   return (
     <HeadquartersShell
@@ -153,6 +178,14 @@ export default async function HeadquartersLaborReportPage({
           <Button type="submit" variant="outline" size="sm">
             조회
           </Button>
+          {canExportReports && env.ENABLE_LABOR_EXPORT === "true" ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={exportHref}>
+                <DownloadIcon data-icon="inline-start" />
+                Excel
+              </a>
+            </Button>
+          ) : null}
           <Button asChild variant="ghost" size="sm">
             <a
               href={

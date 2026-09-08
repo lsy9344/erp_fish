@@ -212,6 +212,7 @@ export function HeadquartersLaborReportView({
                           >
                             {krwFormatter.format(settlement.desiredCashAmount)}
                           </span>
+                          <Badge variant="outline">월 전체 기준</Badge>
                           <Badge variant="outline">자동</Badge>
                           {settlement.desiredCashAmount < 0 ? (
                             <Badge variant="destructive">음수</Badge>

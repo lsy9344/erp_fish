@@ -88,8 +88,7 @@ export type EmployeeProductivityAnalysis = {
 };
 
 // WO-05(2026-06-22): 장부 급여 입력 화면의 직원 선택용 활성 직원 목록.
-// 본사·지점장 모두 동명이인을 구분해 급여 행을 직원과 연결할 수 있도록
-// 매장·직급·입사일을 합친 표시명도 제공하고,
+// 직원 선택 영역에서는 이름과 매장만 간단히 보여주고, 상세 정보는 직원 관리에서 확인한다.
 // 권한 게이트는 호출하는 장부 편집 페이지(편집 권한 확인 완료)에 위임한다.
 export async function getActiveEmployeeOptions(
   includeInactiveIds: Iterable<string> = [],
@@ -115,18 +114,12 @@ export async function getActiveEmployeeOptions(
 
   return employees.map((employee) => {
     const hireDate = employee.hireDate.toISOString().slice(0, 10);
-    const details = [
-      employee.store?.name,
-      employee.position,
-      hireDate,
-      employee.isActive ? null : "퇴사·사용중지",
-    ]
-      .filter(Boolean)
-      .join(" · ");
     return {
       ...employee,
       hireDate,
-      label: `${employee.name}${details ? ` (${details})` : ""}`,
+      label: employee.store
+        ? `${employee.name} (${employee.store.name})`
+        : employee.name,
     };
   });
 }

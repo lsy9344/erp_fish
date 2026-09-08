@@ -13,12 +13,55 @@ const {
   buildPeriodTrendYearRange,
   buildStoreAxisTrendRows,
   calculatePeriodDelta,
+  formatPeriodAbsoluteDelta,
   getPreviousComparableRange,
 } = await import(
   pathToFileURL(
     path.join(root, "src", "features", "reports", "period-analysis.ts"),
   ).href
 );
+const { buildBundledReportXlsx, buildPeriodContrastExport } = await import(
+  pathToFileURL(path.join(root, "src", "features", "reports", "export.ts")).href
+);
+
+test("absolute headcount deltas use people units in exports", () => {
+  assert.equal(formatPeriodAbsoluteDelta(1.1), "+1.1명");
+  assert.equal(formatPeriodAbsoluteDelta(-0.5), "-0.5명");
+  assert.equal(formatPeriodAbsoluteDelta(0), "0.0명");
+});
+
+test("period contrast xlsx writes headcount deltas as people and omits gross profit", async () => {
+  const baseRows = [storeRow("store-1", "강남", { averageWorkerCount: 2 })];
+  const currentRows = [
+    storeRow("store-1", "강남", { averageWorkerCount: 3.1 }),
+  ];
+  const built = buildPeriodContrastExport({
+    base: {
+      range: { startDateInput: "2026-08-01", endDateInput: "2026-08-31" },
+      rows: baseRows,
+    },
+    current: {
+      range: { startDateInput: "2026-09-01", endDateInput: "2026-09-30" },
+      rows: currentRows,
+    },
+    contrastRows: buildPeriodContrastRows({
+      baseRows,
+      currentRows,
+    }),
+    storeId: null,
+  });
+  const bytes = await buildBundledReportXlsx(built.sheets);
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(bytes);
+  const delta = workbook.getWorksheet("증감");
+  const header = delta?.getRow(1).values ?? [];
+  const values = delta?.getRow(2).values ?? [];
+  const headcountColumn = header.indexOf("평균 근무인원");
+
+  assert.equal(header.includes("매출이익"), false);
+  assert.equal(values[headcountColumn], "+1.1명");
+});
 
 function metric(value) {
   return value === null
@@ -61,8 +104,9 @@ test("period analysis metrics follow the owner spreadsheet order", () => {
   );
 });
 
-// 엑셀 실측: 매출은 비율(0.395922), 이익률은 차분(-0.0042728).
-test("delta uses rate for amounts and percentage points for ratios", () => {
+// 엑셀 실측: 매출은 비율(0.395922), 이익률은 차분(-0.0042728),
+// 평균 근무인원은 사람 수 차이(-0.070476...).
+test("delta uses rate, percentage points, and headcount difference", () => {
   const salesDelta = calculatePeriodDelta({
     kind: "money",
     base: metric(82_652_900),
@@ -79,14 +123,14 @@ test("delta uses rate for amounts and percentage points for ratios", () => {
   assert.equal(marginDelta.kind, "point");
   assert.ok(Math.abs(marginDelta.value - -0.0042728379815388) < 1e-12);
 
-  // 평균 근무인원도 비율이다(2.88 → 2.8095238095238093 = -0.024470899470899).
+  // 평균 근무인원은 비율이 아니라 실제 사람 수 차이다.
   const headcountDelta = calculatePeriodDelta({
     kind: "headcount",
     base: metric(2.88),
     current: metric(2.8095238095238093),
   });
-  assert.equal(headcountDelta.kind, "rate");
-  assert.ok(Math.abs(headcountDelta.value - -0.0244708994708994) < 1e-12);
+  assert.equal(headcountDelta.kind, "absolute");
+  assert.ok(Math.abs(headcountDelta.value - -0.07047619047619044) < 1e-12);
 });
 
 test("delta degrades with a reason instead of Infinity or NaN", () => {

@@ -273,7 +273,9 @@ export function DailySalesAnalysis({
                 <SalesChangeLegend rows={salesChangeRows} />
               </>
             )}
-            <SalesChangeTable data={data} />
+            <div className="sr-only">
+              <SalesChangeTable data={data} />
+            </div>
           </CardContent>
           <AvailabilityFooter
             availableMessage="증감률과 증감액은 같은 비교 기준을 사용합니다."

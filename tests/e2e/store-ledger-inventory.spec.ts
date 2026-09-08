@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
@@ -317,6 +317,182 @@ test("지점장 재고 화면은 입고별 단가만 보이고 재고·조정 �
   expect(responsePayload).not.toMatch(THIRTY_PERCENT_DERIVED_KEY_PATTERN);
 });
 
+test("가로 재고 카드는 데스크톱 두 품목과 모바일 한 품목을 순서대로 배치한다", async ({
+  page,
+}, testInfo: TestInfo) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct(
+    "스토리2-5 2열 카드 아주 긴 이름의 자연산 광어",
+    "생물",
+  );
+  const secondProduct = await seedProduct(
+    "스토리2-5 2열 카드 아주 긴 이름의 대형 연어",
+  );
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  for (const [index, item] of [product, secondProduct].entries()) {
+    await prisma.ledgerInventoryItem.create({
+      data: {
+        dailyLedgerId: ledger.id,
+        productId: item.id,
+        productName: item.name,
+        productCategory: item.category,
+        productSpec: item.spec,
+        unitPrice: item.defaultUnitPrice,
+        previousQuantity: 5 + index,
+        purchasedQuantity: 0,
+        currentQuantity: 5 + index,
+        quantity: 5 + index,
+        inventoryAmount: 60_000 + index * 12_000,
+        isModified: false,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    });
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  const tableBody = page
+    .getByRole("table", { name: "재고 품목" })
+    .locator("tbody");
+  const firstRow = page.locator("tr").filter({ hasText: product.name });
+  const secondRow = page.locator("tr").filter({ hasText: secondProduct.name });
+  const inventoryTableContainer = page
+    .getByRole("table", { name: "재고 품목" })
+    .locator("..");
+  await expect(tableBody).toBeVisible();
+  await expect(firstRow.getByText("생물", { exact: true })).toBeVisible();
+  await expect(secondRow.getByText("냉동", { exact: true })).toBeVisible();
+  await expect(firstRow).toContainText("마지막 입고일");
+  await expect(firstRow).toContainText(/2026-\d{2}-\d{2}/);
+  await expect
+    .poll(() =>
+      tableBody.evaluate(
+        (element) =>
+          getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/)
+            .length,
+      ),
+    )
+    .toBe(2);
+  const desktopFirstBox = await firstRow.boundingBox();
+  const desktopSecondBox = await secondRow.boundingBox();
+  expect(desktopFirstBox).not.toBeNull();
+  expect(desktopSecondBox).not.toBeNull();
+  expect(desktopFirstBox?.y).toBeCloseTo(desktopSecondBox?.y ?? 0, 0);
+  expect(desktopFirstBox?.x).not.toBeCloseTo(desktopSecondBox?.x ?? 0, 0);
+  const conversionButton = firstRow.getByRole("button", {
+    name: /냉동 전환은 준비 중입니다/,
+  });
+  await expect(conversionButton).toBeDisabled();
+  await expect(
+    secondRow.getByRole("button", { name: /냉동 전환/ }),
+  ).toHaveCount(0);
+  const inventoryBeforeDisabledClick =
+    await prisma.ledgerInventoryItem.findMany({
+      where: {
+        dailyLedgerId: ledger.id,
+        productId: { in: [product.id, secondProduct.id] },
+      },
+      select: {
+        productId: true,
+        currentQuantity: true,
+        quantity: true,
+        inventoryAmount: true,
+      },
+      orderBy: { productId: "asc" },
+    });
+  await conversionButton.evaluate((button) =>
+    (button as HTMLButtonElement).click(),
+  );
+  const inventoryAfterDisabledClick = await prisma.ledgerInventoryItem.findMany(
+    {
+      where: {
+        dailyLedgerId: ledger.id,
+        productId: { in: [product.id, secondProduct.id] },
+      },
+      select: {
+        productId: true,
+        currentQuantity: true,
+        quantity: true,
+        inventoryAmount: true,
+      },
+      orderBy: { productId: "asc" },
+    },
+  );
+  expect(inventoryAfterDisabledClick).toEqual(inventoryBeforeDisabledClick);
+  await expect
+    .poll(() =>
+      inventoryTableContainer.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("inventory-input-desktop-2col.png"),
+    fullPage: true,
+  });
+
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.reload();
+  await expect
+    .poll(() =>
+      tableBody.evaluate(
+        (element) =>
+          getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/)
+            .length,
+      ),
+    )
+    .toBe(2);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("inventory-input-desktop-1366-2col.png"),
+    fullPage: true,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect
+    .poll(() =>
+      tableBody.evaluate(
+        (element) =>
+          getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/)
+            .length,
+      ),
+    )
+    .toBe(1);
+  const mobileFirstBox = await firstRow.boundingBox();
+  const mobileSecondBox = await secondRow.boundingBox();
+  expect(mobileFirstBox).not.toBeNull();
+  expect(mobileSecondBox).not.toBeNull();
+  expect(mobileFirstBox?.x).toBeCloseTo(mobileSecondBox?.x ?? 0, 0);
+  expect(mobileFirstBox?.y).not.toBeCloseTo(mobileSecondBox?.y ?? 0, 0);
+  await expect
+    .poll(() =>
+      inventoryTableContainer.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("inventory-input-mobile-1col.png"),
+    fullPage: true,
+  });
+});
+
 test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 행을 유지한다", async ({
   page,
 }) => {
@@ -498,9 +674,9 @@ test("직전 본사 마감 장부의 당일재고를 이후 영업일 전일재�
   await expect(ledgerDialog).toContainText("11개");
 });
 
-// WO-11(2026-06-28): 상단 "전날 재고 보기" 모달은 품목/규격/수량/FIFO 기준일만 보여주고
+// 상단 "전날 재고 보기" 모달은 전일 판매량과 남은 재고의 마지막 입고일을 보여주되,
 // 금액·단가·원가·마진은 보여주지 않는다. 전날 장부 수정 링크도 없다.
-test("지점장은 전날 재고 보기에서 품목·수량만 보고 금액·단가는 보지 않는다", async ({
+test("지점장은 전날 재고를 분류하고 판매량·마지막 입고일만 안전하게 본다", async ({
   page,
 }) => {
   test.skip(
@@ -512,6 +688,11 @@ test("지점장은 전날 재고 보기에서 품목·수량만 보고 금액·�
   const actorId = await getHeadquartersUserId();
   // 단가/금액을 눈에 띄는 큰 값으로 둬서 모달에 새면 바로 잡히게 한다.
   const product = await seedProduct("스토리2-5 전날보기 대구", "생물", 777_777);
+  const frozenProduct = await seedProduct(
+    "스토리2-5 전날보기 냉동 대구",
+    "냉동",
+    666_666,
+  );
 
   const previousLedger = await prisma.dailyLedger.create({
     data: {
@@ -523,7 +704,7 @@ test("지점장은 전날 재고 보기에서 품목·수량만 보고 금액·�
     },
   });
 
-  await prisma.ledgerInventoryItem.create({
+  const previousItem = await prisma.ledgerInventoryItem.create({
     data: {
       dailyLedgerId: previousLedger.id,
       productId: product.id,
@@ -531,15 +712,70 @@ test("지점장은 전날 재고 보기에서 품목·수량만 보고 금액·�
       productCategory: product.category,
       productSpec: product.spec,
       unitPrice: product.defaultUnitPrice,
-      previousQuantity: 4,
-      purchasedQuantity: 0,
-      currentQuantity: 13,
-      inventoryAmount: 9_888_888,
+      previousQuantity: 10,
+      purchasedQuantity: 5,
+      currentQuantity: 8,
+      inventoryAmount: 6_222_216,
       carryoverSource: "MANUAL",
       carryoverStatus: "DATA_INSUFFICIENT",
       createdById: actorId,
       updatedById: actorId,
     },
+  });
+  const frozenPreviousItem = await prisma.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: previousLedger.id,
+      productId: frozenProduct.id,
+      productName: frozenProduct.name,
+      productCategory: frozenProduct.category,
+      productSpec: frozenProduct.spec,
+      unitPrice: frozenProduct.defaultUnitPrice,
+      previousQuantity: 4,
+      purchasedQuantity: 0,
+      currentQuantity: 3,
+      inventoryAmount: 1_999_998,
+      carryoverSource: "MANUAL",
+      carryoverStatus: "DATA_INSUFFICIENT",
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  const latestArrivalDate = new Date(
+    getPreviousKstMidnight().getTime() - 2 * 86_400_000,
+  );
+  await prisma.ledgerInventoryFifoLot.createMany({
+    data: [
+      {
+        dailyLedgerId: previousLedger.id,
+        ledgerInventoryItemId: previousItem.id,
+        productId: product.id,
+        sourceType: "PURCHASE",
+        sourceBusinessDate: latestArrivalDate,
+        unitPrice: product.defaultUnitPrice,
+        originalQuantity: 8,
+        consumedQuantity: 0,
+        remainingQuantity: 8,
+        originalAmount: 6_222_216,
+        consumedAmount: 0,
+        remainingAmount: 6_222_216,
+        sortOrder: 0,
+      },
+      {
+        dailyLedgerId: previousLedger.id,
+        ledgerInventoryItemId: frozenPreviousItem.id,
+        productId: frozenProduct.id,
+        sourceType: "PURCHASE",
+        sourceBusinessDate: latestArrivalDate,
+        unitPrice: frozenProduct.defaultUnitPrice,
+        originalQuantity: 3,
+        consumedQuantity: 0,
+        remainingQuantity: 3,
+        originalAmount: 1_999_998,
+        consumedAmount: 0,
+        remainingAmount: 1_999_998,
+        sortOrder: 0,
+      },
+    ],
   });
 
   await upsertLedger(getTodayKstMidnight(), actorId);
@@ -555,12 +791,34 @@ test("지점장은 전날 재고 보기에서 품목·수량만 보고 금액·�
   const dialog = page.getByRole("dialog", { name: "전날 재고 보기" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(product.name);
+  await expect(dialog).toContainText(frozenProduct.name);
   await expect(dialog).toContainText(product.spec);
-  // 전일재고 수량(13)은 보인다.
-  await expect(dialog).toContainText("13");
+  await expect(
+    dialog.getByRole("columnheader", { name: "전날 기준 판매량" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("columnheader", { name: "마지막 입고일" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("columnheader", { name: "FIFO 기준일" }),
+  ).toHaveCount(0);
+  const biologicalRow = dialog.locator("tr").filter({ hasText: product.name });
+  await expect(biologicalRow).toContainText("7");
+  await expect(biologicalRow).toContainText(
+    latestArrivalDate.toISOString().slice(0, 10),
+  );
+  const categoryFilter = dialog.getByLabel("전날 재고 분류");
+  await categoryFilter.getByText("냉동", { exact: true }).click();
+  await expect(dialog).not.toContainText(product.name);
+  await expect(dialog).toContainText(frozenProduct.name);
+  await categoryFilter.getByText("생물", { exact: true }).click();
+  await expect(dialog).toContainText(product.name);
+  await expect(dialog).not.toContainText(frozenProduct.name);
   // 금액·단가는 노출되지 않는다.
   await expect(dialog).not.toContainText("777,777");
-  await expect(dialog).not.toContainText("9,888,888");
+  await expect(dialog).not.toContainText("666,666");
+  await expect(dialog).not.toContainText("6,222,216");
+  await expect(dialog).not.toContainText("1,999,998");
   await expect(dialog).not.toContainText("원");
   // 전날 장부 수정 링크는 없다.
   await expect(dialog.getByRole("link")).toHaveCount(0);

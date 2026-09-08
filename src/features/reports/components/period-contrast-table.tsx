@@ -9,7 +9,7 @@ import {
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import {
-  PERIOD_ANALYSIS_METRICS,
+  PERIOD_CONTRAST_METRICS,
   type PeriodContrastRow,
 } from "../period-analysis";
 import { historicalSourceLabel } from "../historical-integration";
@@ -50,15 +50,15 @@ export function PeriodContrastTable({
       <section className="grid gap-2" aria-label="과거 대비 현재 증감">
         <h3 className="text-base font-semibold">과거 대비 현재 증감</h3>
         <p className="text-muted-foreground text-xs">
-          이익률과 매출대비 재고비율은 퍼센트포인트(%p) 차이, 나머지는 증감률(%)
-          입니다.
+          이익률과 매출대비 재고비율은 퍼센트포인트(%p) 차이, 평균 근무인원은
+          사람 수 차이, 나머지는 증감률(%)입니다.
         </p>
         <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
           <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[160px]">지점</TableHead>
-                {PERIOD_ANALYSIS_METRICS.map((metric) => (
+                {PERIOD_CONTRAST_METRICS.map((metric) => (
                   <TableHead key={metric.key} className="text-right">
                     {metric.label}
                   </TableHead>
@@ -69,7 +69,7 @@ export function PeriodContrastTable({
               {contrastRows.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={PERIOD_ANALYSIS_METRICS.length + 1}
+                    colSpan={PERIOD_CONTRAST_METRICS.length + 1}
                     className="text-muted-foreground h-20 text-center"
                   >
                     비교할 지점 데이터가 없습니다.
@@ -84,7 +84,7 @@ export function PeriodContrastTable({
                     <TableCell className="font-medium">
                       {row.storeName}
                     </TableCell>
-                    {PERIOD_ANALYSIS_METRICS.map((metric) => {
+                    {PERIOD_CONTRAST_METRICS.map((metric) => {
                       const delta = row.deltas[metric.key];
 
                       return (
@@ -148,7 +148,7 @@ function MetricBlock({
           <TableHeader>
             <TableRow>
               <TableHead className="w-[160px]">지점</TableHead>
-              {PERIOD_ANALYSIS_METRICS.map((metric) => (
+              {PERIOD_CONTRAST_METRICS.map((metric) => (
                 <TableHead key={metric.key} className="text-right">
                   {metric.label}
                 </TableHead>
@@ -159,7 +159,7 @@ function MetricBlock({
             {report.rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={PERIOD_ANALYSIS_METRICS.length + 1}
+                  colSpan={PERIOD_CONTRAST_METRICS.length + 1}
                   className="text-muted-foreground h-20 text-center"
                 >
                   표시할 지점 데이터가 없습니다.
@@ -171,7 +171,7 @@ function MetricBlock({
                   <TableCell className="font-medium">
                     <SourceCell row={row} />
                   </TableCell>
-                  {PERIOD_ANALYSIS_METRICS.map((metric) => (
+                  {PERIOD_CONTRAST_METRICS.map((metric) => (
                     <TableCell
                       key={metric.key}
                       className="text-right tabular-nums"

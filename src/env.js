@@ -80,6 +80,7 @@ export const env = createEnv({
     SEED_HQ_NAME: z.string().optional(),
     ALLOW_PRODUCTION_SEED: z.enum(["true"]).optional(),
     ALLOW_SEED_PASSWORD_ROTATION: z.enum(["true"]).optional(),
+    ENABLE_LABOR_EXPORT: z.enum(["true"]).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -106,6 +107,7 @@ export const env = createEnv({
     SEED_HQ_NAME: process.env.SEED_HQ_NAME,
     ALLOW_PRODUCTION_SEED: process.env.ALLOW_PRODUCTION_SEED,
     ALLOW_SEED_PASSWORD_ROTATION: process.env.ALLOW_SEED_PASSWORD_ROTATION,
+    ENABLE_LABOR_EXPORT: process.env.ENABLE_LABOR_EXPORT,
     NODE_ENV: process.env.NODE_ENV,
   },
   /**

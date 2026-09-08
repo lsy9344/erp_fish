@@ -8,7 +8,8 @@ import type {
   StoreComparisonReportRow,
 } from "./types";
 import {
-  PERIOD_ANALYSIS_METRICS,
+  PERIOD_CONTRAST_METRICS,
+  formatPeriodAbsoluteDelta,
   type PeriodContrastRow,
   type PeriodTrendColumn,
   type PeriodTrendRow,
@@ -16,8 +17,14 @@ import {
 import { historicalSourceLabel } from "./historical-integration.ts";
 import type { InventoryPositionReportData } from "./inventory-position-types";
 import type { LedgerReviewMetric } from "../../server/calculations/ledger";
+import type { HeadquartersLaborReport } from "../labor/headquarters-labor-types";
 
-export type ReportExportType = "daily" | "comparison" | "monthly" | "inventory";
+export type ReportExportType =
+  | "daily"
+  | "comparison"
+  | "monthly"
+  | "inventory"
+  | "labor";
 // WO-15(2026-06-28): xlsx 다운로드 추가. CSV는 보조로 유지한다.
 export type ReportExportFormat = "csv" | "xlsx";
 
@@ -33,6 +40,7 @@ const REPORT_SHEET_LABELS: Record<ReportExportType, string> = {
   // monthly 리포트의 기본 시트는 월간 KPI/이상 항목이다. "월별손익" 시트는 별도 추가된다.
   monthly: "월간요약",
   inventory: "재고현황",
+  labor: "조회조건",
 };
 
 type ReportExportColumn = {
@@ -112,6 +120,10 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "differenceQuantity", label: "당일 판매량" },
     { key: "amount", label: "재고 금액" },
     { key: "statusLabel", label: "상태" },
+  ],
+  labor: [
+    { key: "item", label: "조회 항목" },
+    { key: "value", label: "값" },
   ],
 } as const satisfies Record<ReportExportType, readonly ReportExportColumn[]>;
 
@@ -361,6 +373,122 @@ export function buildInventoryPositionReportExport(
       amount: row.inventoryAmount ?? "계산 불가",
       statusLabel: row.statusLabel,
     })),
+  };
+}
+
+export function buildHeadquartersLaborReportExport(
+  report: HeadquartersLaborReport,
+): { exportData: ReportExportData; sheets: ReportExportSheet[] } {
+  const selectedStoreName = report.selectedStoreId
+    ? (report.stores.find((store) => store.id === report.selectedStoreId)
+        ?.name ?? report.selectedStoreId)
+    : "전체 지점";
+  const statusLabels = {
+    ALL: "전체 상태",
+    IN_PROGRESS: "작성 중",
+    IN_REVIEW: "검토 중",
+    HEADQUARTERS_CLOSED: "본사 마감",
+  } as const;
+  const conditionColumns = [...REPORT_EXPORT_COLUMN_ALLOWLISTS.labor];
+  const conditionRows: ReportExportRow[] = [
+    { item: "자료 성격", value: "급여 확정 전 참고 자료" },
+    { item: "조회 기간", value: report.rangeLabel },
+    { item: "지점", value: selectedStoreName },
+    { item: "장부 상태", value: statusLabels[report.selectedStatus] },
+    { item: "직원명", value: report.selectedWorkerName ?? "전체 직원" },
+  ];
+  const storeColumns: ReportExportColumn[] = [
+    { key: "storeName", label: "지점" },
+    { key: "workdayCount", label: "근무일 수" },
+    { key: "workerCount", label: "근무인원 합계" },
+    { key: "averageWorkerCount", label: "근무인원 일평균" },
+    { key: "laborAmount", label: "인건비 합계" },
+  ];
+  const settlementColumns: ReportExportColumn[] = [
+    { key: "workerName", label: "근무자" },
+    { key: "storeNames", label: "근무 지점" },
+    { key: "position", label: "직급" },
+    { key: "workdayCount", label: "근무일수" },
+    { key: "laborAmount", label: "인건비 합계" },
+    { key: "desiredInsuranceAmount", label: "희망 4대보험" },
+    { key: "desiredCashAmount", label: "희망 현금" },
+    { key: "cashUnavailableReason", label: "희망 현금 사유" },
+  ];
+  const detailColumns: ReportExportColumn[] = [
+    { key: "businessDate", label: "영업일" },
+    { key: "storeName", label: "지점" },
+    { key: "status", label: "장부 상태" },
+    { key: "workerName", label: "근무자명" },
+    { key: "amount", label: "인건비" },
+    { key: "lateMemo", label: "지각" },
+    { key: "earlyLeaveMemo", label: "조퇴" },
+    { key: "specialMemo", label: "특이사항" },
+  ];
+  const sheets: ReportExportSheet[] = [
+    { name: "조회조건", columns: conditionColumns, rows: conditionRows },
+    {
+      name: "지점요약",
+      columns: storeColumns,
+      rows: report.storeSummaries.map((summary) => ({
+        storeName: summary.storeName,
+        workdayCount: summary.workdayCount,
+        workerCount: summary.workerCount,
+        averageWorkerCount:
+          summary.workdayCount > 0
+            ? summary.workerCount / summary.workdayCount
+            : "-",
+        laborAmount: summary.laborAmount,
+      })),
+    },
+    {
+      name: "근무자월정산",
+      columns: settlementColumns,
+      rows: report.workerSettlements.map((settlement) => ({
+        workerName: settlement.workerName,
+        storeNames: settlement.storeNames.join(", ") || "-",
+        position: settlement.position ?? "-",
+        workdayCount: settlement.workdayCount,
+        laborAmount: settlement.laborAmount,
+        desiredInsuranceAmount: settlement.desiredInsuranceAmount ?? "-",
+        desiredCashAmount:
+          settlement.desiredCashAmount ??
+          settlement.cashUnavailableReason ??
+          "계산 불가",
+        cashUnavailableReason: settlement.cashUnavailableReason ?? "",
+      })),
+    },
+    {
+      name: "근무상세",
+      columns: detailColumns,
+      rows: report.details.map((detail) => ({
+        businessDate: detail.businessDate,
+        storeName: detail.storeName,
+        status: statusLabels[detail.status],
+        workerName: detail.workerName,
+        amount: detail.amount,
+        lateMemo: detail.lateMemo ?? "-",
+        earlyLeaveMemo: detail.earlyLeaveMemo ?? "-",
+        specialMemo: detail.specialMemo ?? "-",
+      })),
+    },
+  ];
+
+  return {
+    exportData: {
+      report: "labor",
+      period: report.rangeLabel,
+      filters: {
+        startDate: report.startDateInput,
+        endDate: report.endDateInput,
+        storeId: report.selectedStoreId,
+        status: report.selectedStatus,
+        workerName: report.selectedWorkerName,
+      },
+      columns: conditionColumns,
+      rows: conditionRows,
+      scopedStoreIds: report.storeSummaries.map((summary) => summary.storeId),
+    },
+    sheets,
   };
 }
 
@@ -762,7 +890,7 @@ function sanitizeFilenamePart(value: string) {
 }
 
 // WO-0806 [F]: 대표는 엑셀 사용자다. 기간 대조/시계열도 화면 그대로 내보낸다.
-// 컬럼은 PERIOD_ANALYSIS_METRICS 하나에서 오므로 화면과 어긋날 수 없다.
+// 기간 대조 컬럼은 화면 전용 목록에서 오므로 화면과 어긋날 수 없다.
 const PERIOD_ANALYSIS_STORE_COLUMN: ReportExportColumn = {
   key: "storeName",
   label: "지점",
@@ -771,7 +899,7 @@ const PERIOD_ANALYSIS_STORE_COLUMN: ReportExportColumn = {
 function periodMetricColumns(includeSource = false): ReportExportColumn[] {
   return [
     PERIOD_ANALYSIS_STORE_COLUMN,
-    ...PERIOD_ANALYSIS_METRICS.map((metric) => ({
+    ...PERIOD_CONTRAST_METRICS.map((metric) => ({
       key: metric.key,
       label: metric.label,
     })),
@@ -789,7 +917,7 @@ function periodMetricRows(rows: StoreComparisonReportRow[]): ReportExportRow[] {
   return rows.map((row) => ({
     storeName: row.storeName,
     ...Object.fromEntries(
-      PERIOD_ANALYSIS_METRICS.map((metric) => [
+      PERIOD_CONTRAST_METRICS.map((metric) => [
         metric.key,
         formatReviewMetric(row[metric.key]),
       ]),
@@ -851,17 +979,19 @@ export function buildPeriodContrastExport({
         rows: contrastRows.map((row) => ({
           storeName: row.storeName,
           ...Object.fromEntries(
-            PERIOD_ANALYSIS_METRICS.map((metric) => {
+            PERIOD_CONTRAST_METRICS.map((metric) => {
               const delta = row.deltas[metric.key];
 
               return [
                 metric.key,
                 delta.value === null
                   ? (delta.unavailableReason ?? "계산 불가")
-                  : // 비율 지표는 %p 차분, 나머지는 % 비율(엑셀 관행).
-                    delta.kind === "point"
-                    ? `${(delta.value * 100).toFixed(1)}%p`
-                    : `${(delta.value * 100).toFixed(1)}%`,
+                  : delta.kind === "absolute"
+                    ? formatPeriodAbsoluteDelta(delta.value)
+                    : // 비율 지표는 %p 차분, 나머지는 % 비율(엑셀 관행).
+                      delta.kind === "point"
+                      ? `${(delta.value * 100).toFixed(1)}%p`
+                      : `${(delta.value * 100).toFixed(1)}%`,
               ];
             }),
           ),

@@ -552,7 +552,7 @@ export function PurchaseStepClient({
         successMessage={resultMessage}
         unsavedFields={
           showAuthorDisplayName
-            ? ["작성자 표시명", "매입 품목", "단가", "수량"]
+            ? ["장부 작성자", "매입 품목", "단가", "수량"]
             : ["매입 품목", "단가", "수량"]
         }
         onRetry={handleRetry}
@@ -563,7 +563,7 @@ export function PurchaseStepClient({
       {showAuthorDisplayName ? (
         <section className="border-primary/30 bg-primary/5 text-card-foreground rounded-lg border p-4">
           <Field data-invalid={Boolean(authorDisplayNameError)}>
-            <FieldLabel htmlFor="author-display-name">작성자 표시명</FieldLabel>
+            <FieldLabel htmlFor="author-display-name">장부 작성자</FieldLabel>
             <Input
               ref={authorDisplayNameInputRef}
               id="author-display-name"
@@ -590,7 +590,7 @@ export function PurchaseStepClient({
               className="text-muted-foreground mt-1 text-xs"
             >
               {isAuthorLocked
-                ? "최초 작성자 표시명은 보존되며 수정할 수 없습니다. 수정 이력은 감사 로그로 추적됩니다."
+                ? "최초 장부 작성자는 보존되며 수정할 수 없습니다. 수정 이력은 감사 로그로 추적됩니다."
                 : "장부를 작성하는 사람 이름입니다. 매입 저장 시 함께 기록됩니다."}
             </p>
             {authorDisplayNameError ? (

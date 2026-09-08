@@ -1081,14 +1081,16 @@ test("WO-10: store manager labor schema rejects amount input", async () => {
   // 금액 없는 근무자 명단은 통과한다.
   const ok = storeManagerLedgerLaborSchema.safeParse({
     ...base,
-    labor: [{ employeeId: "", workerName: "홍길동" }],
+    labor: [{ employeeId: "employee-1", workerName: "홍길동" }],
   });
   assert.equal(ok.success, true);
 
   // 조작된 amount가 들어오면 무시가 아니라 거부한다.
   const rejected = storeManagerLedgerLaborSchema.safeParse({
     ...base,
-    labor: [{ employeeId: "", workerName: "홍길동", amount: 999_999 }],
+    labor: [
+      { employeeId: "employee-1", workerName: "홍길동", amount: 999_999 },
+    ],
   });
   assert.equal(rejected.success, false);
 });

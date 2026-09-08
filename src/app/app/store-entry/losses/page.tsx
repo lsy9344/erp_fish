@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { NoActiveStoreMessage } from "~/components/store-manager-panels";
 import { StoreManagerShell } from "~/components/store-manager-shell";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
-import { LossTypeAliasEditor } from "~/features/master-data/components/loss-type-alias-editor";
 import { getLossStepData } from "~/features/losses/queries";
 import { SalesPlanLossContext } from "~/features/sales-plan/components/sales-plan-loss-context";
 import { getSalesPlanLossContext } from "~/features/sales-plan/queries";
@@ -38,13 +37,6 @@ function LossContent({
     <div className="flex flex-col gap-4">
       <SalesPlanLossContext items={salesPlanContext} />
       <LossStepClient storeName={storeName} initialData={initialData} />
-      <LossTypeAliasEditor
-        storeId={initialData.storeId}
-        options={initialData.lossTypeOptions.map((option) => ({
-          id: option.id,
-          name: option.name,
-        }))}
-      />
     </div>
   );
 }

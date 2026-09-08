@@ -241,6 +241,7 @@ export function buildHeadquartersLaborReport({
   stores,
   targetStoreIds,
   ledgers,
+  settlementLedgers = ledgers,
   errorMessages = [],
 }: {
   monthInput: string;
@@ -254,6 +255,8 @@ export function buildHeadquartersLaborReport({
   stores: HeadquartersLaborStoreOption[];
   targetStoreIds: readonly string[];
   ledgers: HeadquartersLaborLedgerRecord[];
+  // 화면 필터와 무관한 월 전체 원장. 희망 현금은 이 자료로 계산한다.
+  settlementLedgers?: HeadquartersLaborLedgerRecord[];
   errorMessages?: string[];
 }): HeadquartersLaborReport {
   const targetStoreIdSet = new Set(targetStoreIds);
@@ -290,17 +293,17 @@ export function buildHeadquartersLaborReport({
       specialMemo: item.specialMemo,
     })),
   );
-  // 희망 현금은 월 전체 원장을 볼 때만 지급 근거로 안전하다. 지점·상태·이름
-  // 필터가 하나라도 적용되면 월 급여 일부에서 보험료 전액을 빼는 오류가 생긴다.
-  const hasSettlementFilter =
-    selectedStoreId !== null ||
-    selectedStatus !== "ALL" ||
-    selectedWorkerName !== null;
-  const workerSettlements = buildWorkerSettlements(
-    targetLedgers,
-    isSingleMonth,
-    hasSettlementFilter,
+  // 화면에 보이는 직원 목록은 필터 결과로 정하되, 금액은 필터 전 월 전체 원장에서
+  // 다시 합산한다. 그래서 지점·상태·이름 필터가 보험료 계산을 왜곡하지 않는다.
+  const visibleWorkerKeys = new Set(
+    buildWorkerSettlements(targetLedgers, false).map(
+      (settlement) => settlement.key,
+    ),
   );
+  const workerSettlements = buildWorkerSettlements(
+    settlementLedgers,
+    isSingleMonth,
+  ).filter((settlement) => visibleWorkerKeys.has(settlement.key));
   const summaryByStore = new Map<
     string,
     {
@@ -390,7 +393,6 @@ export function buildHeadquartersLaborReport({
 function buildWorkerSettlements(
   ledgers: HeadquartersLaborLedgerRecord[],
   isSingleMonth: boolean,
-  hasSettlementFilter: boolean,
 ): HeadquartersLaborWorkerSettlement[] {
   const byWorker = new Map<
     string,
@@ -437,7 +439,6 @@ function buildWorkerSettlements(
         desiredInsuranceAmount: settlement.desiredInsuranceAmount,
         isLinkedEmployee: !settlement.key.startsWith("name:"),
         isSingleMonth,
-        hasSettlementFilter,
       });
 
       return {
@@ -461,13 +462,11 @@ export function resolveDesiredCash({
   desiredInsuranceAmount,
   isLinkedEmployee,
   isSingleMonth,
-  hasSettlementFilter = false,
 }: {
   laborAmount: number;
   desiredInsuranceAmount: number | null;
   isLinkedEmployee: boolean;
   isSingleMonth: boolean;
-  hasSettlementFilter?: boolean;
 }): { desiredCashAmount: number | null; cashUnavailableReason: string | null } {
   if (!isLinkedEmployee) {
     return {
@@ -480,13 +479,6 @@ export function resolveDesiredCash({
     return {
       desiredCashAmount: null,
       cashUnavailableReason: "기간 조회에서는 자동계산 미적용",
-    };
-  }
-
-  if (hasSettlementFilter) {
-    return {
-      desiredCashAmount: null,
-      cashUnavailableReason: "필터 조회에서는 자동계산 미적용",
     };
   }
 
@@ -534,20 +526,45 @@ export async function getHeadquartersLaborReport({
     allowedStoreIds: scope.storeIds,
   });
 
+  const ledgerWhere = {
+    closingDate: {
+      gte: monthRange.startDate,
+      lte: monthRange.endDate,
+    },
+  };
   const ledgers =
     storeFilter.targetStoreIds.length === 0
       ? []
       : await db.dailyLedger.findMany({
           where: {
             storeId: { in: storeFilter.targetStoreIds },
-            closingDate: {
-              gte: monthRange.startDate,
-              lte: monthRange.endDate,
-            },
+            ...ledgerWhere,
             status:
               selectedStatus === "ALL"
                 ? { in: [...HEADQUARTERS_LABOR_STATUSES] }
                 : selectedStatus,
+          },
+          orderBy: [
+            { closingDate: "desc" },
+            { store: { name: "asc" } },
+            { id: "asc" },
+          ],
+          select: headquartersLaborLedgerSelect,
+        });
+  const hasSettlementFilter =
+    storeFilter.selectedStoreId !== null ||
+    selectedStatus !== "ALL" ||
+    selectedWorkerName !== null;
+  const settlementLedgers =
+    !monthRange.isSingleMonth ||
+    !hasSettlementFilter ||
+    storeFilter.targetStoreIds.length === 0
+      ? ledgers
+      : await db.dailyLedger.findMany({
+          where: {
+            storeId: { in: scope.storeIds },
+            ...ledgerWhere,
+            status: { in: [...HEADQUARTERS_LABOR_STATUSES] },
           },
           orderBy: [
             { closingDate: "desc" },
@@ -569,6 +586,7 @@ export async function getHeadquartersLaborReport({
     stores: scope.stores.map((store) => ({ id: store.id, name: store.name })),
     targetStoreIds: storeFilter.targetStoreIds,
     ledgers,
+    settlementLedgers,
     errorMessages: [...monthRange.errorMessages, ...storeFilter.errorMessages],
   });
 }

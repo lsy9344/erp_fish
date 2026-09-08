@@ -32,7 +32,7 @@ const laborAmountForbiddenError =
 const laborMemoError = "메모는 0~500자 사이여야 합니다.";
 const closingDateError = "영업일을 확인해 주세요.";
 const ledgerVersionError = "장부 상태를 확인해 주세요.";
-const authorDisplayNameError = "작성자 표시명은 50자 이하여야 합니다.";
+const authorDisplayNameError = "장부 작성자는 50자 이하여야 합니다.";
 
 function parseRequiredKrwAmount(
   value: unknown,
@@ -455,15 +455,40 @@ export type LedgerLaborInput = z.infer<typeof ledgerLaborSchema>;
 // WO-10(2026-06-28) + 2026-09-02 요청: 급여액 입력 칸을 없앴다. 금액은 직원 카드의
 // 하루 인건비를 저장 시점에 스냅샷하거나 기존 금액을 이월해서만 정해진다.
 // 조작된 POST로 급여액이 들어오는 경로는 그대로 거부한다.
-const storeManagerLaborItemSchema = ledgerLaborItemSchema.strict(
-  laborAmountForbiddenError,
-);
+const storeManagerLaborItemSchema = ledgerLaborItemSchema
+  .strict(laborAmountForbiddenError)
+  .superRefine((value, context) => {
+    if (value.employeeId === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "직원을 선택해 주세요.",
+        path: ["employeeId"],
+      });
+    }
+  });
 
-export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema.extend(
-  {
+export const storeManagerLedgerLaborSchema = ledgerMutationContextSchema
+  .extend({
     labor: z.array(storeManagerLaborItemSchema),
-  },
-);
+  })
+  .superRefine((value, context) => {
+    const seen = new Set<string>();
+
+    value.labor.forEach((item, index) => {
+      if (item.employeeId === null || seen.has(item.employeeId)) {
+        if (item.employeeId !== null && seen.has(item.employeeId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "같은 직원을 두 번 선택할 수 없습니다.",
+            path: ["labor", index, "employeeId"],
+          });
+        }
+        return;
+      }
+
+      seen.add(item.employeeId);
+    });
+  });
 
 export type StoreManagerLedgerLaborInput = z.infer<
   typeof storeManagerLedgerLaborSchema

@@ -229,36 +229,40 @@ export default async function StoreComparisonReportPage({
             action="/app/reports/comparison"
             className="flex flex-wrap items-end gap-2"
           >
-            <div className="grid gap-1">
-              <label
-                className="text-muted-foreground text-xs"
-                htmlFor="startDate"
-              >
-                시작일
-              </label>
-              <Input
-                id="startDate"
-                name="startDate"
-                type="date"
-                defaultValue={report.range.startDateInput}
-                className="h-9 w-36"
-              />
-            </div>
-            <div className="grid gap-1">
-              <label
-                className="text-muted-foreground text-xs"
-                htmlFor="endDate"
-              >
-                종료일
-              </label>
-              <Input
-                id="endDate"
-                name="endDate"
-                type="date"
-                defaultValue={report.range.endDateInput}
-                className="h-9 w-36"
-              />
-            </div>
+            {mode !== "trend" ? (
+              <>
+                <div className="grid gap-1">
+                  <label
+                    className="text-muted-foreground text-xs"
+                    htmlFor="startDate"
+                  >
+                    시작일
+                  </label>
+                  <Input
+                    id="startDate"
+                    name="startDate"
+                    type="date"
+                    defaultValue={report.range.startDateInput}
+                    className="h-9 w-36"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label
+                    className="text-muted-foreground text-xs"
+                    htmlFor="endDate"
+                  >
+                    종료일
+                  </label>
+                  <Input
+                    id="endDate"
+                    name="endDate"
+                    type="date"
+                    defaultValue={report.range.endDateInput}
+                    className="h-9 w-36"
+                  />
+                </div>
+              </>
+            ) : null}
             <div className="grid gap-1">
               <label
                 className="text-muted-foreground text-xs"

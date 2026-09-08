@@ -84,6 +84,10 @@ export type InventoryCarryoverDetailView = {
   sourceLossQuantity: number | null;
   sourceCurrentQuantity: number | null;
   sourceQuantity: number | null;
+  /** 전일 장부 근거로 계산한 판매 수량. 근거가 없으면 null이다. */
+  sourceSalesQuantity: number | null;
+  /** 전일 FIFO 잔량이 나온 가장 최근 입고 기준일. */
+  sourceLastArrivalDate: string | null;
   message: string;
   history: InventoryCarryoverHistoryRow[];
 };
