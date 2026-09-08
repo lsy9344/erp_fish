@@ -50,7 +50,10 @@ import {
   loadResolvedLotSalesPricesInTx,
   lotSalesPriceKey,
 } from "../inventory/lot-sales-price.ts";
-import { hasCompleteLotSalesAllocation } from "../inventory/lot-sales-allocation.ts";
+import {
+  hasCompleteLotCostAllocation,
+  hasCompleteLotSalesAllocation,
+} from "../inventory/lot-sales-allocation.ts";
 import type {
   DailyAttendanceReport,
   DailyAttendanceStatus,
@@ -123,6 +126,8 @@ type ReportLedgerRecord = {
     productName: string;
     previousQuantity: number;
     purchasedQuantity: number;
+    conversionInQuantity?: number;
+    conversionOutQuantity?: number;
     currentQuantity: number | null;
     quantity: number | null;
     unitPrice: number;
@@ -187,6 +192,8 @@ type DailyMeetingReportRowWithoutMarginThreshold = Omit<
 type InventoryQuantityFields = {
   previousQuantity: DecimalNumber;
   purchasedQuantity: DecimalNumber;
+  conversionInQuantity?: DecimalNumber;
+  conversionOutQuantity?: DecimalNumber;
   currentQuantity: DecimalNumber | null;
   quantity: DecimalNumber | null;
   fifoLots?: Array<{
@@ -210,12 +217,16 @@ type NormalizedInventoryQuantityFields<T extends InventoryQuantityFields> =
     T,
     | "previousQuantity"
     | "purchasedQuantity"
+    | "conversionInQuantity"
+    | "conversionOutQuantity"
     | "currentQuantity"
     | "quantity"
     | "fifoLots"
   > & {
     previousQuantity: number;
     purchasedQuantity: number;
+    conversionInQuantity?: number;
+    conversionOutQuantity?: number;
     currentQuantity: number | null;
     quantity: number | null;
     fifoLots: T["fifoLots"] extends
@@ -248,6 +259,14 @@ function normalizeInventoryQuantityFields<T extends InventoryQuantityFields>(
     ...item,
     previousQuantity: decimalToNumber(item.previousQuantity),
     purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+    conversionInQuantity:
+      item.conversionInQuantity == null
+        ? undefined
+        : decimalToNumber(item.conversionInQuantity),
+    conversionOutQuantity:
+      item.conversionOutQuantity == null
+        ? undefined
+        : decimalToNumber(item.conversionOutQuantity),
     currentQuantity: nullableDecimalToNumber(item.currentQuantity),
     quantity: nullableDecimalToNumber(item.quantity),
     fifoLots: item.fifoLots?.map((lot) => ({
@@ -345,6 +364,8 @@ function buildDailyMeetingPlannedSalesItems(
       productId?: string | null;
       previousQuantity: number;
       purchasedQuantity: number;
+      conversionInQuantity?: number;
+      conversionOutQuantity?: number;
       lossQuantity?: number;
       currentQuantity: number | null;
       quantity: number | null;
@@ -377,6 +398,8 @@ function buildDailyMeetingPlannedSalesItems(
             productId: item.productId ?? undefined,
             previousQuantity: 0,
             purchasedQuantity: decimalToNumber(lot.soldQuantity),
+            conversionInQuantity: 0,
+            conversionOutQuantity: 0,
             lossQuantity: 0,
             currentQuantity: 0,
             quantity: 0,
@@ -389,6 +412,8 @@ function buildDailyMeetingPlannedSalesItems(
             productId: item.productId ?? undefined,
             previousQuantity: item.previousQuantity,
             purchasedQuantity: item.purchasedQuantity,
+            conversionInQuantity: item.conversionInQuantity,
+            conversionOutQuantity: item.conversionOutQuantity,
             lossQuantity: item.lossQuantity ?? 0,
             currentQuantity: item.currentQuantity,
             quantity: item.quantity,
@@ -1158,6 +1183,8 @@ type CategoryPerformanceItem = {
   // 당일 손실 합계 수량. 판매량은 기준재고(전일+매입-손실)에서 당일재고를 빼야
   // 하므로 손실을 판매로 잘못 잡지 않도록 차감한다. 없으면 0.
   lossQuantity?: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   unitPrice: number;
   // 지점장 판매한 가격. 없으면 null(매입단가로 폴백).
   plannedUnitPrice?: number | null;
@@ -1168,6 +1195,7 @@ type CategoryPerformanceItem = {
     consumedAmount: number;
     soldAmount?: number;
     lossAmount?: number;
+    conversionOutAmount?: number;
   }>;
 };
 
@@ -1190,10 +1218,29 @@ function aggregateLossQuantityByProductId(
 function getItemSoldQuantity(item: CategoryPerformanceItem) {
   if (item.currentQuantity === null) return null;
 
+  if (
+    item.fifoLots &&
+    item.fifoLots.length > 0 &&
+    hasCompleteLotSalesAllocation(
+      item,
+      item.fifoLots.map((lot) => ({
+        soldQuantity: lot.soldQuantity ?? Number.NaN,
+      })),
+    )
+  ) {
+    const soldQuantity = item.fifoLots.reduce(
+      (sum, lot) => sum + (lot.soldQuantity ?? 0),
+      0,
+    );
+    return Number.isFinite(soldQuantity) ? soldQuantity : null;
+  }
+
   const soldQuantity =
     item.previousQuantity +
     item.purchasedQuantity -
     (item.lossQuantity ?? 0) -
+    (item.conversionOutQuantity ?? 0) +
+    (item.conversionInQuantity ?? 0) -
     item.currentQuantity;
 
   return Number.isFinite(soldQuantity) ? soldQuantity : null;
@@ -1202,14 +1249,11 @@ function getItemSoldQuantity(item: CategoryPerformanceItem) {
 function getItemCogs(item: CategoryPerformanceItem, soldQuantity: number) {
   if (item.fifoLots && item.fifoLots.length > 0) {
     return item.fifoLots.reduce((sum, lot) => {
-      const hasCompleteAllocation =
-        lot.soldAmount !== undefined &&
-        lot.lossAmount !== undefined &&
-        Math.abs(lot.soldAmount + lot.lossAmount - lot.consumedAmount) <
-          0.000001;
-
       return (
-        sum + (hasCompleteAllocation ? lot.soldAmount! : lot.consumedAmount)
+        sum +
+        (hasCompleteLotCostAllocation(lot)
+          ? (lot.soldAmount ?? 0)
+          : lot.consumedAmount)
       );
     }, 0);
   }
@@ -1547,6 +1591,8 @@ export async function getHqDailyMeetingReport({
                 productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
+                conversionInQuantity: true,
+                conversionOutQuantity: true,
                 currentQuantity: true,
                 quantity: true,
                 unitPrice: true,
@@ -1560,6 +1606,7 @@ export async function getHqDailyMeetingReport({
                     consumedAmount: true,
                     soldAmount: true,
                     lossAmount: true,
+                    conversionOutAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -1840,6 +1887,7 @@ export async function getHqProductSalesReportForRange({
               consumedAmount: true,
               soldAmount: true,
               lossAmount: true,
+              conversionOutAmount: true,
             },
           },
         },
@@ -2131,6 +2179,7 @@ export async function getHqStoreComparisonReport({
                     consumedAmount: true,
                     soldAmount: true,
                     lossAmount: true,
+                    conversionOutAmount: true,
                     remainingAmount: true,
                   },
                 },
@@ -2363,6 +2412,7 @@ export async function getStoreProfitSummariesForRange({
               consumedAmount: true,
               soldAmount: true,
               lossAmount: true,
+              conversionOutAmount: true,
               remainingAmount: true,
             },
           },
@@ -2555,6 +2605,7 @@ export async function getLedgerProfitSummariesForRange({
               consumedAmount: true,
               soldAmount: true,
               lossAmount: true,
+              conversionOutAmount: true,
               remainingAmount: true,
             },
           },
@@ -2834,6 +2885,7 @@ export async function getHqMonthlyClosingAnomalyReport({
               consumedAmount: true,
               soldAmount: true,
               lossAmount: true,
+              conversionOutAmount: true,
               remainingAmount: true,
             },
           },

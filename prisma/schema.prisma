@@ -61,6 +61,7 @@ enum InventoryCarryoverSource {
   OPENING_SNAPSHOT
   PREVIOUS_CLOSED_LEDGER
   PREVIOUS_SAVED_LEDGER
+  CONVERSION
   MANUAL
 }
 
@@ -88,6 +89,7 @@ enum InventoryLotSource {
   OPENING
   PREVIOUS_CARRYOVER
   PURCHASE
+  CONVERSION
   LEGACY_OPENING
 }
 
@@ -165,6 +167,8 @@ model Product {
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
   ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
+  sourceInventoryConversions LedgerInventoryConversion[] @relation("InventoryConversionSourceProduct")
+  targetInventoryConversions LedgerInventoryConversion[] @relation("InventoryConversionTargetProduct")
   ledgerLotSalesPricePlans   LedgerLotSalesPricePlan[]
   ledgerLossLotAllocations   LedgerLossLotAllocation[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
@@ -358,6 +362,7 @@ model User {
   updatedLedgerPurchaseItems          LedgerPurchaseItem[]        @relation("LedgerPurchaseItemUpdatedBy")
   createdLedgerInventoryItems         LedgerInventoryItem[]       @relation("LedgerInventoryItemCreatedBy")
   updatedLedgerInventoryItems         LedgerInventoryItem[]       @relation("LedgerInventoryItemUpdatedBy")
+  createdLedgerInventoryConversions   LedgerInventoryConversion[] @relation("LedgerInventoryConversionCreatedBy")
   createdLedgerInventoryAdjustments   LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentCreatedBy")
   updatedLedgerInventoryAdjustments   LedgerInventoryAdjustment[] @relation("LedgerInventoryAdjustmentUpdatedBy")
   createdLedgerLossItems              LedgerLossItem[]            @relation("LedgerLossItemCreatedBy")
@@ -463,6 +468,7 @@ model DailyLedger {
   ledgerPurchaseItems        LedgerPurchaseItem[]
   ledgerInventoryItems       LedgerInventoryItem[]
   ledgerInventoryFifoLots    LedgerInventoryFifoLot[]
+  ledgerInventoryConversions LedgerInventoryConversion[]
   ledgerLotSalesPricePlans   LedgerLotSalesPricePlan[]
   ledgerLossLotAllocations   LedgerLossLotAllocation[]
   ledgerInventoryAdjustments LedgerInventoryAdjustment[]
@@ -583,26 +589,28 @@ model LedgerPurchaseItem {
 }
 
 model LedgerInventoryItem {
-  id                String                   @id @default(cuid())
-  dailyLedgerId     String
-  productId         String
-  productName       String
-  productCategory   String
-  productSpec       String
-  unitPrice         Int
-  previousQuantity  Decimal                  @db.Decimal(12, 2)
-  purchasedQuantity Decimal                  @default(0) @db.Decimal(12, 2)
-  currentQuantity   Decimal?                 @db.Decimal(12, 2)
-  quantity          Decimal?                 @db.Decimal(12, 2)
-  inventoryAmount   Int?
-  isModified        Boolean                  @default(false)
-  carryoverSource   InventoryCarryoverSource @default(MANUAL)
-  carryoverStatus   InventoryCarryoverStatus @default(DATA_INSUFFICIENT)
-  carryoverLedgerId String?
-  createdById       String
-  updatedById       String
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
+  id                    String                   @id @default(cuid())
+  dailyLedgerId         String
+  productId             String
+  productName           String
+  productCategory       String
+  productSpec           String
+  unitPrice             Int
+  previousQuantity      Decimal                  @db.Decimal(12, 2)
+  purchasedQuantity     Decimal                  @default(0) @db.Decimal(12, 2)
+  conversionInQuantity  Decimal                  @default(0) @db.Decimal(12, 2)
+  conversionOutQuantity Decimal                  @default(0) @db.Decimal(12, 2)
+  currentQuantity       Decimal?                 @db.Decimal(12, 2)
+  quantity              Decimal?                 @db.Decimal(12, 2)
+  inventoryAmount       Int?
+  isModified            Boolean                  @default(false)
+  carryoverSource       InventoryCarryoverSource @default(MANUAL)
+  carryoverStatus       InventoryCarryoverStatus @default(DATA_INSUFFICIENT)
+  carryoverLedgerId     String?
+  createdById           String
+  updatedById           String
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   dailyLedger               DailyLedger                     @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
   product                   Product                         @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -646,38 +654,42 @@ model LedgerInventoryCarryoverDetail {
 }
 
 model LedgerInventoryFifoLot {
-  id                    String             @id @default(cuid())
+  id                           String             @id @default(cuid())
   // 전날 이월과 FIFO 재계산을 지나도 바뀌지 않는 입고분 식별자.
-  lotOriginKey          String             @default(dbgenerated("(gen_random_uuid())::text"))
-  dailyLedgerId         String
-  ledgerInventoryItemId String?
-  productId             String
-  sourceType            InventoryLotSource
-  sourceLedgerId        String?
-  sourcePurchaseItemId  String?
-  unitPrice             Int
-  originalQuantity      Decimal            @db.Decimal(12, 2)
-  consumedQuantity      Decimal            @db.Decimal(12, 2)
-  lossQuantity          Decimal            @default(0) @db.Decimal(12, 2)
-  soldQuantity          Decimal            @default(0) @db.Decimal(12, 2)
-  remainingQuantity     Decimal            @db.Decimal(12, 2)
-  originalAmount        Int
-  consumedAmount        Int
-  lossAmount            Int                @default(0)
-  soldAmount            Int                @default(0)
-  remainingAmount       Int
-  sortOrder             Int
+  lotOriginKey                 String             @default(dbgenerated("(gen_random_uuid())::text"))
+  dailyLedgerId                String
+  ledgerInventoryItemId        String?
+  productId                    String
+  sourceType                   InventoryLotSource
+  sourceLedgerId               String?
+  sourcePurchaseItemId         String?
+  sourceConversionAllocationId String?
+  unitPrice                    Int
+  originalQuantity             Decimal            @db.Decimal(12, 2)
+  consumedQuantity             Decimal            @db.Decimal(12, 2)
+  lossQuantity                 Decimal            @default(0) @db.Decimal(12, 2)
+  soldQuantity                 Decimal            @default(0) @db.Decimal(12, 2)
+  conversionOutQuantity        Decimal            @default(0) @db.Decimal(12, 2)
+  remainingQuantity            Decimal            @db.Decimal(12, 2)
+  originalAmount               Int
+  consumedAmount               Int
+  lossAmount                   Int                @default(0)
+  soldAmount                   Int                @default(0)
+  conversionOutAmount          Int                @default(0)
+  remainingAmount              Int
+  sortOrder                    Int
   // WO-G(2026-06-22): lot의 실제 영업 기준일. 장기 체화 재고 판정이 데이터 입력 시각
   // (createdAt)이 아니라 영업일을 기준으로 동작하도록 한다.
   // PURCHASE는 매입 장부의 closingDate, 이월/기초 lot은 원천 영업일을 보존한다.
-  sourceBusinessDate    DateTime?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  sourceBusinessDate           DateTime?
+  createdAt                    DateTime           @default(now())
+  updatedAt                    DateTime           @updatedAt
 
-  dailyLedger         DailyLedger          @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
-  ledgerInventoryItem LedgerInventoryItem? @relation(fields: [ledgerInventoryItemId], references: [id], onDelete: Cascade)
-  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
-  sourcePurchaseItem  LedgerPurchaseItem?  @relation(fields: [sourcePurchaseItemId], references: [id], onDelete: SetNull)
+  dailyLedger                DailyLedger                          @relation(fields: [dailyLedgerId], references: [id], onDelete: Cascade)
+  ledgerInventoryItem        LedgerInventoryItem?                 @relation(fields: [ledgerInventoryItemId], references: [id], onDelete: Cascade)
+  product                    Product                              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sourcePurchaseItem         LedgerPurchaseItem?                  @relation(fields: [sourcePurchaseItemId], references: [id], onDelete: SetNull)
+  sourceConversionAllocation LedgerInventoryConversionAllocation? @relation(fields: [sourceConversionAllocationId], references: [id], onDelete: SetNull)
 
   @@unique([dailyLedgerId, productId, sortOrder], map: "ledgerInventoryFifoLot_dailyLedgerId_productId_sortOrder_key")
   @@index([dailyLedgerId, productId])
@@ -686,7 +698,50 @@ model LedgerInventoryFifoLot {
   @@index([productId])
   @@index([sourceType])
   @@index([sourcePurchaseItemId])
+  @@index([sourceConversionAllocationId])
   @@index([sourceBusinessDate])
+}
+
+model LedgerInventoryConversion {
+  id                   String   @id @default(cuid())
+  dailyLedgerId        String
+  sourceProductId      String
+  targetProductId      String
+  quantity             Decimal  @db.Decimal(12, 2)
+  sourceQuantityBefore Decimal  @db.Decimal(12, 2)
+  sourceQuantityAfter  Decimal  @db.Decimal(12, 2)
+  targetQuantityBefore Decimal  @db.Decimal(12, 2)
+  targetQuantityAfter  Decimal  @db.Decimal(12, 2)
+  createdById          String
+  createdAt            DateTime @default(now())
+
+  dailyLedger   DailyLedger                           @relation(fields: [dailyLedgerId], references: [id], onDelete: Restrict)
+  sourceProduct Product                               @relation("InventoryConversionSourceProduct", fields: [sourceProductId], references: [id], onDelete: Restrict)
+  targetProduct Product                               @relation("InventoryConversionTargetProduct", fields: [targetProductId], references: [id], onDelete: Restrict)
+  createdBy     User                                  @relation("LedgerInventoryConversionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  allocations   LedgerInventoryConversionAllocation[]
+
+  @@index([dailyLedgerId, sourceProductId])
+  @@index([dailyLedgerId, targetProductId])
+  @@index([createdById])
+}
+
+model LedgerInventoryConversionAllocation {
+  id                 String    @id @default(cuid())
+  conversionId       String
+  sourceLotOriginKey String
+  sourceBusinessDate DateTime?
+  unitCost           Int
+  quantity           Decimal   @db.Decimal(12, 2)
+  costAmount         Int
+  sortOrder          Int
+  createdAt          DateTime  @default(now())
+
+  conversion LedgerInventoryConversion @relation(fields: [conversionId], references: [id], onDelete: Cascade)
+  fifoLots   LedgerInventoryFifoLot[]
+
+  @@unique([conversionId, sortOrder])
+  @@index([sourceLotOriginKey])
 }
 
 model LedgerInventoryAdjustment {

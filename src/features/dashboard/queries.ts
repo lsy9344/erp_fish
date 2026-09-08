@@ -65,6 +65,8 @@ type DashboardPlannedSalesItem = {
   productId?: string;
   previousQuantity: number;
   purchasedQuantity: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   lossQuantity: number;
   currentQuantity: number | null;
   quantity: number | null;
@@ -80,6 +82,8 @@ async function buildDashboardPlannedSalesItems(
       productId: string | null;
       previousQuantity: number;
       purchasedQuantity: number;
+      conversionInQuantity?: number;
+      conversionOutQuantity?: number;
       currentQuantity: number | null;
       quantity: number | null;
       fifoLots?: Array<{
@@ -164,6 +168,8 @@ async function buildDashboardPlannedSalesItems(
             productId: item.productId ?? undefined,
             previousQuantity: 0,
             purchasedQuantity: decimalToNumber(lot.soldQuantity),
+            conversionInQuantity: 0,
+            conversionOutQuantity: 0,
             lossQuantity: 0,
             currentQuantity: 0,
             quantity: 0,
@@ -180,6 +186,8 @@ async function buildDashboardPlannedSalesItems(
             productId: item.productId ?? undefined,
             previousQuantity: item.previousQuantity,
             purchasedQuantity: item.purchasedQuantity,
+            conversionInQuantity: item.conversionInQuantity ?? 0,
+            conversionOutQuantity: item.conversionOutQuantity ?? 0,
             lossQuantity: itemLossQuantity,
             currentQuantity: item.currentQuantity,
             quantity: item.quantity,
@@ -234,6 +242,8 @@ type DashboardLedgerRecord = {
     productName: string;
     previousQuantity: number;
     purchasedQuantity: number;
+    conversionInQuantity?: number;
+    conversionOutQuantity?: number;
     currentQuantity: number | null;
     quantity: number | null;
     unitPrice: number;
@@ -245,6 +255,7 @@ type DashboardLedgerRecord = {
       consumedAmount: number;
       soldAmount?: number;
       lossAmount?: number;
+      conversionOutAmount?: number;
       remainingAmount: number;
     }[];
   }[];
@@ -287,12 +298,16 @@ type DashboardLedgerRecordSource = Omit<
       DashboardLedgerRecord["ledgerInventoryItems"][number],
       | "previousQuantity"
       | "purchasedQuantity"
+      | "conversionInQuantity"
+      | "conversionOutQuantity"
       | "currentQuantity"
       | "quantity"
       | "fifoLots"
     > & {
       previousQuantity: DecimalNumber;
       purchasedQuantity: DecimalNumber;
+      conversionInQuantity?: DecimalNumber;
+      conversionOutQuantity?: DecimalNumber;
       currentQuantity: DecimalNumber | null;
       quantity: DecimalNumber | null;
       fifoLots?: Array<
@@ -335,6 +350,14 @@ function toDashboardLedgerRecord<T extends DashboardLedgerRecordSource>(
       ...item,
       previousQuantity: decimalToNumber(item.previousQuantity),
       purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      conversionInQuantity:
+        item.conversionInQuantity == null
+          ? undefined
+          : decimalToNumber(item.conversionInQuantity),
+      conversionOutQuantity:
+        item.conversionOutQuantity == null
+          ? undefined
+          : decimalToNumber(item.conversionOutQuantity),
       currentQuantity: nullableDecimalToNumber(item.currentQuantity),
       quantity: nullableDecimalToNumber(item.quantity),
       fifoLots: item.fifoLots?.map((lot) => ({
@@ -545,6 +568,8 @@ export async function getHqDashboardRows({
                 productName: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
+                conversionInQuantity: true,
+                conversionOutQuantity: true,
                 currentQuantity: true,
                 quantity: true,
                 unitPrice: true,
@@ -556,6 +581,7 @@ export async function getHqDashboardRows({
                     soldQuantity: true,
                     consumedAmount: true,
                     soldAmount: true,
+                    conversionOutAmount: true,
                     lossAmount: true,
                     remainingAmount: true,
                   },
@@ -995,6 +1021,8 @@ export async function getHqLedgerDetail(ledgerId: string) {
                 productName: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
+                conversionInQuantity: true,
+                conversionOutQuantity: true,
                 currentQuantity: true,
                 quantity: true,
                 unitPrice: true,
@@ -1006,6 +1034,7 @@ export async function getHqLedgerDetail(ledgerId: string) {
                     soldQuantity: true,
                     consumedAmount: true,
                     soldAmount: true,
+                    conversionOutAmount: true,
                     lossAmount: true,
                     remainingAmount: true,
                   },
@@ -1457,6 +1486,8 @@ function toCorrectedInventoryAdjustments(
       ? calculateSystemInventoryQuantity({
           previousQuantity: lossBasisItem.previousQuantity,
           purchasedQuantity: lossBasisItem.purchasedQuantity,
+          conversionInQuantity: lossBasisItem.conversionInQuantity,
+          conversionOutQuantity: lossBasisItem.conversionOutQuantity,
           lossQuantity: correctedLossQuantity,
         })
       : adjustment.beforeQuantity;

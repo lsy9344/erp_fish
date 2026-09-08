@@ -142,6 +142,8 @@ function getInventoryAmountErrors(
     previousQuantity: number;
     purchasedQuantity: number;
     lossQuantity: number;
+    conversionInQuantity: number;
+    conversionOutQuantity: number;
     currentQuantity: number | null;
     quantity: number | null;
   }>,
@@ -170,6 +172,8 @@ function getInventoryAmountErrors(
         previousQuantity: before.previousQuantity,
         purchasedQuantity: before.purchasedQuantity,
         lossQuantity: before.lossQuantity,
+        conversionInQuantity: before.conversionInQuantity,
+        conversionOutQuantity: before.conversionOutQuantity,
       });
 
       if (
@@ -458,6 +462,8 @@ export async function saveLedgerInventoryItems(
                 previousQuantity: 0,
                 purchasedQuantity: 0,
                 lossQuantity: 0,
+                conversionInQuantity: 0,
+                conversionOutQuantity: 0,
                 carryoverSource: "MANUAL",
                 carryoverStatus: "CARRYOVER_EMPTY",
                 carryoverLedgerId: null,
@@ -470,6 +476,8 @@ export async function saveLedgerInventoryItems(
               previousQuantity: beforeItem.previousQuantity,
               purchasedQuantity: beforeItem.purchasedQuantity,
               lossQuantity: beforeItem.lossQuantity,
+              conversionInQuantity: beforeItem.conversionInQuantity,
+              conversionOutQuantity: beforeItem.conversionOutQuantity,
               carryoverSource: beforeItem.carryoverSource,
               carryoverStatus: beforeItem.carryoverStatus,
               carryoverLedgerId: beforeItem.carryoverLedgerId,
@@ -543,6 +551,8 @@ export async function saveLedgerInventoryItems(
               unitPrice: item.unitPrice,
               previousQuantity: item.previousQuantity,
               purchasedQuantity: item.purchasedQuantity,
+              conversionInQuantity: item.conversionInQuantity,
+              conversionOutQuantity: item.conversionOutQuantity,
               currentQuantity,
               quantity,
               inventoryAmount: calculateInventoryAmount(

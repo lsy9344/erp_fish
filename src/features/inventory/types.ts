@@ -44,6 +44,8 @@ export type InventoryStepLine = {
   unitPrice: number;
   previousQuantity: number;
   purchasedQuantity: number;
+  conversionInQuantity: number;
+  conversionOutQuantity: number;
   purchaseAmount: number;
   lossQuantity: number;
   lossAmount: number;
@@ -170,6 +172,7 @@ export type StoreManagerInventoryFifoLotView = Omit<
   | "consumedAmount"
   | "lossAmount"
   | "soldAmount"
+  | "conversionOutAmount"
   | "remainingAmount"
   | "expectedRevenue"
   | "expectedProfit"

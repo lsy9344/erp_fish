@@ -43,6 +43,7 @@ const sourceTypeLabels: Record<
   OPENING: "기초 재고",
   PREVIOUS_CARRYOVER: "전일 이월",
   PURCHASE: "매입",
+  CONVERSION: "냉동 전환",
   LEGACY_OPENING: "기존 재고",
 };
 

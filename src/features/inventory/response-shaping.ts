@@ -20,6 +20,8 @@ function shapeStoreManagerInventoryLine(
     plannedUnitPrice: item.plannedUnitPrice,
     previousQuantity: item.previousQuantity,
     purchasedQuantity: item.purchasedQuantity,
+    conversionInQuantity: item.conversionInQuantity,
+    conversionOutQuantity: item.conversionOutQuantity,
     lossQuantity: item.lossQuantity,
     currentQuantity: item.currentQuantity,
     quantity: item.quantity,
@@ -34,6 +36,7 @@ function shapeStoreManagerInventoryLine(
         consumedAmount,
         lossAmount,
         soldAmount,
+        conversionOutAmount,
         remainingAmount,
         expectedRevenue,
         expectedProfit,
@@ -43,6 +46,7 @@ function shapeStoreManagerInventoryLine(
         void consumedAmount;
         void lossAmount;
         void soldAmount;
+        void conversionOutAmount;
         void remainingAmount;
         void expectedRevenue;
         void expectedProfit;

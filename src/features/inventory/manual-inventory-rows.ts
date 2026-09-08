@@ -121,6 +121,8 @@ export async function buildManualInventoryRows(
         unitPrice,
         previousQuantity: 0,
         purchasedQuantity: 0,
+        conversionInQuantity: 0,
+        conversionOutQuantity: 0,
         currentQuantity,
         quantity,
         inventoryAmount: calculateInventoryAmount(quantity, unitPrice),

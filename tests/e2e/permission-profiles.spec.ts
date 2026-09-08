@@ -50,6 +50,9 @@ test("지정 지점 본사 프로파일은 지점장 입력 화면을 직접 열
 test("지정 지점 본사 프로파일은 대시보드와 리포트에서 배정 지점 데이터만 받는다", async ({
   page,
 }) => {
+  // 처음 여는 대시보드와 리포트 3종을 한 번에 검사하므로 개발 서버의
+  // 화면 준비 시간을 포함할 수 있게 이 시나리오만 긴 제한을 사용한다.
+  test.slow();
   await login(page, "hq-assigned@example.com");
 
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();

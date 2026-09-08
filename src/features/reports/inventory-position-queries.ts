@@ -45,6 +45,8 @@ type InventoryPositionLedgerItemRecord = {
   unitPrice: number;
   previousQuantity: number;
   purchasedQuantity: number;
+  conversionInQuantity: number;
+  conversionOutQuantity: number;
   currentQuantity: number | null;
   quantity: number | null;
   // FIFO 엔진(refreshLedgerInventoryFifoLots)이 저장한 선입선출 기준 재고 금액.
@@ -163,6 +165,8 @@ function toInventoryPositionRow({
     previousQuantity: item.previousQuantity,
     purchasedQuantity: item.purchasedQuantity,
     lossQuantity,
+    conversionInQuantity: item.conversionInQuantity,
+    conversionOutQuantity: item.conversionOutQuantity,
   });
   const differenceQuantity =
     currentQuantity === null || systemQuantity === null
@@ -340,6 +344,8 @@ export async function getHqInventoryPositionReport({
                 unitPrice: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
+                conversionInQuantity: true,
+                conversionOutQuantity: true,
                 currentQuantity: true,
                 quantity: true,
                 inventoryAmount: true,
@@ -380,6 +386,8 @@ export async function getHqInventoryPositionReport({
       ...item,
       previousQuantity: decimalToNumber(item.previousQuantity),
       purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      conversionInQuantity: decimalToNumber(item.conversionInQuantity),
+      conversionOutQuantity: decimalToNumber(item.conversionOutQuantity),
       currentQuantity: nullableDecimalToNumber(item.currentQuantity),
       quantity: nullableDecimalToNumber(item.quantity),
       fifoLots: item.fifoLots.map((lot) => ({

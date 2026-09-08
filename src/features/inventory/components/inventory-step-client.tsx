@@ -18,11 +18,19 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Field, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import {
   Table,
   TableBody,
@@ -60,12 +68,14 @@ import { type StoreEntryStep } from "~/features/ledger/step-completion";
 import { inventoryTerms } from "~/features/inventory/terms";
 import {
   getLedgerEditBlockReason,
+  isLedgerEditable,
   isLedgerEditableForActor,
 } from "~/features/ledger/status-policy";
 import {
   saveLedgerInventoryAdjustment,
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
+import { convertLedgerInventoryToFrozen } from "~/features/inventory/conversion-actions";
 import {
   describeAdjustmentReason,
   missingAdjustmentReasonMessage,
@@ -117,6 +127,9 @@ type InventoryStepClientProps = {
   saveAdjustmentAction?: (
     input: unknown,
   ) => Promise<ActionResult<InventoryDisplayData>>;
+  convertInventoryAction?: (
+    input: unknown,
+  ) => Promise<ActionResult<InventoryDisplayData>>;
   ledgerLabel?: string;
   showStepNavigation?: boolean;
   hqEditReasonRequired?: boolean;
@@ -153,6 +166,7 @@ const fifoLotSourceLabels: Record<
   OPENING: "기초 재고",
   PREVIOUS_CARRYOVER: "전일 이월",
   PURCHASE: "매입",
+  CONVERSION: "냉동 전환",
   LEGACY_OPENING: "기존 재고",
 };
 
@@ -209,6 +223,7 @@ type InventoryLotPriceEntry = {
   remainingQuantity: number;
   soldQuantity: number;
   lossQuantity: number;
+  conversionOutQuantity: number;
   plannedUnitPrice: number | null;
   plannedUnitPriceSource: InventoryDisplayData["items"][number]["fifoLots"][number]["plannedUnitPriceSource"];
   expectedMarginRate: number | null;
@@ -262,6 +277,7 @@ function getInventoryLotPriceEntries(
       remainingQuantity: lot.remainingQuantity,
       soldQuantity: lot.soldQuantity,
       lossQuantity: lot.lossQuantity,
+      conversionOutQuantity: lot.conversionOutQuantity,
       plannedUnitPrice: lot.plannedUnitPrice,
       plannedUnitPriceSource: lot.plannedUnitPriceSource,
       expectedMarginRate: lot.expectedMarginRate,
@@ -350,6 +366,8 @@ function toManualLineState(
     unitPrice: 0,
     previousQuantity: 0,
     purchasedQuantity: 0,
+    conversionInQuantity: 0,
+    conversionOutQuantity: 0,
     purchaseAmount: 0,
     lossQuantity: 0,
     lossAmount: 0,
@@ -461,6 +479,7 @@ export function InventoryStepClient({
   initialData,
   saveItemsAction = saveLedgerInventoryItems,
   saveAdjustmentAction = saveLedgerInventoryAdjustment,
+  convertInventoryAction = convertLedgerInventoryToFrozen,
   ledgerLabel = "오늘 장부",
   showStepNavigation = true,
   hqEditReasonRequired = false,
@@ -538,6 +557,13 @@ export function InventoryStepClient({
   // 지금 편집 중인 행. 카드가 모두 비슷해 포커스가 어디로 갔는지 헷갈리던
   // 문제를 해결하려고 활성 행에 강한 강조(ring/배경)를 준다.
   const [focusedProductId, setFocusedProductId] = useState<string | null>(null);
+  const [conversionSourceItem, setConversionSourceItem] =
+    useState<InventoryLineState | null>(null);
+  const [conversionTargetProductId, setConversionTargetProductId] =
+    useState("");
+  const [conversionQuantityInput, setConversionQuantityInput] = useState("");
+  const [conversionError, setConversionError] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
   const saveConflict = useSaveConflictDialog();
   const hqEditReasonError = fieldErrors.reason?.[0];
 
@@ -583,6 +609,53 @@ export function InventoryStepClient({
   // 필수 수량 미입력은 saveCurrentDraft의 validateRequiredCurrentQuantities로 막고,
   // "다음 단계로" 버튼은 저장 성공 후에만 보이므로 그 경로에서도 이미 검증을 통과한다.
   const isDirty = !areInventoryLinesEqual(items, toLineState(data));
+  const frozenProductOptions = [
+    ...data.items,
+    ...data.manualProductOptions,
+  ].reduce<
+    Array<{
+      productId: string;
+      productName: string;
+      productSpec: string;
+    }>
+  >((options, product) => {
+    if (
+      product.productCategory !== "냉동" ||
+      options.some((option) => option.productId === product.productId)
+    ) {
+      return options;
+    }
+
+    options.push({
+      productId: product.productId,
+      productName: product.productName,
+      productSpec: product.productSpec,
+    });
+    return options;
+  }, []);
+  const selectedFrozenProduct = frozenProductOptions.find(
+    (product) => product.productId === conversionTargetProductId,
+  );
+  const selectedFrozenInventory = data.items.find(
+    (item) => item.productId === conversionTargetProductId,
+  );
+  const conversionSourceQuantity = conversionSourceItem
+    ? (conversionSourceItem.currentQuantity ??
+      conversionSourceItem.quantity ??
+      0)
+    : 0;
+  const conversionTargetQuantity =
+    selectedFrozenInventory?.currentQuantity ??
+    selectedFrozenInventory?.quantity ??
+    0;
+  const conversionQuantity = Number(conversionQuantityInput.trim());
+  const canSubmitConversion =
+    Boolean(conversionSourceItem) &&
+    Boolean(selectedFrozenProduct) &&
+    Number.isFinite(conversionQuantity) &&
+    conversionQuantity > 0 &&
+    hasAtMostTwoDecimals(conversionQuantity) &&
+    conversionQuantity <= conversionSourceQuantity;
   const previousInitialDataRef = useRef(initialData);
 
   useEffect(() => {
@@ -1322,9 +1395,104 @@ export function InventoryStepClient({
     }, 0);
   }
 
+  function openFrozenConversion(item: InventoryLineState) {
+    setConversionSourceItem(item);
+    setConversionTargetProductId(frozenProductOptions[0]?.productId ?? "");
+    setConversionQuantityInput("");
+    setConversionError(null);
+  }
+
+  function closeFrozenConversion() {
+    if (isConverting) return;
+    setConversionSourceItem(null);
+    setConversionTargetProductId("");
+    setConversionQuantityInput("");
+    setConversionError(null);
+  }
+
+  async function handleFrozenConversion() {
+    if (!conversionSourceItem) return;
+
+    const quantity = Number(conversionQuantityInput.trim());
+    const sourceQuantity =
+      conversionSourceItem.currentQuantity ??
+      conversionSourceItem.quantity ??
+      0;
+
+    if (isDirty) {
+      setConversionError("바꾼 재고를 먼저 저장해 주세요.");
+      return;
+    }
+
+    if (!conversionTargetProductId) {
+      setConversionError("냉동 품목을 선택해 주세요.");
+      return;
+    }
+
+    if (
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      !hasAtMostTwoDecimals(quantity) ||
+      quantity > sourceQuantity
+    ) {
+      setConversionError(
+        `0보다 크고 현재 재고 ${formatQuantity(sourceQuantity)} 이하로 입력해 주세요.`,
+      );
+      return;
+    }
+
+    if (hqEditReasonRequired && !hqEditReason.trim()) {
+      setConversionError("본사 수정 사유를 먼저 입력해 주세요.");
+      hqEditReasonInputRef.current?.focus();
+      return;
+    }
+
+    setIsConverting(true);
+    setConversionError(null);
+
+    try {
+      const result = await convertInventoryAction({
+        ledgerId: data.id,
+        storeId: data.storeId,
+        closingDate: getKstLedgerDateParam(data.closingDate),
+        version: data.version,
+        ledgerUpdatedAt: data.updatedAt,
+        sourceProductId: conversionSourceItem.productId,
+        targetProductId: conversionTargetProductId,
+        quantity: conversionQuantityInput,
+        ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
+      });
+
+      if (!result.ok) {
+        setConversionError(result.error.message);
+        toast.error(result.error.message);
+        return;
+      }
+
+      setData(result.data);
+      setItems(toLineState(result.data));
+      setAddedManualIds(new Set());
+      notifyLedgerUpdated(result.data);
+      setResultMessage(
+        `${conversionSourceItem.productName} ${formatQuantity(quantity)}를 냉동 재고로 옮겼습니다.`,
+      );
+      setSaveReceipt(null);
+      setConversionSourceItem(null);
+      setConversionTargetProductId("");
+      setConversionQuantityInput("");
+      toast.success("일부 수량을 냉동 재고로 옮겼습니다.");
+    } finally {
+      setIsConverting(false);
+    }
+  }
+
   function getSystemQuantity(item: InventoryLineState) {
     const quantity = roundQuantity(
-      item.previousQuantity + item.purchasedQuantity - item.lossQuantity,
+      item.previousQuantity +
+        item.purchasedQuantity +
+        item.conversionInQuantity -
+        item.lossQuantity -
+        item.conversionOutQuantity,
     );
 
     return isValidQuantity(quantity) ? quantity : null;
@@ -1658,6 +1826,8 @@ export function InventoryStepClient({
         return "직전 저장 장부";
       case "OPENING_SNAPSHOT":
         return "월초 스냅샷";
+      case "CONVERSION":
+        return "냉동 전환";
       case "MANUAL":
       default:
         return "수동/근거 부족";
@@ -1702,6 +1872,8 @@ export function InventoryStepClient({
   }
 
   function shouldWarnCarryoverDetail(item: InventoryLineState) {
+    if (item.carryoverSource === "CONVERSION") return false;
+
     return [
       "REVIEW_REQUIRED",
       "CARRYOVER_EMPTY",
@@ -1717,6 +1889,17 @@ export function InventoryStepClient({
       detail: string;
       className?: string;
     }[] = [];
+
+    if (item.carryoverSource === "CONVERSION") {
+      badges.push({
+        label: "냉동 전환",
+        detail: `생물 재고에서 냉동으로 옮긴 수량입니다. 전환 입고 ${formatQuantity(item.conversionInQuantity)}.`,
+        className:
+          "border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300",
+      });
+
+      return badges;
+    }
 
     // 직접 추가했지만 미저장인 행은 "이월 공백"(0 오해) 대신 "직접 입력·근거 없음"으로
     // 표시한다. 추가 후보는 당일 매입/손실이 없는 품목뿐이라 다른 배지는 붙지 않는다.
@@ -2387,6 +2570,32 @@ export function InventoryStepClient({
       const adjustmentButtonLabel = `${item.productName} 고친 이유 저장`;
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
+      const frozenConversionQuantity =
+        item.currentQuantity ?? item.quantity ?? 0;
+      const isConversionBlockedByStatus = !isLedgerEditable(data.status);
+      const isHqReasonMissing = hqEditReasonRequired && !hqEditReason.trim();
+      const frozenConversionDisabled =
+        isSaving ||
+        isConverting ||
+        isAdjustmentSavePending ||
+        isConversionBlockedByStatus ||
+        isHqReasonMissing ||
+        isDirty ||
+        frozenProductOptions.length === 0 ||
+        frozenConversionQuantity <= 0;
+      const frozenConversionHint = isConversionBlockedByStatus
+        ? data.status === "HEADQUARTERS_CLOSED"
+          ? "본사 마감된 장부에서는 냉동 전환할 수 없습니다."
+          : "휴무 장부에서는 냉동 전환할 수 없습니다."
+        : isHqReasonMissing
+          ? "본사 수정 사유를 먼저 입력해 주세요."
+          : isDirty
+            ? "바꾼 재고를 먼저 저장해 주세요."
+            : frozenProductOptions.length === 0
+              ? "사용할 수 있는 냉동 품목이 없습니다."
+              : frozenConversionQuantity <= 0
+                ? "옮길 생물 재고가 없습니다."
+                : originalEditBlockedMessage;
 
       // 품목당 1행(<tr>)을 유지해 입력 포커스와 테스트 범위를 섞지 않는다.
       // tbody가 행을 순서대로 2열에 놓으므로 화면과 Enter 이동 순서도 같다.
@@ -2404,8 +2613,8 @@ export function InventoryStepClient({
               "ring-primary bg-primary/10 relative z-10 rounded-sm shadow-sm ring-2 ring-inset",
           )}
         >
-          <TableCell className="block h-full min-w-0 p-3 align-top whitespace-normal">
-            <div className="flex flex-col gap-2.5">
+          <TableCell className="flex min-w-0 flex-1 p-3 align-top whitespace-normal">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
               {/* 1줄: 행 번호 + 품목명 + 규격 + 상태 뱃지 */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span
@@ -2477,36 +2686,6 @@ export function InventoryStepClient({
                   {sourceBadges.map(renderBadgeWithTooltip)}
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-1">
-                  {item.productCategory === "생물" ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span
-                          tabIndex={0}
-                          aria-label={`${item.productName} 냉동 전환은 준비 중입니다`}
-                          className="focus-visible:ring-ring inline-flex rounded-md outline-none focus-visible:ring-2"
-                        >
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            aria-label={`${item.productName} 냉동 전환은 준비 중입니다`}
-                            disabled
-                            tabIndex={-1}
-                            className="h-11 px-2.5 text-xs"
-                          >
-                            <SnowflakeIcon
-                              data-icon="inline-start"
-                              aria-hidden
-                            />
-                            냉동 전환
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-64 leading-relaxed">
-                        재고와 원가를 안전하게 옮기는 저장 기능을 준비 중입니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
                   {addedManualIds.has(item.productId) ? (
                     <Button
                       type="button"
@@ -2560,6 +2739,9 @@ export function InventoryStepClient({
                             {formatQuantity(entry.remainingQuantity)} · 판매{" "}
                             {formatQuantity(entry.soldQuantity)} · 손실{" "}
                             {formatQuantity(entry.lossQuantity)}
+                            {entry.conversionOutQuantity > 0
+                              ? ` · 냉동 전환 ${formatQuantity(entry.conversionOutQuantity)}`
+                              : ""}
                           </p>
                         </div>
                         {plannedUnitPriceEditable ? (
@@ -2648,6 +2830,22 @@ export function InventoryStepClient({
                     ? ` (${formatKrw(item.lossAmount)})`
                     : ""}
                 </span>
+                {item.conversionInQuantity > 0 ? (
+                  <span className="text-sky-700 dark:text-sky-300">
+                    전환 입고 +
+                    <span className="font-medium">
+                      {formatQuantityValue(item.conversionInQuantity)}
+                    </span>
+                  </span>
+                ) : null}
+                {item.conversionOutQuantity > 0 ? (
+                  <span className="text-sky-700 dark:text-sky-300">
+                    전환 출고 -
+                    <span className="font-medium">
+                      {formatQuantityValue(item.conversionOutQuantity)}
+                    </span>
+                  </span>
+                ) : null}
                 <span>
                   마지막 입고일{" "}
                   <span className="text-foreground font-medium">
@@ -2996,6 +3194,63 @@ export function InventoryStepClient({
                   ) : null}
                 </div>
               )}
+
+              <div
+                data-inventory-card-actions
+                className="mt-auto flex h-16 shrink-0 items-center justify-between gap-3 border-t pt-2.5"
+              >
+                {item.productCategory === "생물" ? (
+                  <>
+                    <p className="text-muted-foreground min-w-0 text-xs leading-relaxed">
+                      현재 {formatQuantity(frozenConversionQuantity)} 중 일부를
+                      냉동으로 옮기기
+                    </p>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex shrink-0 rounded-md">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`${item.productName} 일부 냉동 전환`}
+                            onClick={() => openFrozenConversion(item)}
+                            disabled={frozenConversionDisabled}
+                            className="h-11 px-3 text-xs"
+                          >
+                            <SnowflakeIcon aria-hidden />
+                            일부 냉동 전환
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {frozenConversionDisabled ? (
+                        <TooltipContent className="max-w-64 leading-relaxed">
+                          {frozenConversionHint}
+                        </TooltipContent>
+                      ) : null}
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground text-xs">
+                      냉동 보관 품목
+                    </span>
+                    {item.conversionInQuantity > 0 ? (
+                      <Badge
+                        variant="outline"
+                        className="border-sky-500/60 text-sky-700 dark:text-sky-300"
+                      >
+                        전환 입고 +
+                        {formatQuantityValue(item.conversionInQuantity)}
+                      </Badge>
+                    ) : (
+                      <SnowflakeIcon
+                        aria-hidden
+                        className="text-muted-foreground size-4"
+                      />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </TableCell>
         </TableRow>
@@ -3261,7 +3516,7 @@ export function InventoryStepClient({
                       보조 설명, 오류 문구는 각 품목 행 안에 그대로 유지한다. */}
                     <Table
                       aria-label="재고 품목"
-                      className="block min-w-0 [&_tbody]:grid [&_tbody]:grid-cols-1 lg:[&_tbody]:grid-cols-2 [&_td]:w-full [&_tr]:block"
+                      className="block min-w-0 [&_tbody]:grid [&_tbody]:grid-cols-1 [&_tbody]:items-stretch lg:[&_tbody]:grid-cols-2 [&_td]:w-full [&_tr]:flex [&_tr]:h-full"
                     >
                       <TableBody>{renderRows(category)}</TableBody>
                     </Table>
@@ -3361,6 +3616,135 @@ export function InventoryStepClient({
             ) : null}
           </div>
         </form>
+
+        <Dialog
+          open={conversionSourceItem !== null}
+          onOpenChange={(open) => {
+            if (!open) closeFrozenConversion();
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>일부 냉동 전환</DialogTitle>
+              <DialogDescription>
+                {conversionSourceItem?.productName ?? "생물 재고"}의 일부만 냉동
+                품목으로 옮깁니다. 판매와 손실에는 포함되지 않습니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4">
+              <Field>
+                <FieldLabel htmlFor="inventory-conversion-target">
+                  옮길 냉동 품목
+                </FieldLabel>
+                <Select
+                  value={conversionTargetProductId}
+                  onValueChange={setConversionTargetProductId}
+                  disabled={isConverting}
+                >
+                  <SelectTrigger
+                    id="inventory-conversion-target"
+                    aria-label="옮길 냉동 품목"
+                    className="min-h-11 w-full"
+                  >
+                    <SelectValue placeholder="냉동 품목 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {frozenProductOptions.map((product) => (
+                      <SelectItem
+                        key={product.productId}
+                        value={product.productId}
+                      >
+                        {product.productName}
+                        {product.productSpec ? ` · ${product.productSpec}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field data-invalid={Boolean(conversionError)}>
+                <FieldLabel htmlFor="inventory-conversion-quantity">
+                  전환 수량
+                </FieldLabel>
+                <Input
+                  id="inventory-conversion-quantity"
+                  aria-label="냉동 전환 수량"
+                  aria-invalid={Boolean(conversionError)}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={`최대 ${formatQuantity(conversionSourceQuantity)}`}
+                  value={conversionQuantityInput}
+                  onChange={(event) => {
+                    setConversionQuantityInput(event.currentTarget.value);
+                    setConversionError(null);
+                  }}
+                  disabled={isConverting}
+                  className="h-11 tabular-nums"
+                />
+                {conversionError ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {conversionError}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    현재 재고보다 작거나 같은 수량을 입력하세요.
+                  </p>
+                )}
+              </Field>
+
+              <div className="bg-muted/50 grid grid-cols-2 gap-3 rounded-lg border p-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground text-xs">생물 재고</p>
+                  <p className="font-medium tabular-nums">
+                    {formatQuantity(conversionSourceQuantity)} →{" "}
+                    {canSubmitConversion
+                      ? formatQuantity(
+                          roundQuantity(
+                            conversionSourceQuantity - conversionQuantity,
+                          ),
+                        )
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">냉동 재고</p>
+                  <p className="font-medium tabular-nums">
+                    {formatQuantity(conversionTargetQuantity)} →{" "}
+                    {canSubmitConversion
+                      ? formatQuantity(
+                          roundQuantity(
+                            conversionTargetQuantity + conversionQuantity,
+                          ),
+                        )
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeFrozenConversion}
+                disabled={isConverting}
+                className="min-h-11"
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleFrozenConversion()}
+                disabled={isConverting || !canSubmitConversion}
+                className="min-h-11"
+              >
+                <SnowflakeIcon aria-hidden />
+                {isConverting ? "옮기는 중..." : "냉동으로 옮기기"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );

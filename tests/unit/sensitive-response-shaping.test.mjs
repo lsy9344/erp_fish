@@ -734,6 +734,8 @@ test("store manager inventory mapper exposes planned price on item rows and manu
     "carryoverLedgerId",
     "carryoverSource",
     "carryoverStatus",
+    "conversionInQuantity",
+    "conversionOutQuantity",
     "currentQuantity",
     "fifoLots",
     "id",

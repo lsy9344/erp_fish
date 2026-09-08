@@ -49,21 +49,31 @@ export function calculateSystemInventoryQuantity({
   previousQuantity,
   purchasedQuantity,
   lossQuantity = 0,
+  conversionInQuantity = 0,
+  conversionOutQuantity = 0,
 }: {
   previousQuantity: number;
   purchasedQuantity: number;
   lossQuantity?: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
 }) {
   if (
     !isValidInventoryQuantity(previousQuantity) ||
     !isValidInventoryQuantity(purchasedQuantity) ||
-    !isValidInventoryQuantity(lossQuantity)
+    !isValidInventoryQuantity(lossQuantity) ||
+    !isValidInventoryQuantity(conversionInQuantity) ||
+    !isValidInventoryQuantity(conversionOutQuantity)
   ) {
     return null;
   }
 
   const quantity = roundToTwoDecimals(
-    previousQuantity + purchasedQuantity - lossQuantity,
+    previousQuantity +
+      purchasedQuantity +
+      conversionInQuantity -
+      lossQuantity -
+      conversionOutQuantity,
   );
 
   if (

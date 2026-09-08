@@ -192,11 +192,38 @@ export const ledgerInventoryAdjustmentSchema =
       .pipe(z.string().min(1, "바꾼 이유를 입력해 주세요.")),
   });
 
+export const ledgerInventoryConversionSchema =
+  ledgerMutationContextSchema.extend({
+    sourceProductId: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, productError)),
+    targetProductId: z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1, "냉동 품목을 선택해 주세요.")),
+    quantity: z
+      .unknown()
+      .transform((value, context) =>
+        parseRequiredNonNegativeTwoDecimal(
+          value,
+          context,
+          "전환 수량은 0보다 크고 소수점 둘째 자리까지 입력할 수 있습니다.",
+        ),
+      )
+      .refine((value) => typeof value === "number" && value > 0, {
+        message: "전환 수량은 0보다 커야 합니다.",
+      }),
+  });
+
 export type LedgerInventoryInput = z.infer<typeof ledgerInventorySchema>;
 export type LedgerStoreManagerInventoryInput = z.infer<
   typeof ledgerStoreManagerInventorySchema
 >;
 export type LedgerInventoryAdjustmentInput = z.infer<
   typeof ledgerInventoryAdjustmentSchema
+>;
+export type LedgerInventoryConversionInput = z.infer<
+  typeof ledgerInventoryConversionSchema
 >;
 export { toFieldErrors };

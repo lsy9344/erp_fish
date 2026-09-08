@@ -50,6 +50,8 @@ const reviewInventoryItemSelect = {
   productName: true,
   previousQuantity: true,
   purchasedQuantity: true,
+  conversionInQuantity: true,
+  conversionOutQuantity: true,
   currentQuantity: true,
   quantity: true,
   unitPrice: true,
@@ -59,6 +61,7 @@ const reviewInventoryItemSelect = {
       sourceType: true,
       consumedAmount: true,
       soldAmount: true,
+      conversionOutAmount: true,
       lossAmount: true,
       remainingAmount: true,
     },
@@ -437,6 +440,8 @@ function buildStoreManagerTopSoldItems(
     productName: string;
     previousQuantity: number;
     purchasedQuantity: number;
+    conversionInQuantity?: number;
+    conversionOutQuantity?: number;
     lossQuantity: number;
     currentQuantity: number | null;
     unitPrice: number;
@@ -485,11 +490,13 @@ function buildStoreManagerTopSoldItems(
 
     if (item.currentQuantity === null) continue;
 
-    // 판매량 = 기준재고(전일+매입-손실) - 당일재고. 손실을 빼지 않으면
-    // 폐기/손실 수량이 판매로 잘못 잡혀 추정 매출이 부풀려진다.
+    // 판매량 = 전일+매입+전환입고-전환출고-손실-당일재고. 손실과
+    // 냉동 전환을 빼지 않으면 판매로 잘못 잡혀 추정 매출이 부풀려진다.
     const soldQuantity =
       item.previousQuantity +
       item.purchasedQuantity -
+      (item.conversionOutQuantity ?? 0) +
+      (item.conversionInQuantity ?? 0) -
       item.lossQuantity -
       item.currentQuantity;
 
@@ -546,6 +553,8 @@ export async function getLedgerReviewStepData(
       ...item,
       previousQuantity: decimalToNumber(item.previousQuantity),
       purchasedQuantity: decimalToNumber(item.purchasedQuantity),
+      conversionInQuantity: decimalToNumber(item.conversionInQuantity),
+      conversionOutQuantity: decimalToNumber(item.conversionOutQuantity),
       currentQuantity: nullableDecimalToNumber(item.currentQuantity),
       quantity: nullableDecimalToNumber(item.quantity),
     }));
@@ -749,6 +758,8 @@ export async function getLedgerReviewStepData(
             productName: item.productName,
             previousQuantity: item.previousQuantity,
             purchasedQuantity: item.purchasedQuantity,
+            conversionInQuantity: item.conversionInQuantity,
+            conversionOutQuantity: item.conversionOutQuantity,
             lossQuantity: lossQuantityByProductId.get(item.productId) ?? 0,
             currentQuantity: item.currentQuantity,
             unitPrice: item.unitPrice,

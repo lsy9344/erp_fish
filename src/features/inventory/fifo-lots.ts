@@ -18,6 +18,7 @@ type InventoryLotSourceValue =
   | "OPENING"
   | "PREVIOUS_CARRYOVER"
   | "PURCHASE"
+  | "CONVERSION"
   | "LEGACY_OPENING";
 
 export type FifoPreviousLotInput = {
@@ -25,8 +26,10 @@ export type FifoPreviousLotInput = {
   sourceType: InventoryLotSourceValue;
   sourceLedgerId: string | null;
   sourcePurchaseItemId: string | null;
+  sourceConversionAllocationId?: string | null;
   unitPrice: number;
   remainingQuantity: number;
+  remainingAmount?: number;
   // WO-G(2026-06-22): 이월 lot의 원천 영업 기준일. 이월 시에도 그대로 보존한다.
   sourceBusinessDate: Date | null;
 };
@@ -36,6 +39,22 @@ export type FifoPurchaseLotInput = {
   lotOriginKey: string;
   unitPrice: number;
   quantity: number;
+};
+
+export type FifoConversionInLotInput = {
+  allocationId: string;
+  lotOriginKey: string;
+  sourceBusinessDate: Date | null;
+  unitPrice: number;
+  quantity: number;
+  costAmount: number;
+};
+
+export type FifoConversionOutInput = {
+  allocationId: string;
+  sourceLotOriginKey: string;
+  quantity: number;
+  costAmount: number;
 };
 
 export type FifoLegacyOpeningInput = {
@@ -62,17 +81,20 @@ export type FifoLotSnapshot = {
   sourceType: InventoryLotSourceValue;
   sourceLedgerId: string | null;
   sourcePurchaseItemId: string | null;
+  sourceConversionAllocationId: string | null;
   sourceBusinessDate: Date | null;
   unitPrice: number;
   originalQuantity: number;
   consumedQuantity: number;
   lossQuantity: number;
   soldQuantity: number;
+  conversionOutQuantity: number;
   remainingQuantity: number;
   originalAmount: number;
   consumedAmount: number;
   lossAmount: number;
   soldAmount: number;
+  conversionOutAmount: number;
   remainingAmount: number;
   sortOrder: number;
 };
@@ -97,6 +119,38 @@ function addBoundedAmount(total: number, value: number) {
   return result;
 }
 
+export function calculateInventoryTransferCostAmount({
+  quantity,
+  availableQuantity,
+  availableAmount,
+}: {
+  quantity: number;
+  availableQuantity: number;
+  availableAmount: number;
+}) {
+  if (
+    !Number.isFinite(quantity) ||
+    !Number.isFinite(availableQuantity) ||
+    !Number.isSafeInteger(availableAmount) ||
+    quantity <= 0 ||
+    availableQuantity <= 0 ||
+    quantity > availableQuantity ||
+    availableAmount < 0 ||
+    availableAmount > MAX_VALIDATION_INTEGER
+  ) {
+    return null;
+  }
+
+  const result = Math.round((availableAmount * quantity) / availableQuantity);
+
+  return Number.isSafeInteger(result) &&
+    result >= 0 &&
+    result <= availableAmount &&
+    result <= MAX_VALIDATION_INTEGER
+    ? result
+    : null;
+}
+
 function positiveQuantity(value: number) {
   return Number.isFinite(value) && value > 0;
 }
@@ -106,6 +160,8 @@ export function calculateFifoLotSnapshots({
   legacyOpening,
   purchases,
   losses = [],
+  conversionIns = [],
+  conversionOuts = [],
   closingQuantity,
   businessDate = null,
 }: {
@@ -113,6 +169,8 @@ export function calculateFifoLotSnapshots({
   legacyOpening: FifoLegacyOpeningInput;
   purchases: FifoPurchaseLotInput[];
   losses?: FifoLossInput[];
+  conversionIns?: FifoConversionInLotInput[];
+  conversionOuts?: FifoConversionOutInput[];
   closingQuantity: number;
   // WO-G(2026-06-22): 현재 장부의 영업 기준일(closingDate). PURCHASE lot과
   // 원천 영업일이 없는 기초/LEGACY lot의 fallback 기준일로 쓴다.
@@ -123,9 +181,11 @@ export function calculateFifoLotSnapshots({
     sourceType: InventoryLotSourceValue;
     sourceLedgerId: string | null;
     sourcePurchaseItemId: string | null;
+    sourceConversionAllocationId: string | null;
     sourceBusinessDate: Date | null;
     unitPrice: number;
     quantity: number;
+    originalAmount: number;
   }> = [];
 
   if (previousLots.length > 0) {
@@ -137,10 +197,13 @@ export function calculateFifoLotSnapshots({
         sourceType: lot.sourceType,
         sourceLedgerId: lot.sourceLedgerId,
         sourcePurchaseItemId: lot.sourcePurchaseItemId,
+        sourceConversionAllocationId: lot.sourceConversionAllocationId ?? null,
         // 이월 lot은 원천 영업일을 보존한다. 없으면 현재 영업일로 보정한다.
         sourceBusinessDate: lot.sourceBusinessDate ?? businessDate,
         unitPrice: lot.unitPrice,
         quantity: lot.remainingQuantity,
+        originalAmount:
+          lot.remainingAmount ?? amount(lot.remainingQuantity, lot.unitPrice),
       });
     }
   } else if (positiveQuantity(legacyOpening.quantity)) {
@@ -149,9 +212,11 @@ export function calculateFifoLotSnapshots({
       sourceType: "LEGACY_OPENING",
       sourceLedgerId: null,
       sourcePurchaseItemId: null,
+      sourceConversionAllocationId: null,
       sourceBusinessDate: businessDate,
       unitPrice: legacyOpening.unitPrice,
       quantity: legacyOpening.quantity,
+      originalAmount: amount(legacyOpening.quantity, legacyOpening.unitPrice),
     });
   }
 
@@ -163,10 +228,28 @@ export function calculateFifoLotSnapshots({
       sourceType: "PURCHASE",
       sourceLedgerId: null,
       sourcePurchaseItemId: purchase.id,
+      sourceConversionAllocationId: null,
       // 매입 lot의 영업일은 매입이 기록된 현재 장부의 closingDate다.
       sourceBusinessDate: businessDate,
       unitPrice: purchase.unitPrice,
       quantity: purchase.quantity,
+      originalAmount: amount(purchase.quantity, purchase.unitPrice),
+    });
+  }
+
+  for (const conversion of conversionIns) {
+    if (!positiveQuantity(conversion.quantity)) continue;
+
+    sourceLots.push({
+      lotOriginKey: conversion.lotOriginKey,
+      sourceType: "CONVERSION",
+      sourceLedgerId: null,
+      sourcePurchaseItemId: null,
+      sourceConversionAllocationId: conversion.allocationId,
+      sourceBusinessDate: conversion.sourceBusinessDate ?? businessDate,
+      unitPrice: conversion.unitPrice,
+      quantity: conversion.quantity,
+      originalAmount: conversion.costAmount,
     });
   }
 
@@ -205,7 +288,7 @@ export function calculateFifoLotSnapshots({
         lotOriginKey: lot.lotOriginKey,
         quantity: allocatedQuantity,
         unitCost: lot.unitPrice,
-        costAmount: amount(allocatedQuantity, lot.unitPrice),
+        costAmount: 0,
       });
 
       if ((availableAfterLoss[lossLotIndex] ?? 0) <= 0) {
@@ -223,18 +306,30 @@ export function calculateFifoLotSnapshots({
 
   // 손실을 먼저 차감한 뒤에도 마감 재고가 더 크면, 그 차이만 근거 미상 재고로
   // 보정한다. 손실 전 수량과 비교하면 손실 2개·마감 9개 같은 경우 1개가 사라진다.
-  if (closingQuantity > availablePostLossQuantity) {
+  const requestedConversionOutQuantity = roundToTwoDecimals(
+    conversionOuts.reduce(
+      (sum, conversion) => sum + Math.max(0, conversion.quantity),
+      0,
+    ),
+  );
+  const availablePostConversionQuantity = roundToTwoDecimals(
+    availablePostLossQuantity - requestedConversionOutQuantity,
+  );
+
+  if (closingQuantity > availablePostConversionQuantity) {
     const adjustmentQuantity = roundToTwoDecimals(
-      closingQuantity - availablePostLossQuantity,
+      closingQuantity - availablePostConversionQuantity,
     );
     sourceLots.push({
       lotOriginKey: `${legacyOpening.lotOriginKey}:adjustment`,
       sourceType: "LEGACY_OPENING",
       sourceLedgerId: null,
       sourcePurchaseItemId: null,
+      sourceConversionAllocationId: null,
       sourceBusinessDate: businessDate,
       unitPrice: legacyOpening.unitPrice,
       quantity: adjustmentQuantity,
+      originalAmount: amount(adjustmentQuantity, legacyOpening.unitPrice),
     });
     lossQuantityByLot.push(0);
     availableAfterLoss.push(adjustmentQuantity);
@@ -244,30 +339,142 @@ export function calculateFifoLotSnapshots({
     Math.max(
       0,
       availableAfterLoss.reduce((sum, quantity) => sum + quantity, 0) -
+        requestedConversionOutQuantity -
         closingQuantity,
     ),
   );
-  let consumedAmount = 0;
-  let lossAmount = 0;
-  let soldAmount = 0;
-  let remainingAmount = 0;
-  const lots: FifoLotSnapshot[] = sourceLots.map((lot, index) => {
-    const lotLossQuantity = lossQuantityByLot[index] ?? 0;
+  const soldQuantityByLot = sourceLots.map(() => 0);
+
+  for (
+    let index = 0;
+    index < sourceLots.length && quantityToSell > 0;
+    index++
+  ) {
     const soldQuantity = roundToTwoDecimals(
       Math.min(availableAfterLoss[index] ?? 0, quantityToSell),
     );
-    const consumedQuantity = roundToTwoDecimals(lotLossQuantity + soldQuantity);
+    soldQuantityByLot[index] = soldQuantity;
+    availableAfterLoss[index] = roundToTwoDecimals(
+      (availableAfterLoss[index] ?? 0) - soldQuantity,
+    );
+    quantityToSell = roundToTwoDecimals(quantityToSell - soldQuantity);
+  }
+
+  const conversionOutQuantityByLot = sourceLots.map(() => 0);
+  const conversionOutAmountByLot = sourceLots.map(() => 0);
+
+  for (const conversion of conversionOuts) {
+    let remainingConversion = roundToTwoDecimals(
+      Math.max(0, conversion.quantity),
+    );
+
+    for (
+      let index = 0;
+      index < sourceLots.length && remainingConversion > 0;
+      index++
+    ) {
+      if (sourceLots[index]?.lotOriginKey !== conversion.sourceLotOriginKey) {
+        continue;
+      }
+
+      const allocatedQuantity = roundToTwoDecimals(
+        Math.min(availableAfterLoss[index] ?? 0, remainingConversion),
+      );
+      availableAfterLoss[index] = roundToTwoDecimals(
+        (availableAfterLoss[index] ?? 0) - allocatedQuantity,
+      );
+      conversionOutQuantityByLot[index] = roundToTwoDecimals(
+        (conversionOutQuantityByLot[index] ?? 0) + allocatedQuantity,
+      );
+      conversionOutAmountByLot[index] = addBoundedAmount(
+        conversionOutAmountByLot[index] ?? 0,
+        conversion.costAmount,
+      );
+      remainingConversion = roundToTwoDecimals(
+        remainingConversion - allocatedQuantity,
+      );
+    }
+
+    if (remainingConversion > 0) {
+      throw new Error("FIFO_CONVERSION_ALLOCATION_UNAVAILABLE");
+    }
+  }
+
+  let consumedAmount = 0;
+  let lossAmount = 0;
+  let soldAmount = 0;
+  let conversionOutAmount = 0;
+  let remainingAmount = 0;
+  const lots: FifoLotSnapshot[] = sourceLots.map((lot, index) => {
+    const lotLossQuantity = lossQuantityByLot[index] ?? 0;
+    const soldQuantity = soldQuantityByLot[index] ?? 0;
+    const conversionOutQuantity = conversionOutQuantityByLot[index] ?? 0;
+    const consumedQuantity = roundToTwoDecimals(
+      lotLossQuantity + soldQuantity + conversionOutQuantity,
+    );
     const remainingQuantity = roundToTwoDecimals(
       lot.quantity - consumedQuantity,
     );
-    const lotLossAmount = amount(lotLossQuantity, lot.unitPrice);
-    const lotSoldAmount = amount(soldQuantity, lot.unitPrice);
-    const lotConsumedAmount = amount(consumedQuantity, lot.unitPrice);
-    const lotRemainingAmount = amount(remainingQuantity, lot.unitPrice);
-    quantityToSell = roundToTwoDecimals(quantityToSell - soldQuantity);
+    const lotConversionOutAmount = conversionOutAmountByLot[index] ?? 0;
+    const quantityAfterConversion = roundToTwoDecimals(
+      lot.quantity - conversionOutQuantity,
+    );
+    const amountAfterConversion = lot.originalAmount - lotConversionOutAmount;
+
+    if (
+      quantityAfterConversion < 0 ||
+      !Number.isSafeInteger(amountAfterConversion) ||
+      amountAfterConversion < 0
+    ) {
+      throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+    }
+
+    const lotLossAmount =
+      lotLossQuantity === 0
+        ? 0
+        : calculateInventoryTransferCostAmount({
+            quantity: lotLossQuantity,
+            availableQuantity: quantityAfterConversion,
+            availableAmount: amountAfterConversion,
+          });
+
+    if (lotLossAmount === null) {
+      throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+    }
+
+    const quantityAfterLoss = roundToTwoDecimals(
+      quantityAfterConversion - lotLossQuantity,
+    );
+    const amountAfterLoss = amountAfterConversion - lotLossAmount;
+    const lotSoldAmount =
+      soldQuantity === 0
+        ? 0
+        : calculateInventoryTransferCostAmount({
+            quantity: soldQuantity,
+            availableQuantity: quantityAfterLoss,
+            availableAmount: amountAfterLoss,
+          });
+
+    if (lotSoldAmount === null) {
+      throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+    }
+
+    const lotConsumedAmount = addBoundedAmount(
+      addBoundedAmount(lotLossAmount, lotSoldAmount),
+      lotConversionOutAmount,
+    );
+    const lotRemainingAmount = lot.originalAmount - lotConsumedAmount;
+
+    if (!Number.isSafeInteger(lotRemainingAmount) || lotRemainingAmount < 0) {
+      throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+    }
     consumedAmount = addBoundedAmount(consumedAmount, lotConsumedAmount);
     lossAmount = addBoundedAmount(lossAmount, lotLossAmount);
     soldAmount = addBoundedAmount(soldAmount, lotSoldAmount);
+    conversionOutAmount = addBoundedAmount(
+      conversionOutAmount,
+      lotConversionOutAmount,
+    );
     remainingAmount = addBoundedAmount(remainingAmount, lotRemainingAmount);
 
     return {
@@ -275,21 +482,50 @@ export function calculateFifoLotSnapshots({
       sourceType: lot.sourceType,
       sourceLedgerId: lot.sourceLedgerId,
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceConversionAllocationId: lot.sourceConversionAllocationId,
       sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
       originalQuantity: lot.quantity,
       consumedQuantity,
       lossQuantity: lotLossQuantity,
       soldQuantity,
+      conversionOutQuantity,
       remainingQuantity,
-      originalAmount: amount(lot.quantity, lot.unitPrice),
+      originalAmount: lot.originalAmount,
       consumedAmount: lotConsumedAmount,
       lossAmount: lotLossAmount,
       soldAmount: lotSoldAmount,
+      conversionOutAmount: lotConversionOutAmount,
       remainingAmount: lotRemainingAmount,
       sortOrder: index,
     };
   });
+
+  for (const lot of lots) {
+    const allocations = lossAllocations.filter(
+      (allocation) => allocation.lotOriginKey === lot.lotOriginKey,
+    );
+    let unallocatedQuantity = lot.lossQuantity;
+    let unallocatedAmount = lot.lossAmount;
+
+    for (const allocation of allocations) {
+      const allocationAmount = calculateInventoryTransferCostAmount({
+        quantity: allocation.quantity,
+        availableQuantity: unallocatedQuantity,
+        availableAmount: unallocatedAmount,
+      });
+
+      if (allocationAmount === null) {
+        throw new Error("FIFO_AMOUNT_UNAVAILABLE");
+      }
+
+      allocation.costAmount = allocationAmount;
+      unallocatedQuantity = roundToTwoDecimals(
+        unallocatedQuantity - allocation.quantity,
+      );
+      unallocatedAmount -= allocationAmount;
+    }
+  }
 
   return {
     lots,
@@ -297,6 +533,7 @@ export function calculateFifoLotSnapshots({
     consumedAmount,
     lossAmount,
     soldAmount,
+    conversionOutAmount,
     remainingAmount,
     containsLegacyOpening: lots.some(
       (lot) => lot.sourceType === "LEGACY_OPENING",
@@ -319,11 +556,13 @@ export type InventoryFifoLotView = {
   consumedQuantity: number;
   lossQuantity: number;
   soldQuantity: number;
+  conversionOutQuantity: number;
   remainingQuantity: number;
   originalAmount: number;
   consumedAmount: number;
   lossAmount: number;
   soldAmount: number;
+  conversionOutAmount: number;
   remainingAmount: number;
   plannedUnitPrice: number | null;
   plannedUnitPriceSource: LotPlannedUnitPriceSource | null;
@@ -348,11 +587,13 @@ export function toInventoryFifoLotViews(
     consumedQuantity: lot.consumedQuantity,
     lossQuantity: lot.lossQuantity,
     soldQuantity: lot.soldQuantity,
+    conversionOutQuantity: lot.conversionOutQuantity,
     remainingQuantity: lot.remainingQuantity,
     originalAmount: lot.originalAmount,
     consumedAmount: lot.consumedAmount,
     lossAmount: lot.lossAmount,
     soldAmount: lot.soldAmount,
+    conversionOutAmount: lot.conversionOutAmount,
     remainingAmount: lot.remainingAmount,
     plannedUnitPrice: null,
     plannedUnitPriceSource: null,
@@ -376,11 +617,13 @@ const fifoLotViewSelect = {
   consumedQuantity: true,
   lossQuantity: true,
   soldQuantity: true,
+  conversionOutQuantity: true,
   remainingQuantity: true,
   originalAmount: true,
   consumedAmount: true,
   lossAmount: true,
   soldAmount: true,
+  conversionOutAmount: true,
   remainingAmount: true,
   sortOrder: true,
   sourcePurchaseItem: {
@@ -419,11 +662,13 @@ export async function getLedgerInventoryFifoLotsByProductId(
       consumedQuantity: decimalToNumber(lot.consumedQuantity),
       lossQuantity: decimalToNumber(lot.lossQuantity),
       soldQuantity: decimalToNumber(lot.soldQuantity),
+      conversionOutQuantity: decimalToNumber(lot.conversionOutQuantity),
       remainingQuantity: decimalToNumber(lot.remainingQuantity),
       originalAmount: lot.originalAmount,
       consumedAmount: lot.consumedAmount,
       lossAmount: lot.lossAmount,
       soldAmount: lot.soldAmount,
+      conversionOutAmount: lot.conversionOutAmount,
       remainingAmount: lot.remainingAmount,
       plannedUnitPrice: null,
       plannedUnitPriceSource: null,
@@ -454,6 +699,62 @@ function sumQuantity(items: Array<{ quantity: number }>) {
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
+async function loadInventoryConversionInputs(
+  tx: Prisma.TransactionClient,
+  dailyLedgerId: string,
+) {
+  const conversions = await tx.ledgerInventoryConversion.findMany({
+    where: { dailyLedgerId },
+    select: {
+      sourceProductId: true,
+      targetProductId: true,
+      allocations: {
+        select: {
+          id: true,
+          sourceLotOriginKey: true,
+          sourceBusinessDate: true,
+          unitCost: true,
+          quantity: true,
+          costAmount: true,
+          sortOrder: true,
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const incomingByProductId = new Map<string, FifoConversionInLotInput[]>();
+  const outgoingByProductId = new Map<string, FifoConversionOutInput[]>();
+
+  for (const conversion of conversions) {
+    const incoming = incomingByProductId.get(conversion.targetProductId) ?? [];
+    const outgoing = outgoingByProductId.get(conversion.sourceProductId) ?? [];
+
+    for (const allocation of conversion.allocations) {
+      const quantity = decimalToNumber(allocation.quantity);
+      incoming.push({
+        allocationId: allocation.id,
+        lotOriginKey: `conversion:${allocation.id}`,
+        sourceBusinessDate: allocation.sourceBusinessDate,
+        unitPrice: allocation.unitCost,
+        quantity,
+        costAmount: allocation.costAmount,
+      });
+      outgoing.push({
+        allocationId: allocation.id,
+        sourceLotOriginKey: allocation.sourceLotOriginKey,
+        quantity,
+        costAmount: allocation.costAmount,
+      });
+    }
+
+    incomingByProductId.set(conversion.targetProductId, incoming);
+    outgoingByProductId.set(conversion.sourceProductId, outgoing);
+  }
+
+  return { incomingByProductId, outgoingByProductId };
+}
+
 type FifoAmountValidationItem = {
   productId: string;
   unitPrice: number;
@@ -465,6 +766,8 @@ type FifoAmountValidationItem = {
 
 export type LedgerInventoryFifoSnapshot = {
   purchasedQuantity: number;
+  conversionInQuantity: number;
+  conversionOutQuantity: number;
   lossItems: Array<{ id: string; recoveredAmount: number }>;
   fifo: ReturnType<typeof calculateFifoLotSnapshots>;
 };
@@ -494,49 +797,54 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const [purchases, losses, previousLots] = await Promise.all([
-    tx.ledgerPurchaseItem.findMany({
-      where: { dailyLedgerId, productId: { in: productIds } },
-      select: {
-        id: true,
-        lotOriginKey: true,
-        productId: true,
-        unitPrice: true,
-        quantity: true,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-    tx.ledgerLossItem.findMany({
-      where: { dailyLedgerId, productId: { in: productIds } },
-      select: {
-        id: true,
-        productId: true,
-        quantity: true,
-        recoveredAmount: true,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-    carryoverLedgerIds.length === 0
-      ? Promise.resolve([])
-      : tx.ledgerInventoryFifoLot.findMany({
-          where: {
-            dailyLedgerId: { in: carryoverLedgerIds },
-            productId: { in: productIds },
-            remainingQuantity: { gt: 0 },
-          },
-          select: {
-            dailyLedgerId: true,
-            productId: true,
-            lotOriginKey: true,
-            sourceType: true,
-            sourcePurchaseItemId: true,
-            sourceBusinessDate: true,
-            unitPrice: true,
-            remainingQuantity: true,
-          },
-          orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
-        }),
-  ]);
+  const [purchases, losses, previousLots, conversionInputs] = await Promise.all(
+    [
+      tx.ledgerPurchaseItem.findMany({
+        where: { dailyLedgerId, productId: { in: productIds } },
+        select: {
+          id: true,
+          lotOriginKey: true,
+          productId: true,
+          unitPrice: true,
+          quantity: true,
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+      tx.ledgerLossItem.findMany({
+        where: { dailyLedgerId, productId: { in: productIds } },
+        select: {
+          id: true,
+          productId: true,
+          quantity: true,
+          recoveredAmount: true,
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+      carryoverLedgerIds.length === 0
+        ? Promise.resolve([])
+        : tx.ledgerInventoryFifoLot.findMany({
+            where: {
+              dailyLedgerId: { in: carryoverLedgerIds },
+              productId: { in: productIds },
+              remainingQuantity: { gt: 0 },
+            },
+            select: {
+              dailyLedgerId: true,
+              productId: true,
+              lotOriginKey: true,
+              sourceType: true,
+              sourcePurchaseItemId: true,
+              sourceConversionAllocationId: true,
+              sourceBusinessDate: true,
+              unitPrice: true,
+              remainingQuantity: true,
+              remainingAmount: true,
+            },
+            orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
+          }),
+      loadInventoryConversionInputs(tx, dailyLedgerId),
+    ],
+  );
   const purchasesByProductId = groupByProductId(
     purchases.flatMap((purchase) =>
       purchase.productId
@@ -563,9 +871,11 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
       sourceType: lot.sourceType,
       sourceLedgerId: lot.dailyLedgerId,
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceConversionAllocationId: lot.sourceConversionAllocationId,
       sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
       remainingQuantity: decimalToNumber(lot.remainingQuantity),
+      remainingAmount: lot.remainingAmount,
     })),
   );
   const invalidProductIds: string[] = [];
@@ -574,10 +884,18 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
   for (const item of items) {
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
     const purchasedQuantity = sumQuantity(productPurchases);
+    const conversionIns =
+      conversionInputs.incomingByProductId.get(item.productId) ?? [];
+    const conversionOuts =
+      conversionInputs.outgoingByProductId.get(item.productId) ?? [];
+    const conversionInQuantity = sumQuantity(conversionIns);
+    const conversionOutQuantity = sumQuantity(conversionOuts);
     const systemQuantity = calculateSystemInventoryQuantity({
       previousQuantity: item.previousQuantity,
       purchasedQuantity,
       lossQuantity: sumQuantity(lossesByProductId.get(item.productId) ?? []),
+      conversionInQuantity,
+      conversionOutQuantity,
     });
     const closingQuantity =
       item.currentQuantity ??
@@ -603,11 +921,15 @@ export async function getLedgerInventoryFifoAmountErrorProductIdsInTx(
           id: loss.id,
           quantity: loss.quantity,
         })),
+        conversionIns,
+        conversionOuts,
         closingQuantity,
         businessDate,
       });
       snapshotsByProductId.set(item.productId, {
         purchasedQuantity,
+        conversionInQuantity,
+        conversionOutQuantity,
         lossItems: (lossesByProductId.get(item.productId) ?? []).map(
           (loss) => ({
             id: loss.id,
@@ -689,52 +1011,64 @@ export async function refreshLedgerInventoryFifoLots(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const [purchases, losses, previousLots] = preflightSnapshotsByProductId
-    ? ([[], [], []] as const)
-    : await Promise.all([
-        tx.ledgerPurchaseItem.findMany({
-          where: { dailyLedgerId, productId: { in: productIds } },
-          select: {
-            id: true,
-            lotOriginKey: true,
-            productId: true,
-            unitPrice: true,
-            quantity: true,
+  const [purchases, losses, previousLots, conversionInputs] =
+    preflightSnapshotsByProductId
+      ? ([
+          [],
+          [],
+          [],
+          {
+            incomingByProductId: new Map<string, FifoConversionInLotInput[]>(),
+            outgoingByProductId: new Map<string, FifoConversionOutInput[]>(),
           },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        }),
-        tx.ledgerLossItem.findMany({
-          where: { dailyLedgerId, productId: { in: productIds } },
-          select: {
-            id: true,
-            productId: true,
-            quantity: true,
-            recoveredAmount: true,
-          },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        }),
-        carryoverLedgerIds.length === 0
-          ? Promise.resolve([])
-          : tx.ledgerInventoryFifoLot.findMany({
-              where: {
-                dailyLedgerId: { in: carryoverLedgerIds },
-                productId: { in: productIds },
-                remainingQuantity: { gt: 0 },
-              },
-              select: {
-                dailyLedgerId: true,
-                productId: true,
-                lotOriginKey: true,
-                sourceType: true,
-                sourcePurchaseItemId: true,
-                sourceBusinessDate: true,
-                unitPrice: true,
-                remainingQuantity: true,
-                sortOrder: true,
-              },
-              orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
-            }),
-      ]);
+        ] as const)
+      : await Promise.all([
+          tx.ledgerPurchaseItem.findMany({
+            where: { dailyLedgerId, productId: { in: productIds } },
+            select: {
+              id: true,
+              lotOriginKey: true,
+              productId: true,
+              unitPrice: true,
+              quantity: true,
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+          tx.ledgerLossItem.findMany({
+            where: { dailyLedgerId, productId: { in: productIds } },
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              recoveredAmount: true,
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+          carryoverLedgerIds.length === 0
+            ? Promise.resolve([])
+            : tx.ledgerInventoryFifoLot.findMany({
+                where: {
+                  dailyLedgerId: { in: carryoverLedgerIds },
+                  productId: { in: productIds },
+                  remainingQuantity: { gt: 0 },
+                },
+                select: {
+                  dailyLedgerId: true,
+                  productId: true,
+                  lotOriginKey: true,
+                  sourceType: true,
+                  sourcePurchaseItemId: true,
+                  sourceConversionAllocationId: true,
+                  sourceBusinessDate: true,
+                  unitPrice: true,
+                  remainingQuantity: true,
+                  remainingAmount: true,
+                  sortOrder: true,
+                },
+                orderBy: [{ dailyLedgerId: "asc" }, { sortOrder: "asc" }],
+              }),
+          loadInventoryConversionInputs(tx, dailyLedgerId),
+        ]);
 
   const purchasesByProductId = groupByProductId(
     purchases.flatMap((purchase) =>
@@ -762,9 +1096,11 @@ export async function refreshLedgerInventoryFifoLots(
       sourceType: lot.sourceType,
       sourceLedgerId: lot.dailyLedgerId,
       sourcePurchaseItemId: lot.sourcePurchaseItemId,
+      sourceConversionAllocationId: lot.sourceConversionAllocationId,
       sourceBusinessDate: lot.sourceBusinessDate,
       unitPrice: lot.unitPrice,
       remainingQuantity: decimalToNumber(lot.remainingQuantity),
+      remainingAmount: lot.remainingAmount,
     })),
   );
   const rowsToCreate: Array<Prisma.LedgerInventoryFifoLotCreateManyInput> = [];
@@ -783,6 +1119,8 @@ export async function refreshLedgerInventoryFifoLots(
   const itemUpdates: Array<{
     id: string;
     purchasedQuantity: number;
+    conversionInQuantity: number;
+    conversionOutQuantity: number;
     inventoryAmount: number;
   }> = [];
 
@@ -798,6 +1136,14 @@ export async function refreshLedgerInventoryFifoLots(
     const productPurchases = purchasesByProductId.get(item.productId) ?? [];
     const purchasedQuantity =
       preflightSnapshot?.purchasedQuantity ?? sumQuantity(productPurchases);
+    const conversionIns =
+      conversionInputs.incomingByProductId.get(item.productId) ?? [];
+    const conversionOuts =
+      conversionInputs.outgoingByProductId.get(item.productId) ?? [];
+    const conversionInQuantity =
+      preflightSnapshot?.conversionInQuantity ?? sumQuantity(conversionIns);
+    const conversionOutQuantity =
+      preflightSnapshot?.conversionOutQuantity ?? sumQuantity(conversionOuts);
     const lossQuantity = sumQuantity(
       lossesByProductId.get(item.productId) ?? [],
     );
@@ -805,6 +1151,8 @@ export async function refreshLedgerInventoryFifoLots(
       previousQuantity: item.previousQuantity,
       purchasedQuantity,
       lossQuantity,
+      conversionInQuantity,
+      conversionOutQuantity,
     });
     const closingQuantity =
       item.currentQuantity ??
@@ -830,6 +1178,8 @@ export async function refreshLedgerInventoryFifoLots(
           id: loss.id,
           quantity: loss.quantity,
         })),
+        conversionIns,
+        conversionOuts,
         closingQuantity,
         businessDate,
       });
@@ -837,6 +1187,8 @@ export async function refreshLedgerInventoryFifoLots(
     itemUpdates.push({
       id: item.id,
       purchasedQuantity,
+      conversionInQuantity,
+      conversionOutQuantity,
       inventoryAmount: fifo.remainingAmount,
     });
 
@@ -849,17 +1201,20 @@ export async function refreshLedgerInventoryFifoLots(
         sourceType: lot.sourceType,
         sourceLedgerId: lot.sourceLedgerId,
         sourcePurchaseItemId: lot.sourcePurchaseItemId,
+        sourceConversionAllocationId: lot.sourceConversionAllocationId,
         sourceBusinessDate: lot.sourceBusinessDate,
         unitPrice: lot.unitPrice,
         originalQuantity: lot.originalQuantity,
         consumedQuantity: lot.consumedQuantity,
         lossQuantity: lot.lossQuantity,
         soldQuantity: lot.soldQuantity,
+        conversionOutQuantity: lot.conversionOutQuantity,
         remainingQuantity: lot.remainingQuantity,
         originalAmount: lot.originalAmount,
         consumedAmount: lot.consumedAmount,
         lossAmount: lot.lossAmount,
         soldAmount: lot.soldAmount,
+        conversionOutAmount: lot.conversionOutAmount,
         remainingAmount: lot.remainingAmount,
         sortOrder: lot.sortOrder,
       })),
@@ -892,23 +1247,27 @@ export async function refreshLedgerInventoryFifoLots(
     // Prisma update와 같게 updatedAt을 직접 갱신한다.
     const rowValues = itemUpdates
       .map((_, index) => {
-        const base = index * 3;
+        const base = index * 5;
 
-        return `($${base + 1}, $${base + 2}::numeric, $${base + 3}::int)`;
+        return `($${base + 1}, $${base + 2}::numeric, $${base + 3}::numeric, $${base + 4}::numeric, $${base + 5}::int)`;
       })
       .join(", ");
 
     await tx.$executeRawUnsafe(
       `UPDATE "LedgerInventoryItem" AS item
           SET "purchasedQuantity" = source."purchasedQuantity",
+              "conversionInQuantity" = source."conversionInQuantity",
+              "conversionOutQuantity" = source."conversionOutQuantity",
               "inventoryAmount" = source."inventoryAmount",
               "updatedAt" = now()
          FROM (VALUES ${rowValues})
-           AS source(id, "purchasedQuantity", "inventoryAmount")
+           AS source(id, "purchasedQuantity", "conversionInQuantity", "conversionOutQuantity", "inventoryAmount")
         WHERE item.id = source.id`,
       ...itemUpdates.flatMap((update) => [
         update.id,
         String(update.purchasedQuantity),
+        String(update.conversionInQuantity),
+        String(update.conversionOutQuantity),
         update.inventoryAmount,
       ]),
     );

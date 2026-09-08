@@ -1012,8 +1012,10 @@ test("inventory adjustment calculations derive before after and signed differenc
       previousQuantity: 1.25,
       purchasedQuantity: 2.5,
       lossQuantity: 0.75,
+      conversionInQuantity: 3,
+      conversionOutQuantity: 1,
     }),
-    3,
+    5,
   );
 
   assert.deepEqual(
@@ -1040,6 +1042,211 @@ test("inventory adjustment calculations derive before after and signed differenc
       unitPrice: 2,
     }),
     null,
+  );
+});
+
+test("partial cold conversion moves FIFO quantity and cost without creating a sale", async () => {
+  const fifoPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const { calculateFifoLotSnapshots } = await import(
+    pathToFileURL(fifoPath).href
+  );
+
+  const source = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        lotOriginKey: "bio-old",
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        sourceConversionAllocationId: null,
+        sourceBusinessDate: new Date("2026-09-08T00:00:00.000Z"),
+        unitPrice: 1_000,
+        remainingQuantity: 5,
+      },
+    ],
+    legacyOpening: { lotOriginKey: "legacy", unitPrice: 1_000, quantity: 0 },
+    purchases: [
+      {
+        id: "purchase-1",
+        lotOriginKey: "bio-new",
+        unitPrice: 2_000,
+        quantity: 3,
+      },
+    ],
+    conversionOuts: [
+      {
+        allocationId: "allocation-1",
+        sourceLotOriginKey: "bio-old",
+        quantity: 3,
+        costAmount: 3_000,
+      },
+    ],
+    closingQuantity: 5,
+  });
+
+  assert.equal(source.soldAmount, 0);
+  assert.equal(source.conversionOutAmount, 3_000);
+  assert.equal(source.remainingAmount, 8_000);
+  assert.equal(source.lots[0].conversionOutQuantity, 3);
+  assert.equal(source.lots[0].remainingQuantity, 2);
+
+  const target = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: { lotOriginKey: "target", unitPrice: 0, quantity: 0 },
+    purchases: [],
+    conversionIns: [
+      {
+        allocationId: "allocation-1",
+        lotOriginKey: "conversion:allocation-1",
+        sourceBusinessDate: new Date("2026-09-08T00:00:00.000Z"),
+        unitPrice: 1_000,
+        quantity: 3,
+        costAmount: 3_000,
+      },
+    ],
+    closingQuantity: 3,
+  });
+
+  assert.equal(target.soldAmount, 0);
+  assert.equal(target.remainingAmount, 3_000);
+  assert.equal(target.lots[0].sourceType, "CONVERSION");
+  assert.equal(target.lots[0].sourceConversionAllocationId, "allocation-1");
+});
+
+test("fractional cold conversion preserves every won across source and target lots", async () => {
+  const fifoPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "fifo-lots.ts",
+  );
+  const { calculateFifoLotSnapshots, calculateInventoryTransferCostAmount } =
+    await import(pathToFileURL(fifoPath).href);
+  const transferredCost = calculateInventoryTransferCostAmount({
+    quantity: 0.5,
+    availableQuantity: 1,
+    availableAmount: 101,
+  });
+
+  assert.equal(transferredCost, 51);
+
+  const source = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        lotOriginKey: "bio-fractional",
+        sourceType: "PREVIOUS_CARRYOVER",
+        sourceLedgerId: "previous-ledger",
+        sourcePurchaseItemId: null,
+        sourceConversionAllocationId: null,
+        sourceBusinessDate: new Date("2026-09-08T00:00:00.000Z"),
+        unitPrice: 101,
+        remainingQuantity: 1,
+        remainingAmount: 101,
+      },
+    ],
+    legacyOpening: { lotOriginKey: "legacy", unitPrice: 101, quantity: 0 },
+    purchases: [],
+    conversionOuts: [
+      {
+        allocationId: "allocation-fractional",
+        sourceLotOriginKey: "bio-fractional",
+        quantity: 0.5,
+        costAmount: transferredCost,
+      },
+    ],
+    closingQuantity: 0.5,
+  });
+  const target = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: { lotOriginKey: "target", unitPrice: 0, quantity: 0 },
+    purchases: [],
+    conversionIns: [
+      {
+        allocationId: "allocation-fractional",
+        lotOriginKey: "conversion:allocation-fractional",
+        sourceBusinessDate: new Date("2026-09-08T00:00:00.000Z"),
+        unitPrice: 102,
+        quantity: 0.5,
+        costAmount: transferredCost,
+      },
+    ],
+    closingQuantity: 0.5,
+  });
+
+  assert.equal(source.conversionOutAmount, 51);
+  assert.equal(source.remainingAmount, 50);
+  assert.equal(target.remainingAmount, 51);
+  assert.equal(source.remainingAmount + target.remainingAmount, 101);
+
+  const sourceNextDay = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        ...source.lots[0],
+        sourceLedgerId: "source-ledger",
+      },
+    ],
+    legacyOpening: { lotOriginKey: "legacy", unitPrice: 101, quantity: 0 },
+    purchases: [],
+    closingQuantity: 0,
+  });
+  const targetFirstSale = calculateFifoLotSnapshots({
+    previousLots: [],
+    legacyOpening: { lotOriginKey: "target", unitPrice: 0, quantity: 0 },
+    purchases: [],
+    conversionIns: [
+      {
+        allocationId: "allocation-fractional",
+        lotOriginKey: "conversion:allocation-fractional",
+        sourceBusinessDate: new Date("2026-09-08T00:00:00.000Z"),
+        unitPrice: 101,
+        quantity: 0.5,
+        costAmount: transferredCost,
+      },
+    ],
+    closingQuantity: 0.25,
+  });
+  const targetFinalSale = calculateFifoLotSnapshots({
+    previousLots: [
+      {
+        ...targetFirstSale.lots[0],
+        sourceLedgerId: "target-ledger",
+      },
+    ],
+    legacyOpening: { lotOriginKey: "target", unitPrice: 101, quantity: 0 },
+    purchases: [],
+    closingQuantity: 0,
+  });
+
+  assert.equal(sourceNextDay.soldAmount, 50);
+  assert.equal(sourceNextDay.remainingAmount, 0);
+  assert.equal(targetFirstSale.soldAmount, 26);
+  assert.equal(targetFirstSale.remainingAmount, 25);
+  assert.equal(targetFinalSale.soldAmount, 25);
+  assert.equal(targetFinalSale.remainingAmount, 0);
+  assert.equal(targetFirstSale.soldAmount + targetFinalSale.soldAmount, 51);
+});
+
+test("cold conversion validates the stored ledger date and transfers remaining lot cost", () => {
+  const source = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "conversion-actions.ts",
+  );
+
+  assert.match(
+    source,
+    /getKstLedgerDateParam\(ledger\.closingDate\)\s*!==\s*input\.closingDate/,
+  );
+  assert.match(source, /remainingAmount:\s*true/);
+  assert.match(
+    source,
+    /calculateInventoryTransferCostAmount\(\{[\s\S]*availableQuantity:[\s\S]*availableAmount:\s*lot\.remainingAmount/s,
   );
 });
 
@@ -3253,7 +3460,7 @@ test("FIFO lot refresh writes item amounts in one bulk statement, not one query 
   );
   assert.equal(
     rawCalls[0].params.length,
-    itemCount * 3,
+    itemCount * 5,
     "every value must travel as a bound parameter, never interpolated into SQL",
   );
   assert.equal(rawCalls[0].params[0], "item-0");

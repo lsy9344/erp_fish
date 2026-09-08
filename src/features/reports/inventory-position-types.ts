@@ -6,7 +6,12 @@
 export type InventoryPositionStatusLabel = "입력됨" | "미입력" | "계산 불가";
 
 export type InventoryPositionFifoLotRow = {
-  sourceType: "OPENING" | "PREVIOUS_CARRYOVER" | "PURCHASE" | "LEGACY_OPENING";
+  sourceType:
+    | "OPENING"
+    | "PREVIOUS_CARRYOVER"
+    | "PURCHASE"
+    | "CONVERSION"
+    | "LEGACY_OPENING";
   sourceBusinessDate: string | null;
   purchaseDate: string | null;
   unitPrice: number;

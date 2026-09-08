@@ -179,6 +179,9 @@ async function cleanupStoryTwoFiveData() {
   const ledgerIds = ledgers.map((ledger) => ledger.id);
 
   if (ledgerIds.length > 0) {
+    await prisma.ledgerInventoryConversion.deleteMany({
+      where: { dailyLedgerId: { in: ledgerIds } },
+    });
     await prisma.ledgerLossItem.deleteMany({
       where: { dailyLedgerId: { in: ledgerIds } },
     });
@@ -330,26 +333,121 @@ test("가로 재고 카드는 데스크톱 두 품목과 모바일 한 품목을
     "스토리2-5 2열 카드 아주 긴 이름의 대형 연어",
   );
   const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  const inventoryItems = [];
   for (const [index, item] of [product, secondProduct].entries()) {
-    await prisma.ledgerInventoryItem.create({
-      data: {
+    inventoryItems.push(
+      await prisma.ledgerInventoryItem.create({
+        data: {
+          dailyLedgerId: ledger.id,
+          productId: item.id,
+          productName: item.name,
+          productCategory: item.category,
+          productSpec: item.spec,
+          unitPrice: item.defaultUnitPrice,
+          previousQuantity: index === 0 ? 0 : 2,
+          purchasedQuantity: index === 0 ? 8 : 0,
+          currentQuantity: index === 0 ? 8 : 2,
+          quantity: index === 0 ? 8 : 2,
+          inventoryAmount: index === 0 ? 92_000 : 24_000,
+          isModified: false,
+          createdById: actorId,
+          updatedById: actorId,
+        },
+      }),
+    );
+  }
+  const oldPurchaseId = randomUUID();
+  const newPurchaseId = randomUUID();
+  const oldPurchaseOrigin = `layout-source-old-${product.id}`;
+  const newPurchaseOrigin = `layout-source-new-${product.id}`;
+  await prisma.ledgerPurchaseItem.createMany({
+    data: [
+      {
+        id: oldPurchaseId,
+        lotOriginKey: oldPurchaseOrigin,
         dailyLedgerId: ledger.id,
-        productId: item.id,
-        productName: item.name,
-        productCategory: item.category,
-        productSpec: item.spec,
-        unitPrice: item.defaultUnitPrice,
-        previousQuantity: 5 + index,
-        purchasedQuantity: 0,
-        currentQuantity: 5 + index,
-        quantity: 5 + index,
-        inventoryAmount: 60_000 + index * 12_000,
-        isModified: false,
+        productId: product.id,
+        sourceType: "MANUAL",
+        productName: product.name,
+        productCategory: product.category,
+        productSpec: product.spec,
+        unitPrice: 10_000,
+        quantity: 2,
+        amount: 20_000,
         createdById: actorId,
         updatedById: actorId,
       },
-    });
-  }
+      {
+        id: newPurchaseId,
+        lotOriginKey: newPurchaseOrigin,
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+        sourceType: "MANUAL",
+        productName: product.name,
+        productCategory: product.category,
+        productSpec: product.spec,
+        unitPrice: 12_000,
+        quantity: 6,
+        amount: 72_000,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    ],
+  });
+  await prisma.ledgerInventoryFifoLot.createMany({
+    data: [
+      {
+        lotOriginKey: oldPurchaseOrigin,
+        dailyLedgerId: ledger.id,
+        ledgerInventoryItemId: inventoryItems[0]!.id,
+        productId: product.id,
+        sourceType: "PURCHASE",
+        sourcePurchaseItemId: oldPurchaseId,
+        unitPrice: 10_000,
+        originalQuantity: 2,
+        consumedQuantity: 0,
+        remainingQuantity: 2,
+        originalAmount: 20_000,
+        consumedAmount: 0,
+        remainingAmount: 20_000,
+        sortOrder: 0,
+        sourceBusinessDate: ledger.closingDate,
+      },
+      {
+        lotOriginKey: newPurchaseOrigin,
+        dailyLedgerId: ledger.id,
+        ledgerInventoryItemId: inventoryItems[0]!.id,
+        productId: product.id,
+        sourceType: "PURCHASE",
+        sourcePurchaseItemId: newPurchaseId,
+        unitPrice: 12_000,
+        originalQuantity: 6,
+        consumedQuantity: 0,
+        remainingQuantity: 6,
+        originalAmount: 72_000,
+        consumedAmount: 0,
+        remainingAmount: 72_000,
+        sortOrder: 1,
+        sourceBusinessDate: ledger.closingDate,
+      },
+      {
+        lotOriginKey: `layout-target-${secondProduct.id}`,
+        dailyLedgerId: ledger.id,
+        ledgerInventoryItemId: inventoryItems[1]!.id,
+        productId: secondProduct.id,
+        sourceType: "LEGACY_OPENING",
+        unitPrice: 12_000,
+        originalQuantity: 2,
+        consumedQuantity: 0,
+        remainingQuantity: 2,
+        originalAmount: 24_000,
+        consumedAmount: 0,
+        remainingAmount: 24_000,
+        sortOrder: 0,
+        sourceBusinessDate: ledger.closingDate,
+      },
+    ],
+  });
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
@@ -381,46 +479,87 @@ test("가로 재고 카드는 데스크톱 두 품목과 모바일 한 품목을
   expect(desktopSecondBox).not.toBeNull();
   expect(desktopFirstBox?.y).toBeCloseTo(desktopSecondBox?.y ?? 0, 0);
   expect(desktopFirstBox?.x).not.toBeCloseTo(desktopSecondBox?.x ?? 0, 0);
+  expect(desktopFirstBox?.height).toBeCloseTo(desktopSecondBox?.height ?? 0, 0);
+  const firstActions = firstRow.locator("[data-inventory-card-actions]");
+  const secondActions = secondRow.locator("[data-inventory-card-actions]");
+  const firstActionsBox = await firstActions.boundingBox();
+  const secondActionsBox = await secondActions.boundingBox();
+  expect(
+    Math.abs((firstActionsBox?.y ?? 0) - (secondActionsBox?.y ?? 0)),
+  ).toBeLessThanOrEqual(1);
   const conversionButton = firstRow.getByRole("button", {
-    name: /냉동 전환은 준비 중입니다/,
+    name: /일부 냉동 전환/,
   });
-  await expect(conversionButton).toBeDisabled();
+  await expect(conversionButton).toBeEnabled();
   await expect(
     secondRow.getByRole("button", { name: /냉동 전환/ }),
   ).toHaveCount(0);
-  const inventoryBeforeDisabledClick =
-    await prisma.ledgerInventoryItem.findMany({
-      where: {
-        dailyLedgerId: ledger.id,
-        productId: { in: [product.id, secondProduct.id] },
-      },
-      select: {
-        productId: true,
-        currentQuantity: true,
-        quantity: true,
-        inventoryAmount: true,
-      },
-      orderBy: { productId: "asc" },
-    });
-  await conversionButton.evaluate((button) =>
-    (button as HTMLButtonElement).click(),
-  );
-  const inventoryAfterDisabledClick = await prisma.ledgerInventoryItem.findMany(
-    {
-      where: {
-        dailyLedgerId: ledger.id,
-        productId: { in: [product.id, secondProduct.id] },
-      },
-      select: {
-        productId: true,
-        currentQuantity: true,
-        quantity: true,
-        inventoryAmount: true,
-      },
-      orderBy: { productId: "asc" },
+  await conversionButton.click();
+  const conversionDialog = page.getByRole("dialog", {
+    name: "일부 냉동 전환",
+  });
+  await conversionDialog
+    .getByRole("combobox", { name: "옮길 냉동 품목" })
+    .click();
+  await page
+    .getByRole("option", { name: new RegExp(secondProduct.name) })
+    .click();
+  await conversionDialog.getByLabel("냉동 전환 수량").fill("3");
+  await expect(conversionDialog).toContainText("8개 → 5개");
+  await expect(conversionDialog).toContainText("2개 → 5개");
+  await conversionDialog
+    .getByRole("button", { name: "냉동으로 옮기기" })
+    .click();
+  await expect(conversionDialog).toBeHidden();
+  await expect(page.getByText(/3개를 냉동 재고로 옮겼습니다/)).toBeVisible();
+
+  const convertedItems = await prisma.ledgerInventoryItem.findMany({
+    where: {
+      dailyLedgerId: ledger.id,
+      productId: { in: [product.id, secondProduct.id] },
     },
+    select: {
+      productId: true,
+      currentQuantity: true,
+      conversionInQuantity: true,
+      conversionOutQuantity: true,
+      inventoryAmount: true,
+    },
+  });
+  const convertedSource = convertedItems.find(
+    (item) => item.productId === product.id,
   );
-  expect(inventoryAfterDisabledClick).toEqual(inventoryBeforeDisabledClick);
+  const convertedTarget = convertedItems.find(
+    (item) => item.productId === secondProduct.id,
+  );
+  expect(Number(convertedSource?.currentQuantity)).toBe(5);
+  expect(Number(convertedSource?.conversionOutQuantity)).toBe(3);
+  expect(convertedSource?.inventoryAmount).toBe(60_000);
+  expect(Number(convertedTarget?.currentQuantity)).toBe(5);
+  expect(Number(convertedTarget?.conversionInQuantity)).toBe(3);
+  expect(convertedTarget?.inventoryAmount).toBe(56_000);
+
+  const conversion = await prisma.ledgerInventoryConversion.findFirstOrThrow({
+    where: { dailyLedgerId: ledger.id, sourceProductId: product.id },
+    include: { allocations: { orderBy: { sortOrder: "asc" } } },
+  });
+  expect(Number(conversion.quantity)).toBe(3);
+  expect(
+    conversion.allocations.map((allocation) => ({
+      quantity: Number(allocation.quantity),
+      unitCost: allocation.unitCost,
+      costAmount: allocation.costAmount,
+    })),
+  ).toEqual([
+    { quantity: 2, unitCost: 10_000, costAmount: 20_000 },
+    { quantity: 1, unitCost: 12_000, costAmount: 12_000 },
+  ]);
+  const saleAndLossPollution = await prisma.ledgerInventoryFifoLot.aggregate({
+    where: { dailyLedgerId: ledger.id },
+    _sum: { soldQuantity: true, lossQuantity: true },
+  });
+  expect(Number(saleAndLossPollution._sum.soldQuantity)).toBe(0);
+  expect(Number(saleAndLossPollution._sum.lossQuantity)).toBe(0);
   await expect
     .poll(() =>
       inventoryTableContainer.evaluate(

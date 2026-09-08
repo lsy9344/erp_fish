@@ -70,6 +70,8 @@ export function isManualFirstInventoryEntry(item: {
   previousQuantity: number;
   purchasedQuantity: number;
   lossQuantity: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
 }) {
   return (
     item.carryoverSource === "MANUAL" &&
@@ -77,7 +79,9 @@ export function isManualFirstInventoryEntry(item: {
     item.carryoverLedgerId === null &&
     item.previousQuantity === 0 &&
     item.purchasedQuantity === 0 &&
-    item.lossQuantity === 0
+    item.lossQuantity === 0 &&
+    (item.conversionInQuantity ?? 0) === 0 &&
+    (item.conversionOutQuantity ?? 0) === 0
   );
 }
 
@@ -88,6 +92,8 @@ export function getInventoryQuantityRelation(item: {
   previousQuantity: number;
   purchasedQuantity: number;
   lossQuantity: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   currentQuantity: number | null;
 }): InventoryQuantityRelation {
   const systemQuantity = calculateSystemInventoryQuantity(item);

@@ -110,6 +110,8 @@ export type LedgerReviewInventoryInput = {
   productName?: string;
   previousQuantity: number;
   purchasedQuantity: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   currentQuantity: number | null;
   quantity: number | null;
   unitPrice: number;
@@ -125,6 +127,7 @@ export type LedgerReviewInventoryInput = {
     consumedAmount: number;
     soldAmount?: number;
     lossAmount?: number;
+    conversionOutAmount?: number;
     remainingAmount: number;
   }[];
 };
@@ -155,6 +158,8 @@ export type LedgerReviewPlannedSalesInput = {
   productId?: string;
   previousQuantity: number;
   purchasedQuantity: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   // 당일 손실 합계 수량. 판매량은 기준재고(전일+매입-손실)에서 당일재고를 빼야
   // 하므로 손실을 판매로 잘못 잡지 않도록 차감한다. 없으면 0.
   lossQuantity?: number;
@@ -439,10 +444,13 @@ function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
     return item.fifoLots.reduce((sum, lot) => {
       const soldAmount = lot.soldAmount;
       const lossAmount = lot.lossAmount;
+      const conversionOutAmount = lot.conversionOutAmount ?? 0;
       const hasCompleteAllocation =
         isUsableNumber(soldAmount ?? null) &&
         isUsableNumber(lossAmount ?? null) &&
-        Math.abs(soldAmount! + lossAmount! - lot.consumedAmount) < 0.000001;
+        Math.abs(
+          soldAmount! + lossAmount! + conversionOutAmount - lot.consumedAmount,
+        ) < 0.000001;
 
       // 마이그레이션 전 FIFO 행은 새 필드가 모두 0으로 채워져 있다. 새 배분 합계가
       // 기존 소진금액과 맞을 때만 soldAmount를 쓰고, 아니면 과거 consumedAmount를
@@ -540,6 +548,8 @@ function calculateCostOfGoodsSold(
     total += Math.round(
       (item.previousQuantity +
         item.purchasedQuantity -
+        (item.conversionOutQuantity ?? 0) +
+        (item.conversionInQuantity ?? 0) -
         lossQuantity -
         currentQuantity) *
         item.unitPrice,
@@ -614,6 +624,8 @@ function getPlannedSalesSoldQuantity(item: LedgerReviewPlannedSalesInput) {
   const soldQuantity =
     item.previousQuantity +
     item.purchasedQuantity -
+    (item.conversionOutQuantity ?? 0) +
+    (item.conversionInQuantity ?? 0) -
     (item.lossQuantity ?? 0) -
     currentQuantity;
 

@@ -10,6 +10,7 @@ import { calculateLedgerReviewSummary } from "../../src/server/calculations/ledg
 import { buildProductCategoryPerformance } from "../../src/features/reports/queries.ts";
 import {
   getInventoryFlowSoldQuantity,
+  hasCompleteLotCostAllocation,
   hasCompleteLotSalesAllocation,
 } from "../../src/features/inventory/lot-sales-allocation.ts";
 
@@ -32,6 +33,27 @@ test("pre-migration lots fall back to the legacy product sales calculation", () 
       { soldQuantity: 3 },
       { soldQuantity: 5 },
     ]),
+    true,
+  );
+});
+
+test("legacy lot cost allocation falls back until all movement amounts reconcile", () => {
+  assert.equal(
+    hasCompleteLotCostAllocation({
+      consumedAmount: 1_000,
+      soldAmount: 0,
+      lossAmount: 0,
+      conversionOutAmount: 0,
+    }),
+    false,
+  );
+  assert.equal(
+    hasCompleteLotCostAllocation({
+      consumedAmount: 1_000,
+      soldAmount: 600,
+      lossAmount: 100,
+      conversionOutAmount: 300,
+    }),
     true,
   );
 });
@@ -345,4 +367,37 @@ test("reports sum each lot's sold quantity at that lot's own price", () => {
   assert.equal(frozen.salesAmount, 1_600);
   assert.equal(frozen.grossMarginRate, (1_600 - 650) / 1_600);
   assert.equal(frozen.salesPriceFallbackItemCount, 0);
+});
+
+test("reports keep pre-migration sold quantity and cost instead of trusting zeroed lot fields", () => {
+  const [frozen] = buildProductCategoryPerformance([
+    {
+      ledgerInventoryItems: [
+        {
+          productId: "legacy-product",
+          productCategory: "냉동",
+          previousQuantity: 10,
+          purchasedQuantity: 0,
+          currentQuantity: 2,
+          lossQuantity: 0,
+          unitPrice: 100,
+          plannedUnitPrice: 200,
+          fifoLots: [
+            {
+              soldQuantity: 0,
+              unitPrice: 100,
+              plannedUnitPrice: 200,
+              consumedAmount: 800,
+              soldAmount: 0,
+              lossAmount: 0,
+              conversionOutAmount: 0,
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(frozen.salesAmount, 1_600);
+  assert.equal(frozen.grossMarginRate, 0.5);
 });

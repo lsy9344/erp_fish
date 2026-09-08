@@ -25,6 +25,8 @@ const inventoryItemSelect = {
   productSpec: true,
   unitPrice: true,
   previousQuantity: true,
+  conversionInQuantity: true,
+  conversionOutQuantity: true,
   currentQuantity: true,
   quantity: true,
   carryoverSource: true,
@@ -165,6 +167,14 @@ export async function applyInventoryAdjustmentReasonsInTx(
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
+    const conversionInQuantity =
+      item.conversionInQuantity == null
+        ? 0
+        : decimalToNumber(item.conversionInQuantity);
+    const conversionOutQuantity =
+      item.conversionOutQuantity == null
+        ? 0
+        : decimalToNumber(item.conversionOutQuantity);
 
     if (
       isManualFirstInventoryEntry({
@@ -172,6 +182,8 @@ export async function applyInventoryAdjustmentReasonsInTx(
         previousQuantity,
         purchasedQuantity,
         lossQuantity,
+        conversionInQuantity,
+        conversionOutQuantity,
       })
     ) {
       continue;
@@ -182,6 +194,8 @@ export async function applyInventoryAdjustmentReasonsInTx(
         previousQuantity,
         purchasedQuantity,
         lossQuantity,
+        conversionInQuantity,
+        conversionOutQuantity,
         currentQuantity,
       }) !== "OVERSTOCK"
     ) {
@@ -192,6 +206,8 @@ export async function applyInventoryAdjustmentReasonsInTx(
       previousQuantity,
       purchasedQuantity,
       lossQuantity,
+      conversionInQuantity,
+      conversionOutQuantity,
     });
     const beforeAmount =
       beforeQuantity === null
@@ -302,6 +318,14 @@ export async function reconcileLedgerInventoryAdjustments(
     const purchasedQuantity =
       purchasedQuantityByProductId.get(item.productId) ?? 0;
     const lossQuantity = lossQuantityByProductId.get(item.productId) ?? 0;
+    const conversionInQuantity =
+      item.conversionInQuantity == null
+        ? 0
+        : decimalToNumber(item.conversionInQuantity);
+    const conversionOutQuantity =
+      item.conversionOutQuantity == null
+        ? 0
+        : decimalToNumber(item.conversionOutQuantity);
 
     if (
       isManualFirstInventoryEntry({
@@ -309,6 +333,8 @@ export async function reconcileLedgerInventoryAdjustments(
         previousQuantity,
         purchasedQuantity,
         lossQuantity,
+        conversionInQuantity,
+        conversionOutQuantity,
       })
     ) {
       await tx.ledgerInventoryAdjustment.delete({
@@ -321,6 +347,8 @@ export async function reconcileLedgerInventoryAdjustments(
       previousQuantity,
       purchasedQuantity,
       lossQuantity,
+      conversionInQuantity,
+      conversionOutQuantity,
       currentQuantity,
     });
 
@@ -339,6 +367,8 @@ export async function reconcileLedgerInventoryAdjustments(
       previousQuantity,
       purchasedQuantity,
       lossQuantity,
+      conversionInQuantity,
+      conversionOutQuantity,
     });
     const beforeAmount =
       beforeQuantity === null

@@ -548,6 +548,34 @@ test("HQ inventory adjustment shows the shared reason field error before saving"
   assert.match(source, /hqEditReasonInputRef\.current\?\.focus\(\)/);
 });
 
+test("HQ cold conversion requires reason and scope while closed ledgers stay disabled", () => {
+  const actionSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "conversion-actions.ts",
+  );
+  const clientSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "inventory-step-client.tsx",
+  );
+
+  assert.match(actionSource, /convertHqLedgerInventoryToFrozen/);
+  assert.match(actionSource, /hqReasonSchema\.safeParse/);
+  assert.match(actionSource, /requireLedgerHqEditContext\(\)/);
+  assert.match(
+    actionSource,
+    /requireHeadquartersStoreScope\(parsed\.data\.storeId\)/,
+  );
+  assert.match(actionSource, /ledger\.hq\.inventory\.converted/);
+  assert.match(clientSource, /!isLedgerEditable\(data\.status\)/);
+  assert.match(clientSource, /본사 마감된 장부에서는 냉동 전환할 수 없습니다/);
+  assert.match(clientSource, /본사 수정 사유를 먼저 입력해 주세요/);
+});
+
 test("audit history labels distinguish headquarters edits", () => {
   const source = readProjectFile("src", "features", "audit", "audit-format.ts");
 
@@ -1155,7 +1183,7 @@ test("cost tabs merge synchronized metadata without replacing drafts", () => {
 test("loss and inventory sync only metadata exposed by their narrow responses", () => {
   const clients = [
     ["losses", "loss-step-client.tsx", 1],
-    ["inventory", "inventory-step-client.tsx", 2],
+    ["inventory", "inventory-step-client.tsx", 3],
   ];
 
   for (const [feature, fileName, expectedNotifications] of clients) {

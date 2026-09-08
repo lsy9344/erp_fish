@@ -2,6 +2,8 @@ type InventoryFlow = {
   previousQuantity: number;
   purchasedQuantity: number;
   lossQuantity?: number;
+  conversionInQuantity?: number;
+  conversionOutQuantity?: number;
   currentQuantity: number | null;
   quantity?: number | null;
 };
@@ -19,6 +21,8 @@ export function getInventoryFlowSoldQuantity(item: InventoryFlow) {
     item.previousQuantity +
     item.purchasedQuantity -
     (item.lossQuantity ?? 0) -
+    (item.conversionOutQuantity ?? 0) +
+    (item.conversionInQuantity ?? 0) -
     currentQuantity;
 
   return Number.isFinite(soldQuantity) ? soldQuantity : null;
@@ -45,4 +49,22 @@ export function hasCompleteLotSalesAllocation(
   }
 
   return Math.abs(lotSoldQuantity - itemSoldQuantity) < QUANTITY_EPSILON;
+}
+
+export function hasCompleteLotCostAllocation(lot: {
+  consumedAmount: number;
+  soldAmount?: number;
+  lossAmount?: number;
+  conversionOutAmount?: number;
+}) {
+  const conversionOutAmount = lot.conversionOutAmount ?? 0;
+
+  return (
+    Number.isFinite(lot.consumedAmount) &&
+    Number.isFinite(lot.soldAmount) &&
+    Number.isFinite(lot.lossAmount) &&
+    Number.isFinite(conversionOutAmount) &&
+    lot.soldAmount! + lot.lossAmount! + conversionOutAmount ===
+      lot.consumedAmount
+  );
 }

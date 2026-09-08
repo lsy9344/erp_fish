@@ -347,6 +347,8 @@ export async function saveHqLedgerInventoryItems(
                 previousQuantity: 0,
                 purchasedQuantity: 0,
                 lossQuantity: 0,
+                conversionInQuantity: 0,
+                conversionOutQuantity: 0,
                 carryoverSource: "MANUAL",
                 carryoverStatus: "CARRYOVER_EMPTY",
                 carryoverLedgerId: null,
@@ -359,6 +361,8 @@ export async function saveHqLedgerInventoryItems(
               previousQuantity: beforeItem.previousQuantity,
               purchasedQuantity: beforeItem.purchasedQuantity,
               lossQuantity: beforeItem.lossQuantity,
+              conversionInQuantity: beforeItem.conversionInQuantity,
+              conversionOutQuantity: beforeItem.conversionOutQuantity,
               carryoverSource: beforeItem.carryoverSource,
               carryoverStatus: beforeItem.carryoverStatus,
               carryoverLedgerId: beforeItem.carryoverLedgerId,
@@ -564,6 +568,8 @@ export async function saveHqLedgerInventoryItems(
               unitPrice: item.unitPrice,
               previousQuantity: item.previousQuantity,
               purchasedQuantity: item.purchasedQuantity,
+              conversionInQuantity: item.conversionInQuantity,
+              conversionOutQuantity: item.conversionOutQuantity,
               currentQuantity,
               quantity,
               inventoryAmount,
@@ -740,6 +746,8 @@ export async function saveHqLedgerInventoryAdjustment(
           previousQuantity: line.previousQuantity,
           purchasedQuantity: line.purchasedQuantity,
           lossQuantity: line.lossQuantity,
+          conversionInQuantity: line.conversionInQuantity,
+          conversionOutQuantity: line.conversionOutQuantity,
         });
         const beforeAmount =
           beforeQuantity === null

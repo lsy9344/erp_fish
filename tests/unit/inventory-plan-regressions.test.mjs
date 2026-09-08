@@ -321,17 +321,20 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
         sourceType: "PREVIOUS_CARRYOVER",
         sourceLedgerId: "previous-ledger",
         sourcePurchaseItemId: null,
+        sourceConversionAllocationId: null,
         sourceBusinessDate: new Date("2026-07-20T00:00:00.000Z"),
         unitPrice: 100,
         originalQuantity: 2,
         consumedQuantity: 1,
         lossQuantity: 0,
         soldQuantity: 1,
+        conversionOutQuantity: 0,
         remainingQuantity: 1,
         originalAmount: 200,
         consumedAmount: 100,
         lossAmount: 0,
         soldAmount: 100,
+        conversionOutAmount: 0,
         remainingAmount: 100,
         sortOrder: 0,
       },
@@ -347,12 +350,29 @@ test("FIFO persistence reuses a prepared snapshot without rereading its sources"
   await refreshLedgerInventoryFifoLots(
     tx,
     "ledger-1",
-    new Map([["product-1", { purchasedQuantity: 0, lossItems: [], fifo }]]),
+    new Map([
+      [
+        "product-1",
+        {
+          purchasedQuantity: 0,
+          conversionInQuantity: 0,
+          conversionOutQuantity: 0,
+          lossItems: [],
+          fifo,
+        },
+      ],
+    ]),
   );
 
   assert.equal(inventoryUpdates.length, 1);
   assert.match(inventoryUpdates[0].sql, /UPDATE "LedgerInventoryItem"/);
-  assert.deepEqual(inventoryUpdates[0].params, ["inventory-item", "0", 100]);
+  assert.deepEqual(inventoryUpdates[0].params, [
+    "inventory-item",
+    "0",
+    "0",
+    "0",
+    100,
+  ]);
   assert.equal(createdLots.length, 1);
   assert.equal(createdLots[0].ledgerInventoryItemId, "inventory-item");
   assert.equal(createdLots[0].remainingAmount, 100);

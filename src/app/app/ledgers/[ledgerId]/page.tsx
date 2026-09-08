@@ -55,6 +55,7 @@ import {
   saveHqLedgerInventoryItems,
 } from "~/features/inventory/hq-edit-actions";
 import { InventoryStepClient } from "~/features/inventory/components/inventory-step-client";
+import { convertHqLedgerInventoryToFrozen } from "~/features/inventory/conversion-actions";
 import { saveHqLedgerLosses } from "~/features/losses/hq-edit-actions";
 import { LossStepClient } from "~/features/losses/components/loss-step-client";
 import { getActiveLedgerInputCodeOptions } from "~/features/master-data/code-queries";
@@ -548,6 +549,7 @@ export default async function LedgerDetailPage({
               initialData={editInventoryData}
               saveItemsAction={saveHqLedgerInventoryItems}
               saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
+              convertInventoryAction={convertHqLedgerInventoryToFrozen}
               showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired

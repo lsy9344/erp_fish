@@ -198,6 +198,72 @@ test("ledger summary falls back when FIFO lot rows are empty", async () => {
   assert.deepEqual(summary.inventoryAmount, { value: 8_000, status: "ok" });
 });
 
+test("cold conversion cost is inventory movement, not cost of goods sold", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+    expenseTotal: 0,
+    inventoryItems: [
+      {
+        previousQuantity: 8,
+        purchasedQuantity: 0,
+        conversionOutQuantity: 3,
+        currentQuantity: 5,
+        quantity: 5,
+        unitPrice: 1_000,
+        inventoryAmount: 5_000,
+        fifoLots: [
+          {
+            sourceType: "PREVIOUS_CARRYOVER",
+            consumedAmount: 3_000,
+            soldAmount: 0,
+            lossAmount: 0,
+            conversionOutAmount: 3_000,
+            remainingAmount: 5_000,
+          },
+        ],
+      },
+      {
+        previousQuantity: 0,
+        purchasedQuantity: 0,
+        conversionInQuantity: 3,
+        currentQuantity: 3,
+        quantity: 3,
+        unitPrice: 1_000,
+        inventoryAmount: 3_000,
+        fifoLots: [
+          {
+            sourceType: "CONVERSION",
+            consumedAmount: 0,
+            soldAmount: 0,
+            lossAmount: 0,
+            conversionOutAmount: 0,
+            remainingAmount: 3_000,
+          },
+        ],
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [],
+  });
+
+  assert.equal(summary.costOfGoodsSold.value, 0);
+  assert.equal(summary.inventoryAmount.value, 8_000);
+});
+
 test("zero-flow empty FIFO rows do not disable FIFO for other inventory rows", async () => {
   const calcPath = assertProjectFile(
     "src",
