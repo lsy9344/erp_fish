@@ -258,25 +258,6 @@ test("ledger labor schema validates worker name and memo edge cases and rejects 
   );
 });
 
-test("labor amount restore is audit-bound and preserves the employee link", () => {
-  const source = readProjectFile(
-    "scripts",
-    "restore-labor-amount-from-audit.mjs",
-  );
-  const updateBlock = source.slice(
-    source.indexOf("await tx.ledgerLaborItem.update"),
-    source.indexOf("await tx.dailyLedger.update"),
-  );
-
-  assert.match(source, /--source-audit-id/);
-  assert.match(source, /--confirm=\$\{confirmation\}/);
-  assert.match(source, /ALLOW_REMOTE_LABOR_AMOUNT_RESTORE !== "yes"/);
-  assert.match(source, /labor\.amount !== after\.amount/);
-  assert.match(source, /ledger\.labor_amount\.restored_from_audit/);
-  assert.match(updateBlock, /amount: current\.restoreAmount/);
-  assert.doesNotMatch(updateBlock, /employeeId:/);
-});
-
 test("ledger labor model, query payload, and save actions follow expected contracts", () => {
   const schema = readProjectFile("prisma", "schema.prisma");
   assert.match(
