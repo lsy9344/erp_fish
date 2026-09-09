@@ -1250,6 +1250,20 @@ test("cold conversion validates the stored ledger date and transfers remaining l
   );
 });
 
+test("cold conversion derives the frozen product name from the live product", async () => {
+  const helperPath = assertProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "conversion-product.ts",
+  );
+  const { FROZEN_CONVERSION_PRODUCT_PREFIX, toFrozenConversionProductName } =
+    await import(pathToFileURL(helperPath).href);
+
+  assert.equal(FROZEN_CONVERSION_PRODUCT_PREFIX, "활냉)");
+  assert.equal(toFrozenConversionProductName("꽃게"), "활냉)꽃게");
+});
+
 test("FIFO lot calculation consumes oldest lots first and marks legacy opening lots", async () => {
   const fifoPath = assertProjectFile(
     "src",

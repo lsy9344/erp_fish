@@ -27,6 +27,7 @@ import {
   refreshLedgerInventoryFifoLots,
 } from "~/features/inventory/fifo-lots";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import { toFrozenConversionProductName } from "~/features/inventory/conversion-product";
 import type {
   InventoryStepData,
   StoreManagerInventoryStepData,
@@ -41,6 +42,7 @@ import { db } from "~/server/db";
 import {
   revalidateDashboardAndReports,
   revalidateLedgerDetailPath,
+  revalidateMasterDataPaths,
   revalidateStoreEntryPaths,
 } from "~/server/revalidation";
 
@@ -84,6 +86,7 @@ function revalidateConversionPaths(ledgerId: string) {
   revalidateStoreEntryPaths(["root", "inventory"]);
   revalidateLedgerDetailPath(ledgerId);
   revalidateDashboardAndReports();
+  revalidateMasterDataPaths("products");
 }
 
 async function convertInventoryInTx(
@@ -122,49 +125,32 @@ async function convertInventoryInTx(
     );
   }
 
-  const [sourceItem, targetItem, targetProduct, sourceLots] = await Promise.all(
-    [
-      tx.ledgerInventoryItem.findUnique({
-        where: {
-          dailyLedgerId_productId: {
-            dailyLedgerId: ledger.id,
-            productId: input.sourceProductId,
-          },
-        },
-      }),
-      tx.ledgerInventoryItem.findUnique({
-        where: {
-          dailyLedgerId_productId: {
-            dailyLedgerId: ledger.id,
-            productId: input.targetProductId,
-          },
-        },
-      }),
-      tx.product.findFirst({
-        where: {
-          id: input.targetProductId,
-          isActive: true,
-          category: "냉동",
-        },
-      }),
-      tx.ledgerInventoryFifoLot.findMany({
-        where: {
+  const [sourceItem, sourceLots] = await Promise.all([
+    tx.ledgerInventoryItem.findUnique({
+      where: {
+        dailyLedgerId_productId: {
           dailyLedgerId: ledger.id,
           productId: input.sourceProductId,
-          remainingQuantity: { gt: 0 },
         },
-        select: {
-          lotOriginKey: true,
-          sourceBusinessDate: true,
-          unitPrice: true,
-          remainingQuantity: true,
-          remainingAmount: true,
-          sortOrder: true,
-        },
-        orderBy: { sortOrder: "asc" },
-      }),
-    ],
-  );
+      },
+    }),
+    tx.ledgerInventoryFifoLot.findMany({
+      where: {
+        dailyLedgerId: ledger.id,
+        productId: input.sourceProductId,
+        remainingQuantity: { gt: 0 },
+      },
+      select: {
+        lotOriginKey: true,
+        sourceBusinessDate: true,
+        unitPrice: true,
+        remainingQuantity: true,
+        remainingAmount: true,
+        sortOrder: true,
+      },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
 
   if (sourceItem?.productCategory !== "생물") {
     return conversionError(
@@ -173,21 +159,10 @@ async function convertInventoryInTx(
     );
   }
 
-  if (!targetProduct || input.sourceProductId === input.targetProductId) {
-    return conversionError(
-      "전환할 냉동 품목을 선택해 주세요.",
-      "targetProductId",
-    );
-  }
-
   const sourceBefore = decimalToNumber(
     sourceItem.currentQuantity ?? sourceItem.quantity ?? 0,
   );
-  const targetBefore = targetItem
-    ? decimalToNumber(targetItem.currentQuantity ?? targetItem.quantity ?? 0)
-    : 0;
   const sourceAfter = roundToTwoDecimals(sourceBefore - input.quantity);
-  const targetAfter = roundToTwoDecimals(targetBefore + input.quantity);
 
   if (sourceAfter < 0) {
     return conversionError(
@@ -242,7 +217,6 @@ async function convertInventoryInTx(
     (sum, allocation) => sum + allocation.costAmount,
     0,
   );
-  const targetUnitPrice = Math.round(totalCost / input.quantity);
   const updated = await tx.dailyLedger.updateMany({
     where: {
       id: ledger.id,
@@ -258,6 +232,65 @@ async function convertInventoryInTx(
       "다른 변경이 먼저 저장되었습니다. 새로고침 후 다시 시도해 주세요.",
     );
   }
+
+  const targetIdentity = {
+    name: toFrozenConversionProductName(sourceItem.productName),
+    category: "냉동",
+    spec: sourceItem.productSpec,
+  };
+  const targetWhere = { name_category_spec: targetIdentity };
+  const createdTargetProduct = await tx.product.createMany({
+    data: {
+      ...targetIdentity,
+      defaultUnitPrice: null,
+      isActive: true,
+      updatedById: actor.userId,
+    },
+    skipDuplicates: true,
+  });
+  const targetProduct = await tx.product.findUniqueOrThrow({
+    where: targetWhere,
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      spec: true,
+      defaultUnitPrice: true,
+      isActive: true,
+    },
+  });
+
+  if (createdTargetProduct.count === 1) {
+    await writeAuditLog(tx, {
+      action: "product.created",
+      targetType: "Product",
+      targetId: targetProduct.id,
+      actorId: actor.userId,
+      before: null,
+      after: {
+        name: targetProduct.name,
+        category: targetProduct.category,
+        spec: targetProduct.spec,
+        defaultUnitPrice: targetProduct.defaultUnitPrice,
+        isActive: targetProduct.isActive,
+      },
+      reason: "생물 재고 냉동 전환 자동 품목 생성",
+    });
+  }
+
+  const targetItem = await tx.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: targetProduct.id,
+      },
+    },
+  });
+  const targetBefore = targetItem
+    ? decimalToNumber(targetItem.currentQuantity ?? targetItem.quantity ?? 0)
+    : 0;
+  const targetAfter = roundToTwoDecimals(targetBefore + input.quantity);
+  const targetUnitPrice = Math.round(totalCost / input.quantity);
 
   await tx.ledgerInventoryItem.update({
     where: { id: sourceItem.id },

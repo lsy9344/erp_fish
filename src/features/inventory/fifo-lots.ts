@@ -708,6 +708,7 @@ async function loadInventoryConversionInputs(
     select: {
       sourceProductId: true,
       targetProductId: true,
+      dailyLedger: { select: { closingDate: true } },
       allocations: {
         select: {
           id: true,
@@ -735,7 +736,7 @@ async function loadInventoryConversionInputs(
       incoming.push({
         allocationId: allocation.id,
         lotOriginKey: `conversion:${allocation.id}`,
-        sourceBusinessDate: allocation.sourceBusinessDate,
+        sourceBusinessDate: conversion.dailyLedger.closingDate,
         unitPrice: allocation.unitCost,
         quantity,
         costAmount: allocation.costAmount,

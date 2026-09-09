@@ -25,13 +25,6 @@ import {
 import { Field, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -76,6 +69,7 @@ import {
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
 import { convertLedgerInventoryToFrozen } from "~/features/inventory/conversion-actions";
+import { toFrozenConversionProductName } from "~/features/inventory/conversion-product";
 import {
   describeAdjustmentReason,
   missingAdjustmentReasonMessage,
@@ -559,8 +553,6 @@ export function InventoryStepClient({
   const [focusedProductId, setFocusedProductId] = useState<string | null>(null);
   const [conversionSourceItem, setConversionSourceItem] =
     useState<InventoryLineState | null>(null);
-  const [conversionTargetProductId, setConversionTargetProductId] =
-    useState("");
   const [conversionQuantityInput, setConversionQuantityInput] = useState("");
   const [conversionError, setConversionError] = useState<string | null>(null);
   const [isConverting, setIsConverting] = useState(false);
@@ -609,49 +601,29 @@ export function InventoryStepClient({
   // 필수 수량 미입력은 saveCurrentDraft의 validateRequiredCurrentQuantities로 막고,
   // "다음 단계로" 버튼은 저장 성공 후에만 보이므로 그 경로에서도 이미 검증을 통과한다.
   const isDirty = !areInventoryLinesEqual(items, toLineState(data));
-  const frozenProductOptions = [
-    ...data.items,
-    ...data.manualProductOptions,
-  ].reduce<
-    Array<{
-      productId: string;
-      productName: string;
-      productSpec: string;
-    }>
-  >((options, product) => {
-    if (
-      product.productCategory !== "냉동" ||
-      options.some((option) => option.productId === product.productId)
-    ) {
-      return options;
-    }
-
-    options.push({
-      productId: product.productId,
-      productName: product.productName,
-      productSpec: product.productSpec,
-    });
-    return options;
-  }, []);
-  const selectedFrozenProduct = frozenProductOptions.find(
-    (product) => product.productId === conversionTargetProductId,
-  );
-  const selectedFrozenInventory = data.items.find(
-    (item) => item.productId === conversionTargetProductId,
-  );
+  const conversionTargetProductName = conversionSourceItem
+    ? toFrozenConversionProductName(conversionSourceItem.productName)
+    : null;
+  const conversionTargetInventory = conversionSourceItem
+    ? data.items.find(
+        (item) =>
+          item.productCategory === "냉동" &&
+          item.productName === conversionTargetProductName &&
+          item.productSpec === conversionSourceItem.productSpec,
+      )
+    : undefined;
   const conversionSourceQuantity = conversionSourceItem
     ? (conversionSourceItem.currentQuantity ??
       conversionSourceItem.quantity ??
       0)
     : 0;
   const conversionTargetQuantity =
-    selectedFrozenInventory?.currentQuantity ??
-    selectedFrozenInventory?.quantity ??
+    conversionTargetInventory?.currentQuantity ??
+    conversionTargetInventory?.quantity ??
     0;
   const conversionQuantity = Number(conversionQuantityInput.trim());
   const canSubmitConversion =
     Boolean(conversionSourceItem) &&
-    Boolean(selectedFrozenProduct) &&
     Number.isFinite(conversionQuantity) &&
     conversionQuantity > 0 &&
     hasAtMostTwoDecimals(conversionQuantity) &&
@@ -1397,7 +1369,6 @@ export function InventoryStepClient({
 
   function openFrozenConversion(item: InventoryLineState) {
     setConversionSourceItem(item);
-    setConversionTargetProductId(frozenProductOptions[0]?.productId ?? "");
     setConversionQuantityInput("");
     setConversionError(null);
   }
@@ -1405,7 +1376,6 @@ export function InventoryStepClient({
   function closeFrozenConversion() {
     if (isConverting) return;
     setConversionSourceItem(null);
-    setConversionTargetProductId("");
     setConversionQuantityInput("");
     setConversionError(null);
   }
@@ -1421,11 +1391,6 @@ export function InventoryStepClient({
 
     if (isDirty) {
       setConversionError("바꾼 재고를 먼저 저장해 주세요.");
-      return;
-    }
-
-    if (!conversionTargetProductId) {
-      setConversionError("냉동 품목을 선택해 주세요.");
       return;
     }
 
@@ -1458,7 +1423,6 @@ export function InventoryStepClient({
         version: data.version,
         ledgerUpdatedAt: data.updatedAt,
         sourceProductId: conversionSourceItem.productId,
-        targetProductId: conversionTargetProductId,
         quantity: conversionQuantityInput,
         ...(hqEditReasonRequired ? { reason: hqEditReason } : {}),
       });
@@ -1478,7 +1442,6 @@ export function InventoryStepClient({
       );
       setSaveReceipt(null);
       setConversionSourceItem(null);
-      setConversionTargetProductId("");
       setConversionQuantityInput("");
       toast.success("일부 수량을 냉동 재고로 옮겼습니다.");
     } finally {
@@ -2581,7 +2544,6 @@ export function InventoryStepClient({
         isConversionBlockedByStatus ||
         isHqReasonMissing ||
         isDirty ||
-        frozenProductOptions.length === 0 ||
         frozenConversionQuantity <= 0;
       const frozenConversionHint = isConversionBlockedByStatus
         ? data.status === "HEADQUARTERS_CLOSED"
@@ -2591,11 +2553,9 @@ export function InventoryStepClient({
           ? "본사 수정 사유를 먼저 입력해 주세요."
           : isDirty
             ? "바꾼 재고를 먼저 저장해 주세요."
-            : frozenProductOptions.length === 0
-              ? "사용할 수 있는 냉동 품목이 없습니다."
-              : frozenConversionQuantity <= 0
-                ? "옮길 생물 재고가 없습니다."
-                : originalEditBlockedMessage;
+            : frozenConversionQuantity <= 0
+              ? "옮길 생물 재고가 없습니다."
+              : originalEditBlockedMessage;
 
       // 품목당 1행(<tr>)을 유지해 입력 포커스와 테스트 범위를 섞지 않는다.
       // tbody가 행을 순서대로 2열에 놓으므로 화면과 Enter 이동 순서도 같다.
@@ -3627,40 +3587,24 @@ export function InventoryStepClient({
             <DialogHeader>
               <DialogTitle>일부 냉동 전환</DialogTitle>
               <DialogDescription>
-                {conversionSourceItem?.productName ?? "생물 재고"}의 일부만 냉동
-                품목으로 옮깁니다. 판매와 손실에는 포함되지 않습니다.
+                {conversionSourceItem?.productName ?? "생물 재고"}의 일부를 아래
+                활냉 품목으로 옮깁니다. 판매와 손실에는 포함되지 않습니다.
               </DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4">
               <Field>
-                <FieldLabel htmlFor="inventory-conversion-target">
-                  옮길 냉동 품목
-                </FieldLabel>
-                <Select
-                  value={conversionTargetProductId}
-                  onValueChange={setConversionTargetProductId}
-                  disabled={isConverting}
-                >
-                  <SelectTrigger
-                    id="inventory-conversion-target"
-                    aria-label="옮길 냉동 품목"
-                    className="min-h-11 w-full"
-                  >
-                    <SelectValue placeholder="냉동 품목 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {frozenProductOptions.map((product) => (
-                      <SelectItem
-                        key={product.productId}
-                        value={product.productId}
-                      >
-                        {product.productName}
-                        {product.productSpec ? ` · ${product.productSpec}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FieldLabel>옮길 활냉 품목</FieldLabel>
+                <div className="bg-muted/50 min-h-11 rounded-md border px-3 py-2 text-sm">
+                  <p className="text-foreground font-medium">
+                    {conversionTargetProductName ?? "활냉 품목"}
+                  </p>
+                  {conversionSourceItem?.productSpec ? (
+                    <p className="text-muted-foreground">
+                      규격 · {conversionSourceItem.productSpec}
+                    </p>
+                  ) : null}
+                </div>
               </Field>
 
               <Field data-invalid={Boolean(conversionError)}>
@@ -3708,7 +3652,7 @@ export function InventoryStepClient({
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">냉동 재고</p>
+                  <p className="text-muted-foreground text-xs">활냉 재고</p>
                   <p className="font-medium tabular-nums">
                     {formatQuantity(conversionTargetQuantity)} →{" "}
                     {canSubmitConversion

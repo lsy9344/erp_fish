@@ -198,10 +198,6 @@ export const ledgerInventoryConversionSchema =
       .string()
       .transform((value) => value.trim())
       .pipe(z.string().min(1, productError)),
-    targetProductId: z
-      .string()
-      .transform((value) => value.trim())
-      .pipe(z.string().min(1, "냉동 품목을 선택해 주세요.")),
     quantity: z
       .unknown()
       .transform((value, context) =>
