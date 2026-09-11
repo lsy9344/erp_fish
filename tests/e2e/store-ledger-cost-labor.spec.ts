@@ -39,7 +39,9 @@ async function selectWorkStepEmployee(
   position: "매니저" | "팀원",
   name: string,
 ) {
-  await page.getByLabel(`${position} 직원 선택`).click();
+  // 2026-09-11 요청: 직원 추가로 만든 카드 안에서 직급별로 고른다.
+  await page.getByRole("button", { name: "직원 추가" }).click();
+  await page.getByLabel(`${position} 직원 선택`).last().click();
   await page.getByRole("option", { name: new RegExp(name) }).click();
 }
 
@@ -737,15 +739,20 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
 
   // WO-10(2026-06-28): 지점장은 급여 금액 없이 근무자만 추가한다.
   await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);
-  const selectedEmployee = page.locator('[id^="labor-employee-"]');
-  await expect(selectedEmployee).toBeDisabled();
-  await expect(selectedEmployee).toContainText(EMPLOYEE_MANAGER_NAME);
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveValue(
+    EMPLOYEE_MANAGER_NAME,
+  );
+  // 지점장은 고른 직원을 카드 안에서 바꿀 수 없다.
+  await expect(page.getByLabel("매니저 직원 선택")).toBeDisabled();
+  await expect(page.getByLabel("팀원 직원 선택")).toBeDisabled();
 
   await selectWorkStepEmployee(page, "팀원", EMPLOYEE_MEMBER_NAME);
 
   await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
-  await expect(page.locator('[id^="labor-employee-"]').nth(0)).toBeDisabled();
-  await expect(page.locator('[id^="labor-employee-"]').nth(1)).toBeDisabled();
+  await expect(page.locator('[id^="labor-employee-"]').nth(1)).toHaveValue(
+    EMPLOYEE_MEMBER_NAME,
+  );
+  await expect(page.getByLabel("매니저 직원 선택").nth(1)).toBeDisabled();
   await expect(page.getByLabel("지각 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("조퇴 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("특이사항 (선택)")).toHaveCount(2);
@@ -767,11 +774,11 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
   await page.reload();
   await expect(page.getByText("총 근무인원", { exact: true })).toBeVisible();
   await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
-  await expect(page.locator('[id^="labor-employee-"]').nth(0)).toBeDisabled();
-  await expect(page.locator('[id^="labor-employee-"]').nth(1)).toBeDisabled();
+  await expect(page.getByLabel("매니저 직원 선택").nth(0)).toBeDisabled();
+  await expect(page.getByLabel("매니저 직원 선택").nth(1)).toBeDisabled();
   await expect(page.getByText("급여 / 인건비")).toHaveCount(0);
 
-  // 저장 후에도 잘못 고른 직원은 삭제한 뒤 위 직급 목록에서 다시 추가한다.
+  // 저장 후에도 잘못 고른 직원은 삭제한 뒤 직원 추가로 다시 고른다.
   await page.getByRole("button", { name: "삭제" }).nth(0).click();
   await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(1);
   await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);

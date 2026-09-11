@@ -1,17 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CheckCircle2Icon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
 import {
   Field,
   FieldDescription,
@@ -157,13 +150,11 @@ function createLaborLineId() {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function createLaborLine(
-  employee?: Pick<WorkStepEmployeeOption, "id" | "name">,
-): LaborLine {
+function createLaborLine(): LaborLine {
   return {
     id: createLaborLineId(),
-    employeeId: employee?.id ?? "",
-    workerName: employee?.name ?? "",
+    employeeId: "",
+    workerName: "",
     amount: "",
     lateMemo: "",
     earlyLeaveMemo: "",
@@ -448,21 +439,9 @@ export function WorkStepClient({
     setLaborResultMessage(null);
   }
 
-  function addEmployeeLaborLine(employeeId: string) {
-    const selected = employeeOptions.find((option) => option.id === employeeId);
-
-    if (!selected) {
-      return;
-    }
-
+  function addLaborLine() {
     clearLaborRowState();
-    setLaborItems((current) => {
-      if (current.some((line) => line.employeeId === selected.id)) {
-        return current;
-      }
-
-      return [...current, createLaborLine(selected)];
-    });
+    setLaborItems((current) => [...current, createLaborLine()]);
   }
 
   function removeLaborLine(lineId: string) {
@@ -688,63 +667,22 @@ export function WorkStepClient({
             <p className="text-sm font-medium">
               {showSensitiveAccountingMetrics ? "급여 / 인건비" : "근무자"}
             </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addLaborLine}
+              disabled={
+                !isHydrated ||
+                isLaborSaving ||
+                isOriginalEditBlocked ||
+                employeeOptions.length === 0
+              }
+              className="min-h-11 gap-2"
+            >
+              <PlusIcon data-icon="inline-start" />
+              직원 추가
+            </Button>
           </div>
-
-          {employeeOptionGroups.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {employeeOptionGroups.map((group) => {
-                const availableOptions = group.options.filter(
-                  (option) => !selectedEmployeeIds.has(option.id),
-                );
-
-                return (
-                  <Card key={group.label}>
-                    <CardHeader className="gap-1 p-3">
-                      <CardTitle className="text-sm">{group.label}</CardTitle>
-                      <CardDescription>
-                        {availableOptions.length > 0
-                          ? "직원을 고르면 아래 목록에 바로 추가됩니다."
-                          : "모두 선택했습니다."}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-0">
-                      <Select
-                        value=""
-                        disabled={
-                          !isHydrated ||
-                          isLaborSaving ||
-                          isOriginalEditBlocked ||
-                          availableOptions.length === 0
-                        }
-                        onValueChange={addEmployeeLaborLine}
-                      >
-                        <SelectTrigger
-                          className="min-h-11 w-full"
-                          aria-label={`${group.label} 직원 선택`}
-                        >
-                          <SelectValue placeholder="직원 선택" />
-                        </SelectTrigger>
-                        <SelectContent position="popper">
-                          <SelectGroup>
-                            <SelectLabel>{group.label}</SelectLabel>
-                            {availableOptions.map((option) => (
-                              <SelectItem
-                                key={option.id}
-                                value={option.id}
-                                disabled={!option.isActive}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : null}
 
           {laborItems.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -773,10 +711,73 @@ export function WorkStepClient({
                     key={line.id}
                     className="grid gap-2 rounded-md border p-3"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-muted-foreground text-xs font-medium">
+                    {/* 2026-09-11 요청: 직급별 직원 선택을 각 직원 카드 머리줄로 옮겼다. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium sm:mr-2">
                         직원 {index + 1}
                       </p>
+                      <div className="order-last grid w-full grid-cols-2 gap-2 sm:order-none sm:flex sm:w-auto sm:gap-4">
+                        {employeeOptionGroups.map((group) => {
+                          const availableOptions = group.options.filter(
+                            (option) => !selectedEmployeeIds.has(option.id),
+                          );
+
+                          return (
+                            <div
+                              key={group.label}
+                              className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"
+                            >
+                              <span className="text-muted-foreground text-sm">
+                                {group.label}
+                              </span>
+                              <Select
+                                value=""
+                                disabled={
+                                  !isHydrated ||
+                                  isLaborSaving ||
+                                  isOriginalEditBlocked ||
+                                  availableOptions.length === 0 ||
+                                  // 지점장은 고른 직원을 바꾸지 않고 삭제 후 다시 추가한다.
+                                  (!showSensitiveAccountingMetrics &&
+                                    line.employeeId.length > 0)
+                                }
+                                onValueChange={(employeeId) => {
+                                  const selected = employeeOptions.find(
+                                    (option) => option.id === employeeId,
+                                  );
+
+                                  // 직원명 입력 칸을 없앴으므로 이름은 선택한 직원 카드에서만 온다.
+                                  updateLaborLine(line.id, {
+                                    employeeId,
+                                    workerName: selected?.name ?? "",
+                                  });
+                                }}
+                              >
+                                <SelectTrigger
+                                  className="min-h-11 w-full sm:w-36"
+                                  aria-label={`${group.label} 직원 선택`}
+                                >
+                                  <SelectValue placeholder="직원 선택" />
+                                </SelectTrigger>
+                                <SelectContent position="popper">
+                                  <SelectGroup>
+                                    <SelectLabel>{group.label}</SelectLabel>
+                                    {availableOptions.map((option) => (
+                                      <SelectItem
+                                        key={option.id}
+                                        value={option.id}
+                                        disabled={!option.isActive}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        })}
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
@@ -784,7 +785,7 @@ export function WorkStepClient({
                         disabled={
                           !isHydrated || isLaborSaving || isOriginalEditBlocked
                         }
-                        className="min-h-11 gap-2"
+                        className="ml-auto min-h-11 gap-2"
                       >
                         <Trash2Icon data-icon="inline-start" />
                         삭제
@@ -792,65 +793,18 @@ export function WorkStepClient({
                     </div>
 
                     {employeeOptions.length > 0 ? (
-                      <Field
-                        data-disabled={
-                          !showSensitiveAccountingMetrics ||
-                          !isHydrated ||
-                          isLaborSaving ||
-                          isOriginalEditBlocked
-                        }
-                        data-invalid={Boolean(nameError)}
-                      >
+                      <Field data-invalid={Boolean(nameError)}>
                         <FieldLabel htmlFor={`labor-employee-${line.id}`}>
                           직원
                         </FieldLabel>
-                        <Select
-                          value={line.employeeId}
-                          disabled={
-                            !showSensitiveAccountingMetrics ||
-                            !isHydrated ||
-                            isLaborSaving ||
-                            isOriginalEditBlocked
-                          }
-                          onValueChange={(employeeId) => {
-                            const selected = employeeOptions.find(
-                              (option) => option.id === employeeId,
-                            );
-
-                            // 직원명 입력 칸을 없앴으므로 이름은 선택한 직원 카드에서만 온다.
-                            updateLaborLine(line.id, {
-                              employeeId,
-                              workerName: selected?.name ?? "",
-                            });
-                          }}
-                        >
-                          <SelectTrigger
-                            id={`labor-employee-${line.id}`}
-                            className="min-h-11 w-full"
-                          >
-                            <SelectValue placeholder="직원을 선택하세요" />
-                          </SelectTrigger>
-                          <SelectContent position="popper">
-                            {employeeOptionGroups.map((group) => (
-                              <SelectGroup key={group.label}>
-                                <SelectLabel>{group.label}</SelectLabel>
-                                {group.options.map((option) => (
-                                  <SelectItem
-                                    key={option.id}
-                                    value={option.id}
-                                    disabled={
-                                      !option.isActive ||
-                                      (selectedEmployeeIds.has(option.id) &&
-                                        option.id !== line.employeeId)
-                                    }
-                                  >
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Input
+                          id={`labor-employee-${line.id}`}
+                          value={line.workerName}
+                          placeholder="직원을 선택하세요"
+                          readOnly
+                          aria-invalid={Boolean(nameError)}
+                          aria-describedby={nameError ? nameErrorId : undefined}
+                        />
                         <FieldDescription>
                           직원명과 급여 금액은 인사관리에 등록된 직원 카드에서
                           자동으로 가져옵니다. 바꾸려면 해당 직원을 삭제한 뒤

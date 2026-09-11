@@ -731,6 +731,7 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   ).toBeVisible();
 
   // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 급여 행(직원 연결) 수로 정해진다.
+  await workPanel.getByRole("button", { name: "직원 추가" }).click();
   await workPanel.getByLabel("매니저 직원 선택").click();
   await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await replaceControlValue(workPanel.getByLabel("특이사항 (선택)"), "야근");
@@ -1215,6 +1216,7 @@ test("HQ_ADMIN이 마감 장부의 근무·급여를 기존 편집 화면에서 
     });
 
   // 급여 행 추가(기존 급여 저장 경로 재사용) 후에도 마감 상태가 유지된다.
+  await workPanel.getByRole("button", { name: "직원 추가" }).click();
   await workPanel.getByLabel("매니저 직원 선택").click();
   await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await replaceControlValue(

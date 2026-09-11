@@ -138,6 +138,7 @@ test("회의 0627 지점장 화면은 급여액과 전날재고 민감 금액을
   await login(page, "manager@example.com");
 
   await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=work`);
+  await page.getByRole("button", { name: "직원 추가" }).click();
   await page.getByLabel("팀원 직원 선택").click();
   await page.getByRole("option", { name: new RegExp(EMPLOYEE_NAME) }).click();
   await expect(page.getByLabel("급여 금액")).toHaveCount(0);
