@@ -792,13 +792,22 @@ export function WorkStepClient({
                     </div>
 
                     {employeeOptions.length > 0 ? (
-                      <Field data-invalid={Boolean(nameError)}>
+                      <Field
+                        data-disabled={
+                          !showSensitiveAccountingMetrics ||
+                          !isHydrated ||
+                          isLaborSaving ||
+                          isOriginalEditBlocked
+                        }
+                        data-invalid={Boolean(nameError)}
+                      >
                         <FieldLabel htmlFor={`labor-employee-${line.id}`}>
                           직원
                         </FieldLabel>
                         <Select
                           value={line.employeeId}
                           disabled={
+                            !showSensitiveAccountingMetrics ||
                             !isHydrated ||
                             isLaborSaving ||
                             isOriginalEditBlocked

@@ -737,10 +737,15 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
 
   // WO-10(2026-06-28): 지점장은 급여 금액 없이 근무자만 추가한다.
   await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);
+  const selectedEmployee = page.locator('[id^="labor-employee-"]');
+  await expect(selectedEmployee).toBeDisabled();
+  await expect(selectedEmployee).toContainText(EMPLOYEE_MANAGER_NAME);
 
   await selectWorkStepEmployee(page, "팀원", EMPLOYEE_MEMBER_NAME);
 
   await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
+  await expect(page.locator('[id^="labor-employee-"]').nth(0)).toBeDisabled();
+  await expect(page.locator('[id^="labor-employee-"]').nth(1)).toBeDisabled();
   await expect(page.getByLabel("지각 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("조퇴 (선택)")).toHaveCount(2);
   await expect(page.getByLabel("특이사항 (선택)")).toHaveCount(2);
@@ -762,7 +767,19 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
   await page.reload();
   await expect(page.getByText("총 근무인원", { exact: true })).toBeVisible();
   await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
+  await expect(page.locator('[id^="labor-employee-"]').nth(0)).toBeDisabled();
+  await expect(page.locator('[id^="labor-employee-"]').nth(1)).toBeDisabled();
   await expect(page.getByText("급여 / 인건비")).toHaveCount(0);
+
+  // 저장 후에도 잘못 고른 직원은 삭제한 뒤 위 직급 목록에서 다시 추가한다.
+  await page.getByRole("button", { name: "삭제" }).nth(0).click();
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(1);
+  await selectWorkStepEmployee(page, "매니저", EMPLOYEE_MANAGER_NAME);
+  await expect(page.locator('[id^="labor-employee-"]')).toHaveCount(2);
+  await page.getByRole("button", { name: "근무자 저장" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "근무자 2명을 저장했습니다." }),
+  ).toBeVisible();
 
   const ledger = await prisma.dailyLedger.findFirstOrThrow({
     where: { storeId: STORY_STORE_ID },
