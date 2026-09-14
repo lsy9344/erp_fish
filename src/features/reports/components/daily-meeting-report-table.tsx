@@ -69,7 +69,7 @@ export function DailyMeetingReportTable({
               <TableHead className="min-w-[220px]">상태 메시지</TableHead>
               <TableHead className="text-right">매출 구성</TableHead>
               <TableHead className="text-right">이익률</TableHead>
-              <TableHead className="text-right">매출 차이</TableHead>
+              <TableHead className="text-right">매출이익</TableHead>
               <TableHead>손실</TableHead>
               <TableHead>이상 신호</TableHead>
               <TableHead>상세</TableHead>
@@ -179,7 +179,7 @@ export function DailyMeetingReportTable({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">매출 차이</dt>
+                <dt className="text-muted-foreground">매출이익</dt>
                 <dd className="font-medium tabular-nums">
                   <MetricValueWithEvidence
                     value={formatKrwMetric(row.salesDifference)}

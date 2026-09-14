@@ -1263,6 +1263,70 @@ test("당일 매입이 있는 품목은 전일 근거가 없어도 기본 표에
   await expect(row).toContainText("6");
 });
 
+test("당일매입만 있는 생물도 당일재고 저장 전에 냉동 전환할 수 있다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const product = await seedProduct(
+    "스토리2-5 당일매입 전환 광어",
+    "생물",
+    10_000,
+  );
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  const purchaseId = randomUUID();
+
+  await prisma.ledgerPurchaseItem.create({
+    data: {
+      id: purchaseId,
+      lotOriginKey: `same-day-conversion-${product.id}`,
+      dailyLedgerId: ledger.id,
+      productId: product.id,
+      sourceType: "MANUAL",
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      quantity: 8,
+      amount: 80_000,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await markLossStepReviewed(ledger.id, actorId);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  const row = page.locator("tr").filter({
+    has: page.getByText(product.name, { exact: true }),
+  });
+  const conversionButton = row.getByRole("button", {
+    name: /일부 냉동 전환/,
+  });
+  await expect(conversionButton).toBeEnabled();
+  await conversionButton.click();
+  const conversionDialog = page.getByRole("dialog", {
+    name: "일부 냉동 전환",
+  });
+  await conversionDialog.getByLabel("냉동 전환 수량").fill("3");
+  await conversionDialog
+    .getByRole("button", { name: "냉동으로 옮기기" })
+    .click();
+  await expect(conversionDialog).toBeHidden();
+  await expect(page.getByText(/3개를 냉동 재고로 옮겼습니다/)).toBeVisible();
+
+  const sourceItem = await prisma.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledger.id,
+        productId: product.id,
+      },
+    },
+    select: { currentQuantity: true, conversionOutQuantity: true },
+  });
+  expect(Number(sourceItem?.currentQuantity)).toBe(5);
+  expect(Number(sourceItem?.conversionOutQuantity)).toBe(3);
+});
+
 test("재고 행에 가격이 다른 입고분을 날짜와 단가별로 표시한다", async ({
   page,
 }) => {

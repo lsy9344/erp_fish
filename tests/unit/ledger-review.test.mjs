@@ -304,7 +304,7 @@ test("ledger review summary helper does not calculate sales difference without a
   assert.deepEqual(summary.salesDifference.oqIds, ["OQ-14"]);
 });
 
-test("ledger review summary helper excludes loss from sales difference and subtracts loss quantity from fallback cogs", async () => {
+test("ledger review summary helper includes loss cost in cogs and does not add loss amount to profit", async () => {
   const calcPath = assertProjectFile(
     "src",
     "server",
@@ -347,9 +347,64 @@ test("ledger review summary helper excludes loss from sales difference and subtr
     ],
   });
 
-  // 손실 2개(10,000원)는 매출원가에서 빠지고, 매출차액에서 다시 빼지 않는다.
-  assert.deepEqual(summary.costOfGoodsSold, ok(40_000));
-  assert.deepEqual(summary.salesDifference, ok(70_000));
+  // 손실 2개 원가 10,000원은 매출원가에 포함하고, 손실 카드 금액 5,000원은 매출이익에 더하지 않는다.
+  // 재고 조정도 매출이익에 넣지 않는다. 매출이익 = 매출 - 매출원가 = 50,000.
+  assert.deepEqual(summary.costOfGoodsSold, ok(50_000));
+  assert.deepEqual(summary.grossProfit, ok(50_000));
+  assert.deepEqual(summary.grossMarginRate, ok(0.5));
+  assert.deepEqual(summary.salesDifference, ok(50_000));
+});
+
+test("ledger review FIFO cogs includes loss cost and excludes conversion out", async () => {
+  const calcPath = assertProjectFile(
+    "src",
+    "server",
+    "calculations",
+    "ledger.ts",
+  );
+  const { calculateLedgerReviewSummary } = await import(
+    pathToFileURL(calcPath).href
+  );
+
+  const summary = calculateLedgerReviewSummary({
+    totalSalesAmount: 100_000,
+    cashAmount: 100_000,
+    cardAmount: 0,
+    otherPaymentAmount: 0,
+    workerCount: 1,
+    expenseTotal: 0,
+    inventoryItems: [
+      {
+        previousQuantity: 20,
+        purchasedQuantity: 0,
+        currentQuantity: 8,
+        quantity: 8,
+        unitPrice: 5_000,
+        inventoryAmount: 40_000,
+        fifoLots: [
+          {
+            consumedAmount: 60_000,
+            soldAmount: 40_000,
+            lossAmount: 10_000,
+            conversionOutAmount: 10_000,
+            remainingAmount: 40_000,
+          },
+        ],
+      },
+    ],
+    inventoryAdjustments: [],
+    lossItems: [
+      {
+        productId: "product-1",
+        quantity: 2,
+        amount: 20_000,
+      },
+    ],
+  });
+
+  assert.deepEqual(summary.costOfGoodsSold, ok(50_000));
+  assert.deepEqual(summary.grossProfit, ok(50_000));
+  assert.deepEqual(summary.salesDifference, ok(50_000));
 });
 
 test("ledger review summary helper does not expose divide by zero or hidden inventory calculations", async () => {

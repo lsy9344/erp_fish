@@ -431,13 +431,9 @@ function isZeroInventoryFlow(item: LedgerReviewInventoryInput) {
   );
 }
 
-function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
+function getFifoCogsAmount(item: LedgerReviewInventoryInput) {
   if (item.fifoLots?.length === 0) {
     return isZeroInventoryFlow(item) ? 0 : null;
-  }
-
-  if (isUsableNumber(item.fifoSoldAmount ?? null)) {
-    return item.fifoSoldAmount!;
   }
 
   if (item.fifoLots) {
@@ -452,11 +448,18 @@ function getFifoConsumedAmount(item: LedgerReviewInventoryInput) {
           soldAmount! + lossAmount! + conversionOutAmount - lot.consumedAmount,
         ) < 0.000001;
 
-      // 마이그레이션 전 FIFO 행은 새 필드가 모두 0으로 채워져 있다. 새 배분 합계가
-      // 기존 소진금액과 맞을 때만 soldAmount를 쓰고, 아니면 과거 consumedAmount를
-      // 판매 원가로 본다.
-      return sum + (hasCompleteAllocation ? soldAmount! : lot.consumedAmount);
+      // 전장부 매출원가는 판매분+손실 원가다. 냉동 전환 출고는 재고 이동이라 빼 둔다.
+      // 마이그레이션 전 FIFO 행은 새 필드가 0이라 배분 합계가 맞을 때만 새 필드를 쓰고,
+      // 아니면 과거 consumedAmount를 쓴다.
+      return (
+        sum +
+        (hasCompleteAllocation ? soldAmount! + lossAmount! : lot.consumedAmount)
+      );
     }, 0);
+  }
+
+  if (isUsableNumber(item.fifoSoldAmount ?? null)) {
+    return item.fifoSoldAmount!;
   }
 
   // lot 배열 없이 집계값만 주는 과거 호출자는 기존 consumedAmount를 사용한다.
@@ -493,7 +496,7 @@ function hasLegacyOpeningFifoLot(item: LedgerReviewInventoryInput) {
 function canUseFifoConsumedAmounts(items: LedgerReviewInventoryInput[]) {
   return (
     items.length > 0 &&
-    items.every((item) => isUsableNumber(getFifoConsumedAmount(item)))
+    items.every((item) => isUsableNumber(getFifoCogsAmount(item)))
   );
 }
 
@@ -515,13 +518,10 @@ export function hasCompleteFifoRemainingBasis(
   return canUseFifoRemainingAmounts(items);
 }
 
-// FIFO lot 근거가 있으면 lot의 판매분 금액만 쓰므로 손실은 이미 빠져 있다.
-// lot 근거가 없어 수량 흐름으로 되돌아갈 때도 손실 수량을 빼야 손실 원가가
-// 매출원가(=마진율)에 섞이지 않는다.
-function calculateCostOfGoodsSold(
-  items: LedgerReviewInventoryInput[],
-  lossQuantityByProductId: ReadonlyMap<string, number>,
-) {
+// 전장부 매출원가: 전일+매입-당일(전환 출고는 판매가 아니므로 제외).
+// 손실 수량은 이 흐름에 이미 들어 있으므로 따로 빼지 않는다.
+// FIFO가 있으면 판매분+손실 원가(전환 출고 제외)를 쓴다.
+function calculateCostOfGoodsSold(items: LedgerReviewInventoryInput[]) {
   if (items.length === 0) {
     return null;
   }
@@ -531,7 +531,7 @@ function calculateCostOfGoodsSold(
 
   for (const item of items) {
     if (canUseFifo) {
-      total += getFifoConsumedAmount(item)!;
+      total += getFifoCogsAmount(item)!;
       continue;
     }
 
@@ -541,16 +541,11 @@ function calculateCostOfGoodsSold(
       return null;
     }
 
-    const lossQuantity = item.productId
-      ? (lossQuantityByProductId.get(item.productId) ?? 0)
-      : 0;
-
     total += Math.round(
       (item.previousQuantity +
         item.purchasedQuantity -
         (item.conversionOutQuantity ?? 0) +
         (item.conversionInQuantity ?? 0) -
-        lossQuantity -
         currentQuantity) *
         item.unitPrice,
     );
@@ -586,32 +581,15 @@ function calculateInventoryTotal(items: LedgerReviewInventoryInput[]) {
   return total;
 }
 
-function calculateInventoryAdjustmentTotal(
-  items: LedgerReviewInventoryAdjustmentInput[] = [],
-) {
-  return items.reduce(
-    (sum, item) =>
-      sum +
-      (Number.isFinite(item.differenceAmount) ? item.differenceAmount : 0),
-    0,
-  );
-}
-
-// 2026-09-02 요청: 매출원가는 이미 손실분을 빼고 계산된다. 여기서 손실금액을 또 빼면
-// 매출차액이 손실만큼 부풀려져 같은 손실이 두 번 반영된다(손실 금액 카드와 이중).
+// 매출이익 = 매출 - 매출원가. 손실 카드 금액(판매가 참고)과 재고 조정은 넣지 않는다.
 function calculateSalesDifference({
   totalSalesAmount,
   costOfGoodsSold,
-  inventoryAdjustments,
 }: {
   totalSalesAmount: number;
   costOfGoodsSold: number;
-  inventoryAdjustments: LedgerReviewInventoryAdjustmentInput[];
 }) {
-  const productSalesAmount =
-    costOfGoodsSold + calculateInventoryAdjustmentTotal(inventoryAdjustments);
-
-  return totalSalesAmount - productSalesAmount;
+  return totalSalesAmount - costOfGoodsSold;
 }
 
 function getPlannedSalesSoldQuantity(item: LedgerReviewPlannedSalesInput) {
@@ -676,22 +654,8 @@ export function calculateLedgerReviewSummary({
   lossItems,
   plannedSalesItems,
 }: LedgerReviewSummaryInput): LedgerReviewSummary {
-  const lossQuantityByProductId = new Map<string, number>();
-
-  for (const lossItem of lossItems ?? []) {
-    if (!lossItem.productId || !Number.isFinite(lossItem.quantity ?? NaN)) {
-      continue;
-    }
-
-    lossQuantityByProductId.set(
-      lossItem.productId,
-      (lossQuantityByProductId.get(lossItem.productId) ?? 0) +
-        lossItem.quantity!,
-    );
-  }
-
   const costOfGoodsSoldResult = safelyCalculateNumber("costOfGoodsSold", () =>
-    calculateCostOfGoodsSold(inventoryItems, lossQuantityByProductId),
+    calculateCostOfGoodsSold(inventoryItems),
   );
   const inventoryAmountResult = safelyCalculateNumber("inventoryAmount", () =>
     calculateInventoryTotal(inventoryItems),
@@ -743,7 +707,7 @@ export function calculateLedgerReviewSummary({
       ? ({
           kind: "error",
           metric: dependentCalculationUnavailable(
-            "매출원가 계산 오류로 매출차액을 계산할 수 없습니다.",
+            "매출원가 계산 오류로 매출이익을 계산할 수 없습니다.",
           ),
         } as const)
       : costOfGoodsSold === null || !hasSalesDifferenceContext
@@ -752,7 +716,6 @@ export function calculateLedgerReviewSummary({
             calculateSalesDifference({
               totalSalesAmount: operatingSalesAmount,
               costOfGoodsSold,
-              inventoryAdjustments,
             }),
           );
   const salesDifference =
@@ -913,7 +876,7 @@ export function calculateLedgerReviewSummary({
       : salesDifferenceResult.kind === "error"
         ? salesDifferenceResult.metric
         : salesDifference === null
-          ? dataInsufficient("매출차액 계산에 필요한 재고 입력이 부족합니다.")
+          ? dataInsufficient("매출이익 계산에 필요한 재고 입력이 부족합니다.")
           : hasIncompleteFifoCostBasis
             ? asPolicyUnconfirmedKrwMetric(
                 "salesDifference",

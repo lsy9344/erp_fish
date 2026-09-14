@@ -704,7 +704,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
               <TableHead>이상 신호</TableHead>
               <TableHead className="text-right">영업 매출 합계</TableHead>
               <TableHead className="text-right">이익률</TableHead>
-              <TableHead className="text-right">매출 차이</TableHead>
+              <TableHead className="text-right">매출이익</TableHead>
               <TableHead>손실</TableHead>
               <TableHead>상세</TableHead>
             </TableRow>
@@ -778,7 +778,7 @@ function DayStatusTable({ days }: { days: MonthlyClosingAnomalyDay[] }) {
                 evidence={day.metricEvidence.grossMarginRate}
               />
               <MobileMetric
-                label="매출 차이"
+                label="매출이익"
                 evidence={day.metricEvidence.salesDifference}
               />
               <MobileMetric label="손실" evidence={day.metricEvidence.loss} />

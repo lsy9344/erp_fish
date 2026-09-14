@@ -780,7 +780,7 @@ const calculationMetricLabels: Record<string, string> = {
   productivity: "생산성",
   inventoryAmount: "재고금액",
   paymentDifference: "마감 정산 차액",
-  salesDifference: "매출차액",
+  salesDifference: "매출이익",
 };
 
 const carryoverStatusDetails = {

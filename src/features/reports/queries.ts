@@ -4930,7 +4930,7 @@ function toEmptyReportRow({
       "장부 입력 전이라 마진율 데이터가 없습니다.",
     ),
     salesDifference: dataInsufficient(
-      "장부 입력 전이라 매출차액 데이터가 없습니다.",
+      "장부 입력 전이라 매출이익 데이터가 없습니다.",
     ),
   };
 
@@ -5256,7 +5256,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
       hasUnappliedCorrections: grossMarginRateCorrections.hasUnapplied,
     }),
     salesDifference: buildDailyMeetingReportMetricEvidence({
-      label: "매출 차이",
+      label: "매출이익",
       kind: "money",
       ledgerId,
       ledgerStatus,

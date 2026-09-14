@@ -680,7 +680,7 @@ test("HQ dashboard keeps calculation and policy states as distinct info signals"
       },
       {
         id: "calculation-salesDifference-policy-unconfirmed",
-        label: "매출 차액 계산 불가",
+        label: "매출이익 계산 불가",
         severity: "info",
       },
     ],
@@ -748,7 +748,7 @@ test("HQ dashboard keeps policy-unconfirmed revenue metrics out of threshold ano
       },
       {
         id: "calculation-salesDifference-policy-unconfirmed",
-        label: "매출 차액 계산 불가",
+        label: "매출이익 계산 불가",
         severity: "info",
       },
     ],

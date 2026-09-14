@@ -791,7 +791,7 @@ function toDashboardRow(
         "장부 입력 전이라 마진율 데이터가 없습니다.",
       ),
       salesDifference: dataInsufficient(
-        "장부 입력 전이라 매출차액 데이터가 없습니다.",
+        "장부 입력 전이라 매출이익 데이터가 없습니다.",
       ),
     };
 
@@ -1336,7 +1336,7 @@ function getMetricStatusSignals(revenueCurrent: DashboardRevenueCurrent) {
     ),
     metricStatusSignal(
       "salesDifference",
-      "매출 차액",
+      "매출이익",
       revenueCurrent.salesDifference,
     ),
   ].filter((signal) => signal !== null);
@@ -1369,7 +1369,7 @@ function metricStatusSignal(
   const statusLabelByMetric = {
     totalSales: "매출 기준 확인 필요",
     grossMarginRate: "이익률 계산 불가",
-    salesDifference: "매출 차액 계산 불가",
+    salesDifference: "매출이익 계산 불가",
   } as const;
   const statusLabel = statusLabelByMetric[id];
   const detail =

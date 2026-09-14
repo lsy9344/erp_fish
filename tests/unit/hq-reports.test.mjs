@@ -1490,13 +1490,13 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
   const metricEvidence = {
     salesAmount: baseMetric,
     grossMarginRate: correctedMarginRate,
-    salesDifference: { ...baseMetric, label: "매출 차이" },
+    salesDifference: { ...baseMetric, label: "매출이익" },
     loss: { ...baseMetric, label: "손실", kind: "boolean" },
   };
   const plainMetricEvidence = {
     salesAmount: baseMetric,
     grossMarginRate: { ...baseMetric, label: "이익률", kind: "percent" },
-    salesDifference: { ...baseMetric, label: "매출 차이" },
+    salesDifference: { ...baseMetric, label: "매출이익" },
     loss: { ...baseMetric, label: "손실", kind: "boolean" },
   };
   const inventorySignalMetricEvidence = {
@@ -1507,7 +1507,7 @@ test("HQ monthly closing anomaly report builds day statuses and anomaly evidence
     grossMarginRate: correctedGrossMarginRate,
     salesDifference: {
       ...baseMetric,
-      label: "매출 차이",
+      label: "매출이익",
       ledgerDetailHref: "/app/ledgers/ledger-5",
     },
     loss: {
@@ -1648,7 +1648,7 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
   const dailyMetricEvidence = (ledgerId) => ({
     salesAmount: metric("매출", 100000, "money", ledgerId),
     grossMarginRate: metric("이익률", 0.6, "percent", ledgerId),
-    salesDifference: metric("매출 차이", 0, "money", ledgerId),
+    salesDifference: metric("매출이익", 0, "money", ledgerId),
     loss: metric("손실", 0, "boolean", ledgerId),
   });
   const reviewMetrics = ({
@@ -2211,7 +2211,7 @@ test("HQ monthly closing anomaly report marks inventory ratio unavailable when a
   const metricEvidence = {
     salesAmount: baseEvidence,
     grossMarginRate: { ...baseEvidence, label: "이익률", kind: "percent" },
-    salesDifference: { ...baseEvidence, label: "매출 차이" },
+    salesDifference: { ...baseEvidence, label: "매출이익" },
     loss: { ...baseEvidence, label: "손실", kind: "boolean" },
   };
   const report = buildMonthlyClosingAnomalyReportForTest({
@@ -3368,7 +3368,7 @@ test("HQ daily meeting report metric evidence scopes correction states to the me
   assert.equal(unavailableToValueCorrection.status, "corrected");
 
   const holidayNeedsReview = buildDailyMeetingReportMetricEvidence({
-    label: "매출 차이",
+    label: "매출이익",
     kind: "money",
     ledgerId: "ledger-3",
     ledgerStatus: "HOLIDAY",
@@ -3550,7 +3550,7 @@ test("HQ report export helpers produce safe CSV, filenames, and status values", 
             originalValue: 0.2,
             statusLabel: "정정 반영",
           }),
-          salesDifference: metric({ label: "매출 차이", value: 0 }),
+          salesDifference: metric({ label: "매출이익", value: 0 }),
           loss: metric({ label: "손실", value: 0, statusLabel: "0" }),
         },
       },

@@ -69,6 +69,7 @@ import {
   saveLedgerInventoryItems,
 } from "~/features/inventory/actions";
 import { convertLedgerInventoryToFrozen } from "~/features/inventory/conversion-actions";
+import { getFrozenConversionAvailableQuantity } from "~/features/inventory/conversion-availability";
 import { toFrozenConversionProductName } from "~/features/inventory/conversion-product";
 import {
   describeAdjustmentReason,
@@ -613,9 +614,7 @@ export function InventoryStepClient({
       )
     : undefined;
   const conversionSourceQuantity = conversionSourceItem
-    ? (conversionSourceItem.currentQuantity ??
-      conversionSourceItem.quantity ??
-      0)
+    ? getFrozenConversionAvailableQuantity(conversionSourceItem)
     : 0;
   const conversionTargetQuantity =
     conversionTargetInventory?.currentQuantity ??
@@ -1385,9 +1384,7 @@ export function InventoryStepClient({
 
     const quantity = Number(conversionQuantityInput.trim());
     const sourceQuantity =
-      conversionSourceItem.currentQuantity ??
-      conversionSourceItem.quantity ??
-      0;
+      getFrozenConversionAvailableQuantity(conversionSourceItem);
 
     if (isDirty) {
       setConversionError("바꾼 재고를 먼저 저장해 주세요.");
@@ -2534,7 +2531,7 @@ export function InventoryStepClient({
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";
       const frozenConversionQuantity =
-        item.currentQuantity ?? item.quantity ?? 0;
+        getFrozenConversionAvailableQuantity(item);
       const isConversionBlockedByStatus = !isLedgerEditable(data.status);
       const isHqReasonMissing = hqEditReasonRequired && !hqEditReason.trim();
       const frozenConversionDisabled =

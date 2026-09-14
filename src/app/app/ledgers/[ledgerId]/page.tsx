@@ -380,7 +380,7 @@ export default async function LedgerDetailPage({
           }
         />
         <MetricCard
-          label="매출 차이"
+          label="매출이익"
           value={formatKrwMetric(detail.salesDifference)}
         />
       </section>
@@ -768,11 +768,11 @@ function getCorrectionTargetOptions({
       targetType: "CALCULATED_METRIC",
       targetId: ledger.id,
       fieldKey: "salesDifference",
-      label: "계산 표시값 · 매출 차이",
+      label: "계산 표시값 · 매출이익",
       originalValue: {
         kind: "metric",
         value: null,
-        label: "계산 표시값 · 매출 차이",
+        label: "계산 표시값 · 매출이익",
       },
     },
     {

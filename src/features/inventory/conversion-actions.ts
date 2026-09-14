@@ -27,7 +27,9 @@ import {
   refreshLedgerInventoryFifoLots,
 } from "~/features/inventory/fifo-lots";
 import { reconcileLedgerInventoryAdjustments } from "~/features/inventory/adjustment-reconciliation";
+import { getFrozenConversionAvailableQuantity } from "~/features/inventory/conversion-availability";
 import { toFrozenConversionProductName } from "~/features/inventory/conversion-product";
+import { calculateInventoryAmount } from "~/server/calculations/inventory";
 import type {
   InventoryStepData,
   StoreManagerInventoryStepData,
@@ -89,6 +91,75 @@ function revalidateConversionPaths(ledgerId: string) {
   revalidateMasterDataPaths("products");
 }
 
+async function ensureConversionSourceItem(
+  tx: Prisma.TransactionClient,
+  ledgerId: string,
+  input: LedgerInventoryConversionInput,
+  actorId: string,
+): Promise<ActionResult<true>> {
+  const existing = await tx.ledgerInventoryItem.findUnique({
+    where: {
+      dailyLedgerId_productId: {
+        dailyLedgerId: ledgerId,
+        productId: input.sourceProductId,
+      },
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return actionOk(true);
+  }
+
+  const stepData = await getInventoryStepDataByLedgerIdInTx(tx, ledgerId);
+  const seed = stepData?.items.find(
+    (item) => item.productId === input.sourceProductId,
+  );
+
+  if (seed?.productCategory !== "생물") {
+    return conversionError(
+      "생물 재고 품목을 확인해 주세요.",
+      "sourceProductId",
+    );
+  }
+
+  const available = getFrozenConversionAvailableQuantity(seed);
+
+  if (available < input.quantity) {
+    return conversionError(
+      `전환 수량은 현재 재고 ${available}개를 넘을 수 없습니다.`,
+      "quantity",
+    );
+  }
+
+  await tx.ledgerInventoryItem.create({
+    data: {
+      dailyLedgerId: ledgerId,
+      productId: seed.productId,
+      productName: seed.productName,
+      productCategory: seed.productCategory,
+      productSpec: seed.productSpec,
+      unitPrice: seed.unitPrice,
+      previousQuantity: seed.previousQuantity,
+      purchasedQuantity: seed.purchasedQuantity,
+      conversionInQuantity: seed.conversionInQuantity,
+      conversionOutQuantity: seed.conversionOutQuantity,
+      currentQuantity: available,
+      quantity: available,
+      inventoryAmount: calculateInventoryAmount(available, seed.unitPrice),
+      isModified: true,
+      carryoverSource: seed.carryoverSource,
+      carryoverStatus: seed.carryoverStatus,
+      carryoverLedgerId: seed.carryoverLedgerId,
+      createdById: actorId,
+      updatedById: actorId,
+    },
+  });
+  await refreshLedgerInventoryFifoLots(tx, ledgerId);
+
+  return actionOk(true);
+}
+
 async function convertInventoryInTx(
   tx: Prisma.TransactionClient,
   input: LedgerInventoryConversionInput,
@@ -123,6 +194,17 @@ async function convertInventoryInTx(
       "LEDGER_CONFLICT",
       "다른 변경이 먼저 저장되었습니다. 새로고침 후 다시 시도해 주세요.",
     );
+  }
+
+  const ensured = await ensureConversionSourceItem(
+    tx,
+    ledger.id,
+    input,
+    actor.userId,
+  );
+
+  if (!ensured.ok) {
+    return ensured;
   }
 
   const [sourceItem, sourceLots] = await Promise.all([

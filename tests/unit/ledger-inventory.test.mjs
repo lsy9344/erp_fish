@@ -1248,6 +1248,8 @@ test("cold conversion validates the stored ledger date and transfers remaining l
     source,
     /calculateInventoryTransferCostAmount\(\{[\s\S]*availableQuantity:[\s\S]*availableAmount:\s*lot\.remainingAmount/s,
   );
+  assert.match(source, /ensureConversionSourceItem/);
+  assert.match(source, /getFrozenConversionAvailableQuantity/);
 });
 
 test("cold conversion derives the frozen product name from the live product", async () => {

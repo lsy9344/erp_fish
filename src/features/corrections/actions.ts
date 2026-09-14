@@ -112,7 +112,7 @@ const lossFieldLabels: Record<string, string> = {
 
 const calculatedMetricLabels: Record<string, string> = {
   grossMarginRate: "마진율",
-  salesDifference: "매출 차이",
+  salesDifference: "매출이익",
   lossAmount: "손실",
 };
 

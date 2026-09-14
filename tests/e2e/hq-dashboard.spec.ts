@@ -985,7 +985,7 @@ test("본사 화면은 데이터 부족 계산 상태를 0값이나 계산 불�
   const marginCard = metrics.locator("div").filter({ hasText: "마진율" });
   const salesDifferenceCard = metrics
     .locator("div")
-    .filter({ hasText: "매출 차이" });
+    .filter({ hasText: "매출이익" });
 
   await expect(marginCard).toContainText("데이터 부족");
   await expect(marginCard).not.toContainText("0%");
