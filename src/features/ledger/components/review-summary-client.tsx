@@ -244,9 +244,9 @@ export function ReviewSummaryClient({
         setFeedback({
           kind: "success",
           message:
-            result.data.status === "already-in-review"
-              ? "이미 검토 대기 상태입니다."
-              : "장부를 제출했습니다.",
+            result.data.status === "already-closed"
+              ? "이미 마감된 장부입니다."
+              : "장부를 제출해 마감했습니다.",
         });
         setShowSuccessModal(true);
         return;
@@ -582,7 +582,7 @@ export function ReviewSummaryClient({
               className="min-h-11 w-full sm:w-auto"
             >
               <SendIcon aria-hidden="true" />
-              {isSubmitting ? "제출 중..." : "검토 대기로 제출"}
+              {isSubmitting ? "제출 중..." : "제출하고 마감"}
             </Button>
           </div>
 

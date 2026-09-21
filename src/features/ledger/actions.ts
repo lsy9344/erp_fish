@@ -672,13 +672,12 @@ export async function submitLedgerForReview(
           });
         }
 
-        if (beforeLedger.status === "IN_REVIEW") {
-          return actionOk(
-            toLedgerSubmitResult(beforeLedger, "already-in-review"),
-          );
+        if (beforeLedger.status === "HEADQUARTERS_CLOSED") {
+          return actionOk(toLedgerSubmitResult(beforeLedger, "already-closed"));
         }
 
-        if (beforeLedger.status !== "IN_PROGRESS") {
+        // 지점 제출이 곧 마감이다. 이전에 검토 대기로 제출된 장부도 다시 제출하면 마감된다.
+        if (!isLedgerEditable(beforeLedger.status)) {
           const reason = getLedgerEditBlockReason(
             beforeLedger.status,
             "submit-review",
@@ -703,12 +702,14 @@ export async function submitLedgerForReview(
           where: {
             id: beforeLedger.id,
             version: parsed.data.version,
-            status: "IN_PROGRESS",
+            status: { in: [...editableLedgerStatuses] },
           },
           data: {
-            status: "IN_REVIEW",
+            status: "HEADQUARTERS_CLOSED",
             submittedById: actor.user.id,
             submittedAt: submittedAt,
+            closedById: actor.user.id,
+            closedAt: submittedAt,
             updatedById: actor.user.id,
             version: { increment: 1 },
           },
@@ -720,9 +721,9 @@ export async function submitLedgerForReview(
             select: ledgerSelect,
           });
 
-          if (currentLedger?.status === "IN_REVIEW") {
+          if (currentLedger?.status === "HEADQUARTERS_CLOSED") {
             return actionOk(
-              toLedgerSubmitResult(currentLedger, "already-in-review"),
+              toLedgerSubmitResult(currentLedger, "already-closed"),
             );
           }
 

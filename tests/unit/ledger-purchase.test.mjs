@@ -606,7 +606,6 @@ test("ledger purchase calculations, queries, and actions expose expected contrac
     /lossReviewedById:\s*null[\s\S]*lossReviewedAt:\s*null/,
     "saving purchases should clear the loss-step review marker so losses are reviewed again before inventory",
   );
-  assert.match(actionSource, /beforeLedger\.status\s*!==\s*"IN_PROGRESS"/);
   assert.match(actionSource, /existingPurchaseItemsById/);
   assert.match(actionSource, /consumeStoredPurchaseQuantity/);
   assert.match(actionSource, /getPurchaseQuantityIdentity/);

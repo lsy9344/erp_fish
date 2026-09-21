@@ -298,16 +298,6 @@ async function getLedgerSubmitAuditLogs(ledgerId: string) {
   });
 }
 
-async function getLedgerWorkInfoAuditCount(ledgerId: string) {
-  return prisma.auditLog.count({
-    where: {
-      targetType: "DailyLedger",
-      targetId: ledgerId,
-      action: "ledger.work_info.saved",
-    },
-  });
-}
-
 async function cleanupStoryTwoEightData() {
   const products = await prisma.product.findMany({
     where: { name: { startsWith: "스토리2-8" } },
@@ -801,7 +791,7 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
   await expect(missingSection).toContainText("근무인원");
   await expect(warningSection).toContainText("마감 정산 불일치");
 
-  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+  await page.getByRole("button", { name: "제출하고 마감" }).click();
 
   const submitSection = page.getByRole("region", { name: "제출" });
   const submitAlert = submitSection.getByRole("alert");
@@ -833,12 +823,12 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
   await expect(warningSection).toContainText("마감 정산 불일치");
   await expect(missingSection).toContainText("매입 항목 없음");
 
-  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+  await page.getByRole("button", { name: "제출하고 마감" }).click();
 
   await expect(submitSection.getByRole("status")).toContainText(
-    "장부를 제출했습니다.",
+    "장부를 제출해 마감했습니다.",
   );
-  await expect(page.getByText("검토 대기").first()).toBeVisible();
+  await expect(page.getByText("본사 마감").first()).toBeVisible();
   const submitSectionBox = await submitSection.boundingBox();
   const statusBox = await submitSection.getByRole("status").boundingBox();
 
@@ -851,7 +841,7 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
     },
   });
 
-  expect(submitted.status).toBe("IN_REVIEW");
+  expect(submitted.status).toBe("HEADQUARTERS_CLOSED");
   expect(submitted.submittedById).toBe(managerId);
   expect(submitted.submittedAt).toBeTruthy();
   const firstSubmittedAt = submitted.submittedAt;
@@ -874,7 +864,7 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
     submittedAt: null,
   });
   expect(auditLogs[0]?.after).toMatchObject({
-    status: "IN_REVIEW",
+    status: "HEADQUARTERS_CLOSED",
     submittedById: managerId,
   });
   expect(
@@ -887,15 +877,15 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
   expect(statusBox?.height).toBeGreaterThan(0);
 
   const successDialog = page.getByRole("dialog", {
-    name: "장부를 제출했습니다.",
+    name: "장부를 제출해 마감했습니다.",
   });
   await successDialog.getByRole("button", { name: "확인" }).click();
   await expect(successDialog).toHaveCount(0);
 
-  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+  await page.getByRole("button", { name: "제출하고 마감" }).click();
 
   await expect(submitSection.getByRole("status")).toContainText(
-    "이미 검토 대기 상태입니다.",
+    "이미 마감된 장부입니다.",
   );
   expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(1);
   const duplicate = await prisma.dailyLedger.findUniqueOrThrow({
@@ -909,38 +899,15 @@ test("검토 제출은 필수 누락을 서버에서 거부하고 해결 후 중
   expect(duplicate.submittedById).toBe(managerId);
   expect(duplicate.submittedAt?.getTime()).toBe(firstSubmittedAt!.getTime());
 
+  // 지점 제출이 곧 마감이므로 제출 후에는 지점에서 원본을 수정할 수 없다.
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=work`);
-  await expect(page.getByText("검토 대기").first()).toBeVisible();
-  const workMemoInput = page.getByRole("textbox", { name: "특이사항 메모" });
-  const workSaveButton = page.getByRole("button", {
-    name: "저장",
-    exact: true,
-  });
-  await expect(workMemoInput).toBeEnabled();
-  await workMemoInput.fill("제출 후 보완 수정");
-  await expect(workSaveButton).toBeEnabled();
-  await workSaveButton.click();
-
+  await expect(page.getByText("본사 마감").first()).toBeVisible();
   await expect(
-    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
-  ).toBeVisible();
-  const editedAfterReview = await prisma.dailyLedger.findUniqueOrThrow({
-    where: { id: ledger.id },
-    select: {
-      status: true,
-      submittedById: true,
-      submittedAt: true,
-      workMemo: true,
-    },
-  });
-
-  expect(editedAfterReview.status).toBe("IN_REVIEW");
-  expect(editedAfterReview.submittedById).toBe(managerId);
-  expect(editedAfterReview.submittedAt?.getTime()).toBe(
-    firstSubmittedAt!.getTime(),
-  );
-  expect(editedAfterReview.workMemo).toBe("제출 후 보완 수정");
-  expect(await getLedgerWorkInfoAuditCount(ledger.id)).toBe(1);
+    page.getByRole("textbox", { name: "특이사항 메모" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "저장", exact: true }),
+  ).toBeDisabled();
 });
 
 test("검토 제출 실패 시 기존 상태를 유지하고 재시도할 수 있다", async ({
@@ -975,7 +942,7 @@ test("검토 제출 실패 시 기존 상태를 유지하고 재시도할 수 �
     await route.continue();
   });
 
-  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+  await page.getByRole("button", { name: "제출하고 마감" }).click();
 
   const submitSection = page.getByRole("region", { name: "제출" });
   await expect(
@@ -1003,7 +970,7 @@ test("검토 제출 실패 시 기존 상태를 유지하고 재시도할 수 �
   await submitSection.getByRole("button", { name: "다시 시도" }).click();
 
   await expect(submitSection.getByRole("status")).toContainText(
-    "장부를 제출했습니다.",
+    "장부를 제출해 마감했습니다.",
   );
   expect(await getLedgerSubmitAuditCount(ledger.id)).toBe(1);
 });
@@ -1024,7 +991,7 @@ test("stale version 검토 제출은 conflict dialog와 reload guidance를 보�
   await login(page);
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
   await expect(
-    page.getByRole("button", { name: "검토 대기로 제출" }),
+    page.getByRole("button", { name: "제출하고 마감" }),
   ).toBeVisible();
 
   await prisma.dailyLedger.update({
@@ -1036,7 +1003,7 @@ test("stale version 검토 제출은 conflict dialog와 reload guidance를 보�
     },
   });
 
-  await page.getByRole("button", { name: "검토 대기로 제출" }).click();
+  await page.getByRole("button", { name: "제출하고 마감" }).click();
 
   const conflictDialog = page.getByRole("dialog", {
     name: "저장 충돌이 발생했습니다",

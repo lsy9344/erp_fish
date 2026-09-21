@@ -142,7 +142,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
   );
   assert.equal(
     getAuditActionLabel("ledger.review.submitted"),
-    "검토 대기 제출",
+    "지점 제출",
   );
   assert.equal(getAuditActionLabel("correction.created"), "정정 기록 추가");
   assert.equal(getAuditActionLabel("threshold.updated"), "기준값 변경");

@@ -178,14 +178,15 @@ test("submitLedgerForReview uses guarded server action, idempotent update, audit
     "submit should authorize store access before detailed submit validation",
   );
   assert.match(actionSource, /db\.\$transaction/);
-  assert.match(actionSource, /status:\s*"IN_REVIEW"/);
   assert.match(actionSource, /submittedById:\s*actor\.user\.id/);
   assert.match(actionSource, /submittedAt:\s*submittedAt/);
+  // 지점 제출이 곧 마감이다: 검토 대기를 거치지 않고 바로 HEADQUARTERS_CLOSED로 간다.
   assert.match(
     submitSource,
-    /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*version:\s*parsed\.data\.version,\s*status:\s*"IN_PROGRESS",\s*\},\s*data:\s*\{[\s\S]*status:\s*"IN_REVIEW"[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/,
+    /updateMany\(\{\s*where:\s*\{\s*id:\s*beforeLedger\.id,\s*version:\s*parsed\.data\.version,\s*status:\s*\{\s*in:\s*\[\.\.\.editableLedgerStatuses\]\s*\},\s*\},\s*data:\s*\{[\s\S]*status:\s*"HEADQUARTERS_CLOSED"[\s\S]*closedById:\s*actor\.user\.id,\s*closedAt:\s*submittedAt[\s\S]*version:\s*\{\s*increment:\s*1\s*\}/,
   );
-  assert.match(actionSource, /already-in-review/);
+  assert.doesNotMatch(submitSource, /status:\s*"IN_REVIEW"/);
+  assert.match(submitSource, /already-closed/);
   assert.match(actionSource, /validateLedgerSubmitRequirementsInTx/);
   assert.match(actionSource, /getLedgerReviewMissingItems/);
   assert.match(
@@ -255,8 +256,9 @@ test("review submit UI exposes non-blocking warnings, status feedback, retry, an
   );
 
   assert.match(componentSource, /submitLedgerForReview/);
-  assert.match(componentSource, /장부를 제출했습니다\./);
-  assert.match(componentSource, /이미 검토 대기 상태입니다\./);
+  assert.match(componentSource, /장부를 제출해 마감했습니다\./);
+  assert.match(componentSource, /이미 마감된 장부입니다\./);
+  assert.match(componentSource, /제출하고 마감/);
   assert.match(componentSource, /role="status"/);
   assert.match(componentSource, /fieldErrors/);
   assert.match(componentSource, /Object\.entries\(feedback\.fieldErrors\)/);

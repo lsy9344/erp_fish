@@ -70,7 +70,7 @@ const actionLabels: Record<string, string> = {
   "ledger_input_code.activated": "활성화",
   "ledger_input_code.deactivated": "비활성화",
   "ledger_input_code.reordered": "표시 순서 변경",
-  "ledger.review.submitted": "검토 대기 제출",
+  "ledger.review.submitted": "지점 제출",
   "ledger.hq.sales_payment.updated": "본사 매출/결제 수정",
   "ledger.hq.expenses.saved": "본사 비용 수정",
   "ledger.hq.purchases.saved": "본사 매입 수정",

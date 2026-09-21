@@ -141,7 +141,7 @@ export type StoreManagerLedgerReviewStepData = Omit<
 };
 
 export type LedgerSubmitForReviewResult = {
-  status: "submitted" | "already-in-review";
+  status: "submitted" | "already-closed";
   ledger: Pick<
     LedgerReviewStepData,
     | "id"
