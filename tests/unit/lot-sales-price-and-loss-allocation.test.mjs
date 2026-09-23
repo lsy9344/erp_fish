@@ -250,7 +250,7 @@ test("overstock adjustment is measured after FIFO loss allocation", () => {
   );
 });
 
-test("review revenue subtracts only sold-lot cost, not FIFO loss cost", () => {
+test("review gross profit uses sold cost plus FIFO loss cost, not the loss card amount", () => {
   const summary = calculateLedgerReviewSummary({
     totalSalesAmount: 1_000,
     cashAmount: 1_000,
@@ -277,7 +277,9 @@ test("review revenue subtracts only sold-lot cost, not FIFO loss cost", () => {
         ],
       },
     ],
-    lossItems: [{ amount: 300 }],
+    // 손실 카드 금액은 판매가 참고값이다. 매출원가에 이미 들어간 손실 원가와 달라져도
+    // 매출이익에서 한 번 더 빼지 않는다.
+    lossItems: [{ amount: 900 }],
     plannedSalesItems: [
       {
         previousQuantity: 10,
@@ -290,9 +292,11 @@ test("review revenue subtracts only sold-lot cost, not FIFO loss cost", () => {
     ],
   });
 
-  assert.equal(summary.costOfGoodsSold.value, 500);
+  assert.equal(summary.costOfGoodsSold.value, 800);
+  assert.equal(summary.grossProfit.value, 200);
   assert.equal(summary.plannedSalesTotal.value, 1_000);
-  assert.equal(summary.plannedGrossProfit.value, 500);
+  assert.equal(summary.plannedGrossProfit.value, 200);
+  assert.equal(summary.plannedGrossMarginRate.value, 0.2);
 });
 
 test("review treats pre-migration FIFO consumption as sales cost", () => {

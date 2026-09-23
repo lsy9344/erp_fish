@@ -253,7 +253,7 @@ async function seedClosedLedgerForDashboardRecalc() {
   });
   // 저장 시 FIFO 재계산과 동일한 lot 구성을 심어 저장 전후 재고금액/COGS가
   // 달라지지 않게 한다: 기초 10개 중 손실 3개·판매 5개 + 매입 5개 미소진
-  // (잔존 7개 = 7,000원, 판매분 COGS 5,000원).
+  // (잔존 7개 = 7,000원, 매출원가 = 판매분 5,000원 + 손실 원가 3,000원).
   await prisma.ledgerInventoryFifoLot.createMany({
     data: [
       {
@@ -540,11 +540,12 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
 
   const dashboardRow = page.getByTestId(`hq-dashboard-row-${STORE_ID}`);
 
-  // 수정 전: 판매수량 5개 × 2,000원 = 예상매출 10,000원,
-  // 예상 마진율 (10,000 - 판매분 COGS 5,000) / 10,000 = 50%.
+  // 수정 전: 판매수량 5개 × 2,000원 = 예상매출 10,000원.
+  // 매출원가는 판매분 5,000원 + 손실 원가 3,000원 = 8,000원.
+  // 예상 마진율 (10,000 - 8,000) / 10,000 = 20%.
   await page.goto("/app/dashboard?date=today");
   await expect(dashboardRow).toContainText("예상매출 ₩10,000");
-  await expect(dashboardRow).toContainText("예상 50.0%");
+  await expect(dashboardRow).toContainText("예상 20.0%");
 
   await page.goto(`/app/ledgers/${ledger.id}`);
   await page.getByRole("tab", { name: "재고" }).click();
@@ -578,11 +579,12 @@ test("판매한 가격 수정 후 관제판 예상매출·예상 마진율이 �
     })
     .toBe(1800);
 
-  // 수정 후: 판매수량 5개 × 1,800원 = 예상매출 9,000원,
-  // 예상 마진율 (9,000 - 판매분 COGS 5,000) / 9,000 = 44.4%.
+  // 수정 후: 판매수량 5개 × 1,800원 = 예상매출 9,000원.
+  // 매출원가 8,000원은 원가 기준이라 판매가 수정으로 바뀌지 않는다.
+  // 예상 마진율 (9,000 - 8,000) / 9,000 = 11.1%.
   await page.goto("/app/dashboard?date=today");
   await expect(dashboardRow).toContainText("예상매출 ₩9,000");
-  await expect(dashboardRow).toContainText("예상 44.4%");
+  await expect(dashboardRow).toContainText("예상 11.1%");
 });
 
 test("마감 장부 재고·판매가격의 오래된 화면 저장은 충돌로 거부된다", async ({
