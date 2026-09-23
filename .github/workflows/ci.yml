@@ -1,4 +1,5 @@
 name: CI
+# 이 컴퓨터가 켜져 있으면 자체 러너에서 돌고, 꺼져 있으면 원래 GitHub 호스트에서 돈다.
 
 on:
   pull_request:
@@ -39,7 +40,7 @@ jobs:
   # Cheap, no DB, no browser, no build — gives ~1-2 min feedback on the common case.
   fast-checks:
     name: Fast Checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     timeout-minutes: 10
 
     steps:
@@ -82,7 +83,7 @@ jobs:
   # Feature-branch pushes skip this — you build locally / it runs at merge time.
   build:
     name: Production Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     timeout-minutes: 25
     if: >-
       github.event_name == 'pull_request' ||
@@ -137,7 +138,7 @@ jobs:
 
   api-tests:
     name: API Tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     timeout-minutes: 15
     if: >-
       github.event_name == 'pull_request' ||
@@ -199,7 +200,7 @@ jobs:
 
   playwright-smoke:
     name: Playwright Smoke ${{ matrix.group }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 25
@@ -264,7 +265,7 @@ jobs:
 
   playwright-core:
     name: Playwright Core ${{ matrix.group }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
@@ -325,7 +326,7 @@ jobs:
 
   playwright-full:
     name: Playwright Full ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 30
@@ -397,7 +398,7 @@ jobs:
 
   playwright-burn-in:
     name: Playwright Smoke Burn-In
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
@@ -454,7 +455,7 @@ jobs:
 
   notify-slack:
     name: Slack Notification
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.CI_SELF_HOSTED == 'true' && github.event_name != 'pull_request', fromJSON('["self-hosted","Linux","X64","noah-ci"]'), vars.CI_SELF_HOSTED == 'true' && github.event.pull_request.head.repo.full_name == github.repository, fromJSON('["self-hosted","Linux","X64","noah-ci"]'), 'ubuntu-latest') }}
     timeout-minutes: 5
     needs:
       - fast-checks
