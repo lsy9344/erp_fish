@@ -7,6 +7,12 @@ const databaseURL =
   "postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e";
 const reuseExistingServer =
   !process.env.CI && process.env.PW_REUSE_EXISTING_SERVER === "1";
+// Next 15 enables Webpack when `next dev` has no `--turbo` flag. Keep the
+// faster Turbopack command for local development, but use Webpack for the
+// CI-only test server so API/E2E checks do not start the Turbopack worker.
+const devServerCommand = process.env.CI
+  ? "corepack pnpm exec next dev"
+  : "corepack pnpm dev";
 
 process.env.DATABASE_URL = databaseURL;
 
@@ -28,7 +34,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `corepack pnpm dev --hostname 127.0.0.1 --port ${port}`,
+    command: `${devServerCommand} --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer,
     timeout: 120_000,
