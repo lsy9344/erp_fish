@@ -151,7 +151,7 @@ jobs:
         run: pnpm build
 
   api-tests:
-    name: API Tests
+    name: API Tests (${{ matrix.group }})
     runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
     timeout-minutes: 15
     if: >-
@@ -159,6 +159,11 @@ jobs:
       (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
       github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        group: [chat, report-p0, report-rest, other]
 
     services:
       postgres:
@@ -228,7 +233,42 @@ jobs:
           EOF
 
       - name: API tests
-        run: pnpm test:api
+        env:
+          API_GROUP: ${{ matrix.group }}
+        run: |
+          set -euo pipefail
+
+          case "$API_GROUP" in
+            chat)
+              API_ARGS=(tests/api/chat.spec.ts)
+              ;;
+            report-p0)
+              API_ARGS=(tests/api/report-export.spec.ts --grep '\[P0\]')
+              ;;
+            report-rest)
+              API_ARGS=(tests/api/report-export.spec.ts --grep-invert '\[P0\]')
+              ;;
+            other)
+              mapfile -t API_ARGS < <(
+                find tests/api -type f -name '*.spec.ts' \
+                  ! -name 'chat.spec.ts' \
+                  ! -name 'report-export.spec.ts' \
+                  -print | sort
+              )
+              if [ "${#API_ARGS[@]}" -eq 0 ]; then
+                echo "No API specs remain for the other group." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unknown API group: $API_GROUP" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Running API group: $API_GROUP"
+          printf '  %s\n' "${API_ARGS[@]}"
+          corepack pnpm test:playwright -- "${API_ARGS[@]}"
 
   playwright-smoke:
     name: Playwright Smoke ${{ matrix.group }}

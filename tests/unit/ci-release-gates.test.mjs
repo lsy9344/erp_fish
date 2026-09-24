@@ -91,7 +91,14 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   assert.match(buildJob, /refs\/heads\/main/);
 
   // API tests are likewise gated off feature-branch pushes.
-  assert.match(apiTestsJob, /run:\s*pnpm test:api/);
+  assert.match(apiTestsJob, /corepack pnpm test:playwright --/);
+  assert.match(apiTestsJob, /fail-fast:\s*false/);
+  assert.match(apiTestsJob, /max-parallel:\s*1/);
+  assert.ok(apiTestsJob.includes("--grep '\\[P0\\]'"));
+  assert.ok(apiTestsJob.includes("--grep-invert '\\[P0\\]'"));
+  assert.ok(apiTestsJob.includes("find tests/api -type f -name '*.spec.ts'"));
+  assert.match(apiTestsJob, /! -name 'chat\.spec\.ts'/);
+  assert.match(apiTestsJob, /! -name 'report-export\.spec\.ts'/);
   assert.match(apiTestsJob, /services:[\s\S]*postgres:/);
   assert.match(apiTestsJob, /github\.event_name == 'pull_request'/);
   assert.match(apiTestsJob, /refs\/heads\/staging/);
