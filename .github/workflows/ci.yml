@@ -251,8 +251,8 @@ jobs:
             other)
               mapfile -t API_ARGS < <(
                 find tests/api -type f -name '*.spec.ts' \
-                  ! -name 'chat.spec.ts' \
-                  ! -name 'report-export.spec.ts' \
+                  ! -path 'tests/api/chat.spec.ts' \
+                  ! -path 'tests/api/report-export.spec.ts' \
                   -print | sort
               )
               if [ "${#API_ARGS[@]}" -eq 0 ]; then

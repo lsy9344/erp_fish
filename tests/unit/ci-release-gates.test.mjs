@@ -97,8 +97,8 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   assert.ok(apiTestsJob.includes("--grep '\\[P0\\]'"));
   assert.ok(apiTestsJob.includes("--grep-invert '\\[P0\\]'"));
   assert.ok(apiTestsJob.includes("find tests/api -type f -name '*.spec.ts'"));
-  assert.match(apiTestsJob, /! -name 'chat\.spec\.ts'/);
-  assert.match(apiTestsJob, /! -name 'report-export\.spec\.ts'/);
+  assert.match(apiTestsJob, /! -path 'tests\/api\/chat\.spec\.ts'/);
+  assert.match(apiTestsJob, /! -path 'tests\/api\/report-export\.spec\.ts'/);
   assert.match(apiTestsJob, /services:[\s\S]*postgres:/);
   assert.match(apiTestsJob, /github\.event_name == 'pull_request'/);
   assert.match(apiTestsJob, /refs\/heads\/staging/);
