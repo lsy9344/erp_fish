@@ -6,6 +6,34 @@ The workflow lives at `.github/workflows/ci.yml`. The design goal is fast
 feedback on the common case (a small change pushed to a feature branch) and
 heavier verification only at integration points (PR, `staging`, `main`).
 
+## Runner and dependency store
+
+Every job uses the Linux self-hosted runner with labels
+`[self-hosted, Linux, X64, erp-dabi-linux]`. There is no GitHub-hosted fallback.
+Pull requests from outside this repository are skipped so their code cannot run
+on the persistent runner. Pull requests opened from a branch in this repository
+continue to run normally.
+
+Each job explicitly cleans the checkout and runs
+`pnpm install --frozen-lockfile`. `actions/setup-node` does not use GitHub's
+remote package cache. pnpm's content store is kept outside the checkout at
+`${runner.tool_cache}/package-stores/${github.repository}/${runner.os}-${runner.arch}/{pr|trusted}/pnpm`.
+The install verifies reused package content and disables the side-effects cache.
+The store is reused across jobs, while `node_modules` is recreated for every job.
+The `pr` and `trusted` directories keep dependency data from the two execution
+classes separate.
+
+Jobs that run directly on the runner use a randomly assigned PostgreSQL host
+port. Containerized Playwright jobs connect to the `postgres` service name and
+do not publish a host port, so concurrent projects on the same machine do not
+compete for port `5432`.
+
+Validate workflow syntax locally with:
+
+```bash
+actionlint .github/workflows/ci.yml
+```
+
 - Pushes to feature branches run only `Fast Checks` (lint + typecheck + unit,
   no DB, no build, no browser) — about 1-2 minutes. This is the everyday loop.
 - Pull requests run `Fast Checks`, `Production Build`, `API Tests`, and
@@ -148,7 +176,8 @@ Artifacts are kept for 14 days.
 
 ## Troubleshooting
 
-- If CI fails during install, rerun once. Dependency cache may be cold.
+- If CI fails during install, rerun once. A first run may still be warming the
+  runner's pnpm store.
 - If Playwright fails, download the failed job artifact and inspect `test-results`.
 - If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
   matching local command: `pnpm test:e2e:smoke:ledger`,
