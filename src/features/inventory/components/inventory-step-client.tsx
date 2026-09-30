@@ -3351,17 +3351,6 @@ export function InventoryStepClient({
           closedEditRetained={closedEditAllowed}
         />
 
-        {/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            className="min-h-11 font-semibold"
-            onClick={() => setIsPreviousStockOpen(true)}
-          >
-            전날 재고 보기
-          </Button>
-        </div>
-
         <Alert
           variant={
             data.carryover.status === "manual" ? "destructive" : "default"
@@ -3449,20 +3438,35 @@ export function InventoryStepClient({
               setActiveCategory(normalizeCategory(value))
             }
           >
-            <TabsList
-              variant="line"
-              className="min-h-11 w-full justify-start border-b bg-transparent"
+            <div
+              className={cn(
+                "bg-background flex flex-wrap items-center justify-between gap-2 border-b py-2",
+                isStoreManagerMode && "sticky top-[65px] z-20",
+              )}
             >
-              {categories.map((category) => (
-                <TabsTrigger
-                  key={category}
-                  value={category}
-                  className="min-h-9 px-4"
-                >
-                  {category}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+              <TabsList
+                variant="line"
+                className="min-h-11 justify-start bg-transparent"
+              >
+                {categories.map((category) => (
+                  <TabsTrigger
+                    key={category}
+                    value={category}
+                    className="min-h-9 px-4"
+                  >
+                    {category}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {/* 입력 중에도 기존 전날 재고 창을 바로 열 수 있다. */}
+              <Button
+                type="button"
+                className="min-h-11 font-semibold"
+                onClick={() => setIsPreviousStockOpen(true)}
+              >
+                전날 재고 보기
+              </Button>
+            </div>
 
             {categories.map((category) => (
               <TabsContent key={category} value={category}>

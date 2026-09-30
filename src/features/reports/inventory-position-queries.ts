@@ -438,6 +438,13 @@ export async function getHqInventoryPositionReport({
     for (const item of ledger.ledgerInventoryItems) {
       categoryValues.add(item.productCategory);
 
+      if (
+        item.previousQuantity === 0 &&
+        (item.currentQuantity ?? item.quantity) === 0
+      ) {
+        continue;
+      }
+
       if (normalizedCategory && item.productCategory !== normalizedCategory) {
         continue;
       }

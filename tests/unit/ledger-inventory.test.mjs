@@ -3194,7 +3194,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
   const previousStockButtonStart = componentSource.indexOf(
-    "{/* WO-11(2026-06-28): 상단 전날 재고 전체 보기 버튼. */}",
+    "{/* 입력 중에도 기존 전날 재고 창을 바로 열 수 있다. */}",
   );
   const previousStockButtonSource = componentSource.slice(
     previousStockButtonStart,
