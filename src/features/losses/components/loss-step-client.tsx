@@ -387,9 +387,10 @@ export function LossStepClient({
   });
   const hasOptions =
     data.productOptions.length > 0 && data.lossTypeOptions.length > 0;
-  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
+  const nextStepHref = `/app/store-entry?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
+    step: "cost",
   }).toString()}`;
   const showsSensitiveLossAmounts = "totalAmount" in data.summary;
   const hqEditReasonError = fieldErrors.reason?.[0];
@@ -683,10 +684,10 @@ export function LossStepClient({
                         ? " · 판매한 가격 없음 · 손실액 미산정"
                         : item.unitPrice !== undefined
                           ? ` · 손실액 산정 기준 판매한 가격 ${formatKrw(item.unitPrice)}`
-                          : " · 저장 시 3단계 재고의 판매한 가격으로 손실액 자동 산정"}
+                          : " · 저장 시 5단계 재고의 판매한 가격으로 손실액 자동 산정"}
                       {item.usedPlannedPrice === false ? (
                         <span className="mt-1 block text-amber-600 dark:text-amber-500">
-                          판매한 가격은 3단계 재고에서 입력되며 저장 후 손실
+                          판매한 가격은 5단계 재고에서 입력되며 저장 후 손실
                           금액에 자동 반영됩니다. 현재는 판매한 가격이 없어
                           손실액이 미산정 상태입니다.
                         </span>

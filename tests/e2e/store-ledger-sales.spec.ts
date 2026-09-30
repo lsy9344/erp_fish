@@ -576,7 +576,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
 
   await page.getByRole("textbox", { name: "현금", exact: true }).fill("77777");
 
-  await page.getByRole("link", { name: /4단계: 지출/ }).click();
+  await page.getByRole("link", { name: /3단계: 지출/ }).click();
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toBeVisible();
@@ -589,7 +589,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
     page.getByRole("textbox", { name: "총매출", exact: true }),
   ).toHaveValue("77,777원");
 
-  await page.getByRole("link", { name: /4단계: 지출/ }).click();
+  await page.getByRole("link", { name: /3단계: 지출/ }).click();
   await page
     .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
     .getByRole("button", { name: "변경 버리고 이동" })
@@ -616,7 +616,7 @@ test("미저장 변경 상태에서 단계 이동 전 저장, 취소, 계속 편
 
   await page.getByRole("textbox", { name: "현금", exact: true }).fill("77777");
 
-  await page.getByRole("link", { name: /4단계: 지출/ }).click();
+  await page.getByRole("link", { name: /3단계: 지출/ }).click();
   await page
     .getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })
     .getByRole("button", { name: "저장" })
@@ -975,7 +975,7 @@ test("390px에서 매출/결제 키패드 입력성과 터치 타깃이 충족�
       href: /\/app\/store-entry\?storeId=store-gangnam&date=\d{4}-\d{2}-\d{2}&step=sales/,
     },
     {
-      name: /3단계: 재고/,
+      name: /5단계: 재고/,
       href: /\/app\/store-entry\/inventory\?storeId=store-gangnam&date=\d{4}-\d{2}-\d{2}/,
     },
     {

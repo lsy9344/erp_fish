@@ -22,19 +22,14 @@ type StoreEntryStepNavigationProps = {
 const steps: { id: StoreEntryStep; label: string }[] = [
   { id: "purchase", label: "1단계: 매입" },
   { id: "losses", label: "2단계: 손실/폐기" },
-  { id: "inventory", label: "3단계: 재고" },
-  { id: "cost", label: "4단계: 지출" },
-  { id: "work", label: "5단계: 근무인원/이름" },
+  { id: "cost", label: "3단계: 지출" },
+  { id: "work", label: "4단계: 근무인원/이름" },
+  { id: "inventory", label: "5단계: 재고" },
   { id: "sales", label: "6단계: 매출/결제" },
   { id: "review", label: "7단계: 검토/제출" },
 ];
 
-const stepsAfterInventory = new Set<StoreEntryStep>([
-  "cost",
-  "work",
-  "sales",
-  "review",
-]);
+const stepsAfterInventory = new Set<StoreEntryStep>(["sales", "review"]);
 
 function stepHref(storeId: string, closingDate: string, step: StoreEntryStep) {
   const params = new URLSearchParams({
@@ -80,7 +75,7 @@ export function StoreEntryStepNavigation({
                 aria-disabled={isBlockedByInventory || undefined}
                 title={
                   isBlockedByInventory
-                    ? "3단계 재고의 수량과 판매한 가격을 먼저 저장해 주세요."
+                    ? "5단계 재고의 수량과 판매한 가격을 먼저 저장해 주세요."
                     : undefined
                 }
                 className={cn(

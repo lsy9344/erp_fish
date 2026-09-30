@@ -728,7 +728,7 @@ test("근무 단계는 근무인원/이름 명칭과 근무자 입력을 유지�
 
   // Task 1/2: 5단계 네비게이션 명칭과 근무 요약 제목.
   await expect(
-    page.getByRole("link", { name: /5단계: 근무인원\/이름/ }),
+    page.getByRole("link", { name: /4단계: 근무인원\/이름/ }),
   ).toHaveAttribute("aria-current", "step");
   await expect(page.getByText("근무 요약")).toBeVisible();
   // 2026-09-02 요청: 근무인원 입력 칸 대신 직원 연결 결과를 보여준다.

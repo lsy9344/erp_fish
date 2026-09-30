@@ -285,7 +285,7 @@ export function buildLedgerReviewStepSummaries({
   const missingById = new Map(missingItems.map((item) => [item.id, item]));
 
   // 단계 순서 변경(2026-07-02): 검토 요약 카드도 지점 입력 순서
-  // (매입>손실>재고>지출>근무>매출)와 동일하게 정렬한다.
+  // (매입>손실>지출>근무>재고>매출)와 동일하게 정렬한다.
   return [
     {
       id: "purchases",
@@ -313,23 +313,6 @@ export function buildLedgerReviewStepSummaries({
       }),
       href: getLedgerReviewStepHref(storeId, closingDate, "losses"),
       metrics: [textMetric("lossCount", "손실 저장", `${lossCount}건`)],
-    },
-    {
-      id: "inventory",
-      label: "재고",
-      status: stepStatus("inventory", missingById, summary.inventoryAmount),
-      detail: stepDetail({
-        stepId: "inventory",
-        missingItems: missingById,
-        savedDetail: `재고 ${inventoryCount}건이 저장되어 있습니다.`,
-        calculationMetric: summary.inventoryAmount,
-      }),
-      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
-      metrics: [
-        textMetric("inventoryCount", "재고 저장", `${inventoryCount}건`),
-        moneyMetric("inventoryAmount", "재고금액", summary.inventoryAmount),
-        statusMetric("reviewStatus", "계산 상태", summary.inventoryAmount),
-      ],
     },
     {
       id: "expenses",
@@ -374,6 +357,23 @@ export function buildLedgerReviewStepSummaries({
       ],
     },
     {
+      id: "inventory",
+      label: "재고",
+      status: stepStatus("inventory", missingById, summary.inventoryAmount),
+      detail: stepDetail({
+        stepId: "inventory",
+        missingItems: missingById,
+        savedDetail: `재고 ${inventoryCount}건이 저장되어 있습니다.`,
+        calculationMetric: summary.inventoryAmount,
+      }),
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
+      metrics: [
+        textMetric("inventoryCount", "재고 저장", `${inventoryCount}건`),
+        moneyMetric("inventoryAmount", "재고금액", summary.inventoryAmount),
+        statusMetric("reviewStatus", "계산 상태", summary.inventoryAmount),
+      ],
+    },
+    {
       id: "sales",
       label: "매출/결제",
       status: stepStatus("sales", missingById, summary.paymentDifference),
@@ -397,7 +397,7 @@ export function buildLedgerReviewStepSummaries({
           "현금·카드·기타 합계",
           summary.paymentTotal,
         ),
-        moneyMetric("expenseTotal", "4단계 지출 합계", summary.expenseTotal),
+        moneyMetric("expenseTotal", "3단계 지출 합계", summary.expenseTotal),
         moneyMetric(
           "paymentDifference",
           "마감 정산 차액",

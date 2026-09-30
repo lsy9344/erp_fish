@@ -771,7 +771,7 @@ const calculationMetricLabels: Record<string, string> = {
   carryoverSales: "이월 매출",
   operatingSales: "영업 매출 합계",
   paymentTotal: "현금·카드·기타 합계",
-  expenseTotal: "4단계 지출 합계",
+  expenseTotal: "3단계 지출 합계",
   workerCount: "근무인원",
   costOfGoodsSold: "매출원가",
   grossProfit: "매출이익",

@@ -57,7 +57,7 @@ export function getLedgerReviewMissingItems({
   const items: LedgerReviewMissingItem[] = [];
 
   // 단계 순서 변경(2026-07-02): 누락/확인 항목도 지점 입력 순서
-  // (매입>손실>재고>지출>근무>매출)와 동일하게 정렬한다.
+  // (매입>손실>지출>근무>재고>매출)와 동일하게 정렬한다.
   if (purchaseCount === 0) {
     items.push({
       id: "purchases",
@@ -79,29 +79,6 @@ export function getLedgerReviewMissingItems({
         : `손실 항목 ${lossCount}건이 저장되어 있습니다.`,
   });
 
-  if (inventoryCount === 0 || hasInventoryUnavailable) {
-    items.push({
-      id: "inventory",
-      label: "재고",
-      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
-      status: "missing",
-      detail:
-        inventoryCount === 0
-          ? "재고 항목이 아직 저장되지 않았습니다."
-          : "재고 수량 또는 금액 중 계산할 수 없는 항목이 있습니다.",
-    });
-  }
-
-  if (missingInventoryPlanCount > 0) {
-    items.push({
-      id: "inventory-plans",
-      label: "판매한 가격",
-      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
-      status: "missing",
-      detail: `3단계 재고에서 판매한 가격이 누락된 품목 ${missingInventoryPlanCount}건을 입력해 주세요.`,
-    });
-  }
-
   if (expenseCount === 0) {
     items.push({
       id: "expenses",
@@ -122,6 +99,29 @@ export function getLedgerReviewMissingItems({
         workerCount === null
           ? "근무인원이 아직 입력되지 않았습니다."
           : "근무인원은 1명 이상이어야 제출할 수 있습니다.",
+    });
+  }
+
+  if (inventoryCount === 0 || hasInventoryUnavailable) {
+    items.push({
+      id: "inventory",
+      label: "재고",
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
+      status: "missing",
+      detail:
+        inventoryCount === 0
+          ? "재고 항목이 아직 저장되지 않았습니다."
+          : "재고 수량 또는 금액 중 계산할 수 없는 항목이 있습니다.",
+    });
+  }
+
+  if (missingInventoryPlanCount > 0) {
+    items.push({
+      id: "inventory-plans",
+      label: "판매한 가격",
+      href: getLedgerReviewStepHref(storeId, closingDate, "inventory"),
+      status: "missing",
+      detail: `5단계 재고에서 판매한 가격이 누락된 품목 ${missingInventoryPlanCount}건을 입력해 주세요.`,
     });
   }
 

@@ -93,7 +93,7 @@ async function assertInventoryPlanCompleteInTx(
 function inventoryPlanIncompleteActionError<T>(): ActionResult<T> {
   return actionError(
     "INVENTORY_PLAN_INCOMPLETE",
-    "3단계 재고의 수량과 판매한 가격을 모두 저장한 뒤 진행해 주세요.",
+    "5단계 재고의 수량과 판매한 가격을 모두 저장한 뒤 진행해 주세요.",
   );
 }
 
@@ -951,8 +951,6 @@ export async function saveLedgerExpenses(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
-      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
-
       const expenseCodeValidation = await validateActiveExpenseCodesInTx(
         tx,
         parsed.data.expenses,
@@ -1017,10 +1015,6 @@ export async function saveLedgerExpenses(
 
     return result;
   } catch (error: unknown) {
-    if (error instanceof InventoryPlanIncompleteError) {
-      return inventoryPlanIncompleteActionError();
-    }
-
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("expenses", parsed.data);
     }
@@ -1478,8 +1472,6 @@ export async function saveLedgerWorkInfo(
         throw originalLedgerBlockedError(beforeLedger.status);
       }
 
-      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
-
       await updateEditableDailyLedgerInTx(
         tx,
         beforeLedger.id,
@@ -1518,10 +1510,6 @@ export async function saveLedgerWorkInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
-    if (error instanceof InventoryPlanIncompleteError) {
-      return inventoryPlanIncompleteActionError();
-    }
-
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("work", parsed.data);
     }
@@ -1576,8 +1564,6 @@ export async function saveLedgerLaborInfo(
       if (!isLedgerEditable(beforeLedger.status)) {
         throw originalLedgerBlockedError(beforeLedger.status);
       }
-
-      await assertInventoryPlanCompleteInTx(tx, beforeLedger);
 
       // 2026-09-02 요청: 근무인원은 직접 쓰지 않고 직원 연결을 마친 급여 행 수로 정한다.
       await updateEditableDailyLedgerInTx(
@@ -1680,10 +1666,6 @@ export async function saveLedgerLaborInfo(
 
     return actionOk(result);
   } catch (error: unknown) {
-    if (error instanceof InventoryPlanIncompleteError) {
-      return inventoryPlanIncompleteActionError();
-    }
-
     if (error instanceof Error && error.message === "LEDGER_CONFLICT") {
       return await mapLedgerConflictError("labor", parsed.data);
     }

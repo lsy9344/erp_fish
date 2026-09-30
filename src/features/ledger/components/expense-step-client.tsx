@@ -404,7 +404,7 @@ export function ExpenseStepClient({
       ) : null}
 
       <LedgerSaveStatus
-        stepLabel="4단계: 지출"
+        stepLabel="3단계: 지출"
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}
         isSaving={isFormSaving}

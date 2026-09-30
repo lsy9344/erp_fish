@@ -226,10 +226,7 @@ export default async function StoreEntryPage({
 
   if (
     isLedgerEditable(initialLedger.status) &&
-    (step === "cost" ||
-      step === "work" ||
-      step === "sales" ||
-      step === "review") &&
+    (step === "sales" || step === "review") &&
     initialLedger.stepCompletion.inventory !== true
   ) {
     const query = new URLSearchParams({

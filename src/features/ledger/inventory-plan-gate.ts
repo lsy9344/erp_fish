@@ -18,7 +18,7 @@ type InventoryPlanGateInput = {
   /**
    * 재고 입력 폼이 숨기는 0재고 행(applyInventoryFormDisplayPolicy). 화면에 없으니
    * 지점장이 판매한 가격을 넣을 수단이 없다. 계획 필수 대상에서 뺀다.
-   * 빼지 않으면 3단계가 영원히 미완료로 남아 4단계 이후 진입이 막힌다.
+   * 빼지 않으면 5단계가 영원히 미완료로 남아 6단계 이후 진입이 막힌다.
    */
   planExemptProductIds?: Iterable<string>;
 };

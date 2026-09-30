@@ -354,7 +354,7 @@ test("work step keeps store work copy neutral and HQ salary helpers role-specifi
   assert.doesNotMatch(componentSource, /id="worker-count"/);
   assert.match(
     componentSource,
-    /stepLabel=\{\s*showSensitiveAccountingMetrics\s*\?\s*"5단계 근무\/인건비"\s*:\s*"5단계: 근무인원\/이름"\s*\}/,
+    /stepLabel=\{\s*showSensitiveAccountingMetrics\s*\?\s*"4단계 근무\/인건비"\s*:\s*"4단계: 근무인원\/이름"\s*\}/,
   );
   assert.equal(
     (componentSource.match(/<section className="bg-card/g) ?? []).length,
@@ -791,7 +791,7 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
   assert.match(source, /const\s+draftExpenseTotal\s*=\s*getDraftExpenseTotal/);
   assert.match(source, /ledgerTerms\.draftExpenseTotal/);
   assert.match(source, /ledgerTerms\.lastSavedExpenseTotal/);
-  assert.match(source, /stepLabel="4단계: 지출"/);
+  assert.match(source, /stepLabel="3단계: 지출"/);
   assert.match(source, /formatKrw\(ledger\.expenseTotal\)/);
 
   const termsSource = readProjectFile("src", "features", "ledger", "terms.ts");
@@ -837,8 +837,8 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     termsSource,
     /lastSavedExpenseTotal:\s*"마지막 서버 저장 지출 합계"/,
   );
-  assert.match(navigationSource, /4단계: 지출/);
-  assert.match(navigationSource, /5단계: 근무인원\/이름/);
+  assert.match(navigationSource, /3단계: 지출/);
+  assert.match(navigationSource, /4단계: 근무인원\/이름/);
   assert.match(conflictSource, /expenses:\s*"지출"/);
   assert.match(aliasSource, /heading:\s*"지출 항목 표시명"/);
   assert.match(
@@ -850,7 +850,7 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
   );
   assert.match(hqClosePreflightSource, /paymentTotal:\s*"현금·카드·기타 합계"/);
-  assert.match(hqClosePreflightSource, /expenseTotal:\s*"4단계 지출 합계"/);
+  assert.match(hqClosePreflightSource, /expenseTotal:\s*"3단계 지출 합계"/);
   assert.match(hqClosePreflightSource, /paymentDifference:\s*"마감 정산 차액"/);
 });
 

@@ -588,7 +588,7 @@ export function InventoryStepClient({
   const nextStepHref = `/app/store-entry?${new URLSearchParams({
     storeId: data.storeId,
     date: getKstLedgerDateParam(data.closingDate),
-    step: "cost",
+    step: "sales",
   }).toString()}`;
   const isAdjustmentSavePending = savingAdjustmentProductId !== null;
   const isStoreManagerMode = !hqEditReasonRequired;
@@ -3266,12 +3266,7 @@ export function InventoryStepClient({
     trigger: HTMLElement,
     targetStep: StoreEntryStep,
   ) {
-    if (
-      targetStep === "cost" ||
-      targetStep === "work" ||
-      targetStep === "sales" ||
-      targetStep === "review"
-    ) {
+    if (targetStep === "sales" || targetStep === "review") {
       if (!isDirty && data.stepCompletion.inventory) {
         window.location.href = href;
         return;
@@ -3334,7 +3329,7 @@ export function InventoryStepClient({
         ) : null}
 
         <LedgerSaveStatus
-          stepLabel="3단계 재고"
+          stepLabel="5단계 재고"
           authorDisplayName={data.authorDisplayName}
           updatedAt={data.updatedAt}
           isSaving={isSaving || isAdjustmentSavePending}
@@ -3568,7 +3563,7 @@ export function InventoryStepClient({
                   void handleInventoryNavigation(
                     nextStepHref,
                     event.currentTarget,
-                    "cost",
+                    "sales",
                   )
                 }
               >

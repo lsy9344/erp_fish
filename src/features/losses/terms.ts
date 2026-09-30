@@ -17,7 +17,7 @@ export const lossTerms = {
 
   // 도움말/검증 문구
   recoveredAmountHelp:
-    "손실 수량과 떨이 판매액을 먼저 저장하세요. 3단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다.",
+    "손실 수량과 떨이 판매액을 먼저 저장하세요. 5단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다.",
   quantityInvalid:
     "박스단위 수량은 0 이상이고 소수점 둘째 자리까지 입력할 수 있습니다.",
   recoveredAmountInvalid:

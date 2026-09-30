@@ -583,15 +583,15 @@ test("ledger review missing item helper preserves KST links and separates review
     workerCount: 0,
   });
 
-  // 단계 순서 변경(2026-07-02): 매입>손실>재고>지출>근무>매출 순서로 정렬한다.
+  // 단계 순서 변경(2026-07-02): 매입>손실>지출>근무>재고>매출 순서로 정렬한다.
   assert.deepEqual(
     missingItems.map((item) => [item.id, item.status]),
     [
       ["purchases", "review"],
       ["losses", "review"],
-      ["inventory", "missing"],
       ["expenses", "missing"],
       ["work", "missing"],
+      ["inventory", "missing"],
       ["sales", "missing"],
     ],
   );
@@ -801,7 +801,7 @@ test("ledger review step summary contract preserves shape, KST links, signed dif
   );
   assert.match(
     querySource,
-    /moneyMetric\(\s*"expenseTotal",\s*"4단계 지출 합계",\s*summary\.expenseTotal,?\s*\)/,
+    /moneyMetric\(\s*"expenseTotal",\s*"3단계 지출 합계",\s*summary\.expenseTotal,?\s*\)/,
   );
   assert.match(
     querySource,
@@ -1089,12 +1089,12 @@ test("store manager review exposes estimated top sold items derived from invento
   // 카드 UI: 추정 라벨과 안내 문구가 있어야 하고, 판매가 미반영(cost 폴백)을 구분 표시한다.
   assert.match(clientSource, /오늘 많이 팔린 품목/);
   assert.match(clientSource, /추정 매출/);
-  // 판매한 가격 책임과 수정 링크는 3단계 재고를 가리킨다.
+  // 판매한 가격 책임과 수정 링크는 5단계 재고를 가리킨다.
   assert.match(
     clientSource,
-    /추정 매출은 3단계 재고의 판매한 가격을 우선 사용합니다\./,
+    /추정 매출은 5단계 재고의 판매한 가격을 우선 사용합니다\./,
   );
-  assert.match(clientSource, /3단계 재고에서 판매한 가격 입력/);
+  assert.match(clientSource, /5단계 재고에서 판매한 가격 입력/);
   assert.match(clientSource, /\/app\/store-entry\/inventory/);
   assert.match(clientSource, /판매가 미반영/);
   assert.match(clientSource, /item\.salesBasis === "cost"/);
@@ -1127,7 +1127,7 @@ test("store manager review orders losses before inventory to match entry steps",
   assert.ok(
     summariesSource.indexOf('id: "losses"') <
       summariesSource.indexOf('id: "inventory"'),
-    "review step summaries should show 4단계 손실 before 5단계 재고",
+    "review step summaries should show 2단계 손실 before 5단계 재고",
   );
 
   assert.ok(

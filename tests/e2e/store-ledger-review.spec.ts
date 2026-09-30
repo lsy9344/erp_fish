@@ -489,6 +489,14 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   await page.goto(`/app/store-entry?storeId=${STORY_STORE_ID}&step=review`);
 
   const metrics = page.locator("section").filter({ hasText: "검토 요약" });
+  await expect(metrics.getByRole("heading", { level: 3 })).toHaveText([
+    "매입",
+    "손실",
+    "지출",
+    "근무인원/이름",
+    "재고",
+    "매출/결제",
+  ]);
   await expect(metrics).toContainText("매출/결제");
   await expect(metrics).toContainText("지출");
   await expect(metrics).toContainText("매입");
@@ -535,9 +543,9 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
     .locator("section")
     .filter({ hasText: "오늘 많이 팔린 품목" });
   await expect(topSoldSection).toBeVisible();
-  // 판매한 가격 입력 위치가 3단계 재고로 이동한 현재 안내를 검증한다.
+  // 판매한 가격 입력 위치가 5단계 재고로 이동한 현재 안내를 검증한다.
   await expect(topSoldSection).toContainText(
-    "추정 매출은 3단계 재고의 판매한 가격을 우선 사용합니다.",
+    "추정 매출은 5단계 재고의 판매한 가격을 우선 사용합니다.",
   );
   // 품목명은 Y축 눈금으로, 금액/수량 전환 버튼은 차트 토글로 노출된다.
   await expect(topSoldSection).toContainText(
@@ -556,7 +564,7 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   ).toHaveCount(0);
   await expect(
     topSoldSection.getByRole("link", {
-      name: "3단계 재고에서 판매한 가격 입력",
+      name: "5단계 재고에서 판매한 가격 입력",
     }),
   ).toHaveCount(0);
 
@@ -588,7 +596,7 @@ test("검토 화면은 지점장에게 민감 계산값 없이 합계 불일치�
   );
 });
 
-test("7단계 추정 매출은 3단계 재고에서 입력한 판매한 가격을 우선 반영한다", async ({
+test("7단계 추정 매출은 5단계 재고에서 입력한 판매한 가격을 우선 반영한다", async ({
   page,
 }) => {
   const suffix = randomUUID().slice(0, 8);
@@ -619,7 +627,7 @@ test("7단계 추정 매출은 3단계 재고에서 입력한 판매한 가격�
       updatedById: actorId,
     },
   });
-  // 3단계 재고에서 저장된 판매한 가격(StoreSalesPricePlan).
+  // 5단계 재고에서 저장된 판매한 가격(StoreSalesPricePlan).
   await prisma.storeSalesPricePlan.create({
     data: {
       storeId: STORY_STORE_ID,
@@ -643,14 +651,14 @@ test("7단계 추정 매출은 3단계 재고에서 입력한 판매한 가격�
   await expect(topSoldSection).toContainText(
     product.name.split(/\s+/).pop() ?? product.name,
   );
-  // 판매한 가격이 반영됐으므로 cost 폴백 표시와 3단계 재고 안내 링크가 없다.
+  // 판매한 가격이 반영됐으므로 cost 폴백 표시와 5단계 재고 안내 링크가 없다.
   // (섹션 상단 안내 문구의 "판매가 미반영"은 설명용이므로, li 대신 차트의 cost 폴백 산출물로 검증한다.)
   await expect(
     topSoldSection.getByText("판매가 미반영", { exact: true }),
   ).toHaveCount(0);
   await expect(
     topSoldSection.getByRole("link", {
-      name: "3단계 재고에서 판매한 가격 입력",
+      name: "5단계 재고에서 판매한 가격 입력",
     }),
   ).toHaveCount(0);
 });
@@ -709,7 +717,7 @@ test("검토 화면은 누락 항목 링크와 모바일 읽기 상태를 제공
     "href",
     new RegExp(`storeId=${STORY_STORE_ID}.*step=sales`),
   );
-  await expect(page.getByRole("link", { name: "3단계: 재고" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "5단계: 재고" })).toHaveAttribute(
     "href",
     new RegExp(`/app/store-entry/inventory\\?storeId=${STORY_STORE_ID}.*date=`),
   );

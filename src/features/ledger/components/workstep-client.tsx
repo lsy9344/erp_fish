@@ -115,20 +115,6 @@ function formatKrw(value: number) {
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
-function stepHref(
-  storeId: string,
-  closingDate: string,
-  step: "sales" | "cost" | "purchase" | "work" | "review",
-) {
-  const params = new URLSearchParams({
-    storeId,
-    date: getKstLedgerDateParam(closingDate),
-    step,
-  });
-
-  return `/app/store-entry?${params.toString()}`;
-}
-
 function hasSensitiveAccountingMetrics(
   data: WorkLedgerData,
 ): data is LedgerCostStepData {
@@ -472,7 +458,10 @@ export function WorkStepClient({
       .map((line) => line.employeeId)
       .filter((employeeId) => employeeId.length > 0),
   );
-  const nextStepHref = stepHref(ledger.storeId, ledger.closingDate, "sales");
+  const nextStepHref = `/app/store-entry/inventory?${new URLSearchParams({
+    storeId: ledger.storeId,
+    date: getKstLedgerDateParam(ledger.closingDate),
+  }).toString()}`;
   const guard = useUnsavedStepGuard({
     isDirty: isDirty || isLaborDirty,
     onSave: async () => {
@@ -524,8 +513,8 @@ export function WorkStepClient({
       <LedgerSaveStatus
         stepLabel={
           showSensitiveAccountingMetrics
-            ? "5단계 근무/인건비"
-            : "5단계: 근무인원/이름"
+            ? "4단계 근무/인건비"
+            : "4단계: 근무인원/이름"
         }
         authorDisplayName={ledger.authorDisplayName}
         updatedAt={ledger.updatedAt}

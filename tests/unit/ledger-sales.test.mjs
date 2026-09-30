@@ -264,7 +264,7 @@ test("sales payment step uses the requested order and removes field descriptions
   assert.doesNotMatch(source, /FieldDescription/);
   assert.doesNotMatch(source, /표시:/);
   assert.doesNotMatch(source, /현금 \(당일 지출 후\)/);
-  assert.doesNotMatch(source, /4단계 지출 합계/);
+  assert.doesNotMatch(source, /3단계 지출 합계/);
   assert.doesNotMatch(source, /결제 합계 차액/);
   assert.doesNotMatch(source, /hasPaymentDifference/);
   assert.doesNotMatch(source, /function\s+calculatePaymentDifference\s*\(/);

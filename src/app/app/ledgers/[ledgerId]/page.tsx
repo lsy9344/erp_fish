@@ -99,13 +99,13 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 
 const hqLedgerLabel = "본사 검토 장부";
 // 단계 순서 변경(2026-07-02): 본사 장부 상세 탭 순서를 지점 입력 순서
-// (매입>손실>재고>지출>근무>매출)와 동일하게 맞춘다.
+// (매입>손실>지출>근무>재고>매출)와 동일하게 맞춘다.
 const ledgerDetailTabs = [
   "purchases",
   "losses",
-  "inventory",
   "expenses",
   "work",
+  "inventory",
   "sales",
 ] as const;
 type LedgerDetailTab = (typeof ledgerDetailTabs)[number];
@@ -487,14 +487,14 @@ export default async function LedgerDetailPage({
             <TabsTrigger value="losses" className="min-h-9 px-3">
               손실
             </TabsTrigger>
-            <TabsTrigger value="inventory" className="min-h-9 px-3">
-              재고
-            </TabsTrigger>
             <TabsTrigger value="expenses" className="min-h-9 px-3">
               지출
             </TabsTrigger>
             <TabsTrigger value="work" className="min-h-9 px-3">
               근무
+            </TabsTrigger>
+            <TabsTrigger value="inventory" className="min-h-9 px-3">
+              재고
             </TabsTrigger>
             <TabsTrigger value="sales" className="min-h-9 px-3">
               매출/결제
@@ -538,25 +538,6 @@ export default async function LedgerDetailPage({
             />
           </TabsContent>
           <TabsContent
-            value="inventory"
-            className="mt-3 scroll-mt-16"
-            data-ledger-detail-panel="inventory"
-            forceMount
-          >
-            <InventoryStepClient
-              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
-              storeName={detail.storeName}
-              initialData={editInventoryData}
-              saveItemsAction={saveHqLedgerInventoryItems}
-              saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
-              convertInventoryAction={convertHqLedgerInventoryToFrozen}
-              showStepNavigation={false}
-              ledgerLabel={hqLedgerLabel}
-              hqEditReasonRequired
-              closedEditAllowed={closedEditAllowed}
-            />
-          </TabsContent>
-          <TabsContent
             value="expenses"
             className="mt-3 scroll-mt-16"
             data-ledger-detail-panel="expenses"
@@ -592,6 +573,25 @@ export default async function LedgerDetailPage({
               employeeOptions={employeeOptions}
               showStepNavigation={false}
               showSensitiveAccountingMetrics
+              ledgerLabel={hqLedgerLabel}
+              hqEditReasonRequired
+              closedEditAllowed={closedEditAllowed}
+            />
+          </TabsContent>
+          <TabsContent
+            value="inventory"
+            className="mt-3 scroll-mt-16"
+            data-ledger-detail-panel="inventory"
+            forceMount
+          >
+            <InventoryStepClient
+              key={`inventory-${inventoryData.id}-${inventoryData.status}`}
+              storeName={detail.storeName}
+              initialData={editInventoryData}
+              saveItemsAction={saveHqLedgerInventoryItems}
+              saveAdjustmentAction={saveHqLedgerInventoryAdjustment}
+              convertInventoryAction={convertHqLedgerInventoryToFrozen}
+              showStepNavigation={false}
               ledgerLabel={hqLedgerLabel}
               hqEditReasonRequired
               closedEditAllowed={closedEditAllowed}

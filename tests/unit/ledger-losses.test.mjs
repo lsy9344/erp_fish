@@ -762,7 +762,7 @@ test("ledger loss query action and UI contracts are wired", () => {
   assert.match(lossTermsSource, /recoveredAmount:\s*"떨이로 실제 판매한 금액"/);
   assert.match(
     lossTermsSource,
-    /recoveredAmountHelp:\s*"손실 수량과 떨이 판매액을 먼저 저장하세요\. 3단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다\."/,
+    /recoveredAmountHelp:\s*"손실 수량과 떨이 판매액을 먼저 저장하세요\. 5단계 재고에서 판매한 가격을 저장하면 손실액이 자동 확정됩니다\."/,
   );
   assert.match(componentSource, /clientKey/);
   assert.match(componentSource, /id:\s*""/);
@@ -808,7 +808,10 @@ test("ledger loss query action and UI contracts are wired", () => {
     "planned-price-sync.ts",
   );
   assert.match(plannedPriceSyncSource, /editableLedgerStatuses/);
-  assert.match(plannedPriceSyncSource, /ledgerStatuses\?:\s*readonly DailyLedgerStatus\[\]/);
+  assert.match(
+    plannedPriceSyncSource,
+    /ledgerStatuses\?:\s*readonly DailyLedgerStatus\[\]/,
+  );
   assert.match(plannedPriceSyncSource, /status:\s*\{\s*in:\s*\[/);
 });
 

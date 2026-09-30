@@ -5,8 +5,12 @@ import { PrismaClient } from "../../generated/prisma/index.js";
 const prisma = new PrismaClient();
 const STORE_ID = "store-gangnam";
 const PRODUCT_PREFIX = "재고계획 회귀";
+const EMPLOYEE_PREFIX = "재고계획 회귀 근무자";
+const EXPENSE_CODE_PREFIX = "재고계획 회귀 지출";
 const createdLedgerIds = new Set<string>();
 const createdProductIds = new Set<string>();
+const createdEmployeeIds = new Set<string>();
+const createdExpenseCodeIds = new Set<string>();
 
 function getTodayKstMidnight(inputDate = new Date()) {
   const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
@@ -68,6 +72,35 @@ async function seedProduct(defaultUnitPrice = 1_000) {
 
   createdProductIds.add(product.id);
   return product;
+}
+
+async function seedWorkEmployee() {
+  const employee = await prisma.employee.create({
+    data: {
+      name: `${EMPLOYEE_PREFIX} ${randomUUID().slice(0, 8)}`,
+      hireDate: getTodayKstMidnight(),
+      isActive: true,
+      position: "팀원",
+    },
+  });
+
+  createdEmployeeIds.add(employee.id);
+  return employee;
+}
+
+async function seedExpenseCode() {
+  const code = await prisma.ledgerInputCode.create({
+    data: {
+      group: "EXPENSE_ITEM",
+      name: `${EXPENSE_CODE_PREFIX} ${randomUUID().slice(0, 8)}`,
+      displayOrder: 99_000,
+      isActive: true,
+      updatedById: await getActorId(),
+    },
+  });
+
+  createdExpenseCodeIds.add(code.id);
+  return code;
 }
 
 async function createTodayLedger(
@@ -180,8 +213,28 @@ async function cleanupRegressionData() {
     },
     select: { id: true },
   });
+  const employees = await prisma.employee.findMany({
+    where: {
+      OR: [
+        { id: { in: [...createdEmployeeIds] } },
+        { name: { startsWith: EMPLOYEE_PREFIX } },
+      ],
+    },
+    select: { id: true },
+  });
+  const expenseCodes = await prisma.ledgerInputCode.findMany({
+    where: {
+      OR: [
+        { id: { in: [...createdExpenseCodeIds] } },
+        { name: { startsWith: EXPENSE_CODE_PREFIX } },
+      ],
+    },
+    select: { id: true },
+  });
   const ledgerIds = ledgers.map((ledger) => ledger.id);
   const productIds = products.map((product) => product.id);
+  const employeeIds = employees.map((employee) => employee.id);
+  const expenseCodeIds = expenseCodes.map((code) => code.id);
 
   if (ledgerIds.length > 0) {
     await prisma.auditLog.deleteMany({
@@ -224,8 +277,20 @@ async function cleanupRegressionData() {
     await prisma.product.deleteMany({ where: { id: { in: productIds } } });
   }
 
+  if (employeeIds.length > 0) {
+    await prisma.employee.deleteMany({ where: { id: { in: employeeIds } } });
+  }
+
+  if (expenseCodeIds.length > 0) {
+    await prisma.ledgerInputCode.deleteMany({
+      where: { id: { in: expenseCodeIds } },
+    });
+  }
+
   createdLedgerIds.clear();
   createdProductIds.clear();
+  createdEmployeeIds.clear();
+  createdExpenseCodeIds.clear();
 }
 
 test.beforeEach(cleanupRegressionData);
@@ -236,7 +301,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("재고 계획 미완료 직접 URL은 명시 지점과 자동 선택 지점 모두 재고 단계로 보낸다", async ({
+test("재고 계획 미완료 장부는 매출과 검토 직접 진입을 재고 단계로 보낸다", async ({
   page,
 }) => {
   const actorId = await getActorId();
@@ -245,21 +310,152 @@ test("재고 계획 미완료 직접 URL은 명시 지점과 자동 선택 지�
   await seedPurchase(ledger.id, product, actorId);
   await login(page);
 
-  await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=cost`);
-  await expect(page).toHaveURL(
-    /\/app\/store-entry\/inventory\?.*reason=inventory-plan-incomplete/,
-  );
-  await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
+  for (const step of ["sales", "review"]) {
+    await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=${step}`);
+    await expect(page).toHaveURL(
+      /\/app\/store-entry\/inventory\?.*reason=inventory-plan-incomplete/,
+    );
+    await expect(
+      page.getByRole("heading", { name: "재고 입력" }),
+    ).toBeVisible();
+  }
 
   await prisma.dailyLedger.update({
     where: { id: ledger.id },
     data: { status: "IN_REVIEW" },
   });
-  await page.goto("/app/store-entry?step=cost");
-  await expect(page).toHaveURL(
-    /\/app\/store-entry\/inventory\?.*reason=inventory-plan-incomplete/,
-  );
-  await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
+  for (const step of ["sales", "review"]) {
+    await page.goto(`/app/store-entry?step=${step}`);
+    await expect(page).toHaveURL(
+      /\/app\/store-entry\/inventory\?.*reason=inventory-plan-incomplete/,
+    );
+    await expect(
+      page.getByRole("heading", { name: "재고 입력" }),
+    ).toBeVisible();
+  }
+});
+
+test("재고 계획 미완료 장부도 지출·근무를 직접 저장하고 근무 다음은 재고로 간다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct();
+  const employee = await seedWorkEmployee();
+  const expenseCode = await seedExpenseCode();
+  const ledger = await createTodayLedger(actorId);
+  await seedPurchase(ledger.id, product, actorId);
+
+  await login(page);
+
+  await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=cost`);
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=cost/);
+
+  const stepLinks = page
+    .getByRole("region", { name: "장부 입력 단계" })
+    .getByRole("link");
+  await expect(stepLinks).toHaveText([
+    /1단계: 매입/,
+    /2단계: 손실\/폐기/,
+    /3단계: 지출/,
+    /4단계: 근무인원\/이름/,
+    /5단계: 재고/,
+    /6단계: 매출\/결제/,
+    /7단계: 검토\/제출/,
+  ]);
+  await expect(
+    page.getByRole("link", { name: /6단계: 매출\/결제/ }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByRole("link", { name: /7단계: 검토\/제출/ }),
+  ).toHaveAttribute("aria-disabled", "true");
+
+  await page.getByRole("button", { name: "항목 추가" }).click();
+  await page
+    .getByLabel("지출 항목", { exact: true })
+    .selectOption(expenseCode.id);
+  await page.getByRole("textbox", { name: "지출 금액" }).fill("1200");
+  await page
+    .locator('button[type="submit"]')
+    .filter({ hasText: "저장" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "지출 항목 1건을 저장했습니다." }),
+  ).toBeVisible();
+
+  expect(
+    await prisma.ledgerExpense.findFirst({
+      where: { dailyLedgerId: ledger.id, ledgerInputCodeId: expenseCode.id },
+      select: { amount: true },
+    }),
+  ).toEqual({ amount: 1_200 });
+
+  await page.goto(`/app/store-entry?storeId=${STORE_ID}&step=work`);
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=work/);
+  await page.getByRole("button", { name: "직원 추가" }).click();
+  await page.getByLabel("팀원 직원 선택").last().click();
+  await page.getByRole("option", { name: new RegExp(employee.name) }).click();
+  await page.getByRole("button", { name: "근무자 저장" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "근무자 1명을 저장했습니다." }),
+  ).toBeVisible();
+  expect(
+    await prisma.ledgerLaborItem.findFirst({
+      where: { dailyLedgerId: ledger.id, employeeId: employee.id },
+      select: { employeeId: true, workerName: true },
+    }),
+  ).toEqual({ employeeId: employee.id, workerName: employee.name });
+
+  await page
+    .getByRole("textbox", { name: "특이사항 메모" })
+    .fill("재고 전 단계 근무 메모");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "저장됐습니다." }),
+  ).toBeVisible();
+  expect(
+    await prisma.dailyLedger.findUnique({
+      where: { id: ledger.id },
+      select: { workMemo: true },
+    }),
+  ).toEqual({ workMemo: "재고 전 단계 근무 메모" });
+
+  await page.getByRole("button", { name: "다음 단계로 →" }).click();
+  await expect(page).toHaveURL(/\/app\/store-entry\/inventory\?/);
+});
+
+test("손실·폐기 다음 단계는 지출이다", async ({ page }) => {
+  const actorId = await getActorId();
+  const product = await seedProduct();
+  const ledger = await createTodayLedger(actorId);
+  await seedPurchase(ledger.id, product, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/losses?storeId=${STORE_ID}`);
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  await page.getByRole("button", { name: "다음 단계로 →" }).click();
+
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=cost/);
+});
+
+test("재고 단계에서 지출과 근무로 뒤로 이동할 때 재고 완료를 요구하지 않는다", async ({
+  page,
+}) => {
+  const actorId = await getActorId();
+  const product = await seedProduct();
+  const ledger = await createTodayLedger(actorId);
+  await seedPurchase(ledger.id, product, actorId);
+  await login(page);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await page.getByRole("link", { name: /3단계: 지출/ }).click();
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=cost/);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
+  await page.getByRole("link", { name: /4단계: 근무인원\/이름/ }).click();
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=work/);
 });
 
 test("여러 입고분 판매가와 당일재고를 모두 쓰면 후속 단계로 진행한다", async ({
@@ -275,7 +471,7 @@ test("여러 입고분 판매가와 당일재고를 모두 쓰면 후속 단계�
 
   await page.goto(`/app/store-entry/inventory?storeId=${STORE_ID}`);
   await page.getByLabel(`${product.name} 당일재고`, { exact: true }).fill("2");
-  await page.getByRole("link", { name: /4단계: 지출/ }).click();
+  await page.getByRole("link", { name: /6단계: 매출\/결제/ }).click();
   await expect(page).toHaveURL(/\/app\/store-entry\/inventory/);
   // 이동이 막힌 이유와 대상 품목을 경고 모달로 알린다.
   const priceBlockDialog = page.getByRole("dialog", {
@@ -314,12 +510,12 @@ test("여러 입고분 판매가와 당일재고를 모두 쓰면 후속 단계�
   await page.getByRole("tab", { name: "전체" }).click();
   await expect(lotPriceInputs.nth(0)).toHaveValue("2,000");
   await expect(lotPriceInputs.nth(1)).toHaveValue("2,500");
-  await page.getByRole("link", { name: /4단계: 지출/ }).click();
+  await page.getByRole("link", { name: /6단계: 매출\/결제/ }).click();
 
   await expect(
     page.getByRole("dialog", { name: "저장하지 않은 변경이 있습니다" }),
   ).toHaveCount(0);
-  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=cost/);
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=sales/);
 
   expect(
     await prisma.ledgerInventoryItem.count({
@@ -357,7 +553,7 @@ test("재고를 명시 저장한 뒤 다음 단계 이동은 버전과 감사로
   ).toBeVisible();
 
   await page.getByRole("button", { name: "다음 단계로 →" }).click();
-  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=cost/);
+  await expect(page).toHaveURL(/\/app\/store-entry\?.*step=sales/);
 
   expect(
     await prisma.dailyLedger.findUnique({
@@ -748,8 +944,8 @@ test("재고 계획 완료 상태는 매출을 연속 저장한 응답에서도 
     ).toBeVisible();
 
     for (const stepName of [
-      /4단계: 지출/,
-      /5단계: 근무인원\/이름/,
+      /3단계: 지출/,
+      /4단계: 근무인원\/이름/,
       /7단계: 검토\/제출/,
     ]) {
       await expect(

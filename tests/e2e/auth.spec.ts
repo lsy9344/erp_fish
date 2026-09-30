@@ -297,7 +297,7 @@ test("지점장 업무 진입점은 장부 저장 기능 없이 준비 화면으
   await expect(page).toHaveURL(/\/app\/store-entry\/inventory/);
   await expect(page.getByRole("heading", { name: "재고 입력" })).toBeVisible();
   await expect(page.getByText(/강남점 · 영업일:/)).toBeVisible();
-  await expect(page.getByRole("link", { name: /3단계: 재고/ })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: /5단계: 재고/ })).toHaveAttribute(
     "aria-current",
     "step",
   );

@@ -16,7 +16,7 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/app\//);
 }
 
-// 판매한 가격 입력은 3단계 재고 화면으로 통합됐다. 별도 "판매한 가격"
+// 판매한 가격 입력은 5단계 재고 화면으로 통합됐다. 별도 "판매한 가격"
 // 메뉴는 기본 지점장 네비게이션에서 제거되고, 기존 route는 재고 단계로 redirect한다.
 test("판매한 가격 메뉴가 기본 지점장 네비게이션에서 보이지 않는다", async ({
   page,
@@ -28,7 +28,7 @@ test("판매한 가격 메뉴가 기본 지점장 네비게이션에서 보이�
   await expect(page.getByRole("button", { name: "항목 추가" })).toBeVisible();
 });
 
-test("기존 판매한 가격 route는 storeId를 보존한 채 3단계 재고로 redirect한다", async ({
+test("기존 판매한 가격 route는 storeId를 보존한 채 5단계 재고로 redirect한다", async ({
   page,
 }) => {
   await login(page);

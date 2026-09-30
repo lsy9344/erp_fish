@@ -56,6 +56,34 @@ test("ledger-backed store entry steps share saved status for every step", () => 
   assert.match(navigationSource, /isBlockedByInventory/);
   assert.match(navigationSource, /저장됨/);
 
+  const expectedStepLabels = [
+    "1단계: 매입",
+    "2단계: 손실/폐기",
+    "3단계: 지출",
+    "4단계: 근무인원/이름",
+    "5단계: 재고",
+    "6단계: 매출/결제",
+    "7단계: 검토/제출",
+  ];
+  let previousLabelIndex = -1;
+  for (const label of expectedStepLabels) {
+    const labelIndex = navigationSource.indexOf(`label: "${label}"`);
+    assert.ok(
+      labelIndex > previousLabelIndex,
+      `${label} should keep the new step order`,
+    );
+    previousLabelIndex = labelIndex;
+  }
+
+  const inventoryGateSource = navigationSource.match(
+    /const stepsAfterInventory[\s\S]*?\]\);/,
+  )?.[0];
+  assert.ok(inventoryGateSource, "inventory gate step set should be declared");
+  assert.match(inventoryGateSource, /"sales"/);
+  assert.match(inventoryGateSource, /"review"/);
+  assert.doesNotMatch(inventoryGateSource, /"cost"/);
+  assert.doesNotMatch(inventoryGateSource, /"work"/);
+
   const saveStatusSource = readProjectFile(
     "src",
     "features",
@@ -128,12 +156,12 @@ test("ledger-backed store entry steps share saved status for every step", () => 
     );
     assert.doesNotMatch(
       source,
-      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*5단계: 재고\s*<\/li>/s,
+      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*3단계: 재고\s*<\/li>/s,
       `${component} should not hard-code an unsaved inventory step`,
     );
     assert.doesNotMatch(
       source,
-      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*4단계: 손실\/폐기\s*<\/li>/s,
+      /<li className="text-muted-foreground rounded-md border px-3 py-2 text-sm">\s*2단계: 손실\/폐기\s*<\/li>/s,
       `${component} should not hard-code an unsaved losses step`,
     );
   }
@@ -175,13 +203,13 @@ test("ledger-backed store entry steps share saved status for every step", () => 
       assert.match(source, /async function handleInventoryNavigation/);
       assert.match(
         source,
-        /targetStep === "cost"[\s\S]*targetStep === "work"[\s\S]*targetStep === "sales"[\s\S]*targetStep === "review"/,
+        /targetStep === "sales"[\s\S]*targetStep === "review"/,
       );
       assert.match(source, /if \(await saveCurrentDraft\(\)\)/);
       assert.match(source, /onNavigateAttempt=\{handleInventoryNavigation\}/);
       assert.match(
         source,
-        /handleInventoryNavigation\(\s*nextStepHref,\s*event\.currentTarget,\s*"cost",\s*\)/,
+        /handleInventoryNavigation\(\s*nextStepHref,\s*event\.currentTarget,\s*"sales",\s*\)/,
       );
     } else {
       assert.match(source, /onNavigateAttempt=\{guard\.requestNavigation\}/);

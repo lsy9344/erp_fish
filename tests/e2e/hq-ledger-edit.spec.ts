@@ -936,13 +936,21 @@ test("본사 장부 상세 탭을 클릭하면 6개 입력 섹션 카드로 각�
 
   const tabList = page.getByRole("tablist", { name: "장부 입력 섹션" });
   await expect(tabList).toBeVisible();
+  await expect(tabList.getByRole("tab")).toHaveText([
+    "매입",
+    "손실",
+    "지출",
+    "근무",
+    "재고",
+    "매출/결제",
+  ]);
 
   for (const [value, label] of [
     ["purchases", "매입"],
     ["losses", "손실"],
-    ["inventory", "재고"],
     ["expenses", "지출"],
     ["work", "근무"],
+    ["inventory", "재고"],
     ["sales", "매출/결제"],
   ] as const) {
     await tabList.evaluate((element) => {

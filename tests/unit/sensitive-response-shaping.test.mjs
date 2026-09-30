@@ -177,7 +177,7 @@ test("store manager response shaping recursively removes sensitive ledger metric
           },
           {
             id: "expenseTotal",
-            label: "4단계 지출 합계",
+            label: "3단계 지출 합계",
             value: 10_000,
             kind: "krw",
             status: "ok",
