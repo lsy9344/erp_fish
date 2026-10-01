@@ -431,6 +431,10 @@ function buildDailyMeetingPlannedSalesItems(
 export function getDailyMeetingReportDatePreset(
   value: unknown,
 ): DailyMeetingReportDatePreset {
+  if (value === "today") {
+    return "today";
+  }
+
   if (value === "yesterday") {
     return "yesterday";
   }
@@ -439,10 +443,14 @@ export function getDailyMeetingReportDatePreset(
     return "custom";
   }
 
-  return "today";
+  return "yesterday";
 }
 
 export function getDailyMeetingReportDateQuery(value: unknown) {
+  if (value === "today") {
+    return "today";
+  }
+
   if (value === "yesterday") {
     return "yesterday";
   }
@@ -451,7 +459,7 @@ export function getDailyMeetingReportDateQuery(value: unknown) {
     return value;
   }
 
-  return "today";
+  return "yesterday";
 }
 
 export function getDailyMeetingReportDate(
@@ -503,7 +511,7 @@ export function getDailyMeetingReportPath({
   dateQuery?: string;
 }) {
   return `/app/reports/daily?date=${encodeURIComponent(
-    dateQuery ?? datePreset ?? "today",
+    dateQuery ?? datePreset ?? "yesterday",
   )}`;
 }
 
@@ -1522,7 +1530,7 @@ export function buildProductProfitability(
 }
 
 export async function getHqDailyMeetingReport({
-  datePreset = "today",
+  datePreset = "yesterday",
   dateQuery,
   storeId,
 }: {

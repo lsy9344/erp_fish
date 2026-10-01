@@ -71,12 +71,11 @@ export function InventoryPositionReportTable({
               <TableHead className="w-[180px]">품목</TableHead>
               <TableHead>분류</TableHead>
               <TableHead>규격</TableHead>
-              <TableHead className="text-right">전일재고</TableHead>
+              <TableHead className="text-right">당일 판매량</TableHead>
+              <TableHead className="text-right">남은 재고</TableHead>
               <TableHead className="text-right">매입</TableHead>
               <TableHead className="text-right">손실</TableHead>
-              <TableHead className="text-right">남은 재고</TableHead>
-              <TableHead className="text-right">전산 재고</TableHead>
-              <TableHead className="text-right">당일 판매량</TableHead>
+              <TableHead className="text-right">전일재고</TableHead>
               <TableHead className="text-right">재고 금액</TableHead>
               <TableHead>상태</TableHead>
             </TableRow>
@@ -95,13 +94,8 @@ export function InventoryPositionReportTable({
                 </TableCell>
                 <TableCell>{row.productCategory || "—"}</TableCell>
                 <TableCell>{row.productSpec || "—"}</TableCell>
-                <HistoryQuantityCell
-                  row={row}
-                  dateInput={report.filters.dateInput}
-                  value={
-                    row.statusLabel === "미입력" ? null : row.previousQuantity
-                  }
-                />
+                <QuantityCell value={row.differenceQuantity} />
+                <QuantityCell value={row.currentQuantity} highlight />
                 <QuantityCell
                   value={
                     row.statusLabel === "미입력" ? null : row.purchasedQuantity
@@ -110,9 +104,13 @@ export function InventoryPositionReportTable({
                 <QuantityCell
                   value={row.statusLabel === "미입력" ? null : row.lossQuantity}
                 />
-                <QuantityCell value={row.currentQuantity} highlight />
-                <QuantityCell value={row.systemQuantity} />
-                <QuantityCell value={row.differenceQuantity} signed />
+                <HistoryQuantityCell
+                  row={row}
+                  dateInput={report.filters.dateInput}
+                  value={
+                    row.statusLabel === "미입력" ? null : row.previousQuantity
+                  }
+                />
                 <TableCell className="text-right tabular-nums">
                   <InventoryPositionHistoryDialog
                     row={row}
@@ -154,19 +152,27 @@ export function InventoryPositionReportTable({
 
             <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               <MobileMetric
+                label="당일 판매량"
+                value={formatQuantity(row.differenceQuantity)}
+              />
+              <MobileMetric
                 label="남은 재고"
                 value={formatQuantity(row.currentQuantity)}
               />
               <MobileMetric
-                label="재고 금액"
+                label="매입"
                 value={
-                  <InventoryPositionHistoryDialog
-                    row={row}
-                    dateInput={report.filters.dateInput}
-                    metricLabel="재고 금액"
-                    value={formatAmount(row.inventoryAmount)}
-                    align="left"
-                  />
+                  row.statusLabel === "미입력"
+                    ? "미입력"
+                    : formatQuantity(row.purchasedQuantity)
+                }
+              />
+              <MobileMetric
+                label="손실"
+                value={
+                  row.statusLabel === "미입력"
+                    ? "미입력"
+                    : formatQuantity(row.lossQuantity)
                 }
               />
               <MobileMetric
@@ -186,11 +192,15 @@ export function InventoryPositionReportTable({
                 }
               />
               <MobileMetric
-                label="매입"
+                label="재고 금액"
                 value={
-                  row.statusLabel === "미입력"
-                    ? "미입력"
-                    : formatQuantity(row.purchasedQuantity)
+                  <InventoryPositionHistoryDialog
+                    row={row}
+                    dateInput={report.filters.dateInput}
+                    metricLabel="재고 금액"
+                    value={formatAmount(row.inventoryAmount)}
+                    align="left"
+                  />
                 }
               />
             </dl>
@@ -201,22 +211,6 @@ export function InventoryPositionReportTable({
               </summary>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
                 <MobileMetric label="분류" value={row.productCategory || "—"} />
-                <MobileMetric
-                  label="손실"
-                  value={
-                    row.statusLabel === "미입력"
-                      ? "미입력"
-                      : formatQuantity(row.lossQuantity)
-                  }
-                />
-                <MobileMetric
-                  label="전산 재고"
-                  value={formatQuantity(row.systemQuantity)}
-                />
-                <MobileMetric
-                  label="당일 판매량"
-                  value={formatSignedQuantity(row.differenceQuantity)}
-                />
               </dl>
             </details>
           </article>
@@ -229,11 +223,9 @@ export function InventoryPositionReportTable({
 function QuantityCell({
   value,
   highlight = false,
-  signed = false,
 }: {
   value: number | null;
   highlight?: boolean;
-  signed?: boolean;
 }) {
   return (
     <TableCell
@@ -242,7 +234,7 @@ function QuantityCell({
         highlight ? "font-semibold" : undefined,
       )}
     >
-      {signed ? formatSignedQuantity(value) : formatQuantity(value)}
+      {formatQuantity(value)}
     </TableCell>
   );
 }
@@ -283,24 +275,6 @@ function StatusBadge({ status }: { status: InventoryPositionStatusLabel }) {
 
 function formatQuantity(value: number | null) {
   return value === null ? "계산 불가" : quantityFormatter.format(value);
-}
-
-function formatSignedQuantity(value: number | null) {
-  if (value === null) {
-    return "계산 불가";
-  }
-
-  const formatted = quantityFormatter.format(Math.abs(value));
-
-  if (value > 0) {
-    return `+${formatted}`;
-  }
-
-  if (value < 0) {
-    return `-${formatted}`;
-  }
-
-  return formatted;
 }
 
 function formatAmount(value: number | null) {

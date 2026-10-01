@@ -121,6 +121,13 @@ test("HQ inventory position report source files follow WO-08 boundaries", () => 
   assert.match(tableSource, /재고 금액/);
   assert.match(tableSource, />당일 판매량</);
   assert.match(tableSource, /label="당일 판매량"/);
+  assert.doesNotMatch(tableSource, /전산 재고/);
+  assert.doesNotMatch(tableSource, /formatSignedQuantity/);
+  assert.match(
+    tableSource,
+    /당일 판매량[\s\S]*남은 재고[\s\S]*매입[\s\S]*손실[\s\S]*전일재고/,
+  );
+  assert.match(querySource, /systemQuantity - currentQuantity/);
   assert.match(fifoDialogSource, /최근 1개월/);
   assert.match(fifoDialogSource, /전체/);
   assert.match(fifoDialogSource, /sourceBusinessDate/);
@@ -129,7 +136,7 @@ test("HQ inventory position report source files follow WO-08 boundaries", () => 
   assert.match(reportsNavSource, /\/app\/reports\/inventory/);
 });
 
-test("inventory position date range falls back to today for invalid input", async () => {
+test("inventory position date range falls back to yesterday for invalid input", async () => {
   const queryPath = assertProjectFile(
     "src",
     "features",
@@ -151,14 +158,14 @@ test("inventory position date range falls back to today for invalid input", asyn
     new Date("2026-06-22T16:00:00.000Z"),
   );
   // KST 기준 다음날(자정 UTC 변환)로 오늘을 잡는다.
-  assert.equal(fallback.dateInput, "2026-06-23");
-  assert.match(fallback.errorMessage ?? "", /조회 날짜를 확인/);
+  assert.equal(fallback.dateInput, "2026-06-22");
+  assert.match(fallback.errorMessage ?? "", /어제 날짜 기준/);
 
   const empty = getInventoryPositionDateRange(
     undefined,
     new Date("2026-06-22T16:00:00.000Z"),
   );
-  assert.equal(empty.dateInput, "2026-06-23");
+  assert.equal(empty.dateInput, "2026-06-22");
   assert.equal(empty.errorMessage, null);
 
   assert.equal(
@@ -211,7 +218,7 @@ test("inventory position export keeps allowlisted labels without leaking raw sen
         lossQuantity: 1,
         currentQuantity: 12,
         systemQuantity: 14,
-        differenceQuantity: -2,
+        differenceQuantity: 2,
         inventoryAmount: 120000,
         statusLabel: "입력됨",
       },

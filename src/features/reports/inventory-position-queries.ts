@@ -110,13 +110,13 @@ export function getInventoryPositionDateRange(
     };
   }
 
-  const today = getDailyMeetingReportDate("today", inputDate);
+  const yesterday = getDailyMeetingReportDate("yesterday", inputDate);
 
   return {
-    date: today,
-    dateInput: getDailyMeetingReportDateInput(today),
+    date: yesterday,
+    dateInput: getDailyMeetingReportDateInput(yesterday),
     errorMessage: hasDateInput
-      ? "조회 날짜를 확인해 주세요. 오늘 날짜 기준으로 조회합니다."
+      ? "조회 날짜를 확인해 주세요. 어제 날짜 기준으로 조회합니다."
       : null,
   };
 }
@@ -168,10 +168,11 @@ function toInventoryPositionRow({
     conversionInQuantity: item.conversionInQuantity,
     conversionOutQuantity: item.conversionOutQuantity,
   });
+  // 당일 판매량은 기준재고에서 남은 재고를 뺀 수량이다. 팔린 수량이 음수로 보이지 않는다.
   const differenceQuantity =
     currentQuantity === null || systemQuantity === null
       ? null
-      : currentQuantity - systemQuantity;
+      : systemQuantity - currentQuantity;
   // 재고 금액은 단순 곱셈(수량×단가)이 아니라 FIFO 엔진이 저장한 선입선출 잔액을 그대로
   // 사용한다(meeting/change.md:21). 단가가 다른 lot이 섞여도 재고 단계 팝업·LINE 요약과 동일
   // 기준이 된다. FIFO 금액이 아직 없는(미계산) 행은 "계산 불가"로 분리한다.

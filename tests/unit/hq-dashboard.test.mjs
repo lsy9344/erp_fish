@@ -512,7 +512,9 @@ test("HQ dashboard status and date helpers map story states", async () => {
     await import(pathToFileURL(queryPath).href);
 
   assert.equal(getDashboardDatePreset("yesterday"), "yesterday");
-  assert.equal(getDashboardDatePreset("tomorrow"), "today");
+  assert.equal(getDashboardDatePreset("today"), "today");
+  assert.equal(getDashboardDatePreset(undefined), "yesterday");
+  assert.equal(getDashboardDatePreset("tomorrow"), "yesterday");
 
   const today = getDashboardDate("today", new Date("2026-05-31T12:00:00Z"));
   const yesterday = getDashboardDate(

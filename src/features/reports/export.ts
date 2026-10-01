@@ -116,12 +116,11 @@ export const REPORT_EXPORT_COLUMN_ALLOWLISTS = {
     { key: "productName", label: "품목" },
     { key: "productCategory", label: "분류" },
     { key: "productSpec", label: "규격" },
-    { key: "previousQuantity", label: "전일재고" },
+    { key: "differenceQuantity", label: "당일 판매량" },
+    { key: "currentQuantity", label: "남은 재고" },
     { key: "purchasedQuantity", label: "매입" },
     { key: "lossQuantity", label: "손실" },
-    { key: "currentQuantity", label: "남은 재고" },
-    { key: "systemQuantity", label: "전산 재고" },
-    { key: "differenceQuantity", label: "당일 판매량" },
+    { key: "previousQuantity", label: "전일재고" },
     { key: "amount", label: "재고 금액" },
     { key: "statusLabel", label: "상태" },
   ],
@@ -366,14 +365,13 @@ export function buildInventoryPositionReportExport(
       productName: row.productName,
       productCategory: row.productCategory,
       productSpec: row.productSpec,
-      previousQuantity:
-        row.statusLabel === "미입력" ? "미입력" : row.previousQuantity,
+      differenceQuantity: formatExportQuantity(row.differenceQuantity),
+      currentQuantity: formatExportQuantity(row.currentQuantity),
       purchasedQuantity:
         row.statusLabel === "미입력" ? "미입력" : row.purchasedQuantity,
       lossQuantity: row.statusLabel === "미입력" ? "미입력" : row.lossQuantity,
-      currentQuantity: formatExportQuantity(row.currentQuantity),
-      systemQuantity: formatExportQuantity(row.systemQuantity),
-      differenceQuantity: formatExportSignedQuantity(row.differenceQuantity),
+      previousQuantity:
+        row.statusLabel === "미입력" ? "미입력" : row.previousQuantity,
       amount: row.inventoryAmount ?? "계산 불가",
       statusLabel: row.statusLabel,
     })),
@@ -498,14 +496,6 @@ export function buildHeadquartersLaborReportExport(
 
 function formatExportQuantity(value: number | null) {
   return value ?? "계산 불가";
-}
-
-function formatExportSignedQuantity(value: number | null) {
-  if (value === null) {
-    return "계산 불가";
-  }
-
-  return value > 0 ? `+${value}` : String(value);
 }
 
 export function buildReportCsv(exportData: ReportExportData) {

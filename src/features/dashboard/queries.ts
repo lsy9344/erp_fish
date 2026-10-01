@@ -381,7 +381,8 @@ function toDashboardLedgerRecord<T extends DashboardLedgerRecordSource>(
 }
 
 export function getDashboardDatePreset(value: unknown): DashboardDatePreset {
-  return value === "yesterday" ? "yesterday" : "today";
+  // 본사는 마감 다음 날 전일을 확인하므로, 날짜를 고르지 않으면 어제가 기본이다.
+  return value === "today" ? "today" : "yesterday";
 }
 
 export function getDashboardSortMode(value: unknown): DashboardSortMode {
@@ -506,7 +507,7 @@ export function getClosedLedgerFifoInventoryAmount(
 }
 
 export async function getHqDashboardRows({
-  datePreset = "today",
+  datePreset = "yesterday",
   sortMode = "priority",
   filterMode = "all",
 }: {

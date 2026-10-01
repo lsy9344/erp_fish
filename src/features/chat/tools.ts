@@ -614,11 +614,25 @@ async function runLaborReport(
 // 6. get_inventory_position — 재고 축
 // ---------------------------------------------------------------------------
 
+const INVENTORY_LIST_LIMIT = 120;
+
 const inventoryPositionArgs = z.object({
   date: dateField,
   storeName: z.string().optional(),
   limit: z.number().optional(),
 });
+
+function clampInventoryLimit(limit?: number) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return INVENTORY_LIST_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.trunc(limit), 1), INVENTORY_LIST_LIMIT);
+}
+
+function inventoryQuantity(value: number | null, statusLabel: string) {
+  return value ?? statusLabel;
+}
 
 async function runInventoryPosition(
   args: z.infer<typeof inventoryPositionArgs>,
@@ -641,10 +655,13 @@ async function runInventoryPosition(
     date: args.date,
     storeId: store.storeId ?? undefined,
   });
-  const limit = clampLimit(args.limit);
-  const rows = [...report.rows]
-    .sort((a, b) => (b.inventoryAmount ?? 0) - (a.inventoryAmount ?? 0))
-    .slice(0, limit);
+  const limit = clampInventoryLimit(args.limit);
+  const sorted = [...report.rows].sort(
+    (left, right) =>
+      left.storeName.localeCompare(right.storeName, "ko-KR") ||
+      left.productName.localeCompare(right.productName, "ko-KR"),
+  );
+  const rows = sorted.slice(0, limit);
 
   return {
     ok: true,
@@ -652,14 +669,29 @@ async function runInventoryPosition(
       기준일: report.range.dateInput,
       지점: report.filters.storeName ?? "전체",
       요약: report.summary,
-      상위품목: rows.map((row) => ({
-        지점: row.storeName,
-        품목: row.productName,
-        규격: row.productSpec,
-        수량: row.currentQuantity,
-        재고금액: row.inventoryAmount,
-        상태: row.statusLabel,
-      })),
+      전체행수: report.rows.length,
+      표시행수: rows.length,
+      잘린행수: report.rows.length - rows.length,
+      품목별: rows.map((row) => {
+        const missing = row.statusLabel === "미입력";
+
+        return {
+          지점: row.storeName,
+          품목: row.productName,
+          규격: row.productSpec,
+          전일재고: missing ? "미입력" : row.previousQuantity,
+          매입: missing ? "미입력" : row.purchasedQuantity,
+          손실: missing ? "미입력" : row.lossQuantity,
+          남은재고: inventoryQuantity(row.currentQuantity, row.statusLabel),
+          당일판매량: inventoryQuantity(
+            row.differenceQuantity,
+            row.statusLabel,
+          ),
+          재고금액: row.inventoryAmount ?? row.statusLabel,
+          상태: row.statusLabel,
+        };
+      }),
+      주의: "당일판매량은 기준재고에서 남은 재고를 뺀 수량입니다. POS 판매 수량과 다를 수 있습니다. 잘린행수가 0보다 크면 일부만 보여 준 것이므로 그 사실을 밝히고 지점을 좁혀 다시 조회하라고 안내하세요.",
       안내: report.errorMessages,
     },
   };
@@ -1006,13 +1038,20 @@ export const CHAT_TOOLS: ChatTool[] = [
   }),
   defineTool({
     name: "get_inventory_position",
-    description: "특정 일자의 지점·품목별 재고 수량과 재고금액 상위 N개.",
+    description:
+      "특정 일자의 지점·품목별 전일재고, 남은 재고, 당일 판매량을 조회한다. 전일·어제 재고나 판매 수량을 물으면 어제 날짜를 date에 넣는다. 지점을 생략하면 권한 안 지점을 지점별로 나눠 돌려준다.",
     parameters: {
       type: "object",
       properties: {
-        date: { type: "string", description: "기준일 YYYY-MM-DD" },
+        date: {
+          type: "string",
+          description: "기준일 YYYY-MM-DD. 전일이면 어제.",
+        },
         storeName: storeNameParam,
-        limit: { type: "number", description: "상위 개수 1~20. 기본 5." },
+        limit: {
+          type: "number",
+          description: "품목 행 수 1~120. 생략하면 최대 120행.",
+        },
       },
       required: ["date"],
     },

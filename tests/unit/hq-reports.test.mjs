@@ -2303,9 +2303,12 @@ test("HQ daily meeting report date helpers normalize KST operating dates", async
   } = await import(pathToFileURL(queryPath).href);
 
   assert.equal(getDailyMeetingReportDatePreset("yesterday"), "yesterday");
+  assert.equal(getDailyMeetingReportDatePreset("today"), "today");
+  assert.equal(getDailyMeetingReportDatePreset(undefined), "yesterday");
   assert.equal(getDailyMeetingReportDatePreset("2026-05-31"), "custom");
   assert.equal(getDailyMeetingReportDateQuery("2026-05-31"), "2026-05-31");
-  assert.equal(getDailyMeetingReportDateQuery("unknown"), "today");
+  assert.equal(getDailyMeetingReportDateQuery("today"), "today");
+  assert.equal(getDailyMeetingReportDateQuery("unknown"), "yesterday");
   assert.equal(
     getDailyMeetingReportDate(
       "today",
