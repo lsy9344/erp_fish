@@ -1,4 +1,7 @@
-import type { Prisma } from "../../../generated/prisma/index.ts";
+import {
+  StoreAccessMode,
+  type Prisma,
+} from "../../../generated/prisma/index.js";
 
 import type { ReportExportSheet } from "./export.ts";
 import { buildPeriodTrendColumns } from "./period-analysis.ts";
@@ -106,6 +109,13 @@ export type SourceWorkbookBuildInput = {
   includePersonnel?: boolean;
 };
 
+export type FullSourceWorkbookExportData = {
+  templateBytes: Uint8Array;
+  sourceSheet: ReportExportSheet;
+  scopedStoreIds: string[];
+  additionalPersonnelSheet?: ReportExportSheet;
+};
+
 export type SourceWorkbookPersonnelRow = {
   businessDate: string;
   storeName: string;
@@ -130,6 +140,9 @@ const SOURCE_NUMBER_FORMATS: Record<string, string> = {
   workerCount: "#,##0.0",
   salesDifference: "#,##0",
 };
+
+const FULL_HISTORICAL_PAGE_SIZE = 500;
+const FULL_HISTORICAL_BATCH_SIZE = 4;
 
 function toExcelValue(value: unknown): SourceWorkbookValue {
   if (value === null || value === undefined) return null;
@@ -530,13 +543,25 @@ async function operationalFact(
   } satisfies OperationalSourceFact;
 }
 
-export async function getSourceWorkbookSheets({
+type SourceWorkbookLoadOptions = {
+  dateRanges: Array<{ startDate: string; endDate: string }> | null;
+  storeId?: string | null;
+  includeInactiveStores?: boolean;
+  includeTemplateBytes?: boolean;
+};
+
+type SourceWorkbookLoadResult = {
+  templateBytes: Uint8Array | null;
+  sheets: ReportExportSheet[];
+  scopedStoreIds: string[];
+};
+
+async function loadSourceWorkbookData({
   dateRanges,
   storeId,
-}: {
-  dateRanges: Array<{ startDate: string; endDate: string }>;
-  storeId?: string | null;
-}): Promise<ReportExportSheet[]> {
+  includeInactiveStores = false,
+  includeTemplateBytes = false,
+}: SourceWorkbookLoadOptions): Promise<SourceWorkbookLoadResult> {
   const {
     getHeadquartersStoreScope,
     hasActionPermission,
@@ -551,40 +576,119 @@ export async function getSourceWorkbookSheets({
     "LABOR_VIEW",
   );
   const scope = await getHeadquartersStoreScope();
-  if (storeId && !scope.storeIds.includes(storeId)) return [];
-  const selectedStoreIds = storeId ? [storeId] : scope.storeIds;
-  if (dateRanges.length === 0 || selectedStoreIds.length === 0) return [];
-  const activeBatch = await db.historicalExcelImportBatch.findFirst({
-    where: { status: "ACTIVE" },
-    select: { id: true },
-  });
+  if (storeId && !scope.storeIds.includes(storeId)) {
+    return { templateBytes: null, sheets: [], scopedStoreIds: [] };
+  }
+  if (includeInactiveStores && scope.mode !== StoreAccessMode.ALL_STORES) {
+    return { templateBytes: null, sheets: [], scopedStoreIds: [] };
+  }
+  const selectedStoreIds = storeId
+    ? [storeId]
+    : includeInactiveStores
+      ? (
+          await db.store.findMany({
+            select: { id: true },
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+          })
+        ).map((store) => store.id)
+      : scope.storeIds;
+  if (dateRanges?.length === 0) {
+    return {
+      templateBytes: null,
+      sheets: [],
+      scopedStoreIds: selectedStoreIds,
+    };
+  }
+  if (selectedStoreIds.length === 0) {
+    return { templateBytes: null, sheets: [], scopedStoreIds: [] };
+  }
+  const activeBatch = includeTemplateBytes
+    ? await db.historicalExcelImportBatch.findFirst({
+        where: { status: "ACTIVE" },
+        select: { id: true, sourceWorkbook: true },
+      })
+    : await db.historicalExcelImportBatch.findFirst({
+        where: { status: "ACTIVE" },
+        select: { id: true },
+      });
 
-  const [historicalRows, ledgers] = await Promise.all([
-    activeBatch
-      ? db.historicalDailyFact.findMany({
-          where: {
-            batchId: activeBatch.id,
-            storeId: { in: selectedStoreIds },
-            OR: dateRanges.map(({ startDate, endDate }) => ({
-              businessDate: {
-                gte: dateValue(startDate),
-                lte: new Date(`${endDate}T23:59:59.999Z`),
-              },
-            })),
+  const dateFilter = dateRanges
+    ? {
+        OR: dateRanges.map(({ startDate, endDate }) => ({
+          businessDate: {
+            gte: dateValue(startDate),
+            lte: new Date(`${endDate}T23:59:59.999Z`),
           },
-          select: historicalFactSelect,
-          orderBy: [{ businessDate: "asc" }, { storeId: "asc" }],
-        })
-      : [],
-    db.dailyLedger.findMany({
-      where: {
-        storeId: { in: selectedStoreIds },
+        })),
+      }
+    : {};
+  const closingDateFilter = dateRanges
+    ? {
         OR: dateRanges.map(({ startDate, endDate }) => ({
           closingDate: {
             gte: dateValue(startDate),
             lte: new Date(`${endDate}T23:59:59.999Z`),
           },
         })),
+      }
+    : {};
+
+  const historicalRowsPromise = (async () => {
+    if (!activeBatch) return [] as HistoricalFactRecord[];
+
+    const where = {
+      batchId: activeBatch.id,
+      storeId: { in: selectedStoreIds },
+      ...dateFilter,
+    };
+    if (dateRanges !== null) {
+      return (await db.historicalDailyFact.findMany({
+        where,
+        select: historicalFactSelect,
+        orderBy: [{ businessDate: "asc" }, { storeId: "asc" }],
+      })) as HistoricalFactRecord[];
+    }
+
+    // The full workbook includes the imported history, which is large enough
+    // for one relation-heavy Prisma query to exceed PostgreSQL's stack limit.
+    // Keep each page small while retaining a deterministic complete ordering.
+    const total = await db.historicalDailyFact.count({ where });
+    const rows: HistoricalFactRecord[] = [];
+    for (
+      let skip = 0;
+      skip < total;
+      skip += FULL_HISTORICAL_PAGE_SIZE * FULL_HISTORICAL_BATCH_SIZE
+    ) {
+      const pages = await Promise.all(
+        Array.from({ length: FULL_HISTORICAL_BATCH_SIZE }, (_, pageIndex) => {
+          const pageSkip = skip + pageIndex * FULL_HISTORICAL_PAGE_SIZE;
+          if (pageSkip >= total) return Promise.resolve(null);
+          return db.historicalDailyFact.findMany({
+            where,
+            select: historicalFactSelect,
+            orderBy: [
+              { businessDate: "asc" },
+              { storeId: "asc" },
+              { id: "asc" },
+            ],
+            take: FULL_HISTORICAL_PAGE_SIZE,
+            skip: pageSkip,
+          });
+        }),
+      );
+      for (const page of pages) {
+        if (page) rows.push(...(page as HistoricalFactRecord[]));
+      }
+    }
+    return rows;
+  })();
+
+  const [historicalRows, ledgers] = await Promise.all([
+    historicalRowsPromise,
+    db.dailyLedger.findMany({
+      where: {
+        storeId: { in: selectedStoreIds },
+        ...closingDateFilter,
       },
       select: sourceLedgerSelect,
       orderBy: [{ closingDate: "asc" }, { storeId: "asc" }],
@@ -595,19 +699,17 @@ export async function getSourceWorkbookSheets({
     selectedStoreIds,
   );
 
-  const historicalFacts = (historicalRows as HistoricalFactRecord[]).map(
-    (row) => ({
-      storeId: row.storeId,
-      storeName: row.sourceStoreName,
-      businessDate: row.businessDate.toISOString().slice(0, 10),
-      rawCells: row.sourceRawRow.rawCells as { values: unknown[] },
-      roles: row.dailyRoles.map((role) => ({
-        role: role.role,
-        slotNumber: role.slotNumber,
-        originalName: role.originalName,
-      })),
-    }),
-  );
+  const historicalFacts = historicalRows.map((row) => ({
+    storeId: row.storeId,
+    storeName: row.sourceStoreName,
+    businessDate: row.businessDate.toISOString().slice(0, 10),
+    rawCells: row.sourceRawRow.rawCells as { values: unknown[] },
+    roles: row.dailyRoles.map((role) => ({
+      role: role.role,
+      slotNumber: role.slotNumber,
+      originalName: role.originalName,
+    })),
+  }));
   const operationalFacts = await Promise.all(
     ledgers.map((ledger) =>
       operationalFact(
@@ -621,7 +723,17 @@ export async function getSourceWorkbookSheets({
     operationalFacts,
     includePersonnel,
   });
-  if (!includePersonnel) return [sourceSheet];
+  const templateBytes =
+    includeTemplateBytes && activeBatch && "sourceWorkbook" in activeBatch
+      ? new Uint8Array(activeBatch.sourceWorkbook as Uint8Array)
+      : null;
+  if (!includePersonnel) {
+    return {
+      templateBytes,
+      sheets: [sourceSheet],
+      scopedStoreIds: selectedStoreIds,
+    };
+  }
 
   const personnelRows: SourceWorkbookPersonnelRow[] = [
     ...historicalFacts.flatMap((fact) =>
@@ -655,7 +767,58 @@ export async function getSourceWorkbookSheets({
     (row) => row.source === "operational",
   );
 
-  return hasOverflow || hasOperationalPersonnel
-    ? [sourceSheet, buildSourceWorkbookPersonnelSheet(personnelRows)]
-    : [sourceSheet];
+  return {
+    templateBytes,
+    sheets:
+      hasOverflow || hasOperationalPersonnel
+        ? [sourceSheet, buildSourceWorkbookPersonnelSheet(personnelRows)]
+        : [sourceSheet],
+    scopedStoreIds: selectedStoreIds,
+  };
+}
+
+export async function getSourceWorkbookSheets({
+  dateRanges,
+  storeId,
+}: {
+  dateRanges: Array<{ startDate: string; endDate: string }>;
+  storeId?: string | null;
+}): Promise<ReportExportSheet[]> {
+  const result = await loadSourceWorkbookData({ dateRanges, storeId });
+  return result.sheets;
+}
+
+export async function getFullSourceWorkbookExportData(): Promise<FullSourceWorkbookExportData> {
+  const result = await loadSourceWorkbookData({
+    dateRanges: null,
+    includeInactiveStores: true,
+    includeTemplateBytes: true,
+  });
+  const sourceSheet = result.sheets[0];
+  if (!result.templateBytes || !sourceSheet) {
+    throw new Error("활성 과거 엑셀 자료가 없습니다.");
+  }
+  const personnelSheet = result.sheets[1];
+  const additionalPersonnelRows = personnelSheet?.rows.filter((row) => {
+    const source = row.source;
+    const role = row.role;
+    const slotNumber = row.slotNumber;
+    return (
+      source === "ERP" ||
+      (role === "팀장" && typeof slotNumber === "number" && slotNumber > 2) ||
+      (role === "팀원" && typeof slotNumber === "number" && slotNumber > 11)
+    );
+  });
+
+  return {
+    templateBytes: result.templateBytes,
+    sourceSheet,
+    scopedStoreIds: result.scopedStoreIds,
+    additionalPersonnelSheet:
+      personnelSheet &&
+      additionalPersonnelRows &&
+      additionalPersonnelRows.length > 0
+        ? { ...personnelSheet, rows: additionalPersonnelRows }
+        : undefined,
+  };
 }

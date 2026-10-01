@@ -8,6 +8,7 @@ import {
   PermissionAction,
   PrismaClient,
   StoreAccessMode,
+  type Prisma,
 } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
@@ -20,6 +21,38 @@ const PERIOD_CONTRAST_STORE_ID = "store-api-period-contrast";
 const PERIOD_CONTRAST_STORE_NAME = "API 기간대조 테스트 지점";
 const CSV_ESCAPE_STORE_ID = "store-api-export-csv-escaping";
 const CSV_ESCAPE_STORE_NAME = '=SUM(1,1), "quoted"';
+const FULL_EXPORT_BATCH_ID = "api-full-workbook-batch";
+const FULL_EXPORT_ACTIVE_STORE_ID = "store-api-full-workbook-active";
+const FULL_EXPORT_INACTIVE_STORE_ID = "store-api-full-workbook-inactive";
+const FULL_EXPORT_ACTIVE_STORE_NAME = "API 전체자료 활성점";
+const FULL_EXPORT_INACTIVE_STORE_NAME = "API 전체자료 비활성점";
+const FULL_EXPORT_SHEET_NAMES = [
+  "입력",
+  "분석",
+  "매장 별(년도)",
+  "매장 별(달)",
+  "매출",
+  "매출이익",
+  "이익률",
+  "인당생산성",
+  "평균 재고",
+  "Sheet3",
+];
+const SOURCE_WORKBOOK_HEADERS = [
+  "일자",
+  "요일",
+  "매장",
+  "매출",
+  "매출이익",
+  "마진율",
+  "영업이익",
+  "인당생산성",
+  "근무인원",
+  "팀장",
+  "팀장",
+  ...Array.from({ length: 11 }, () => "팀원"),
+  "매출차액",
+];
 const THIRTY_PERCENT_EXPORT_PATTERN =
   /30[%_-]?단가|thirty[_-]?percent|thirty[_-]?percent[_-]?unit[_-]?price|price[_-]?30|margin[_-]?30/i;
 const SENSITIVE_RESPONSE_PATTERN =
@@ -315,6 +348,140 @@ test.describe("Report export API", () => {
     }
 
     await expectNoReportExportAudit();
+  });
+
+  test("[P0] full workbook export requires labor view and all-store access", async ({
+    request,
+  }) => {
+    await seedAssignedExporterProfile({ includeLaborView: true });
+
+    for (const email of [
+      "hq@example.com",
+      "hq-assigned@example.com",
+      "manager@example.com",
+    ]) {
+      await signInForApi(request, email);
+      const response = await request.get(
+        "/api/reports/export-all?storeId=store-gangnam&from=2099-01-01",
+      );
+      const body = (await response.json()) as ForbiddenPayload;
+
+      expect(response.status(), email).toBe(403);
+      expect(response.headers()["content-disposition"], email).toBeUndefined();
+      expect(response.headers()["cache-control"], email).toBe("no-store");
+      expect(body, email).toEqual({
+        error: "forbidden",
+        message: "export 권한이 없습니다.",
+      });
+      assertSafeForbiddenBody(body);
+    }
+
+    await expectNoReportExportAudit();
+  });
+
+  test("[P0] full workbook export keeps the original ten sheets and all ERP rows", async ({
+    request,
+  }) => {
+    await seedFullWorkbookFixture();
+
+    try {
+      await signInForApi(request, "owner@example.com");
+      const response = await request.get(
+        "/api/reports/export-all?storeId=store-gangnam&from=2099-01-01&to=2099-01-02",
+      );
+      expect(response.status()).toBe(200);
+      expect(response.headers()["content-type"]).toContain(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      expect(response.headers()["content-disposition"]).toContain(
+        'filename="erp-fish-full-data.xlsx"',
+      );
+      expect(response.headers()["cache-control"]).toBe("no-store");
+
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const bytes = new Uint8Array(await response.body());
+      await workbook.xlsx.load(
+        bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ),
+      );
+
+      expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(
+        FULL_EXPORT_SHEET_NAMES,
+      );
+      const input = workbook.getWorksheet("입력");
+      expect(input).toBeTruthy();
+      expect((input!.getRow(1).values as unknown[]).slice(1)).toEqual(
+        SOURCE_WORKBOOK_HEADERS,
+      );
+
+      const rows = Array.from({ length: input!.rowCount - 1 }, (_, index) => {
+        const row = input!.getRow(index + 2);
+        return {
+          store: row.getCell(3).value,
+          sales: row.getCell(4).value,
+        };
+      });
+      const fixtureStoreNames = [
+        FULL_EXPORT_ACTIVE_STORE_NAME,
+        FULL_EXPORT_INACTIVE_STORE_NAME,
+      ];
+      const fixtureRows = rows.filter(
+        ({ store }) =>
+          typeof store === "string" && fixtureStoreNames.includes(store),
+      );
+      expect(fixtureRows).toHaveLength(4);
+      expect(rows.length).toBeGreaterThanOrEqual(fixtureRows.length);
+      expect(fixtureRows).toContainEqual({
+        store: FULL_EXPORT_ACTIVE_STORE_NAME,
+        sales: 300,
+      });
+      expect(fixtureRows).toContainEqual({
+        store: FULL_EXPORT_INACTIVE_STORE_NAME,
+        sales: 500,
+      });
+      expect(fixtureRows).not.toContainEqual({
+        store: FULL_EXPORT_ACTIVE_STORE_NAME,
+        sales: 100,
+      });
+      const detail = workbook.getWorksheet("Sheet3");
+      expect(detail).toBeTruthy();
+      if (!detail) throw new Error("Sheet3 is missing from the export.");
+      const detailText = Array.from({ length: detail.rowCount }, (_, index) => {
+        const row = detail.getRow(index + 1);
+        return Array.from(
+          { length: row.cellCount },
+          (_, cellIndex) => row.getCell(cellIndex + 1).text,
+        ).join(" ");
+      }).join(" ");
+      expect(detailText).toContain("API ERP 직원");
+      expect(detailText).toContain("API 역사 초과 슬롯 직원");
+
+      const owner = await prisma.user.findUniqueOrThrow({
+        where: { email: "owner@example.com" },
+        select: { id: true },
+      });
+      const audit = await prisma.auditLog.findFirst({
+        where: {
+          targetType: "ReportExport",
+          targetId: "full-customer-workbook",
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit?.actorId).toBe(owner.id);
+      expect(audit?.after).toMatchObject({
+        export: "full-customer-workbook",
+        format: "xlsx",
+        filename: "erp-fish-full-data.xlsx",
+      });
+      expect(audit?.after).toMatchObject({
+        inputRowCount: rows.length,
+      });
+    } finally {
+      await cleanupFullWorkbookFixture();
+    }
   });
 
   test("[P0] blocks requested store ids outside the resolved report scope", async ({
@@ -1047,6 +1214,255 @@ function getTodayKstInput() {
 
 function getCurrentMonthInput() {
   return getTodayKstInput().slice(0, 7);
+}
+
+async function seedFullWorkbookFixture() {
+  await cleanupFullWorkbookFixture();
+
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  for (const [id, name, isActive] of [
+    [FULL_EXPORT_ACTIVE_STORE_ID, FULL_EXPORT_ACTIVE_STORE_NAME, true],
+    [FULL_EXPORT_INACTIVE_STORE_ID, FULL_EXPORT_INACTIVE_STORE_NAME, false],
+  ] as const) {
+    await prisma.store.create({
+      data: { id, name, isActive, updatedById: actor.id },
+    });
+  }
+
+  const ExcelJS = (await import("exceljs")).default;
+  const template = new ExcelJS.Workbook();
+  for (const sheetName of FULL_EXPORT_SHEET_NAMES) {
+    template.addWorksheet(sheetName);
+  }
+  const input = template.getWorksheet("입력")!;
+  input.addRow(SOURCE_WORKBOOK_HEADERS);
+  input.addRow([
+    new Date("2020-01-01T00:00:00.000Z"),
+    "수",
+    FULL_EXPORT_ACTIVE_STORE_NAME,
+    100,
+    30,
+    0.3,
+    20,
+    50,
+    2,
+  ]);
+  const sourceWorkbook = new Uint8Array(await template.xlsx.writeBuffer());
+
+  await prisma.historicalExcelImportBatch.create({
+    data: {
+      id: FULL_EXPORT_BATCH_ID,
+      fileHash: "api-full-workbook-hash",
+      sourceFileName: "full-workbook-fixture.xlsx",
+      sourceFileSize: sourceWorkbook.byteLength,
+      sourceWorkbook,
+      status: "ACTIVE",
+      sheetCount: FULL_EXPORT_SHEET_NAMES.length,
+      rawRowCount: 3,
+      canonicalFactCount: 3,
+      roleCount: 0,
+      sourceNameCount: 2,
+      duplicateStoreDateCount: 0,
+      validationSummary: { validation: "APPROVED" },
+      stagedAt: new Date(),
+      activatedAt: new Date(),
+    },
+  });
+
+  const historicalRows = [
+    {
+      id: "api-full-workbook-raw-active-overlap",
+      factId: "api-full-workbook-fact-active-overlap",
+      storeId: FULL_EXPORT_ACTIVE_STORE_ID,
+      storeName: FULL_EXPORT_ACTIVE_STORE_NAME,
+      date: "2020-01-01",
+      sales: 100,
+    },
+    {
+      id: "api-full-workbook-raw-active-history",
+      factId: "api-full-workbook-fact-active-history",
+      storeId: FULL_EXPORT_ACTIVE_STORE_ID,
+      storeName: FULL_EXPORT_ACTIVE_STORE_NAME,
+      date: "2020-01-02",
+      sales: 200,
+    },
+    {
+      id: "api-full-workbook-raw-inactive-history",
+      factId: "api-full-workbook-fact-inactive-history",
+      storeId: FULL_EXPORT_INACTIVE_STORE_ID,
+      storeName: FULL_EXPORT_INACTIVE_STORE_NAME,
+      date: "2020-01-01",
+      sales: 400,
+    },
+  ];
+  for (const [index, row] of historicalRows.entries()) {
+    await prisma.historicalExcelRawRow.create({
+      data: {
+        id: row.id,
+        batchId: FULL_EXPORT_BATCH_ID,
+        sheetIndex: 0,
+        sheetName: "입력",
+        rowNumber: index + 2,
+        rawCells: {
+          values: fullExportSourceValues(row),
+        },
+      },
+    });
+    await prisma.historicalDailyFact.create({
+      data: {
+        id: row.factId,
+        batchId: FULL_EXPORT_BATCH_ID,
+        sourceRawRowId: row.id,
+        storeId: row.storeId,
+        sourceStoreName: row.storeName,
+        businessDate: new Date(`${row.date}T00:00:00.000Z`),
+        salesAmount: row.sales,
+        grossProfit: row.sales * 0.3,
+        grossMarginRate: 0.3,
+        sourceOperatingProfit: row.sales * 0.2,
+        productivity: row.sales / 2,
+        workerCount: 2,
+        metricStatus: {},
+      },
+    });
+  }
+
+  const overflowEmployee = await prisma.historicalEmployee.create({
+    data: {
+      id: "api-full-workbook-overflow-employee",
+      batchId: FULL_EXPORT_BATCH_ID,
+      originalName: "API 역사 초과 슬롯 직원",
+      firstSeenWorkDate: new Date("2020-01-02T00:00:00.000Z"),
+      lastSeenWorkDate: new Date("2020-01-02T00:00:00.000Z"),
+      leadRoleCount: 1,
+      storeNames: [FULL_EXPORT_ACTIVE_STORE_NAME],
+    },
+  });
+  await prisma.historicalEmployeeDailyRole.create({
+    data: {
+      id: "api-full-workbook-overflow-role",
+      batchId: FULL_EXPORT_BATCH_ID,
+      historicalEmployeeId: overflowEmployee.id,
+      dailyFactId: "api-full-workbook-fact-active-history",
+      sourceRawRowId: "api-full-workbook-raw-active-history",
+      businessDate: new Date("2020-01-02T00:00:00.000Z"),
+      storeId: FULL_EXPORT_ACTIVE_STORE_ID,
+      role: "LEAD",
+      slotNumber: 3,
+      originalName: "API 역사 초과 슬롯 직원",
+    },
+  });
+
+  await prisma.dailyLedger.createMany({
+    data: [
+      {
+        storeId: FULL_EXPORT_ACTIVE_STORE_ID,
+        closingDate: new Date("2020-01-01T00:00:00.000Z"),
+        status: "IN_REVIEW",
+        totalSalesAmount: 300,
+        cashAmount: 300,
+        workerCount: 2,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+      {
+        storeId: FULL_EXPORT_INACTIVE_STORE_ID,
+        closingDate: new Date("2020-01-03T00:00:00.000Z"),
+        status: "IN_REVIEW",
+        totalSalesAmount: 500,
+        cashAmount: 500,
+        workerCount: 2,
+        createdById: actor.id,
+        updatedById: actor.id,
+      },
+    ],
+  });
+  const operationalLedger = await prisma.dailyLedger.findUniqueOrThrow({
+    where: {
+      storeId_closingDate: {
+        storeId: FULL_EXPORT_INACTIVE_STORE_ID,
+        closingDate: new Date("2020-01-03T00:00:00.000Z"),
+      },
+    },
+  });
+  await prisma.ledgerLaborItem.create({
+    data: {
+      dailyLedgerId: operationalLedger.id,
+      workerName: "API ERP 직원",
+      amount: 50,
+      createdById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+}
+
+function fullExportSourceValues(row: {
+  date: string;
+  storeName: string;
+  sales: number;
+}) {
+  const values: (Prisma.InputJsonValue | null)[] = Array.from(
+    { length: SOURCE_WORKBOOK_HEADERS.length },
+    () => null,
+  );
+  values[0] = { kind: "date", iso: `${row.date}T00:00:00.000Z` };
+  values[1] = "수";
+  values[2] = row.storeName;
+  values[3] = row.sales;
+  values[4] = row.sales * 0.3;
+  values[5] = 0.3;
+  values[6] = row.sales * 0.2;
+  values[7] = row.sales / 2;
+  values[8] = 2;
+  return values;
+}
+
+async function cleanupFullWorkbookFixture() {
+  await prisma.auditLog.deleteMany({
+    where: {
+      targetType: "ReportExport",
+      targetId: "full-customer-workbook",
+    },
+  });
+  const fixtureLedgers = await prisma.dailyLedger.findMany({
+    where: {
+      storeId: {
+        in: [FULL_EXPORT_ACTIVE_STORE_ID, FULL_EXPORT_INACTIVE_STORE_ID],
+      },
+    },
+    select: { id: true },
+  });
+  await prisma.ledgerLaborItem.deleteMany({
+    where: { dailyLedgerId: { in: fixtureLedgers.map((ledger) => ledger.id) } },
+  });
+  await prisma.dailyLedger.deleteMany({
+    where: { id: { in: fixtureLedgers.map((ledger) => ledger.id) } },
+  });
+  await prisma.historicalEmployeeDailyRole.deleteMany({
+    where: { batchId: FULL_EXPORT_BATCH_ID },
+  });
+  await prisma.historicalEmployee.deleteMany({
+    where: { batchId: FULL_EXPORT_BATCH_ID },
+  });
+  await prisma.historicalDailyFact.deleteMany({
+    where: { batchId: FULL_EXPORT_BATCH_ID },
+  });
+  await prisma.historicalExcelRawRow.deleteMany({
+    where: { batchId: FULL_EXPORT_BATCH_ID },
+  });
+  await prisma.historicalExcelImportBatch.deleteMany({
+    where: { id: FULL_EXPORT_BATCH_ID },
+  });
+  await prisma.store.deleteMany({
+    where: {
+      id: {
+        in: [FULL_EXPORT_ACTIVE_STORE_ID, FULL_EXPORT_INACTIVE_STORE_ID],
+      },
+    },
+  });
 }
 
 async function seedCsvEscapingStore() {

@@ -1,6 +1,9 @@
 import { DownloadIcon } from "lucide-react";
 
-import { PermissionAction } from "../../../../../generated/prisma";
+import {
+  PermissionAction,
+  StoreAccessMode,
+} from "../../../../../generated/prisma";
 import { Button } from "~/components/ui/button";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
@@ -21,7 +24,11 @@ import {
   getHqStoreComparisonReport,
   getPeriodSalesAnalysis,
 } from "~/features/reports/queries";
-import { hasActionPermission, requireReportAccess } from "~/server/authz";
+import {
+  getHeadquartersStoreScope,
+  hasActionPermission,
+  requireReportAccess,
+} from "~/server/authz";
 
 // WO-0806 [F]: 대표 엑셀의 4개 뷰를 신규 페이지 없이 모드 3개로 덮는다.
 //   single(현행) / contrast(`분석` 시트) / trend(`매장 별(달)`·`매장 별(년도)`·지표 피벗)
@@ -83,6 +90,10 @@ export default async function StoreComparisonReportPage({
     user.id,
     PermissionAction.EXPORT_CREATE,
   );
+  const canExportFullWorkbook =
+    canExportReports &&
+    canViewLabor &&
+    (await getHeadquartersStoreScope()).mode === StoreAccessMode.ALL_STORES;
   const params = await searchParams;
   const startDate = firstParam(params.startDate);
   const endDate = firstParam(params.endDate);
@@ -503,6 +514,14 @@ export default async function StoreComparisonReportPage({
                     <a href={exportHref}>
                       <DownloadIcon data-icon="inline-start" />
                       CSV
+                    </a>
+                  </Button>
+                ) : null}
+                {canExportFullWorkbook ? (
+                  <Button asChild variant="outline" size="sm">
+                    <a href="/api/reports/export-all">
+                      <DownloadIcon data-icon="inline-start" />
+                      자료 전체 내보내기
                     </a>
                   </Button>
                 ) : null}
