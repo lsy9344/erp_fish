@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -57,6 +57,38 @@ test("unconfirmed same-day purchase seed can convert purchased quantity", async 
     ),
     18,
   );
+  assert.equal(
+    getFrozenConversionAvailableQuantity(
+      item({
+        previousQuantity: 1.1,
+        purchasedQuantity: 5,
+        currentQuantity: 1.1,
+        quantity: 1.1,
+      }),
+    ),
+    6.1,
+  );
+});
+
+test("partial freeze button stays available before 당일재고 is saved", () => {
+  const clientSource = readFileSync(
+    assertProjectFile(
+      "src",
+      "features",
+      "inventory",
+      "components",
+      "inventory-step-client.tsx",
+    ),
+    "utf8",
+  );
+  const disabledBlock = clientSource.match(
+    /const frozenConversionDisabled =\s*([^;]+);/,
+  )?.[1];
+
+  assert.ok(disabledBlock);
+  assert.doesNotMatch(disabledBlock, /isDirty/);
+  assert.doesNotMatch(disabledBlock, /isHqReasonMissing/);
+  assert.match(disabledBlock, /frozenConversionQuantity <= 0/);
 });
 
 test("saved remaining stock is the conversion cap after 당일재고 is confirmed", async () => {

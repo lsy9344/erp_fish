@@ -1366,7 +1366,13 @@ export function InventoryStepClient({
   function openFrozenConversion(item: InventoryLineState) {
     setConversionSourceItem(item);
     setConversionQuantityInput("");
-    setConversionError(null);
+    setConversionError(
+      isDirty
+        ? "바꾼 재고를 먼저 저장해 주세요."
+        : hqEditReasonRequired && !hqEditReason.trim()
+          ? "본사 수정 사유를 먼저 입력해 주세요."
+          : null,
+    );
   }
 
   function closeFrozenConversion() {
@@ -2426,26 +2432,21 @@ export function InventoryStepClient({
       const frozenConversionQuantity =
         getFrozenConversionAvailableQuantity(item);
       const isConversionBlockedByStatus = !isLedgerEditable(data.status);
-      const isHqReasonMissing = hqEditReasonRequired && !hqEditReason.trim();
+      // 당일재고를 아직 저장하지 않았어도 기준재고가 있으면 버튼을 연다.
+      // 저장하지 않은 수정과 본사 수정 사유는 버튼을 막지 않고, 옮길 때 안내한다.
       const frozenConversionDisabled =
         isSaving ||
         isConverting ||
         isAdjustmentSavePending ||
         isConversionBlockedByStatus ||
-        isHqReasonMissing ||
-        isDirty ||
         frozenConversionQuantity <= 0;
       const frozenConversionHint = isConversionBlockedByStatus
         ? data.status === "HEADQUARTERS_CLOSED"
           ? "본사 마감된 장부에서는 냉동 전환할 수 없습니다."
           : "휴무 장부에서는 냉동 전환할 수 없습니다."
-        : isHqReasonMissing
-          ? "본사 수정 사유를 먼저 입력해 주세요."
-          : isDirty
-            ? "바꾼 재고를 먼저 저장해 주세요."
-            : frozenConversionQuantity <= 0
-              ? "옮길 생물 재고가 없습니다."
-              : originalEditBlockedMessage;
+        : frozenConversionQuantity <= 0
+          ? "옮길 생물 재고가 없습니다."
+          : originalEditBlockedMessage;
 
       // 품목당 1행(<tr>)을 유지해 입력 포커스와 테스트 범위를 섞지 않는다.
       // tbody가 행을 순서대로 2열에 놓으므로 화면과 Enter 이동 순서도 같다.
