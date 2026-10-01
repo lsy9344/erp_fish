@@ -20,6 +20,11 @@ import { CorrectionReadonlySummary } from "~/features/corrections/components/cor
 import { getStoreReadableCorrectionRecordsForLedger } from "~/features/corrections/queries";
 import type { CorrectionRecordListItem } from "~/features/corrections/types";
 import { SalesPaymentStepClient } from "~/features/ledger/components/sales-payment-step-client";
+import { getInventoryStepData } from "~/features/inventory/queries";
+import {
+  toPreviousStockViewItems,
+  type PreviousStockViewItem,
+} from "~/features/inventory/previous-stock-view";
 import { ExpenseStepClient } from "~/features/ledger/components/expense-step-client";
 import { InputCodeAliasEditor } from "~/features/master-data/components/input-code-alias-editor";
 import { PurchaseStepClient } from "~/features/ledger/components/purchase-step-client";
@@ -91,6 +96,7 @@ type StoreEntryContentProps = {
   expenseCodeOptions: LedgerInputCodeOption[];
   productOptions: ProductOption[];
   employeeOptions: EmployeeOption[];
+  previousStockItems: PreviousStockViewItem[] | null;
 };
 
 function StoreEntryContent({
@@ -102,6 +108,7 @@ function StoreEntryContent({
   expenseCodeOptions,
   productOptions,
   employeeOptions,
+  previousStockItems,
 }: StoreEntryContentProps) {
   let content;
 
@@ -139,6 +146,7 @@ function StoreEntryContent({
         productOptions={productOptions}
         storeName={storeName}
         currentStep={step}
+        previousStockItems={previousStockItems}
       />
     );
   } else if (step === "work") {
@@ -237,14 +245,21 @@ export default async function StoreEntryPage({
     redirect(`/app/store-entry/inventory?${query.toString()}`);
   }
 
-  const [reviewData, correctionRecords] = await Promise.all([
-    step === "review"
-      ? getStoreManagerLedgerReviewStepData(store.id, closingDate, user.id)
-      : Promise.resolve(null),
-    initialLedger.status === "HEADQUARTERS_CLOSED"
-      ? getStoreReadableCorrectionRecordsForLedger(initialLedger.id, store.id)
-      : Promise.resolve([]),
-  ]);
+  const [reviewData, correctionRecords, previousStockItems] = await Promise.all(
+    [
+      step === "review"
+        ? getStoreManagerLedgerReviewStepData(store.id, closingDate, user.id)
+        : Promise.resolve(null),
+      initialLedger.status === "HEADQUARTERS_CLOSED"
+        ? getStoreReadableCorrectionRecordsForLedger(initialLedger.id, store.id)
+        : Promise.resolve([]),
+      step === "purchase"
+        ? getInventoryStepData(store.id, closingDate, user.id).then((data) =>
+            toPreviousStockViewItems(data.items),
+          )
+        : Promise.resolve(null),
+    ],
+  );
 
   return (
     <StoreManagerShell
@@ -261,6 +276,7 @@ export default async function StoreEntryPage({
         expenseCodeOptions={expenseCodeOptions}
         productOptions={productOptions}
         employeeOptions={employeeOptions}
+        previousStockItems={previousStockItems}
       />
     </StoreManagerShell>
   );

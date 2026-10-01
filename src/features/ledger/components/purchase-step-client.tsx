@@ -22,6 +22,8 @@ import {
   useLedgerSync,
 } from "~/features/ledger/components/ledger-updated-at-sync";
 import { StoreEntryStepNavigation } from "~/features/ledger/components/store-entry-step-navigation";
+import { PreviousStockButton } from "~/features/inventory/components/previous-stock-button";
+import { type PreviousStockViewItem } from "~/features/inventory/previous-stock-view";
 import type { StoreManagerLedgerCostStepData } from "~/features/ledger/types";
 import type { ActionResult, FieldErrors } from "~/lib/action-result";
 import {
@@ -72,6 +74,8 @@ type PurchaseStepClientProps = {
   hqEditReasonRequired?: boolean;
   // DESIGN.md D5: 서버가 판정한 마감 편집 허용 여부. 표시 제어만 하며 기본 false.
   closedEditAllowed?: boolean;
+  // 지점 첫 화면(매입)에서만 넘긴다. 금액은 포함하지 않는다.
+  previousStockItems?: PreviousStockViewItem[] | null;
 };
 
 function formatKrw(value: number | null) {
@@ -173,6 +177,7 @@ export function PurchaseStepClient({
   ledgerLabel = "오늘 장부",
   hqEditReasonRequired = false,
   closedEditAllowed = false,
+  previousStockItems = null,
 }: PurchaseStepClientProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const productRefs = useRef<(HTMLSelectElement | null)[]>([]);
@@ -532,6 +537,10 @@ export function PurchaseStepClient({
         status={ledger.status}
         step={currentStep}
       />
+
+      {previousStockItems ? (
+        <PreviousStockButton items={previousStockItems} sticky />
+      ) : null}
 
       {showStepNavigation ? (
         <StoreEntryStepNavigation

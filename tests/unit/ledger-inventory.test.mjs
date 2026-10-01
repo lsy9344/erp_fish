@@ -3202,17 +3202,23 @@ test("inventory UI is wired to the canonical inventory route", () => {
         componentSource.indexOf("<StoreEntryStepNavigation"),
     "previous stock button should sit above the inventory step list",
   );
-  const previousStockButtonSource = componentSource.slice(
-    previousStockButtonStart,
-    componentSource.indexOf("</Button>", previousStockButtonStart) +
-      "</Button>".length,
+  const previousStockButtonSource = readProjectFile(
+    "src",
+    "features",
+    "inventory",
+    "components",
+    "previous-stock-button.tsx",
   );
-  assert.doesNotMatch(previousStockButtonSource, /variant="outline"/);
+  assert.doesNotMatch(
+    previousStockButtonSource.slice(
+      previousStockButtonSource.indexOf("<Button"),
+      previousStockButtonSource.indexOf("</Button>") + "</Button>".length,
+    ),
+    /variant="outline"/,
+  );
   assert.match(previousStockButtonSource, /className="min-h-11 font-semibold"/);
-  assert.equal(
-    (previousStockButtonSource.match(/전날 재고 보기/g) ?? []).length,
-    1,
-  );
+  assert.match(previousStockButtonSource, /전날 재고 보기/);
+  assert.doesNotMatch(previousStockButtonSource, /formatKrw|원가|마진/);
   assert.match(componentSource, /saveLedgerInventoryItems/);
   assert.match(componentSource, /inventoryTerms/);
   assert.match(componentSource, /냉동/);

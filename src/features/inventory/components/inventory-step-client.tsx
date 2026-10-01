@@ -33,7 +33,6 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
@@ -47,6 +46,8 @@ import {
 import { HqEditReasonField } from "~/features/ledger/components/hq-edit-reason-field";
 import { LedgerContextHeader } from "~/features/ledger/components/ledger-context-header";
 import { LedgerSaveStatus } from "~/features/ledger/components/ledger-save-status";
+import { PreviousStockButton } from "~/features/inventory/components/previous-stock-button";
+import { toPreviousStockViewItem } from "~/features/inventory/previous-stock-view";
 import {
   formatKrwInput,
   toRawKrwInputValue,
@@ -515,10 +516,6 @@ export function InventoryStepClient({
   // WO-25(2026-07-25) #2: 남아있는 재고 클릭 → FIFO 매입 이력 팝업.
   const [selectedFifoLotItem, setSelectedFifoLotItem] =
     useState<InventoryLineState | null>(null);
-  // WO-11(2026-06-28): 상단 "전날 재고 보기" 전체 목록 모달.
-  const [isPreviousStockOpen, setIsPreviousStockOpen] = useState(false);
-  const [previousStockCategory, setPreviousStockCategory] =
-    useState<(typeof categories)[number]>("전체");
   // 직접 추가했지만 아직 저장하지 않은 행. 상태 배지를 "이월 공백" 대신 "직접 입력"으로
   // 보여줘 0개 재고로 오해하지 않게 한다. 저장 후에는 실제 저장 행이 되므로 비운다.
   const [addedManualIds, setAddedManualIds] = useState<ReadonlySet<string>>(
@@ -2001,110 +1998,6 @@ export function InventoryStepClient({
 
   const dailySalesQuantityHelp = inventoryTerms.dailySalesQuantityHelp;
 
-  // WO-11(2026-06-28): 전날 재고 전체 보기. 수량·판매량·마지막 입고일과
-  // 전일 장부 상태만 보여준다. 금액·단가·원가·마진은 노출하지 않는다.
-  function renderPreviousStockDialog() {
-    const visibleItems =
-      previousStockCategory === "전체"
-        ? items
-        : items.filter(
-            (item) => item.productCategory === previousStockCategory,
-          );
-
-    return (
-      <Dialog open={isPreviousStockOpen} onOpenChange={setIsPreviousStockOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>전날 재고 보기</DialogTitle>
-            <DialogDescription>
-              전날 재고 수량·판매량·마지막 입고일입니다. 금액·단가는 표시하지
-              않으며, 전날 장부는 여기서 수정할 수 없습니다.
-            </DialogDescription>
-          </DialogHeader>
-          <ToggleGroup
-            type="single"
-            value={previousStockCategory}
-            onValueChange={(value) => {
-              if (value) {
-                setPreviousStockCategory(normalizeCategory(value));
-              }
-            }}
-            aria-label="전날 재고 분류"
-          >
-            {categories.map((category) => (
-              <ToggleGroupItem key={category} value={category}>
-                {category}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          {visibleItems.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center text-sm">
-              전날 재고 항목이 없습니다.
-            </p>
-          ) : (
-            <div className="max-h-[28rem] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>품목</TableHead>
-                    <TableHead>규격</TableHead>
-                    <TableHead className="text-right">전날 재고</TableHead>
-                    <TableHead className="text-right">
-                      전날 기준 판매량
-                    </TableHead>
-                    <TableHead>마지막 입고일</TableHead>
-                    <TableHead>전일 장부</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleItems.map((item) => (
-                    <TableRow key={item.productId}>
-                      <TableCell className="font-medium">
-                        {item.productName}
-                      </TableCell>
-                      <TableCell>{item.productSpec || "-"}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQuantity(item.previousQuantity)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {item.previousQuantityDetail.sourceSalesQuantity ===
-                        null ? (
-                          <span title="전일 장부의 시작·매입·마감 수량 근거가 없어 계산할 수 없습니다.">
-                            계산 불가
-                          </span>
-                        ) : (
-                          formatQuantity(
-                            item.previousQuantityDetail.sourceSalesQuantity,
-                          )
-                        )}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {item.previousQuantityDetail.sourceLastArrivalDate ? (
-                          formatDate(
-                            item.previousQuantityDetail.sourceLastArrivalDate,
-                          )
-                        ) : (
-                          <span title="남아 있는 FIFO 입고 근거가 없습니다.">
-                            계산 불가
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {formatLedgerStatus(
-                          item.previousQuantityDetail.sourceLedgerStatus,
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   function renderEntryBlockDialog() {
     if (!entryBlock) {
       return null;
@@ -3291,7 +3184,6 @@ export function InventoryStepClient({
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {renderEntryBlockDialog()}
         {renderCarryoverDetailDialog()}
-        {renderPreviousStockDialog()}
         {renderFifoLotHistoryDialog()}
         <UnsavedChangeDialog
           open={guard.isDialogOpen}
@@ -3319,20 +3211,10 @@ export function InventoryStepClient({
         />
 
         {/* 재고 단계 첫 화면에서 바로 열고, 입력 중에도 따라온다. */}
-        <div
-          className={cn(
-            "bg-background flex justify-end",
-            isStoreManagerMode && "sticky top-[65px] z-20 py-2",
-          )}
-        >
-          <Button
-            type="button"
-            className="min-h-11 font-semibold"
-            onClick={() => setIsPreviousStockOpen(true)}
-          >
-            전날 재고 보기
-          </Button>
-        </div>
+        <PreviousStockButton
+          sticky={isStoreManagerMode}
+          items={items.map(toPreviousStockViewItem)}
+        />
 
         {showStepNavigation ? (
           <StoreEntryStepNavigation

@@ -787,6 +787,8 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
   );
   assert.match(pageSource, /step === "purchase"/);
   assert.match(pageSource, /PurchaseStepClient/);
+  assert.match(pageSource, /getInventoryStepData/);
+  assert.match(pageSource, /previousStockItems=\{previousStockItems\}/);
   assert.match(pageSource, /getActiveProductOptions/);
   // WO(2026-06-24): 매입 기준 select 제거로 purchase step 페이지는 매입 기준 옵션 prop을 더 이상 주입하지 않는다.
   assert.doesNotMatch(pageSource, /getActivePurchaseStandardOptions/);
@@ -808,6 +810,11 @@ test("ledger purchase UI and routing are wired for the purchase step", () => {
     "the shared store/HQ client payload must preserve an unchanged purchase standard",
   );
   assert.doesNotMatch(currentLinesSource, /purchaseStandardId:\s*""/);
+  assert.ok(
+    componentSource.indexOf("<PreviousStockButton") <
+      componentSource.indexOf("<StoreEntryStepNavigation"),
+    "previous stock button should sit above the purchase step list",
+  );
   assert.match(componentSource, /saveAction = saveLedgerPurchases/);
   assert.match(componentSource, /const result = await saveAction\(/);
   assert.match(componentSource, /saveLedgerPurchases/);
