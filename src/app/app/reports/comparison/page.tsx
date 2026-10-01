@@ -63,6 +63,12 @@ function toBoundedInt(
     : fallback;
 }
 
+function monthDayLabel(dateInput: string) {
+  const [, month, day] = dateInput.split("-");
+
+  return `${Number(month)}월 ${Number(day)}일`;
+}
+
 export default async function StoreComparisonReportPage({
   searchParams,
 }: StoreComparisonReportPageProps) {
@@ -140,6 +146,23 @@ export default async function StoreComparisonReportPage({
         })
       : null;
   const selectedStoreLabel = report.selectedStoreName ?? "전체 활성 지점";
+  const trendStoreLabel =
+    mode === "trend" && axis === "metric"
+      ? (trend?.stores.find((store) => store.id === trend.selectedStoreId)
+          ?.name ?? "선택 지점")
+      : selectedStoreLabel;
+  const trendFirstColumn = trend?.columns[0];
+  const trendLastColumn = trend?.columns.at(-1);
+  const trendPeriodLabel =
+    trendFirstColumn && trendLastColumn
+      ? unit === "year"
+        ? `${trendFirstColumn.startDateInput.slice(0, 4)}~${trendLastColumn.endDateInput.slice(0, 4)}년, 매년 ${monthDayLabel(trendFirstColumn.startDateInput)}~${monthDayLabel(trendLastColumn.endDateInput)}`
+        : `${trendFirstColumn.startDateInput}부터 ${trendLastColumn.endDateInput}까지`
+      : null;
+  const pageDescription =
+    mode === "trend" && trendPeriodLabel
+      ? `${trendPeriodLabel} ${trendStoreLabel}의 ${axis === "metric" ? "지표별" : "지점별"} 실적 추이를 봅니다.`
+      : `${report.range.startDateInput}부터 ${report.range.endDateInput}까지 ${selectedStoreLabel}의 지점별 실적을 비교합니다.`;
   const trendErrorMessages = [
     ...new Set([
       ...trendYearRange.errorMessages,
@@ -220,10 +243,7 @@ export default async function StoreComparisonReportPage({
       </nav>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <PageHeader
-          title="기간 분석"
-          description={`${report.range.startDateInput}부터 ${report.range.endDateInput}까지 ${selectedStoreLabel}의 지점별 실적을 비교합니다.`}
-        />
+        <PageHeader title="기간 분석" description={pageDescription} />
         <div className="flex flex-col gap-2 md:items-end">
           <form
             action="/app/reports/comparison"

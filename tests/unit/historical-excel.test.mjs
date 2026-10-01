@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   APPROVED_HISTORICAL_STORE_NAMES,
   APPROVED_WORKBOOK_EXPECTATIONS,
+  APPROVED_WORKBOOK_EXPECTATIONS_LATEST,
   parseHistoricalWorkbook,
 } from "../../src/features/historical-excel/parser.ts";
 import { buildStoreComparisonReportExport } from "../../src/features/reports/export.ts";
@@ -162,6 +163,9 @@ test("parser preserves formulas, cached values, blanks, errors, and first canoni
   assert.equal(parsed.summary.normalizedRoleCount, 3);
   assert.equal(parsed.summary.sourceNameCount, 2);
   assert.ok(parsed.validationErrors.length > 0);
+  assert.ok(
+    parsed.validationErrors.some((error) => error.startsWith("파일 hash:")),
+  );
 
   const inputRow2 = parsed.rawRows.find(
     (rawRow) => rawRow.sheetName === "입력" && rawRow.rowNumber === 2,
@@ -217,6 +221,144 @@ test("approved customer workbook matches the immutable dry-run contract", async 
   assert.equal(parsed.summary.rawRoleCellCount, 52_113);
   assert.equal(parsed.summary.sourceNameCount, 412);
   assert.equal(parsed.summary.duplicateStoreDateCount, 28);
+});
+
+test("approved September workbook skips giant validation ranges and matches its profile", async (t) => {
+  const workbookPath = process.env.HISTORICAL_WORKBOOK_FIXTURE;
+  if (!workbookPath) {
+    t.skip("set HISTORICAL_WORKBOOK_FIXTURE to verify the supplied workbook");
+    return;
+  }
+  let fileBytes;
+  try {
+    fileBytes = new Uint8Array(await readFile(workbookPath));
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      t.skip("supplied customer workbook is unavailable");
+      return;
+    }
+    throw error;
+  }
+
+  const parsed = await parseHistoricalWorkbook({
+    fileBytes,
+    sourceFileName: workbookPath,
+  });
+
+  assert.deepEqual(parsed.validationErrors, []);
+  assert.equal(
+    parsed.summary.fileHash,
+    APPROVED_WORKBOOK_EXPECTATIONS_LATEST.fileHash,
+  );
+  assert.deepEqual(parsed.sourceWorkbook, fileBytes);
+  assert.equal(parsed.summary.sheetCount, 10);
+  assert.equal(parsed.summary.rawRowCount, 14_953);
+  assert.equal(parsed.summary.canonicalFactCount, 14_717);
+  assert.equal(parsed.summary.normalizedRoleCount, 53_848);
+  assert.equal(parsed.summary.rawRoleCellCount, 53_954);
+  assert.equal(parsed.summary.sourceNameCount, 415);
+  assert.equal(parsed.summary.duplicateStoreDateCount, 28);
+  assert.equal(parsed.summary.ignoredInputRowCount, 62);
+  assert.deepEqual(parsed.summary.unknownStoreNames, []);
+  assert.equal(parsed.summary.firstBusinessDate, "2020-01-01");
+  assert.equal(parsed.summary.lastBusinessDate, "2026-09-30");
+  assert.deepEqual(parsed.summary.resolvedStoreCorrections, [
+    {
+      sheetName: "입력",
+      rowNumber: 13_955,
+      businessDate: "2026-06-01",
+      originalStoreName: "0",
+      storeName: "강서수산",
+    },
+  ]);
+
+  const correctedRawRow = parsed.rawRows.find(
+    (rawRow) => rawRow.sheetName === "입력" && rawRow.rowNumber === 13_955,
+  );
+  assert.equal(correctedRawRow.rawCells.values[2], 0);
+  const correctedFact = parsed.dailyFacts.find(
+    (fact) => fact.key === "강서수산|2026-06-01",
+  );
+  assert.equal(correctedFact.sourceStoreName, "강서수산");
+  assert.equal(
+    correctedFact.salesAmount.value,
+    String(correctedRawRow.rawCells.values[3]),
+  );
+  const correctedRoles = parsed.roles.filter(
+    (role) => role.sourceRawRowKey === "1:13955",
+  );
+  assert.equal(correctedRoles.length, 2);
+  assert.deepEqual(
+    correctedRoles.map((role) => role.sourceStoreName),
+    ["강서수산", "강서수산"],
+  );
+  assert.ok(
+    correctedRoles.every((role) => role.dailyFactKey === correctedFact.key),
+  );
+  for (const { originalName } of correctedRoles) {
+    const employee = parsed.employees.find(
+      (candidate) => candidate.originalName === originalName,
+    );
+    assert.ok(employee.storeNames.includes("강서수산"));
+    assert.ok(!employee.storeNames.includes("0"));
+  }
+
+  const inputRows = parsed.rawRows.filter(
+    (rawRow) => rawRow.sheetName === "입력",
+  );
+  assert.equal(inputRows.length, 14_808);
+  assert.equal(
+    Math.max(...inputRows.map((rawRow) => rawRow.rowNumber)),
+    14_808,
+  );
+  assert.ok(
+    inputRows
+      .filter((rawRow) => rawRow.rowNumber > 1)
+      .every((rawRow) => rawRow.rawCells.values[22] === null),
+  );
+});
+
+test("parser ignores giant validation ranges without changing source bytes or formulas", async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  const input = workbook.addWorksheet("입력");
+  input.addRow(["일자", "요일", "매장", "매출"]);
+  const row = input.addRow([
+    new Date("2020-01-01T00:00:00.000Z"),
+    "수",
+    APPROVED_HISTORICAL_STORE_NAMES[0],
+  ]);
+  row.getCell(4).value = { formula: "1+1", result: 2 };
+  input.dataValidations.add("R1:R1048576", {
+    type: "list",
+    allowBlank: true,
+    formulae: ['"A,B"'],
+  });
+  input.dataValidations.add("J14809:Q1048576", {
+    type: "list",
+    allowBlank: true,
+    formulae: ['"A,B"'],
+  });
+
+  const fileBytes = new Uint8Array(await workbook.xlsx.writeBuffer());
+  const parsed = await parseHistoricalWorkbook({
+    fileBytes,
+    sourceFileName: "validation-range-fixture.xlsx",
+  });
+
+  assert.deepEqual(parsed.sourceWorkbook, fileBytes);
+  assert.equal(parsed.rawRows.length, 2);
+  assert.equal(parsed.summary.rawRowCount, 2);
+  assert.equal(
+    Math.max(...parsed.rawRows.map((rawRow) => rawRow.rowNumber)),
+    2,
+  );
+  assert.deepEqual(parsed.rawRows[1].rawCells.values[3], {
+    formula: "1+1",
+    result: 2,
+  });
+  assert.equal(parsed.rawRows[1].rawCells.formulas[0].formula, "1+1");
+  assert.equal(parsed.rawRows[1].rawCells.formulas[0].cachedValue, 2);
 });
 
 test("historical and operational rows combine without treating broken inventory as zero", () => {

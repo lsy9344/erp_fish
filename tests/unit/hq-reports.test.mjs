@@ -996,6 +996,20 @@ test("HQ store comparison report source files follow story 6.2 boundaries", () =
     "components",
     "store-comparison-report-table.tsx",
   );
+  const trendTableSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "period-trend-table.tsx",
+  );
+  const trendChartSource = readProjectFile(
+    "src",
+    "features",
+    "reports",
+    "components",
+    "period-trend-chart.tsx",
+  );
 
   assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqStoreComparisonReport\(/);
@@ -1027,6 +1041,18 @@ test("HQ store comparison report source files follow story 6.2 boundaries", () =
   assert.match(tableSource, /tabular-nums/);
   assert.match(tableSource, /break-words/);
   assert.doesNotMatch(tableSource, /calculateLedgerReviewSummary/);
+  assert.match(pageSource, /trendFirstColumn/);
+  assert.match(pageSource, /trendLastColumn/);
+  assert.match(pageSource, /trendStoreLabel/);
+  assert.match(pageSource, /trendPeriodLabel/);
+  assert.match(pageSource, /monthDayLabel/);
+  assert.match(pageSource, /unit === "year"/);
+  assert.match(trendTableSource, /const totalLabel = "기간 통합값"/);
+  assert.match(trendChartSource, /LINE_PATTERNS/);
+  assert.match(trendChartSource, /strokeDasharray/);
+  assert.match(trendChartSource, /columnCount > 12/);
+  assert.match(trendChartSource, /flex flex-wrap/);
+  assert.match(trendChartSource, /isAnimationActive={false}/);
 });
 
 test("HQ store comparison report query reuses report calculation contracts", () => {

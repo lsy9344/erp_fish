@@ -18,6 +18,7 @@ import {
   buildReportXlsx,
   buildStoreComparisonReportExport,
   getReportExportFilename,
+  getReportExportSheetName,
   isReportExportFormat,
   reportExportToSheet,
   type ReportExportData,
@@ -38,6 +39,10 @@ import { HEADQUARTERS_LABOR_STATUSES } from "~/features/labor/headquarters-labor
 import type { ReportExportSheet } from "~/features/reports/export";
 import { buildPeriodTrendYearRange } from "~/features/reports/period-analysis";
 import { getHqInventoryPositionReport } from "~/features/reports/inventory-position-queries";
+import {
+  getSourceWorkbookSheets,
+  getSourceWorkbookTrendDateRanges,
+} from "~/features/reports/source-workbook-export";
 import {
   requireExportCreateAccess,
   requireLaborViewAccess,
@@ -80,6 +85,7 @@ export async function GET(request: Request) {
 
   let exportData: ReportExportData;
   let bundledSheets: ReportExportSheet[] | undefined;
+  let sourceSheets: ReportExportSheet[] = [];
 
   try {
     if (parsed.value.report === "labor") {
@@ -124,6 +130,19 @@ export async function GET(request: Request) {
     } else {
       exportData = await loadReportExportData(parsed.value);
     }
+
+    if (
+      parsed.format === "xlsx" &&
+      (parsed.value.report === "daily" ||
+        parsed.value.report === "comparison" ||
+        parsed.value.report === "monthly")
+    ) {
+      const sourceRanges = getSourceWorkbookDateRanges(parsed.value);
+      sourceSheets = await getSourceWorkbookSheets({
+        dateRanges: sourceRanges,
+        storeId: parsed.value.report === "daily" ? null : parsed.value.storeId,
+      });
+    }
   } catch (error) {
     if (isNextRedirectError(error)) {
       return forbiddenResponse(request);
@@ -156,16 +175,24 @@ export async function GET(request: Request) {
     // 번들한다. 다른 리포트는 종전대로 단일 시트로 내보낸다.
     if (parsed.value.report === "monthly") {
       auditSheets = await buildMonthlyBundleSheets(parsed.value, exportData);
+      auditSheets = [...sourceSheets, ...auditSheets];
       body = await buildBundledReportXlsx(auditSheets);
     } else if (
       (parsed.value.report === "comparison" &&
         parsed.value.mode === "contrast") ||
       parsed.value.report === "labor"
     ) {
-      auditSheets = bundledSheets;
-      body = await buildBundledReportXlsx(bundledSheets ?? []);
+      auditSheets = [...sourceSheets, ...(bundledSheets ?? [])];
+      body = await buildBundledReportXlsx(auditSheets);
     } else {
-      body = await buildReportXlsx(exportData);
+      auditSheets = [
+        ...sourceSheets,
+        reportExportToSheet(
+          exportData,
+          getReportExportSheetName(exportData.report),
+        ),
+      ];
+      body = await buildReportXlsx(exportData, [], sourceSheets);
     }
   } else {
     contentType = "text/csv; charset=utf-8";
@@ -514,6 +541,25 @@ function monthDateRange(month: string): { startDate: string; endDate: string } {
     startDate: `${month}-01`,
     endDate: `${month}-${String(lastDay).padStart(2, "0")}`,
   };
+}
+
+function getSourceWorkbookDateRanges(
+  request: ParsedExportRequest,
+): Array<{ startDate: string; endDate: string }> {
+  if (request.report === "daily") {
+    return [{ startDate: request.date, endDate: request.date }];
+  }
+  if (request.report === "monthly") {
+    return [monthDateRange(request.month)];
+  }
+  if (request.report !== "comparison") {
+    throw new Error("입력 시트 조회 기간을 확인할 수 없습니다.");
+  }
+  if (request.mode !== "trend") {
+    return [{ startDate: request.startDate, endDate: request.endDate }];
+  }
+
+  return getSourceWorkbookTrendDateRanges(request);
 }
 
 // WO-15(2026-06-29, fixed 2026-06-30): 월별 xlsx 5시트 번들. summary는 호출부에서 만든

@@ -20,7 +20,11 @@ const {
     path.join(root, "src", "features", "reports", "period-analysis.ts"),
   ).href
 );
-const { buildBundledReportXlsx, buildPeriodContrastExport } = await import(
+const {
+  buildBundledReportXlsx,
+  buildPeriodContrastExport,
+  buildPeriodTrendExport,
+} = await import(
   pathToFileURL(path.join(root, "src", "features", "reports", "export.ts")).href
 );
 
@@ -75,6 +79,13 @@ function metric(value) {
 }
 
 function storeRow(storeId, storeName, values = {}) {
+  const businessDayCount = values.businessDayCount ?? 1;
+  const salesTotal = values.salesTotal ?? values.salesAmount ?? 0;
+  const grossProfitTotal = values.grossProfitTotal ?? values.grossProfit ?? 0;
+  const workerTotal =
+    values.workerTotal ?? (values.averageWorkerCount ?? 0) * businessDayCount;
+  const inventoryTotal =
+    values.inventoryTotal ?? (values.averageInventory ?? 0) * businessDayCount;
   return {
     storeId,
     storeName,
@@ -84,6 +95,14 @@ function storeRow(storeId, storeName, values = {}) {
         metric(values[definition.key] ?? 0),
       ]),
     ),
+    trendAggregation: {
+      businessDayCount,
+      salesTotal,
+      grossProfitTotal,
+      workerTotal,
+      inventoryTotal,
+      inventoryDayCount: values.inventoryDayCount ?? businessDayCount,
+    },
   };
 }
 
@@ -304,15 +323,16 @@ test("metric axis rows sum amounts and weight ratios by sales", () => {
   const rows = buildMetricAxisTrendRows([
     storeRow("a", "강남", {
       salesAmount: 100,
+      grossProfit: 30,
       grossMarginRate: 0.3,
       averageWorkerCount: 2,
     }),
     storeRow("a", "강남", {
       salesAmount: 300,
+      grossProfit: 30,
       grossMarginRate: 0.1,
       averageWorkerCount: 4,
     }),
-    null,
   ]);
   const byKey = new Map(rows.map((row) => [row.key, row]));
 
@@ -320,10 +340,8 @@ test("metric axis rows sum amounts and weight ratios by sales", () => {
   assert.equal(byKey.get("salesAmount").total.value, 400);
   // 비율은 매출 가중평균: (0.3*100 + 0.1*300) / 400 = 0.15
   assert.ok(Math.abs(byKey.get("grossMarginRate").total.value - 0.15) < 1e-12);
-  // 평균 근무인원은 매출로 가중하지 않고 기간별 평균의 단순평균이다.
+  // 평균 근무인원은 영업일수로 가중한다. 두 기간의 길이가 같아 여기서는 3명이다.
   assert.equal(byKey.get("averageWorkerCount").total.value, 3);
-  // 데이터 없는 기간은 셀이 null이며 합계에서 빠진다.
-  assert.equal(byKey.get("salesAmount").cells[2], null);
 });
 
 test("trend total does not silently omit a period with unavailable data", () => {
@@ -337,6 +355,81 @@ test("trend total does not silently omit a period with unavailable data", () => 
 
   assert.equal(rows.find((row) => row.key === "grossProfit").total, null);
   assert.equal(rows.find((row) => row.key === "salesAmount").total.value, 300);
+});
+
+test("trend totals use metric-specific raw numerators and unequal business days", () => {
+  const rows = buildMetricAxisTrendRows([
+    storeRow("store-a", "A", {
+      businessDayCount: 2,
+      salesAmount: 100,
+      grossProfit: 50,
+      grossMarginRate: 0.5,
+      averageWorkerCount: 5,
+      workerTotal: 10,
+      productivity: 10,
+      averageSales: 50,
+      averageInventory: 10,
+      inventoryTotal: 20,
+      inventoryToSalesRatio: 0.2,
+    }),
+    storeRow("store-a", "A", {
+      businessDayCount: 4,
+      salesAmount: 300,
+      grossProfit: 60,
+      grossMarginRate: 0.2,
+      averageWorkerCount: 5,
+      workerTotal: 20,
+      productivity: 15,
+      averageSales: 75,
+      averageInventory: 25,
+      inventoryTotal: 100,
+      inventoryToSalesRatio: 100 / 300,
+    }),
+  ]);
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+
+  assert.equal(byKey.get("salesAmount").total.value, 400);
+  assert.equal(byKey.get("grossProfit").total.value, 110);
+  assert.equal(byKey.get("averageSales").total.value, 400 / 6);
+  assert.equal(byKey.get("averageWorkerCount").total.value, 5);
+  assert.equal(byKey.get("productivity").total.value, 400 / 30);
+  assert.equal(byKey.get("averageInventory").total.value, 120 / 6);
+  assert.equal(byKey.get("grossMarginRate").total.value, 110 / 400);
+  assert.equal(byKey.get("inventoryToSalesRatio").total.value, 120 / 400);
+});
+
+test("weighted trend totals are unavailable when raw denominators are absent", () => {
+  const row = storeRow("store-a", "A", {
+    salesAmount: 100,
+    averageSales: 100,
+  });
+  delete row.trendAggregation;
+
+  const rows = buildMetricAxisTrendRows([row]);
+  assert.equal(rows.find((item) => item.key === "averageSales").total, null);
+  assert.equal(rows.find((item) => item.key === "productivity").total, null);
+});
+
+test("trend export names its derived total as a period aggregate", () => {
+  const row = buildMetricAxisTrendRows([
+    storeRow("store-a", "A", { salesAmount: 100 }),
+  ])[0];
+  const exportData = buildPeriodTrendExport({
+    axis: "store",
+    columns: [
+      {
+        key: "2026-06",
+        label: "6월",
+        startDateInput: "2026-06-01",
+        endDateInput: "2026-06-30",
+      },
+    ],
+    rows: [row],
+    metric: { key: "salesAmount", label: "매출" },
+    storeId: "store-a",
+  });
+
+  assert.equal(exportData.columns.at(-1).label, "기간 통합값");
 });
 
 test("store axis rows list every store seen in any period", () => {
@@ -359,6 +452,6 @@ test("store axis rows list every store seen in any period", () => {
   );
   // 첫 기간에 없던 지점은 해당 셀이 null.
   assert.equal(rows[0].cells[0], null);
-  assert.equal(rows[0].total.value, 20);
+  assert.equal(rows[0].total, null);
   assert.equal(rows[1].total.value, 40);
 });

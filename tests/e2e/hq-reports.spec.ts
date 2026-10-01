@@ -1944,6 +1944,30 @@ test("본사는 시계열에서 지점 선택, 연도 범위, 표와 차트를 �
   await expect(
     page.locator('[data-testid="hq-report-trend-row-salesAmount"]'),
   ).toBeVisible();
+  const metricTrendHeader = page
+    .getByRole("heading", { name: "기간 분석" })
+    .locator("..");
+  const selectedMetricStoreName = (
+    await getStoreSelect(page).locator("option:checked").textContent()
+  )?.trim();
+  expect(selectedMetricStoreName).toBeTruthy();
+  await expect(metricTrendHeader).toContainText(
+    `${year}-01-01부터 ${year}-12-31까지`,
+  );
+  await expect(metricTrendHeader).toContainText(selectedMetricStoreName!);
+
+  // 연도 축은 중간 달까지 이어지는 기간이 아니라 같은 월일의 계절 구간이다.
+  const seasonFromYear = Number(year) - 2;
+  await page.goto(
+    `/app/reports/comparison?mode=trend&axis=metric&unit=year&year=${year}&fromYear=${seasonFromYear}&toYear=${year}&fromMonth=6&toMonth=8&storeId=${STORE_IDS.closed}`,
+  );
+  const seasonTrendHeader = page
+    .getByRole("heading", { name: "기간 분석" })
+    .locator("..");
+  await expect(seasonTrendHeader).toContainText(
+    `${seasonFromYear}~${year}년, 매년 6월 1일~8월 31일`,
+  );
+  await expect(seasonTrendHeader).toContainText("스토리6-1 정정마감점");
 
   // 지점 축에서 선택 지점을 실제 데이터 범위에 적용하고 꺾은선 차트를 제공한다.
   await page.goto(
@@ -1954,11 +1978,42 @@ test("본사는 시계열에서 지점 선택, 연도 범위, 표와 차트를 �
     page.locator(`[data-testid="hq-report-trend-row-${STORE_IDS.closed}"]`),
   ).toBeVisible();
   await expect(
+    page.getByRole("columnheader", { name: "기간 통합값" }),
+  ).toBeVisible();
+  await expect(
     page.getByLabel("매출 지점별 기간 추이 꺾은선 차트"),
   ).toBeVisible();
   await expect(
     page.locator('[data-testid^="hq-report-trend-row-"]'),
   ).toHaveCount(1);
+
+  // 한 기간만 조회해도 실제 값의 점을 차트에서 확인할 수 있다.
+  const currentMonth = Number(getCurrentMonthInput().slice(5));
+  await page.goto(
+    `/app/reports/comparison?mode=trend&axis=store&unit=year&year=${year}&fromYear=${year}&toYear=${year}&fromMonth=${currentMonth}&toMonth=${currentMonth}&storeId=${STORE_IDS.closed}&metricKey=salesAmount`,
+  );
+  const singlePointChart = page.getByLabel("매출 지점별 기간 추이 꺾은선 차트");
+  await expect(singlePointChart).toBeVisible();
+  await expect(singlePointChart.locator("svg.recharts-surface")).toBeVisible();
+  expect(await singlePointChart.locator("circle").count()).toBeGreaterThan(0);
+
+  // 모바일에서는 지점 범례가 항목 단위로 다음 줄에 배치되고 화면을 넘지 않는다.
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto(
+    `/app/reports/comparison?mode=trend&axis=store&unit=month&year=${year}&metricKey=salesAmount`,
+  );
+  const trendLegend = page.locator('[aria-label="지점 범례"]');
+  await expect(trendLegend).toBeVisible();
+  const trendLegendBox = await trendLegend.boundingBox();
+  expect(trendLegendBox).not.toBeNull();
+  expect(trendLegendBox!.x + trendLegendBox!.width).toBeLessThanOrEqual(376);
+  const mobileViewportWidths = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(mobileViewportWidths.scrollWidth).toBeLessThanOrEqual(
+    mobileViewportWidths.clientWidth + 1,
+  );
 
   // UI 숫자 제한을 우회한 URL도 500이 아니라 안전한 기본 연도로 폴백한다.
   await page.goto(

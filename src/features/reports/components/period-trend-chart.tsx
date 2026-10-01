@@ -1,12 +1,18 @@
 "use client";
 
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+  type DotItemDotProps,
+} from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   ChartContainer,
   ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -23,6 +29,16 @@ const CHART_COLORS = [
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
+] as const;
+
+const LINE_PATTERNS = [
+  "0",
+  "8 4",
+  "2 3",
+  "12 4 2 4",
+  "1 3",
+  "16 4 2 4",
+  "6 2",
 ] as const;
 
 const krwFormatter = new Intl.NumberFormat("ko-KR", {
@@ -43,6 +59,76 @@ function formatValue(kind: PeriodAnalysisMetric["kind"], value: number) {
   if (kind === "percent") return percentFormatter.format(value);
   if (kind === "headcount") return `${headcountFormatter.format(value)}명`;
   return krwFormatter.format(value);
+}
+
+function TrendDot({
+  row,
+  columnCount,
+  props,
+}: {
+  row: PeriodTrendRow;
+  columnCount: number;
+  props: DotItemDotProps;
+}) {
+  const { cx, cy, index } = props;
+  const value = props.value as unknown;
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    typeof index !== "number" ||
+    typeof value !== "number"
+  ) {
+    return null;
+  }
+
+  const previousValue = row.cells[index - 1]?.value ?? null;
+  const nextValue = row.cells[index + 1]?.value ?? null;
+  const isIsolated = previousValue === null || nextValue === null;
+  if (columnCount > 12 && !isIsolated) return null;
+
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      fill={`var(--color-${row.key})`}
+      r={3}
+      stroke="var(--background)"
+      strokeWidth={1.5}
+    />
+  );
+}
+
+function TrendLegend({ rows }: { rows: PeriodTrendRow[] }) {
+  return (
+    <div
+      aria-label="지점 범례"
+      className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3"
+    >
+      {rows.map((row, index) => (
+        <div
+          key={row.key}
+          className="flex min-w-0 items-center gap-1.5 text-xs"
+        >
+          <svg
+            aria-hidden="true"
+            className="h-3 w-8 shrink-0"
+            viewBox="0 0 32 12"
+          >
+            <line
+              x1="1"
+              x2="31"
+              y1="6"
+              y2="6"
+              stroke={`var(--color-${row.key})`}
+              strokeDasharray={LINE_PATTERNS[index % LINE_PATTERNS.length]}
+              strokeWidth="2"
+            />
+          </svg>
+          <span className="max-w-32 whitespace-nowrap">{row.label}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function PeriodTrendChart({
@@ -115,14 +201,22 @@ export function PeriodTrendChart({
                 />
               }
             />
-            <ChartLegend content={<ChartLegendContent />} />
-            {rows.map((row) => (
+            <ChartLegend content={<TrendLegend rows={rows} />} />
+            {rows.map((row, index) => (
               <Line
                 key={row.key}
                 connectNulls={false}
                 dataKey={row.key}
-                dot={false}
+                dot={(props) => (
+                  <TrendDot
+                    row={row}
+                    columnCount={columns.length}
+                    props={props}
+                  />
+                )}
+                isAnimationActive={false}
                 stroke={`var(--color-${row.key})`}
+                strokeDasharray={LINE_PATTERNS[index % LINE_PATTERNS.length]}
                 strokeWidth={2}
                 type="monotone"
               />

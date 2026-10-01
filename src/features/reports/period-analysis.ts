@@ -1,5 +1,8 @@
 import type { LedgerReviewMetric } from "../../server/calculations/ledger.ts";
-import type { StoreComparisonReportRow } from "./types.ts";
+import type {
+  StoreComparisonReportRow,
+  StoreComparisonTrendAggregation,
+} from "./types.ts";
 
 // WO-0806 [F]: 대표 엑셀 `분석` 시트의 8지표를 순서까지 그대로 옮긴다.
 // 이 배열은 단일 기간·월별 추이의 지표 선택과 시계열 계산에 사용한다.
@@ -339,70 +342,114 @@ export type PeriodTrendRow = {
 };
 
 function sumOrWeightedAverage(
-  kind: PeriodAnalysisMetric["kind"],
+  metricKey: PeriodAnalysisMetric["key"],
   cells: PeriodTrendCell[],
-  weights: number[],
+  aggregations: (StoreComparisonTrendAggregation | undefined)[],
 ): PeriodTrendCell {
-  // 일부 기간이 계산 불가인데 나머지만 합치면 전체 기간 값처럼 오해된다.
-  if (cells.some((cell) => cell?.value === null)) return null;
-
-  const usable = cells
-    .map((cell, index) => ({
-      value: cell?.value ?? null,
-      weight: weights[index] ?? 0,
-    }))
-    .filter(
-      (entry): entry is { value: number; weight: number } =>
-        entry.value !== null,
-    );
-
-  if (usable.length === 0) {
+  // 기간 하나라도 계산 불가이면 나머지 기간만 합쳐 전체처럼 보이지 않게 한다.
+  if (cells.some((cell) => cell?.value === null || cell?.value === undefined)) {
     return null;
   }
 
-  // 금액은 합계, 평균 근무인원은 기간별 평균의 단순평균, 비율은 매출
-  // 가중평균이다. 인원을 매출로 가중하면 매출이 큰 달의 인력이 과대 반영된다.
-  if (kind === "money") {
-    return {
-      value: usable.reduce((sum, entry) => sum + entry.value, 0),
-      status: "ok",
-    };
-  }
-
-  if (kind === "headcount") {
-    return {
-      value:
-        usable.reduce((sum, entry) => sum + entry.value, 0) / usable.length,
-      status: "ok",
-    };
-  }
-
-  const weightTotal = usable.reduce((sum, entry) => sum + entry.weight, 0);
-
-  if (weightTotal <= 0) {
-    return {
-      value:
-        usable.reduce((sum, entry) => sum + entry.value, 0) / usable.length,
-      status: "ok",
-    };
-  }
-
-  return {
-    value:
-      usable.reduce((sum, entry) => sum + entry.value * entry.weight, 0) /
-      weightTotal,
-    status: "ok",
+  const availableMetric = (value: number | null): PeriodTrendCell =>
+    value === null ? null : { value, status: "ok" };
+  const valuesFor = (
+    key: keyof StoreComparisonTrendAggregation,
+  ): number[] | null => {
+    const values = aggregations.map((aggregation) => aggregation?.[key]);
+    return values.every((value): value is number => typeof value === "number")
+      ? values
+      : null;
   };
+
+  if (metricKey === "salesAmount" || metricKey === "grossProfit") {
+    const key = metricKey === "salesAmount" ? "salesTotal" : "grossProfitTotal";
+    const totals = valuesFor(key);
+    return availableMetric(
+      totals
+        ? totals.reduce((sum, value) => sum + value, 0)
+        : cells.reduce((sum, cell) => sum + (cell?.value ?? 0), 0),
+    );
+  }
+
+  const businessDays = valuesFor("businessDayCount");
+  if (!businessDays || businessDays.some((value) => value <= 0)) return null;
+
+  if (metricKey === "averageSales") {
+    const salesTotals = valuesFor("salesTotal");
+    return salesTotals
+      ? availableMetric(
+          salesTotals.reduce((sum, value) => sum + value, 0) /
+            businessDays.reduce((sum, value) => sum + value, 0),
+        )
+      : null;
+  }
+
+  if (metricKey === "averageWorkerCount") {
+    const workerTotals = valuesFor("workerTotal");
+    return workerTotals
+      ? availableMetric(
+          workerTotals.reduce((sum, value) => sum + value, 0) /
+            businessDays.reduce((sum, value) => sum + value, 0),
+        )
+      : null;
+  }
+
+  if (metricKey === "productivity") {
+    const salesTotals = valuesFor("salesTotal");
+    const workerTotals = valuesFor("workerTotal");
+    if (!salesTotals || !workerTotals) return null;
+    const totalWorkers = workerTotals.reduce((sum, value) => sum + value, 0);
+    return totalWorkers > 0
+      ? availableMetric(
+          salesTotals.reduce((sum, value) => sum + value, 0) / totalWorkers,
+        )
+      : null;
+  }
+
+  if (metricKey === "grossMarginRate") {
+    const grossProfitTotals = valuesFor("grossProfitTotal");
+    const salesTotals = valuesFor("salesTotal");
+    if (!grossProfitTotals || !salesTotals) return null;
+    const totalSales = salesTotals.reduce((sum, value) => sum + value, 0);
+    return totalSales > 0
+      ? availableMetric(
+          grossProfitTotals.reduce((sum, value) => sum + value, 0) / totalSales,
+        )
+      : null;
+  }
+
+  if (metricKey === "averageInventory") {
+    const inventoryTotals = valuesFor("inventoryTotal");
+    const inventoryDays = valuesFor("inventoryDayCount");
+    if (!inventoryTotals || !inventoryDays) return null;
+    const supportedDays = inventoryDays.reduce((sum, value) => sum + value, 0);
+    return supportedDays > 0
+      ? availableMetric(
+          inventoryTotals.reduce((sum, value) => sum + value, 0) /
+            supportedDays,
+        )
+      : null;
+  }
+
+  const inventoryTotals = valuesFor("inventoryTotal");
+  const salesTotals = valuesFor("salesTotal");
+  if (!inventoryTotals || !salesTotals) return null;
+  const totalSales = salesTotals.reduce((sum, value) => sum + value, 0);
+  return totalSales > 0
+    ? availableMetric(
+        inventoryTotals.reduce((sum, value) => sum + value, 0) / totalSales,
+      )
+    : null;
 }
 
 // axis=metric → 행이 8지표(엑셀 `매장 별(달)`/`매장 별(년도)`).
 export function buildMetricAxisTrendRows(
   rowsByColumn: (StoreComparisonReportRow | null)[],
 ): PeriodTrendRow[] {
-  const weights = rowsByColumn.map((row) => row?.salesAmount.value ?? 0);
-
   return PERIOD_ANALYSIS_METRICS.map((metric) => {
     const cells = rowsByColumn.map((row) => row?.[metric.key] ?? null);
+    const aggregations = rowsByColumn.map((row) => row?.trendAggregation);
 
     return {
       key: metric.key,
@@ -415,7 +462,7 @@ export function buildMetricAxisTrendRows(
         excludedHistoricalOverlapCount:
           row?.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
       })),
-      total: sumOrWeightedAverage(metric.kind, cells, weights),
+      total: sumOrWeightedAverage(metric.key, cells, aggregations),
     };
   });
 }
@@ -443,9 +490,8 @@ export function buildStoreAxisTrendRows({
         (rows) =>
           rows.find((row) => row.storeId === storeId)?.[metric.key] ?? null,
       );
-      const weights = rowsByColumn.map(
-        (rows) =>
-          rows.find((row) => row.storeId === storeId)?.salesAmount.value ?? 0,
+      const aggregations = rowsByColumn.map(
+        (rows) => rows.find((row) => row.storeId === storeId)?.trendAggregation,
       );
 
       return {
@@ -464,7 +510,7 @@ export function buildStoreAxisTrendRows({
               source?.excludedHistoricalOverlapCount ?? 0,
           };
         }),
-        total: sumOrWeightedAverage(metric.kind, cells, weights),
+        total: sumOrWeightedAverage(metric.key, cells, aggregations),
       };
     });
 }

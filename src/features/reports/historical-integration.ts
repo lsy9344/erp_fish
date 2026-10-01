@@ -180,9 +180,12 @@ export function mergeHistoricalStoreComparisonRow({
   const operationalWorkers =
     operationalBusinessDayCount === 0
       ? 0
-      : operationalRow.averageWorkerCount.value === null
-        ? null
-        : operationalRow.averageWorkerCount.value * operationalBusinessDayCount;
+      : operationalRow.trendAggregation
+        ? operationalRow.trendAggregation.workerTotal
+        : operationalRow.averageWorkerCount.value === null
+          ? null
+          : operationalRow.averageWorkerCount.value *
+            operationalBusinessDayCount;
   const workerTotal =
     operationalWorkers === null || historicalWorkers === null
       ? null
@@ -285,6 +288,16 @@ export function mergeHistoricalStoreComparisonRow({
     averageInventory,
     averageSales,
     inventoryToSalesRatio,
+    trendAggregation: {
+      businessDayCount,
+      salesTotal: salesAmount.value,
+      grossProfitTotal: grossProfit.value,
+      workerTotal,
+      // Historical Excel inventory is unavailable, so a mixed period cannot
+      // claim an inventory denominator by treating it as zero.
+      inventoryTotal: null,
+      inventoryDayCount: null,
+    },
     hasLoss: operationalBusinessDayCount > 0 ? operationalRow.hasLoss : null,
     sourceSummary: {
       source,

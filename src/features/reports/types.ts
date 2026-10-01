@@ -189,6 +189,17 @@ export type StoreComparisonSourceSummary = {
   missingMetrics: string[];
 };
 
+// 기간 추세의 합계/평균을 다시 계산할 때 사용하는 원시 분자·분모다.
+// 화면에 표시된 반올림 평균을 역산하지 않도록 기간 조회 단계에서 함께 만든다.
+export type StoreComparisonTrendAggregation = {
+  businessDayCount: number;
+  salesTotal: number | null;
+  grossProfitTotal: number | null;
+  workerTotal: number | null;
+  inventoryTotal: number | null;
+  inventoryDayCount: number | null;
+};
+
 export type StoreComparisonReportRow = {
   storeId: string;
   storeName: string;
@@ -210,6 +221,7 @@ export type StoreComparisonReportRow = {
   hasLoss: boolean | null;
   hasUnappliedCorrections: boolean;
   sourceSummary: StoreComparisonSourceSummary;
+  trendAggregation?: StoreComparisonTrendAggregation;
   metricEvidence: StoreComparisonReportMetricEvidenceMap;
 };
 

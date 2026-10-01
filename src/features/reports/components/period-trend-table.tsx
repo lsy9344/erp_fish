@@ -61,8 +61,7 @@ export function PeriodTrendTable({
   metric: PeriodAnalysisMetric;
 }) {
   const headLabel = axis === "metric" ? "지표" : "지점";
-  const totalLabel =
-    metric.kind === "money" && axis === "store" ? "합계" : "합계/평균";
+  const totalLabel = "기간 통합값";
 
   if (columns.length === 0 || rows.length === 0) {
     return (

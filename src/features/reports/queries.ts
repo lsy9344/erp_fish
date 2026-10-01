@@ -84,6 +84,7 @@ import type {
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
+  StoreComparisonTrendAggregation,
 } from "./types.ts";
 import {
   mergeHistoricalStoreComparisonRow,
@@ -4420,6 +4421,7 @@ export function buildStoreComparisonReportRowForTest({
       excludedHistoricalOverlapCount: 0,
       missingMetrics: [],
     },
+    trendAggregation: appliedAggregates.trendAggregation,
     metricEvidence: {
       salesAmount: buildStoreComparisonMetricEvidence({
         label: "영업 매출 합계",
@@ -4706,6 +4708,13 @@ function aggregateStoreComparisonMetrics(
     (sum, summary) => sum + (getWorkerCount(summary, source) ?? 0),
     0,
   );
+  const workerCounts = ledgerSummaries.map((summary) =>
+    getWorkerCount(summary, source),
+  );
+  const trendWorkerTotal =
+    workerCounts.length > 0 && workerCounts.every((value) => value !== null)
+      ? workerTotal
+      : null;
   const hasSalesDayWithoutWorkers = ledgerSummaries.some((summary) => {
     const sales = summary[source].totalSales.value;
     const workerCount = getWorkerCount(summary, source);
@@ -4719,9 +4728,23 @@ function aggregateStoreComparisonMetrics(
   // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 영업일수로 나눈 소수값이며
   // averageSales와 같은 분모(ledgerSummaries.length)를 쓴다.
   const averageWorkerCount =
-    ledgerSummaries.length > 0
+    ledgerSummaries.length > 0 && trendWorkerTotal !== null
       ? available(workerTotal / ledgerSummaries.length)
       : unavailable("계산 불가");
+  const trendInventoryTotal =
+    inventoryMetrics.length > 0 &&
+    inventoryMetrics.every((metric) => metric.value !== null)
+      ? inventoryMetrics.reduce((sum, metric) => sum + (metric.value ?? 0), 0)
+      : null;
+  const trendAggregation: StoreComparisonTrendAggregation = {
+    businessDayCount: ledgerSummaries.length,
+    salesTotal: salesAmount.value,
+    grossProfitTotal: grossProfit.value,
+    workerTotal: trendWorkerTotal,
+    inventoryTotal: trendInventoryTotal,
+    inventoryDayCount:
+      trendInventoryTotal === null ? null : inventoryMetrics.length,
+  };
 
   return {
     salesAmount,
@@ -4745,6 +4768,7 @@ function aggregateStoreComparisonMetrics(
     averageWorkerCount,
     averageInventory,
     averageSales,
+    trendAggregation,
     inventoryToSalesRatio:
       averageInventory.value !== null &&
       averageSales.value !== null &&

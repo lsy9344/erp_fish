@@ -46,9 +46,13 @@ const REPORT_SHEET_LABELS: Record<ReportExportType, string> = {
 type ReportExportColumn = {
   key: string;
   label: string;
+  numberFormat?: string;
 };
 
-type ReportExportRow = Record<string, string | number | null>;
+type ReportExportRow = Record<
+  string,
+  string | number | Date | null | { error: string }
+>;
 const CORRECTION_APPLIED_LABEL = "정정 반영";
 const POLICY_CHECK_REQUIRED_LABEL = "기준 확인 필요";
 
@@ -522,6 +526,10 @@ export type ReportExportSheet = {
   rows: ReportExportRow[];
 };
 
+export function getReportExportSheetName(report: ReportExportType) {
+  return REPORT_SHEET_LABELS[report];
+}
+
 // ReportExportData(리포트별 컬럼/행)를 명명된 xlsx 시트 스펙으로 바꾼다.
 export function reportExportToSheet(
   exportData: Pick<ReportExportData, "columns" | "rows">,
@@ -535,8 +543,10 @@ export function reportExportToSheet(
 export async function buildReportXlsx(
   exportData: ReportExportData,
   extraSheets: ReportExportSheet[] = [],
+  sourceSheets: ReportExportSheet[] = [],
 ): Promise<ArrayBuffer> {
   return buildXlsxWorkbook([
+    ...sourceSheets,
     reportExportToSheet(exportData, REPORT_SHEET_LABELS[exportData.report]),
     ...extraSheets,
   ]);
@@ -564,15 +574,21 @@ async function buildXlsxWorkbook(
       header: column.label,
       key: column.key,
       width: Math.min(40, Math.max(12, column.label.length + 4)),
+      style: column.numberFormat ? { numFmt: column.numberFormat } : undefined,
     }));
     sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: sheetSpec.columns.length },
+    };
 
     for (const row of sheetSpec.rows) {
       sheet.addRow(
         Object.fromEntries(
           sheetSpec.columns.map((column) => [
             column.key,
-            row[column.key] ?? "",
+            row[column.key] ?? null,
           ]),
         ),
       );
@@ -870,8 +886,17 @@ function formatDateTime(value: string | Date | null | undefined) {
   return value.toISOString();
 }
 
-function escapeCsvCell(value: string | number | null) {
-  const stringValue = value === null ? "" : String(value);
+function escapeCsvCell(
+  value: string | number | Date | null | { error: string },
+) {
+  const stringValue =
+    value === null
+      ? ""
+      : value instanceof Date
+        ? value.toISOString()
+        : typeof value === "object"
+          ? value.error
+          : String(value);
   const safeValue = /^[=+\-@]/.test(stringValue)
     ? `'${stringValue}`
     : stringValue;
@@ -1054,7 +1079,7 @@ export function buildPeriodTrendExport({
           label: `${column.label} 출처/누락`,
         }))
       : []),
-    { key: "total", label: "합계/평균" },
+    { key: "total", label: "기간 통합값" },
   ];
   const first = periodColumns[0];
   const last = periodColumns[periodColumns.length - 1];

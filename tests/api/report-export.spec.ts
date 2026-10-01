@@ -549,11 +549,12 @@ test.describe("Report export API", () => {
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     );
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "입력",
       "대조기간",
       "현재",
       "증감",
     ]);
-    for (const sheet of workbook.worksheets) {
+    for (const sheet of workbook.worksheets.slice(1)) {
       expect(sheet.getRow(1).values).not.toContain("매출이익");
     }
     const deltaSheet = workbook.getWorksheet("증감");
@@ -730,8 +731,25 @@ test.describe("Report export API", () => {
     await workbook.xlsx.load(
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     );
-    expect(workbook.worksheets).toHaveLength(1);
-    const header = workbook.worksheets[0]?.getRow(1).values as unknown[];
+    expect(workbook.worksheets).toHaveLength(2);
+    const sourceSheet = workbook.worksheets[0];
+    expect(sourceSheet?.name).toBe("입력");
+    expect((sourceSheet?.getRow(1).values as unknown[]).slice(1)).toEqual([
+      "일자",
+      "요일",
+      "매장",
+      "매출",
+      "매출이익",
+      "마진율",
+      "영업이익",
+      "인당생산성",
+      "근무인원",
+      "팀장",
+      "팀장",
+      ...Array.from({ length: 11 }, () => "팀원"),
+      "매출차액",
+    ]);
+    const header = workbook.worksheets[1]?.getRow(1).values as unknown[];
     expect(header).toContain("2020년");
     expect(header).toContain("2026년");
   });
@@ -849,7 +867,19 @@ test.describe("Report export API", () => {
           sheetIndex: 1,
           sheetName: "입력",
           rowNumber: 2,
-          rawCells: { cells: [] },
+          rawCells: {
+            values: [
+              { kind: "date", iso: "2020-01-01T00:00:00.000Z" },
+              "수",
+              "강남점",
+              1_000_000,
+              300_000,
+              0.3,
+              200_000,
+              500_000,
+              2,
+            ],
+          },
         },
       });
       await prisma.historicalDailyFact.create({

@@ -39,6 +39,24 @@ export const APPROVED_WORKBOOK_EXPECTATIONS = {
   lastBusinessDate: "2026-06-30",
 } as const;
 
+export const APPROVED_WORKBOOK_EXPECTATIONS_LATEST = {
+  fileHash: "b463014c012aed8177390b2db9891207563dd160f8110d27f574743fd05c4b95",
+  sheetCount: 10,
+  rawRowCount: 14_953,
+  canonicalFactCount: 14_717,
+  normalizedRoleCount: 53_848,
+  rawRoleCellCount: 53_954,
+  sourceNameCount: 415,
+  duplicateStoreDateCount: 28,
+  firstBusinessDate: "2020-01-01",
+  lastBusinessDate: "2026-09-30",
+} as const;
+
+const APPROVED_WORKBOOK_PROFILES = [
+  APPROVED_WORKBOOK_EXPECTATIONS,
+  APPROVED_WORKBOOK_EXPECTATIONS_LATEST,
+] as const;
+
 const approvedStoreNames = new Set<string>(APPROVED_HISTORICAL_STORE_NAMES);
 const REVIEW_REQUIRED_NAMES = new Set(["0", "기타"]);
 
@@ -114,6 +132,14 @@ export type HistoricalEmployeeInput = {
   storeNames: string[];
 };
 
+export type HistoricalResolvedStoreCorrection = {
+  sheetName: string;
+  rowNumber: number;
+  businessDate: string;
+  originalStoreName: string;
+  storeName: string;
+};
+
 export type HistoricalWorkbookSummary = {
   fileHash: string;
   sourceFileName: string;
@@ -130,6 +156,7 @@ export type HistoricalWorkbookSummary = {
   unknownStoreNames: string[];
   firstBusinessDate: string | null;
   lastBusinessDate: string | null;
+  resolvedStoreCorrections?: HistoricalResolvedStoreCorrection[];
 };
 
 export type ParsedHistoricalWorkbook = {
@@ -221,9 +248,40 @@ function businessDateInput(cell: ExcelJS.Cell): string | null {
   return null;
 }
 
+function resolvedStoreCorrectionFor({
+  fileHash,
+  rowNumber,
+  businessDate,
+  sourceStoreName,
+}: {
+  fileHash: string;
+  rowNumber: number;
+  businessDate: string | null;
+  sourceStoreName: string;
+}): HistoricalResolvedStoreCorrection | null {
+  if (
+    fileHash !== APPROVED_WORKBOOK_EXPECTATIONS_LATEST.fileHash ||
+    rowNumber !== 13_955 ||
+    businessDate !== "2026-06-01" ||
+    sourceStoreName !== "0"
+  ) {
+    return null;
+  }
+  return {
+    sheetName: "입력",
+    rowNumber,
+    businessDate,
+    originalStoreName: sourceStoreName,
+    storeName: "강서수산",
+  };
+}
+
 function validationErrorsFor(summary: HistoricalWorkbookSummary): string[] {
   const errors: string[] = [];
-  const expected = APPROVED_WORKBOOK_EXPECTATIONS;
+  const expected =
+    APPROVED_WORKBOOK_PROFILES.find(
+      (profile) => profile.fileHash === summary.fileHash,
+    ) ?? APPROVED_WORKBOOK_EXPECTATIONS;
 
   if (summary.fileHash !== expected.fileHash) {
     errors.push(
@@ -285,8 +343,13 @@ export async function parseHistoricalWorkbook({
   fileBytes: Uint8Array;
   sourceFileName: string;
 }): Promise<ParsedHistoricalWorkbook> {
+  const fileHash = createHash("sha256").update(fileBytes).digest("hex");
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(Buffer.from(fileBytes) as never);
+  // 고객 workbook의 입력!R1:R1048576 및 J14809:Q1048576 검증 범위는
+  // ExcelJS가 백만 개 이상의 빈 셀을 만들게 하므로 원본 셀 데이터만 읽는다.
+  await workbook.xlsx.load(Buffer.from(fileBytes) as never, {
+    ignoreNodes: ["dataValidations"],
+  });
 
   const rawRows: HistoricalRawRow[] = [];
   const rawRowByInputRow = new Map<number, HistoricalRawRow>();
@@ -356,6 +419,7 @@ export async function parseHistoricalWorkbook({
   let duplicateStoreDateCount = 0;
   let ignoredInputRowCount = 0;
   let rawRoleCellCount = 0;
+  const resolvedStoreCorrections: HistoricalResolvedStoreCorrection[] = [];
 
   type EmployeeAccumulator = Omit<HistoricalEmployeeInput, "storeNames"> & {
     storeNames: Set<string>;
@@ -372,13 +436,24 @@ export async function parseHistoricalWorkbook({
 
     const dateInput = businessDateInput(row.getCell(1));
     const sourceStoreName = row.getCell(3).text.trim();
-    if (!dateInput || !approvedStoreNames.has(sourceStoreName)) {
+    const resolvedStoreCorrection = resolvedStoreCorrectionFor({
+      fileHash,
+      rowNumber,
+      businessDate: dateInput,
+      sourceStoreName,
+    });
+    const resolvedStoreName =
+      resolvedStoreCorrection?.storeName ?? sourceStoreName;
+    if (!dateInput || !approvedStoreNames.has(resolvedStoreName)) {
       ignoredInputRowCount += 1;
       if (sourceStoreName) unknownStoreNames.add(sourceStoreName);
       return;
     }
+    if (resolvedStoreCorrection) {
+      resolvedStoreCorrections.push(resolvedStoreCorrection);
+    }
 
-    const storeDateKey = `${sourceStoreName}|${dateInput}`;
+    const storeDateKey = `${resolvedStoreName}|${dateInput}`;
     if (seenStoreDates.has(storeDateKey)) {
       duplicateStoreDateCount += 1;
       return;
@@ -394,7 +469,7 @@ export async function parseHistoricalWorkbook({
     facts.push({
       key: factKey,
       sourceRawRowKey: sourceRawRow.key,
-      sourceStoreName,
+      sourceStoreName: resolvedStoreName,
       businessDate: dateInput,
       salesAmount: parseNumericMetric(row.getCell(4)),
       grossProfit: parseNumericMetric(row.getCell(5)),
@@ -415,7 +490,7 @@ export async function parseHistoricalWorkbook({
       roles.push({
         sourceRawRowKey: sourceRawRow.key,
         dailyFactKey: factKey,
-        sourceStoreName,
+        sourceStoreName: resolvedStoreName,
         businessDate: dateInput,
         role,
         slotNumber,
@@ -440,10 +515,10 @@ export async function parseHistoricalWorkbook({
       if (dateInput > next.lastSeenWorkDate) next.lastSeenWorkDate = dateInput;
       if (role === "LEAD") next.leadRoleCount += 1;
       else next.memberRoleCount += 1;
-      next.storeNames.add(sourceStoreName);
+      next.storeNames.add(resolvedStoreName);
       const storesOnDate =
         next.storesByDate.get(dateInput) ?? new Set<string>();
-      storesOnDate.add(sourceStoreName);
+      storesOnDate.add(resolvedStoreName);
       next.storesByDate.set(dateInput, storesOnDate);
       // 이름만으로 한 사람을 확정하지 않는다. 같은 원본 이름이 같은 날 여러
       // 지점에 있으면 동명이인 가능성이 있으므로 반드시 검토 대상으로 둔다.
@@ -469,7 +544,7 @@ export async function parseHistoricalWorkbook({
     .sort((a, b) => a.originalName.localeCompare(b.originalName, "ko"));
   const businessDates = facts.map((fact) => fact.businessDate).sort();
   const summary: HistoricalWorkbookSummary = {
-    fileHash: createHash("sha256").update(fileBytes).digest("hex"),
+    fileHash,
     sourceFileName: path.basename(sourceFileName),
     sourceFileSize: fileBytes.byteLength,
     sheetCount: workbook.worksheets.length,
@@ -486,6 +561,9 @@ export async function parseHistoricalWorkbook({
     ),
     firstBusinessDate: businessDates[0] ?? null,
     lastBusinessDate: businessDates.at(-1) ?? null,
+    ...(resolvedStoreCorrections.length > 0
+      ? { resolvedStoreCorrections }
+      : {}),
   };
 
   return {
