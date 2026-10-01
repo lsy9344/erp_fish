@@ -3318,6 +3318,22 @@ export function InventoryStepClient({
           status={data.status}
         />
 
+        {/* 재고 단계 첫 화면에서 바로 열고, 입력 중에도 따라온다. */}
+        <div
+          className={cn(
+            "bg-background flex justify-end",
+            isStoreManagerMode && "sticky top-[65px] z-20 py-2",
+          )}
+        >
+          <Button
+            type="button"
+            className="min-h-11 font-semibold"
+            onClick={() => setIsPreviousStockOpen(true)}
+          >
+            전날 재고 보기
+          </Button>
+        </div>
+
         {showStepNavigation ? (
           <StoreEntryStepNavigation
             storeId={data.storeId}
@@ -3433,35 +3449,20 @@ export function InventoryStepClient({
               setActiveCategory(normalizeCategory(value))
             }
           >
-            <div
-              className={cn(
-                "bg-background flex flex-wrap items-center justify-between gap-2 border-b py-2",
-                isStoreManagerMode && "sticky top-[65px] z-20",
-              )}
+            <TabsList
+              variant="line"
+              className="min-h-11 w-full justify-start border-b bg-transparent"
             >
-              <TabsList
-                variant="line"
-                className="min-h-11 justify-start bg-transparent"
-              >
-                {categories.map((category) => (
-                  <TabsTrigger
-                    key={category}
-                    value={category}
-                    className="min-h-9 px-4"
-                  >
-                    {category}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {/* 입력 중에도 기존 전날 재고 창을 바로 열 수 있다. */}
-              <Button
-                type="button"
-                className="min-h-11 font-semibold"
-                onClick={() => setIsPreviousStockOpen(true)}
-              >
-                전날 재고 보기
-              </Button>
-            </div>
+              {categories.map((category) => (
+                <TabsTrigger
+                  key={category}
+                  value={category}
+                  className="min-h-9 px-4"
+                >
+                  {category}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
             {categories.map((category) => (
               <TabsContent key={category} value={category}>

@@ -3194,14 +3194,19 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   const inventoryUiSource = `${componentSource}\n${termsSource}`;
   const previousStockButtonStart = componentSource.indexOf(
-    "{/* 입력 중에도 기존 전날 재고 창을 바로 열 수 있다. */}",
+    "{/* 재고 단계 첫 화면에서 바로 열고, 입력 중에도 따라온다. */}",
+  );
+  assert.ok(
+    previousStockButtonStart >= 0 &&
+      previousStockButtonStart <
+        componentSource.indexOf("<StoreEntryStepNavigation"),
+    "previous stock button should sit above the inventory step list",
   );
   const previousStockButtonSource = componentSource.slice(
     previousStockButtonStart,
     componentSource.indexOf("</Button>", previousStockButtonStart) +
       "</Button>".length,
   );
-  assert.ok(previousStockButtonStart >= 0);
   assert.doesNotMatch(previousStockButtonSource, /variant="outline"/);
   assert.match(previousStockButtonSource, /className="min-h-11 font-semibold"/);
   assert.equal(
