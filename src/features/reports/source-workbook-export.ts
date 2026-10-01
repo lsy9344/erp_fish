@@ -135,7 +135,7 @@ function toExcelValue(value: unknown): SourceWorkbookValue {
   if (value === null || value === undefined) return null;
 
   if (typeof value === "object") {
-    if ("formula" in value && "result" in value) {
+    if (("formula" in value || "sharedFormula" in value) && "result" in value) {
       return toExcelValue(value.result);
     }
     if ("error" in value && typeof value.error === "string") {

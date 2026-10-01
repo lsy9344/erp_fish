@@ -71,6 +71,64 @@ test("downloaded input cells keep real blanks, numeric rates, and cached errors"
   assert.equal(sheet.getCell("W2").value, null);
 });
 
+test("shared-formula round trips preserve cached numeric, error, and blank values", async () => {
+  const originalWorkbook = new ExcelJS.Workbook();
+  const originalSheet = originalWorkbook.addWorksheet("입력");
+  originalSheet.getCell("F2").value = {
+    formula: "1",
+    result: 0.1,
+    shareType: "shared",
+    ref: "F2:F5",
+  };
+  originalSheet.getCell("F3").value = {
+    sharedFormula: "F2",
+    result: 0.25,
+  };
+  originalSheet.getCell("F4").value = {
+    sharedFormula: "F2",
+    result: { error: "#REF!" },
+  };
+  originalSheet.getCell("F5").value = {
+    sharedFormula: "F2",
+    result: null,
+  };
+
+  const originalBytes = await originalWorkbook.xlsx.writeBuffer();
+  const parsedWorkbook = new ExcelJS.Workbook();
+  await parsedWorkbook.xlsx.load(originalBytes);
+  const parsedSheet = parsedWorkbook.getWorksheet("입력");
+  const cachedRates = ["F2", "F3", "F4", "F5"].map(
+    (address) => parsedSheet.getCell(address).value,
+  );
+  const dates = ["2025-07-02", "2025-07-03", "2025-07-04", "2025-07-05"];
+  const source = buildSourceWorkbookSheet({
+    historicalFacts: dates.map((businessDate, index) => {
+      const values = Array.from({ length: 23 }, () => null);
+      values[0] = businessDate;
+      values[1] = "수";
+      values[2] = "store";
+      values[5] = cachedRates[index];
+      return {
+        storeId: "store-1",
+        storeName: "store",
+        businessDate,
+        rawCells: { values },
+        roles: [],
+      };
+    }),
+    operationalFacts: [],
+  });
+
+  const exportedBytes = await buildBundledReportXlsx([source]);
+  const exportedWorkbook = new ExcelJS.Workbook();
+  await exportedWorkbook.xlsx.load(exportedBytes);
+  const exportedSheet = exportedWorkbook.getWorksheet("입력");
+  assert.equal(exportedSheet.getCell("F2").value, 0.1);
+  assert.equal(exportedSheet.getCell("F3").value, 0.25);
+  assert.deepEqual(exportedSheet.getCell("F4").value, { error: "#REF!" });
+  assert.equal(exportedSheet.getCell("F5").value, null);
+});
+
 test("operational facts take date precedence and historical cached cells stay intact", () => {
   const sheet = buildSourceWorkbookSheet({
     historicalFacts: [
