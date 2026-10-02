@@ -58,8 +58,7 @@ export function PreviousStockButton({
   sticky = false,
 }: PreviousStockButtonProps) {
   const [open, setOpen] = useState(false);
-  const [category, setCategory] =
-    useState<(typeof categories)[number]>("전체");
+  const [category, setCategory] = useState<(typeof categories)[number]>("전체");
   const visibleItems =
     category === "전체"
       ? items
