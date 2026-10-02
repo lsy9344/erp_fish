@@ -7,6 +7,7 @@ const root = process.cwd();
 const {
   MAX_TREND_COLUMNS,
   PERIOD_ANALYSIS_METRICS,
+  PERIOD_CONTRAST_METRICS,
   buildMetricAxisTrendRows,
   buildPeriodContrastRows,
   buildPeriodTrendColumns,
@@ -34,7 +35,7 @@ test("absolute headcount deltas use people units in exports", () => {
   assert.equal(formatPeriodAbsoluteDelta(0), "0.0명");
 });
 
-test("period contrast xlsx writes headcount deltas as people and omits gross profit", async () => {
+test("period contrast xlsx keeps people units and omits unsupported inventory metrics", async () => {
   const baseRows = [storeRow("store-1", "강남", { averageWorkerCount: 2 })];
   const currentRows = [
     storeRow("store-1", "강남", { averageWorkerCount: 3.1 }),
@@ -64,7 +65,58 @@ test("period contrast xlsx writes headcount deltas as people and omits gross pro
   const headcountColumn = header.indexOf("평균 근무인원");
 
   assert.equal(header.includes("매출이익"), false);
+  for (const sheet of workbook.worksheets) {
+    const labels = sheet.getRow(1).values;
+    assert.equal(labels.includes("평균재고"), false);
+    assert.equal(labels.includes("매출대비 재고비율"), false);
+  }
   assert.equal(values[headcountColumn], "+1.1명");
+});
+
+test("period contrast lists only supported metrics and exports relevant missing reasons", () => {
+  assert.deepEqual(
+    PERIOD_CONTRAST_METRICS.map((metric) => metric.label),
+    ["매출", "이익률", "평균 근무인원", "인당생산성", "평균매출"],
+  );
+  const row = storeRow("store-1", "안양참수산", { salesAmount: 10572000 });
+  row.averageWorkerCount = { ...metric(null), reason: "근무인원이 없습니다." };
+  row.sourceSummary = {
+    source: "historical",
+    operationalDayCount: 0,
+    historicalDayCount: 1,
+    historicalCoverageDayCount: 1,
+    excludedHistoricalOverlapCount: 0,
+    excludedOperationalOverlapCount: 1,
+    missingMetrics: [
+      "평균 근무인원",
+      "평균재고",
+      "매출대비 재고비율",
+      "영업이익(정의 상이)",
+    ],
+  };
+  const report = {
+    range: { startDateInput: "2026-09-01", endDateInput: "2026-09-30" },
+    rows: [row],
+  };
+  const { sheets } = buildPeriodContrastExport({
+    base: report,
+    current: report,
+    contrastRows: buildPeriodContrastRows({
+      baseRows: [row],
+      currentRows: [row],
+    }),
+    storeId: null,
+  });
+  for (const sheet of sheets.slice(0, 2)) {
+    assert.equal(sheet.rows[0].operationalOverlapExcludedCount, 1);
+    assert.equal(
+      sheet.rows[0].missingMetrics,
+      "평균 근무인원: 근무인원이 없습니다.",
+    );
+    assert.ok(
+      sheet.columns.some((column) => column.label === "Excel 우선 적용 일수"),
+    );
+  }
 });
 
 function metric(value) {

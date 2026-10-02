@@ -570,6 +570,13 @@ export default async function StoreComparisonReportPage({
         </div>
       ) : null}
 
+      {mode === "contrast" ? (
+        <p className="text-muted-foreground text-xs">
+          과거 엑셀에 있는 날짜는 최신 엑셀을 기준으로 계산합니다. 그 밖의
+          날짜는 앱 장부를 사용합니다.
+        </p>
+      ) : null}
+
       {mode === "contrast" && contrast ? (
         <PeriodContrastTable
           base={contrast.base}

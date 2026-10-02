@@ -7,7 +7,6 @@ import {
   getEmployeeList,
   getEmployeeProductivityAnalysis,
   getEmployeeStoreOptions,
-  getHistoricalEmployeeList,
 } from "~/features/labor/employees-queries";
 import { getKstBusinessDateParam } from "~/features/ledger/date";
 import { EmployeeManagementClient } from "~/features/labor/components/employee-management-client";
@@ -19,14 +18,12 @@ export default async function EmployeesPage() {
   const currentMonth = getKstBusinessDateParam().slice(0, 7);
   const [
     employees,
-    historicalEmployees,
     productivity,
     storeOptions,
     navigationItems,
     canManageEmployees,
   ] = await Promise.all([
     getEmployeeList(currentMonth),
-    getHistoricalEmployeeList(),
     // WO-E(2026-06-22): 월간 생산성/인력 배치 분석.
     getEmployeeProductivityAnalysis(currentMonth),
     getEmployeeStoreOptions(),
@@ -44,7 +41,7 @@ export default async function EmployeesPage() {
         <PageHeader title="직원 관리" />
         <EmployeeManagementClient
           initialEmployees={employees}
-          initialHistoricalEmployees={historicalEmployees}
+          initialHistoricalEmployees={[]}
           storeOptions={storeOptions}
           canManage={canManageEmployees}
           summaryMonth={currentMonth}

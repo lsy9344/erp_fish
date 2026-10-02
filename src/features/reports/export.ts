@@ -184,6 +184,10 @@ export function buildStoreComparisonReportExport(
         { key: "historicalDayCount", label: "과거 Excel 영업일수" },
         { key: "historicalCoverageDayCount", label: "과거 Excel 원본 일수" },
         { key: "overlapExcludedCount", label: "운영 우선 제외 일수" },
+        {
+          key: "operationalOverlapExcludedCount",
+          label: "Excel 우선 적용 일수",
+        },
         { key: "missingMetrics", label: "누락/원본 오류" },
         { key: "averageWorkerCount", label: "평균 근무인원" },
         { key: "averageInventory", label: "평균재고" },
@@ -235,6 +239,8 @@ export function buildStoreComparisonReportExport(
         row.sourceSummary?.historicalCoverageDayCount ?? 0,
       overlapExcludedCount:
         row.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
+      operationalOverlapExcludedCount:
+        row.sourceSummary?.excludedOperationalOverlapCount ?? 0,
       missingMetrics: row.sourceSummary?.missingMetrics.join("; ") ?? "",
       averageWorkerCount: formatReviewMetric(row.averageWorkerCount),
       averageInventory: formatReviewMetric(row.averageInventory),
@@ -922,6 +928,10 @@ function periodMetricColumns(includeSource = false): ReportExportColumn[] {
       ? [
           { key: "source", label: "출처" },
           { key: "overlapExcludedCount", label: "운영 우선 제외 일수" },
+          {
+            key: "operationalOverlapExcludedCount",
+            label: "Excel 우선 적용 일수",
+          },
           { key: "missingMetrics", label: "누락/원본 오류" },
         ]
       : []),
@@ -940,7 +950,16 @@ function periodMetricRows(rows: StoreComparisonReportRow[]): ReportExportRow[] {
     source: historicalSourceLabel(row.sourceSummary?.source ?? "operational"),
     overlapExcludedCount:
       row.sourceSummary?.excludedHistoricalOverlapCount ?? 0,
-    missingMetrics: row.sourceSummary?.missingMetrics.join("; ") ?? "",
+    operationalOverlapExcludedCount:
+      row.sourceSummary?.excludedOperationalOverlapCount ?? 0,
+    missingMetrics: PERIOD_CONTRAST_METRICS.filter(
+      (metric) => row[metric.key].value === null,
+    )
+      .map(
+        (metric) =>
+          `${metric.label}: ${row[metric.key].reason ?? row[metric.key].unavailableReason ?? "자료 없음"}`,
+      )
+      .join("; "),
   }));
 }
 

@@ -15,6 +15,34 @@ export type HistoricalFactForReport = {
   metricStatus: unknown;
 };
 
+type ReportSourceDate = { storeId: string; businessDate: string };
+
+// 활성화한 최신 Excel은 해당 날짜의 과거 실적 기준이다. 같은 날짜의
+// 미완성 운영 장부가 매출·근무인원·매출이익을 덮어쓰지 않게 한다.
+export function selectHistoricalReportSources<
+  Historical extends ReportSourceDate,
+  Operational extends ReportSourceDate,
+>(historicalFacts: Historical[], operationalFacts: Operational[]) {
+  const historicalDates = new Set(
+    historicalFacts.map((fact) => `${fact.storeId}|${fact.businessDate}`),
+  );
+  const excludedOperationalOverlapByStoreId = new Map<string, number>();
+  const selectedOperationalFacts = operationalFacts.filter((fact) => {
+    if (!historicalDates.has(`${fact.storeId}|${fact.businessDate}`))
+      return true;
+    excludedOperationalOverlapByStoreId.set(
+      fact.storeId,
+      (excludedOperationalOverlapByStoreId.get(fact.storeId) ?? 0) + 1,
+    );
+    return false;
+  });
+  return {
+    historicalFacts,
+    operationalFacts: selectedOperationalFacts,
+    excludedOperationalOverlapByStoreId,
+  };
+}
+
 function available(value: number): LedgerReviewMetric {
   return { value, status: "ok" };
 }
@@ -108,6 +136,7 @@ export function mergeHistoricalStoreComparisonRow({
   operationalBusinessDayCount,
   historicalFacts,
   excludedHistoricalOverlapCount,
+  excludedOperationalOverlapCount = 0,
   dateCount,
 }: {
   operationalRow: StoreComparisonReportRow;
@@ -115,6 +144,7 @@ export function mergeHistoricalStoreComparisonRow({
   operationalBusinessDayCount: number;
   historicalFacts: HistoricalFactForReport[];
   excludedHistoricalOverlapCount: number;
+  excludedOperationalOverlapCount?: number;
   dateCount: number;
 }): StoreComparisonReportRow {
   if (historicalFacts.length === 0) {
@@ -126,6 +156,7 @@ export function mergeHistoricalStoreComparisonRow({
         historicalDayCount: 0,
         historicalCoverageDayCount: excludedHistoricalOverlapCount,
         excludedHistoricalOverlapCount,
+        excludedOperationalOverlapCount,
         missingMetrics: [],
       },
     };
@@ -306,6 +337,7 @@ export function mergeHistoricalStoreComparisonRow({
       historicalCoverageDayCount:
         historicalFacts.length + excludedHistoricalOverlapCount,
       excludedHistoricalOverlapCount,
+      excludedOperationalOverlapCount,
       missingMetrics,
     },
     metricEvidence: {

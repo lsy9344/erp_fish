@@ -50,8 +50,8 @@ export function PeriodContrastTable({
       <section className="grid gap-2" aria-label="과거 대비 현재 증감">
         <h3 className="text-base font-semibold">과거 대비 현재 증감</h3>
         <p className="text-muted-foreground text-xs">
-          이익률과 매출대비 재고비율은 퍼센트포인트(%p) 차이, 평균 근무인원은
-          사람 수 차이, 나머지는 증감률(%)입니다.
+          이익률은 퍼센트포인트(%p) 차이, 평균 근무인원은 사람 수 차이, 나머지는
+          증감률(%)입니다.
         </p>
         <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
           <Table className="min-w-[1080px]">
@@ -111,15 +111,29 @@ export function PeriodContrastTable({
 }
 
 function SourceCell({ row }: { row: StoreComparisonReportRow }) {
+  const excludedOperationalOverlapCount =
+    row.sourceSummary.excludedOperationalOverlapCount ?? 0;
+  const missingMetrics = PERIOD_CONTRAST_METRICS.filter(
+    (metric) => row[metric.key].value === null,
+  ).map((metric) => {
+    const value = row[metric.key];
+    return `${metric.label}: ${value.reason ?? value.unavailableReason ?? "자료 없음"}`;
+  });
+
   return (
     <div className="grid gap-1">
       <span>{row.storeName}</span>
       <Badge variant="outline" className="w-fit">
         {historicalSourceLabel(row.sourceSummary.source)}
       </Badge>
-      {row.sourceSummary.missingMetrics.length > 0 ? (
+      {excludedOperationalOverlapCount > 0 ? (
         <span className="text-muted-foreground text-xs">
-          누락: {row.sourceSummary.missingMetrics.join(", ")}
+          Excel 우선 {excludedOperationalOverlapCount}일
+        </span>
+      ) : null}
+      {missingMetrics.length > 0 ? (
+        <span className="text-muted-foreground text-xs">
+          누락: {missingMetrics.join(", ")}
         </span>
       ) : null}
     </div>
@@ -175,6 +189,12 @@ function MetricBlock({
                     <TableCell
                       key={metric.key}
                       className="text-right tabular-nums"
+                      title={
+                        row[metric.key].value === null
+                          ? (row[metric.key].reason ??
+                            row[metric.key].unavailableReason)
+                          : undefined
+                      }
                     >
                       {formatPeriodMetricValue(metric.kind, row[metric.key])}
                     </TableCell>

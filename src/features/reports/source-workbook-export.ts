@@ -5,6 +5,7 @@ import {
 
 import type { ReportExportSheet } from "./export.ts";
 import { buildPeriodTrendColumns } from "./period-analysis.ts";
+import { selectHistoricalReportSources } from "./historical-integration.ts";
 
 export const SOURCE_WORKBOOK_HEADERS = [
   "일자",
@@ -279,16 +280,15 @@ export function buildSourceWorkbookSheet({
   operationalFacts,
   includePersonnel = true,
 }: SourceWorkbookBuildInput): ReportExportSheet {
-  const operationalKeys = new Set(
-    operationalFacts.map((fact) => `${fact.storeId}|${fact.businessDate}`),
+  const sources = selectHistoricalReportSources(
+    historicalFacts,
+    operationalFacts,
   );
   const rows = [
-    ...historicalFacts
-      .filter(
-        (fact) => !operationalKeys.has(`${fact.storeId}|${fact.businessDate}`),
-      )
-      .map((fact) => historicalRow(fact, includePersonnel)),
-    ...operationalFacts.map(operationalRow),
+    ...sources.historicalFacts.map((fact) =>
+      historicalRow(fact, includePersonnel),
+    ),
+    ...sources.operationalFacts.map(operationalRow),
   ].sort((left, right) => {
     const dateOrder = sortValue(left.businessDate ?? null).localeCompare(
       sortValue(right.businessDate ?? null),
@@ -718,9 +718,13 @@ async function loadSourceWorkbookData({
       ),
     ),
   );
-  const sourceSheet = buildSourceWorkbookSheet({
+  const sources = selectHistoricalReportSources(
     historicalFacts,
     operationalFacts,
+  );
+  const sourceSheet = buildSourceWorkbookSheet({
+    historicalFacts: sources.historicalFacts,
+    operationalFacts: sources.operationalFacts,
     includePersonnel,
   });
   const templateBytes =
@@ -736,7 +740,7 @@ async function loadSourceWorkbookData({
   }
 
   const personnelRows: SourceWorkbookPersonnelRow[] = [
-    ...historicalFacts.flatMap((fact) =>
+    ...sources.historicalFacts.flatMap((fact) =>
       fact.roles.map((role) => ({
         businessDate: fact.businessDate,
         storeName: fact.storeName,
@@ -746,7 +750,7 @@ async function loadSourceWorkbookData({
         source: "historical" as const,
       })),
     ),
-    ...operationalFacts.flatMap((fact) =>
+    ...sources.operationalFacts.flatMap((fact) =>
       fact.roles.map((role) => ({
         businessDate: fact.businessDate,
         storeName: fact.storeName,

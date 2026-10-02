@@ -184,7 +184,7 @@ export function EmployeeManagementClient({
   const [isSaving, setIsSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
   const [detail, setDetail] = useState<EmployeeListItem | null>(null);
   const [historicalDetail, setHistoricalDetail] =
     useState<HistoricalEmployeeDetail | null>(null);
@@ -453,6 +453,10 @@ export function EmployeeManagementClient({
           {employees.length + initialHistoricalEmployees.length}명
         </span>
       </div>
+      <p className="text-muted-foreground text-xs">
+        기본 목록에는 재직 중인 직원 등록 정보만 표시합니다. 퇴사·사용중지
+        직원은 체크박스로 확인할 수 있습니다.
+      </p>
 
       {!canManage ? (
         <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
@@ -797,7 +801,7 @@ export function EmployeeManagementClient({
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span>{emp.name}</span>
-                        <Badge>현재</Badge>
+                        <Badge>직원 등록</Badge>
                         {selectedDirectoryKey === `current:${emp.id}` ? (
                           <Badge variant="outline">선택됨</Badge>
                         ) : null}

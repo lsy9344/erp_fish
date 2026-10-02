@@ -186,6 +186,7 @@ export type StoreComparisonSourceSummary = {
   // 휴무·공란을 포함해 원본에 존재한 지점·일자 수. 미입력 일수 판단에 사용한다.
   historicalCoverageDayCount: number;
   excludedHistoricalOverlapCount: number;
+  excludedOperationalOverlapCount?: number;
   missingMetrics: string[];
 };
 

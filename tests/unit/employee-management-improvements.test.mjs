@@ -113,6 +113,13 @@ test("employee management exposes store, explicit status actions, and safe delet
   assert.match(clientSource, /<AlertDialog/);
   assert.match(clientSource, /재직/);
   assert.match(clientSource, /퇴사[^]*사용중지/);
+  assert.match(
+    clientSource,
+    /const \[showInactive, setShowInactive\] = useState\(false\)/,
+  );
+  assert.match(clientSource, /<Badge>직원 등록<\/Badge>/);
+  assert.doesNotMatch(pageSource, /getHistoricalEmployeeList\(\)/);
+  assert.match(pageSource, /initialHistoricalEmployees=\{\[\]\}/);
   assert.doesNotMatch(
     clientSource,
     /const payload = \{ \.\.\.form, isActive: true \}/,

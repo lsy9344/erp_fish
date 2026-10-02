@@ -11,6 +11,51 @@ import {
   getSourceWorkbookTrendDateRanges,
 } from "../../src/features/reports/source-workbook-export.ts";
 
+test("latest Excel keeps Anyang September sales and workers over an empty app ledger", () => {
+  const sheet = buildSourceWorkbookSheet({
+    historicalFacts: [
+      {
+        storeId: "anyang",
+        storeName: "안양참수산",
+        businessDate: "2026-09-15",
+        rawCells: {
+          values: [
+            "2026-09-15",
+            "화",
+            "안양참수산",
+            10572000,
+            2371490,
+            2371490 / 10572000,
+            2186490,
+            2643000,
+            4,
+          ],
+        },
+        roles: [],
+      },
+    ],
+    operationalFacts: [
+      {
+        storeId: "anyang",
+        storeName: "안양참수산",
+        businessDate: "2026-09-15",
+        salesAmount: 0,
+        grossProfit: null,
+        grossMarginRate: null,
+        operatingProfit: null,
+        productivity: null,
+        workerCount: null,
+        salesDifference: null,
+        roles: [],
+      },
+    ],
+  });
+  assert.equal(sheet.rows.length, 1);
+  assert.equal(sheet.rows[0].salesAmount, 10572000);
+  assert.equal(sheet.rows[0].grossProfit, 2371490);
+  assert.equal(sheet.rows[0].workerCount, 4);
+});
+
 test("source workbook uses the customer's 23 input columns", () => {
   assert.deepEqual(
     [...SOURCE_WORKBOOK_HEADERS],
@@ -129,7 +174,7 @@ test("shared-formula round trips preserve cached numeric, error, and blank value
   assert.equal(exportedSheet.getCell("F5").value, null);
 });
 
-test("operational facts take date precedence and historical cached cells stay intact", () => {
+test("latest historical facts take date precedence and cached cells stay intact", () => {
   const sheet = buildSourceWorkbookSheet({
     historicalFacts: [
       {
@@ -204,12 +249,13 @@ test("operational facts take date precedence and historical cached cells stay in
   );
   assert.equal(sheet.rows.length, 2);
 
-  const operational = sheet.rows.find(
-    (row) => row.storeName === "강서수산" && row.salesAmount === 99,
+  const latest = sheet.rows.find(
+    (row) => row.storeName === "강서수산" && row.salesAmount === 3927400,
   );
-  assert.equal(operational?.salesAmount, 99);
-  assert.equal(operational?.lead1, null);
-  assert.equal(operational?.member1, null);
+  assert.equal(latest?.salesAmount, 3927400);
+  assert.equal(latest?.lead1, "과거팀장");
+  assert.equal(latest?.member1, "과거팀원");
+  assert.deepEqual(latest?.grossProfit, { error: "#REF!" });
 
   const historical = sheet.rows.find((row) => row.salesAmount === 10);
   assert.equal(historical?.storeName, "강서수산");

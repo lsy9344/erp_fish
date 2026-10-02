@@ -25,24 +25,31 @@ export const PERIOD_ANALYSIS_METRICS = [
   kind: "money" | "percent" | "headcount";
 }[];
 
-// 기간 대조 화면은 운영 요청에 따라 매출이익을 제외한다. 월별 추이와
-// 단일 기간 화면은 위의 전체 지표를 그대로 유지한다.
+// 기간 대조 화면은 운영 요청에 따라 매출이익과 원본 재고 지표를 제외한다.
+// 월별 추이와 단일 기간 화면은 위의 전체 지표를 그대로 유지한다.
 export const PERIOD_CONTRAST_METRICS = PERIOD_ANALYSIS_METRICS.filter(
-  (metric) => metric.key !== "grossProfit",
+  (metric) =>
+    metric.key !== "grossProfit" &&
+    metric.key !== "averageInventory" &&
+    metric.key !== "inventoryToSalesRatio",
 ) as readonly Exclude<
   (typeof PERIOD_ANALYSIS_METRICS)[number],
-  { key: "grossProfit" }
+  {
+    key: "grossProfit" | "averageInventory" | "inventoryToSalesRatio";
+  }
 >[];
 
 export type PeriodAnalysisMetric = (typeof PERIOD_ANALYSIS_METRICS)[number];
 export type PeriodAnalysisMetricKey = PeriodAnalysisMetric["key"];
 export type PeriodContrastMetric = Exclude<
   PeriodAnalysisMetric,
-  { key: "grossProfit" }
+  {
+    key: "grossProfit" | "averageInventory" | "inventoryToSalesRatio";
+  }
 >;
 export type PeriodContrastMetricKey = Exclude<
   PeriodAnalysisMetricKey,
-  "grossProfit"
+  "grossProfit" | "averageInventory" | "inventoryToSalesRatio"
 >;
 
 const signedHeadcountDeltaFormatter = new Intl.NumberFormat("ko-KR", {

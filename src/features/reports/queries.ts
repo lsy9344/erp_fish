@@ -88,6 +88,7 @@ import type {
 } from "./types.ts";
 import {
   mergeHistoricalStoreComparisonRow,
+  selectHistoricalReportSources,
   type HistoricalFactForReport,
 } from "./historical-integration.ts";
 import { DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS } from "./store-daily-performance.ts";
@@ -2252,27 +2253,21 @@ export async function getHqStoreComparisonReport({
           },
         })
       : [];
-  // 같은 지점·일자는 운영 자료가 우선이다. 과거 fact는 삭제하지 않고 이 조회에서만 제외한다.
-  const operationalStoreDates = new Set(
-    rawLedgers.map(
-      (ledger) =>
-        `${ledger.storeId}|${ledger.closingDate.toISOString().slice(0, 10)}`,
-    ),
+  const sources = selectHistoricalReportSources(
+    historicalRows.map((fact) => ({
+      ...fact,
+      businessDate: fact.businessDate.toISOString().slice(0, 10),
+    })),
+    rawLedgers.map((ledger) => ({
+      ...ledger,
+      businessDate: ledger.closingDate.toISOString().slice(0, 10),
+    })),
   );
   const historicalByStoreId = new Map<string, HistoricalFactForReport[]>();
-  const excludedHistoricalOverlapByStoreId = new Map<string, number>();
-  for (const fact of historicalRows) {
-    const storeDate = `${fact.storeId}|${fact.businessDate.toISOString().slice(0, 10)}`;
-    if (operationalStoreDates.has(storeDate)) {
-      excludedHistoricalOverlapByStoreId.set(
-        fact.storeId,
-        (excludedHistoricalOverlapByStoreId.get(fact.storeId) ?? 0) + 1,
-      );
-      continue;
-    }
+  for (const fact of sources.historicalFacts) {
     const storeFacts = historicalByStoreId.get(fact.storeId) ?? [];
     storeFacts.push({
-      businessDate: fact.businessDate.toISOString().slice(0, 10),
+      businessDate: fact.businessDate,
       salesAmount:
         fact.salesAmount === null ? null : Number(fact.salesAmount.toString()),
       grossProfit:
@@ -2292,6 +2287,9 @@ export async function getHqStoreComparisonReport({
     historicalByStoreId.set(fact.storeId, storeFacts);
   }
 
+  const selectedOperationalLedgerIds = new Set(
+    sources.operationalFacts.map((ledger) => ledger.id),
+  );
   const ledgers = rawLedgers.map(normalizeReportLedgerQuantities);
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
@@ -2323,7 +2321,10 @@ export async function getHqStoreComparisonReport({
     ),
     rows: sortStoreComparisonReportRowsForTest(
       selectedStores.map((store) => {
-        const ledgerSummaries = summariesByStoreId.get(store.id) ?? [];
+        const allLedgerSummaries = summariesByStoreId.get(store.id) ?? [];
+        const ledgerSummaries = allLedgerSummaries.filter((summary) =>
+          selectedOperationalLedgerIds.has(summary.ledgerId),
+        );
         const dateCount = getInclusiveDateCount(range.startDate, range.endDate);
         const operationalRow = buildStoreComparisonReportRowForTest({
           store,
@@ -2331,17 +2332,36 @@ export async function getHqStoreComparisonReport({
           ledgerSummaries,
         });
 
-        return mergeHistoricalStoreComparisonRow({
+        const integratedRow = mergeHistoricalStoreComparisonRow({
           operationalRow,
           operationalLedgerCount: ledgerSummaries.length,
           operationalBusinessDayCount: ledgerSummaries.filter(
             (summary) => summary.status !== "HOLIDAY",
           ).length,
           historicalFacts: historicalByStoreId.get(store.id) ?? [],
-          excludedHistoricalOverlapCount:
-            excludedHistoricalOverlapByStoreId.get(store.id) ?? 0,
+          excludedHistoricalOverlapCount: 0,
+          excludedOperationalOverlapCount:
+            sources.excludedOperationalOverlapByStoreId.get(store.id) ?? 0,
           dateCount,
         });
+        // Excel 기준 지표와 별개로 앱 장부의 상태·손실 기록은 보존한다.
+        const operationalStatusRow = buildStoreComparisonReportRowForTest({
+          store,
+          dateCount,
+          ledgerSummaries: allLedgerSummaries,
+        });
+        return {
+          ...integratedRow,
+          statusCounts: {
+            ...operationalStatusRow.statusCounts,
+            missingDayCount: integratedRow.statusCounts.missingDayCount,
+          },
+          hasLoss: operationalStatusRow.hasLoss,
+          metricEvidence: {
+            ...integratedRow.metricEvidence,
+            loss: operationalStatusRow.metricEvidence.loss,
+          },
+        };
       }),
     ),
   };

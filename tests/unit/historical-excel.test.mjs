@@ -10,7 +10,11 @@ import {
   parseHistoricalWorkbook,
 } from "../../src/features/historical-excel/parser.ts";
 import { buildStoreComparisonReportExport } from "../../src/features/reports/export.ts";
-import { mergeHistoricalStoreComparisonRow } from "../../src/features/reports/historical-integration.ts";
+import {
+  mergeHistoricalStoreComparisonRow,
+  selectHistoricalReportSources,
+} from "../../src/features/reports/historical-integration.ts";
+import { buildStoreComparisonReportRowForTest } from "../../src/features/reports/queries.ts";
 
 function metric(value) {
   return value === null
@@ -84,6 +88,140 @@ function operationalRow() {
     },
   };
 }
+
+test("latest Excel selects covered dates once and keeps app dates outside the workbook", () => {
+  const historical = [
+    { storeId: "a", businessDate: "2026-09-15", salesAmount: 10572000 },
+    { storeId: "a", businessDate: "2026-09-28", salesAmount: null },
+  ];
+  const operational = [
+    { storeId: "a", businessDate: "2026-09-15", salesAmount: 0 },
+    { storeId: "a", businessDate: "2026-09-28", salesAmount: 0 },
+    { storeId: "a", businessDate: "2026-10-01", salesAmount: 100 },
+    { storeId: "b", businessDate: "2026-09-15", salesAmount: 200 },
+  ];
+  const selected = selectHistoricalReportSources(historical, operational);
+  assert.deepEqual(selected.historicalFacts, historical);
+  assert.deepEqual(selected.operationalFacts, operational.slice(2));
+  assert.equal(selected.excludedOperationalOverlapByStoreId.get("a"), 2);
+  assert.equal(selected.excludedOperationalOverlapByStoreId.has("b"), false);
+  assert.deepEqual(
+    selectHistoricalReportSources([], operational).operationalFacts,
+    operational,
+  );
+  assert.deepEqual(
+    operational.map((fact) => fact.salesAmount),
+    [0, 0, 100, 200],
+  );
+});
+
+test("latest Excel restores missing metrics and mixes uncovered corrected app days", () => {
+  const historical = [
+    {
+      storeId: "store-1",
+      businessDate: "2026-09-15",
+      salesAmount: 300,
+      grossProfit: 90,
+      workerCount: 2,
+      grossMarginRate: 0.3,
+      productivity: 150,
+      metricStatus: {},
+    },
+    {
+      storeId: "store-1",
+      businessDate: "2026-09-28",
+      salesAmount: null,
+      grossProfit: null,
+      workerCount: null,
+      grossMarginRate: null,
+      productivity: null,
+      metricStatus: {},
+    },
+  ];
+  const original = {
+    totalSales: metric(100),
+    grossProfit: metric(20),
+    grossMarginRate: metric(0.2),
+    operatingProfit: metric(15),
+    productivity: metric(50),
+    inventoryAmount: metric(30),
+  };
+  const applied = {
+    ...original,
+    totalSales: metric(120),
+    grossProfit: metric(24),
+    productivity: metric(60),
+  };
+  const operational = [
+    {
+      storeId: "store-1",
+      businessDate: "2026-09-15",
+      ledgerId: "empty-business-day",
+      status: "HEADQUARTERS_CLOSED",
+      original: { ...original, totalSales: metric(0) },
+      applied: { ...applied, totalSales: metric(0) },
+      workerCount: null,
+      hasLoss: false,
+      hasUnappliedCorrections: false,
+    },
+    {
+      storeId: "store-1",
+      businessDate: "2026-09-28",
+      ledgerId: "empty-holiday",
+      status: "IN_PROGRESS",
+      original,
+      applied,
+      workerCount: null,
+      hasLoss: false,
+      hasUnappliedCorrections: false,
+    },
+    {
+      storeId: "store-1",
+      businessDate: "2026-10-01",
+      ledgerId: "corrected-uncovered-day",
+      status: "HEADQUARTERS_CLOSED",
+      original,
+      applied,
+      workerCount: 2,
+      originalWorkerCount: 2,
+      hasLoss: false,
+      hasUnappliedCorrections: false,
+      appliedCorrectionCount: 2,
+      appliedCorrectionKeys: new Set([
+        "LEDGER_FIELD:totalSalesAmount",
+        "LEDGER_FIELD:workerCount",
+      ]),
+    },
+  ];
+  const selected = selectHistoricalReportSources(historical, operational);
+  const appRow = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "강서수산" },
+    dateCount: 17,
+    ledgerSummaries: selected.operationalFacts,
+  });
+  const merged = mergeHistoricalStoreComparisonRow({
+    operationalRow: appRow,
+    operationalLedgerCount: 1,
+    operationalBusinessDayCount: 1,
+    historicalFacts: selected.historicalFacts,
+    excludedHistoricalOverlapCount: 0,
+    excludedOperationalOverlapCount:
+      selected.excludedOperationalOverlapByStoreId.get("store-1"),
+    dateCount: 17,
+  });
+  assert.equal(merged.salesAmount.value, 420);
+  assert.equal(merged.grossProfit.value, 114);
+  assert.equal(merged.grossMarginRate.value, 114 / 420);
+  assert.equal(merged.averageWorkerCount.value, 2);
+  assert.equal(merged.productivity.value, 105);
+  assert.equal(merged.averageSales.value, 210);
+  assert.equal(merged.trendAggregation.businessDayCount, 2);
+  assert.equal(merged.sourceSummary.source, "mixed");
+  assert.equal(merged.sourceSummary.excludedOperationalOverlapCount, 2);
+  assert.equal(merged.metricEvidence.salesAmount.original.value, 400);
+  assert.equal(merged.metricEvidence.salesAmount.applied.value, 420);
+  assert.equal(merged.statusCounts.inProgressCount, 0);
+});
 
 test("parser preserves formulas, cached values, blanks, errors, and first canonical store-date", async () => {
   const ExcelJS = (await import("exceljs")).default;

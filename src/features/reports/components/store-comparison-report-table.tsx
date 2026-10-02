@@ -350,6 +350,11 @@ function SourceBadges({
           운영 우선 {row.sourceSummary.excludedHistoricalOverlapCount}일
         </Badge>
       ) : null}
+      {(row.sourceSummary.excludedOperationalOverlapCount ?? 0) > 0 ? (
+        <Badge variant="outline">
+          Excel 우선 {row.sourceSummary.excludedOperationalOverlapCount}일
+        </Badge>
+      ) : null}
     </div>
   );
 }
