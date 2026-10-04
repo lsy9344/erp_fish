@@ -154,6 +154,11 @@ Playwright jobs run inside the official Playwright container image, so they use
 the same PostgreSQL service through the `postgres` service hostname instead of
 `localhost`.
 
+The CI test server uses Webpack with Node source maps disabled and an explicit
+8 GiB heap limit. Long browser shards previously triggered Next.js development
+server memory restarts, which interrupted navigation and caused connection
+errors. Local development keeps its existing server settings.
+
 ## Artifacts
 
 Playwright uploads artifacts when a Playwright job fails or is cancelled:

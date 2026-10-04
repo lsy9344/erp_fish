@@ -10,8 +10,10 @@ const reuseExistingServer =
 // Next 15 enables Webpack when `next dev` has no `--turbo` flag. Keep the
 // faster Turbopack command for local development, but use Webpack for the
 // CI-only test server so API/E2E checks do not start the Turbopack worker.
+// Disable Node source maps and reserve enough heap for long CI shards so
+// compilation does not trigger Next's automatic memory-threshold restart.
 const devServerCommand = process.env.CI
-  ? "corepack pnpm exec next dev"
+  ? "corepack pnpm exec next dev --disable-source-maps"
   : "corepack pnpm dev";
 
 process.env.DATABASE_URL = databaseURL;
@@ -39,6 +41,11 @@ export default defineConfig({
     reuseExistingServer,
     timeout: 120_000,
     env: {
+      ...(process.env.CI
+        ? {
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=8192`,
+          }
+        : {}),
       AUTH_SECRET: "test-auth-secret-at-least-32-characters",
       AUTH_URL: baseURL,
       DATABASE_URL: databaseURL,

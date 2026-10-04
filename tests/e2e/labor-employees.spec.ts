@@ -122,6 +122,7 @@ test("대표는 인사관리 카드에서 직원 상세를 등록하고 검색�
   await expect(page.getByText("월간 생산성 / 인력 배치 분석")).toBeVisible();
 
   await employeeRow.getByRole("button", { name: "퇴사·사용중지" }).click();
+  await page.getByLabel("퇴사·사용중지 직원 포함").check();
   await expect(employeeRow).toContainText("퇴사·사용중지");
   await employeeRow.getByRole("button", { name: "다시 재직" }).click();
   await expect(employeeRow).toContainText("재직");
@@ -565,7 +566,7 @@ test("나중에 하루 인건비를 입력하면 연결된 0원 근무기록을 
   }
 });
 
-test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하고 역할 이력을 본다", async ({
+test("과거 Excel 직원 이름은 직원 관리 목록에서 숨기고 리포트에서만 사용한다", async ({
   page,
 }) => {
   const batchId = "e2e-historical-batch";
@@ -660,16 +661,12 @@ test("대표는 과거 직원을 현재 직원과 구분해 한 명씩 선택하
     await page.goto("/app/labor/employees");
     await page.getByLabel("직원 검색").fill("과거테스트");
     const row = page.getByRole("row", { name: /과거테스트직원/ });
-    await expect(row).toContainText("과거 Excel");
-    await expect(row).toContainText("최초 확인 근무일");
-    await page.getByLabel("직원 선택").selectOption(`historical:${employeeId}`);
-    await expect(row).toContainText("선택됨");
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("한 사람으로 확정한 정보가 아닙니다");
-    await expect(dialog).toContainText("2020-01-01");
-    await expect(dialog).toContainText("강남점");
-    await expect(dialog).toContainText("매니저");
-    await page.keyboard.press("Escape");
+    await expect(row).toHaveCount(0);
+    await expect(
+      page
+        .getByLabel("직원 선택")
+        .locator(`option[value="historical:${employeeId}"]`),
+    ).toHaveCount(0);
 
     await page.goto(
       "/app/reports/comparison?startDate=2020-01-01&endDate=2020-01-01&storeId=store-gangnam",

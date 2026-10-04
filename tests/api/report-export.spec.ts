@@ -433,9 +433,14 @@ test.describe("Report export API", () => {
       );
       expect(fixtureRows).toHaveLength(4);
       expect(rows.length).toBeGreaterThanOrEqual(fixtureRows.length);
+      // 활성화한 최신 Excel 원본이 같은 날짜의 ERP 장부보다 우선한다.
       expect(fixtureRows).toContainEqual({
         store: FULL_EXPORT_ACTIVE_STORE_NAME,
-        sales: 300,
+        sales: 100,
+      });
+      expect(fixtureRows).toContainEqual({
+        store: FULL_EXPORT_ACTIVE_STORE_NAME,
+        sales: 200,
       });
       expect(fixtureRows).toContainEqual({
         store: FULL_EXPORT_INACTIVE_STORE_NAME,
@@ -443,7 +448,7 @@ test.describe("Report export API", () => {
       });
       expect(fixtureRows).not.toContainEqual({
         store: FULL_EXPORT_ACTIVE_STORE_NAME,
-        sales: 100,
+        sales: 300,
       });
       const detail = workbook.getWorksheet("Sheet3");
       expect(detail).toBeTruthy();

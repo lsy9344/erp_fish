@@ -1248,7 +1248,7 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
   assert.match(componentSource, /break-words/);
   assert.doesNotMatch(componentSource, /evaluateRevenueAnomalySignals/);
   assert.doesNotMatch(componentSource, /evaluateInventoryLossAnomalySignals/);
-  assert.match(dailyPageSource, /<ReportsNav active="daily"/);
+  assert.match(dailyPageSource, /<ReportsNav\s+active="daily"/);
   assert.match(comparisonPageSource, /<ReportsNav active="comparison"/);
   assert.match(reportsNavSource, /href:\s*"\/app\/reports\/monthly"/);
   // 매출분석 3종은 월간이 아니라 기간 분석에서 기간을 지정해 본다.

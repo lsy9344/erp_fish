@@ -69,9 +69,11 @@ const REPORT_GROUPS: ReportGroup[] = [
 export function ReportsNav({
   active,
   canViewLabor = false,
+  dateInput,
 }: {
   active: ReportKey;
   canViewLabor?: boolean;
+  dateInput?: string;
 }) {
   const groups = REPORT_GROUPS.map((group) => ({
     ...group,
@@ -98,11 +100,15 @@ export function ReportsNav({
             <div className="flex flex-wrap gap-1.5">
               {group.items.map((item) => {
                 const isActive = item.key === active;
+                const href =
+                  item.key === "inventory" && dateInput
+                    ? `${item.href}?date=${encodeURIComponent(dateInput)}`
+                    : item.href;
 
                 return (
                   <Link
                     key={item.key}
-                    href={item.href}
+                    href={href}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors",

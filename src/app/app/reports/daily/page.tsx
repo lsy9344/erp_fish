@@ -97,7 +97,11 @@ export default async function DailyMeetingReportPage({
       userEmail={user.email ?? "headquarters"}
       navigationItems={navigationItems}
     >
-      <ReportsNav active="daily" canViewLabor={canViewLabor} />
+      <ReportsNav
+        active="daily"
+        canViewLabor={canViewLabor}
+        dateInput={report.dateInput}
+      />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <PageHeader

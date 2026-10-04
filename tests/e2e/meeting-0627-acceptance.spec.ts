@@ -160,7 +160,7 @@ test("회의 0627 지점장 화면은 급여액과 전날재고 민감 금액을
   await expect(dialog.getByRole("link")).toHaveCount(0);
 });
 
-test("회의 0627 본사 전용 관리와 월간 xlsx 5시트 export를 검증한다", async ({
+test("회의 0627 본사 전용 관리와 원본 입력 포함 월간 xlsx 6시트 export를 검증한다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
@@ -211,6 +211,7 @@ test("회의 0627 본사 전용 관리와 월간 xlsx 5시트 export를 검증�
   await workbook.xlsx.load(arrayBuffer);
 
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+    "입력",
     "요약",
     "기간조회_RAW",
     "월별손익",
