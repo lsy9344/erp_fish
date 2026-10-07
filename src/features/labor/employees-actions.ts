@@ -6,11 +6,13 @@ import type { ZodError } from "zod";
 import { actionError, actionOk, type ActionResult } from "~/lib/action-result";
 import { writeAuditLog } from "~/server/audit";
 import {
+  getHeadquartersStoreScope,
   hasActionPermission,
   requireEmployeeManageAccess,
 } from "~/server/authz";
 import { db } from "~/server/db";
-import { employeeFormSchema } from "./employees-schemas";
+import { employeeFormSchema, employeeUpdateSchema } from "./employees-schemas";
+import { applyEmployeePastWageInTx } from "./employee-past-wage";
 import {
   linkExistingLaborItemsInTx,
   lockEmployeeNamesInTx,
@@ -46,6 +48,7 @@ export type EmployeeSaveResult = {
   name: string;
   linkedLaborItemCount?: number;
   filledLinkedZeroAmountCount?: number;
+  updatedPastLaborItemCount?: number;
 };
 
 function revalidateEmployeeLaborPaths() {
@@ -183,7 +186,7 @@ export async function updateEmployee(
     PermissionAction.LEDGER_EDIT,
   );
 
-  const parsed = employeeFormSchema.safeParse(input);
+  const parsed = employeeUpdateSchema.safeParse(input);
 
   if (!parsed.success) {
     return actionError("VALIDATION_ERROR", "입력값을 확인해 주세요.", {
@@ -194,16 +197,44 @@ export async function updateEmployee(
   const storeValidation = await validateEmployeeStore(parsed.data.storeId);
   if (!storeValidation.ok) return storeValidation;
 
+  const period = parsed.data.pastWagePeriod;
+  if (period && !canEditLedgers) {
+    return actionError(
+      "FORBIDDEN",
+      "과거 일급 변경에는 장부 수정 권한이 필요합니다.",
+    );
+  }
+  const scope = period ? await getHeadquartersStoreScope() : null;
+  const canEditClosedLedgers = period
+    ? await hasActionPermission(actor.id, PermissionAction.LEDGER_CLOSED_EDIT)
+    : false;
+
   const writeData = toEmployeeWriteData(parsed.data);
-  const employee = await db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Employee" WHERE "id" = ${id} FOR UPDATE`;
     const existing = await tx.employee.findUnique({ where: { id } });
-    if (!existing) return null;
+    if (!existing) {
+      return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
+    }
     await lockEmployeeNamesInTx(tx, [existing.name, writeData.name]);
     // 활성 상태는 별도 activate/deactivate 액션으로만 바꾼다. 특히 비활성 직원
     // 편집이 실수로 다시 활성화되지 않도록 항상 현재 상태를 유지한다.
     const safeWriteData = { ...writeData, isActive: existing.isActive };
     const changedFields = employeeChangedFields(existing, safeWriteData);
+    let updatedPastLaborItemCount = 0;
+    if (period && scope && parsed.data.dailyWage !== null) {
+      const pastResult = await applyEmployeePastWageInTx({
+        tx,
+        employeeId: id,
+        amount: parsed.data.dailyWage,
+        ...period,
+        storeIds: scope.storeIds,
+        actorId: actor.id,
+        canEditClosedLedgers,
+      });
+      if (!pastResult.ok) return pastResult;
+      updatedPastLaborItemCount = pastResult.data.updatedLaborItemCount;
+    }
     const updated = await tx.employee.update({
       where: { id },
       data: safeWriteData,
@@ -215,15 +246,21 @@ export async function updateEmployee(
         dailyWage: true,
       },
     });
-    const linkResult = await linkExistingLaborItemsInTx({
-      tx,
-      employee: updated,
-      actorId: actor.id,
-      canEditLedgers,
-      fillLinkedZeroAmounts:
-        (existing.dailyWage ?? 0) === 0 && (updated.dailyWage ?? 0) > 0,
-      auditReason: "직원 정보 수정 후 기존 근무기록 자동 연결",
-    });
+    const linkResult = period
+      ? {
+          linkedLaborItemCount: 0,
+          filledLinkedZeroAmountCount: 0,
+          linkedDailyLedgerCount: 0,
+        }
+      : await linkExistingLaborItemsInTx({
+          tx,
+          employee: updated,
+          actorId: actor.id,
+          canEditLedgers,
+          fillLinkedZeroAmounts:
+            (existing.dailyWage ?? 0) === 0 && (updated.dailyWage ?? 0) > 0,
+          auditReason: "직원 정보 수정 후 기존 근무기록 자동 연결",
+        });
     await writeAuditLog(tx, {
       action: "employee.updated",
       targetType: "Employee",
@@ -232,24 +269,28 @@ export async function updateEmployee(
       before: { changedFields: [] },
       after: {
         changedFields,
+        updatedPastLaborItemCount,
         linkedLaborItemCount: linkResult.linkedLaborItemCount,
         filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
         linkedDailyLedgerCount: linkResult.linkedDailyLedgerCount,
       },
     });
-    return {
+    return actionOk({
       id: updated.id,
       name: updated.name,
       linkedLaborItemCount: linkResult.linkedLaborItemCount,
       filledLinkedZeroAmountCount: linkResult.filledLinkedZeroAmountCount,
-    };
+      updatedPastLaborItemCount,
+    });
   });
 
-  if (!employee) {
-    return actionError("NOT_FOUND", "직원 정보를 찾을 수 없습니다.");
-  }
+  if (!result.ok) return result;
   revalidateEmployeeLaborPaths();
-  return actionOk(employee);
+  if (period) {
+    revalidatePath("/app/ledgers/[ledgerId]", "page");
+    revalidatePath("/app/store-entry");
+  }
+  return result;
 }
 
 // WO-E(2026-06-22): HR 월간 생산성/인력 배치 분석 조회용 서버 액션.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getTodayKstInput } from "../ledger/date.ts";
 
 // WO-25(2026-07-25) #6/#8: 등록 상세 — 하루 인건비 · 월 희망 수령액(4대보험/현금).
 // 빈 문자열은 "미입력"(null)로 취급하고, 입력 시에는 0 이상 정수 원 단위만 허용한다.
@@ -85,3 +86,52 @@ export const employeeFormSchema = z.object({
 
 export type EmployeeFormInput = z.input<typeof employeeFormSchema>;
 export type EmployeeFormData = z.output<typeof employeeFormSchema>;
+
+const pastWageDateSchema = z.string().refine((value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}, "올바른 날짜를 입력해 주세요.");
+
+export const employeeUpdateSchema = employeeFormSchema
+  .extend({
+    pastWagePeriod: z
+      .object({
+        startDate: pastWageDateSchema,
+        endDate: pastWageDateSchema,
+        reason: z
+          .string()
+          .trim()
+          .min(1, "변경 사유를 입력해 주세요.")
+          .max(500, "변경 사유는 500자 이하여야 합니다."),
+      })
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    const period = data.pastWagePeriod;
+    if (!period) return;
+    if (data.dailyWage === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dailyWage"],
+        message: "과거 근무기록에 적용할 하루 인건비를 입력해 주세요.",
+      });
+    }
+    if (period.startDate > period.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pastWagePeriod", "endDate"],
+        message: "종료일은 시작일 이후여야 합니다.",
+      });
+    }
+    if (period.endDate > getTodayKstInput()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pastWagePeriod", "endDate"],
+        message: "과거 적용 종료일은 오늘까지 선택할 수 있습니다.",
+      });
+    }
+  });

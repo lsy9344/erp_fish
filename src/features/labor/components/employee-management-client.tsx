@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -177,10 +178,18 @@ export function EmployeeManagementClient({
   summaryMonth,
   canManage,
 }: EmployeeManagementClientProps) {
+  const router = useRouter();
   const [employees, setEmployees] =
     useState<EmployeeListItem[]>(initialEmployees);
+  useEffect(() => setEmployees(initialEmployees), [initialEmployees]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [applyPastWage, setApplyPastWage] = useState(false);
+  const [pastWagePeriod, setPastWagePeriod] = useState({
+    startDate: "",
+    endDate: "",
+    reason: "",
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [search, setSearch] = useState("");
@@ -273,12 +282,16 @@ export function EmployeeManagementClient({
 
   function handleEdit(employee: EmployeeListItem) {
     setEditingId(employee.id);
+    setApplyPastWage(false);
+    setPastWagePeriod({ startDate: "", endDate: "", reason: "" });
     setForm(toFormState(employee));
     setFieldErrors({});
   }
 
   function handleCancel() {
     setEditingId(null);
+    setApplyPastWage(false);
+    setPastWagePeriod({ startDate: "", endDate: "", reason: "" });
     setForm(emptyForm);
     setFieldErrors({});
   }
@@ -292,6 +305,7 @@ export function EmployeeManagementClient({
       storeId: form.storeId || null,
       dailyWage: toOptionalAmount(form.dailyWage),
       desiredInsuranceAmount: toOptionalAmount(form.desiredInsuranceAmount),
+      ...(editingId && applyPastWage ? { pastWagePeriod } : {}),
     };
     const result = editingId
       ? await updateEmployee(editingId, payload)
@@ -345,8 +359,12 @@ export function EmployeeManagementClient({
     const linkedMessage = reflectedLaborItemCount
       ? ` 기존 근무기록 ${reflectedLaborItemCount}건을 반영했습니다.`
       : "";
-    toast.success(`${baseMessage}${linkedMessage}`);
+    const pastMessage = applyPastWage
+      ? ` 선택한 과거 기간의 근무기록 ${result.data.updatedPastLaborItemCount ?? 0}건을 변경했습니다.`
+      : "";
+    toast.success(`${baseMessage}${linkedMessage}${pastMessage}`);
     handleCancel();
+    if (applyPastWage) router.refresh();
   }
 
   async function handleDeactivate(id: string) {
@@ -608,7 +626,8 @@ export function EmployeeManagementClient({
               />
               <FieldDescription>
                 새 근무 기록에 이 직원을 연결할 때 기본 금액으로 저장됩니다.
-                이미 저장된 장부 금액은 바뀌지 않습니다.
+                {editingId &&
+                  " 과거 근무기록도 변경하려면 아래에서 적용 기간을 선택해 주세요."}
               </FieldDescription>
             </Field>
             <Field
@@ -682,6 +701,132 @@ export function EmployeeManagementClient({
               />
             </Field>
           </FieldGroup>
+
+          {editingId && (
+            <FieldGroup className="grid gap-3 sm:grid-cols-3">
+              <Field>
+                <FieldLabel htmlFor="employee-wage-scope">
+                  일급 적용 범위
+                </FieldLabel>
+                <Select
+                  value={applyPastWage ? "period" : "new"}
+                  onValueChange={(value) =>
+                    setApplyPastWage(value === "period")
+                  }
+                  disabled={isSaving}
+                >
+                  <SelectTrigger id="employee-wage-scope" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="new">기본 일급 저장</SelectItem>
+                      <SelectItem value="period">과거 기간에도 적용</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  미연결 기록과 일급 최초 입력 시의 미마감 0원 기록은 자동
+                  보완됩니다. 과거 기간을 선택하면 마감 장부를 포함해 해당
+                  직원의 기존 금액을 입력한 하루 인건비로 변경합니다. 기본
+                  일급도 함께 저장됩니다.
+                </FieldDescription>
+              </Field>
+              {applyPastWage && (
+                <>
+                  <Field
+                    data-invalid={Boolean(
+                      fieldErrors["pastWagePeriod.startDate"]?.length,
+                    )}
+                  >
+                    <FieldLabel htmlFor="employee-wage-start">
+                      과거 적용 시작일
+                    </FieldLabel>
+                    <Input
+                      id="employee-wage-start"
+                      type="date"
+                      value={pastWagePeriod.startDate}
+                      onChange={(e) =>
+                        setPastWagePeriod((prev) => ({
+                          ...prev,
+                          startDate: e.target.value,
+                        }))
+                      }
+                      disabled={isSaving}
+                      aria-invalid={Boolean(
+                        fieldErrors["pastWagePeriod.startDate"]?.length,
+                      )}
+                    />
+                    <FieldError
+                      errors={fieldErrors["pastWagePeriod.startDate"]?.map(
+                        (message) => ({ message }),
+                      )}
+                    />
+                  </Field>
+                  <Field
+                    data-invalid={Boolean(
+                      fieldErrors["pastWagePeriod.endDate"]?.length,
+                    )}
+                  >
+                    <FieldLabel htmlFor="employee-wage-end">
+                      과거 적용 종료일
+                    </FieldLabel>
+                    <Input
+                      id="employee-wage-end"
+                      type="date"
+                      value={pastWagePeriod.endDate}
+                      onChange={(e) =>
+                        setPastWagePeriod((prev) => ({
+                          ...prev,
+                          endDate: e.target.value,
+                        }))
+                      }
+                      disabled={isSaving}
+                      aria-invalid={Boolean(
+                        fieldErrors["pastWagePeriod.endDate"]?.length,
+                      )}
+                    />
+                    <FieldError
+                      errors={fieldErrors["pastWagePeriod.endDate"]?.map(
+                        (message) => ({ message }),
+                      )}
+                    />
+                  </Field>
+                  <Field
+                    className="sm:col-span-3"
+                    data-invalid={Boolean(
+                      fieldErrors["pastWagePeriod.reason"]?.length,
+                    )}
+                  >
+                    <FieldLabel htmlFor="employee-wage-reason">
+                      과거 일급 변경 사유
+                    </FieldLabel>
+                    <Input
+                      id="employee-wage-reason"
+                      value={pastWagePeriod.reason}
+                      onChange={(e) =>
+                        setPastWagePeriod((prev) => ({
+                          ...prev,
+                          reason: e.target.value,
+                        }))
+                      }
+                      placeholder="일급 누락 또는 입력 오류 정정"
+                      maxLength={500}
+                      disabled={isSaving}
+                      aria-invalid={Boolean(
+                        fieldErrors["pastWagePeriod.reason"]?.length,
+                      )}
+                    />
+                    <FieldError
+                      errors={fieldErrors["pastWagePeriod.reason"]?.map(
+                        (message) => ({ message }),
+                      )}
+                    />
+                  </Field>
+                </>
+              )}
+            </FieldGroup>
+          )}
 
           <div className="flex gap-2">
             <Button
