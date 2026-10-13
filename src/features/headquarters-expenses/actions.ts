@@ -8,12 +8,17 @@ import {
   requireSettingsAccess,
 } from "~/server/authz";
 import { db } from "~/server/db";
-import { revalidateDashboardAndReports } from "~/server/revalidation";
+import {
+  revalidateBestEffort,
+  revalidateDashboardAndReports,
+} from "~/server/revalidation";
 import { revalidatePath } from "next/cache";
 import {
   headquartersExpenseCreateSchema,
+  headquartersExpenseBatchCreateSchema,
   headquartersExpenseUpdateSchema,
   toFieldErrors,
+  type HeadquartersExpenseBatchCreateInput,
   type HeadquartersExpenseCreateInput,
   type HeadquartersExpenseUpdateInput,
 } from "./schemas";
@@ -36,6 +41,10 @@ export type HeadquartersExpenseActionData = {
   id: string;
 };
 
+export type HeadquartersExpenseBatchActionData = {
+  ids: string[];
+};
+
 function parseExpenseDate(expenseDate: string) {
   return new Date(`${expenseDate}T00:00:00.000Z`);
 }
@@ -52,9 +61,9 @@ function toExpenseAuditValue(expense: HeadquartersExpenseRecord) {
   };
 }
 
-async function assertStoreInScope(
+async function assertStoreInScope<T>(
   storeId: string | null,
-): Promise<ActionResult<HeadquartersExpenseActionData> | null> {
+): Promise<ActionResult<T> | null> {
   if (!storeId) {
     return null;
   }
@@ -62,7 +71,7 @@ async function assertStoreInScope(
   const scope = await getHeadquartersStoreScope();
 
   if (!scope.storeIds.includes(storeId)) {
-    return actionError<HeadquartersExpenseActionData>(
+    return actionError<T>(
       "STORE_OUT_OF_SCOPE",
       "권한 범위에 없는 지점입니다. 권한 있는 지점을 선택해 주세요.",
       { storeId: ["권한 범위에 없는 지점입니다."] },
@@ -92,7 +101,8 @@ export async function createHeadquartersExpense(
   }
 
   const data: HeadquartersExpenseCreateInput = parsed.data;
-  const storeScopeError = await assertStoreInScope(data.storeId);
+  const storeScopeError =
+    await assertStoreInScope<HeadquartersExpenseActionData>(data.storeId);
 
   if (storeScopeError) {
     return storeScopeError;
@@ -148,7 +158,8 @@ export async function updateHeadquartersExpense(
   }
 
   const data: HeadquartersExpenseUpdateInput = parsed.data;
-  const storeScopeError = await assertStoreInScope(data.storeId);
+  const storeScopeError =
+    await assertStoreInScope<HeadquartersExpenseActionData>(data.storeId);
 
   if (storeScopeError) {
     return storeScopeError;
@@ -171,7 +182,10 @@ export async function updateHeadquartersExpense(
         );
       }
 
-      const existingScopeError = await assertStoreInScope(existing.storeId);
+      const existingScopeError =
+        await assertStoreInScope<HeadquartersExpenseActionData>(
+          existing.storeId,
+        );
 
       if (existingScopeError) {
         return actionError(
@@ -212,4 +226,65 @@ export async function updateHeadquartersExpense(
   }
 
   return result;
+}
+
+export async function createHeadquartersExpenses(
+  input: unknown,
+): Promise<ActionResult<HeadquartersExpenseBatchActionData>> {
+  const actor = await requireSettingsAccess();
+  const parsed = headquartersExpenseBatchCreateSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return actionError(
+      "VALIDATION_ERROR",
+      "입력값을 확인해 주세요.",
+      toFieldErrors(parsed.error),
+    );
+  }
+
+  const data: HeadquartersExpenseBatchCreateInput = parsed.data;
+  const storeScopeError =
+    await assertStoreInScope<HeadquartersExpenseBatchActionData>(data.storeId);
+
+  if (storeScopeError) {
+    return storeScopeError;
+  }
+
+  const created = await db.$transaction(async (tx) => {
+    const expenses = [];
+
+    for (const item of data.items) {
+      const expense = await tx.headquartersExpense.create({
+        data: {
+          expenseDate: parseExpenseDate(data.expenseDate),
+          storeId: data.storeId,
+          category: item.category,
+          amount: item.amount,
+          adjustmentReason:
+            item.category === "본사조정" ? item.adjustmentReason : null,
+          memo: item.memo,
+          createdById: actor.id,
+          updatedById: actor.id,
+        },
+        select: headquartersExpenseSelect,
+      });
+
+      await writeAuditLog(tx, {
+        action: "headquarters-expense.created",
+        targetType: "HeadquartersExpense",
+        targetId: expense.id,
+        actorId: actor.id,
+        before: null,
+        after: toExpenseAuditValue(expense),
+      });
+
+      expenses.push(expense);
+    }
+
+    return expenses;
+  });
+
+  revalidateBestEffort(revalidateHeadquartersExpensePaths);
+
+  return actionOk({ ids: created.map((expense) => expense.id) });
 }

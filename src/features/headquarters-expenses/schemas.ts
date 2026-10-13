@@ -11,6 +11,19 @@ const amountError = "지출 금액은 0원 이상의 정수여야 합니다.";
 const memoError = "메모는 0~500자 사이여야 합니다.";
 const adjustmentReasonError = "조정사유는 0~500자 사이여야 합니다.";
 
+export const HEADQUARTERS_EXPENSE_CATEGORIES = [
+  "임차료",
+  "전기세",
+  "CCTV",
+  "화재보험료",
+  "교통비",
+  "4대보험료",
+  "수도세",
+  "카드단말기사용료",
+  "인터넷",
+  "카드·세무수수료",
+] as const;
+
 function parseCategory(value: unknown, context: z.RefinementCtx) {
   if (typeof value === "string") {
     const category = value.trim();
@@ -69,10 +82,22 @@ function parseOptionalStoreId(value: unknown) {
   return null;
 }
 
+function isValidExpenseDate(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+
 const expenseDateSchema = z
   .string()
   .transform((value) => value.trim())
-  .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, expenseDateError));
+  .pipe(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, expenseDateError)
+      .refine(isValidExpenseDate, expenseDateError),
+  );
 
 const headquartersExpenseIdSchema = z
   .string()
@@ -102,12 +127,31 @@ const headquartersExpenseFields = {
     ),
 };
 
+const headquartersExpenseItemFields = {
+  category: headquartersExpenseFields.category,
+  amount: headquartersExpenseFields.amount,
+  adjustmentReason: headquartersExpenseFields.adjustmentReason,
+  memo: headquartersExpenseFields.memo,
+};
+
 export const headquartersExpenseCreateSchema = z.object(
   headquartersExpenseFields,
 );
 
 export type HeadquartersExpenseCreateInput = z.infer<
   typeof headquartersExpenseCreateSchema
+>;
+
+export const headquartersExpenseBatchCreateSchema = z.object({
+  expenseDate: expenseDateSchema,
+  storeId: z.unknown().transform((value) => parseOptionalStoreId(value)),
+  items: z
+    .array(z.object(headquartersExpenseItemFields))
+    .min(1, "지출 내역을 하나 이상 입력해 주세요."),
+});
+
+export type HeadquartersExpenseBatchCreateInput = z.infer<
+  typeof headquartersExpenseBatchCreateSchema
 >;
 
 export const headquartersExpenseUpdateSchema = z.object({

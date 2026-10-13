@@ -143,6 +143,149 @@ test("headquarters expense create schema rejects invalid date, category, amount,
   );
 });
 
+test("headquarters expense schemas accept leap days and reject nonexistent dates", async () => {
+  const {
+    headquartersExpenseCreateSchema,
+    headquartersExpenseUpdateSchema,
+    headquartersExpenseBatchCreateSchema,
+  } = await importSchemas();
+
+  const validDate = "2024-02-29";
+  const invalidDate = "2023-02-29";
+  const createFields = {
+    storeId: "",
+    category: "임차료",
+    amount: 1000,
+  };
+
+  assert.equal(
+    headquartersExpenseCreateSchema.safeParse({
+      expenseDate: validDate,
+      ...createFields,
+    }).success,
+    true,
+  );
+  assert.equal(
+    headquartersExpenseCreateSchema.safeParse({
+      expenseDate: invalidDate,
+      ...createFields,
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    headquartersExpenseUpdateSchema.safeParse({
+      id: "expense-1",
+      expenseDate: validDate,
+      ...createFields,
+    }).success,
+    true,
+  );
+  assert.equal(
+    headquartersExpenseUpdateSchema.safeParse({
+      id: "expense-1",
+      expenseDate: "2024-02-30",
+      ...createFields,
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    headquartersExpenseBatchCreateSchema.safeParse({
+      expenseDate: validDate,
+      storeId: "",
+      items: [{ category: "임차료", amount: 1000 }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    headquartersExpenseBatchCreateSchema.safeParse({
+      expenseDate: "2024-04-31",
+      storeId: "",
+      items: [{ category: "임차료", amount: 1000 }],
+    }).success,
+    false,
+  );
+});
+
+test("headquarters expense batch schema normalizes shared fields and rows", async () => {
+  const {
+    headquartersExpenseBatchCreateSchema,
+    HEADQUARTERS_EXPENSE_CATEGORIES,
+  } = await importSchemas();
+
+  const parsed = headquartersExpenseBatchCreateSchema.safeParse({
+    expenseDate: " 2026-06-22 ",
+    storeId: " store-gangnam ",
+    items: [
+      { category: " 임차료 ", amount: "1500000", memo: "  6월 임차료  " },
+      { category: "전기세", amount: 32000, adjustmentReason: "" },
+    ],
+  });
+
+  assert.equal(parsed.success, true);
+  assert.deepEqual(parsed.data, {
+    expenseDate: "2026-06-22",
+    storeId: "store-gangnam",
+    items: [
+      {
+        category: "임차료",
+        amount: 1500000,
+        memo: "6월 임차료",
+        adjustmentReason: null,
+      },
+      { category: "전기세", amount: 32000, memo: null, adjustmentReason: null },
+    ],
+  });
+  assert.deepEqual(
+    [...HEADQUARTERS_EXPENSE_CATEGORIES],
+    [
+      "임차료",
+      "전기세",
+      "CCTV",
+      "화재보험료",
+      "교통비",
+      "4대보험료",
+      "수도세",
+      "카드단말기사용료",
+      "인터넷",
+      "카드·세무수수료",
+    ],
+  );
+});
+
+test("headquarters expense batch schema requires a nonempty row list", async () => {
+  const { headquartersExpenseBatchCreateSchema } = await importSchemas();
+
+  const result = headquartersExpenseBatchCreateSchema.safeParse({
+    expenseDate: "2026-06-22",
+    storeId: "",
+    items: [],
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.error.issues[0].path.join("."), "items");
+});
+
+test("headquarters expense batch schema reports invalid row fields with dot paths", async () => {
+  const { headquartersExpenseBatchCreateSchema, toFieldErrors } =
+    await importSchemas();
+
+  const result = headquartersExpenseBatchCreateSchema.safeParse({
+    expenseDate: "2026-06-22",
+    storeId: "",
+    items: [
+      { category: "임차료", amount: "1000" },
+      { category: "전기세", amount: "not-an-amount" },
+    ],
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(toFieldErrors(result.error), {
+    "items.1.amount": ["지출 금액은 0원 이상의 정수여야 합니다."],
+  });
+});
+
 test("headquarters expense update schema requires an id", async () => {
   const { headquartersExpenseUpdateSchema } = await importSchemas();
 
