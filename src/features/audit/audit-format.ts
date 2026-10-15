@@ -70,6 +70,23 @@ const actionLabels: Record<string, string> = {
   "ledger_input_code.activated": "활성화",
   "ledger_input_code.deactivated": "비활성화",
   "ledger_input_code.reordered": "표시 순서 변경",
+  "ledger.created": "장부 생성",
+  "ledger.sales_payment.updated": "매출/결제 저장",
+  "ledger.expenses.saved": "지출 저장",
+  "ledger.purchases.saved": "매입 저장",
+  "ledger.inventory.saved": "재고 저장",
+  "ledger.inventory_adjustment.saved": "재고 조정",
+  "ledger.losses.saved": "손실 저장",
+  "ledger.labor.saved": "근무자 저장",
+  "ledger.work_info.saved": "근무 정보 저장",
+  "ledger.labor_amount.restored_from_audit": "근무 금액 복구",
+  "ledger.repair.gangseo_0803_fifo.applied": "재고 원가 보정",
+  "ledger.hq.labor.saved": "본사 근무자 수정",
+  "ledger.hq.bulk_closed": "본사 일괄 마감",
+  "store.deleted": "삭제",
+  "user.deleted": "삭제",
+  "user.credentials_updated": "로그인 정보 변경",
+  "user.permission_profiles_changed": "권한 프로필 변경",
   "ledger.review.submitted": "지점 제출",
   "ledger.hq.sales_payment.updated": "본사 매출/결제 수정",
   "ledger.hq.expenses.saved": "본사 비용 수정",
@@ -139,7 +156,88 @@ const auditSummaryFieldLabels: Record<string, string> = {
   sourceUnitPrice: "원본 이카운트 단가",
   currentQuantity: "당일재고",
   reason: "사유",
+  status: "상태",
+  closedAt: "마감 시각",
+  submittedAt: "제출 시각",
+  authorDisplayName: "작성자",
+  workMemo: "근무 메모",
+  expenseItems: "지출 항목",
+  expenseTotal: "지출 합계",
+  purchaseItems: "매입 항목",
+  purchaseTotal: "매입 합계",
+  laborItems: "근무자",
+  payrollTotal: "인건비 합계",
+  lossItems: "손실 항목",
+  items: "재고 품목",
+  grossProfit: "영업이익",
+  productivity: "인당생산성",
+  paymentDifferenceAmount: "마감 정산 차액",
+  spec: "규격",
+  defaultUnitPrice: "참고 단가",
+  appliedUnitPrice: "적용 단가",
+  inventoryAmount: "재고금액",
+  adjustment: "재고 조정",
+  beforeQuantity: "조정 전 수량",
+  afterQuantity: "조정 후 수량",
+  differenceQuantity: "차이 수량",
+  beforeAmount: "조정 전 금액",
+  afterAmount: "조정 후 금액",
+  differenceAmount: "차이 금액",
+  displayName: "표시 이름",
+  rawName: "원본 이름",
+  rawSpec: "원본 규격",
+  marginRateBps: "마진율 기준(bp)",
+  loginId: "로그인 ID",
+  passwordChanged: "비밀번호 변경",
+  profileNames: "권한 프로필",
+  storeNames: "배정 지점",
+  fileName: "파일명",
+  startDate: "적용 시작일",
+  endDate: "적용 종료일",
 };
+
+// 상태·권한 코드값을 화면 말로 바꾼다.
+const auditSummaryValueLabels: Record<string, string> = {
+  IN_PROGRESS: "작성 중",
+  IN_REVIEW: "검토 중",
+  HEADQUARTERS_CLOSED: "본사 마감",
+  HOLIDAY: "휴무",
+  HEADQUARTERS: "본사",
+  STORE_MANAGER: "지점장",
+  GLOBAL: "전체",
+  READY: "반영 가능",
+  COMMITTED: "반영됨",
+  FAILED: "오류",
+  VOIDED: "취소됨",
+};
+
+// 목록 항목(지출·매입·재고 등)을 한 줄로 설명할 때 쓰는 이름/세부 필드.
+const auditItemNameKeys = [
+  "productName",
+  "ledgerInputCodeName",
+  "workerName",
+  "name",
+  "displayName",
+] as const;
+
+const auditItemDetailLabels = {
+  currentQuantity: "당일재고",
+  quantity: "수량",
+  unitPrice: "단가",
+  amount: "금액",
+  inventoryAmount: "재고금액",
+  reason: "사유",
+  memo: "메모",
+} as const;
+
+const auditMoneyFieldPattern =
+  /(?:^amount|Amount|Price|Total|Profit|^productivity)$/;
+const auditDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const auditDateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  dateStyle: "short",
+  timeStyle: "short",
+  timeZone: "Asia/Seoul",
+});
 
 function isJsonObject(
   value: Prisma.JsonValue | null | undefined,
@@ -147,20 +245,179 @@ function isJsonObject(
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function formatAuditSummaryValue(value: Prisma.JsonValue | null | undefined) {
-  if (value === null || value === undefined) {
+function formatAuditSummaryValue(
+  key: string,
+  value: Prisma.JsonValue | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") {
     return "-";
   }
 
+  if (typeof value === "boolean") {
+    if (key === "isActive") {
+      return value ? "활성" : "비활성";
+    }
+
+    return value ? "예" : "아니오";
+  }
+
+  if (typeof value === "number") {
+    // 예전 기록에는 소수 인당생산성이 남아 있어 금액은 원 단위로 보여준다.
+    return auditMoneyFieldPattern.test(key)
+      ? `${Math.round(value).toLocaleString("ko-KR")}원`
+      : value.toLocaleString("ko-KR");
+  }
+
   if (typeof value === "string") {
-    return value;
+    if (auditDateTimePattern.test(value)) {
+      return auditDateTimeFormatter.format(new Date(value));
+    }
+
+    return auditSummaryValueLabels[value] ?? value;
   }
 
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  if (Array.isArray(value)) {
+    return value.length === 0
+      ? "없음"
+      : value
+          .map((item) =>
+            isJsonObject(item)
+              ? describeAuditItem(item)
+              : formatAuditSummaryValue(key, item),
+          )
+          .join(", ");
   }
 
-  return JSON.stringify(value) ?? "-";
+  return describeAuditItem(value);
+}
+
+function getAuditItemName(item: Prisma.JsonObject) {
+  const name = auditItemNameKeys
+    .map((key) => item[key])
+    .find(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    );
+  const spec =
+    typeof item.productSpec === "string" && item.productSpec.trim()
+      ? ` ${item.productSpec}`
+      : "";
+
+  return name ? `${name}${spec}` : "항목";
+}
+
+function describeAuditItem(item: Prisma.JsonObject) {
+  const details = Object.entries(auditItemDetailLabels).flatMap(
+    ([key, label]) => {
+      const value = item[key];
+
+      if (value === null || value === undefined || value === "") {
+        return [];
+      }
+
+      // 재고 행의 quantity는 당일재고의 옛 필드라 당일재고가 있으면 생략한다.
+      if (key === "quantity" && item.currentQuantity !== undefined) {
+        return [];
+      }
+
+      return [`${label} ${formatAuditSummaryValue(key, value)}`];
+    },
+  );
+
+  return [getAuditItemName(item), ...details].join(" · ");
+}
+
+// 목록은 저장할 때마다 행 id가 새로 생겨 id로 짝지을 수 없다. 설명이 같은 행은
+// 변경 없음으로 지우고, 남은 행은 이름이 같으면 변경, 아니면 삭제/추가로 보여준다.
+function formatAuditItemChanges(
+  label: string,
+  before: Prisma.JsonValue[],
+  after: Prisma.JsonValue[],
+) {
+  const toEntries = (items: Prisma.JsonValue[]) =>
+    items.filter(isJsonObject).map((item) => ({
+      name: getAuditItemName(item),
+      text: describeAuditItem(item),
+    }));
+  const removed = toEntries(before);
+  const added = toEntries(after);
+
+  for (let index = removed.length - 1; index >= 0; index -= 1) {
+    const sameIndex = added.findIndex(
+      (entry) => entry.text === removed[index]!.text,
+    );
+
+    if (sameIndex >= 0) {
+      removed.splice(index, 1);
+      added.splice(sameIndex, 1);
+    }
+  }
+
+  const lines: string[] = [];
+
+  for (const entry of removed) {
+    const nextIndex = added.findIndex((next) => next.name === entry.name);
+
+    if (nextIndex < 0) {
+      lines.push(`${label} 삭제: ${entry.text}`);
+      continue;
+    }
+
+    const [next] = added.splice(nextIndex, 1);
+    lines.push(`${label} 변경: ${entry.text} → ${next!.text}`);
+  }
+
+  for (const entry of added) {
+    lines.push(`${label} 추가: ${entry.text}`);
+  }
+
+  return lines;
+}
+
+function hasAuditItemObjects(value: Prisma.JsonValue | null | undefined) {
+  return Array.isArray(value) && value.some(isJsonObject);
+}
+
+// 한글 라벨이 있는 필드만 요약한다. id·버전·내부 상태 같은 값은
+// "원문 변경 전/후(JSON)"에서만 본다.
+function collectAuditChangeLines(
+  before: Prisma.JsonObject,
+  after: Prisma.JsonObject,
+  prefix: string,
+): string[] {
+  return Array.from(
+    new Set([...Object.keys(before), ...Object.keys(after)]),
+  ).flatMap((key) => {
+    const fieldLabel = auditSummaryFieldLabels[key];
+    const beforeValue = before[key];
+    const afterValue = after[key];
+
+    if (!fieldLabel || isSameAuditValue(beforeValue, afterValue)) {
+      return [];
+    }
+
+    const label = `${prefix}${fieldLabel}`;
+
+    if (hasAuditItemObjects(beforeValue) || hasAuditItemObjects(afterValue)) {
+      return formatAuditItemChanges(
+        label,
+        Array.isArray(beforeValue) ? beforeValue : [],
+        Array.isArray(afterValue) ? afterValue : [],
+      );
+    }
+
+    if (isJsonObject(beforeValue) || isJsonObject(afterValue)) {
+      return collectAuditChangeLines(
+        isJsonObject(beforeValue) ? beforeValue : {},
+        isJsonObject(afterValue) ? afterValue : {},
+        `${label} · `,
+      );
+    }
+
+    return [
+      `${label}: ${formatAuditSummaryValue(key, beforeValue)} → ${formatAuditSummaryValue(key, afterValue)}`,
+    ];
+  });
 }
 
 function isSameAuditValue(
@@ -235,26 +492,17 @@ export function formatAuditChangeSummary(
   before: Prisma.JsonValue | null | undefined,
   after: Prisma.JsonValue | null | undefined,
 ) {
-  if (!isJsonObject(before) || !isJsonObject(after)) {
+  if (!isJsonObject(before) && !isJsonObject(after)) {
     return isSameAuditValue(before, after)
       ? "-"
-      : `값: ${formatAuditSummaryValue(before)} → ${formatAuditSummaryValue(after)}`;
+      : `값: ${formatAuditSummaryValue("", before)} → ${formatAuditSummaryValue("", after)}`;
   }
 
-  const lines = Array.from(
-    new Set([...Object.keys(before), ...Object.keys(after)]),
-  ).flatMap((key) => {
-    const beforeValue = before[key];
-    const afterValue = after[key];
-
-    if (isSameAuditValue(beforeValue, afterValue)) {
-      return [];
-    }
-
-    return [
-      `${auditSummaryFieldLabels[key] ?? key}: ${formatAuditSummaryValue(beforeValue)} → ${formatAuditSummaryValue(afterValue)}`,
-    ];
-  });
+  const lines = collectAuditChangeLines(
+    isJsonObject(before) ? before : {},
+    isJsonObject(after) ? after : {},
+    "",
+  );
 
   return lines.length > 0 ? lines.join("\n") : "-";
 }

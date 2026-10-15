@@ -16,6 +16,37 @@ export const CALCULATION_STATUS_LABELS = {
 } as const;
 
 export type CalculationStatus = keyof typeof CALCULATION_STATUS_LABELS;
+
+// 계산 지표의 화면 이름. 오류 안내문과 본사 마감 점검 목록이 같은 이름을 쓴다.
+export const CALCULATION_METRIC_LABELS: Record<string, string> = {
+  totalSales: "영업 매출 합계",
+  closingTotalSales: "장부 마감 매출",
+  carryoverSales: "이월 매출",
+  operatingSales: "영업 매출 합계",
+  paymentTotal: "현금·카드·기타 합계",
+  expenseTotal: "3단계 지출 합계",
+  workerCount: "근무인원",
+  costOfGoodsSold: "매출원가",
+  grossProfit: "매출이익",
+  grossMarginRate: "마진율",
+  operatingProfit: "영업이익",
+  productivity: "생산성",
+  inventoryAmount: "재고금액",
+  paymentDifference: "마감 정산 차액",
+  salesDifference: "매출이익",
+  plannedSalesTotal: "판매가 기준 예상 매출",
+  plannedGrossProfit: "판매가 기준 예상 이익",
+  plannedGrossMarginRate: "판매가 기준 예상 마진율",
+  plannedVsActualSalesDifference: "예상 매출 대비 차이",
+};
+
+function getMetricLabel(metricId: string) {
+  return CALCULATION_METRIC_LABELS[metricId] ?? metricId;
+}
+
+function krwOutOfRangeReason(metricId: string) {
+  return `${getMetricLabel(metricId)} 금액을 계산할 수 없습니다. 원 단위로 떨어지지 않거나 너무 큰 금액이 있는지 입력값을 확인해 주세요.`;
+}
 export type CalculationStatusLabel =
   (typeof CALCULATION_STATUS_LABELS)[CalculationStatus];
 export type LedgerReviewUnavailableReason = "계산 불가" | "계산 기준 확인 필요";
@@ -97,7 +128,9 @@ export function calculateProductivity(
     return null;
   }
 
-  return operatingSalesAmount / workerCount;
+  // 인당생산성은 원 단위로 반올림한다. 매출이 인원수로 나누어떨어지지 않으면
+  // 소수점이 생겨 화면에 소수로 보이고 원 단위 검증에 걸려 마감이 막혔다.
+  return Math.round(operatingSalesAmount / workerCount);
 }
 
 export type LedgerReviewMetric = CalculationMetric & {
@@ -306,7 +339,7 @@ function asKrwMetric(metricId: string, value: number): LedgerReviewMetric {
   if (!isSafeKrwInteger(value)) {
     return calculationUnavailable({
       metricId,
-      reason: `${metricId} 계산값이 integer KRW 안전 범위를 벗어났습니다.`,
+      reason: krwOutOfRangeReason(metricId),
       logReason: "unsafe-krw-integer",
     });
   }
@@ -322,7 +355,7 @@ function asPolicyUnconfirmedKrwMetric(
   if (!isSafeKrwInteger(value)) {
     return calculationUnavailable({
       metricId,
-      reason: `${metricId} 계산값이 integer KRW 안전 범위를 벗어났습니다.`,
+      reason: krwOutOfRangeReason(metricId),
       logReason: "unsafe-krw-integer",
     });
   }
@@ -340,7 +373,7 @@ function asRatioMetric(metricId: string, value: number): LedgerReviewMetric {
   if (!Number.isFinite(value)) {
     return calculationUnavailable({
       metricId,
-      reason: `${metricId} 계산값이 유효한 숫자가 아닙니다.`,
+      reason: `${getMetricLabel(metricId)} 값을 계산할 수 없습니다. 관련 입력값을 확인해 주세요.`,
       logReason: "invalid-number",
     });
   }
@@ -356,7 +389,7 @@ function asPolicyUnconfirmedRatioMetric(
   if (!Number.isFinite(value)) {
     return calculationUnavailable({
       metricId,
-      reason: `${metricId} 계산값이 유효한 숫자가 아닙니다.`,
+      reason: `${getMetricLabel(metricId)} 값을 계산할 수 없습니다. 관련 입력값을 확인해 주세요.`,
       logReason: "invalid-number",
     });
   }
@@ -375,13 +408,13 @@ function asCountMetric(
   value: number | null,
 ): LedgerReviewMetric {
   if (value === null) {
-    return dataInsufficient(`${metricId} 입력값이 없습니다.`);
+    return dataInsufficient(`${getMetricLabel(metricId)} 입력값이 없습니다.`);
   }
 
   if (!Number.isSafeInteger(value)) {
     return calculationUnavailable({
       metricId,
-      reason: `${metricId} 계산값이 유효한 정수가 아닙니다.`,
+      reason: `${getMetricLabel(metricId)}은(는) 소수점 없는 숫자로 입력해 주세요.`,
       logReason: "invalid-integer",
     });
   }
@@ -404,7 +437,7 @@ function safelyCalculateNumber(
       kind: "error",
       metric: calculationUnavailable({
         metricId,
-        reason: `${metricId} 계산 중 예상하지 못한 오류가 발생했습니다.`,
+        reason: `${getMetricLabel(metricId)} 계산 중 예상하지 못한 오류가 발생했습니다.`,
         logReason:
           error instanceof Error
             ? `unexpected-error:${error.name}`
@@ -680,8 +713,7 @@ export function calculateLedgerReviewSummary({
     expenseTotalMetric.status !== "ok"
       ? calculationUnavailable({
           metricId: "paymentDifference",
-          reason:
-            "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+          reason: krwOutOfRangeReason("paymentDifference"),
           logReason: "unsafe-krw-integer",
         })
       : asKrwMetric(

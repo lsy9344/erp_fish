@@ -439,8 +439,12 @@ export async function getHqInventoryPositionReport({
     for (const item of ledger.ledgerInventoryItems) {
       categoryValues.add(item.productCategory);
 
+      // 재고가 들어온 적도 남은 것도 없는 품목만 숨긴다. 당일 매입해 당일 다 판
+      // 품목(당일재고 0)은 보여준다.
       if (
         item.previousQuantity === 0 &&
+        item.purchasedQuantity === 0 &&
+        item.conversionInQuantity === 0 &&
         (item.currentQuantity ?? item.quantity) === 0
       ) {
         continue;

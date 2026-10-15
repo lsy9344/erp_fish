@@ -58,7 +58,7 @@ test("ledger calculations expose separated status code, label, and legacy reason
     status: "data-insufficient",
     label: "데이터 부족",
     unavailableReason: "계산 불가",
-    reason: "workerCount 입력값이 없습니다.",
+    reason: "근무인원 입력값이 없습니다.",
   });
   assert.deepEqual(summary.productivity, {
     value: null,
@@ -129,7 +129,7 @@ test("ledger calculations mark invalid KRW arithmetic as unavailable and log con
       label: "계산 불가",
       unavailableReason: "계산 불가",
       reason:
-        "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+        "마감 정산 차액 금액을 계산할 수 없습니다. 원 단위로 떨어지지 않거나 너무 큰 금액이 있는지 입력값을 확인해 주세요.",
     });
 
     const unsafeExpenseSummary = calculateLedgerReviewSummary({
@@ -152,7 +152,7 @@ test("ledger calculations mark invalid KRW arithmetic as unavailable and log con
       label: "계산 불가",
       unavailableReason: "계산 불가",
       reason:
-        "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+        "마감 정산 차액 금액을 계산할 수 없습니다. 원 단위로 떨어지지 않거나 너무 큰 금액이 있는지 입력값을 확인해 주세요.",
     });
   } finally {
     console.error = originalError;
@@ -205,7 +205,7 @@ test("ledger calculations reject payment difference when expense total is unsafe
       label: "계산 불가",
       unavailableReason: "계산 불가",
       reason:
-        "paymentDifference 계산값이 integer KRW 안전 범위를 벗어났습니다.",
+        "마감 정산 차액 금액을 계산할 수 없습니다. 원 단위로 떨어지지 않거나 너무 큰 금액이 있는지 입력값을 확인해 주세요.",
     });
   } finally {
     console.error = originalError;

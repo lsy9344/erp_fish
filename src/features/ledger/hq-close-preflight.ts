@@ -9,6 +9,7 @@ import { getDashboardSignals } from "~/features/dashboard/queries";
 import { ANOMALY_THRESHOLD_SCOPE } from "~/features/dashboard/threshold-schemas";
 import {
   applyCorrectionValuesToLedgerReviewInput,
+  CALCULATION_METRIC_LABELS,
   calculateExpenseTotal,
   calculateLedgerReviewSummary,
   calculatePaymentTotal,
@@ -570,7 +571,7 @@ function buildCalculationItems(
     return [
       item({
         id: `calculation-${metricId}-${metric.status}`,
-        label: calculationMetricLabels[metricId] ?? metricId,
+        label: CALCULATION_METRIC_LABELS[metricId] ?? metricId,
         severity,
         detail:
           metric.status === "policy-unconfirmed"
@@ -764,24 +765,6 @@ function dedupeItems(items: HqLedgerClosePreflightItem[]) {
     return true;
   });
 }
-
-const calculationMetricLabels: Record<string, string> = {
-  totalSales: "영업 매출 합계",
-  closingTotalSales: "장부 마감 매출",
-  carryoverSales: "이월 매출",
-  operatingSales: "영업 매출 합계",
-  paymentTotal: "현금·카드·기타 합계",
-  expenseTotal: "3단계 지출 합계",
-  workerCount: "근무인원",
-  costOfGoodsSold: "매출원가",
-  grossProfit: "매출이익",
-  grossMarginRate: "마진율",
-  operatingProfit: "영업이익",
-  productivity: "생산성",
-  inventoryAmount: "재고금액",
-  paymentDifference: "마감 정산 차액",
-  salesDifference: "매출이익",
-};
 
 const carryoverStatusDetails = {
   DATA_INSUFFICIENT: "이월 판단에 필요한 데이터가 부족합니다.",

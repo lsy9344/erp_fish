@@ -490,6 +490,8 @@ test("ledger cost calculation helpers validate edge cases", async () => {
   assert.equal(calculateGrossProfit(10_000, 4_500), 5_500);
   assert.equal(calculateGrossProfit(5_000, 7_000), -2_000);
   assert.equal(calculateProductivity(10_000, 2), 5_000);
+  // 나누어떨어지지 않아도 원 단위 정수다(소수면 마감 검증에서 막혔다).
+  assert.equal(calculateProductivity(4_169_000, 3), 1_389_667);
   assert.equal(calculateProductivity(10_000, 0), null);
   assert.equal(calculateProductivity(10_000, null), null);
   assert.equal(calculateProductivity(10_000, -1), null);
@@ -823,11 +825,12 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     "[ledgerId]",
     "page.tsx",
   );
-  const hqClosePreflightSource = readProjectFile(
+  // 마감 점검 지표 이름은 계산 모듈의 CALCULATION_METRIC_LABELS를 같이 쓴다.
+  const metricLabelSource = readProjectFile(
     "src",
-    "features",
-    "ledger",
-    "hq-close-preflight.ts",
+    "server",
+    "calculations",
+    "ledger.ts",
   );
 
   assert.match(termsSource, /expenseItem:\s*"지출 항목"/);
@@ -849,9 +852,9 @@ test("store-entry expense surfaces use customer-facing expenditure wording", () 
     hqPageSource,
     /`지출 \$\{index \+ 1\} · \$\{item\.ledgerInputCodeName\} · 금액`/,
   );
-  assert.match(hqClosePreflightSource, /paymentTotal:\s*"현금·카드·기타 합계"/);
-  assert.match(hqClosePreflightSource, /expenseTotal:\s*"3단계 지출 합계"/);
-  assert.match(hqClosePreflightSource, /paymentDifference:\s*"마감 정산 차액"/);
+  assert.match(metricLabelSource, /paymentTotal:\s*"현금·카드·기타 합계"/);
+  assert.match(metricLabelSource, /expenseTotal:\s*"3단계 지출 합계"/);
+  assert.match(metricLabelSource, /paymentDifference:\s*"마감 정산 차액"/);
 });
 
 test("cost and work migration exists and defines required schema objects", () => {

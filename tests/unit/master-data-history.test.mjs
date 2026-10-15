@@ -140,10 +140,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
     getAuditActionLabel("ledger_input_code.reordered"),
     "표시 순서 변경",
   );
-  assert.equal(
-    getAuditActionLabel("ledger.review.submitted"),
-    "지점 제출",
-  );
+  assert.equal(getAuditActionLabel("ledger.review.submitted"), "지점 제출");
   assert.equal(getAuditActionLabel("correction.created"), "정정 기록 추가");
   assert.equal(getAuditActionLabel("threshold.updated"), "기준값 변경");
   assert.equal(
@@ -158,7 +155,7 @@ test("audit format helpers map target/action labels and safely format JSON detai
       { targetName: "이상 신호 기준값", isActive: false, quantity: 5 },
       { targetName: "이상 신호 기준값", isActive: true, quantity: 6 },
     ),
-    /활성 상태: false → true[\s\S]*수량: 5 → 6/,
+    /활성 상태: 비활성 → 활성[\s\S]*수량: 5 → 6/,
   );
   // WO-05(2026-06-28): 장부 대표 필드도 한글 라벨로 매핑된다(raw key 의존 감소).
   assert.match(
@@ -166,7 +163,61 @@ test("audit format helpers map target/action labels and safely format JSON detai
       { totalSalesAmount: 100000, unitPrice: 5000, sourceUnitPrice: 4800 },
       { totalSalesAmount: 120000, unitPrice: 5200, sourceUnitPrice: 4800 },
     ),
-    /총매출: 100000 → 120000[\s\S]*장부 적용 단가: 5000 → 5200/,
+    /총매출: 100,000원 → 120,000원[\s\S]*장부 적용 단가: 5,000원 → 5,200원/,
+  );
+  // 변경 요약에는 코드(id·버전·상태 코드)가 아니라 화면 말이 나온다.
+  const ledgerSummary = formatAuditChangeSummary(
+    {
+      version: 4,
+      status: "IN_PROGRESS",
+      updatedAt: "2026-10-07T01:00:00.000Z",
+      expenseItems: [
+        { id: "a", amount: 90000, ledgerInputCodeName: "식대" },
+        { id: "b", amount: 10000, ledgerInputCodeName: "교통비" },
+      ],
+      items: [
+        {
+          id: "c",
+          productName: "광어",
+          productSpec: "1kg",
+          currentQuantity: 3,
+        },
+        { id: "d", productName: "우럭", productSpec: "", currentQuantity: 1 },
+      ],
+    },
+    {
+      version: 5,
+      status: "HEADQUARTERS_CLOSED",
+      updatedAt: "2026-10-07T02:00:00.000Z",
+      expenseItems: [
+        { id: "e", amount: 75000, ledgerInputCodeName: "식대" },
+        { id: "f", amount: 5000, ledgerInputCodeName: "주차비" },
+      ],
+      items: [
+        {
+          id: "g",
+          productName: "광어",
+          productSpec: "1kg",
+          currentQuantity: 2,
+        },
+        { id: "h", productName: "우럭", productSpec: "", currentQuantity: 1 },
+      ],
+    },
+  );
+  assert.equal(
+    ledgerSummary,
+    [
+      "상태: 작성 중 → 본사 마감",
+      "지출 항목 변경: 식대 · 금액 90,000원 → 식대 · 금액 75,000원",
+      "지출 항목 삭제: 교통비 · 금액 10,000원",
+      "지출 항목 추가: 주차비 · 금액 5,000원",
+      "재고 품목 변경: 광어 1kg · 당일재고 3 → 광어 1kg · 당일재고 2",
+    ].join("\n"),
+  );
+  assert.doesNotMatch(ledgerSummary, /version|updatedAt|IN_PROGRESS|"id"/);
+  assert.equal(
+    formatAuditChangeSummary(null, { name: "광어", category: "생물" }),
+    "이름: - → 광어\n분류: - → 생물",
   );
   assert.match(
     formatAuditJsonValue({

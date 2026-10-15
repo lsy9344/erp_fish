@@ -2,13 +2,25 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { test } from "node:test";
 
-test("inventory report hides only items with zero previous and current stock", async () => {
+test("inventory report hides only items with no stock in or left", async () => {
   const cases = [
     { productId: "empty", previousQuantity: 0, currentQuantity: 0 },
     { productId: "sold-out", previousQuantity: 0.1, currentQuantity: 0 },
     { productId: "small-sold-out", previousQuantity: 0.01, currentQuantity: 0 },
     { productId: "new-stock", previousQuantity: 0, currentQuantity: 0.1 },
     { productId: "remaining", previousQuantity: 1, currentQuantity: 0.5 },
+    {
+      productId: "same-day-sold-out",
+      previousQuantity: 0,
+      purchasedQuantity: 5,
+      currentQuantity: 0,
+    },
+    {
+      productId: "converted-sold-out",
+      previousQuantity: 0,
+      conversionInQuantity: 2,
+      currentQuantity: 0,
+    },
     { productId: "unknown", previousQuantity: 0, currentQuantity: null },
     {
       productId: "legacy-empty",
@@ -85,6 +97,8 @@ test("inventory report hides only items with zero previous and current stock", a
       "small-sold-out",
       "new-stock",
       "remaining",
+      "same-day-sold-out",
+      "converted-sold-out",
       "unknown",
       "legacy-stock",
     ].sort();
