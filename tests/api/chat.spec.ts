@@ -4,7 +4,7 @@ import { test } from "@seontechnologies/playwright-utils/api-request/fixtures";
 const ENDPOINT = "/api/chat";
 const PASSWORD = "correct-password";
 
-// LLM은 /api/test/openai-stub으로 우회된다(playwright.config.ts). 스텁은
+// LLM은 /api/test/anthropic-stub으로 우회된다(playwright.config.ts). 스텁은
 // 도구 결과가 없으면 도구 호출을, 있으면 최종 답변을 돌려준다.
 type ChatResponse = { reply: string; usedTools: string[] };
 type ErrorResponse = { error: string; message: string };

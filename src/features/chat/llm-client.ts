@@ -1,6 +1,6 @@
-// OpenAI Chat Completions `fetch` 래퍼. SDK를 추가하지 않는다.
+// Anthropic Messages API `fetch` 래퍼. SDK를 추가하지 않는다.
 // notifications/line-client.ts와 같은 구조다 — 기본 엔드포인트는 공식 API이고,
-// OPENAI_API_BASE_URL로 스텁을 가리키면 실제 키 없이 호출 경로를 검증할 수 있다.
+// ANTHROPIC_API_BASE_URL로 스텁을 가리키면 실제 키 없이 호출 경로를 검증할 수 있다.
 
 export type ChatModelToolCall = {
   id: string;
@@ -9,14 +9,22 @@ export type ChatModelToolCall = {
   argumentsJson: string;
 };
 
+/**
+ * Anthropic assistant content block. thinking/redacted_thinking 블록은 도구 루프에서
+ * 그대로 돌려보내야 하므로 알 수 없는 타입도 보존한다.
+ */
+export type ChatModelAssistantBlock = {
+  type: string;
+  [key: string]: unknown;
+};
+
+export type ChatModelUserBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_result"; tool_use_id: string; content: string };
+
 export type ChatModelMessage =
-  | { role: "system" | "user"; content: string }
-  | {
-      role: "assistant";
-      content: string | null;
-      toolCalls?: ChatModelToolCall[];
-    }
-  | { role: "tool"; toolCallId: string; content: string };
+  | { role: "user"; content: string | ChatModelUserBlock[] }
+  | { role: "assistant"; content: ChatModelAssistantBlock[] };
 
 export type ChatModelTool = {
   name: string;
@@ -34,71 +42,84 @@ export type ChatModelUsage = {
 export type ChatModelResult =
   | {
       status: "ok";
-      content: string | null;
+      content: ChatModelAssistantBlock[];
+      text: string | null;
       toolCalls: ChatModelToolCall[];
       usage: ChatModelUsage;
     }
   | { status: "error"; error: string };
 
-// 소형(mini) 등급. 어려운 계산은 리포트 계층이 하므로 상위 모델이 필요 없다.
-// 모델명이 바뀌면 코드가 아니라 OPENAI_CHAT_MODEL로 교체한다.
-const DEFAULT_MODEL = "gpt-5.4-mini";
+// Sonnet 5.5. thinking은 기본(adaptive)이고, effort가 사고 깊이를 조절한다.
+// 모델명이 바뀌면 코드가 아니라 ANTHROPIC_CHAT_MODEL로 교체한다.
+const DEFAULT_MODEL = "claude-sonnet-5-5";
+const EFFORT = "medium";
+// thinking 토큰도 max_tokens에 포함된다. 2~4문장 답변과 도구 루프에 여유를 둔다.
+const MAX_TOKENS = 8_192;
+const ANTHROPIC_VERSION = "2023-06-01";
 const REQUEST_TIMEOUT_MS = 20_000;
 
-function getChatCompletionsUrl() {
-  const base = process.env.OPENAI_API_BASE_URL?.replace(/\/$/, "");
+function getMessagesUrl() {
+  const base = process.env.ANTHROPIC_API_BASE_URL?.replace(/\/$/, "");
 
-  return `${base ?? "https://api.openai.com"}/v1/chat/completions`;
+  return `${base ?? "https://api.anthropic.com"}/v1/messages`;
 }
 
 export function isChatModelConfigured() {
-  return (process.env.OPENAI_API_KEY ?? "").trim().length > 0;
-}
-
-function toWireMessage(message: ChatModelMessage) {
-  if (message.role === "tool") {
-    return {
-      role: "tool",
-      tool_call_id: message.toolCallId,
-      content: message.content,
-    };
-  }
-
-  if (message.role === "assistant") {
-    return {
-      role: "assistant",
-      content: message.content,
-      ...(message.toolCalls && message.toolCalls.length > 0
-        ? {
-            tool_calls: message.toolCalls.map((call) => ({
-              id: call.id,
-              type: "function",
-              function: { name: call.name, arguments: call.argumentsJson },
-            })),
-          }
-        : {}),
-    };
-  }
-
-  return { role: message.role, content: message.content };
+  return (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 0;
 }
 
 type WireResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | null;
-      tool_calls?: Array<{
-        id?: string;
-        function?: { name?: string; arguments?: string };
-      }>;
-    };
-  }>;
+  content?: unknown;
   usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
   };
 };
+
+function asAssistantBlocks(content: unknown): ChatModelAssistantBlock[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  return content.filter(
+    (block): block is ChatModelAssistantBlock =>
+      typeof block === "object" &&
+      block !== null &&
+      typeof (block as { type?: unknown }).type === "string",
+  );
+}
+
+function readText(blocks: ChatModelAssistantBlock[]) {
+  const text = blocks
+    .filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text as string)
+    .join("")
+    .trim();
+
+  return text.length > 0 ? text : null;
+}
+
+function readToolCalls(blocks: ChatModelAssistantBlock[]) {
+  return blocks.flatMap((block) => {
+    if (
+      block.type !== "tool_use" ||
+      typeof block.id !== "string" ||
+      typeof block.name !== "string"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: block.id,
+        name: block.name,
+        argumentsJson: JSON.stringify(block.input ?? {}),
+      },
+    ];
+  });
+}
 
 /**
  * 프롬프트 순서 규약(설계 §비용 설계): system + tools가 항상 맨 앞의 고정
@@ -109,42 +130,47 @@ export async function callChatModel({
   system,
   tools,
   messages,
+  toolChoice = "auto",
 }: {
   system: string;
   tools: ChatModelTool[];
   messages: ChatModelMessage[];
+  toolChoice?: "auto" | "none";
 }): Promise<ChatModelResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
-    return { status: "error", error: "OPENAI_API_KEY not configured" };
+    return { status: "error", error: "ANTHROPIC_API_KEY not configured" };
   }
 
   let response: Response;
 
   try {
-    response = await fetch(getChatCompletionsUrl(), {
+    response = await fetch(getMessagesUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
-        model: process.env.OPENAI_CHAT_MODEL ?? DEFAULT_MODEL,
-        messages: [
-          { role: "system", content: system },
-          ...messages.map(toWireMessage),
-        ],
-        tools: tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        })),
-        tool_choice: "auto",
+        model: process.env.ANTHROPIC_CHAT_MODEL ?? DEFAULT_MODEL,
+        max_tokens: MAX_TOKENS,
+        system,
+        messages,
+        ...(tools.length > 0
+          ? {
+              tools: tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                input_schema: tool.parameters,
+              })),
+              tool_choice: { type: toolChoice },
+            }
+          : {}),
+        output_config: { effort: EFFORT },
+        cache_control: { type: "ephemeral" },
       }),
     });
   } catch (error) {
@@ -161,41 +187,31 @@ export async function callChatModel({
 
     return {
       status: "error",
-      error: `OpenAI API ${response.status}: ${text.slice(0, 200)}`,
+      error: `Anthropic API ${response.status}: ${text.slice(0, 200)}`,
     };
   }
 
   const body = (await response.json().catch(() => null)) as WireResponse | null;
-  const message = body?.choices?.[0]?.message;
+  const content = asAssistantBlocks(body?.content);
 
-  if (!message) {
-    return { status: "error", error: "OpenAI API returned no message" };
+  if (content.length === 0) {
+    return { status: "error", error: "Anthropic API returned no content" };
   }
 
-  const toolCalls = (message.tool_calls ?? []).flatMap((call) => {
-    const name = call.function?.name;
-
-    if (!call.id || !name) {
-      return [];
-    }
-
-    return [
-      {
-        id: call.id,
-        name,
-        argumentsJson: call.function?.arguments ?? "{}",
-      },
-    ];
-  });
+  const usage = body?.usage;
 
   return {
     status: "ok",
-    content: message.content ?? null,
-    toolCalls,
+    content,
+    text: readText(content),
+    toolCalls: readToolCalls(content),
     usage: {
-      inputTokens: body?.usage?.prompt_tokens ?? 0,
-      outputTokens: body?.usage?.completion_tokens ?? 0,
-      cachedInputTokens: body?.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      inputTokens:
+        (usage?.input_tokens ?? 0) +
+        (usage?.cache_creation_input_tokens ?? 0) +
+        (usage?.cache_read_input_tokens ?? 0),
+      outputTokens: usage?.output_tokens ?? 0,
+      cachedInputTokens: usage?.cache_read_input_tokens ?? 0,
     },
   };
 }

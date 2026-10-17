@@ -10,6 +10,7 @@ import {
   callChatModel,
   isChatModelConfigured,
   type ChatModelMessage,
+  type ChatModelUserBlock,
 } from "~/features/chat/llm-client";
 import { getChatSystemPrompt } from "~/features/chat/prompt";
 import {
@@ -160,7 +161,10 @@ export async function POST(request: Request) {
     .slice(-MAX_HISTORY_TURNS)
     .map((message) =>
       message.role === "assistant"
-        ? { role: "assistant" as const, content: message.content }
+        ? {
+            role: "assistant" as const,
+            content: [{ type: "text" as const, text: message.content }],
+          }
         : { role: "user" as const, content: message.content },
     );
   const tools = CHAT_TOOLS.map((tool) => ({
@@ -177,7 +181,7 @@ export async function POST(request: Request) {
     console.info(
       "[chat] usage",
       JSON.stringify({
-        model: process.env.OPENAI_CHAT_MODEL ?? "default",
+        model: process.env.ANTHROPIC_CHAT_MODEL ?? "default",
         rounds: usage.rounds,
         inputTokens: usage.input,
         cachedInputTokens: usage.cached,
@@ -209,7 +213,7 @@ export async function POST(request: Request) {
       logUsage();
 
       return replyResponse({
-        reply: result.content ?? "",
+        reply: result.text ?? "",
         usedTools,
         question,
       });
@@ -218,19 +222,22 @@ export async function POST(request: Request) {
     messages.push({
       role: "assistant",
       content: result.content,
-      toolCalls: result.toolCalls,
     });
+
+    const toolResults: ChatModelUserBlock[] = [];
 
     for (const call of result.toolCalls) {
       const toolResult = await runTool(call.name, call.argumentsJson);
 
       usedTools.push(call.name);
-      messages.push({
-        role: "tool",
-        toolCallId: call.id,
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: call.id,
         content: JSON.stringify(toolResult),
       });
     }
+
+    messages.push({ role: "user", content: toolResults });
   }
 
   // 상한까지 도구만 부르고 답을 못 냈다. 지금까지의 근거로 마무리하게 한다.
@@ -240,7 +247,12 @@ export async function POST(request: Request) {
       "더 조회하지 말고 지금까지 확인한 내용만으로 답하세요. 일부만 확인했다는 사실을 밝히세요.",
   });
 
-  const finalResult = await callChatModel({ system, tools: [], messages });
+  const finalResult = await callChatModel({
+    system,
+    tools,
+    messages,
+    toolChoice: "none",
+  });
 
   if (finalResult.status === "error") {
     console.error("[chat] llm final call failed", finalResult.error);
@@ -259,7 +271,7 @@ export async function POST(request: Request) {
   logUsage();
 
   return replyResponse({
-    reply: finalResult.content ?? "",
+    reply: finalResult.text ?? "",
     usedTools,
     question,
   });

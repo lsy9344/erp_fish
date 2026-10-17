@@ -208,22 +208,22 @@ curl -X POST "https://erp-fish.vercel.app/api/internal/notifications/morning-sum
 설계·구현 근거는 `docs/rev/2026-08-10_챗봇_설계.md`와
 `docs/rev/2026-08-10_챗봇_구현_작업지시서.md`다.
 
-| 변수                  | 필수   | 용도                                                                        |
-| --------------------- | ------ | --------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`      | 예     | 미설정 시 챗봇은 503과 안내 문구를 반환한다(화면은 그대로 뜼다)             |
-| `OPENAI_CHAT_MODEL`   | 아니오 | 소형(mini) 등급 모델명. 미설정 시 코드 기본값. **배포 전 현행 모델명 확인** |
-| `OPENAI_API_BASE_URL` | 아니오 | 테스트 스텁 전용. **운영에서는 설정하지 않는다**                            |
+| 변수                     | 필수   | 용도                                                              |
+| ------------------------ | ------ | ----------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`      | 예     | 미설정 시 챗봇은 503과 안내 문구를 반환한다(화면은 그대로 뜬다)   |
+| `ANTHROPIC_CHAT_MODEL`   | 아니오 | 미설정 시 `claude-sonnet-5-5`. effort는 코드에서 medium으로 고정  |
+| `ANTHROPIC_API_BASE_URL` | 아니오 | 테스트 스텁 전용. **운영에서는 설정하지 않는다**                  |
 
 운영 주의:
 
 - **API 키에 사용량 상한(monthly budget)을 반드시 걸어 둔다.** 질문 1건당 약
   4,000~11,000 입력 토큰을 쓴다.
-- 질문과 도구 결과(집계 수치, 지점명, 품목명, 근무자 이름)가 OpenAI API로
+- 질문과 도구 결과(집계 수치, 지점명, 품목명, 근무자 이름)가 Anthropic API로
   전송된다. 계좌번호·주소·연락처는 도구 출력 allowlist로 차단된다
   (`src/features/chat/tools.ts`, 회귀 방지는 `tests/unit/chat-tools.test.mjs`).
 - 접근 권한은 `REPORT_VIEW`, 인건비 조회는 `LABOR_VIEW`를 그대로 따른다.
   별도 권한을 신설하지 않았고 스키마 변경도 없다.
-- 긴급 비용 차단: `OPENAI_API_KEY`를 비우면 된다. 기능 자체 철회는
+- 긴급 비용 차단: `ANTHROPIC_API_KEY`를 비우면 된다. 기능 자체 철회는
   `src/components/headquarters-shell.tsx`의 `<ChatWidget />` 1줄 제거다.
 
 ## 2026-08-07 — WO-0806 대표 전용 인건비 권한 사전 적용 기록
