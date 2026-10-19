@@ -47,6 +47,20 @@ function available(value: number): LedgerReviewMetric {
   return { value, status: "ok" };
 }
 
+const HISTORICAL_MARGIN_PAIR_REASON =
+  "과거 Excel에는 판매가 기준 예상 매출과 같은 매출원가가 없어 예상 마진율을 합산하지 않습니다.";
+
+function historicalMarginPairGap() {
+  const gap = missing(HISTORICAL_MARGIN_PAIR_REASON);
+
+  return {
+    expectedSalesAmount: gap,
+    costOfGoodsSold: gap,
+    expectedMarginRate: gap,
+    plannedVsActualSalesDifference: gap,
+  };
+}
+
 function missing(reason: string): LedgerReviewMetric {
   return {
     value: null,
@@ -330,6 +344,9 @@ export function mergeHistoricalStoreComparisonRow({
       inventoryDayCount: null,
     },
     hasLoss: operationalBusinessDayCount > 0 ? operationalRow.hasLoss : null,
+    // 과거 Excel에는 판매가 기준 예상 매출과 같은 매출원가가 없다.
+    // 운영 장부만의 예상 마진율을 합산 매출 옆에 두면 틀린 근거가 된다.
+    ...historicalMarginPairGap(),
     sourceSummary: {
       source,
       operationalDayCount: operationalBusinessDayCount,

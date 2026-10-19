@@ -18,6 +18,10 @@ import {
   type LedgerReviewMetric,
   type LedgerReviewPlannedSalesInput,
 } from "../../server/calculations/ledger.ts";
+import {
+  aggregateMarginPairBasis,
+  buildMarginPairBasis,
+} from "../../server/calculations/margin-pair.ts";
 // OQ-gated calculation policy is centralized in ../../server/calculations/policy-gates.
 import {
   calculateInventoryAdjustment,
@@ -427,6 +431,86 @@ function buildDailyMeetingPlannedSalesItems(
   }
 
   return result;
+}
+
+const MISSING_PLANNED_SALES_REASON =
+  "판매한 가격이 입력되지 않아 계획 대비 비교를 계산할 수 없습니다.";
+const MISSING_COST_OF_GOODS_REASON =
+  "매출원가 계산에 필요한 재고 입력이 부족합니다.";
+
+async function loadPlannedSalesItemsByLedgerId(
+  ledgers: ReportLedgerRecord[],
+): Promise<Map<string, LedgerReviewPlannedSalesInput[]>> {
+  if (ledgers.length === 0) {
+    return new Map();
+  }
+
+  const { getPlannedUnitPriceLookup } =
+    await import("../sales-plan/queries.ts");
+  const { db } = await import("../../server/db.ts");
+  const plannedUnitPriceLookup = await getPlannedUnitPriceLookup(
+    ledgers.map((ledger) => ({
+      storeId: ledger.storeId,
+      businessDate: ledger.closingDate,
+    })),
+  );
+  const lotPriceByLedgerId = new Map(
+    await Promise.all(
+      ledgers.map(
+        async (ledger) =>
+          [
+            ledger.id,
+            await loadResolvedLotSalesPricesInTx(
+              db as unknown as Prisma.TransactionClient,
+              {
+                dailyLedgerId: ledger.id,
+                storeId: ledger.storeId,
+                businessDate: ledger.closingDate,
+                lots: ledger.ledgerInventoryItems.flatMap(
+                  (item) =>
+                    item.fifoLots?.map((lot) => ({
+                      productId: item.productId,
+                      lotOriginKey: lot.lotOriginKey,
+                    })) ?? [],
+                ),
+              },
+            ),
+          ] as const,
+      ),
+    ),
+  );
+  const ledgersWithPlannedPrice = ledgers.map((ledger) => {
+    const lossQuantityByProductId = aggregateLossQuantityByProductId(
+      ledger.ledgerLossItems,
+    );
+
+    return {
+      ...ledger,
+      ledgerInventoryItems: ledger.ledgerInventoryItems.map((item) => ({
+        ...item,
+        fifoLots: item.fifoLots?.map((lot) => ({
+          ...lot,
+          plannedUnitPrice:
+            lotPriceByLedgerId
+              .get(ledger.id)
+              ?.get(lotSalesPriceKey(item.productId, lot.lotOriginKey))
+              ?.plannedUnitPrice ?? null,
+        })),
+        lossQuantity: item.productId
+          ? (lossQuantityByProductId.get(item.productId) ?? 0)
+          : 0,
+        plannedUnitPrice: item.productId
+          ? plannedUnitPriceLookup(
+              ledger.storeId,
+              ledger.closingDate,
+              item.productId,
+            )
+          : null,
+      })),
+    };
+  });
+
+  return buildDailyMeetingPlannedSalesItems(ledgersWithPlannedPrice);
 }
 
 export function getDailyMeetingReportDatePreset(
@@ -2176,6 +2260,8 @@ export async function getHqStoreComparisonReport({
                 productCategory: true,
                 previousQuantity: true,
                 purchasedQuantity: true,
+                conversionInQuantity: true,
+                conversionOutQuantity: true,
                 currentQuantity: true,
                 quantity: true,
                 unitPrice: true,
@@ -2294,6 +2380,13 @@ export async function getHqStoreComparisonReport({
   const correctionValuesByLedgerId = await getLatestCorrectionValuesForLedgers(
     ledgers.map((ledger) => ledger.id),
   );
+  const plannedSalesItemsByLedgerId = await loadPlannedSalesItemsByLedgerId(
+    ledgers.filter(
+      (ledger) =>
+        selectedOperationalLedgerIds.has(ledger.id) &&
+        ledger.status !== "HOLIDAY",
+    ),
+  );
   const summariesByStoreId = new Map<
     string,
     StoreComparisonLedgerSummaryForTest[]
@@ -2306,6 +2399,7 @@ export async function getHqStoreComparisonReport({
       toStoreComparisonLedgerSummary(
         ledger,
         correctionValuesByLedgerId.get(ledger.id),
+        plannedSalesItemsByLedgerId.get(ledger.id),
       ),
     );
     summariesByStoreId.set(ledger.storeId, storeSummaries);
@@ -3137,7 +3231,13 @@ type ReportAggregateMetrics = Pick<
   | "operatingProfit"
   | "productivity"
   | "inventoryAmount"
->;
+> &
+  Partial<
+    Pick<
+      ReturnType<typeof calculateLedgerReviewSummary>,
+      "operatingSales" | "costOfGoodsSold" | "plannedSalesTotal"
+    >
+  >;
 
 type ReportAggregateLedgerSummary = {
   ledgerId: string;
@@ -4260,8 +4360,13 @@ type StoreComparisonLedgerSummaryForTest = ReportAggregateLedgerSummary & {
 function toStoreComparisonLedgerSummary(
   ledger: ReportLedgerRecord,
   corrections?: Map<string, CorrectionAppliedValue>,
+  plannedSalesItems?: LedgerReviewPlannedSalesInput[],
 ): StoreComparisonLedgerSummaryForTest {
-  const summary = toReportLedgerCalculationSummary(ledger, corrections);
+  const summary = toReportLedgerCalculationSummary(
+    ledger,
+    corrections,
+    plannedSalesItems,
+  );
 
   return {
     ...summary,
@@ -4433,6 +4538,11 @@ export function buildStoreComparisonReportRowForTest({
     operatingSalesAmount: appliedAggregates.operatingSalesAmount,
     grossProfit: appliedAggregates.grossProfit,
     grossMarginRate: appliedAggregates.grossMarginRate,
+    expectedSalesAmount: appliedAggregates.expectedSalesAmount,
+    costOfGoodsSold: appliedAggregates.costOfGoodsSold,
+    expectedMarginRate: appliedAggregates.expectedMarginRate,
+    plannedVsActualSalesDifference:
+      appliedAggregates.plannedVsActualSalesDifference,
     operatingProfit: appliedAggregates.operatingProfit,
     averageWorkerCount: appliedAggregates.averageWorkerCount,
     productivity: appliedAggregates.productivity,
@@ -4786,6 +4896,7 @@ function aggregateStoreComparisonMetrics(
       salesAmount.value > 0
         ? available(grossProfit.value / salesAmount.value)
         : unavailable("계산 불가"),
+    ...marginPairFields(ledgerSummaries, source),
     operatingProfit,
     productivity:
       salesAmount.value !== null &&
@@ -4806,10 +4917,42 @@ function aggregateStoreComparisonMetrics(
   };
 }
 
+function marginPairFields(
+  ledgerSummaries: ReportAggregateLedgerSummary[],
+  source: "original" | "applied",
+) {
+  const marginPair = aggregateMarginPairBasis(
+    ledgerSummaries.map((summary) => {
+      const metrics = summary[source];
+
+      return buildMarginPairBasis({
+        operatingSales: metrics.operatingSales ?? metrics.totalSales,
+        expectedSales:
+          metrics.plannedSalesTotal ??
+          dataInsufficient(MISSING_PLANNED_SALES_REASON),
+        costOfGoodsSold:
+          metrics.costOfGoodsSold ??
+          dataInsufficient(MISSING_COST_OF_GOODS_REASON),
+      });
+    }),
+  );
+
+  return {
+    expectedSalesAmount: marginPair.expectedSales,
+    costOfGoodsSold: marginPair.costOfGoodsSold,
+    expectedMarginRate: marginPair.expectedMarginRate,
+    plannedVsActualSalesDifference:
+      marginPair.plannedVsActualSalesDifference,
+  };
+}
+
 function getMetrics(
   ledgerSummaries: ReportAggregateLedgerSummary[],
   source: "original" | "applied",
-  key: keyof ReportAggregateLedgerSummary["applied"],
+  key: Exclude<
+    keyof ReportAggregateMetrics,
+    "operatingSales" | "costOfGoodsSold" | "plannedSalesTotal"
+  >,
 ) {
   return ledgerSummaries.map((summary) => summary[source][key]);
 }

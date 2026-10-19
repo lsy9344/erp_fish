@@ -55,7 +55,15 @@ function metric(value: CalculationMetric | undefined): number | string {
   }
 
   if (value.value === null) {
-    return `산출 불가: ${value.reason ?? "근거 데이터 부족"}`;
+    return `산출 불가: ${value.reason ?? value.label ?? "근거 데이터 부족"}`;
+  }
+
+  if (
+    value.status === "policy-unconfirmed" ||
+    value.status === "data-insufficient" ||
+    value.status === "calculation-unavailable"
+  ) {
+    return `${value.value} (${value.reason ?? value.label ?? "확인 필요"})`;
   }
 
   return value.value;
@@ -176,12 +184,22 @@ function toMetricRow(row: {
   averageInventory: CalculationMetric;
   averageSales: CalculationMetric;
   inventoryToSalesRatio: CalculationMetric;
+  expectedSalesAmount: CalculationMetric;
+  costOfGoodsSold: CalculationMetric;
+  expectedMarginRate: CalculationMetric;
+  plannedVsActualSalesDifference: CalculationMetric;
 }) {
   return {
     지점: row.storeName,
     매출: metric(row.salesAmount),
+    영업매출: metric(row.salesAmount),
     매출이익: metric(row.grossProfit),
     이익률: metric(row.grossMarginRate),
+    실제마진율: metric(row.grossMarginRate),
+    예상매출: metric(row.expectedSalesAmount),
+    매출원가: metric(row.costOfGoodsSold),
+    예상마진율: metric(row.expectedMarginRate),
+    매출차이: metric(row.plannedVsActualSalesDifference),
     평균근무인원: metric(row.averageWorkerCount),
     인당생산성: metric(row.productivity),
     평균재고: metric(row.averageInventory),
@@ -946,7 +964,7 @@ export const CHAT_TOOLS: ChatTool[] = [
   defineTool({
     name: "get_period_metrics",
     description:
-      "기간과 지점의 매출·매출이익·이익률·평균근무인원·인당생산성·평균재고·평균매출·재고비율을 조회한다. 하루도 기간으로 넣을 수 있다. 매출 관련 질문의 기본 도구.",
+      "기간과 지점의 매출·매출이익·실제 마진율(이익률)·예상 마진율·예상 매출·매출원가·매출 차이·평균근무인원·인당생산성·평균재고·평균매출·재고비율을 조회한다. 예상 마진율은 이미 계산된 값이다. 하루도 기간으로 넣을 수 있다. 매출·마진 관련 질문의 기본 도구.",
     parameters: {
       type: "object",
       properties: {
@@ -966,7 +984,7 @@ export const CHAT_TOOLS: ChatTool[] = [
   defineTool({
     name: "get_month_overview",
     description:
-      "한 달의 손익 단계(매출→원가→인건비→고정비→남은금액), 손실 항목별 분해, 일별 매출 추이(전월 대비), 지점 순위, 경보를 조회한다. 무엇이 왜 늘거나 줄었는지 묻는 질문에 쓴다.",
+      "한 달의 손익 단계(매출→원가→인건비→고정비→남은금액), 손실 항목별 분해, 일별 매출 추이(전월 대비), 지점 순위, 경보를 조회한다. 손익 단계가 왜 변했는지를 물을 때 쓴다. 실제 마진율과 예상 마진율의 차이는 get_period_metrics를 쓴다.",
     parameters: {
       type: "object",
       properties: {
@@ -1094,6 +1112,7 @@ export const chatToolInternals = {
   rankProductSales,
   metric,
   normalizeStoreName,
+  toMetricRow,
   pick,
   resolveRange,
   LABOR_SETTLEMENT_FIELDS,
