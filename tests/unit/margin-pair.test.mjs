@@ -215,6 +215,37 @@ test("ledger review summary and the margin pair use the same inputs", async () =
   assert.equal(pair.plannedVsActualSalesDifference.value, 86_500);
 });
 
+test("못골 마진 차이는 장부 매출이 계획 가격 합보다 적다고 말한다", async () => {
+  const { explainMarginGapPlain } = await import(
+    moduleUrl("src/server/calculations/margin-pair.ts")
+  );
+  const operatingSales = 3_984_000;
+  const expectedSales = 4_182_400;
+  const costOfGoodsSold = 3_186_070;
+  const sentence = explainMarginGapPlain({
+    operatingSales: money(operatingSales),
+    expectedSales: money(expectedSales),
+    costOfGoodsSold: money(costOfGoodsSold),
+    actualMarginRate: money((operatingSales - costOfGoodsSold) / operatingSales),
+    expectedMarginRate: money((expectedSales - costOfGoodsSold) / expectedSales),
+    salesDifference: money(operatingSales - expectedSales),
+  });
+
+  assert.equal(
+    sentence,
+    [
+      "장부 매출 3,984,000원이 계획 가격 합 4,182,400원보다 198,400원 적게 적혀 있습니다. 원가 3,186,070원은 실제 마진과 예상 마진에 같이 들어갑니다. 그래서 실제 마진율 20.03%가 예상 마진율 23.82%보다 낮습니다.",
+      "이렇게 될 수 있는 경우는 다섯 가지입니다.",
+      "1. 적어 둔 판매가보다 싸게 팔린 경우",
+      "2. 재고는 빠졌는데 돈은 안 들어온 경우. 폐기로 안 적은 덤, 접대, 가져감",
+      "3. 마감 재고를 실제보다 적게 센 경우",
+      "4. 현금, 카드, 기타를 실제보다 적게 적은 경우",
+      "5. 외상처럼 돈 칸에 없는 방식으로 나간 경우",
+      "어느 경우인지는 이 금액만으로 정해지지 않습니다.",
+    ].join("\n"),
+  );
+});
+
 test("store comparison period row reads the margin pair from summed ledger inputs", async () => {
   const { buildStoreComparisonReportRowForTest } = await import(
     moduleUrl("src/features/reports/queries.ts")
@@ -417,5 +448,6 @@ test("chat period metrics cite the margin pair and do not recompute it", async (
   assert.match(prompt, /get_period_metrics/);
   assert.match(prompt, /나누지/);
   assert.match(prompt, /get_month_overview를 쓰지 않는다/);
+  assert.match(prompt, /차이설명을 한 글자도 바꾸지 말고/);
   assert.doesNotMatch(prompt, /estimatedGrossMarginRate/);
 });

@@ -17,6 +17,7 @@ import { z } from "zod";
 import { getKstBusinessDate } from "../ledger/date.ts";
 import { PERIOD_ANALYSIS_METRICS } from "../reports/period-analysis.ts";
 import type { CalculationMetric } from "../../server/calculations/ledger.ts";
+import { explainMarginGapPlain } from "../../server/calculations/margin-pair.ts";
 
 // 인건비 리포트와 동일한 상한(headquarters-labor-queries.ts:17).
 const MAX_RANGE_DAYS = 366;
@@ -200,6 +201,14 @@ function toMetricRow(row: {
     매출원가: metric(row.costOfGoodsSold),
     예상마진율: metric(row.expectedMarginRate),
     매출차이: metric(row.plannedVsActualSalesDifference),
+    차이설명: explainMarginGapPlain({
+      operatingSales: row.salesAmount,
+      expectedSales: row.expectedSalesAmount,
+      costOfGoodsSold: row.costOfGoodsSold,
+      actualMarginRate: row.grossMarginRate,
+      expectedMarginRate: row.expectedMarginRate,
+      salesDifference: row.plannedVsActualSalesDifference,
+    }),
     평균근무인원: metric(row.averageWorkerCount),
     인당생산성: metric(row.productivity),
     평균재고: metric(row.averageInventory),
@@ -964,7 +973,7 @@ export const CHAT_TOOLS: ChatTool[] = [
   defineTool({
     name: "get_period_metrics",
     description:
-      "기간과 지점의 매출·매출이익·실제 마진율(이익률)·예상 마진율·예상 매출·매출원가·매출 차이·평균근무인원·인당생산성·평균재고·평균매출·재고비율을 조회한다. 예상 마진율은 이미 계산된 값이다. 하루도 기간으로 넣을 수 있다. 매출·마진 관련 질문의 기본 도구.",
+      "기간과 지점의 매출·매출이익·실제 마진율(이익률)·예상 마진율·예상 매출·매출원가·매출 차이·차이설명을 조회한다. 마진이 왜 다른지는 차이설명을 그대로 전한다. 하루도 기간으로 넣을 수 있다. 매출·마진 관련 질문의 기본 도구.",
     parameters: {
       type: "object",
       properties: {

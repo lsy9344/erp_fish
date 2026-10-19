@@ -200,3 +200,83 @@ export function aggregateMarginPairBasis(
     ),
   });
 }
+
+function formatWon(value: number) {
+  return `${Math.round(Math.abs(value)).toLocaleString("ko-KR")}원`;
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+/** 마진이 다른 이유를 질문자에게 그대로 읽어 줄 문장. */
+export function explainMarginGapPlain({
+  operatingSales,
+  expectedSales,
+  costOfGoodsSold,
+  actualMarginRate,
+  expectedMarginRate,
+  salesDifference,
+}: {
+  operatingSales: LedgerReviewMetric;
+  expectedSales: LedgerReviewMetric;
+  costOfGoodsSold: LedgerReviewMetric;
+  actualMarginRate: LedgerReviewMetric;
+  expectedMarginRate: LedgerReviewMetric;
+  salesDifference: LedgerReviewMetric;
+}): string {
+  const operating = finiteAmount(operatingSales);
+  const expected = finiteAmount(expectedSales);
+  const cost = finiteAmount(costOfGoodsSold);
+  const actual = finiteAmount(actualMarginRate);
+  const planned = finiteAmount(expectedMarginRate);
+  const gap = finiteAmount(salesDifference);
+
+  if (operating === null || expected === null || gap === null) {
+    return "장부 매출이나 계획 가격 합이 없어서, 어디가 다른지 말할 수 없습니다.";
+  }
+
+  const salesSentence =
+    gap < 0
+      ? `장부 매출 ${formatWon(operating)}이 계획 가격 합 ${formatWon(expected)}보다 ${formatWon(gap)} 적게 적혀 있습니다.`
+      : gap > 0
+        ? `장부 매출 ${formatWon(operating)}이 계획 가격 합 ${formatWon(expected)}보다 ${formatWon(gap)} 많이 적혀 있습니다.`
+        : `장부 매출 ${formatWon(operating)}과 계획 가격 합 ${formatWon(expected)}은 같습니다.`;
+  const costSentence =
+    cost === null
+      ? ""
+      : ` 원가 ${formatWon(cost)}은 실제 마진과 예상 마진에 같이 들어갑니다.`;
+  const rateSentence =
+    actual === null || planned === null
+      ? ""
+      : actual < planned
+        ? ` 그래서 실제 마진율 ${formatPercent(actual)}가 예상 마진율 ${formatPercent(planned)}보다 낮습니다.`
+        : actual > planned
+          ? ` 그래서 실제 마진율 ${formatPercent(actual)}가 예상 마진율 ${formatPercent(planned)}보다 높습니다.`
+          : " 그래서 두 마진율도 같습니다.";
+  const cases =
+    gap < 0
+      ? [
+          "이렇게 될 수 있는 경우는 다섯 가지입니다.",
+          "1. 적어 둔 판매가보다 싸게 팔린 경우",
+          "2. 재고는 빠졌는데 돈은 안 들어온 경우. 폐기로 안 적은 덤, 접대, 가져감",
+          "3. 마감 재고를 실제보다 적게 센 경우",
+          "4. 현금, 카드, 기타를 실제보다 적게 적은 경우",
+          "5. 외상처럼 돈 칸에 없는 방식으로 나간 경우",
+          "어느 경우인지는 이 금액만으로 정해지지 않습니다.",
+        ].join("\n")
+      : gap > 0
+        ? [
+            "이렇게 될 수 있는 경우는 네 가지입니다.",
+            "1. 적어 둔 판매가보다 비싸게 팔린 경우",
+            "2. 마감 재고를 실제보다 많이 센 경우",
+            "3. 현금, 카드, 기타를 실제보다 많이 적은 경우",
+            "4. 돈은 들어왔는데 재고에는 판매로 안 잡힌 경우",
+            "어느 경우인지는 이 금액만으로 정해지지 않습니다.",
+          ].join("\n")
+        : "";
+
+  return [`${salesSentence}${costSentence}${rateSentence}`, cases]
+    .filter(Boolean)
+    .join("\n");
+}
