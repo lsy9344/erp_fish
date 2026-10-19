@@ -4941,8 +4941,7 @@ function marginPairFields(
     expectedSalesAmount: marginPair.expectedSales,
     costOfGoodsSold: marginPair.costOfGoodsSold,
     expectedMarginRate: marginPair.expectedMarginRate,
-    plannedVsActualSalesDifference:
-      marginPair.plannedVsActualSalesDifference,
+    plannedVsActualSalesDifference: marginPair.plannedVsActualSalesDifference,
   };
 }
 
