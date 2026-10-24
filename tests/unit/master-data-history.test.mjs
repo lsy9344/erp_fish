@@ -346,7 +346,7 @@ test("audit history route, client, skeleton, and navigation use the headquarters
     "app",
     "master-data",
     "history",
-    "loading.tsx",
+    "change-history-loading.tsx",
   );
   const client = readProjectFile(
     "src",

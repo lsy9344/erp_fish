@@ -172,13 +172,15 @@ export function HqDashboardTable({ dashboard }: HqDashboardTableProps) {
   );
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [refreshClockAt, setRefreshClockAt] = useState(() => Date.now());
+  // 서버 렌더와 hydration 첫 렌더가 같은 문구를 그리도록 시각은 마운트 뒤에 읽는다.
+  // 서버 시각으로 그리면 영업시간 경계에서 hydration mismatch가 난다.
+  const [refreshClockAt, setRefreshClockAt] = useState<number | null>(null);
   const [isDocumentVisible, setIsDocumentVisible] = useState(true);
   const wasAutoRefreshPausedRef = useRef(false);
 
-  const isOutsideBusinessHours = !isWithinDashboardRefreshWindow(
-    new Date(refreshClockAt),
-  );
+  const isOutsideBusinessHours =
+    refreshClockAt !== null &&
+    !isWithinDashboardRefreshWindow(new Date(refreshClockAt));
   const isAutoRefreshPaused = isOutsideBusinessHours || !isDocumentVisible;
 
   useEffect(() => {

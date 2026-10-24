@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { HeadquartersShell } from "~/components/headquarters-shell";
 import { getHeadquartersNavigationItems } from "~/components/app-sidebar";
 import { PageHeader } from "~/components/page-header";
@@ -7,6 +8,7 @@ import {
   normalizeAuditHistoryFilters,
 } from "~/features/audit/audit-queries";
 import { requireSettingsAccess } from "~/server/authz";
+import ChangeHistoryLoading from "./change-history-loading";
 
 type ChangeHistoryPageProps = {
   searchParams: Promise<{
@@ -18,12 +20,27 @@ type ChangeHistoryPageProps = {
   }>;
 };
 
+// loading.tsx 경계는 같은 경로에서 쿼리만 바뀌면 재사용되어, 운영 빌드에서 필터 이동이
+// 커밋되지 않는다(vercel/next.js#86151). 쿼리마다 새 Suspense 경계를 만든다.
 export default async function ChangeHistoryPage({
   searchParams,
 }: ChangeHistoryPageProps) {
+  const params = await searchParams;
+
+  return (
+    <Suspense key={JSON.stringify(params)} fallback={<ChangeHistoryLoading />}>
+      <ChangeHistoryContent params={params} />
+    </Suspense>
+  );
+}
+
+async function ChangeHistoryContent({
+  params,
+}: {
+  params: Awaited<ChangeHistoryPageProps["searchParams"]>;
+}) {
   const user = await requireSettingsAccess();
   const navigationItems = await getHeadquartersNavigationItems(user.id);
-  const params = await searchParams;
   const filters = normalizeAuditHistoryFilters(params);
   const history = await getAuditHistoryForHeadquarters(filters);
 

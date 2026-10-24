@@ -32,6 +32,8 @@ type DashboardPageProps = {
   }>;
 };
 
+// 이 경로에는 loading.tsx(Suspense 경계)를 두지 않는다. 경계가 있으면 운영 빌드에서
+// 자동 갱신(router.refresh)과 같은 경로 필터 이동이 커밋되지 않는다(vercel/next.js#86151).
 export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {

@@ -42,14 +42,6 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
     "components",
     "hq-dashboard-table.tsx",
   );
-  assertProjectFile(
-    "src",
-    "features",
-    "dashboard",
-    "components",
-    "dashboard-delayed-loading-notice.tsx",
-  );
-  assertProjectFile("src", "app", "app", "dashboard", "loading.tsx");
 
   const pageSource = readProjectFile(
     "src",
@@ -64,13 +56,6 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
     "dashboard",
     "components",
     "hq-dashboard-table.tsx",
-  );
-  const loadingSource = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "loading.tsx",
   );
   assert.match(pageSource, /requireReportAccess\(/);
   assert.match(pageSource, /getHqDashboardRows\(/);
@@ -108,9 +93,6 @@ test("HQ dashboard source files follow story 3.1 boundaries", () => {
   );
   assert.match(detailPageSource, /requireReportAccess\(/);
   assert.match(detailPageSource, /getHqLedgerDetail\(/);
-  assert.match(loadingSource, /md:block/);
-  assert.match(loadingSource, /md:hidden/);
-  assert.match(loadingSource, /repeat\(13/);
 });
 
 test("HQ dashboard density control keeps column resizing and stores density in URL (WO-07)", async () => {
@@ -991,36 +973,6 @@ test("HQ dashboard distinguishes filtered-empty rows from no active stores", () 
   assert.match(tableSource, /권한이 부여된 활성 지점이 없습니다/);
   assert.match(tableSource, /활성 지점이 없습니다/);
   assert.match(tableSource, /emptyStateReason/);
-});
-
-test("HQ dashboard loading copy stays distinct from business empty states", () => {
-  const loadingSource = readProjectFile(
-    "src",
-    "app",
-    "app",
-    "dashboard",
-    "loading.tsx",
-  );
-  const delayedLoadingSource = readProjectFile(
-    "src",
-    "features",
-    "dashboard",
-    "components",
-    "dashboard-delayed-loading-notice.tsx",
-  );
-
-  assert.match(loadingSource, /활성 지점 장부 상태를 불러오는 중입니다/);
-  assert.match(loadingSource, /관제판 요약 불러오기/);
-  assert.match(loadingSource, /관제판 지점 목록 불러오기/);
-  assert.match(loadingSource, /DashboardDelayedLoadingNotice/);
-  assert.match(delayedLoadingSource, /3000/);
-  assert.match(delayedLoadingSource, /부분 로드/);
-  assert.match(delayedLoadingSource, /마지막 갱신 시각/);
-  assert.match(delayedLoadingSource, /router\.refresh\(\)/);
-  assert.match(delayedLoadingSource, /재시도/);
-  assert.doesNotMatch(loadingSource, /조건에 맞는 지점이 없습니다/);
-  assert.doesNotMatch(loadingSource, /권한이 부여된 활성 지점이 없습니다/);
-  assert.doesNotMatch(loadingSource, /활성 지점이 없습니다/);
 });
 
 test("HQ dashboard preserves sort and filter state through detail links", () => {

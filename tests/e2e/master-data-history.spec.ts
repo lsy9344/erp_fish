@@ -522,7 +522,7 @@ test("변경 이력 loading route는 실제 표와 비슷한 skeleton을 정의�
       "app",
       "master-data",
       "history",
-      "loading.tsx",
+      "change-history-loading.tsx",
     ),
     "utf8",
   );

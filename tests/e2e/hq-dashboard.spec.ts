@@ -743,9 +743,11 @@ test("본사 관제판 자동 갱신은 숨김·영업시간 밖에서 멈추고
 
   const progressRow = getDesktopRow(page, STORE_IDS.progress);
   await expect(progressRow).toContainText("입력 중");
-  await expect(page.getByTestId("hq-dashboard-refresh-status")).toContainText(
-    "마지막 갱신",
-  );
+  // "마지막 갱신"은 서버 HTML에도 있다. "확인 중"이 시각으로 바뀌어야 마운트 effect와
+  // 자동 갱신 타이머가 붙은 것이므로, 그 뒤에 시계를 돌린다.
+  await expect(
+    page.getByTestId("hq-dashboard-refresh-status"),
+  ).not.toContainText("확인 중");
 
   await prisma.dailyLedger.update({
     where: { id: progressLedger.id },
