@@ -119,7 +119,7 @@ const actionLabels: Record<string, string> = {
   "product_external_alias.updated": "품목 매핑 수정",
 };
 
-const snapshotNameKeys = [
+export const snapshotNameKeys = [
   "name",
   "email",
   "productName",
@@ -128,7 +128,7 @@ const snapshotNameKeys = [
   "targetName",
 ] as const;
 
-const auditSummaryFieldLabels: Record<string, string> = {
+export const auditSummaryFieldLabels: Record<string, string> = {
   amount: "금액",
   category: "분류",
   codeName: "코드명",
@@ -212,7 +212,7 @@ const auditSummaryValueLabels: Record<string, string> = {
 };
 
 // 목록 항목(지출·매입·재고 등)을 한 줄로 설명할 때 쓰는 이름/세부 필드.
-const auditItemNameKeys = [
+export const auditItemNameKeys = [
   "productName",
   "ledgerInputCodeName",
   "workerName",
@@ -220,7 +220,7 @@ const auditItemNameKeys = [
   "displayName",
 ] as const;
 
-const auditItemDetailLabels = {
+export const auditItemDetailLabels = {
   currentQuantity: "당일재고",
   quantity: "수량",
   unitPrice: "단가",
@@ -491,9 +491,14 @@ export function formatAuditJsonValue(
 export function formatAuditChangeSummary(
   before: Prisma.JsonValue | null | undefined,
   after: Prisma.JsonValue | null | undefined,
+  rootChanged?: boolean | null,
 ) {
   if (!isJsonObject(before) && !isJsonObject(after)) {
-    return isSameAuditValue(before, after)
+    return (
+      rootChanged === null || rootChanged === undefined
+        ? isSameAuditValue(before, after)
+        : !rootChanged
+    )
       ? "-"
       : `값: ${formatAuditSummaryValue("", before)} → ${formatAuditSummaryValue("", after)}`;
   }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
+import { expectInventoryAuditSnapshot } from "./_helpers/inventory-audit";
 
 const prisma = new PrismaClient();
 const STORY_STORE_ID = "store-gangnam";
@@ -848,6 +849,28 @@ test("월초 스냅샷 기준 전일재고를 프리필하고 저장 후 수정 
   });
   expect(savedProductRow?.currentQuantity?.toString()).toBe("9.25");
   expect(savedProductRow?.quantity?.toString()).toBe("9.25");
+
+  const audit = await prisma.auditLog.findFirstOrThrow({
+    where: { action: "ledger.inventory.saved", targetId: ledger.id },
+    orderBy: { createdAt: "desc" },
+  });
+  expectInventoryAuditSnapshot(audit.before);
+  expectInventoryAuditSnapshot(audit.after);
+  expect(audit.before).toHaveProperty(
+    "items",
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: untouchedProduct.id,
+        productId: untouchedProduct.id,
+        previousQuantity: 5,
+        previousQuantityDetail: expect.objectContaining({
+          source: "OPENING_SNAPSHOT",
+          sourceYearMonth: getCurrentKstYearMonth(),
+          sourceQuantity: 5,
+        }),
+      }),
+    ]),
+  );
 
   const productRow = page.locator("tr").filter({ hasText: product.name });
   await expect(productRow.getByText("수정됨").first()).toBeVisible();

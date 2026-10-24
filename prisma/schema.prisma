@@ -389,15 +389,16 @@ model User {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  action     String
-  targetType String
-  targetId   String
-  actorId    String
-  before     Json?
-  after      Json?
-  reason     String?
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  action      String
+  targetType  String
+  targetId    String
+  actorId     String
+  before      Json?
+  after       Json?
+  listSummary Json?
+  reason      String?
+  createdAt   DateTime @default(now())
 
   actor User @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
 

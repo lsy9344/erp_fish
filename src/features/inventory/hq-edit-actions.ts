@@ -37,6 +37,7 @@ import {
   missingRequiredCurrentQuantityMessage,
 } from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
+import { toInventoryAuditSnapshot } from "./audit-snapshot";
 import { refreshLedgerInventoryFifoLots } from "./fifo-lots";
 import {
   getSalesPriceWriteGateDecision,
@@ -671,11 +672,14 @@ export async function saveHqLedgerInventoryItems(
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before: beforeAuditData,
-          after: withLedgerEditContext(afterAuditData, {
-            ledgerStatusAtEdit: before.status,
-            closedEdit: before.status === "HEADQUARTERS_CLOSED",
-          }),
+          before: toInventoryAuditSnapshot(beforeAuditData),
+          after: withLedgerEditContext(
+            toInventoryAuditSnapshot(afterAuditData),
+            {
+              ledgerStatusAtEdit: before.status,
+              closedEdit: before.status === "HEADQUARTERS_CLOSED",
+            },
+          ),
           reason: parsed.data.reason,
         });
 

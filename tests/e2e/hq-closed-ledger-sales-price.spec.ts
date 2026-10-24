@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
+import { expectInventoryAuditSnapshot } from "./_helpers/inventory-audit";
 
 const prisma = new PrismaClient();
 
@@ -466,6 +467,18 @@ test("마스터가 지점장이 입력한 판매한 가격을 마감 장부 재�
       amount: 5400,
       usedPlannedPrice: true,
     });
+
+  const audit = await prisma.auditLog.findFirstOrThrow({
+    where: { action: "ledger.hq.inventory.saved", targetId: ledger.id },
+    orderBy: { createdAt: "desc" },
+  });
+  expectInventoryAuditSnapshot(audit.before);
+  expectInventoryAuditSnapshot(audit.after);
+  expect(audit.reason).toBe("판매한 가격 오기입 정정");
+  expect(audit.after).toMatchObject({
+    ledgerStatusAtEdit: "HEADQUARTERS_CLOSED",
+    closedEdit: true,
+  });
 });
 
 test("마감 장부 재고 저장은 빈 가격 유지, 0원 저장, 무가격 품목 혼합을 지원한다", async ({

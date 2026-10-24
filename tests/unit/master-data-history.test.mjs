@@ -282,7 +282,7 @@ test("audit history query enforces headquarters auth, safe filters, stable order
   assert.match(query, /reasonText:\s*log\.reason\s*\?\?\s*"-"/);
   assert.match(
     query,
-    /changeSummaryText:\s*formatAuditChangeSummary\(safeBefore,\s*safeAfter\)/,
+    /changeSummaryText:\s*formatAuditChangeSummary\(\s*safeBefore,\s*safeAfter,\s*summary\.rootChanged,?\s*\)/,
   );
   assert.match(query, /beforeText:\s*formatAuditJsonValue\(safeBefore\)/);
   assert.match(query, /afterText:\s*formatAuditJsonValue\(safeAfter\)/);
@@ -388,8 +388,16 @@ test("audit history route, client, skeleton, and navigation use the headquarters
   assert.match(client, /기존 값 → 변경된 값/);
   assert.match(client, /사유/);
   // WO-05(2026-06-28): 원문 JSON은 접을 수 있는 영역, 장부 이력은 상세 링크를 제공한다.
-  assert.match(client, /<details/);
-  assert.match(client, /원문 변경 전\/후 \(JSON\)/);
+  const rawComparison = readProjectFile(
+    "src",
+    "features",
+    "audit",
+    "components",
+    "audit-raw-comparison.tsx",
+  );
+  assert.match(client, /AuditRawComparison/);
+  assert.match(rawComparison, /<details/);
+  assert.match(rawComparison, /원문 변경 전\/후 \(JSON\)/);
   assert.match(client, /selectedHistory\.ledgerDetailHref/);
   assert.match(client, /장부 상세 보기/);
   assert.match(client, /조건에 맞는 변경 이력이 없습니다\./);

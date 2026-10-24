@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PrismaClient } from "../../generated/prisma/index.js";
+import { expectInventoryAuditSnapshot } from "./_helpers/inventory-audit";
 
 const prisma = new PrismaClient();
 const STORY_MARKER = "story-4-3-test";
@@ -807,6 +808,15 @@ test("본사는 ledgerId 상세에서 검토 대기 장부의 모든 입력 섹�
   );
   expect(auditActions.every((entry) => entry.actorId === actorId)).toBe(true);
   expect(auditActions.every((entry) => entry.before && entry.after)).toBe(true);
+  const inventoryAudit = auditActions.find(
+    (entry) => entry.action === "ledger.hq.inventory.saved",
+  );
+  expectInventoryAuditSnapshot(inventoryAudit?.before);
+  expectInventoryAuditSnapshot(inventoryAudit?.after);
+  expect(inventoryAudit?.after).toMatchObject({
+    ledgerStatusAtEdit: "IN_REVIEW",
+    closedEdit: false,
+  });
   expect(auditActions.map((entry) => entry.reason)).toEqual(
     expect.arrayContaining([
       "매출 결제 원본 보완",

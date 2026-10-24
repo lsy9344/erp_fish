@@ -1,4 +1,4 @@
-const defaultSensitiveFieldKeys = [
+export const defaultSensitiveFieldKeys = [
   "costOfGoodsSold",
   "fifoCostOfGoodsSold",
   "fifoInventoryAmount",

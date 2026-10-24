@@ -14,6 +14,7 @@ type ChangeHistoryPageProps = {
     actorId?: string | string[];
     from?: string | string[];
     to?: string | string[];
+    cursor?: string | string[];
   }>;
 };
 
@@ -41,6 +42,7 @@ export default async function ChangeHistoryPage({
         actorOptions={history.actorOptions}
         visibleTargetTypeOptions={history.visibleTargetTypeOptions}
         filters={history.filters}
+        nextCursor={history.nextCursor}
       />
     </HeadquartersShell>
   );

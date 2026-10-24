@@ -29,6 +29,7 @@ import {
   applyInventoryAdjustmentReasonsInTx,
   reconcileLedgerInventoryAdjustments,
 } from "./adjustment-reconciliation";
+import { toInventoryAuditSnapshot } from "./audit-snapshot";
 import {
   getLedgerInventoryFifoAmountErrorProductIdsInTx,
   refreshLedgerInventoryFifoLots,
@@ -722,8 +723,8 @@ export async function saveLedgerInventoryItems(
           targetType: "DailyLedger",
           targetId: before.id,
           actorId: actor.user.id,
-          before,
-          after,
+          before: toInventoryAuditSnapshot(before),
+          after: toInventoryAuditSnapshot(after),
         });
 
         // Audit keeps exact-date values. Store-manager form response applies the

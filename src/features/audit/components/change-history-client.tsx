@@ -4,6 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EyeIcon } from "lucide-react";
+import { AuditRawComparison } from "./audit-raw-comparison";
+import type { AuditHistoryCursor } from "../audit-pagination";
 
 import type { AuditHistoryTargetTypeFilter } from "~/features/audit/audit-format";
 import type {
@@ -47,6 +49,7 @@ type ChangeHistoryClientProps = {
   actorOptions: AuditHistoryActorOption[];
   visibleTargetTypeOptions: AuditHistoryTargetTypeOption[];
   filters: AuditHistoryFilters;
+  nextCursor: AuditHistoryCursor | null;
 };
 
 function formatChangedAt(value: string) {
@@ -71,6 +74,7 @@ export function ChangeHistoryClient({
   actorOptions,
   visibleTargetTypeOptions,
   filters,
+  nextCursor,
 }: ChangeHistoryClientProps) {
   const router = useRouter();
   const [selectedHistory, setSelectedHistory] =
@@ -86,7 +90,10 @@ export function ChangeHistoryClient({
     setIsHydrated(true);
   }, []);
 
-  function pushFilters(next: Partial<AuditHistoryFilters>) {
+  function pushFilters(
+    next: Partial<AuditHistoryFilters>,
+    cursor: AuditHistoryCursor | null = null,
+  ) {
     const merged = { ...filters, ...next };
     const params = new URLSearchParams();
 
@@ -105,6 +112,7 @@ export function ChangeHistoryClient({
     if (merged.to) {
       params.set("to", merged.to);
     }
+    if (cursor) params.set("cursor", `${cursor.createdAt}|${cursor.id}`);
 
     router.push(`${historyPath}${params.size ? `?${params.toString()}` : ""}`);
   }
@@ -262,6 +270,19 @@ export function ChangeHistoryClient({
         </Table>
       </div>
 
+      <div className="flex justify-end gap-3">
+        {filters.cursor ? (
+          <Button variant="outline" onClick={() => pushFilters({})}>
+            처음으로
+          </Button>
+        ) : null}
+        {nextCursor ? (
+          <Button variant="outline" onClick={() => pushFilters({}, nextCursor)}>
+            다음 50건
+          </Button>
+        ) : null}
+      </div>
+
       <Dialog
         open={Boolean(selectedHistory)}
         onOpenChange={(open) => !open && setSelectedHistory(null)}
@@ -327,25 +348,10 @@ export function ChangeHistoryClient({
                 </section>
               ) : null}
               {/* WO-05(2026-06-28): 원문 JSON 전/후 비교는 기본 접힘. 요약/사유를 먼저 본다. */}
-              <details className="rounded-md border">
-                <summary className="cursor-pointer p-3 text-sm font-semibold">
-                  원문 변경 전/후 (JSON)
-                </summary>
-                <div className="grid gap-4 p-3 pt-0 lg:grid-cols-2">
-                  <section className="flex flex-col gap-2">
-                    <h3 className="text-sm font-semibold">변경 전</h3>
-                    <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                      {selectedHistory.beforeText}
-                    </pre>
-                  </section>
-                  <section className="flex flex-col gap-2">
-                    <h3 className="text-sm font-semibold">변경 후</h3>
-                    <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm break-words whitespace-pre-wrap">
-                      {selectedHistory.afterText}
-                    </pre>
-                  </section>
-                </div>
-              </details>
+              <AuditRawComparison
+                key={selectedHistory.id}
+                auditId={selectedHistory.id}
+              />
             </div>
           ) : null}
         </DialogContent>

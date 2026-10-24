@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { PrismaClient } from "../../generated/prisma/index.js";
+import { PrismaClient, Prisma } from "../../generated/prisma/index.js";
 
 const prisma = new PrismaClient();
 const storyPrefix = "story17-";
@@ -67,6 +67,10 @@ async function cleanupStory17Data() {
     });
   }
 
+  await prisma.dailyLedger.deleteMany({
+    where: { id: { startsWith: storyPrefix } },
+  });
+
   if (await tableExists("PurchaseStandard")) {
     await prisma.purchaseStandard.deleteMany({
       where: { id: { startsWith: storyPrefix } },
@@ -80,6 +84,9 @@ async function cleanupStory17Data() {
   }
 
   await prisma.user.deleteMany({
+    where: { id: { startsWith: storyPrefix } },
+  });
+  await prisma.permissionProfile.deleteMany({
     where: { id: { startsWith: storyPrefix } },
   });
   await prisma.store.deleteMany({
@@ -211,6 +218,16 @@ async function seedHistoryRows(): Promise<SeededHistory> {
     ],
   });
 
+  // 원문 UPDATE 없이 기존 null·향후 미지원 요약 버전의 SQL fallback을 검증한다.
+  await prisma.auditLog.updateMany({
+    where: { targetId: storeId },
+    data: { listSummary: Prisma.DbNull },
+  });
+  await prisma.auditLog.updateMany({
+    where: { targetId: codeId },
+    data: { listSummary: { version: 99 } },
+  });
+
   return {
     actorId,
     storeName,
@@ -226,6 +243,174 @@ function historyRow(page: Page, text: string): Locator {
   return page.locator("tbody tr").filter({ hasText: text });
 }
 
+test("같은 시각의 이력도 ID 커서로 빠짐없이 다음 페이지를 탐색한다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const createdAt = new Date("2035-01-01T00:00:00.000Z");
+  await prisma.auditLog.createMany({
+    data: Array.from({ length: 55 }, (_, index) => ({
+      id: `${storyPrefix}page-${String(index).padStart(3, "0")}`,
+      action: "product.updated",
+      targetType: "Product",
+      targetId: `${storyPrefix}absent-product`,
+      actorId,
+      after: { name: `페이지 품목 ${index}` },
+      createdAt,
+    })),
+  });
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/master-data/history?targetType=Product&actorId=${actorId}&from=2035-01-01&to=2035-01-01`,
+  );
+  await expect(page.locator("tbody tr")).toHaveCount(50);
+  await expect(page.locator("tbody tr").first()).toContainText(
+    "페이지 품목 54",
+  );
+  await expect(page.locator("tbody tr").last()).toContainText("페이지 품목 5");
+  await page.getByRole("button", { name: "다음 50건" }).click();
+  await expect(page).toHaveURL(/cursor=/);
+  await expect(page.locator("tbody tr")).toHaveCount(5);
+  await expect(page.locator("tbody tr").first()).toContainText("페이지 품목 4");
+  await expect(page.locator("tbody tr").last()).toContainText("페이지 품목 0");
+  await expect(page.getByRole("button", { name: "다음 50건" })).toHaveCount(0);
+  await page.getByRole("button", { name: "처음으로" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(50);
+  await expect(page).not.toHaveURL(/cursor=/);
+});
+
+test("원문 상세는 현재 권한·대상 유형·지점 범위를 다시 확인하고 민감 필드를 제거한다", async ({
+  page,
+}) => {
+  const seeded = await seedHistoryRows();
+  const visibleStore = await prisma.store.findFirstOrThrow({
+    where: { name: seeded.storeName },
+  });
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { id: seeded.actorId },
+    select: { passwordHash: true },
+  });
+  const profile = await prisma.permissionProfile.create({
+    data: {
+      id: prefixedId("profile"),
+      code: prefixedId("profile-code"),
+      name: "시험 지정 지점 감사",
+      storeAccessMode: "ASSIGNED_STORES",
+      actions: {
+        create: [{ action: "SETTINGS_MANAGE" }, { action: "REPORT_VIEW" }],
+      },
+    },
+  });
+  const email = `${prefixedId("audit-viewer")}@example.com`;
+  await prisma.user.create({
+    data: {
+      id: prefixedId("audit-viewer"),
+      email,
+      passwordHash: actor.passwordHash,
+      name: "시험 감사 담당자",
+      role: "HEADQUARTERS",
+      permissionProfiles: { create: { profileId: profile.id } },
+      storeAssignments: { create: { storeId: visibleStore.id } },
+    },
+  });
+  const hiddenStore = await prisma.store.create({
+    data: {
+      id: prefixedId("hidden-store"),
+      name: "시험 범위 밖 지점",
+      updatedById: seeded.actorId,
+    },
+  });
+  const auditIds: string[] = [];
+  for (const storeId of [visibleStore.id, hiddenStore.id]) {
+    const ledger = await prisma.dailyLedger.create({
+      data: {
+        id: prefixedId("scope-ledger"),
+        storeId,
+        closingDate: new Date("2035-01-01"),
+        createdById: seeded.actorId,
+        updatedById: seeded.actorId,
+      },
+    });
+    const audit = await prisma.auditLog.create({
+      data: {
+        id: prefixedId("scope-audit"),
+        actorId: seeded.actorId,
+        action: "ledger.inventory.saved",
+        targetType: "DailyLedger",
+        targetId: ledger.id,
+        before: { currentQuantity: 8, unitPrice: 123, inventoryAmount: 984 },
+        after: { currentQuantity: 7, unitPrice: 123, inventoryAmount: 861 },
+      },
+    });
+    auditIds.push(audit.id);
+  }
+  expect((await page.request.get(`/api/audit/${auditIds[0]}`)).status()).toBe(
+    403,
+  );
+  await login(page, email);
+  const allowed = await page.request.get(`/api/audit/${auditIds[0]}`);
+  expect(allowed.status()).toBe(200);
+  expect(allowed.headers()["cache-control"]).toBe("private, no-store");
+  const detail = (await allowed.json()) as {
+    beforeText: string;
+    afterText: string;
+  };
+  expect(JSON.parse(detail.beforeText)).toEqual({ currentQuantity: 8 });
+  expect(JSON.parse(detail.afterText)).toEqual({ currentQuantity: 7 });
+  expect((await page.request.get(`/api/audit/${auditIds[1]}`)).status()).toBe(
+    404,
+  );
+  const userAudit = await prisma.auditLog.findFirstOrThrow({
+    where: { targetType: "User", id: { startsWith: storyPrefix } },
+  });
+  expect((await page.request.get(`/api/audit/${userAudit.id}`)).status()).toBe(
+    404,
+  );
+  expect(
+    (await page.request.get(`/api/audit/${storyPrefix}missing`)).status(),
+  ).toBe(404);
+  await prisma.permissionProfileAction.delete({
+    where: {
+      profileId_action: { profileId: profile.id, action: "REPORT_VIEW" },
+    },
+  });
+  expect((await page.request.get(`/api/audit/${auditIds[0]}`)).status()).toBe(
+    403,
+  );
+});
+
+test("원문 로드 실패는 재시도할 수 있고 성공한 원문은 접었다 펼쳐도 다시 요청하지 않는다", async ({
+  page,
+}) => {
+  const seeded = await seedHistoryRows();
+  let requests = 0;
+  await page.route("**/api/audit/*", async (route) => {
+    requests++;
+    if (requests === 1)
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: "{}",
+      });
+    else await route.continue();
+  });
+  await login(page, "hq@example.com");
+  await page.goto("/app/master-data/history");
+  await historyRow(page, seeded.storeName)
+    .getByRole("button", { name: "상세 보기" })
+    .click();
+  await page.getByText("원문 변경 전/후 (JSON)").click();
+  await expect(page.getByRole("alert")).toContainText(
+    "원문을 불러오지 못했습니다",
+  );
+  await page.getByRole("button", { name: "다시 불러오기" }).click();
+  await expect(page.getByText(seeded.longMemo).first()).toBeVisible();
+  await page.getByText("원문 변경 전/후 (JSON)").click();
+  await page.getByText("원문 변경 전/후 (JSON)").click();
+  await expect(page.getByText(seeded.longMemo).first()).toBeVisible();
+  expect(requests).toBe(2);
+});
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("로그인 식별자").fill(email);
@@ -240,7 +425,12 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
   const seeded = await seedHistoryRows();
 
   await login(page, "hq@example.com");
-  await page.goto("/app/master-data/history");
+  let detailRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/audit/")) detailRequests++;
+  });
+  const listResponse = await page.goto("/app/master-data/history");
+  expect(await listResponse!.text()).not.toContain(seeded.longMemo);
 
   await expect(page).toHaveURL(/\/app\/master-data\/history/);
   await expect(page.getByRole("heading", { name: "변경 이력" })).toBeVisible();
@@ -280,11 +470,13 @@ test("본사는 변경 이력 목록을 시간 역순으로 보고 상세 전후
   // WO-05(2026-06-28): 사유는 기본 노출, 원문 JSON 전/후는 접힘 영역에 둔다.
   await expect(page.getByRole("heading", { name: "사유" })).toBeVisible();
   await expect(page.getByText(seeded.reason)).toBeVisible();
+  expect(detailRequests).toBe(0);
   // 원문 JSON 전/후는 접힌 영역을 펼쳐야 보인다.
   await page.getByText("원문 변경 전/후 (JSON)").click();
   await expect(page.getByRole("heading", { name: "변경 전" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "변경 후" })).toBeVisible();
   await expect(page.getByText(seeded.longMemo).first()).toBeVisible();
+  expect(detailRequests).toBe(1);
 });
 
 test("본사는 대상 유형, 변경자, 기간 필터를 URL query로 유지한다", async ({

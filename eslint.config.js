@@ -13,6 +13,7 @@ export default tseslint.config(
       ".next",
       ".tmp",
       "tmp",
+      "caveman",
       "generated",
       "next-env.d.ts",
       "src/components/ui",

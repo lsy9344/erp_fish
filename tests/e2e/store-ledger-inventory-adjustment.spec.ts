@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
+import { expectInventoryAuditSnapshot } from "./_helpers/inventory-audit";
 import {
   PrismaClient,
   type DailyLedgerStatus,
@@ -372,6 +373,22 @@ test("실제 재고 차이를 바꾼 이유와 함께 저장하고 재방문 시
   expect(auditLog?.createdAt).toBeTruthy();
   expect(auditLog?.before).toBeTruthy();
   expect(auditLog?.after).toBeTruthy();
+  expectInventoryAuditSnapshot(auditLog?.before);
+  expectInventoryAuditSnapshot(auditLog?.after);
+  expect(auditLog?.after).toHaveProperty(
+    "items",
+    expect.arrayContaining([
+      expect.objectContaining({
+        productId: product.id,
+        adjustment: expect.objectContaining({
+          beforeQuantity: 7,
+          afterQuantity: 9,
+          differenceQuantity: 2,
+          reason: "실사 재고 차이",
+        }),
+      }),
+    ]),
+  );
 });
 
 test("바꾼 이유가 비어 있으면 여러 행 초안을 유지하고 첫 이유 필드에 포커스한다", async ({

@@ -1,5 +1,10 @@
-import type { Prisma } from "../../../generated/prisma";
-import { PermissionAction } from "../../../generated/prisma";
+import { type Prisma, PermissionAction } from "../../../generated/prisma";
+import { isAuditListSummary } from "./list-summary";
+import {
+  auditHistoryCursorWhere,
+  parseAuditHistoryCursor,
+  type AuditHistoryCursor,
+} from "./audit-pagination";
 import {
   AUDIT_HISTORY_TARGET_TYPES,
   AUDIT_TARGET_TYPE_OPTIONS,
@@ -28,6 +33,7 @@ export type AuditHistoryFilters = {
   actorId: string;
   from: string;
   to: string;
+  cursor?: AuditHistoryCursor | null;
 };
 
 export type AuditHistorySearchParams = {
@@ -35,6 +41,7 @@ export type AuditHistorySearchParams = {
   actorId?: string | string[];
   from?: string | string[];
   to?: string | string[];
+  cursor?: string | string[];
 };
 
 export type AuditHistoryItem = {
@@ -49,8 +56,6 @@ export type AuditHistoryItem = {
   actionLabel: string;
   reasonText: string;
   changeSummaryText: string;
-  beforeText: string;
-  afterText: string;
   // WO-05(2026-06-28): 장부/정정 이력은 장부 상세 링크. 그 외 대상은 null.
   ledgerDetailHref: string | null;
 };
@@ -78,8 +83,7 @@ type AuditLogWithActor = Prisma.AuditLogGetPayload<{
     targetType: true;
     targetId: true;
     actorId: true;
-    before: true;
-    after: true;
+    listSummary: true;
     reason: true;
     createdAt: true;
     actor: {
@@ -139,6 +143,7 @@ export function normalizeAuditHistoryFilters(
     actorId: normalizeAuditHistoryActorFilter(params.actorId),
     from: normalizeAuditHistoryDateFilter(params.from),
     to: normalizeAuditHistoryDateFilter(params.to),
+    cursor: parseAuditHistoryCursor(params.cursor),
   };
 }
 
@@ -223,6 +228,13 @@ function buildAuditHistoryWhere(
     if (scopedTargetWhere) {
       where.AND = [scopedTargetWhere];
     }
+  }
+
+  if (filters.cursor) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : []),
+      auditHistoryCursorWhere(filters.cursor),
+    ];
   }
 
   return where;
@@ -508,6 +520,7 @@ function getVisibleTargetTypeOptions(
 export async function getAuditHistoryForHeadquarters(
   filters: Partial<AuditHistoryFilters> = {},
 ): Promise<AuditHistoryResult> {
+  const startedAt = Date.now();
   const currentUser = await requireAuditHistoryAccess();
   const storeScope = await getHeadquartersStoreScope();
   const scopedTargets = await getScopedAuditTargetFilters(storeScope.storeIds);
@@ -520,6 +533,7 @@ export async function getAuditHistoryForHeadquarters(
     actorId: filters.actorId ?? "all",
     from: filters.from ?? "",
     to: filters.to ?? "",
+    cursor: filters.cursor ?? null,
   };
 
   if (
@@ -542,15 +556,14 @@ export async function getAuditHistoryForHeadquarters(
         allowedTargetTypes,
       ),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: AUDIT_HISTORY_PAGE_SIZE,
+      take: AUDIT_HISTORY_PAGE_SIZE + 1,
       select: {
         id: true,
         action: true,
         targetType: true,
         targetId: true,
         actorId: true,
-        before: true,
-        after: true,
+        listSummary: true,
         reason: true,
         createdAt: true,
         actor: {
@@ -563,11 +576,21 @@ export async function getAuditHistoryForHeadquarters(
     }),
     getAuditActorOptions(scopedTargets, allowedTargetTypes),
   ]);
-  const { names: targetNames, ledgerHrefs } = await resolveTargetNames(
-    logs,
-    scopedTargets.storeIds,
-  );
-  const items = logs
+  const page = logs.slice(0, AUDIT_HISTORY_PAGE_SIZE);
+  const legacyIds = page
+    .filter((log) => !isAuditListSummary(log.listSummary))
+    .map((log) => log.id);
+  const [{ names: targetNames, ledgerHrefs }, legacy] = await Promise.all([
+    resolveTargetNames(page, scopedTargets.storeIds),
+    legacyIds.length === 0
+      ? []
+      : db.$queryRaw<{ id: string; summary: Prisma.JsonValue }[]>`
+      SELECT "id", audit_list_summary_v1("before", "after") AS summary
+        FROM "AuditLog" WHERE "id" = ANY(${legacyIds}::text[])
+    `,
+  ]);
+  const legacyById = new Map(legacy.map((row) => [row.id, row.summary]));
+  const items = page
     .filter(
       (
         log,
@@ -575,11 +598,16 @@ export async function getAuditHistoryForHeadquarters(
         isAuditHistoryTargetType(log.targetType),
     )
     .map<AuditHistoryItem>((log) => {
-      const safeBefore = omitSensitiveFields(log.before) as
+      const summary = isAuditListSummary(log.listSummary)
+        ? log.listSummary
+        : legacyById.get(log.id);
+      if (!isAuditListSummary(summary))
+        throw new Error("감사 목록 요약 형식을 확인할 수 없습니다.");
+      const safeBefore = omitSensitiveFields(summary.before) as
         | Prisma.JsonValue
         | null
         | undefined;
-      const safeAfter = omitSensitiveFields(log.after) as
+      const safeAfter = omitSensitiveFields(summary.after) as
         | Prisma.JsonValue
         | null
         | undefined;
@@ -599,19 +627,82 @@ export async function getAuditHistoryForHeadquarters(
         action: log.action,
         actionLabel: getAuditActionLabel(log.action),
         reasonText: log.reason ?? "-",
-        changeSummaryText: formatAuditChangeSummary(safeBefore, safeAfter),
-        beforeText: formatAuditJsonValue(safeBefore),
-        afterText: formatAuditJsonValue(safeAfter),
+        changeSummaryText: formatAuditChangeSummary(
+          safeBefore,
+          safeAfter,
+          summary.rootChanged,
+        ),
         ledgerDetailHref:
           ledgerHrefs.get(targetKey(log.targetType, log.targetId)) ?? null,
       };
     });
 
-  return {
+  const result: AuditHistoryResult = {
     items,
     actorOptions,
     visibleTargetTypeOptions,
     filters: normalizedFilters,
-    nextCursor: null,
+    nextCursor:
+      logs.length > AUDIT_HISTORY_PAGE_SIZE && page.at(-1)
+        ? {
+            createdAt: page.at(-1)!.createdAt.toISOString(),
+            id: page.at(-1)!.id,
+          }
+        : null,
   };
+  console.info(
+    JSON.stringify({
+      event: "audit_history_list",
+      sizeMetric: "serialized-json-proxy",
+      itemCount: items.length,
+      legacyProjectionCount: legacy.length,
+      auditRowsJsonBytes: Buffer.byteLength(JSON.stringify({ logs, legacy })),
+      appModelJsonBytes: Buffer.byteLength(JSON.stringify(result)),
+      durationMs: Date.now() - startedAt,
+    }),
+  );
+  return result;
+}
+
+export type AuditHistoryDetail = { beforeText: string; afterText: string };
+
+/** 단일 ID도 목록과 같은 권한·대상 유형·지점 범위를 매번 확인한다. */
+export async function getAuditHistoryDetail(
+  id: string,
+): Promise<AuditHistoryDetail | null> {
+  const startedAt = Date.now();
+  const user = await requireAuditHistoryAccess();
+  const storeScope = await getHeadquartersStoreScope();
+  const scopedTargets = await getScopedAuditTargetFilters(storeScope.storeIds);
+  const allowedTargetTypes = await getAllowedAuditHistoryTargetTypes(user.id);
+  const log = await db.auditLog.findFirst({
+    where: {
+      AND: [
+        { id },
+        buildAuditHistoryWhere(
+          { targetType: "all", actorId: "all", from: "", to: "" },
+          scopedTargets,
+          allowedTargetTypes,
+        ),
+      ],
+    },
+    select: { before: true, after: true },
+  });
+  if (!log) return null;
+  const safeBefore = omitSensitiveFields(log.before) as Prisma.JsonValue | null;
+  const safeAfter = omitSensitiveFields(log.after) as Prisma.JsonValue | null;
+  const result = {
+    beforeText: formatAuditJsonValue(safeBefore),
+    afterText: formatAuditJsonValue(safeAfter),
+  };
+  console.info(
+    JSON.stringify({
+      event: "audit_history_detail",
+      sizeMetric: "serialized-json-proxy",
+      auditRowJsonBytes: Buffer.byteLength(JSON.stringify(log)),
+      appModelJsonBytes: Buffer.byteLength(JSON.stringify(result)),
+      durationMs: Date.now() - startedAt,
+    }),
+  );
+  return result;
 }

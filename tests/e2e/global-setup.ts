@@ -239,6 +239,13 @@ export default async function globalSetup() {
     },
   );
 
+  // db push는 SQL 함수·트리거를 만들지 않는다. 시험 DB guard 뒤에서만
+  // 같은 버전의 멱등 migration을 적용해 새 CI DB와 로컬 DB의 동작을 맞춘다.
+  execSync(
+    "corepack pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/migrations/20261024060000_add_audit_list_summary/migration.sql",
+    { env: process.env, stdio: "inherit" },
+  );
+
   const prisma = new PrismaClient();
   await truncateE2eDatabase(prisma);
   const passwordHash = await hashPassword("correct-password");
