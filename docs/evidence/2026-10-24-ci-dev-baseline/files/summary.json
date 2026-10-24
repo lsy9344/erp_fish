@@ -1,0 +1,27 @@
+{
+  "mode": "development",
+  "command": [
+    "pnpm",
+    "test:playwright",
+    "--",
+    "tests/e2e/hq-ledger-edit.spec.ts",
+    "tests/e2e/hq-reports.spec.ts",
+    "--grep",
+    "지점장 direct URL|본사는 마감 버튼으로|본사는 리포트에 들어와",
+    "--reporter=line,json",
+    "--trace=on"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 65.88,
+  "source_commit": "9141d2dcf2d41e8f5c7c577ceb872cbefd4e0657",
+  "resource_usage": "\tCommand being timed: \"pnpm test:playwright -- tests/e2e/hq-ledger-edit.spec.ts tests/e2e/hq-reports.spec.ts --grep 지점장 direct URL|본사는 마감 버튼으로|본사는 리포트에 들어와 --reporter=line,json --trace=on\"\n\tUser time (seconds): 16.64\n\tSystem time (seconds): 5.08\n\tPercent of CPU this job got: 30%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:10.38\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 416828\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 189\n\tMinor (reclaiming a frame) page faults: 1087669\n\tVoluntary context switches: 76083\n\tInvoluntary context switches: 124\n\tSwaps: 0\n\tFile system inputs: 63112\n\tFile system outputs: 199168\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+  "stats": {
+    "startTime": "2026-10-24T14:13:11.712Z",
+    "duration": 64500.883,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": []
+}

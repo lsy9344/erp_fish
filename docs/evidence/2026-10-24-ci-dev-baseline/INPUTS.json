@@ -1,0 +1,11 @@
+[
+ {
+  "path": "/home/noah/.cache/scratch-guard/kept/fish-ci-dev-baseline-20261024T141305Z-822d77/w/out/summary.json",
+  "volatile": true,
+  "kind": "file",
+  "bytes": 1623,
+  "mode": "0644",
+  "sha256": "110f981abd6d6b8768cdc3090386f01f2f415eba7fe5086e95caf0edfcdb1732",
+  "copy": "inputs/00-summary.json"
+ }
+]

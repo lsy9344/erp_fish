@@ -45,11 +45,10 @@ actionlint .github/workflows/ci.yml
   broader core E2E bundle split into four parallel groups: `ledger`, `hq`,
   `admin`, and `imports`. Smoke is skipped here because core covers it.
 - Pushes to `main` or `master` run `Fast Checks`, `Production Build`, `API Tests`,
-  and the full Playwright suite in 4 shards. The smoke job is skipped on those
+  and the full Playwright suite in 4 explicit groups. The smoke job is skipped on those
   pushes because the full suite covers it.
-- The nightly schedule runs the full Playwright suite in 4 shards at 19:00 UTC
-  (04:00 KST). The full Playwright shards run only `tests/e2e`; API tests stay
-  in `API Tests`.
+- There is no nightly schedule. The full Playwright groups run only `tests/e2e`;
+  API tests stay in `API Tests`.
 - Manual runs can trigger full Playwright and burn-in when needed.
   Manual full Playwright runs skip the smoke job because the full suite covers
   the same tests.
@@ -103,7 +102,7 @@ Bypass options:
 3. Select `CI`.
 4. Click `Run workflow`.
 5. Choose options:
-   - `run_full_e2e`: runs the full Playwright suite in 4 shards and skips
+   - `run_full_e2e`: runs the full Playwright suite in 4 groups and skips
      smoke.
    - `run_burn_in`: runs the smoke test with `--repeat-each=10`.
    - `e2e_grep`: optional text filter for manual full e2e runs.
@@ -154,17 +153,47 @@ Playwright jobs run inside the official Playwright container image, so they use
 the same PostgreSQL service through the `postgres` service hostname instead of
 `localhost`.
 
-The CI test server uses Webpack with Node source maps disabled and an explicit
-8 GiB heap limit. Long browser shards previously triggered Next.js development
-server memory restarts, which interrupted navigation and caused connection
-errors. Local development keeps its existing server settings.
+Full E2E uses the explicit assignments in `scripts/playwright-full-groups.mjs`.
+A unit test checks that every E2E spec belongs to exactly one group, so adding a
+spec requires updating its assignment. The report suite is split into overview,
+daily, comparison, monthly, inventory, and review specs, with shared fixtures.
+Those specs are distributed across groups 2, 3, and 4.
+
+`Production Build` packages `.next` without its build cache. Groups 2, 3, and 4
+download that build from the same workflow run and commit, then run `next start`.
+This removes on-demand development compilation from their browser requests.
+Group 1 keeps the Webpack development server because chatbot tests require the
+development-only API stub, which remains unavailable in production. API, smoke,
+core, and burn-in tests keep their existing development server settings: source
+maps disabled and an 8 GiB heap limit in CI. Each group still uses one worker,
+its own PostgreSQL service, and the guarded setup that resets the test database.
+The job, test, and assertion timeouts and retry counts have not been increased.
+
+To reproduce a full group locally, select a dedicated test database first:
+
+```bash
+# Groups 2–4 require a production build before their first run.
+pnpm build
+node scripts/run-playwright-full.mjs --group 2 --reporter=line
+```
+
+Set `PLAYWRIGHT_DATABASE_URL` to the dedicated database; the wrapper rejects
+database names without `test` or `e2e`. Do not point it at an operational DB.
+Group 1 can run without a build. Matrix groups are sequential with one available
+runner; additional runners must retain separate test databases.
+
+See the [Next.js CLI](https://nextjs.org/docs/15/app/api-reference/cli/next)
+and [Playwright web server configuration](https://playwright.dev/docs/test-webserver).
 
 ## Artifacts
 
-Playwright uploads artifacts when a Playwright job fails or is cancelled:
+Full E2E uploads artifacts on success, failure, or cancellation; other Playwright
+jobs upload on failure or cancellation:
 
 - `test-results/`
 - `playwright-report/`
+- `ci-diagnostics/` (full E2E): JSON results with per-test duration and resource
+  samples every 30 seconds (available memory, load, Linux CPU/memory/IO pressure).
 
 Artifacts are kept for 14 days.
 
@@ -190,5 +219,6 @@ Artifacts are kept for 14 days.
 - If staging core E2E fails, run the matching local group:
   `pnpm test:e2e:core:ledger`, `pnpm test:e2e:core:hq`,
   `pnpm test:e2e:core:admin`, or `pnpm test:e2e:core:imports`.
-- If full e2e is slow, check which shard is slow and run that file locally with `pnpm test:playwright -- <file>`.
+- If full E2E is slow, compare its JSON test durations and resource samples, then
+  reproduce the affected group with `node scripts/run-playwright-full.mjs --group N`.
 - If a manual grep run behaves oddly, prefer file and line targeting, for example `tests/e2e/auth.spec.ts:16`.

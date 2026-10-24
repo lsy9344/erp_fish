@@ -1,0 +1,31 @@
+{
+ "run_id": "fish-ci-baseline-evidenc-20261024T141912Z-cde509",
+ "label": "fish-ci-baseline-evidence",
+ "outcome": "success",
+ "reason": "종료 코드 0",
+ "rc": 0,
+ "argv": [
+  "cp",
+  "/home/noah/.cache/scratch-guard/kept/fish-ci-dev-baseline-20261024T141305Z-822d77/w/out/summary.json",
+  "{scratch}/summary.json"
+ ],
+ "seconds": 0.0,
+ "peak": {
+  "bytes": 20480,
+  "inodes": 5
+ },
+ "final": {
+  "bytes": 20480,
+  "inodes": 5
+ },
+ "limits": {
+  "max_bytes": 2147483648,
+  "max_inodes": 200000
+ },
+ "started_at": "2026-10-24T14:19:12Z",
+ "ended_at": "2026-10-24T14:19:12Z",
+ "exported_files": [
+  "summary.json"
+ ],
+ "written_at": "2026-10-24T14:19:12Z"
+}

@@ -1,0 +1,54 @@
+{
+  "mode": "production",
+  "build_seconds": 65.42,
+  "build_exit_code": 0,
+  "stages": [
+    {
+      "label": "targeted",
+      "command": [
+        "node",
+        "scripts/run-playwright-clean.mjs",
+        "tests/e2e/hq-ledger-edit.spec.ts",
+        "tests/e2e/hq-reports.spec.ts",
+        "--grep",
+        "지점장 direct URL|본사는 마감 버튼으로|본사는 리포트에 들어와",
+        "--reporter=line,json",
+        "--trace=on"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 19.97,
+      "resource_usage": "\tCommand being timed: \"node scripts/run-playwright-clean.mjs tests/e2e/hq-ledger-edit.spec.ts tests/e2e/hq-reports.spec.ts --grep 지점장 direct URL|본사는 마감 버튼으로|본사는 리포트에 들어와 --reporter=line,json --trace=on\"\n\tUser time (seconds): 9.52\n\tSystem time (seconds): 2.69\n\tPercent of CPU this job got: 61%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 0:19.97\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 403076\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 192\n\tMinor (reclaiming a frame) page faults: 532485\n\tVoluntary context switches: 44755\n\tInvoluntary context switches: 79\n\tSwaps: 0\n\tFile system inputs: 1656\n\tFile system outputs: 64056\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "stats": {
+        "startTime": "2026-10-24T14:19:22.470Z",
+        "duration": 18811.733,
+        "expected": 3,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "errors": []
+    },
+    {
+      "label": "group2",
+      "command": [
+        "node",
+        "scripts/run-playwright-full.mjs",
+        "--group",
+        "2",
+        "--reporter=line,json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 147.43,
+      "resource_usage": "\tCommand being timed: \"node scripts/run-playwright-full.mjs --group 2 --reporter=line,json\"\n\tUser time (seconds): 39.21\n\tSystem time (seconds): 16.86\n\tPercent of CPU this job got: 35%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 2:39.27\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 449788\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 5138\n\tMinor (reclaiming a frame) page faults: 746218\n\tVoluntary context switches: 338859\n\tInvoluntary context switches: 2702\n\tSwaps: 0\n\tFile system inputs: 568\n\tFile system outputs: 532080\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "stats": {
+        "startTime": "2026-10-24T14:19:42.127Z",
+        "duration": 146589.349,
+        "expected": 82,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "errors": []
+    }
+  ]
+}

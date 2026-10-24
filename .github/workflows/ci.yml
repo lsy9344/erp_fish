@@ -150,6 +150,23 @@ jobs:
       - name: Production build
         run: pnpm build
 
+      - name: Package browser test build
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) ||
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+        run: tar --exclude='.next/cache' -czf "$RUNNER_TEMP/playwright-build.tgz" .next
+
+      - name: Upload browser test build
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.run_full_e2e) ||
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-build-${{ github.sha }}
+          path: ${{ runner.temp }}/playwright-build.tgz
+          retention-days: 7
+          overwrite: true
+
   api-tests:
     name: API Tests (${{ matrix.group }})
     runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
@@ -409,6 +426,7 @@ jobs:
 
   playwright-full:
     name: Playwright Full ${{ matrix.shard }}
+    needs: build
     runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
@@ -438,6 +456,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
       PLAYWRIGHT_DATABASE_URL: postgresql://postgres:erp_fish_local_pw@postgres:5432/erp_fish_e2e
+      PW_RESOURCE_LOG: ci-diagnostics/resources.jsonl
+      PLAYWRIGHT_JSON_OUTPUT_NAME: ci-diagnostics/results.json
       E2E_GREP: ${{ github.event_name == 'workflow_dispatch' && inputs.e2e_grep || '' }}
 
     steps:
@@ -464,24 +484,35 @@ jobs:
           echo "Using pnpm store: $PNPM_STORE_DIR"
           pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR" --verify-store-integrity=true --side-effects-cache=false
 
-      - name: Run Playwright shard
+      - name: Download browser test build
+        if: matrix.shard != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-build-${{ github.sha }}
+          path: ${{ runner.temp }}/playwright-build
+
+      - name: Restore browser test build
+        if: matrix.shard != 1
+        run: tar -xzf "$RUNNER_TEMP/playwright-build/playwright-build.tgz"
+
+      - name: Run Playwright group
         run: |
-          echo "Running Playwright shard ${{ matrix.shard }}/4"
           # Security: inputs passed through env: to prevent script injection
           if [ -n "$E2E_GREP" ]; then
-            pnpm test:playwright -- tests/e2e --grep "$E2E_GREP" --shard=${{ matrix.shard }}/4 --reporter=line
+            node scripts/run-playwright-full.mjs --group ${{ matrix.shard }} --grep "$E2E_GREP" --reporter=line,json
           else
-            pnpm test:playwright -- tests/e2e --shard=${{ matrix.shard }}/4 --reporter=line
+            node scripts/run-playwright-full.mjs --group ${{ matrix.shard }} --reporter=line,json
           fi
 
       - name: Upload Playwright artifacts
-        if: failure() || cancelled()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-full-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: playwright-full-group-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             test-results/
             playwright-report/
+            ci-diagnostics/
           retention-days: 14
 
   playwright-burn-in:

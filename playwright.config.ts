@@ -7,14 +7,17 @@ const databaseURL =
   "postgresql://postgres:erp_fish_local_pw@localhost:5432/erp_fish_e2e";
 const reuseExistingServer =
   !process.env.CI && process.env.PW_REUSE_EXISTING_SERVER === "1";
+const productionServer = process.env.PW_SERVER_MODE === "production";
 // Next 15 enables Webpack when `next dev` has no `--turbo` flag. Keep the
 // faster Turbopack command for local development, but use Webpack for the
 // CI-only test server so API/E2E checks do not start the Turbopack worker.
 // Disable Node source maps and reserve enough heap for long CI shards so
 // compilation does not trigger Next's automatic memory-threshold restart.
-const devServerCommand = process.env.CI
-  ? "corepack pnpm exec next dev --disable-source-maps"
-  : "corepack pnpm dev";
+const serverCommand = productionServer
+  ? "corepack pnpm exec next start"
+  : process.env.CI
+    ? "corepack pnpm exec next dev --disable-source-maps"
+    : "corepack pnpm dev";
 
 process.env.DATABASE_URL = databaseURL;
 
@@ -36,7 +39,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `${devServerCommand} --hostname 127.0.0.1 --port ${port}`,
+    command: `${serverCommand} --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer,
     timeout: 120_000,

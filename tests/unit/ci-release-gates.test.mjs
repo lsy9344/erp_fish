@@ -152,13 +152,20 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
 
   assert.match(
     fullJob,
-    /pnpm test:playwright -- tests\/e2e --grep "\$E2E_GREP" --shard=\$\{\{\s*matrix\.shard\s*\}\}\/4 --reporter=line/,
+    /node scripts\/run-playwright-full\.mjs --group \$\{\{\s*matrix\.shard\s*\}\} --grep "\$E2E_GREP" --reporter=line,json/,
   );
   assert.match(
     fullJob,
-    /pnpm test:playwright -- tests\/e2e --shard=\$\{\{\s*matrix\.shard\s*\}\}\/4 --reporter=line/,
+    /node scripts\/run-playwright-full\.mjs --group \$\{\{\s*matrix\.shard\s*\}\} --reporter=line,json/,
   );
-  assert.doesNotMatch(fullJob, /pnpm test:playwright -- --shard/);
+  assert.match(fullJob, /needs:\s*build/);
+  assert.match(fullJob, /uses: actions\/download-artifact@v4/);
+  assert.match(fullJob, /name: playwright-build-\$\{\{ github\.sha \}\}/);
+  assert.match(buildJob, /uses: actions\/upload-artifact@v4/);
+  assert.match(buildJob, /name: playwright-build-\$\{\{ github\.sha \}\}/);
+  assert.match(fullJob, /PW_RESOURCE_LOG:/);
+  assert.match(fullJob, /ci-diagnostics\//);
+  assert.doesNotMatch(fullJob, /--shard=/);
 
   for (const [scriptName, { spec, grep }] of Object.entries({
     "test:e2e:smoke:ledger": {
@@ -228,6 +235,11 @@ test("core e2e bundle covers store, headquarters, reports, permissions, and mast
     "tests/e2e/hq-ledger-edit.spec.ts",
     "tests/e2e/hq-ledger-corrections.spec.ts",
     "tests/e2e/hq-reports.spec.ts",
+    "tests/e2e/hq-reports-daily.spec.ts",
+    "tests/e2e/hq-reports-comparison.spec.ts",
+    "tests/e2e/hq-reports-monthly.spec.ts",
+    "tests/e2e/hq-reports-inventory.spec.ts",
+    "tests/e2e/hq-reports-review.spec.ts",
     "tests/e2e/ecount-supply-imports.spec.ts",
     "tests/e2e/permission-profiles.spec.ts",
     "tests/e2e/master-data-stores.spec.ts",
@@ -252,7 +264,7 @@ test("release documentation has one local DB path and an operations checklist", 
   assert.match(ciDocs, /Pushes to feature branches/);
   assert.match(ciDocs, /same branch cancel older in-progress runs/);
   assert.match(ciDocs, /four parallel groups/);
-  assert.match(ciDocs, /full Playwright shards run only `tests\/e2e`/);
+  assert.match(ciDocs, /full Playwright groups run only `tests\/e2e`/);
   assert.match(ciDocs, /representative E2E smoke/);
   assert.doesNotMatch(ciDocs, /new_function/);
 
