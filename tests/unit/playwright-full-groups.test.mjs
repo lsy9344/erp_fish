@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { test } from "node:test";
 
@@ -37,3 +38,35 @@ test("unknown groups fail closed instead of silently running an incomplete suite
     assert.throws(() => getFullE2EGroup(id), /Unknown full E2E group/);
   }
 });
+
+test("manual filters with no match in the complete suite fail", () => {
+  const result = listFilteredGroup("2", "no-such-e2e-test-4e3d891a");
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /No tests found/);
+});
+
+test("a valid manual filter permits an empty unrelated group", () => {
+  const result = listFilteredGroup("1", "지점장 direct URL");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Total: 0 tests in 0 files/);
+});
+
+function listFilteredGroup(group, grep) {
+  return spawnSync(
+    process.execPath,
+    [
+      "scripts/run-playwright-full.mjs",
+      "--group",
+      group,
+      "--grep",
+      grep,
+      "--list",
+      "--reporter=line",
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, PW_RESOURCE_LOG: "" },
+      timeout: 30_000,
+    },
+  );
+}
