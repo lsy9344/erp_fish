@@ -164,6 +164,7 @@ test("PR CI keeps release gates while running representative e2e smoke", () => {
   assert.match(buildJob, /uses: actions\/upload-artifact@v4/);
   assert.match(buildJob, /name: playwright-build-\$\{\{ github\.sha \}\}/);
   assert.match(fullJob, /PW_RESOURCE_LOG:/);
+  assert.match(fullJob, /options:\s*--memory=\S+ --memory-swap=\S+/);
   assert.match(fullJob, /ci-diagnostics\//);
   assert.doesNotMatch(fullJob, /--shard=/);
 

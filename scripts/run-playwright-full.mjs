@@ -53,6 +53,16 @@ if (grepIndex !== -1) {
 }
 
 function resourceSample() {
+  const cgroupMemoryMiB = (file) => {
+    try {
+      const bytes = Number(
+        readFileSync(`/sys/fs/cgroup/${file}`, "utf8").trim(),
+      );
+      return Number.isFinite(bytes) ? Math.round(bytes / 1024 ** 2) : null;
+    } catch {
+      return null;
+    }
+  };
   const pressure = {};
   for (const resource of ["cpu", "memory", "io"]) {
     try {
@@ -70,6 +80,9 @@ function resourceSample() {
     serverMode: group.serverMode,
     load: os.loadavg(),
     freeMemoryMiB: Math.round(os.freemem() / 1024 ** 2),
+    cgroupMemoryCurrentMiB: cgroupMemoryMiB("memory.current"),
+    cgroupMemoryPeakMiB: cgroupMemoryMiB("memory.peak"),
+    cgroupMemoryLimitMiB: cgroupMemoryMiB("memory.max"),
     pressure,
   };
   const line = JSON.stringify(sample);

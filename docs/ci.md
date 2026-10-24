@@ -172,6 +172,11 @@ uses one worker, its own PostgreSQL service, and the guarded setup that resets
 the test database. The job, test, and assertion timeouts and retry counts have
 not been increased.
 
+Full browser containers have a 4 GiB RAM limit and 1 GiB of additional swap;
+the production Next.js process has a 2 GiB heap limit. This bounds a browser
+job on the shared runner's 8 GiB WSL VM. Resource samples also record the
+container's current, peak, and maximum memory when cgroup v2 exposes them.
+
 To reproduce a full group locally, select a dedicated test database first:
 
 ```bash

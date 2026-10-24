@@ -50,7 +50,7 @@ export default defineConfig({
       NODE_ENV: productionServer ? "production" : "development",
       ...(process.env.CI
         ? {
-            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=8192`,
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=${productionServer ? 2048 : 8192}`,
           }
         : {}),
       AUTH_SECRET: "test-auth-secret-at-least-32-characters",
