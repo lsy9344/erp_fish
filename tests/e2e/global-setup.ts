@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { startChatApiStub } from "./_helpers/chat-api-stub";
 
 import {
   PermissionAction,
@@ -1001,4 +1002,9 @@ export default async function globalSetup() {
   });
 
   await prisma.$disconnect();
+
+  if (process.env.PW_SERVER_MODE === "production") {
+    const stub = await startChatApiStub(Number(process.env.PORT ?? 3102) + 1);
+    return stub.close;
+  }
 }

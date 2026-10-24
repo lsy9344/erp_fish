@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 // Anthropic Messages API 스텁. ANTHROPIC_API_BASE_URL이 이 라우트를 가리키도록 설정하면
 // 실제 API 키 없이 /api/chat의 도구 루프(도구 호출 → 실행 → 답변)를 검증할 수 있다.

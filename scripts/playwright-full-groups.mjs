@@ -1,13 +1,16 @@
 // Keep each group sequential: specs share the guarded, freshly seeded test DB.
-// Group 1 needs the development-only chatbot stub; the other groups use next start.
+// Every group uses next start; the provider fixture runs in the test process.
 export const fullE2EGroups = [
   {
     id: 1,
-    serverMode: "development",
+    serverMode: "production",
     specs: [
       "auth",
       "chat-widget",
       "historical-import-lifecycle",
+      "hq-reports-comparison",
+      "hq-reports-monthly",
+      "labor-employees",
       "master-data-codes",
       "master-data-stores",
       "master-data-users",
@@ -27,8 +30,6 @@ export const fullE2EGroups = [
       "hq-ledger-corrections",
       "hq-ledger-edit",
       "hq-reports",
-      "hq-reports-comparison",
-      "hq-reports-monthly",
     ],
   },
   {
@@ -38,7 +39,6 @@ export const fullE2EGroups = [
       "hq-dashboard",
       "hq-reports-daily",
       "inventory-plan-regressions",
-      "labor-employees",
       "store-ledger-inventory",
       "store-ledger-inventory-adjustment",
       "store-ledger-cost-labor",

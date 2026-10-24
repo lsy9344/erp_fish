@@ -1,0 +1,12 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 57.61,
+  "source_sha256": {
+    "playwright.config.ts": "76ec41f880d50b018b6bc7acfe90b4592137f3ae2ee0848513db90f77d8eab95",
+    "scripts/playwright-full-groups.mjs": "1cefb60cb5c5f60b0d771e44623732819cc066b5929b48b8476662c7cd1578d7",
+    "scripts/run-playwright-full.mjs": "4afd6aaf25673b95a3e237e925fd208f0134e21e6054d6aba8ff24e563ba1deb",
+    "tests/e2e/global-setup.ts": "cb6b440f18d50cb1f32ea7aad975c9d9f471582d3fa436fbf2b0323f8c936cd0",
+    "tests/e2e/_helpers/chat-api-stub.ts": "05a61ce1a4d8720bf451d77d9358c1bb9aff6cb817d6313ae27eda1de5ac5039",
+    "src/app/api/test/anthropic-stub/v1/messages/route.ts": "280c2328809238e1345bb1022b8b327e6c883a67724171e8ab6e3a27d7785638"
+  }
+}

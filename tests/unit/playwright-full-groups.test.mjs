@@ -22,14 +22,10 @@ test("full E2E groups cover every spec exactly once", () => {
   );
 });
 
-test("chatbot's development-only stub stays out of production-server groups", () => {
-  const chatGroup = fullE2EGroups.find(({ specs }) =>
-    specs.includes("chat-widget"),
-  );
-  assert.equal(chatGroup.serverMode, "development");
+test("all full E2E groups use the compiled production server", () => {
   assert.deepEqual(
-    fullE2EGroups.slice(1).map(({ serverMode }) => serverMode),
-    ["production", "production", "production"],
+    fullE2EGroups.map(({ serverMode }) => serverMode),
+    ["production", "production", "production", "production"],
   );
 });
 

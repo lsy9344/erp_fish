@@ -1,0 +1,32 @@
+{
+ "run_id": "fish-ci-all-prod-build-20261024T150758Z-489a4b",
+ "label": "fish-ci-all-prod-build",
+ "outcome": "success",
+ "reason": "종료 코드 0",
+ "rc": 0,
+ "argv": [
+  "python3",
+  "-c",
+  "import pathlib,subprocess,tarfile,io,sys,os,time,json,hashlib\nroot=pathlib.Path.cwd();w=pathlib.Path(sys.argv[1]);app=w/\"app\";app.mkdir();(w/\"out\").mkdir()\ntarfile.open(fileobj=io.BytesIO(subprocess.check_output([\"git\",\"archive\",\"HEAD\"]))).extractall(app,filter=\"data\")\npaths=[\"playwright.config.ts\",\"scripts/playwright-full-groups.mjs\",\"scripts/run-playwright-full.mjs\",\"tests/e2e/global-setup.ts\",\"tests/e2e/_helpers/chat-api-stub.ts\",\"src/app/api/test/anthropic-stub/v1/messages/route.ts\"]\nhashes={}\nfor p in paths:\n b=(root/p).read_bytes();dest=app/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(b);hashes[p]=hashlib.sha256(b).hexdigest()\nfor p in [\"node_modules\",\"generated\"]:(app/p).symlink_to(root/p,target_is_directory=True)\nenv=dict(os.environ,CI=\"true\",SKIP_ENV_VALIDATION=\"1\",AUTH_SECRET=\"test-auth-secret-at-least-32-characters\",DATABASE_URL=\"postgresql://postgres:fixture-password@127.0.0.1:1/fish_ci_test\")\nt=time.monotonic()\nwith (w/\"build.log\").open(\"w\") as f:r=subprocess.run([\"pnpm\",\"build\"],cwd=app,env=env,stdout=f,stderr=subprocess.STDOUT)\nx={\"exit_code\":r.returncode,\"elapsed_seconds\":round(time.monotonic()-t,2),\"source_sha256\":hashes};(w/\"out/summary.json\").write_text(json.dumps(x,indent=2));print(json.dumps(x),flush=True)\nif r.returncode:print((w/\"build.log\").read_text()[-4000:]);sys.exit(r.returncode)\n",
+  "{scratch}"
+ ],
+ "seconds": 58.8,
+ "peak": {
+  "bytes": 547315712,
+  "inodes": 4522
+ },
+ "final": {
+  "bytes": 547315712,
+  "inodes": 4522
+ },
+ "limits": {
+  "max_bytes": 2147483648,
+  "max_inodes": 200000
+ },
+ "started_at": "2026-10-24T15:07:58Z",
+ "ended_at": "2026-10-24T15:09:02Z",
+ "exported_files": [
+  "out/summary.json"
+ ],
+ "written_at": "2026-10-24T15:09:02Z"
+}

@@ -1,0 +1,32 @@
+{
+ "run_id": "fish-ci-all-production-20261024T150349Z-413acb",
+ "label": "fish-ci-all-production",
+ "outcome": "success",
+ "reason": "종료 코드 0",
+ "rc": 0,
+ "argv": [
+  "python3",
+  "-c",
+  "import os,sys,subprocess,tarfile,io,json,time,pathlib,shutil,hashlib\nroot=pathlib.Path.cwd(); w=pathlib.Path(sys.argv[1]); app=w/\"app\"; app.mkdir(); out=w/\"out\";out.mkdir()\npaths=[\"playwright.config.ts\",\"scripts/playwright-full-groups.mjs\",\"scripts/run-playwright-full.mjs\",\"tests/e2e/global-setup.ts\",\"tests/e2e/_helpers/chat-api-stub.ts\",\"src/app/api/test/anthropic-stub/v1/messages/route.ts\"]\nsnapshot={p:(root/p).read_bytes() for p in paths}\ntarfile.open(fileobj=io.BytesIO(subprocess.check_output([\"git\",\"archive\",\"HEAD\"]))).extractall(app,filter=\"data\")\nfor name in [\"node_modules\",\"generated\"]: (app/name).symlink_to(root/name,target_is_directory=True)\nsubprocess.run([\"gh\",\"run\",\"download\",\"40102660700\",\"--name\",\"playwright-build-814009d702cefb0ca2bb8567fc6953e03988afb9\",\"--dir\",str(w/\"build\")],check=True)\nbinary=w/\"build/playwright-build.tgz\"\ntarfile.open(binary).extractall(app,filter=\"data\")\nname=\"fish-ci-all-production-\"+str(os.getpid()); result={\"build_workflow\":40102660700,\"build_commit\":\"814009d702cefb0ca2bb8567fc6953e03988afb9\",\"build_sha256\":hashlib.sha256(binary.read_bytes()).hexdigest(),\"source_sha256\":{p:hashlib.sha256(b).hexdigest() for p,b in snapshot.items()},\"stages\":[]}\ntry:\n subprocess.run([\"docker\",\"run\",\"-d\",\"--name\",name,\"-e\",\"POSTGRES_PASSWORD=fixture-password\",\"-e\",\"POSTGRES_DB=fish_ci_test\",\"-p\",\"127.0.0.1::5432\",\"postgres:16-alpine\"],check=True,stdout=subprocess.DEVNULL)\n port=subprocess.check_output([\"docker\",\"inspect\",\"--format\",'{{(index (index .NetworkSettings.Ports \"5432/tcp\") 0).HostPort}}',name],text=True).strip()\n for i in range(40):\n  if subprocess.run([\"docker\",\"exec\",name,\"pg_isready\",\"-U\",\"postgres\"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:break\n  time.sleep(0.5)\n url=f\"postgresql://postgres:fixture-password@127.0.0.1:{port}/fish_ci_test\"\n env=dict(os.environ,CI=\"true\",PORT=\"3223\",DATABASE_URL=url,PLAYWRIGHT_DATABASE_URL=url,AUTH_SECRET=\"test-auth-secret-at-least-32-characters\",SKIP_ENV_VALIDATION=\"1\",AUTH_TRUST_HOST=\"true\",ENABLE_LABOR_EXPORT=\"true\",PW_SERVER_MODE=\"production\",PLAYWRIGHT_JSON_OUTPUT_NAME=str(w/\"results.json\"))\n stages=[(\"missing-provider-fixture\",[\"node\",\"scripts/run-playwright-clean.mjs\",\"tests/e2e/chat-widget.spec.ts\",\"--grep\",\"본사 화면에서 원형 아이콘으로\",\"--retries=0\",\"--reporter=line,json\"]),(\"group1-production\",[\"node\",\"scripts/run-playwright-full.mjs\",\"--group\",\"1\",\"--reporter=line,json\"])]\n for label,args in stages:\n  if label==\"group1-production\":\n   for p,b in snapshot.items():dest=app/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(b)\n  started=time.monotonic()\n  with (w/(label+\".log\")).open(\"w\") as log:p=subprocess.run([\"/usr/bin/time\",\"-v\",\"-o\",str(w/(label+\".time\")),*args],cwd=app,env=env,stdout=log,stderr=subprocess.STDOUT)\n  report=json.loads((w/\"results.json\").read_text()) if (w/\"results.json\").exists() else {}\n  stage={\"label\":label,\"exit_code\":p.returncode,\"elapsed_seconds\":round(time.monotonic()-started,2),\"stats\":report.get(\"stats\"),\"resource_usage\":(w/(label+\".time\")).read_text()}\n  result[\"stages\"].append(stage);print(json.dumps(stage,ensure_ascii=False),flush=True)\n  if label==\"missing-provider-fixture\":\n   assert p.returncode!=0 and report.get(\"stats\",{}).get(\"unexpected\")==1 and \"스텁 답변\" in json.dumps(report,ensure_ascii=False), \"Baseline did not reproduce the missing fixture symptom\"\n  else: assert p.returncode==0,\"Production group 1 failed\"\n (out/\"summary.json\").write_text(json.dumps(result,ensure_ascii=False,indent=2))\nfinally:\n subprocess.run([\"docker\",\"rm\",\"-f\",name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n",
+  "{scratch}"
+ ],
+ "seconds": 117.8,
+ "peak": {
+  "bytes": 79675392,
+  "inodes": 4609
+ },
+ "final": {
+  "bytes": 77455360,
+  "inodes": 4564
+ },
+ "limits": {
+  "max_bytes": 2147483648,
+  "max_inodes": 200000
+ },
+ "started_at": "2026-10-24T15:03:49Z",
+ "ended_at": "2026-10-24T15:05:52Z",
+ "exported_files": [
+  "out/summary.json"
+ ],
+ "written_at": "2026-10-24T15:05:52Z"
+}

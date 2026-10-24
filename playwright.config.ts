@@ -8,6 +8,9 @@ const databaseURL =
 const reuseExistingServer =
   !process.env.CI && process.env.PW_REUSE_EXISTING_SERVER === "1";
 const productionServer = process.env.PW_SERVER_MODE === "production";
+const chatStubBaseURL = productionServer
+  ? `http://127.0.0.1:${port + 1}`
+  : `${baseURL}/api/test/anthropic-stub`;
 // Next 15 enables Webpack when `next dev` has no `--turbo` flag. Keep the
 // faster Turbopack command for local development, but use Webpack for the
 // CI-only test server so API/E2E checks do not start the Turbopack worker.
@@ -44,6 +47,7 @@ export default defineConfig({
     reuseExistingServer,
     timeout: 120_000,
     env: {
+      NODE_ENV: productionServer ? "production" : "development",
       ...(process.env.CI
         ? {
             NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=8192`,
@@ -64,7 +68,7 @@ export default defineConfig({
       // 챗봇: 실제 Anthropic 키 없이 /api/chat의 도구 루프를 검증한다.
       // ANTHROPIC_API_BASE_URL이 로컬 스텁을 가리키므로 외부 호출이 나가지 않는다.
       ANTHROPIC_API_KEY: "test-anthropic-key",
-      ANTHROPIC_API_BASE_URL: `${baseURL}/api/test/anthropic-stub`,
+      ANTHROPIC_API_BASE_URL: chatStubBaseURL,
     },
   },
   projects: [

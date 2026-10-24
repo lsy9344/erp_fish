@@ -1,0 +1,43 @@
+{
+  "build_workflow": 40102660700,
+  "build_commit": "814009d702cefb0ca2bb8567fc6953e03988afb9",
+  "build_sha256": "05866a651bef6eca3b62f2bfa7126b2f6219f43ad4d3c7367d23e296154fb1bd",
+  "source_sha256": {
+    "playwright.config.ts": "76ec41f880d50b018b6bc7acfe90b4592137f3ae2ee0848513db90f77d8eab95",
+    "scripts/playwright-full-groups.mjs": "1cefb60cb5c5f60b0d771e44623732819cc066b5929b48b8476662c7cd1578d7",
+    "scripts/run-playwright-full.mjs": "4afd6aaf25673b95a3e237e925fd208f0134e21e6054d6aba8ff24e563ba1deb",
+    "tests/e2e/global-setup.ts": "cb6b440f18d50cb1f32ea7aad975c9d9f471582d3fa436fbf2b0323f8c936cd0",
+    "tests/e2e/_helpers/chat-api-stub.ts": "d5be5a201dd4e570bbd207088696dbb0356a7c05af34bc39f85a43a6962456de",
+    "src/app/api/test/anthropic-stub/v1/messages/route.ts": "280c2328809238e1345bb1022b8b327e6c883a67724171e8ab6e3a27d7785638"
+  },
+  "stages": [
+    {
+      "label": "missing-provider-fixture",
+      "exit_code": 1,
+      "elapsed_seconds": 42.07,
+      "stats": {
+        "startTime": "2026-10-24T15:03:58.684Z",
+        "duration": 40993.179000000004,
+        "expected": 0,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      },
+      "resource_usage": "Command exited with non-zero status 1\n\tCommand being timed: \"node scripts/run-playwright-clean.mjs tests/e2e/chat-widget.spec.ts --grep 본사 화면에서 원형 아이콘으로 --retries=0 --reporter=line,json\"\n\tUser time (seconds): 6.41\n\tSystem time (seconds): 1.37\n\tPercent of CPU this job got: 17%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 0:43.71\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 397392\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 59\n\tMinor (reclaiming a frame) page faults: 353099\n\tVoluntary context switches: 15910\n\tInvoluntary context switches: 27\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 16264\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 1\n"
+    },
+    {
+      "label": "group1-production",
+      "exit_code": 0,
+      "elapsed_seconds": 66.86,
+      "stats": {
+        "startTime": "2026-10-24T15:04:42.347Z",
+        "duration": 65826.596,
+        "expected": 58,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "resource_usage": "\tCommand being timed: \"node scripts/run-playwright-full.mjs --group 1 --reporter=line,json\"\n\tUser time (seconds): 21.74\n\tSystem time (seconds): 9.22\n\tPercent of CPU this job got: 43%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:11.03\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 460560\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 2837\n\tMinor (reclaiming a frame) page faults: 606607\n\tVoluntary context switches: 170967\n\tInvoluntary context switches: 261\n\tSwaps: 0\n\tFile system inputs: 104\n\tFile system outputs: 302640\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n"
+    }
+  ]
+}

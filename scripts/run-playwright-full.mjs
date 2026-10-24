@@ -86,7 +86,7 @@ console.log(
 resourceSample();
 const timer = setInterval(resourceSample, 30_000);
 const child = spawn(process.execPath, [cleanRunner, ...group.specs, ...args], {
-  env: { ...process.env, PW_SERVER_MODE: group.serverMode },
+  env: { ...process.env, NODE_ENV: "test", PW_SERVER_MODE: group.serverMode },
   stdio: "inherit",
 });
 child.on("error", (error) => {

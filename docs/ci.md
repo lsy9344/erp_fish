@@ -159,28 +159,31 @@ spec requires updating its assignment. The report suite is split into overview,
 daily, comparison, monthly, inventory, and review specs, with shared fixtures.
 Those specs are distributed across groups 2, 3, and 4.
 
-`Production Build` packages `.next` without its build cache. Groups 2, 3, and 4
+`Production Build` packages `.next` without its build cache. All four groups
 download that build from the same workflow run and commit, then run `next start`.
 This removes on-demand development compilation from their browser requests.
-Group 1 keeps the Webpack development server because chatbot tests require the
-development-only API stub, which remains unavailable in production. API, smoke,
-core, and burn-in tests keep their existing development server settings: source
-maps disabled and an 8 GiB heap limit in CI. Each group still uses one worker,
-its own PostgreSQL service, and the guarded setup that resets the test database.
-The job, test, and assertion timeouts and retry counts have not been increased.
+The chatbot's existing Anthropic provider fixture runs on a separate loopback
+HTTP server in the Playwright process, including the same tool-call responses.
+The compiled app's test API remains unavailable in production. Global setup
+starts the fixture after seeding and closes it during teardown.
+API, smoke, core, and burn-in tests keep their existing development server
+settings: source maps disabled and an 8 GiB heap limit in CI. Each group still
+uses one worker, its own PostgreSQL service, and the guarded setup that resets
+the test database. The job, test, and assertion timeouts and retry counts have
+not been increased.
 
 To reproduce a full group locally, select a dedicated test database first:
 
 ```bash
-# Groups 2–4 require a production build before their first run.
+# Full groups require a production build before their first run.
 pnpm build
 node scripts/run-playwright-full.mjs --group 2 --reporter=line
 ```
 
 Set `PLAYWRIGHT_DATABASE_URL` to the dedicated database; the wrapper rejects
 database names without `test` or `e2e`. Do not point it at an operational DB.
-Group 1 can run without a build. Matrix groups are sequential with one available
-runner; additional runners must retain separate test databases.
+Matrix groups are sequential with one available runner; additional runners must
+retain separate test databases.
 
 See the [Next.js CLI](https://nextjs.org/docs/15/app/api-reference/cli/next)
 and [Playwright web server configuration](https://playwright.dev/docs/test-webserver).
