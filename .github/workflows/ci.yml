@@ -1,5 +1,7 @@
 name: CI
-# 모든 검사는 Linux 자체 러너에서만 실행한다. 외부 fork PR은 자체 러너에 접근하지 못한다.
+# 공개 저장소라 GitHub-hosted Linux 러너(4코어·16GB)가 무료다. job 마다 따로 VM 을 받아 나란히 돈다.
+# CI PC(jena-dabi)는 비공개 저장소 몫으로 둔다. 거기서 jena 와 겹치면 양쪽이 7~10배 느려졌다(2026-10-24).
+# 외부 fork PR은 job 조건(head.repo == 이 저장소)과 저장소 설정(외부 기여자 실행은 승인 필요)으로 막는다.
 
 on:
   pull_request:
@@ -40,7 +42,7 @@ jobs:
   # Cheap, no DB, no browser, no build — gives ~1-2 min feedback on the common case.
   fast-checks:
     name: Fast Checks
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
@@ -90,7 +92,7 @@ jobs:
   # Feature-branch pushes skip this — you build locally / it runs at merge time.
   build:
     name: Production Build
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -169,7 +171,7 @@ jobs:
 
   api-tests:
     name: API Tests (${{ matrix.group }})
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -289,7 +291,7 @@ jobs:
 
   playwright-smoke:
     name: Playwright Smoke ${{ matrix.group }}
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 25
@@ -362,7 +364,7 @@ jobs:
 
   playwright-core:
     name: Playwright Core ${{ matrix.group }}
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
@@ -433,7 +435,7 @@ jobs:
   playwright-full:
     name: Playwright Full ${{ matrix.shard }}
     needs: build
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
       options: --memory=4g --memory-swap=5g
@@ -525,7 +527,7 @@ jobs:
 
   playwright-burn-in:
     name: Playwright Smoke Burn-In
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     timeout-minutes: 35
@@ -591,7 +593,7 @@ jobs:
 
   notify-slack:
     name: Slack Notification
-    runs-on: [self-hosted, Linux, X64, erp-dabi-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
       - fast-checks

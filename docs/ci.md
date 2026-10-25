@@ -8,18 +8,21 @@ heavier verification only at integration points (PR, `staging`, `main`).
 
 ## Runner and dependency store
 
-Every job uses the Linux self-hosted runner with labels
-`[self-hosted, Linux, X64, erp-dabi-linux]`. There is no GitHub-hosted fallback.
-Pull requests from outside this repository are skipped so their code cannot run
-on the persistent runner. Pull requests opened from a branch in this repository
-continue to run normally.
+Every job uses the GitHub-hosted `ubuntu-latest` runner. The repository is
+public, so these minutes are free, and each job gets its own VM. Until
+2026-10-25 the jobs ran on the shared CI PC runner (`erp-dabi-linux`); when
+they overlapped jena's checks there, both slowed 7-10x.
+Pull requests from outside this repository are skipped, and the repository
+requires approval before it runs workflows for any outside contributor.
+Pull requests opened from a branch in this repository continue to run normally.
 
 Each job explicitly cleans the checkout and runs
 `pnpm install --frozen-lockfile`. `actions/setup-node` does not use GitHub's
 remote package cache. pnpm's content store is kept outside the checkout at
 `${runner.tool_cache}/package-stores/${github.repository}/${runner.os}-${runner.arch}/{pr|trusted}/pnpm`.
 The install verifies reused package content and disables the side-effects cache.
-The store is reused across jobs, while `node_modules` is recreated for every job.
+On a hosted runner the store starts empty in every job; the paths keep the
+self-hosted layout so the jobs can move back by changing `runs-on` only.
 Containerized Playwright jobs use `_work/_pnpm-store/{pr|trusted}/pnpm` instead
 (`/__w/_pnpm-store` inside the container): the tool cache is a separate bind
 mount there, so pnpm would copy every package instead of hard-linking it.
@@ -176,9 +179,10 @@ the test database. The job, test, and assertion timeouts and retry counts have
 not been increased.
 
 Full browser containers have a 4 GiB RAM limit and 1 GiB of additional swap;
-the production Next.js process has a 2 GiB heap limit. This bounds a browser
-job on the shared runner's 8 GiB WSL VM. Resource samples also record the
-container's current, peak, and maximum memory when cgroup v2 exposes them.
+the production Next.js process has a 2 GiB heap limit. The limit dates from the
+shared runner's 8 GiB WSL VM (a hosted runner has 16 GiB). Resource samples
+also record the container's current, peak, and maximum memory when cgroup v2
+exposes them.
 
 To reproduce a full group locally, select a dedicated test database first:
 
@@ -190,8 +194,8 @@ node scripts/run-playwright-full.mjs --group 2 --reporter=line
 
 Set `PLAYWRIGHT_DATABASE_URL` to the dedicated database; the wrapper rejects
 database names without `test` or `e2e`. Do not point it at an operational DB.
-Matrix groups are sequential with one available runner; additional runners must
-retain separate test databases.
+Each matrix group runs on its own hosted VM with its own PostgreSQL service, so
+the groups run in parallel. Self-hosted runners must keep separate test databases.
 
 See the [Next.js CLI](https://nextjs.org/docs/15/app/api-reference/cli/next)
 and [Playwright web server configuration](https://playwright.dev/docs/test-webserver).
@@ -221,8 +225,8 @@ Artifacts are kept for 14 days.
 
 ## Troubleshooting
 
-- If CI fails during install, rerun once. A first run may still be warming the
-  runner's pnpm store.
+- If CI fails during install, rerun once. Hosted runners download every package
+  from the registry, so a registry hiccup can fail one job.
 - If Playwright fails, download the failed job artifact and inspect `test-results`.
 - If PR smoke is slow, check which `Playwright Smoke` group is slow and run the
   matching local command: `pnpm test:e2e:smoke:ledger`,
