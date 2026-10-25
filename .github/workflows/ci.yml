@@ -339,8 +339,11 @@ jobs:
 
       - name: Install dependencies
         env:
-          PNPM_STORE_DIR: ${{ runner.tool_cache }}/package-stores/${{ github.repository }}/${{ runner.os }}-${{ runner.arch }}/${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}/pnpm
+          PNPM_STORE_KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}
         run: |
+          # In containers the tool cache (/__t) is a separate bind mount from the
+          # checkout (/__w), so pnpm copies every file. A store under /__w hard-links.
+          PNPM_STORE_DIR="${GITHUB_WORKSPACE%/*/*}/_pnpm-store/$PNPM_STORE_KIND/pnpm"
           echo "Using pnpm store: $PNPM_STORE_DIR"
           pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR" --verify-store-integrity=true --side-effects-cache=false
 
@@ -406,8 +409,11 @@ jobs:
 
       - name: Install dependencies
         env:
-          PNPM_STORE_DIR: ${{ runner.tool_cache }}/package-stores/${{ github.repository }}/${{ runner.os }}-${{ runner.arch }}/${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}/pnpm
+          PNPM_STORE_KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}
         run: |
+          # In containers the tool cache (/__t) is a separate bind mount from the
+          # checkout (/__w), so pnpm copies every file. A store under /__w hard-links.
+          PNPM_STORE_DIR="${GITHUB_WORKSPACE%/*/*}/_pnpm-store/$PNPM_STORE_KIND/pnpm"
           echo "Using pnpm store: $PNPM_STORE_DIR"
           pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR" --verify-store-integrity=true --side-effects-cache=false
 
@@ -480,8 +486,11 @@ jobs:
 
       - name: Install dependencies
         env:
-          PNPM_STORE_DIR: ${{ runner.tool_cache }}/package-stores/${{ github.repository }}/${{ runner.os }}-${{ runner.arch }}/${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}/pnpm
+          PNPM_STORE_KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}
         run: |
+          # In containers the tool cache (/__t) is a separate bind mount from the
+          # checkout (/__w), so pnpm copies every file. A store under /__w hard-links.
+          PNPM_STORE_DIR="${GITHUB_WORKSPACE%/*/*}/_pnpm-store/$PNPM_STORE_KIND/pnpm"
           echo "Using pnpm store: $PNPM_STORE_DIR"
           pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR" --verify-store-integrity=true --side-effects-cache=false
 
@@ -559,8 +568,11 @@ jobs:
 
       - name: Install dependencies
         env:
-          PNPM_STORE_DIR: ${{ runner.tool_cache }}/package-stores/${{ github.repository }}/${{ runner.os }}-${{ runner.arch }}/${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}/pnpm
+          PNPM_STORE_KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'trusted' }}
         run: |
+          # In containers the tool cache (/__t) is a separate bind mount from the
+          # checkout (/__w), so pnpm copies every file. A store under /__w hard-links.
+          PNPM_STORE_DIR="${GITHUB_WORKSPACE%/*/*}/_pnpm-store/$PNPM_STORE_KIND/pnpm"
           echo "Using pnpm store: $PNPM_STORE_DIR"
           pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR" --verify-store-integrity=true --side-effects-cache=false
 
@@ -615,10 +627,14 @@ jobs:
             exit 0
           fi
 
+          # A newer push cancels the older run, and a job timeout also reports
+          # cancelled. Keep both visible, but do not call them failures.
           overall="success"
           for result in "$FAST_CHECKS_RESULT" "$BUILD_RESULT" "$API_TESTS_RESULT" "$PLAYWRIGHT_SMOKE_RESULT" "$PLAYWRIGHT_CORE_RESULT" "$PLAYWRIGHT_FULL_RESULT" "$PLAYWRIGHT_BURN_IN_RESULT"; do
-            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+            if [ "$result" = "failure" ]; then
               overall="failure"
+            elif [ "$result" = "cancelled" ] && [ "$overall" = "success" ]; then
+              overall="cancelled"
             fi
           done
 
@@ -626,6 +642,10 @@ jobs:
             icon=":white_check_mark:"
             status="CI passed"
             color="#2eb67d"
+          elif [ "$overall" = "cancelled" ]; then
+            icon=":heavy_minus_sign:"
+            status="CI cancelled (superseded or timed out)"
+            color="#9e9e9e"
           else
             icon=":x:"
             status="CI failed"

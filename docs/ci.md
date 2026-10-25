@@ -20,6 +20,9 @@ remote package cache. pnpm's content store is kept outside the checkout at
 `${runner.tool_cache}/package-stores/${github.repository}/${runner.os}-${runner.arch}/{pr|trusted}/pnpm`.
 The install verifies reused package content and disables the side-effects cache.
 The store is reused across jobs, while `node_modules` is recreated for every job.
+Containerized Playwright jobs use `_work/_pnpm-store/{pr|trusted}/pnpm` instead
+(`/__w/_pnpm-store` inside the container): the tool cache is a separate bind
+mount there, so pnpm would copy every package instead of hard-linking it.
 The `pr` and `trusted` directories keep dependency data from the two execution
 classes separate.
 
