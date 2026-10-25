@@ -16,6 +16,10 @@ Pull requests from outside this repository are skipped, and the repository
 requires approval before it runs workflows for any outside contributor.
 Pull requests opened from a branch in this repository continue to run normally.
 
+Keep the repository public. Hosted minutes are free only for public
+repositories, and Vercel Hobby can block deploys of commits that carry
+`Co-authored-by` trailers once the repository is private.
+
 Each job explicitly cleans the checkout and runs
 `pnpm install --frozen-lockfile`. `actions/setup-node` does not use GitHub's
 remote package cache. pnpm's content store is kept outside the checkout at
