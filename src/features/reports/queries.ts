@@ -4853,22 +4853,19 @@ function aggregateStoreComparisonMetrics(
     workerCounts.length > 0 && workerCounts.every((value) => value !== null)
       ? workerTotal
       : null;
-  const hasSalesDayWithoutWorkers = ledgerSummaries.some((summary) => {
-    const sales = summary[source].totalSales.value;
-    const workerCount = getWorkerCount(summary, source);
-
-    return (
-      sales !== null && sales > 0 && (workerCount === null || workerCount <= 0)
-    );
-  });
+  const salesDayWorkerBlockReason = getSalesDayWorkerBlockReason(
+    ledgerSummaries,
+    source,
+  );
   const averageInventory = averageMetric(inventoryMetrics);
   const averageSales = averageMetric(salesMetrics);
   // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 영업일수로 나눈 소수값이며
   // averageSales와 같은 분모(ledgerSummaries.length)를 쓴다.
-  const averageWorkerCount =
-    ledgerSummaries.length > 0 && trendWorkerTotal !== null
-      ? available(workerTotal / ledgerSummaries.length)
-      : unavailable("계산 불가");
+  const averageWorkerCount = averageWorkerCountMetric({
+    ledgerCount: ledgerSummaries.length,
+    workerTotal,
+    trendWorkerTotal,
+  });
   const trendInventoryTotal =
     inventoryMetrics.length > 0 &&
     inventoryMetrics.every((metric) => metric.value !== null)
@@ -4890,30 +4887,22 @@ function aggregateStoreComparisonMetrics(
     carryoverSalesAmount: sumMetric(carryoverSalesMetrics),
     operatingSalesAmount: salesAmount,
     grossProfit,
-    grossMarginRate:
-      salesAmount.value !== null &&
-      grossProfit.value !== null &&
-      salesAmount.value > 0
-        ? available(grossProfit.value / salesAmount.value)
-        : unavailable("계산 불가"),
+    grossMarginRate: grossMarginRateMetric(salesAmount, grossProfit),
     ...marginPairFields(ledgerSummaries, source),
     operatingProfit,
-    productivity:
-      salesAmount.value !== null &&
-      workerTotal > 0 &&
-      !hasSalesDayWithoutWorkers
-        ? available(salesAmount.value / workerTotal)
-        : unavailable("계산 불가"),
+    productivity: productivityMetric({
+      salesAmount,
+      workerTotal,
+      salesDayWorkerBlockReason,
+    }),
     averageWorkerCount,
     averageInventory,
     averageSales,
     trendAggregation,
-    inventoryToSalesRatio:
-      averageInventory.value !== null &&
-      averageSales.value !== null &&
-      averageSales.value > 0
-        ? available(averageInventory.value / averageSales.value)
-        : unavailable("계산 불가"),
+    inventoryToSalesRatio: inventoryToSalesRatioMetric(
+      averageInventory,
+      averageSales,
+    ),
   };
 }
 
@@ -4995,14 +4984,207 @@ function aggregateUnavailableMetric(
   dataInsufficientReason: string,
 ): LedgerReviewMetric {
   if (metrics.some((metric) => metric.status === "policy-unconfirmed")) {
-    return unavailable("계산 기준 확인 필요");
+    return unavailable(
+      "계산 기준 확인 필요",
+      nullChildReason(metrics, "policy-unconfirmed"),
+    );
   }
 
   if (metrics.some((metric) => metric.status === "calculation-unavailable")) {
-    return unavailable("계산 불가");
+    return unavailable(
+      "계산 불가",
+      nullChildReason(metrics, "calculation-unavailable") ??
+        "포함된 장부 중 계산할 수 없는 값이 있습니다.",
+    );
   }
 
-  return dataInsufficient(dataInsufficientReason);
+  return dataInsufficient(
+    nullChildReason(metrics, "data-insufficient") ?? dataInsufficientReason,
+  );
+}
+
+const GENERIC_METRIC_LABELS = new Set(["계산 불가", "계산 기준 확인 필요"]);
+
+function concreteMetricText(value: string | undefined) {
+  if (!value || GENERIC_METRIC_LABELS.has(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function nullChildReason(
+  metrics: LedgerReviewMetric[],
+  status: LedgerReviewMetric["status"],
+) {
+  let unavailableDetail: string | undefined;
+
+  for (const metric of metrics) {
+    if (metric.value !== null || metric.status !== status) {
+      continue;
+    }
+
+    const reason = concreteMetricText(metric.reason);
+
+    if (reason) {
+      return reason;
+    }
+
+    unavailableDetail ??= concreteMetricText(metric.unavailableReason);
+  }
+
+  return unavailableDetail;
+}
+
+function blockedMetricDetail(metric: LedgerReviewMetric) {
+  return (
+    concreteMetricText(metric.reason) ??
+    (metric.unavailableReason === "계산 불가"
+      ? undefined
+      : metric.unavailableReason)
+  );
+}
+
+function withBlockedMetricDetail(summary: string, metric: LedgerReviewMetric) {
+  const detail = blockedMetricDetail(metric);
+
+  return detail ? `${summary} ${detail}` : summary;
+}
+
+function grossMarginRateMetric(
+  salesAmount: LedgerReviewMetric,
+  grossProfit: LedgerReviewMetric,
+) {
+  if (
+    salesAmount.value !== null &&
+    grossProfit.value !== null &&
+    salesAmount.value > 0
+  ) {
+    return available(grossProfit.value / salesAmount.value);
+  }
+
+  if (salesAmount.value === null) {
+    return unavailable(
+      "계산 불가",
+      withBlockedMetricDetail("매출을 계산할 수 없습니다.", salesAmount),
+    );
+  }
+
+  if (!(salesAmount.value > 0)) {
+    return unavailable("계산 불가", "매출이 0 이하입니다.");
+  }
+
+  return unavailable(
+    "계산 불가",
+    withBlockedMetricDetail("매출이익을 계산할 수 없습니다.", grossProfit),
+  );
+}
+
+function getSalesDayWorkerBlockReason(
+  ledgerSummaries: ReportAggregateLedgerSummary[],
+  source: "original" | "applied",
+) {
+  for (const summary of ledgerSummaries) {
+    const sales = summary[source].totalSales.value;
+    const workerCount = getWorkerCount(summary, source);
+
+    if (sales === null || !(sales > 0)) {
+      continue;
+    }
+
+    if (workerCount === null) {
+      return "매출이 있는 날의 근무인원이 공란입니다.";
+    }
+
+    if (workerCount <= 0) {
+      return "매출이 있는 날의 근무인원이 0 이하입니다.";
+    }
+  }
+
+  return null;
+}
+
+function productivityMetric({
+  salesAmount,
+  workerTotal,
+  salesDayWorkerBlockReason,
+}: {
+  salesAmount: LedgerReviewMetric;
+  workerTotal: number;
+  salesDayWorkerBlockReason: string | null;
+}) {
+  if (
+    salesAmount.value !== null &&
+    workerTotal > 0 &&
+    salesDayWorkerBlockReason === null
+  ) {
+    return available(salesAmount.value / workerTotal);
+  }
+
+  if (salesAmount.value === null) {
+    return unavailable(
+      "계산 불가",
+      withBlockedMetricDetail("매출을 계산할 수 없습니다.", salesAmount),
+    );
+  }
+
+  if (salesDayWorkerBlockReason) {
+    return unavailable("계산 불가", salesDayWorkerBlockReason);
+  }
+
+  return unavailable("계산 불가", "근무인원 합계가 0 이하입니다.");
+}
+
+function averageWorkerCountMetric({
+  ledgerCount,
+  workerTotal,
+  trendWorkerTotal,
+}: {
+  ledgerCount: number;
+  workerTotal: number;
+  trendWorkerTotal: number | null;
+}) {
+  if (ledgerCount > 0 && trendWorkerTotal !== null) {
+    return available(workerTotal / ledgerCount);
+  }
+
+  if (ledgerCount === 0) {
+    return unavailable("계산 불가", "평균 근무인원 계산 대상 장부가 없습니다.");
+  }
+
+  return unavailable("계산 불가", "근무인원이 공란인 장부가 있습니다.");
+}
+
+function inventoryToSalesRatioMetric(
+  averageInventory: LedgerReviewMetric,
+  averageSales: LedgerReviewMetric,
+) {
+  if (
+    averageInventory.value !== null &&
+    averageSales.value !== null &&
+    averageSales.value > 0
+  ) {
+    return available(averageInventory.value / averageSales.value);
+  }
+
+  if (averageInventory.value === null) {
+    return unavailable(
+      "계산 불가",
+      withBlockedMetricDetail(
+        "평균재고를 계산할 수 없습니다.",
+        averageInventory,
+      ),
+    );
+  }
+
+  if (averageSales.value === null) {
+    return unavailable(
+      "계산 불가",
+      withBlockedMetricDetail("평균매출을 계산할 수 없습니다.", averageSales),
+    );
+  }
+
+  return unavailable("계산 불가", "평균매출이 0 이하입니다.");
 }
 
 function getWorkerCount(
@@ -5734,6 +5916,7 @@ function toCorrectedInventoryAdjustments(
 
 function unavailable(
   unavailableReason: NonNullable<LedgerReviewMetric["unavailableReason"]>,
+  reason?: string,
 ): LedgerReviewMetric {
   const status =
     unavailableReason === "계산 기준 확인 필요"
@@ -5745,6 +5928,7 @@ function unavailable(
     status,
     label: status === "policy-unconfirmed" ? "확인 필요" : "계산 불가",
     unavailableReason,
+    ...(reason ? { reason } : {}),
   };
 }
 

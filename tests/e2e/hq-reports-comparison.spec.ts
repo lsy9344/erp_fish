@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import {
   setupReportFixtures,
   STORE_IDS,
@@ -252,4 +252,93 @@ test("본사는 좁은 화면에서도 기간 비교 핵심 지표와 상태를 
   expect(viewportWidths.scrollWidth).toBeLessThanOrEqual(
     viewportWidths.clientWidth + 1,
   );
+});
+
+const missingWorkerAverageReason = "평균 근무인원 계산 대상 장부가 없습니다.";
+
+async function expectAverageWorkerCount(
+  row: Locator,
+  expected: { text: string } | { unavailableReason: string },
+) {
+  const headcount = row.getByTestId("average-worker-count");
+  await expect(headcount).toBeVisible();
+
+  if ("text" in expected) {
+    await expect(headcount).toHaveText(expected.text);
+    await expect(headcount.getByText("근거 보기")).toHaveCount(0);
+    return;
+  }
+
+  await expect(headcount).toContainText("계산 불가");
+  await expect(headcount.getByText("근거 보기")).toHaveCount(1);
+  await expect(headcount.getByText(expected.unavailableReason)).toBeHidden();
+  await headcount.getByText("근거 보기").click();
+  await expect(headcount.getByText(expected.unavailableReason)).toBeVisible();
+  await expect(headcount.getByText("공란")).toHaveCount(0);
+}
+
+test("PC 기간 비교는 평균 근무인원 숫자만 보여주고 null일 때만 근거를 연다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/comparison?startDate=2026-05-31&endDate=${getTodayKstInput()}`,
+  );
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
+
+  const closed = page.locator(
+    `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
+  );
+  const zeroSales = page.locator(
+    `[data-testid="hq-report-comparison-row-${STORE_IDS.zeroSales}"]`,
+  );
+  const holiday = page.locator(
+    `[data-testid="hq-report-comparison-row-${STORE_IDS.holiday}"]`,
+  );
+  await expect(closed).toBeVisible();
+  await expect(
+    page.locator(
+      `[data-testid="hq-report-comparison-mobile-row-${STORE_IDS.closed}"]`,
+    ),
+  ).toBeHidden();
+
+  await expectAverageWorkerCount(closed, { text: "2.50명" });
+  await expectAverageWorkerCount(zeroSales, { text: "0.00명" });
+  await expectAverageWorkerCount(holiday, {
+    unavailableReason: missingWorkerAverageReason,
+  });
+});
+
+test("모바일 기간 비교는 평균 근무인원 숫자만 보여주고 null일 때만 근거를 연다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/comparison?startDate=2026-05-31&endDate=${getTodayKstInput()}`,
+  );
+  await expect(page.getByRole("heading", { name: "기간 분석" })).toBeVisible();
+
+  const closed = page.locator(
+    `[data-testid="hq-report-comparison-mobile-row-${STORE_IDS.closed}"]`,
+  );
+  const zeroSales = page.locator(
+    `[data-testid="hq-report-comparison-mobile-row-${STORE_IDS.zeroSales}"]`,
+  );
+  const holiday = page.locator(
+    `[data-testid="hq-report-comparison-mobile-row-${STORE_IDS.holiday}"]`,
+  );
+  await expect(closed).toBeVisible();
+  await expect(
+    page.locator(
+      `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
+    ),
+  ).toBeHidden();
+
+  await expectAverageWorkerCount(closed, { text: "2.50명" });
+  await expectAverageWorkerCount(zeroSales, { text: "0.00명" });
+  await expectAverageWorkerCount(holiday, {
+    unavailableReason: missingWorkerAverageReason,
+  });
 });

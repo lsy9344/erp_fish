@@ -3243,6 +3243,846 @@ test("HQ store comparison report keeps OQ-gated metrics as needs-review instead 
   assert.equal(row.metricEvidence.averageInventory.status, "needs-review");
 });
 
+function comparisonMetric(value, extra = {}) {
+  return { value, status: "ok", ...extra };
+}
+
+function comparisonLedger({
+  id,
+  status = "HEADQUARTERS_CLOSED",
+  sales,
+  profit,
+  inventory,
+  operatingProfit = comparisonMetric(0),
+  workers,
+  originalSales = sales,
+  correctionKeys = [],
+  unappliedKeys = [],
+}) {
+  const applied = {
+    totalSales: sales,
+    grossProfit: profit,
+    operatingProfit,
+    inventoryAmount: inventory,
+  };
+
+  return {
+    ledgerId: id,
+    status,
+    original: { ...applied, totalSales: originalSales },
+    applied,
+    workerCount: workers,
+    hasLoss: false,
+    hasUnappliedCorrections: unappliedKeys.length > 0,
+    appliedCorrectionCount: correctionKeys.length,
+    appliedCorrectionKeys: new Set(correctionKeys),
+    unappliedCorrectionKeys: new Set(unappliedKeys),
+  };
+}
+
+async function buildComparisonRow(
+  ledgerSummaries,
+  dateCount = ledgerSummaries.length,
+) {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+
+  return buildStoreComparisonReportRowForTest({
+    store: { id: "store-reason", name: "사유점" },
+    dateCount,
+    ledgerSummaries,
+  });
+}
+
+function assertCalculationUnavailable(metric) {
+  assert.equal(metric.value, null);
+  assert.equal(metric.status, "calculation-unavailable");
+  assert.equal(metric.label, "계산 불가");
+  assert.equal(metric.unavailableReason, "계산 불가");
+}
+
+test("HQ store comparison explains why margin productivity and inventory ratio are unavailable", async () => {
+  const row = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-margin",
+      sales: comparisonMetric(100_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "매출이익 원가를 확정할 수 없습니다.",
+      },
+      inventory: comparisonMetric(20_000),
+      workers: 2,
+    }),
+  ]);
+
+  assertCalculationUnavailable(row.grossMarginRate);
+  assert.equal(
+    row.grossMarginRate.reason,
+    "매출이익을 계산할 수 없습니다. 매출이익 원가를 확정할 수 없습니다.",
+  );
+  assert.equal(
+    row.metricEvidence.grossMarginRate.unavailableReason,
+    row.grossMarginRate.reason,
+  );
+  assert.equal(row.productivity.value, 50_000);
+  assert.equal(row.productivity.reason, undefined);
+  assert.equal(row.inventoryToSalesRatio.value, 0.2);
+  assert.equal(row.inventoryToSalesRatio.reason, undefined);
+
+  const productivityRow = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-workers-blank",
+      sales: comparisonMetric(80_000),
+      profit: comparisonMetric(20_000),
+      inventory: comparisonMetric(10_000),
+      workers: null,
+    }),
+    comparisonLedger({
+      id: "ledger-workers-present",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: comparisonMetric(10_000),
+      workers: 4,
+    }),
+  ]);
+
+  assertCalculationUnavailable(productivityRow.productivity);
+  assert.equal(
+    productivityRow.productivity.reason,
+    "매출이 있는 날의 근무인원이 공란입니다.",
+  );
+  assert.equal(
+    productivityRow.metricEvidence.productivity.unavailableReason,
+    productivityRow.productivity.reason,
+  );
+  assert.doesNotMatch(productivityRow.productivity.reason, /0명|0원|0 이하/);
+  assertCalculationUnavailable(productivityRow.averageWorkerCount);
+  assert.equal(
+    productivityRow.averageWorkerCount.reason,
+    "근무인원이 공란인 장부가 있습니다.",
+  );
+  assert.equal(productivityRow.metricEvidence.averageWorkerCount, undefined);
+
+  const ratioRow = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-inventory",
+      sales: comparisonMetric(90_000),
+      profit: comparisonMetric(30_000),
+      inventory: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "저장 FIFO 재고금액이 없습니다.",
+      },
+      workers: 3,
+    }),
+  ]);
+
+  assert.equal(
+    ratioRow.averageInventory.reason,
+    "저장 FIFO 재고금액이 없습니다.",
+  );
+  assert.equal(ratioRow.averageInventory.status, "data-insufficient");
+  assert.equal(ratioRow.averageInventory.label, "데이터 부족");
+  assert.equal(ratioRow.averageInventory.unavailableReason, "계산 불가");
+  assertCalculationUnavailable(ratioRow.inventoryToSalesRatio);
+  assert.equal(
+    ratioRow.inventoryToSalesRatio.reason,
+    "평균재고를 계산할 수 없습니다. 저장 FIFO 재고금액이 없습니다.",
+  );
+  assert.equal(
+    ratioRow.metricEvidence.inventoryToSalesRatio.unavailableReason,
+    ratioRow.inventoryToSalesRatio.reason,
+  );
+  assert.doesNotMatch(ratioRow.inventoryToSalesRatio.reason, /데이터 부족/);
+});
+
+test("HQ store comparison picks the same blocking branch the formula uses", async () => {
+  const salesAndProfitBlocked = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-both-null",
+      sales: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "당일 매출이 없습니다.",
+      },
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "매출이익이 없습니다.",
+      },
+      inventory: comparisonMetric(10_000),
+      workers: null,
+    }),
+  ]);
+
+  assert.equal(
+    salesAndProfitBlocked.grossMarginRate.reason,
+    "매출을 계산할 수 없습니다. 당일 매출이 없습니다.",
+  );
+  assert.doesNotMatch(
+    salesAndProfitBlocked.grossMarginRate.reason,
+    /매출이익이 없습니다|데이터 부족/,
+  );
+  assert.equal(
+    salesAndProfitBlocked.productivity.reason,
+    "매출을 계산할 수 없습니다. 당일 매출이 없습니다.",
+  );
+  assert.doesNotMatch(salesAndProfitBlocked.productivity.reason, /공란|0 이하/);
+
+  const nonPositiveSales = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-negative-sales",
+      sales: comparisonMetric(-1_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "매출이익이 없습니다.",
+      },
+      inventory: comparisonMetric(5_000),
+      workers: 2,
+    }),
+  ]);
+
+  assert.equal(nonPositiveSales.grossMarginRate.reason, "매출이 0 이하입니다.");
+  assert.doesNotMatch(nonPositiveSales.grossMarginRate.reason, /매출이익|0원/);
+  assert.equal(nonPositiveSales.productivity.value, -500);
+  assert.equal(nonPositiveSales.productivity.reason, undefined);
+
+  const zeroSales = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-zero-sales",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: comparisonMetric(8_000),
+      workers: 2,
+    }),
+  ]);
+
+  assert.equal(zeroSales.grossMarginRate.reason, "매출이 0 이하입니다.");
+  assert.equal(zeroSales.productivity.value, 0);
+  assert.equal(
+    zeroSales.inventoryToSalesRatio.reason,
+    "평균매출이 0 이하입니다.",
+  );
+  assert.doesNotMatch(zeroSales.inventoryToSalesRatio.reason, /0원/);
+
+  const salesDayAndTotal = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-zero-workers",
+      sales: comparisonMetric(40_000),
+      profit: comparisonMetric(10_000),
+      inventory: comparisonMetric(4_000),
+      workers: 0,
+    }),
+  ]);
+
+  assert.equal(
+    salesDayAndTotal.productivity.reason,
+    "매출이 있는 날의 근무인원이 0 이하입니다.",
+  );
+  assert.doesNotMatch(
+    salesDayAndTotal.productivity.reason,
+    /합계|0명|0원|공란/,
+  );
+
+  const negativeWorkerFirst = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-negative-workers",
+      sales: comparisonMetric(40_000),
+      profit: comparisonMetric(10_000),
+      inventory: comparisonMetric(4_000),
+      workers: -2,
+    }),
+    comparisonLedger({
+      id: "ledger-blank-workers-later",
+      sales: comparisonMetric(10_000),
+      profit: comparisonMetric(1_000),
+      inventory: comparisonMetric(4_000),
+      workers: null,
+    }),
+  ]);
+
+  assert.equal(
+    negativeWorkerFirst.productivity.reason,
+    "매출이 있는 날의 근무인원이 0 이하입니다.",
+  );
+
+  const blankWorkerFirst = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-blank-workers-first",
+      sales: comparisonMetric(10_000),
+      profit: comparisonMetric(1_000),
+      inventory: comparisonMetric(4_000),
+      workers: null,
+    }),
+    comparisonLedger({
+      id: "ledger-negative-workers-later",
+      sales: comparisonMetric(40_000),
+      profit: comparisonMetric(10_000),
+      inventory: comparisonMetric(4_000),
+      workers: -2,
+    }),
+  ]);
+
+  assert.equal(
+    blankWorkerFirst.productivity.reason,
+    "매출이 있는 날의 근무인원이 공란입니다.",
+  );
+
+  const totalOnly = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-no-positive-sales",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: comparisonMetric(4_000),
+      workers: -3,
+    }),
+  ]);
+
+  assert.equal(totalOnly.productivity.reason, "근무인원 합계가 0 이하입니다.");
+  assert.doesNotMatch(totalOnly.productivity.reason, /0명|0원|공란/);
+
+  const inventoryBeforeSales = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-inventory-and-sales",
+      sales: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "평균매출 원천이 없습니다.",
+      },
+      profit: comparisonMetric(1_000),
+      inventory: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "FIFO 재고금액을 확정할 수 없습니다.",
+      },
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(
+    inventoryBeforeSales.inventoryToSalesRatio.reason,
+    "평균재고를 계산할 수 없습니다. FIFO 재고금액을 확정할 수 없습니다.",
+  );
+  assert.doesNotMatch(
+    inventoryBeforeSales.inventoryToSalesRatio.reason,
+    /평균매출 원천/,
+  );
+
+  const salesBeforeNonPositive = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-zero-average-sales",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "FIFO 재고금액을 확정할 수 없습니다.",
+      },
+      workers: 1,
+    }),
+  ]);
+
+  assert.match(
+    salesBeforeNonPositive.inventoryToSalesRatio.reason,
+    /FIFO 재고금액을 확정할 수 없습니다/,
+  );
+  assert.doesNotMatch(
+    salesBeforeNonPositive.inventoryToSalesRatio.reason,
+    /0 이하/,
+  );
+
+  const averageSalesBlocked = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-average-sales-null",
+      sales: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "매출 입력이 없습니다.",
+      },
+      profit: comparisonMetric(1_000),
+      inventory: comparisonMetric(2_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(
+    averageSalesBlocked.inventoryToSalesRatio.reason,
+    "평균매출을 계산할 수 없습니다. 매출 입력이 없습니다.",
+  );
+
+  const negativeAverageSales = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-negative-average-sales",
+      sales: comparisonMetric(-2_000),
+      profit: comparisonMetric(-500),
+      inventory: comparisonMetric(2_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(
+    negativeAverageSales.inventoryToSalesRatio.reason,
+    "평균매출이 0 이하입니다.",
+  );
+  assert.doesNotMatch(negativeAverageSales.inventoryToSalesRatio.reason, /0원/);
+
+  const policyWithoutReason = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-policy-profit",
+      sales: comparisonMetric(50_000),
+      profit: {
+        value: null,
+        status: "policy-unconfirmed",
+        label: "확인 필요",
+        unavailableReason: "계산 기준 확인 필요",
+      },
+      inventory: comparisonMetric(2_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(
+    policyWithoutReason.grossMarginRate.reason,
+    "매출이익을 계산할 수 없습니다. 계산 기준 확인 필요",
+  );
+  assert.notEqual(
+    policyWithoutReason.grossMarginRate.reason,
+    "매출이익을 계산할 수 없습니다. 확인 필요",
+  );
+});
+
+test("HQ store comparison keeps unavailable aggregate status and only the matching null reason", async () => {
+  const calculationReason = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-calc-blank",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-calc-reason",
+      sales: comparisonMetric(20_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "둘째 계산 사유",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-other-status",
+      sales: comparisonMetric(30_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "다른 상태의 부족 사유",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assertCalculationUnavailable(calculationReason.grossProfit);
+  assert.equal(calculationReason.grossProfit.reason, "둘째 계산 사유");
+  assert.doesNotMatch(
+    calculationReason.grossProfit.reason,
+    /다른 상태|데이터 부족/,
+  );
+  assert.equal(
+    calculationReason.metricEvidence.grossProfit.unavailableReason,
+    "둘째 계산 사유",
+  );
+
+  const noCalculationReason = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-calc-without-reason",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-insufficient-reason",
+      sales: comparisonMetric(20_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        unavailableReason: "계산 불가",
+        reason: "특정 장부 데이터 부족",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assertCalculationUnavailable(noCalculationReason.grossProfit);
+  assert.equal(
+    noCalculationReason.grossProfit.reason,
+    "포함된 장부 중 계산할 수 없는 값이 있습니다.",
+  );
+  assert.doesNotMatch(
+    `${noCalculationReason.grossProfit.reason ?? ""} ${noCalculationReason.metricEvidence.grossProfit.unavailableReason}`,
+    /특정 장부 데이터 부족|데이터 부족/,
+  );
+
+  const policyReason = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-policy",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "policy-unconfirmed",
+        label: "확인 필요",
+        unavailableReason: "계산 기준 확인 필요",
+        reason: "판매 가격 기준이 확정되지 않았습니다.",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-calc-later",
+      sales: comparisonMetric(20_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        unavailableReason: "계산 불가",
+        reason: "나눗셈 불가",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(policyReason.grossProfit.value, null);
+  assert.equal(policyReason.grossProfit.status, "policy-unconfirmed");
+  assert.equal(policyReason.grossProfit.label, "확인 필요");
+  assert.equal(
+    policyReason.grossProfit.unavailableReason,
+    "계산 기준 확인 필요",
+  );
+  assert.equal(
+    policyReason.grossProfit.reason,
+    "판매 가격 기준이 확정되지 않았습니다.",
+  );
+  assert.equal(policyReason.metricEvidence.grossProfit.status, "needs-review");
+  assert.doesNotMatch(policyReason.grossProfit.reason, /나눗셈 불가/);
+
+  const valuedPolicy = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-valued-policy",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: 4_000,
+        status: "policy-unconfirmed",
+        label: "확인 필요",
+        unavailableReason: "계산 기준 확인 필요",
+        reason: "값은 있으나 기준 미확정",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-null-insufficient",
+      sales: comparisonMetric(20_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "수량 데이터가 없습니다.",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(valuedPolicy.grossProfit.value, null);
+  assert.equal(valuedPolicy.grossProfit.status, "policy-unconfirmed");
+  assert.equal(
+    valuedPolicy.grossProfit.unavailableReason,
+    "계산 기준 확인 필요",
+  );
+  assert.equal(valuedPolicy.grossProfit.reason, undefined);
+  assert.doesNotMatch(
+    valuedPolicy.metricEvidence.grossProfit.unavailableReason,
+    /수량 데이터가 없습니다|값은 있으나/,
+  );
+
+  const insufficientReason = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-insufficient",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+        reason: "저장 FIFO 재고금액이 없습니다.",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(insufficientReason.grossProfit.status, "data-insufficient");
+  assert.equal(insufficientReason.grossProfit.label, "데이터 부족");
+  assert.equal(insufficientReason.grossProfit.unavailableReason, "계산 불가");
+  assert.equal(
+    insufficientReason.grossProfit.reason,
+    "저장 FIFO 재고금액이 없습니다.",
+  );
+  assert.notEqual(
+    insufficientReason.grossProfit.reason,
+    "합계 계산에 필요한 장부 데이터가 부족합니다.",
+  );
+
+  const genericInsufficient = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-generic",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "data-insufficient",
+        label: "데이터 부족",
+        unavailableReason: "계산 불가",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+    comparisonLedger({
+      id: "ledger-statusless",
+      sales: comparisonMetric(20_000),
+      profit: {
+        value: null,
+        unavailableReason: "계산 불가",
+        reason: "상태 없는 사유",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(genericInsufficient.grossProfit.status, "data-insufficient");
+  assert.equal(
+    genericInsufficient.grossProfit.reason,
+    "합계 계산에 필요한 장부 데이터가 부족합니다.",
+  );
+  assert.doesNotMatch(genericInsufficient.grossProfit.reason, /상태 없는 사유/);
+
+  const genericAverage = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-average-generic",
+      sales: comparisonMetric(10_000),
+      profit: comparisonMetric(1_000),
+      inventory: { value: null, unavailableReason: "계산 불가" },
+      workers: 1,
+    }),
+  ]);
+
+  assert.equal(
+    genericAverage.averageInventory.reason,
+    "평균 계산에 필요한 장부 데이터가 부족합니다.",
+  );
+  assert.equal(
+    genericAverage.inventoryToSalesRatio.reason,
+    "평균재고를 계산할 수 없습니다. 평균 계산에 필요한 장부 데이터가 부족합니다.",
+  );
+});
+
+test("HQ store comparison explains a calculation-unavailable total when the child has no reason", async () => {
+  const row = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-no-child-reason",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "계산 불가",
+        unavailableReason: "계산 불가",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assertCalculationUnavailable(row.grossProfit);
+  assert.equal(
+    row.grossProfit.reason,
+    "포함된 장부 중 계산할 수 없는 값이 있습니다.",
+  );
+  assert.equal(
+    row.metricEvidence.grossProfit.unavailableReason,
+    "포함된 장부 중 계산할 수 없는 값이 있습니다.",
+  );
+  assert.equal(
+    row.grossMarginRate.reason,
+    "매출이익을 계산할 수 없습니다. 포함된 장부 중 계산할 수 없는 값이 있습니다.",
+  );
+  assert.doesNotMatch(row.grossMarginRate.reason, /계산 불가$/);
+  assert.equal(row.grossMarginRate.status, "calculation-unavailable");
+  assert.equal(row.grossMarginRate.value, null);
+
+  const specificDetail = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-specific-unavailable-reason",
+      sales: comparisonMetric(10_000),
+      profit: {
+        value: null,
+        status: "calculation-unavailable",
+        label: "계산 불가",
+        unavailableReason: "FIFO 금액을 확정할 수 없습니다.",
+      },
+      inventory: comparisonMetric(1_000),
+      workers: 1,
+    }),
+  ]);
+
+  assertCalculationUnavailable(specificDetail.grossProfit);
+  assert.equal(
+    specificDetail.grossProfit.reason,
+    "FIFO 금액을 확정할 수 없습니다.",
+  );
+  assert.equal(
+    specificDetail.grossMarginRate.reason,
+    "매출이익을 계산할 수 없습니다. FIFO 금액을 확정할 수 없습니다.",
+  );
+});
+
+test("HQ store comparison preserves numbers corrections and holiday exclusion while naming missing worker averages", async () => {
+  const row = await buildComparisonRow(
+    [
+      comparisonLedger({
+        id: "ledger-corrected",
+        sales: comparisonMetric(150_000),
+        originalSales: comparisonMetric(100_000),
+        profit: comparisonMetric(60_000),
+        inventory: comparisonMetric(30_000),
+        workers: 2,
+        correctionKeys: [
+          "ledger-corrected:PAYMENT_FIELD:ledger-corrected:totalSalesAmount",
+        ],
+      }),
+      comparisonLedger({
+        id: "ledger-plain",
+        sales: comparisonMetric(50_000),
+        profit: comparisonMetric(20_000),
+        inventory: comparisonMetric(10_000),
+        workers: 2,
+      }),
+      comparisonLedger({
+        id: "ledger-holiday",
+        status: "HOLIDAY",
+        sales: comparisonMetric(0),
+        profit: comparisonMetric(0),
+        inventory: { value: null, unavailableReason: "계산 불가" },
+        workers: null,
+        unappliedKeys: [
+          "ledger-holiday:CALCULATED_METRIC:ledger-holiday:salesDifference",
+        ],
+      }),
+    ],
+    4,
+  );
+
+  assert.equal(row.statusCounts.holidayCount, 1);
+  assert.equal(row.statusCounts.missingDayCount, 1);
+  assert.equal(row.salesAmount.value, 200_000);
+  assert.equal(row.grossProfit.value, 80_000);
+  assert.equal(row.grossMarginRate.value, 0.4);
+  assert.equal(row.grossMarginRate.reason, undefined);
+  assert.equal(row.metricEvidence.grossMarginRate.unavailableReason, null);
+  assert.equal(row.productivity.value, 50_000);
+  assert.equal(row.productivity.reason, undefined);
+  assert.equal(row.averageWorkerCount.value, 2);
+  assert.equal(row.averageWorkerCount.reason, undefined);
+  assert.equal(row.averageInventory.value, 20_000);
+  assert.equal(row.averageSales.value, 100_000);
+  assert.equal(row.inventoryToSalesRatio.value, 0.2);
+  assert.equal(row.inventoryToSalesRatio.reason, undefined);
+  assert.equal(row.metricEvidence.salesAmount.isCorrected, true);
+  assert.equal(row.metricEvidence.salesAmount.statusLabel, "정정 반영");
+  assert.equal(row.hasUnappliedCorrections, true);
+
+  const zeroWorkers = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-zero-headcount",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: comparisonMetric(1_000),
+      workers: 0,
+    }),
+  ]);
+
+  assert.equal(zeroWorkers.averageWorkerCount.value, 0);
+  assert.equal(zeroWorkers.averageWorkerCount.status, "ok");
+  assert.equal(zeroWorkers.averageWorkerCount.reason, undefined);
+
+  const noLedgers = await buildComparisonRow([], 2);
+
+  assertCalculationUnavailable(noLedgers.averageWorkerCount);
+  assert.equal(
+    noLedgers.averageWorkerCount.reason,
+    "평균 근무인원 계산 대상 장부가 없습니다.",
+  );
+  assert.doesNotMatch(noLedgers.averageWorkerCount.reason, /공란|0명/);
+  assert.equal(noLedgers.metricEvidence.loss.statusLabel, "미입력");
+
+  const holidayOnly = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-holiday-only",
+      status: "HOLIDAY",
+      sales: comparisonMetric(0),
+      profit: comparisonMetric(0),
+      inventory: comparisonMetric(0),
+      workers: null,
+    }),
+  ]);
+
+  assert.equal(
+    holidayOnly.averageWorkerCount.reason,
+    "평균 근무인원 계산 대상 장부가 없습니다.",
+  );
+  assert.doesNotMatch(holidayOnly.averageWorkerCount.reason, /공란/);
+});
+
 test("HQ store comparison report loss evidence matches missing-ledger rows", async () => {
   const queryPath = assertProjectFile(
     "src",

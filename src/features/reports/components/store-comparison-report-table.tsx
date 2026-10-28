@@ -99,7 +99,10 @@ export function StoreComparisonReportTable({
                   evidence={row.metricEvidence.grossMarginRate}
                 />
                 <TableCell className="text-right tabular-nums">
-                  {formatHeadcountMetric(row.averageWorkerCount)}
+                  <AverageWorkerCountValue
+                    metric={row.averageWorkerCount}
+                    align="right"
+                  />
                 </TableCell>
                 <MetricCell
                   value={formatKrwMetric(row.productivity)}
@@ -172,7 +175,10 @@ export function StoreComparisonReportTable({
               <div className="min-w-0">
                 <dt className="text-muted-foreground">평균 근무인원</dt>
                 <dd className="font-medium tabular-nums">
-                  {formatHeadcountMetric(row.averageWorkerCount)}
+                  <AverageWorkerCountValue
+                    metric={row.averageWorkerCount}
+                    align="left"
+                  />
                 </dd>
               </div>
               <MobileMetric
@@ -487,6 +493,42 @@ function formatHeadcountMetric(
   return metric.value === null
     ? (metric.label ?? metric.unavailableReason ?? "계산 불가")
     : `${headcountFormatter.format(metric.value)}명`;
+}
+
+function AverageWorkerCountValue({
+  metric,
+  align,
+}: {
+  metric: StoreComparisonReportRow["averageWorkerCount"];
+  align: "left" | "right";
+}) {
+  const value = formatHeadcountMetric(metric);
+
+  if (metric.value !== null) {
+    return <span data-testid="average-worker-count">{value}</span>;
+  }
+
+  return (
+    <div
+      className={cn("min-w-0", align === "right" ? "text-right" : "text-left")}
+      data-testid="average-worker-count"
+    >
+      <div className="font-medium break-words">{value}</div>
+      <details className="mt-1 text-xs">
+        <summary className="text-primary inline-flex cursor-pointer list-none break-words underline-offset-2 hover:underline">
+          근거 보기
+        </summary>
+        <dl className="bg-muted/40 mt-2 grid gap-1 rounded-md p-2 text-left">
+          <div className="min-w-0">
+            <dt className="text-muted-foreground">계산 불가 사유</dt>
+            <dd className="break-words">
+              {metric.reason ?? metric.unavailableReason ?? "계산 불가"}
+            </dd>
+          </div>
+        </dl>
+      </details>
+    </div>
+  );
 }
 
 function formatLoss(row: StoreComparisonReportRow) {
