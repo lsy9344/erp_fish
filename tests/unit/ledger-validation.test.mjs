@@ -6,6 +6,41 @@ import { test } from "node:test";
 
 const root = process.cwd();
 
+test("purchase validation keeps item errors when price and quantity are also blank", async () => {
+  const { ledgerPurchaseSchema } = await import(
+    pathToFileURL(path.join(root, "src/features/ledger/schemas.ts")).href
+  );
+  const { toFieldErrors } = await import(
+    pathToFileURL(path.join(root, "src/lib/validation.ts")).href
+  );
+  const result = ledgerPurchaseSchema.safeParse({
+    storeId: "store-1",
+    ledgerId: "ledger-1",
+    closingDate: "2026-10-28",
+    version: 1,
+    purchases: [
+      {
+        productName: "",
+        productCategory: "",
+        productSpec: "",
+        unitPrice: "",
+        quantity: "",
+      },
+    ],
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(toFieldErrors(result.error), {
+    "purchases.0.productName": ["품목명을 입력해 주세요."],
+    "purchases.0.productCategory": ["구분을 입력해 주세요."],
+    "purchases.0.productSpec": ["규격을 입력해 주세요."],
+    "purchases.0.unitPrice": ["단가는 0원 이상의 정수여야 합니다."],
+    "purchases.0.quantity": [
+      "수량은 0 이상이고 소수점 첫째 자리까지 입력할 수 있습니다.",
+    ],
+  });
+});
+
 function assertProjectFile(...segments) {
   const filePath = path.join(root, ...segments);
 

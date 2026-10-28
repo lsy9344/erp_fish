@@ -252,7 +252,7 @@ export const ledgerExpenseSchema = ledgerMutationContextSchema.extend({
 
 export type LedgerExpensesInput = z.infer<typeof ledgerExpenseSchema>;
 
-const ledgerPurchaseItemSchema = z.object({
+const ledgerPurchaseItemBaseSchema = z.object({
   id: z
     .unknown()
     .optional()
@@ -324,26 +324,19 @@ const ledgerPurchaseItemSchema = z.object({
     ),
 });
 
-export const ledgerPurchaseSchema = z
-  .object({
-    storeId: salesPaymentStoreSchema,
-    ledgerId: ledgerIdSchema,
-    closingDate: closingDateSchema,
-    version: versionSchema,
-    // 1단계 매입 화면에서 받는 최초 작성자 표시명(선택). 최초 저장 때만 기록되고 이후 보존된다.
-    authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
-    purchases: z.array(ledgerPurchaseItemSchema),
-  })
-  .superRefine((value, context) => {
-    value.purchases.forEach((purchase, index) => {
-      if (purchase.quantity === null && !purchase.id) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: purchaseQuantityError,
-          path: ["purchases", index, "quantity"],
-        });
-      }
-
+// Keep identity checks independent of numeric transforms so every invalid field
+// remains visible and the first invalid input can receive focus.
+const ledgerPurchaseItemSchema = z.intersection(
+  ledgerPurchaseItemBaseSchema
+    .pick({
+      sourceType: true,
+      productId: true,
+      purchaseStandardId: true,
+      productName: true,
+      productCategory: true,
+      productSpec: true,
+    })
+    .superRefine((purchase, context) => {
       if (
         purchase.sourceType === "ECOUNT_UPLOAD" &&
         !purchase.productId &&
@@ -352,43 +345,49 @@ export const ledgerPurchaseSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: "이카운트 출고/입고 라인은 앱 품목을 선택해 주세요.",
-          path: ["purchases", index, "productId"],
+          path: ["productId"],
         });
       }
 
-      if (
-        !purchase.productId &&
-        !purchase.purchaseStandardId &&
-        !purchase.productName
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: purchaseProductNameError,
-          path: ["purchases", index, "productName"],
-        });
+      if (!purchase.productId && !purchase.purchaseStandardId) {
+        if (!purchase.productName) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: purchaseProductNameError,
+            path: ["productName"],
+          });
+        }
+        if (!purchase.productCategory) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: purchaseProductCategoryError,
+            path: ["productCategory"],
+          });
+        }
+        if (!purchase.productSpec) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: purchaseProductSpecError,
+            path: ["productSpec"],
+          });
+        }
       }
-
-      if (
-        !purchase.productId &&
-        !purchase.purchaseStandardId &&
-        !purchase.productCategory
-      ) {
+    }),
+  ledgerPurchaseItemBaseSchema
+    .omit({
+      sourceType: true,
+      productId: true,
+      purchaseStandardId: true,
+      productName: true,
+      productCategory: true,
+      productSpec: true,
+    })
+    .superRefine((purchase, context) => {
+      if (purchase.quantity === null && !purchase.id) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: purchaseProductCategoryError,
-          path: ["purchases", index, "productCategory"],
-        });
-      }
-
-      if (
-        !purchase.productId &&
-        !purchase.purchaseStandardId &&
-        !purchase.productSpec
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: purchaseProductSpecError,
-          path: ["purchases", index, "productSpec"],
+          message: purchaseQuantityError,
+          path: ["quantity"],
         });
       }
 
@@ -407,11 +406,21 @@ export const ledgerPurchaseSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: purchaseAmountError,
-          path: ["purchases", index, "quantity"],
+          path: ["quantity"],
         });
       }
-    });
-  });
+    }),
+);
+
+export const ledgerPurchaseSchema = z.object({
+  storeId: salesPaymentStoreSchema,
+  ledgerId: ledgerIdSchema,
+  closingDate: closingDateSchema,
+  version: versionSchema,
+  // 1단계 매입 화면에서 받는 최초 작성자 표시명(선택). 최초 저장 때만 기록되고 이후 보존된다.
+  authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
+  purchases: z.array(ledgerPurchaseItemSchema),
+});
 
 export type LedgerPurchasesInput = z.infer<typeof ledgerPurchaseSchema>;
 
