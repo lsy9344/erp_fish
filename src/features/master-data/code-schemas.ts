@@ -79,7 +79,7 @@ const ledgerInputCodeNameSchema = z
 export const ledgerInputCodeFormSchema = z.object({
   group: ledgerInputCodeGroupSchema,
   name: ledgerInputCodeNameSchema,
-  displayOrder: z.unknown().transform(parseOptionalDisplayOrder),
+  displayOrder: z.unknown().optional().transform(parseOptionalDisplayOrder),
 });
 
 export type LedgerInputCodeFormInput = z.infer<

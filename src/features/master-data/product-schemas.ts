@@ -97,7 +97,7 @@ function parseOptionalKrw(value: unknown, context: z.RefinementCtx) {
 
 export const productFormSchema = productIdentitySchema.extend({
   spec: productSpecSchema,
-  defaultUnitPrice: z.unknown().transform(parseOptionalKrw),
+  defaultUnitPrice: z.unknown().optional().transform(parseOptionalKrw),
   isActive: z.boolean().default(true),
 });
 

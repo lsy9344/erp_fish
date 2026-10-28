@@ -80,14 +80,17 @@ export const anomalyThresholdFormSchema = z
   .object({
     marginRate: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parsePercentBps(value, context, percentError.marginRate),
       ),
     isActive: z
       .unknown()
+      .optional()
       .transform((value, context) => parseActiveStatus(value, context)),
     reason: z
       .unknown()
+      .optional()
       .transform((value, context) => parseReason(value, context)),
   })
   .transform((value) => ({
@@ -105,6 +108,7 @@ const storeReportMarginGapThresholdSchema = z
     storeId: z.string().trim().min(1, storeRequiredError),
     marginGapRate: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parsePercentBps(value, context, percentError.reportMarginGap, 1),
       ),
@@ -121,6 +125,7 @@ export const storeReportMarginGapThresholdFormSchema = z
     }),
     reason: z
       .unknown()
+      .optional()
       .transform((value, context) => parseReason(value, context)),
   })
   .superRefine((value, context) => {

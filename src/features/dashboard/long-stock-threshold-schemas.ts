@@ -82,15 +82,19 @@ function parseReason(value: unknown, context: z.RefinementCtx) {
 export const longStockThresholdFormSchema = z.object({
   category: z
     .unknown()
+    .optional()
     .transform((value, context) => parseCategory(value, context)),
   thresholdDays: z
     .unknown()
+    .optional()
     .transform((value, context) => parseThresholdDays(value, context)),
   isActive: z
     .unknown()
+    .optional()
     .transform((value, context) => parseActiveStatus(value, context)),
   reason: z
     .unknown()
+    .optional()
     .transform((value, context) => parseReason(value, context)),
 });
 

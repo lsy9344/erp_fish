@@ -959,7 +959,7 @@ function defineTool<Schema extends z.ZodTypeAny>(input: {
         };
       }
 
-      return input.run(parsed.data as z.infer<Schema>);
+      return input.run(parsed.data);
     },
   };
 }

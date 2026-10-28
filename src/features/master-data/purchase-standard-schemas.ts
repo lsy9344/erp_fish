@@ -58,8 +58,8 @@ function parseOptionalText(value: unknown) {
 export const purchaseStandardFormSchema = z
   .object({
     productId: productIdSchema,
-    standardUnitPrice: z.unknown().transform(parseOptionalKrw),
-    referenceInfo: z.unknown().transform(parseOptionalText),
+    standardUnitPrice: z.unknown().optional().transform(parseOptionalKrw),
+    referenceInfo: z.unknown().optional().transform(parseOptionalText),
     isActive: z.boolean().default(true),
   })
   .superRefine((value, context) => {

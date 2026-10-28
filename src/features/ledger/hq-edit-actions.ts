@@ -118,9 +118,9 @@ const hqEditReasonSchema = z.object({
     ),
 });
 
-function parseHqLedgerInput<T>(
+function parseHqLedgerInput<T extends object>(
   input: unknown,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
 ): ActionResult<
   T & { ledgerId: string; ledgerUpdatedAt: string; reason: string }
 > {

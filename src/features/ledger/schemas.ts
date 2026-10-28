@@ -107,25 +107,28 @@ const closingDateSchema = z
   .transform((value) => value.trim())
   .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, closingDateError));
 
-const versionSchema = z.unknown().transform((value, context) => {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
+const versionSchema = z
+  .unknown()
+  .optional()
+  .transform((value, context) => {
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^\d+$/.test(value.trim())
+          ? Number(value.trim())
+          : Number.NaN;
 
-  if (Number.isSafeInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
 
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: ledgerVersionError,
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: ledgerVersionError,
+    });
+
+    return z.NEVER;
   });
-
-  return z.NEVER;
-});
 
 export const ledgerOpenSchema = z.object({
   storeId: salesPaymentStoreSchema,
@@ -149,6 +152,7 @@ export type LedgerStoreAccessInput = z.infer<typeof ledgerStoreAccessSchema>;
 // 재사용하는데 authorDisplayName을 보내지 않으므로 선택값이어야 한다.
 export const ledgerOptionalAuthorDisplayNameSchema = z
   .unknown()
+  .optional()
   .transform((value, context) => {
     if (value === "" || value === null || value === undefined) {
       return null;
@@ -181,26 +185,31 @@ export const ledgerSalesPaymentSchema = ledgerMutationContextSchema
     authorDisplayName: ledgerOptionalAuthorDisplayNameSchema,
     totalSalesAmount: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredKrwAmount(value, context, totalSalesAmountError),
       ),
     carryoverSalesAmount: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredKrwAmount(value, context, carryoverSalesAmountError),
       ),
     cashAmount: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredKrwAmount(value, context, cashAmountError),
       ),
     cardAmount: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredKrwAmount(value, context, cardAmountError),
       ),
     otherPaymentAmount: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredKrwAmount(value, context, otherPaymentAmountError),
       ),
@@ -227,11 +236,13 @@ const ledgerExpenseItemSchema = z.object({
     .pipe(z.string().min(1, expenseCodeError)),
   amount: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredKrwAmount(value, context, expenseAmountError),
     ),
   memo: z
     .unknown()
+    .optional()
     .transform((value, context) => parseOptionalMemo(value, context)),
 });
 
@@ -244,9 +255,11 @@ export type LedgerExpensesInput = z.infer<typeof ledgerExpenseSchema>;
 const ledgerPurchaseItemSchema = z.object({
   id: z
     .unknown()
+    .optional()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   lotOriginKey: z
     .unknown()
+    .optional()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
@@ -263,35 +276,43 @@ const ledgerPurchaseItemSchema = z.object({
   ),
   productId: z
     .unknown()
+    .optional()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
   purchaseStandardId: z
     .unknown()
+    .optional()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
   productName: z
     .unknown()
+    .optional()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   productCategory: z
     .unknown()
+    .optional()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   productSpec: z
     .unknown()
+    .optional()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   referenceInfo: z
     .unknown()
+    .optional()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
   unitPrice: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredKrwAmount(value, context, purchaseUnitPriceError),
     ),
   quantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       value === null
         ? null
@@ -399,6 +420,7 @@ export type LedgerPurchasesInput = z.infer<typeof ledgerPurchaseSchema>;
 export const ledgerWorkInfoSchema = ledgerMutationContextSchema.extend({
   workMemo: z
     .unknown()
+    .optional()
     .transform((value, context) => parseOptionalMemo(value, context)),
 });
 
@@ -407,42 +429,51 @@ export type LedgerWorkInfoInput = z.infer<typeof ledgerWorkInfoSchema>;
 const ledgerLaborItemSchema = z.object({
   // WO-05(2026-06-22): 급여 행을 직원 마스터(Employee)와 선택적으로 연결한다.
   // 선택하지 않으면 null로 저장되고 직원별 월간 롤업에서 제외된다.
-  employeeId: z.unknown().transform((value) => {
-    if (typeof value === "string") {
-      const employeeId = value.trim();
+  employeeId: z
+    .unknown()
+    .optional()
+    .transform((value) => {
+      if (typeof value === "string") {
+        const employeeId = value.trim();
 
-      if (employeeId.length > 0) {
-        return employeeId;
+        if (employeeId.length > 0) {
+          return employeeId;
+        }
       }
-    }
 
-    return null;
-  }),
+      return null;
+    }),
   // 직원명은 선택한 직원 카드의 이름을 그대로 보관한다(직접 입력 칸은 삭제됨).
-  workerName: z.unknown().transform((value, context) => {
-    if (typeof value === "string") {
-      const workerName = value.trim();
+  workerName: z
+    .unknown()
+    .optional()
+    .transform((value, context) => {
+      if (typeof value === "string") {
+        const workerName = value.trim();
 
-      if (workerName.length >= 1 && workerName.length <= 50) {
-        return workerName;
+        if (workerName.length >= 1 && workerName.length <= 50) {
+          return workerName;
+        }
       }
-    }
 
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: laborWorkerNameError,
-    });
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: laborWorkerNameError,
+      });
 
-    return z.NEVER;
-  }),
+      return z.NEVER;
+    }),
   lateMemo: z
     .unknown()
+    .optional()
     .transform((value, context) => parseOptionalLaborMemo(value, context)),
   earlyLeaveMemo: z
     .unknown()
+    .optional()
     .transform((value, context) => parseOptionalLaborMemo(value, context)),
   specialMemo: z
     .unknown()
+    .optional()
     .transform((value, context) => parseOptionalLaborMemo(value, context)),
 });
 
@@ -455,8 +486,10 @@ export type LedgerLaborInput = z.infer<typeof ledgerLaborSchema>;
 // WO-10(2026-06-28) + 2026-09-02 요청: 급여액 입력 칸을 없앴다. 금액은 직원 카드의
 // 하루 인건비를 저장 시점에 스냅샷하거나 기존 금액을 이월해서만 정해진다.
 // 조작된 POST로 급여액이 들어오는 경로는 그대로 거부한다.
-const storeManagerLaborItemSchema = ledgerLaborItemSchema
-  .strict(laborAmountForbiddenError)
+const storeManagerLaborItemSchema = z
+  .strictObject(ledgerLaborItemSchema.shape, {
+    error: laborAmountForbiddenError,
+  })
   .superRefine((value, context) => {
     if (value.employeeId === null) {
       context.addIssue({

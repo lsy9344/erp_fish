@@ -55,25 +55,28 @@ const closingDateSchema = z
   .transform((value) => value.trim())
   .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, closingDateError));
 
-const versionSchema = z.unknown().transform((value, context) => {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
+const versionSchema = z
+  .unknown()
+  .optional()
+  .transform((value, context) => {
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^\d+$/.test(value.trim())
+          ? Number(value.trim())
+          : Number.NaN;
 
-  if (Number.isSafeInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
 
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: ledgerVersionError,
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: ledgerVersionError,
+    });
+
+    return z.NEVER;
   });
-
-  return z.NEVER;
-});
 
 const ledgerMutationContextSchema = z.object({
   storeId: storeSchema,
@@ -97,16 +100,19 @@ const ledgerInventoryItemSchema = z.object({
     .pipe(z.string().min(1, productError)),
   currentQuantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
     ),
   quantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
     ),
   unitPrice: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalNonNegativeInteger(value, context, inventoryUnitPriceError),
     ),
@@ -115,6 +121,7 @@ const ledgerInventoryItemSchema = z.object({
   // 빈 값은 null(사유 없음)로 해석한다.
   adjustmentReason: z
     .unknown()
+    .optional()
     .transform((value) =>
       typeof value === "string" && value.trim() ? value.trim() : null,
     ),
@@ -122,6 +129,7 @@ const ledgerInventoryItemSchema = z.object({
   // 기존 자료와 입고분이 없는 예외 행을 위한 선택적 기본값으로만 남긴다.
   plannedUnitPrice: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalNonNegativeInteger(value, context, plannedUnitPriceError),
     ),
@@ -138,6 +146,7 @@ const ledgerLotSalesPriceSchema = z.object({
     .pipe(z.string().min(1, "입고분을 확인해 주세요.")),
   plannedUnitPrice: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredNonNegativeInteger(value, context, plannedUnitPriceError),
     ),
@@ -153,11 +162,13 @@ const ledgerStoreManagerInventoryItemSchema = ledgerInventoryItemSchema.extend({
   // 저장 단계의 required-entry guard가 담당하고, schema는 기존 optional 계약을 유지한다.
   currentQuantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
     ),
   quantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalInventoryQuantity(value, context),
     ),
@@ -183,6 +194,7 @@ export const ledgerInventoryAdjustmentSchema =
       .pipe(z.string().min(1, productError)),
     actualQuantity: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredInventoryQuantity(value, context),
       ),
@@ -200,6 +212,7 @@ export const ledgerInventoryConversionSchema =
       .pipe(z.string().min(1, productError)),
     quantity: z
       .unknown()
+      .optional()
       .transform((value, context) =>
         parseRequiredNonNegativeTwoDecimal(
           value,

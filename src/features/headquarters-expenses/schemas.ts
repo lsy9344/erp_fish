@@ -106,22 +106,29 @@ const headquartersExpenseIdSchema = z
 
 const headquartersExpenseFields = {
   expenseDate: expenseDateSchema,
-  storeId: z.unknown().transform((value) => parseOptionalStoreId(value)),
+  storeId: z
+    .unknown()
+    .optional()
+    .transform((value) => parseOptionalStoreId(value)),
   category: z
     .unknown()
+    .optional()
     .transform((value, context) => parseCategory(value, context)),
   amount: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredNonNegativeInteger(value, context, amountError),
     ),
   adjustmentReason: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalText(value, context, adjustmentReasonError),
     ),
   memo: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseOptionalText(value, context, memoError),
     ),
@@ -144,7 +151,10 @@ export type HeadquartersExpenseCreateInput = z.infer<
 
 export const headquartersExpenseBatchCreateSchema = z.object({
   expenseDate: expenseDateSchema,
-  storeId: z.unknown().transform((value) => parseOptionalStoreId(value)),
+  storeId: z
+    .unknown()
+    .optional()
+    .transform((value) => parseOptionalStoreId(value)),
   items: z
     .array(z.object(headquartersExpenseItemFields))
     .min(1, "지출 내역을 하나 이상 입력해 주세요."),

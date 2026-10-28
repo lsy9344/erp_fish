@@ -60,9 +60,10 @@ function parseNumericCorrectionValue(value: unknown) {
 export const correctionValueSchema = z
   .object({
     kind: z.enum(correctionValueKinds),
-    value: z.unknown(),
+    value: z.unknown().optional(),
     label: z
       .unknown()
+      .optional()
       .transform((value) =>
         typeof value === "string" && value.trim() ? value.trim() : undefined,
       ),
@@ -125,12 +126,17 @@ export const correctionValueSchema = z
         ? parseRequiredNonNegativeTwoDecimal(
             value.value,
             {
+              ...context,
               addIssue: (issue) =>
                 context.addIssue({
-                  ...issue,
-                  path: ["value", ...(issue.path ?? [])],
+                  ...(typeof issue === "string"
+                    ? { code: "custom" as const, message: issue }
+                    : issue),
+                  path: [
+                    "value",
+                    ...(typeof issue === "string" ? [] : (issue.path ?? [])),
+                  ],
                 }),
-              path: [...context.path, "value"],
             },
             correctionQuantityError,
           )
@@ -170,7 +176,7 @@ export const correctionRecordSchema = z
       .transform((value) => value.trim())
       .pipe(z.string().min(1, "장부 상태를 확인해 주세요.")),
     targetType: z.enum(correctionTargetTypes, {
-      errorMap: () => ({ message: "정정 대상을 확인해 주세요." }),
+      error: "정정 대상을 확인해 주세요.",
     }),
     targetId: z
       .string()

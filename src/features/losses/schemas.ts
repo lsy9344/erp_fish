@@ -48,58 +48,67 @@ const closingDateSchema = z
   .transform((value) => value.trim())
   .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, closingDateError));
 
-const versionSchema = z.unknown().transform((value, context) => {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
+const versionSchema = z
+  .unknown()
+  .optional()
+  .transform((value, context) => {
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^\d+$/.test(value.trim())
+          ? Number(value.trim())
+          : Number.NaN;
 
-  if (Number.isSafeInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
 
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: ledgerVersionError,
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: ledgerVersionError,
+    });
+
+    return z.NEVER;
   });
-
-  return z.NEVER;
-});
 
 const ledgerLossItemSchema = z.object({
   id: z
     .unknown()
+    .optional()
     .transform((value) => (typeof value === "string" ? value.trim() : "")),
   productId: requiredIdSchema(productError),
   ledgerInputCodeId: requiredIdSchema(lossTypeError),
   quantity: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredQuantity(value, context, quantityError),
     ),
   recoveredAmount: z
     .unknown()
+    .optional()
     .transform((value, context) =>
       parseRequiredInteger(value, context, recoveredAmountError),
     ),
-  reason: z.unknown().transform((value, context) => {
-    if (typeof value === "string") {
-      const trimmed = value.trim();
+  reason: z
+    .unknown()
+    .optional()
+    .transform((value, context) => {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
 
-      if (trimmed.length > 0 && trimmed.length <= 500) {
-        return trimmed;
+        if (trimmed.length > 0 && trimmed.length <= 500) {
+          return trimmed;
+        }
       }
-    }
 
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: reasonError,
-    });
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: reasonError,
+      });
 
-    return z.NEVER;
-  }),
+      return z.NEVER;
+    }),
 });
 
 const ledgerLossesContextSchema = z.object({
