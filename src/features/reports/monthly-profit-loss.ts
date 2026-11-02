@@ -10,6 +10,7 @@ import { requireReportAccess, getHeadquartersStoreScope } from "~/server/authz";
 import { db } from "~/server/db";
 import { getHeadquartersExpenseMonthRange } from "~/features/headquarters-expenses/queries";
 import { getStoreProfitSummariesForRange } from "./queries";
+import { excludeEmptyLedgers } from "./empty-ledger.ts";
 import { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
 
 export { MONTHLY_PNL_COMPANY_WIDE_STORE_ID } from "./types.ts";
@@ -144,6 +145,7 @@ export async function buildAllMonthsProfitAndLoss({
       where: {
         storeId: { in: targetStoreIds },
         status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+        ...excludeEmptyLedgers,
       },
       select: { closingDate: true },
     }),

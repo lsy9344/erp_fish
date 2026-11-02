@@ -4,6 +4,7 @@ import {
 } from "../../../generated/prisma/index.js";
 
 import type { ReportExportSheet } from "./export.ts";
+import { excludeEmptyLedgers } from "./empty-ledger.ts";
 import { buildPeriodTrendColumns } from "./period-analysis.ts";
 import { selectHistoricalReportSources } from "./historical-integration.ts";
 
@@ -689,6 +690,7 @@ async function loadSourceWorkbookData({
       where: {
         storeId: { in: selectedStoreIds },
         ...closingDateFilter,
+        ...excludeEmptyLedgers,
       },
       select: sourceLedgerSelect,
       orderBy: [{ closingDate: "asc" }, { storeId: "asc" }],

@@ -165,6 +165,47 @@ test("본사는 월간 리포트에서 미마감과 휴무 상태를 텍스트�
   await expect(page.getByLabel("계산 포함/제외 일자")).toContainText("휴무일");
 });
 
+test("휴무일에 열렸다 마감된 빈 장부는 월간·지점 비교에서 미입력으로 보고 집계에서 뺀다", async ({
+  page,
+}) => {
+  // 픽스처는 2026-05-31에 매출 ₩777,000 마감 장부를 둔다. 그 전날에 아무것도
+  // 입력하지 않은 본사 마감 장부를 추가한다.
+  const hq = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_IDS.closed,
+      closingDate: new Date(Date.UTC(2026, 4, 30)),
+      status: "HEADQUARTERS_CLOSED",
+      createdById: hq.id,
+      updatedById: hq.id,
+    },
+  });
+
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/monthly?month=2026-05&storeId=${STORE_IDS.closed}`,
+  );
+  await expect(
+    page.locator('[data-testid="hq-report-monthly-day-2026-05-30"]'),
+  ).toContainText("미입력");
+  // 빈 장부를 영업일로 세면 평균매출이 ₩388,500으로 반토막 난다.
+  const kpis = page.getByLabel("월간 핵심 성과", { exact: true });
+  await expect(kpis).toContainText("마감 장부 숫자만 포함");
+  await expect(kpis).not.toContainText("₩388,500");
+
+  await page.goto(
+    `/app/reports/comparison?startDate=2026-05-01&endDate=2026-05-31&storeId=${STORE_IDS.closed}`,
+  );
+  await expect(
+    page.locator(
+      `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
+    ),
+  ).toContainText("미입력 30일");
+});
+
 test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과로 본다", async ({
   page,
 }) => {

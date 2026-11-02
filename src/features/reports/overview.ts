@@ -2,6 +2,7 @@ import type { DailyLedgerStatus } from "../../../generated/prisma";
 import type { HqDashboardRow } from "../dashboard/types.ts";
 import type { MonthlyProfitAndLossRow } from "./monthly-profit-loss.ts";
 import type { LedgerProfitSummary } from "./queries.ts";
+import { excludeEmptyLedgers } from "./empty-ledger.ts";
 import {
   MONTHLY_PNL_COMPANY_WIDE_STORE_ID,
   type MonthlyClosingAnomalyReportMonthRange,
@@ -1086,6 +1087,7 @@ export async function getHqReportOverview({
           gte: previousRange.startDate,
           lte: monthRange.endDate,
         },
+        ...excludeEmptyLedgers,
       },
       select: { storeId: true, closingDate: true, status: true },
     }),

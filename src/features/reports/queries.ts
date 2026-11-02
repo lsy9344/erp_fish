@@ -96,6 +96,7 @@ import {
   type HistoricalFactForReport,
 } from "./historical-integration.ts";
 import { DEFAULT_REPORT_MARGIN_GAP_THRESHOLD_BPS } from "./store-daily-performance.ts";
+import { excludeEmptyLedgers } from "./empty-ledger.ts";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 const DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -2231,6 +2232,7 @@ export async function getHqStoreComparisonReport({
           where: {
             storeId: { in: storeIds },
             closingDate: { gte: range.startDate, lte: range.endDate },
+            ...excludeEmptyLedgers,
           },
           orderBy: [{ storeId: "asc" }, { closingDate: "asc" }],
           select: {
@@ -2501,6 +2503,7 @@ export async function getStoreProfitSummariesForRange({
       storeId: { in: storeIds },
       closingDate: { gte: startDate, lte: endDate },
       status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+      ...excludeEmptyLedgers,
     },
     select: {
       id: true,
@@ -2694,6 +2697,7 @@ export async function getLedgerProfitSummariesForRange({
       storeId: { in: storeIds },
       closingDate: { gte: startDate, lte: endDate },
       status: { in: ["IN_REVIEW", "HEADQUARTERS_CLOSED"] },
+      ...excludeEmptyLedgers,
     },
     select: {
       id: true,
@@ -2967,6 +2971,7 @@ export async function getHqMonthlyClosingAnomalyReport({
         gte: monthRange.startDate,
         lte: monthRange.endDate,
       },
+      ...excludeEmptyLedgers,
     },
     orderBy: [{ closingDate: "asc" }, { id: "asc" }],
     select: {
