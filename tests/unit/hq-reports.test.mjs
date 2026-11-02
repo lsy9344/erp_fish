@@ -3166,6 +3166,97 @@ test("HQ store comparison report keeps data-insufficient aggregate states", asyn
   assert.equal(row.metricEvidence.grossProfit.statusLabel, "데이터 부족");
 });
 
+test("HQ store comparison report names the ledger dates that block a metric", async () => {
+  const queryPath = assertProjectFile(
+    "src",
+    "features",
+    "reports",
+    "queries.ts",
+  );
+  const { buildStoreComparisonReportRowForTest } = await import(
+    pathToFileURL(queryPath).href
+  );
+  const okMetrics = {
+    totalSales: { value: 100000 },
+    grossProfit: { value: 60000 },
+    grossMarginRate: { value: 0.6 },
+    operatingProfit: { value: 50000 },
+    productivity: { value: 100000 },
+    inventoryAmount: { value: 30000 },
+  };
+  // 휴무일에 열렸다가 본사가 마감한 빈 장부: 매출 0, 근무인원 공란, 재고 없음.
+  const emptyMetrics = {
+    totalSales: { value: 0, status: "ok" },
+    grossProfit: {
+      value: null,
+      status: "policy-unconfirmed",
+      label: "확인 필요",
+      unavailableReason: "계산 기준 확인 필요",
+    },
+    grossMarginRate: { value: null, unavailableReason: "계산 불가" },
+    operatingProfit: {
+      value: null,
+      status: "policy-unconfirmed",
+      label: "확인 필요",
+      unavailableReason: "계산 기준 확인 필요",
+    },
+    productivity: { value: null, unavailableReason: "계산 불가" },
+    inventoryAmount: {
+      value: null,
+      status: "data-insufficient",
+      label: "데이터 부족",
+      unavailableReason: "계산 불가",
+      reason: "재고 확정 원본이 없어 계산할 수 없습니다.",
+    },
+  };
+  const summary = (dateInput, ledgerId, metrics, workerCount) => ({
+    dateInput,
+    ledgerId,
+    status: "HEADQUARTERS_CLOSED",
+    original: metrics,
+    applied: metrics,
+    workerCount,
+    hasLoss: false,
+    hasUnappliedCorrections: false,
+    appliedCorrectionCount: 0,
+    appliedCorrectionKeys: new Set(),
+    unappliedCorrectionKeys: new Set(),
+  });
+
+  const row = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "테스트점" },
+    dateCount: 3,
+    ledgerSummaries: [
+      summary("2026-10-04", "ledger-empty", emptyMetrics, null),
+      summary("2026-10-05", "ledger-ok", okMetrics, 2),
+      summary("2026-10-22", "ledger-no-worker", okMetrics, null),
+    ],
+  });
+
+  assert.equal(
+    row.averageWorkerCount.reason,
+    "근무인원이 공란인 장부가 있습니다. 확인할 장부: 10월 4일(빈 장부), 10월 22일",
+  );
+  assert.equal(
+    row.productivity.reason,
+    "매출이 있는 날의 근무인원이 공란입니다. 확인할 장부: 10월 22일",
+  );
+  assert.equal(
+    row.metricEvidence.grossProfit.unavailableReason,
+    "계산할 수 없는 장부가 있습니다. 확인할 장부: 10월 4일(빈 장부)",
+  );
+  assert.equal(
+    row.averageInventory.reason,
+    "재고 확정 원본이 없어 계산할 수 없습니다. 확인할 장부: 10월 4일(빈 장부)",
+  );
+  // 파생 지표(이익률·재고비율)도 원인 지표의 날짜를 그대로 보여준다.
+  assert.match(row.grossMarginRate.reason, /확인할 장부: 10월 4일\(빈 장부\)$/);
+  assert.match(
+    row.inventoryToSalesRatio.reason,
+    /확인할 장부: 10월 4일\(빈 장부\)$/,
+  );
+});
+
 test("HQ store comparison report keeps OQ-gated metrics as needs-review instead of finalized numbers", async () => {
   const queryPath = assertProjectFile(
     "src",
