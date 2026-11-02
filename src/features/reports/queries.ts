@@ -85,6 +85,7 @@ import type {
   ProductSalesPeriodItem,
   ProductSalesPeriodReportData,
   ProductStoreSalesItem,
+  ReportLedgerLink,
   StoreComparisonReportData,
   StoreComparisonReportDateRange,
   StoreComparisonReportRow,
@@ -4779,6 +4780,8 @@ function buildStoreComparisonMetricEvidence({
     ledgerSummaries,
     matchers,
   );
+  const blockingLedgers =
+    applied.value === null ? (applied.blockingLedgers ?? []) : [];
 
   return buildDailyMeetingReportMetricEvidence({
     label,
@@ -4791,6 +4794,14 @@ function buildStoreComparisonMetricEvidence({
     ledgerStatus,
     correctionCount: correctionState.appliedCount,
     hasUnappliedCorrections: correctionState.hasUnapplied,
+    ...(blockingLedgers.length > 0
+      ? { ledgersLabel: "확인할 장부", ledgers: blockingLedgers }
+      : {
+          ledgersLabel: "포함 장부",
+          ledgers: ledgerSummaries.flatMap(
+            (summary) => toReportLedgerLink(summary) ?? [],
+          ),
+        }),
   });
 }
 
@@ -4927,26 +4938,33 @@ function aggregateStoreComparisonMetrics(
     carryoverSalesAmount: sumMetric(carryoverSalesMetrics),
     operatingSalesAmount: salesAmount,
     grossProfit,
-    grossMarginRate: grossMarginRateMetric(salesAmount, grossProfit),
+    grossMarginRate: inheritBlockingLedgers(
+      grossMarginRateMetric(salesAmount, grossProfit),
+      [salesAmount, grossProfit],
+    ),
     ...marginPairFields(ledgerSummaries, source),
     operatingProfit,
-    productivity: blockedBy(
-      productivityMetric({
-        salesAmount,
-        workerTotal,
-        salesDayWorkerBlockReason,
-      }),
-      // 매출 자체가 막힌 경우는 매출 사유에 이미 날짜가 붙는다.
-      (summary) =>
-        salesAmount.value !== null && isSalesDayWorkerBlocked(summary, source),
+    productivity: inheritBlockingLedgers(
+      blockedBy(
+        productivityMetric({
+          salesAmount,
+          workerTotal,
+          salesDayWorkerBlockReason,
+        }),
+        // 매출 자체가 막힌 경우는 매출 사유에 이미 날짜가 붙는다.
+        (summary) =>
+          salesAmount.value !== null &&
+          isSalesDayWorkerBlocked(summary, source),
+      ),
+      [salesAmount],
     ),
     averageWorkerCount,
     averageInventory,
     averageSales,
     trendAggregation,
-    inventoryToSalesRatio: inventoryToSalesRatioMetric(
-      averageInventory,
-      averageSales,
+    inventoryToSalesRatio: inheritBlockingLedgers(
+      inventoryToSalesRatioMetric(averageInventory, averageSales),
+      [averageInventory, averageSales],
     ),
   };
 }
@@ -5154,6 +5172,9 @@ function withBlockingLedgerDates(
     return metric;
   }
 
+  const blockingLedgers = blockingSummaries.flatMap(
+    (summary) => toReportLedgerLink(summary) ?? [],
+  );
   const shown =
     labels.length > 5
       ? [...labels.slice(0, 5), `외 ${labels.length - 5}일`]
@@ -5162,7 +5183,46 @@ function withBlockingLedgerDates(
   return {
     ...metric,
     reason: `${metric.reason ?? (metric.status === "policy-unconfirmed" ? "계산 기준 확인이 필요한 장부가 있습니다." : "계산할 수 없는 장부가 있습니다.")} 확인할 장부: ${shown.join(", ")}`,
+    blockingLedgers,
   };
+}
+
+// 파생 지표(이익률·재고비율·인당생산성)는 재료 지표를 막은 장부를 그대로 넘겨받는다.
+function inheritBlockingLedgers(
+  metric: LedgerReviewMetric,
+  sources: LedgerReviewMetric[],
+): LedgerReviewMetric {
+  if (metric.value !== null) {
+    return metric;
+  }
+
+  const byHref = new Map(
+    [metric, ...sources]
+      .flatMap((item) =>
+        item.value === null ? (item.blockingLedgers ?? []) : [],
+      )
+      .map((link) => [link.href, link]),
+  );
+
+  if (byHref.size === 0) {
+    return metric;
+  }
+
+  return {
+    ...metric,
+    blockingLedgers: [...byHref.values()].sort((a, b) =>
+      a.dateInput.localeCompare(b.dateInput),
+    ),
+  };
+}
+
+function toReportLedgerLink(summary: {
+  ledgerId: string;
+  dateInput?: string;
+}): ReportLedgerLink | null {
+  return summary.dateInput
+    ? { dateInput: summary.dateInput, href: `/app/ledgers/${summary.ledgerId}` }
+    : null;
 }
 
 function getSalesDayWorkerBlockReason(
@@ -5590,6 +5650,7 @@ function toLedgerReportRow({
     ...rowWithoutEvidence,
     metricEvidence: buildDailyMeetingReportMetricEvidenceMap({
       ledgerId: ledger.id,
+      ledgerDateInput: getDailyMeetingReportDateInput(ledger.closingDate),
       ledgerStatus: rowWithoutEvidence.ledgerStatus.key,
       originalSummary,
       appliedSummary: reviewSummary,
@@ -5612,6 +5673,8 @@ export function buildDailyMeetingReportMetricEvidence({
   applied,
   correctionCount,
   hasUnappliedCorrections,
+  ledgersLabel,
+  ledgers,
 }: DailyMeetingReportMetricEvidenceInput): DailyMeetingReportMetricEvidence {
   const isCorrected = correctionCount > 0;
   const status = getMetricStatus({
@@ -5638,11 +5701,13 @@ export function buildDailyMeetingReportMetricEvidence({
       ledgerId && (correctionCount > 0 || hasUnappliedCorrections)
         ? `/app/ledgers/${ledgerId}#correction-timeline`
         : null,
+    ...(ledgers && ledgers.length > 0 ? { ledgersLabel, ledgers } : {}),
   };
 }
 
 function buildDailyMeetingReportMetricEvidenceMap({
   ledgerId,
+  ledgerDateInput,
   ledgerStatus,
   originalSummary,
   appliedSummary,
@@ -5651,6 +5716,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
   correctionState,
 }: {
   ledgerId: string | null;
+  ledgerDateInput?: string;
   ledgerStatus: DailyMeetingReportMetricEvidenceInput["ledgerStatus"];
   originalSummary: Pick<
     ReturnType<typeof calculateLedgerReviewSummary>,
@@ -5689,6 +5755,13 @@ function buildDailyMeetingReportMetricEvidenceMap({
     { targetType: "LOSS_ROW", fieldKey: "quantity" },
     { targetType: "CALCULATED_METRIC", fieldKey: "salesDifference" },
   ]);
+  // 일별 근거는 그날 장부 하나를 날짜와 함께 가리킨다.
+  const ledgerLink = ledgerId
+    ? toReportLedgerLink({ ledgerId, dateInput: ledgerDateInput })
+    : null;
+  const ledgerRef = ledgerLink
+    ? { ledgersLabel: "장부 상세", ledgers: [ledgerLink] }
+    : {};
   const lossCorrections = getMetricCorrectionState(correctionState, [
     { targetType: "LOSS_ROW", fieldKey: "amount" },
     { targetType: "LOSS_ROW", fieldKey: "quantity" },
@@ -5701,6 +5774,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
       kind: "money",
       ledgerId,
       ledgerStatus,
+      ...ledgerRef,
       original: originalSummary.totalSales,
       applied: appliedSummary.totalSales,
       correctionCount: salesAmountCorrections.appliedCount,
@@ -5711,6 +5785,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
       kind: "percent",
       ledgerId,
       ledgerStatus,
+      ...ledgerRef,
       original: originalSummary.grossMarginRate,
       applied: appliedSummary.grossMarginRate,
       correctionCount: grossMarginRateCorrections.appliedCount,
@@ -5721,6 +5796,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
       kind: "money",
       ledgerId,
       ledgerStatus,
+      ...ledgerRef,
       original: originalSummary.salesDifference,
       applied: appliedSummary.salesDifference,
       correctionCount: salesDifferenceCorrections.appliedCount,
@@ -5731,6 +5807,7 @@ function buildDailyMeetingReportMetricEvidenceMap({
       kind: "boolean",
       ledgerId,
       ledgerStatus,
+      ...ledgerRef,
       original:
         originalHasLoss === null
           ? unavailable("계산 불가")

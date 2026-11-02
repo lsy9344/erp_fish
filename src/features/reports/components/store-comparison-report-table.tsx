@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { EvidenceLedgerLinks } from "./evidence-ledger-links";
 import { historicalSourceLabel } from "../historical-integration";
 import type {
   DailyMeetingReportMetricEvidence,
@@ -422,7 +423,7 @@ function MetricValueWithEvidence({
           </span>
         ) : null}
       </div>
-      <details className="mt-1 text-xs">
+      <details className="mt-1 text-xs whitespace-normal">
         <summary className="text-primary inline-flex cursor-pointer list-none break-words underline-offset-2 hover:underline">
           근거 보기
         </summary>
@@ -451,14 +452,11 @@ function MetricValueWithEvidence({
           </div>
         </dl>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          {evidence.ledgerDetailHref ? (
-            <Link
-              className="text-primary underline"
-              href={evidence.ledgerDetailHref}
-            >
-              장부 상세
-            </Link>
-          ) : null}
+          <EvidenceLedgerLinks
+            label={evidence.ledgersLabel}
+            ledgers={evidence.ledgers}
+            fallbackHref={evidence.ledgerDetailHref}
+          />
           {evidence.correctionTimelineHref ? (
             <Link
               className="text-primary underline"
@@ -514,7 +512,7 @@ function AverageWorkerCountValue({
       data-testid="average-worker-count"
     >
       <div className="font-medium break-words">{value}</div>
-      <details className="mt-1 text-xs">
+      <details className="mt-1 text-xs whitespace-normal">
         <summary className="text-primary inline-flex cursor-pointer list-none break-words underline-offset-2 hover:underline">
           근거 보기
         </summary>
@@ -526,6 +524,12 @@ function AverageWorkerCountValue({
             </dd>
           </div>
         </dl>
+        <div className="mt-2 text-xs">
+          <EvidenceLedgerLinks
+            label="확인할 장부"
+            ledgers={metric.blockingLedgers}
+          />
+        </div>
       </details>
     </div>
   );

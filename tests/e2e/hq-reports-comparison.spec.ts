@@ -51,9 +51,15 @@ test("본사는 일별 리포트에서 기간 비교로 이동해 선택 기간�
   await expect(closedRow).toContainText("₩1,077,000");
   await expect(closedRow).toContainText("정정 반영");
   await expect(closedRow).toContainText("₩822,000");
-  await expect(
-    closedRow.getByRole("link", { name: "장부 상세" }).first(),
-  ).toHaveAttribute("href", /\/app\/ledgers\//);
+  // 근거 패널은 집계에 포함된 장부를 날짜 링크로 보여준다.
+  const salesLedgerLinks = closedRow
+    .getByTestId("evidence-ledger-links")
+    .first();
+  await expect(salesLedgerLinks).toContainText("포함 장부 2일");
+  await expect(salesLedgerLinks.getByRole("link").first()).toHaveAttribute(
+    "href",
+    /\/app\/ledgers\//,
+  );
   await expect(
     closedRow.getByRole("link", { name: "정정 타임라인" }).first(),
   ).toHaveAttribute("href", /\/app\/ledgers\/.+#correction-timeline/);

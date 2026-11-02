@@ -27,6 +27,9 @@ export type DailyMeetingReportMetricValue = LedgerReviewMetric & {
   kind: DailyMeetingReportMetricKind;
 };
 
+// 근거 패널에서 날짜로 보여주고 장부 상세로 이동하는 링크.
+export type ReportLedgerLink = { dateInput: string; href: string };
+
 export type DailyMeetingReportMetricEvidence = {
   label: string;
   kind: DailyMeetingReportMetricKind;
@@ -38,6 +41,9 @@ export type DailyMeetingReportMetricEvidence = {
   unavailableReason: string | null;
   ledgerDetailHref: string | null;
   correctionTimelineHref: string | null;
+  // 이 값과 관련된 장부. 계산 불가면 막은 장부, 집계면 포함 장부, 일별이면 그날 장부.
+  ledgersLabel?: string;
+  ledgers?: ReportLedgerLink[];
 };
 
 export type DailyMeetingReportMetricEvidenceMap = {
@@ -56,6 +62,8 @@ export type DailyMeetingReportMetricEvidenceInput = {
   applied: LedgerReviewMetric;
   correctionCount: number;
   hasUnappliedCorrections: boolean;
+  ledgersLabel?: string;
+  ledgers?: ReportLedgerLink[];
 };
 
 export type DailyMeetingReportRow = HqDashboardRow & {

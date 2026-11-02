@@ -13,6 +13,7 @@ import { Button } from "~/components/ui/button";
 import { DashboardSignalSummary } from "~/features/dashboard/components/dashboard-signal-summary";
 import { DashboardStatusBadge } from "~/features/dashboard/components/dashboard-status-badge";
 import { cn } from "~/lib/utils";
+import { EvidenceLedgerLinks } from "./evidence-ledger-links";
 import type {
   DailyMeetingReportData,
   DailyMeetingReportMetricEvidence,
@@ -303,7 +304,7 @@ function MetricValueWithEvidence({
         ) : null}
       </div>
       {children ? <div className="mt-0.5">{children}</div> : null}
-      <details className="mt-1 text-xs">
+      <details className="mt-1 text-xs whitespace-normal">
         <summary className="text-primary inline-flex cursor-pointer list-none break-words underline-offset-2 hover:underline">
           근거 보기
         </summary>
@@ -332,14 +333,11 @@ function MetricValueWithEvidence({
           </div>
         </dl>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          {evidence.ledgerDetailHref ? (
-            <Link
-              className="text-primary underline"
-              href={evidence.ledgerDetailHref}
-            >
-              장부 상세
-            </Link>
-          ) : null}
+          <EvidenceLedgerLinks
+            label={evidence.ledgersLabel}
+            ledgers={evidence.ledgers}
+            fallbackHref={evidence.ledgerDetailHref}
+          />
           {evidence.correctionTimelineHref ? (
             <Link
               className="text-primary underline"

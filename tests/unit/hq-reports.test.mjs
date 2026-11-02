@@ -3252,6 +3252,38 @@ test("HQ store comparison report names the ledger dates that block a metric", as
   // 파생 지표(이익률·재고비율)도 원인 지표의 날짜를 그대로 보여준다.
   assert.match(row.grossMarginRate.reason, /확인할 장부: 10월 4일$/);
   assert.match(row.inventoryToSalesRatio.reason, /확인할 장부: 10월 4일$/);
+  // 근거 패널은 원인 장부를 날짜 링크로 보여준다(파생 지표 포함).
+  const link = (dateInput, ledgerId) => ({
+    dateInput,
+    href: `/app/ledgers/${ledgerId}`,
+  });
+  assert.deepEqual(row.averageWorkerCount.blockingLedgers, [
+    link("2026-10-04", "ledger-empty"),
+    link("2026-10-22", "ledger-no-worker"),
+  ]);
+  for (const key of [
+    "grossProfit",
+    "grossMarginRate",
+    "averageInventory",
+    "inventoryToSalesRatio",
+  ]) {
+    assert.equal(row.metricEvidence[key].ledgersLabel, "확인할 장부", key);
+    assert.deepEqual(
+      row.metricEvidence[key].ledgers,
+      [link("2026-10-04", "ledger-empty")],
+      key,
+    );
+  }
+  assert.deepEqual(row.metricEvidence.productivity.ledgers, [
+    link("2026-10-22", "ledger-no-worker"),
+  ]);
+  // 계산된 값은 집계에 포함된 장부를 보여준다.
+  assert.equal(row.metricEvidence.salesAmount.ledgersLabel, "포함 장부");
+  assert.deepEqual(row.metricEvidence.salesAmount.ledgers, [
+    link("2026-10-04", "ledger-empty"),
+    link("2026-10-05", "ledger-ok"),
+    link("2026-10-22", "ledger-no-worker"),
+  ]);
 });
 
 test("HQ store comparison report keeps OQ-gated metrics as needs-review instead of finalized numbers", async () => {

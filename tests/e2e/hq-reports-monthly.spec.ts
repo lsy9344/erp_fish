@@ -195,6 +195,15 @@ test("휴무일에 열렸다 마감된 빈 장부는 월간·지점 비교에서
   const kpis = page.getByLabel("월간 핵심 성과", { exact: true });
   await expect(kpis).toContainText("마감 장부 숫자만 포함");
   await expect(kpis).not.toContainText("₩388,500");
+  // 근거 패널은 관련 장부를 날짜로 보여주고, 누르면 그 장부로 간다.
+  const kpiSales = page.getByTestId("hq-report-monthly-kpi-sales");
+  await expect(kpiSales).toContainText("포함 장부5/31");
+  await expect(
+    page.locator('[data-testid="hq-report-monthly-day-2026-05-31"]'),
+  ).toContainText("장부 상세5/31");
+  await kpiSales.getByText("근거 보기").click();
+  await kpiSales.getByRole("link", { name: "5/31" }).click();
+  await expect(page).toHaveURL(/\/app\/ledgers\/[^/?#]+$/);
 
   await page.goto(
     `/app/reports/comparison?startDate=2026-05-01&endDate=2026-05-31&storeId=${STORE_IDS.closed}`,
@@ -204,6 +213,12 @@ test("휴무일에 열렸다 마감된 빈 장부는 월간·지점 비교에서
       `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
     ),
   ).toContainText("미입력 30일");
+  // 계산 불가 근거는 막은 장부(재고 입력이 없는 5/31)를 가리킨다.
+  await expect(
+    page.locator(
+      `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
+    ),
+  ).toContainText("확인할 장부5/31");
 });
 
 test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과로 본다", async ({
