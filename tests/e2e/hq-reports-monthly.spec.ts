@@ -51,6 +51,14 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   const kpiSales = page.getByTestId("hq-report-monthly-kpi-sales");
   await expect(kpiSales).toContainText("₩45,000");
   await expect(kpiSales).toContainText("정정 반영");
+  // 지점장 입력 현금의 월 합계와, 버튼으로 펼치는 일자별 현금 목록.
+  const cashTotal = page.getByTestId("hq-report-monthly-cash-total");
+  await expect(cashTotal).toContainText("₩100,000");
+  await expect(cashTotal.getByRole("listitem")).toHaveCount(0);
+  await cashTotal.getByText("일별 보기").click();
+  await expect(cashTotal.getByRole("listitem")).toHaveCount(
+    Number(todayInput.slice(8, 10)),
+  );
 
   const lossSummary = page.getByTestId("hq-report-monthly-loss-summary");
   await expect(lossSummary).toContainText("손실 유형별 요약");

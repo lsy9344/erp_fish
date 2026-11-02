@@ -213,9 +213,10 @@ function MonthlyKpiSummary({
       </div>
 
       <div className="bg-card text-muted-foreground overflow-x-auto rounded-lg border text-sm shadow-sm">
-        <Table className="min-w-[560px]">
+        <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
+              <TableHead className="text-right text-xs">현금 합계</TableHead>
               {secondaryItems.map(([label]) => (
                 <TableHead key={label} className="text-right text-xs">
                   {label}
@@ -225,6 +226,12 @@ function MonthlyKpiSummary({
           </TableHeader>
           <TableBody>
             <TableRow>
+              <TableCell
+                data-testid="hq-report-monthly-cash-total"
+                className="text-right align-top tabular-nums"
+              >
+                <MonthlyCashTotal days={report.days} />
+              </TableCell>
               {secondaryItems.map(([label, evidence]) => (
                 <TableCell key={label} className="text-right tabular-nums">
                   <MetricValueWithEvidence evidence={evidence} />
@@ -235,6 +242,36 @@ function MonthlyKpiSummary({
         </Table>
       </div>
     </section>
+  );
+}
+
+// 지점장 입력 현금의 월 합계. 작은 버튼을 누르면 일자별 현금을 스크롤 목록으로 펼친다.
+function MonthlyCashTotal({ days }: { days: MonthlyClosingAnomalyDay[] }) {
+  const total = days.reduce((sum, day) => sum + (day.cashAmount ?? 0), 0);
+
+  return (
+    <details className="text-right">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-2">
+        <span className="text-foreground font-medium">
+          {krwFormatter.format(total)}
+        </span>
+        <span className="text-primary hover:bg-muted rounded border px-1.5 py-0.5 text-xs">
+          일별 보기
+        </span>
+      </summary>
+      <ul className="bg-muted/40 mt-2 max-h-60 overflow-y-auto rounded-md p-2 text-left text-xs">
+        {days.map((day) => (
+          <li key={day.dateInput} className="flex justify-between gap-4 py-0.5">
+            <span>{day.dateLabel}</span>
+            <span className="text-foreground">
+              {day.cashAmount === null
+                ? "-"
+                : krwFormatter.format(day.cashAmount)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

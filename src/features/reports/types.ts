@@ -269,6 +269,8 @@ export type MonthlyClosingAnomalyDay = {
   hasUnappliedCorrections: boolean;
   signals: DashboardSignalSummary[];
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
+  // 지점장 입력 현금(정정 반영). 미입력·휴무일은 null.
+  cashAmount: number | null;
 };
 
 export type MonthlyAnomalyItem = {

@@ -3141,6 +3141,7 @@ export async function getHqMonthlyClosingAnomalyReport({
       applied: calculationSummary.applied,
       originalWorkerCount: calculationSummary.originalWorkerCount,
       workerCount: calculationSummary.workerCount,
+      cashAmount: calculationSummary.cashAmount,
       originalLossItems: calculationSummary.originalLossItems,
       lossItems: calculationSummary.lossItems,
       originalInventoryItems: calculationSummary.originalInventoryItems,
@@ -3203,6 +3204,7 @@ type MonthlyClosingAnomalyLedgerSummaryForTest = {
   dateInput: string;
   ledgerId: string;
   status: DailyLedgerStatus;
+  cashAmount?: number;
   signals: DashboardSignalSummary[];
   metricEvidence: DailyMeetingReportMetricEvidenceMap;
   hasUnappliedCorrections: boolean;
@@ -3322,6 +3324,8 @@ export function buildMonthlyClosingAnomalyReportForTest({
       hasUnappliedCorrections: summary.hasUnappliedCorrections,
       signals: summary.signals,
       metricEvidence: summary.metricEvidence,
+      cashAmount:
+        summary.status === "HOLIDAY" ? null : (summary.cashAmount ?? null),
     };
   });
 
@@ -3412,6 +3416,7 @@ function buildMonthlyMissingDay({
     hasUnappliedCorrections: false,
     signals: [],
     metricEvidence: buildEmptyMonthlyMetricEvidence(),
+    cashAmount: null,
   };
 }
 
@@ -4443,6 +4448,7 @@ function toReportLedgerCalculationSummary(
     applied,
     originalWorkerCount: ledger.workerCount,
     workerCount: correctionOverlay.reviewInput.workerCount,
+    cashAmount: correctionOverlay.reviewInput.cashAmount,
     originalLossItems: ledger.ledgerLossItems,
     lossItems: correctedLossItems,
     originalInventoryItems: ledger.ledgerInventoryItems,

@@ -1700,6 +1700,7 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
       {
         dateInput: "2026-06-01",
         ledgerId: "ledger-1",
+        cashAmount: 30000,
         status: "HEADQUARTERS_CLOSED",
         signals: [],
         metricEvidence: dailyMetricEvidence("ledger-1"),
@@ -1760,6 +1761,7 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
       {
         dateInput: "2026-06-02",
         ledgerId: "ledger-2",
+        cashAmount: 45000,
         status: "IN_REVIEW",
         signals: [],
         metricEvidence: dailyMetricEvidence("ledger-2"),
@@ -1829,6 +1831,7 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
       {
         dateInput: "2026-06-03",
         ledgerId: "ledger-3",
+        cashAmount: 5000,
         status: "HOLIDAY",
         signals: [],
         metricEvidence: dailyMetricEvidence("ledger-3"),
@@ -1897,6 +1900,11 @@ test("HQ monthly closing anomaly report builds monthly KPIs loss inventory flow 
       ["떨이", 1, 6000],
       ["유형 미지정", 1, 4000],
     ],
+  );
+  // 현금은 정정 반영값을 일자별로 보여주고, 휴무·미입력일은 null이다.
+  assert.deepEqual(
+    report.days.map((day) => day.cashAmount),
+    [30000, 45000, null, null],
   );
   assert.equal(report.monthlyInventoryFlow.previousQuantity.value, 30);
   assert.equal(report.monthlyInventoryFlow.previousAmount.value, 50000);
