@@ -4851,20 +4851,22 @@ function aggregateStoreComparisonMetrics(
   const blockedBy = (
     metric: LedgerReviewMetric,
     isBlocked: (summary: ReportAggregateLedgerSummary) => boolean,
-  ) =>
-    withBlockingLedgerDates(metric, ledgerSummaries.filter(isBlocked), source);
-  const isNull =
+  ) => withBlockingLedgerDates(metric, ledgerSummaries.filter(isBlocked));
+  const hasNullMetric =
     (key: Parameters<typeof getMetrics>[2]) =>
     (summary: ReportAggregateLedgerSummary) =>
       summary[source][key].value === null;
-  const salesAmount = blockedBy(sumMetric(salesMetrics), isNull("totalSales"));
+  const salesAmount = blockedBy(
+    sumMetric(salesMetrics),
+    hasNullMetric("totalSales"),
+  );
   const grossProfit = blockedBy(
     sumMetric(grossProfitMetrics),
-    isNull("grossProfit"),
+    hasNullMetric("grossProfit"),
   );
   const operatingProfit = blockedBy(
     sumMetric(operatingProfitMetrics),
-    isNull("operatingProfit"),
+    hasNullMetric("operatingProfit"),
   );
   const workerTotal = ledgerSummaries.reduce(
     (sum, summary) => sum + (getWorkerCount(summary, source) ?? 0),
@@ -4883,11 +4885,11 @@ function aggregateStoreComparisonMetrics(
   );
   const averageInventory = blockedBy(
     averageMetric(inventoryMetrics),
-    isNull("inventoryAmount"),
+    hasNullMetric("inventoryAmount"),
   );
   const averageSales = blockedBy(
     averageMetric(salesMetrics),
-    isNull("totalSales"),
+    hasNullMetric("totalSales"),
   );
   // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 영업일수로 나눈 소수값이며
   // averageSales와 같은 분모(ledgerSummaries.length)를 쓴다.
@@ -5134,19 +5136,14 @@ function isSalesDayWorkerBlocked(
 function withBlockingLedgerDates(
   metric: LedgerReviewMetric,
   blockingSummaries: ReportAggregateLedgerSummary[],
-  source: "original" | "applied",
 ): LedgerReviewMetric {
-  const labels = blockingSummaries.flatMap((summary) => {
-    if (!summary.dateInput) return [];
-    // 매출 0·근무인원 공란이면 아무것도 입력하지 않은 장부(예: 휴무일에 열린 장부)다.
-    const isEmpty =
-      summary[source].totalSales.value === 0 &&
-      getWorkerCount(summary, source) === null;
-    const month = Number(summary.dateInput.slice(5, 7));
-    const day = Number(summary.dateInput.slice(8, 10));
-
-    return [`${month}월 ${day}일${isEmpty ? "(빈 장부)" : ""}`];
-  });
+  const labels = blockingSummaries.flatMap(({ dateInput }) =>
+    dateInput
+      ? [
+          `${Number(dateInput.slice(5, 7))}월 ${Number(dateInput.slice(8, 10))}일`,
+        ]
+      : [],
+  );
 
   if (metric.value !== null || labels.length === 0) {
     return metric;
@@ -5159,7 +5156,7 @@ function withBlockingLedgerDates(
 
   return {
     ...metric,
-    reason: `${metric.reason ?? "계산할 수 없는 장부가 있습니다."} 확인할 장부: ${shown.join(", ")}`,
+    reason: `${metric.reason ?? (metric.status === "policy-unconfirmed" ? "계산 기준 확인이 필요한 장부가 있습니다." : "계산할 수 없는 장부가 있습니다.")} 확인할 장부: ${shown.join(", ")}`,
   };
 }
 

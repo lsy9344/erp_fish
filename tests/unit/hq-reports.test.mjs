@@ -3235,7 +3235,7 @@ test("HQ store comparison report names the ledger dates that block a metric", as
 
   assert.equal(
     row.averageWorkerCount.reason,
-    "근무인원이 공란인 장부가 있습니다. 확인할 장부: 10월 4일(빈 장부), 10월 22일",
+    "근무인원이 공란인 장부가 있습니다. 확인할 장부: 10월 4일, 10월 22일",
   );
   assert.equal(
     row.productivity.reason,
@@ -3243,18 +3243,15 @@ test("HQ store comparison report names the ledger dates that block a metric", as
   );
   assert.equal(
     row.metricEvidence.grossProfit.unavailableReason,
-    "계산할 수 없는 장부가 있습니다. 확인할 장부: 10월 4일(빈 장부)",
+    "계산 기준 확인이 필요한 장부가 있습니다. 확인할 장부: 10월 4일",
   );
   assert.equal(
     row.averageInventory.reason,
-    "재고 확정 원본이 없어 계산할 수 없습니다. 확인할 장부: 10월 4일(빈 장부)",
+    "재고 확정 원본이 없어 계산할 수 없습니다. 확인할 장부: 10월 4일",
   );
   // 파생 지표(이익률·재고비율)도 원인 지표의 날짜를 그대로 보여준다.
-  assert.match(row.grossMarginRate.reason, /확인할 장부: 10월 4일\(빈 장부\)$/);
-  assert.match(
-    row.inventoryToSalesRatio.reason,
-    /확인할 장부: 10월 4일\(빈 장부\)$/,
-  );
+  assert.match(row.grossMarginRate.reason, /확인할 장부: 10월 4일$/);
+  assert.match(row.inventoryToSalesRatio.reason, /확인할 장부: 10월 4일$/);
 });
 
 test("HQ store comparison report keeps OQ-gated metrics as needs-review instead of finalized numbers", async () => {
