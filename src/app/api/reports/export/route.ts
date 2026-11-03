@@ -88,7 +88,8 @@ export async function GET(request: Request) {
   let sourceSheets: ReportExportSheet[] = [];
 
   try {
-    if (parsed.value.report === "labor") {
+    // 월간 요약 export에는 월별손익(인건비) 시트가 들어가 화면과 같은 권한을 쓴다.
+    if (parsed.value.report === "labor" || parsed.value.report === "monthly") {
       await requireLaborViewAccess();
     }
 

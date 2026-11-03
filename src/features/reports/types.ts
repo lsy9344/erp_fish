@@ -44,6 +44,8 @@ export type DailyMeetingReportMetricEvidence = {
   // 이 값과 관련된 장부. 계산 불가면 막은 장부, 집계면 포함 장부, 일별이면 그날 장부.
   ledgersLabel?: string;
   ledgers?: ReportLedgerLink[];
+  // 입력이 비어 계산에서 뺀 장부(근무인원 미입력일 등).
+  excludedLedgers?: ReportLedgerLink[];
 };
 
 export type DailyMeetingReportMetricEvidenceMap = {
@@ -64,6 +66,7 @@ export type DailyMeetingReportMetricEvidenceInput = {
   hasUnappliedCorrections: boolean;
   ledgersLabel?: string;
   ledgers?: ReportLedgerLink[];
+  excludedLedgers?: ReportLedgerLink[];
 };
 
 export type DailyMeetingReportRow = HqDashboardRow & {
@@ -205,6 +208,9 @@ export type StoreComparisonTrendAggregation = {
   salesTotal: number | null;
   grossProfitTotal: number | null;
   workerTotal: number | null;
+  // 근무인원이 입력된 영업일 수와 그날들의 매출. 미입력일은 근무 지표에서 뺀다.
+  workerDayCount?: number;
+  workerSalesTotal?: number | null;
   inventoryTotal: number | null;
   inventoryDayCount: number | null;
 };

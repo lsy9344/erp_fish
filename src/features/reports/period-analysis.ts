@@ -392,18 +392,21 @@ function sumOrWeightedAverage(
       : null;
   }
 
+  // 근무 지표는 근무인원이 입력된 날만의 분모·매출을 쓴다(미입력일 제외).
   if (metricKey === "averageWorkerCount") {
     const workerTotals = valuesFor("workerTotal");
-    return workerTotals
+    const workerDays = valuesFor("workerDayCount") ?? businessDays;
+    const totalWorkerDays = workerDays.reduce((sum, value) => sum + value, 0);
+    return workerTotals && totalWorkerDays > 0
       ? availableMetric(
-          workerTotals.reduce((sum, value) => sum + value, 0) /
-            businessDays.reduce((sum, value) => sum + value, 0),
+          workerTotals.reduce((sum, value) => sum + value, 0) / totalWorkerDays,
         )
       : null;
   }
 
   if (metricKey === "productivity") {
-    const salesTotals = valuesFor("salesTotal");
+    const salesTotals =
+      valuesFor("workerSalesTotal") ?? valuesFor("salesTotal");
     const workerTotals = valuesFor("workerTotal");
     if (!salesTotals || !workerTotals) return null;
     const totalWorkers = workerTotals.reduce((sum, value) => sum + value, 0);

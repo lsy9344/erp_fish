@@ -462,7 +462,7 @@ test("설정 권한 없는 본사 사용자는 본사 지출 화면에서 차단
 test("월간 리포트는 본사 설정 권한 사용자에게 순이익 계산의 본사지출을 보여준다", async ({
   page,
 }) => {
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
 
   await page.goto("/app/reports/monthly?storeId=store-gangnam");
 

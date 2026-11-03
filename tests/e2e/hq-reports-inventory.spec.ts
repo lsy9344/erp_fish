@@ -141,7 +141,7 @@ test("본사는 월간 리포트에서 손익 준비도와 추정 매출 순위 
   page,
 }) => {
   test.slow();
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await page.goto(
     `/app/reports/monthly?month=${getCurrentMonthInput()}&storeId=${STORE_IDS.closed}`,
     { waitUntil: "domcontentloaded" },

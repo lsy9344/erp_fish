@@ -465,6 +465,10 @@ function MetricValueWithEvidence({
               정정 타임라인
             </Link>
           ) : null}
+          <EvidenceLedgerLinks
+            label={WORKER_EXCLUDED_LABEL}
+            ledgers={evidence.excludedLedgers}
+          />
         </div>
       </details>
     </div>
@@ -493,6 +497,9 @@ function formatHeadcountMetric(
     : `${headcountFormatter.format(metric.value)}명`;
 }
 
+// 근무인원을 입력하지 않은 날은 평균 근무인원·인당생산성 계산에서 빠진다.
+const WORKER_EXCLUDED_LABEL = "근무인원 미입력 제외";
+
 function AverageWorkerCountValue({
   metric,
   align,
@@ -503,7 +510,25 @@ function AverageWorkerCountValue({
   const value = formatHeadcountMetric(metric);
 
   if (metric.value !== null) {
-    return <span data-testid="average-worker-count">{value}</span>;
+    return (
+      <div
+        className={cn(
+          "min-w-0",
+          align === "right" ? "text-right" : "text-left",
+        )}
+        data-testid="average-worker-count"
+      >
+        <span>{value}</span>
+        {metric.excludedLedgers?.length ? (
+          <div className="mt-1 text-xs whitespace-normal">
+            <EvidenceLedgerLinks
+              label={WORKER_EXCLUDED_LABEL}
+              ledgers={metric.excludedLedgers}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   return (

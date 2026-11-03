@@ -137,6 +137,8 @@ export type LedgerReviewMetric = CalculationMetric & {
   unavailableReason?: LedgerReviewUnavailableReason;
   // 리포트 집계에서 이 값을 막은 장부(날짜·장부 상세 링크).
   blockingLedgers?: { dateInput: string; href: string }[];
+  // 값은 계산됐지만 입력이 비어 계산에서 뺀 장부(예: 근무인원 미입력일).
+  excludedLedgers?: { dateInput: string; href: string }[];
 };
 
 export type LedgerReviewInventoryInput = {

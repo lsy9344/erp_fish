@@ -8,6 +8,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { EvidenceLedgerLinks } from "./evidence-ledger-links";
 import {
   PERIOD_CONTRAST_METRICS,
   type PeriodContrastRow,
@@ -54,10 +55,10 @@ export function PeriodContrastTable({
           증감률(%)입니다.
         </p>
         <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-          <Table className="min-w-[1080px]">
+          <Table className="min-w-[1080px] table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[160px]">지점</TableHead>
+                <TableHead className="w-[180px]">지점</TableHead>
                 {PERIOD_CONTRAST_METRICS.map((metric) => (
                   <TableHead key={metric.key} className="text-right">
                     {metric.label}
@@ -81,7 +82,7 @@ export function PeriodContrastTable({
                     key={row.storeId}
                     data-testid={`hq-report-contrast-row-${row.storeId}`}
                   >
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium whitespace-normal">
                       {row.storeName}
                     </TableCell>
                     {PERIOD_CONTRAST_METRICS.map((metric) => {
@@ -113,12 +114,11 @@ export function PeriodContrastTable({
 function SourceCell({ row }: { row: StoreComparisonReportRow }) {
   const excludedOperationalOverlapCount =
     row.sourceSummary.excludedOperationalOverlapCount ?? 0;
+  // 사유는 각 값 칸의 title로 보이므로 여기서는 지표 이름만 짧게 적는다.
+  // 긴 사유를 넣으면 지점 열이 늘어나 대조/현재 표의 열이 어긋난다.
   const missingMetrics = PERIOD_CONTRAST_METRICS.filter(
     (metric) => row[metric.key].value === null,
-  ).map((metric) => {
-    const value = row[metric.key];
-    return `${metric.label}: ${value.reason ?? value.unavailableReason ?? "자료 없음"}`;
-  });
+  ).map((metric) => metric.label);
 
   return (
     <div className="grid gap-1">
@@ -135,6 +135,14 @@ function SourceCell({ row }: { row: StoreComparisonReportRow }) {
         <span className="text-muted-foreground text-xs">
           누락: {missingMetrics.join(", ")}
         </span>
+      ) : null}
+      {row.averageWorkerCount.excludedLedgers?.length ? (
+        <div className="text-xs">
+          <EvidenceLedgerLinks
+            label="근무인원 미입력 제외"
+            ledgers={row.averageWorkerCount.excludedLedgers}
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -158,10 +166,10 @@ function MetricBlock({
         </span>
       </div>
       <div className="bg-card overflow-x-auto rounded-lg border shadow-sm">
-        <Table className="min-w-[1080px]">
+        <Table className="min-w-[1080px] table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[160px]">지점</TableHead>
+              <TableHead className="w-[180px]">지점</TableHead>
               {PERIOD_CONTRAST_METRICS.map((metric) => (
                 <TableHead key={metric.key} className="text-right">
                   {metric.label}
@@ -182,7 +190,7 @@ function MetricBlock({
             ) : (
               report.rows.map((row) => (
                 <TableRow key={row.storeId}>
-                  <TableCell className="font-medium">
+                  <TableCell className="font-medium whitespace-normal">
                     <SourceCell row={row} />
                   </TableCell>
                   {PERIOD_CONTRAST_METRICS.map((metric) => (

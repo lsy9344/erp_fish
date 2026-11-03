@@ -11,7 +11,7 @@ import { ReportsNav } from "~/features/reports/components/reports-nav";
 import { getHqMonthlyClosingAnomalyReport } from "~/features/reports/queries";
 import { getHeadquartersExpenseReportSummary } from "~/features/headquarters-expenses/queries";
 import type { MonthlyHeadquartersExpenseSummary } from "~/features/reports/types";
-import { hasActionPermission, requireReportAccess } from "~/server/authz";
+import { hasActionPermission, requireLaborViewAccess } from "~/server/authz";
 
 type MonthlyClosingAnomalyReportPageProps = {
   searchParams: Promise<{
@@ -23,12 +23,9 @@ type MonthlyClosingAnomalyReportPageProps = {
 export default async function MonthlyClosingAnomalyReportPage({
   searchParams,
 }: MonthlyClosingAnomalyReportPageProps) {
-  const user = await requireReportAccess();
-  // WO-0806 #5: 인건비 링크는 대표(LABOR_VIEW) 계정에만 노출한다.
-  const canViewLabor = await hasActionPermission(
-    user.id,
-    PermissionAction.LABOR_VIEW,
-  );
+  // 월간 요약은 인건비·순이익을 보여주므로 대표(LABOR_VIEW) 계정만 연다.
+  const user = await requireLaborViewAccess();
+  const canViewLabor = true;
   const navigationItems = await getHeadquartersNavigationItems(user.id);
   const canExportReports = await hasActionPermission(
     user.id,

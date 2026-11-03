@@ -189,6 +189,9 @@ test("회의 0627 본사 전용 관리와 원본 입력 포함 월간 xlsx 6시�
     }),
   ).resolves.toBeGreaterThan(0);
 
+  // 월간 요약 export는 월별손익(인건비) 시트를 담아 대표(LABOR_VIEW) 전용이다.
+  await page.context().clearCookies();
+  await login(page, "owner@example.com");
   const response = await page.request.get(
     `/api/reports/export?${new URLSearchParams({
       report: "monthly",

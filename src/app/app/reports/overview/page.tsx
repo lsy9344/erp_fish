@@ -35,7 +35,7 @@ export default async function HqReportOverviewPage({
   const [navigationItems, canExportReports, report] = await Promise.all([
     getHeadquartersNavigationItems(user.id),
     hasActionPermission(user.id, PermissionAction.EXPORT_CREATE),
-    getHqReportOverview({ month, storeId }),
+    getHqReportOverview({ month, storeId, canViewMonthly: canViewLabor }),
   ]);
   const canExportOverview =
     canExportReports &&

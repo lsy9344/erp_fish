@@ -235,16 +235,48 @@ export function mergeHistoricalStoreComparisonRow({
     operationalWorkers === null || historicalWorkers === null
       ? null
       : operationalWorkers + historicalWorkers;
+  // 운영 장부의 근무인원 미입력일은 근무 지표의 분모와 인당생산성 매출에서 뺀다.
+  const operationalTrend =
+    operationalBusinessDayCount === 0 ? null : operationalRow.trendAggregation;
+  const operationalWorkerDayCount =
+    operationalBusinessDayCount === 0
+      ? 0
+      : (operationalTrend?.workerDayCount ?? operationalBusinessDayCount);
+  const operationalWorkerSales =
+    operationalBusinessDayCount === 0
+      ? 0
+      : operationalTrend?.workerSalesTotal !== undefined
+        ? operationalTrend.workerSalesTotal
+        : operationalRow.salesAmount.value;
+  const workerDayCount =
+    operationalWorkerDayCount + historicalBusinessFacts.length;
+  const workerSales =
+    operationalWorkerSales === null
+      ? null
+      : operationalWorkerSales +
+        (hasHistoricalBusinessDay ? (historicalSales ?? 0) : 0);
+  const operationalWorkerMetric = operationalRow.averageWorkerCount;
+  const workerExcludedLedgers =
+    operationalBusinessDayCount === 0
+      ? []
+      : (operationalWorkerMetric.excludedLedgers ??
+        operationalWorkerMetric.blockingLedgers ??
+        []);
+  const withWorkerExclusions = (metric: LedgerReviewMetric) =>
+    metric.value !== null && workerExcludedLedgers.length > 0
+      ? { ...metric, excludedLedgers: workerExcludedLedgers }
+      : metric;
   const originalOperationalWorkers =
     operationalBusinessDayCount === 0
       ? 0
-      : operationalRow.metricEvidence.salesAmount.original.value !== null &&
-          operationalRow.metricEvidence.productivity.original.value !== null &&
-          operationalRow.metricEvidence.productivity.original.value > 0
-        ? operationalRow.metricEvidence.salesAmount.original.value /
-          operationalRow.metricEvidence.productivity.original.value
-        : !operationalRow.metricEvidence.productivity.isCorrected
-          ? operationalWorkers
+      : !operationalRow.metricEvidence.productivity.isCorrected
+        ? operationalWorkers
+        : operationalRow.metricEvidence.salesAmount.original.value !== null &&
+            operationalRow.metricEvidence.productivity.original.value !==
+              null &&
+            operationalRow.metricEvidence.productivity.original.value > 0
+          ? operationalRow.metricEvidence.salesAmount.original.value /
+            operationalRow.metricEvidence.productivity.original.value
           : null;
   const originalWorkerTotal =
     originalOperationalWorkers === null || historicalWorkers === null
@@ -266,19 +298,33 @@ export function mergeHistoricalStoreComparisonRow({
       : missing(
           "통합 원본 이익률 계산에 필요한 매출 또는 매출이익이 없습니다.",
         );
-  const averageWorkerCount =
-    workerTotal !== null && businessDayCount > 0
-      ? available(workerTotal / businessDayCount)
-      : missing("과거 Excel 근무인원에 공란 또는 원본 오류가 있습니다.");
-  const productivity =
-    salesAmount.value !== null && workerTotal !== null && workerTotal > 0
-      ? available(salesAmount.value / workerTotal)
-      : missing("통합 인당생산성 계산에 필요한 매출 또는 근무인원이 없습니다.");
+  const averageWorkerCount = withWorkerExclusions(
+    workerTotal !== null && workerDayCount > 0
+      ? available(workerTotal / workerDayCount)
+      : missing("과거 Excel 근무인원에 공란 또는 원본 오류가 있습니다."),
+  );
+  const productivity = withWorkerExclusions(
+    salesAmount.value !== null &&
+      workerSales !== null &&
+      workerTotal !== null &&
+      workerTotal > 0
+      ? available(workerSales / workerTotal)
+      : missing("통합 인당생산성 계산에 필요한 매출 또는 근무인원이 없습니다."),
+  );
+  // 원본 인당생산성도 근무인원 미입력일의 매출(정정 반영값 기준)을 빼고 계산한다.
+  const excludedWorkerSales =
+    salesAmount.value !== null && workerSales !== null
+      ? salesAmount.value - workerSales
+      : 0;
+  const originalWorkerSales =
+    originalSalesAmount.value === null
+      ? null
+      : originalSalesAmount.value - excludedWorkerSales;
   const originalProductivity =
-    originalSalesAmount.value !== null &&
+    originalWorkerSales !== null &&
     originalWorkerTotal !== null &&
     originalWorkerTotal > 0
-      ? available(originalSalesAmount.value / originalWorkerTotal)
+      ? available(originalWorkerSales / originalWorkerTotal)
       : missing(
           "통합 원본 인당생산성 계산에 필요한 매출 또는 근무인원이 없습니다.",
         );
@@ -338,6 +384,8 @@ export function mergeHistoricalStoreComparisonRow({
       salesTotal: salesAmount.value,
       grossProfitTotal: grossProfit.value,
       workerTotal,
+      workerDayCount,
+      workerSalesTotal: workerSales,
       // Historical Excel inventory is unavailable, so a mixed period cannot
       // claim an inventory denominator by treating it as zero.
       inventoryTotal: null,
@@ -387,13 +435,16 @@ export function mergeHistoricalStoreComparisonRow({
         kind: "money",
         sourceLabel,
       }),
-      productivity: withIntegratedEvidence({
-        evidence: operationalRow.metricEvidence.productivity,
-        originalMetric: originalProductivity,
-        appliedMetric: productivity,
-        kind: "money",
-        sourceLabel,
-      }),
+      productivity: {
+        ...withIntegratedEvidence({
+          evidence: operationalRow.metricEvidence.productivity,
+          originalMetric: originalProductivity,
+          appliedMetric: productivity,
+          kind: "money",
+          sourceLabel,
+        }),
+        excludedLedgers: productivity.excludedLedgers,
+      },
       averageInventory: withIntegratedEvidence({
         evidence: operationalRow.metricEvidence.averageInventory,
         originalMetric: averageInventory,

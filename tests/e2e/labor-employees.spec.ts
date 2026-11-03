@@ -726,9 +726,12 @@ test("대표에게는 인건비·직원 관리 메뉴가 보인다", async ({ pa
   await expect(
     page.getByRole("link", { name: "인건비", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "월간", exact: true }),
+  ).toBeVisible();
 });
 
-test("대표가 아닌 본사 계정에는 인건비·직원 관리 메뉴가 보이지 않는다", async ({
+test("대표가 아닌 본사 계정에는 인건비·월간·직원 관리 메뉴가 보이지 않는다", async ({
   page,
 }) => {
   await login(page, "hq@example.com");
@@ -740,4 +743,10 @@ test("대표가 아닌 본사 계정에는 인건비·직원 관리 메뉴가 �
   await expect(
     page.getByRole("link", { name: "인건비", exact: true }),
   ).toHaveCount(0);
+  // 월간 요약도 인건비·순이익을 보여주므로 직원 계정에는 메뉴도, 주소 접근도 없다.
+  await expect(
+    page.getByRole("link", { name: "월간", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/app/reports/monthly");
+  await expect(page).toHaveURL(/\/app\/unauthorized/);
 });

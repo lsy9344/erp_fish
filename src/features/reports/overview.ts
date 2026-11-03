@@ -740,6 +740,8 @@ function aggregateCompleteMetric(input: {
 
 export function buildHqReportOverviewForTest(input: {
   monthRange: MonthlyClosingAnomalyReportMonthRange;
+  // 월간 요약은 대표(LABOR_VIEW) 전용이다. 직원 계정의 근거 링크는 같은 달 기간 분석으로 보낸다.
+  canViewMonthly?: boolean;
   stores: Array<{ id: string; name: string }>;
   calculationStoreIds?: string[];
   companyWideCostsIncluded: boolean;
@@ -809,13 +811,21 @@ export function buildHqReportOverviewForTest(input: {
     input.monthRange.monthInput,
     input.selectedStoreId,
   );
+  const monthDetailHref =
+    input.canViewMonthly === false
+      ? `/app/reports/comparison?${new URLSearchParams({
+          startDate: input.monthRange.startDateInput,
+          endDate: input.monthRange.endDateInput,
+          ...(input.selectedStoreId ? { storeId: input.selectedStoreId } : {}),
+        }).toString()}`
+      : monthlyHref(input.monthRange.monthInput, input.selectedStoreId);
   const closingStatus = buildClosingStatusForTest({
     storeIds,
     dateInputs,
     statusRows: input.statusRows,
   }).map((row) => ({
     ...row,
-    detailHref: monthlyHref(input.monthRange.monthInput, input.selectedStoreId),
+    detailHref: monthDetailHref,
   }));
   const closingMissingDays = scopedStores.flatMap((store) =>
     dateInputs
@@ -856,7 +866,7 @@ export function buildHqReportOverviewForTest(input: {
   });
   const profitAndLoss = {
     ...profitAndLossResult,
-    detailHref: monthlyHref(input.monthRange.monthInput, input.selectedStoreId),
+    detailHref: monthDetailHref,
   };
   const rankings = buildRankings({
     stores: scopedStores,
@@ -951,7 +961,7 @@ export function buildHqReportOverviewForTest(input: {
       closingStatus: `미입력은 ${missingCount}건입니다.`,
     },
     salesTrend,
-    lossBreakdown,
+    lossBreakdown: { ...lossBreakdown, detailHref: monthDetailHref },
     rankings,
     profitAndLoss,
     closingStatus,
@@ -977,9 +987,11 @@ export function buildHqReportOverviewForTest(input: {
 export async function getHqReportOverview({
   month,
   storeId,
+  canViewMonthly = true,
 }: {
   month?: unknown;
   storeId?: unknown;
+  canViewMonthly?: boolean;
 } = {}): Promise<HqReportOverviewData> {
   const { requireReportAccess, getHeadquartersStoreScope } =
     await import("../../server/authz.ts");
@@ -1021,6 +1033,7 @@ export async function getHqReportOverview({
   if (targetStoreIds.length === 0) {
     return buildHqReportOverviewForTest({
       monthRange,
+      canViewMonthly,
       stores: scope.stores,
       calculationStoreIds: [],
       companyWideCostsIncluded,
@@ -1043,6 +1056,7 @@ export async function getHqReportOverview({
 
     return buildHqReportOverviewForTest({
       monthRange,
+      canViewMonthly,
       stores: scope.stores,
       calculationStoreIds: [],
       companyWideCostsIncluded,
@@ -1095,6 +1109,7 @@ export async function getHqReportOverview({
 
   return buildHqReportOverviewForTest({
     monthRange,
+    canViewMonthly,
     stores: scope.stores,
     companyWideCostsIncluded,
     selectedStoreId,

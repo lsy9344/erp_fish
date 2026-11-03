@@ -580,7 +580,7 @@ test.describe("Report export API", () => {
   test("[P0] exports monthly CSV with only allowlisted columns and no raw sensitive keys", async ({
     request,
   }) => {
-    await signInForApi(request, "hq@example.com");
+    await signInForApi(request, "owner@example.com");
 
     const response = await request.get(
       exportPath({
@@ -848,6 +848,29 @@ test.describe("Report export API", () => {
     await expectNoReportExportAudit();
   });
 
+  test("[P1] monthly export rejects headquarters users without labor permission", async ({
+    request,
+  }) => {
+    // hq@example.com은 export 권한은 있지만 LABOR_VIEW가 없는 직원 계정이다.
+    await signInForApi(request, "hq@example.com");
+
+    const response = await request.get(
+      exportPath({
+        report: "monthly",
+        month: getCurrentMonthInput(),
+        format: "xlsx",
+      }),
+    );
+    const body = (await response.json()) as ForbiddenPayload;
+
+    expect(response.status()).toBe(403);
+    expect(body).toEqual({
+      error: "forbidden",
+      message: "export 권한이 없습니다.",
+    });
+    await expectNoReportExportAudit();
+  });
+
   test("[P1] labor export blocks a store outside an assigned headquarters scope", async ({
     request,
   }) => {
@@ -929,7 +952,7 @@ test.describe("Report export API", () => {
   test("[P1] monthly xlsx includes the 월별손익 sheet with P&L columns", async ({
     request,
   }) => {
-    await signInForApi(request, "hq@example.com");
+    await signInForApi(request, "owner@example.com");
 
     const response = await request.get(
       exportPath({

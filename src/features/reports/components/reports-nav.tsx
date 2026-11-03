@@ -66,6 +66,9 @@ const REPORT_GROUPS: ReportGroup[] = [
 ];
 
 // WO-0806 #5: 인건비는 대표 전용이므로 LABOR_VIEW가 없는 계정에게는 링크 자체를 감춘다.
+// 월간 요약도 인건비·순이익을 보여주므로 같은 기준으로 직원 계정에서 감춘다.
+const LABOR_VIEW_REPORTS: ReportKey[] = ["labor", "monthly"];
+
 export function ReportsNav({
   active,
   canViewLabor = false,
@@ -77,7 +80,9 @@ export function ReportsNav({
 }) {
   const groups = REPORT_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => item.key !== "labor" || canViewLabor),
+    items: group.items.filter(
+      (item) => canViewLabor || !LABOR_VIEW_REPORTS.includes(item.key),
+    ),
   })).filter((group) => group.items.length > 0);
 
   return (

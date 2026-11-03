@@ -17,7 +17,7 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
   page,
 }) => {
   test.slow();
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await page.goto("/app/reports/daily?date=today");
 
   await page.getByRole("link", { name: "월간" }).click();
@@ -114,7 +114,7 @@ test("본사는 월간 리포트에서 선택 지점의 마감 상태와 정정 
 test("본사는 월간 리포트에서 미마감과 휴무 상태를 텍스트로 구분해 본다", async ({
   page,
 }) => {
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
 
   const currentMonth = getCurrentMonthInput();
   const todayInput = getTodayKstInput();
@@ -184,7 +184,7 @@ test("휴무일에 열렸다 마감된 빈 장부는 월간·지점 비교에서
     },
   });
 
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await page.goto(
     `/app/reports/monthly?month=2026-05&storeId=${STORE_IDS.closed}`,
   );
@@ -224,7 +224,7 @@ test("휴무일에 열렸다 마감된 빈 장부는 월간·지점 비교에서
 test("본사는 월간 리포트에서 잘못된 월과 지점 URL을 빈 결과로 본다", async ({
   page,
 }) => {
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await page.goto("/app/reports/monthly?month=2026-13&storeId=missing-store");
 
   await expect(
@@ -242,7 +242,7 @@ test("본사는 일별 기간비교 월간 리포트를 CSV로 다운로드하�
 }) => {
   test.setTimeout(90_000);
 
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
 
   await page.goto("/app/reports/daily?date=today");
   const dailyCsv = await fetchCsvFromVisibleLink(
@@ -323,7 +323,7 @@ test("export 권한이 없는 본사 조회 사용자와 지점장은 CSV를 받
 test("본사는 잘못된 export 요청에서 CSV 파일이나 감사 로그를 받지 않는다", async ({
   page,
 }) => {
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
   await prisma.auditLog.deleteMany({ where: { targetType: "ReportExport" } });
 
   const response = await page.request.get(
@@ -349,7 +349,7 @@ test("본사는 좁은 화면에서도 월간 리포트 날짜와 이상 항목�
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 900 });
-  await login(page, "hq@example.com");
+  await login(page, "owner@example.com");
 
   const currentMonth = getCurrentMonthInput();
   const todayInput = getTodayKstInput();

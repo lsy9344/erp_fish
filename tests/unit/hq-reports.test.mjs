@@ -1198,7 +1198,8 @@ test("HQ monthly closing anomaly report source files follow story 6.3 boundaries
     "reports-nav.tsx",
   );
 
-  assert.match(pageSource, /requireReportAccess\(/);
+  // 월간 요약은 인건비·순이익을 보여주므로 대표(LABOR_VIEW) 전용이다.
+  assert.match(pageSource, /requireLaborViewAccess\(/);
   assert.match(pageSource, /getHqMonthlyClosingAnomalyReport\(/);
   assert.match(pageSource, /MonthlyClosingAnomalyReport/);
   assert.match(pageSource, /월간 요약 리포트/);
@@ -3160,7 +3161,8 @@ test("HQ store comparison report keeps data-insufficient aggregate states", asyn
   assert.equal(row.salesAmount.value, 300000);
   assert.equal(row.grossProfit.value, null);
   assert.equal(row.operatingProfit.value, null);
-  assert.equal(row.productivity.value, null);
+  // 근무인원 미입력 장부(ledger-2)는 인당생산성에서 매출·인원 모두 뺀다.
+  assert.equal(row.productivity.value, 100000);
   assert.equal(row.averageInventory.value, null);
   assert.equal(row.inventoryToSalesRatio.value, null);
   assert.equal(row.metricEvidence.grossProfit.statusLabel, "데이터 부족");
@@ -3233,14 +3235,9 @@ test("HQ store comparison report names the ledger dates that block a metric", as
     ],
   });
 
-  assert.equal(
-    row.averageWorkerCount.reason,
-    "근무인원이 공란인 장부가 있습니다. 확인할 장부: 10월 4일, 10월 22일",
-  );
-  assert.equal(
-    row.productivity.reason,
-    "매출이 있는 날의 근무인원이 공란입니다. 확인할 장부: 10월 22일",
-  );
+  // 근무인원 미입력일(10/4 빈 장부, 10/22)은 근무 기반 지표에서만 빼고 계산한다.
+  assert.equal(row.averageWorkerCount.value, 2);
+  assert.equal(row.productivity.value, 50000);
   assert.equal(
     row.metricEvidence.grossProfit.unavailableReason,
     "계산 기준 확인이 필요한 장부가 있습니다. 확인할 장부: 10월 4일",
@@ -3257,10 +3254,19 @@ test("HQ store comparison report names the ledger dates that block a metric", as
     dateInput,
     href: `/app/ledgers/${ledgerId}`,
   });
-  assert.deepEqual(row.averageWorkerCount.blockingLedgers, [
+  const workerExcluded = [
     link("2026-10-04", "ledger-empty"),
     link("2026-10-22", "ledger-no-worker"),
-  ]);
+  ];
+  assert.deepEqual(row.averageWorkerCount.excludedLedgers, workerExcluded);
+  assert.deepEqual(row.productivity.excludedLedgers, workerExcluded);
+  assert.deepEqual(
+    row.metricEvidence.productivity.excludedLedgers,
+    workerExcluded,
+  );
+  assert.equal(row.trendAggregation.workerTotal, 2);
+  assert.equal(row.trendAggregation.workerDayCount, 1);
+  assert.equal(row.trendAggregation.workerSalesTotal, 100000);
   for (const key of [
     "grossProfit",
     "grossMarginRate",
@@ -3274,9 +3280,6 @@ test("HQ store comparison report names the ledger dates that block a metric", as
       key,
     );
   }
-  assert.deepEqual(row.metricEvidence.productivity.ledgers, [
-    link("2026-10-22", "ledger-no-worker"),
-  ]);
   // 계산된 값은 집계에 포함된 장부를 보여준다.
   assert.equal(row.metricEvidence.salesAmount.ledgersLabel, "포함 장부");
   assert.deepEqual(row.metricEvidence.salesAmount.ledgers, [
@@ -3484,22 +3487,35 @@ test("HQ store comparison explains why margin productivity and inventory ratio a
     }),
   ]);
 
-  assertCalculationUnavailable(productivityRow.productivity);
-  assert.equal(
-    productivityRow.productivity.reason,
-    "매출이 있는 날의 근무인원이 공란입니다.",
-  );
-  assert.equal(
-    productivityRow.metricEvidence.productivity.unavailableReason,
-    productivityRow.productivity.reason,
-  );
-  assert.doesNotMatch(productivityRow.productivity.reason, /0명|0원|0 이하/);
-  assertCalculationUnavailable(productivityRow.averageWorkerCount);
-  assert.equal(
-    productivityRow.averageWorkerCount.reason,
-    "근무인원이 공란인 장부가 있습니다.",
-  );
+  // 근무인원 미입력 장부는 근무 기반 지표에서만 빼고 나머지 날로 계산한다.
+  assert.equal(productivityRow.productivity.value, 0);
+  assert.equal(productivityRow.averageWorkerCount.value, 4);
   assert.equal(productivityRow.metricEvidence.averageWorkerCount, undefined);
+
+  const allBlankWorkerRow = await buildComparisonRow([
+    comparisonLedger({
+      id: "ledger-workers-blank",
+      sales: comparisonMetric(80_000),
+      profit: comparisonMetric(20_000),
+      inventory: comparisonMetric(10_000),
+      workers: null,
+    }),
+  ]);
+
+  assertCalculationUnavailable(allBlankWorkerRow.productivity);
+  assert.equal(
+    allBlankWorkerRow.productivity.reason,
+    "근무인원을 입력한 장부가 없습니다.",
+  );
+  assert.equal(
+    allBlankWorkerRow.metricEvidence.productivity.unavailableReason,
+    allBlankWorkerRow.productivity.reason,
+  );
+  assertCalculationUnavailable(allBlankWorkerRow.averageWorkerCount);
+  assert.equal(
+    allBlankWorkerRow.averageWorkerCount.reason,
+    "근무인원을 입력한 장부가 없습니다.",
+  );
 
   const ratioRow = await buildComparisonRow([
     comparisonLedger({
@@ -3669,9 +3685,10 @@ test("HQ store comparison picks the same blocking branch the formula uses", asyn
     }),
   ]);
 
+  // 공란은 건너뛰고, 0 이하로 잘못 입력된 날이 계산을 막는다.
   assert.equal(
     blankWorkerFirst.productivity.reason,
-    "매출이 있는 날의 근무인원이 공란입니다.",
+    "매출이 있는 날의 근무인원이 0 이하입니다.",
   );
 
   const totalOnly = await buildComparisonRow([

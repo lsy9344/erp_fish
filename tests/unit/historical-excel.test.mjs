@@ -223,6 +223,83 @@ test("latest Excel restores missing metrics and mixes uncovered corrected app da
   assert.equal(merged.statusCounts.inProgressCount, 0);
 });
 
+test("mixed rows skip app days with a blank worker count in worker metrics", () => {
+  const historical = [
+    {
+      storeId: "store-1",
+      businessDate: "2026-09-15",
+      salesAmount: 300,
+      grossProfit: 90,
+      workerCount: 2,
+      grossMarginRate: 0.3,
+      productivity: 150,
+      metricStatus: {},
+    },
+  ];
+  const day = (dateInput, ledgerId, sales, workerCount) => ({
+    storeId: "store-1",
+    businessDate: dateInput,
+    dateInput,
+    ledgerId,
+    status: "HEADQUARTERS_CLOSED",
+    original: {
+      totalSales: metric(sales),
+      grossProfit: metric(sales / 4),
+      grossMarginRate: metric(0.25),
+      operatingProfit: metric(sales / 5),
+      productivity: metric(0),
+      inventoryAmount: metric(30),
+    },
+    applied: {
+      totalSales: metric(sales),
+      grossProfit: metric(sales / 4),
+      grossMarginRate: metric(0.25),
+      operatingProfit: metric(sales / 5),
+      productivity: metric(0),
+      inventoryAmount: metric(30),
+    },
+    workerCount,
+    originalWorkerCount: workerCount,
+    hasLoss: false,
+    hasUnappliedCorrections: false,
+  });
+  const appRow = buildStoreComparisonReportRowForTest({
+    store: { id: "store-1", name: "강서수산" },
+    dateCount: 3,
+    ledgerSummaries: [
+      day("2026-10-21", "ledger-workers", 400, 4),
+      day("2026-10-22", "ledger-no-workers", 1000, null),
+    ],
+  });
+  const merged = mergeHistoricalStoreComparisonRow({
+    operationalRow: appRow,
+    operationalLedgerCount: 2,
+    operationalBusinessDayCount: 2,
+    historicalFacts: historical,
+    excludedHistoricalOverlapCount: 0,
+    dateCount: 3,
+  });
+
+  // 근무인원 공란인 10/22는 근무 지표의 분자·분모에서 빠진다.
+  assert.equal(merged.averageWorkerCount.value, (4 + 2) / 2);
+  assert.equal(merged.productivity.value, (400 + 300) / (4 + 2));
+  assert.equal(merged.metricEvidence.productivity.original.value, 700 / 6);
+  assert.deepEqual(merged.averageWorkerCount.excludedLedgers, [
+    { dateInput: "2026-10-22", href: "/app/ledgers/ledger-no-workers" },
+  ]);
+  assert.deepEqual(
+    merged.metricEvidence.productivity.excludedLedgers,
+    merged.averageWorkerCount.excludedLedgers,
+  );
+  assert.equal(merged.trendAggregation.workerTotal, 6);
+  assert.equal(merged.trendAggregation.workerDayCount, 2);
+  assert.equal(merged.trendAggregation.workerSalesTotal, 700);
+  assert.equal(
+    merged.sourceSummary.missingMetrics.includes("평균 근무인원"),
+    false,
+  );
+});
+
 test("parser preserves formulas, cached values, blanks, errors, and first canonical store-date", async () => {
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();

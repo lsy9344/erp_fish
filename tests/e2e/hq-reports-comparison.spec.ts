@@ -7,6 +7,7 @@ import {
   getTodayKstInput,
   getCurrentMonthInput,
   getStoreSelect,
+  prisma,
 } from "./_helpers/hq-reports";
 
 setupReportFixtures();
@@ -347,4 +348,54 @@ test("모바일 기간 비교는 평균 근무인원 숫자만 보여주고 null
   await expectAverageWorkerCount(holiday, {
     unavailableReason: missingWorkerAverageReason,
   });
+});
+
+test("근무인원을 비운 날은 근무 지표에서만 빠지고, 대조 표들의 열 위치가 같다", async ({
+  page,
+}) => {
+  // 픽스처의 2026-05-31 마감 장부(매출 ₩777,000, 근무 2명) 앞에 근무인원을
+  // 입력하지 않은 영업일을 하나 둔다.
+  const hq = await prisma.user.findUniqueOrThrow({
+    where: { email: "hq@example.com" },
+    select: { id: true },
+  });
+  await prisma.dailyLedger.create({
+    data: {
+      storeId: STORE_IDS.closed,
+      closingDate: new Date(Date.UTC(2026, 4, 29)),
+      status: "HEADQUARTERS_CLOSED",
+      totalSalesAmount: 100000,
+      cashAmount: 100000,
+      workerCount: null,
+      createdById: hq.id,
+      updatedById: hq.id,
+    },
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await login(page, "hq@example.com");
+  await page.goto(
+    `/app/reports/comparison?startDate=2026-05-01&endDate=2026-05-31&storeId=${STORE_IDS.closed}`,
+  );
+  const row = page.locator(
+    `[data-testid="hq-report-comparison-row-${STORE_IDS.closed}"]`,
+  );
+  const headcount = row.getByTestId("average-worker-count");
+  await expect(headcount).toContainText("2.00명");
+  await expect(headcount).toContainText("근무인원 미입력 제외5/29");
+  // 인당생산성 = 5/31 매출 ₩777,000 ÷ 2명. 5/29 매출은 분자에서도 뺀다.
+  await expect(row).toContainText("₩388,500");
+
+  await page.goto(
+    `/app/reports/comparison?mode=contrast&startDate=2026-05-01&endDate=2026-05-31&baseStartDate=2026-04-01&baseEndDate=2026-04-30&storeId=${STORE_IDS.closed}`,
+  );
+  const salesHeaderX = async (title: string) => {
+    const box = await page
+      .getByRole("region", { name: title, exact: true })
+      .getByRole("columnheader", { name: "매출", exact: true })
+      .boundingBox();
+    expect(box, title).not.toBeNull();
+    return Math.round(box!.x);
+  };
+  expect(await salesHeaderX("현재")).toBe(await salesHeaderX("대조 기간"));
 });

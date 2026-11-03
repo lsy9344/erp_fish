@@ -4794,6 +4794,7 @@ function buildStoreComparisonMetricEvidence({
     ledgerStatus,
     correctionCount: correctionState.appliedCount,
     hasUnappliedCorrections: correctionState.hasUnapplied,
+    excludedLedgers: applied.excludedLedgers,
     ...(blockingLedgers.length > 0
       ? { ledgersLabel: "확인할 장부", ledgers: blockingLedgers }
       : {
@@ -4884,17 +4885,24 @@ function aggregateStoreComparisonMetrics(
     sumMetric(operatingProfitMetrics),
     hasNullMetric("operatingProfit"),
   );
-  const workerTotal = ledgerSummaries.reduce(
+  // 근무인원 미입력 장부는 근무 기반 지표(평균 근무인원·인당생산성)에서만 뺀다.
+  // 한 날의 공란 때문에 월 전체가 계산 불가가 되지 않게 하고, 뺀 날은 함께 보여준다.
+  const isWorkerBlank = (summary: ReportAggregateLedgerSummary) =>
+    getWorkerCount(summary, source) === null;
+  const workerSummaries = ledgerSummaries.filter(
+    (summary) => !isWorkerBlank(summary),
+  );
+  const workerExcludedLedgers = ledgerSummaries
+    .filter(isWorkerBlank)
+    .flatMap((summary) => toReportLedgerLink(summary) ?? []);
+  const workerTotal = workerSummaries.reduce(
     (sum, summary) => sum + (getWorkerCount(summary, source) ?? 0),
     0,
   );
-  const workerCounts = ledgerSummaries.map((summary) =>
-    getWorkerCount(summary, source),
-  );
-  const trendWorkerTotal =
-    workerCounts.length > 0 && workerCounts.every((value) => value !== null)
-      ? workerTotal
-      : null;
+  const workerSalesTotal = sumMetric(
+    getMetrics(workerSummaries, source, "totalSales"),
+  ).value;
+  const trendWorkerTotal = workerSummaries.length > 0 ? workerTotal : null;
   const salesDayWorkerBlockReason = getSalesDayWorkerBlockReason(
     ledgerSummaries,
     source,
@@ -4907,15 +4915,18 @@ function aggregateStoreComparisonMetrics(
     averageMetric(salesMetrics),
     hasNullMetric("totalSales"),
   );
-  // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 영업일수로 나눈 소수값이며
-  // averageSales와 같은 분모(ledgerSummaries.length)를 쓴다.
-  const averageWorkerCount = blockedBy(
-    averageWorkerCountMetric({
-      ledgerCount: ledgerSummaries.length,
-      workerTotal,
-      trendWorkerTotal,
-    }),
-    (summary) => getWorkerCount(summary, source) === null,
+  // WO-0806 [F]: 대표 엑셀 `분석` 시트의 `평균 근무인원`. 근무인원이 입력된
+  // 영업일 수로 나눈 소수값이다(엑셀 AVERAGE가 공란을 건너뛰는 것과 같다).
+  const averageWorkerCount = withExcludedLedgers(
+    blockedBy(
+      averageWorkerCountMetric({
+        ledgerCount: ledgerSummaries.length,
+        workerDayCount: workerSummaries.length,
+        workerTotal,
+      }),
+      isWorkerBlank,
+    ),
+    workerExcludedLedgers,
   );
   const trendInventoryTotal =
     inventoryMetrics.length > 0 &&
@@ -4927,6 +4938,8 @@ function aggregateStoreComparisonMetrics(
     salesTotal: salesAmount.value,
     grossProfitTotal: grossProfit.value,
     workerTotal: trendWorkerTotal,
+    workerDayCount: workerSummaries.length,
+    workerSalesTotal: workerSummaries.length > 0 ? workerSalesTotal : null,
     inventoryTotal: trendInventoryTotal,
     inventoryDayCount:
       trendInventoryTotal === null ? null : inventoryMetrics.length,
@@ -4944,19 +4957,25 @@ function aggregateStoreComparisonMetrics(
     ),
     ...marginPairFields(ledgerSummaries, source),
     operatingProfit,
-    productivity: inheritBlockingLedgers(
-      blockedBy(
-        productivityMetric({
-          salesAmount,
-          workerTotal,
-          salesDayWorkerBlockReason,
-        }),
-        // 매출 자체가 막힌 경우는 매출 사유에 이미 날짜가 붙는다.
-        (summary) =>
-          salesAmount.value !== null &&
-          isSalesDayWorkerBlocked(summary, source),
+    productivity: withExcludedLedgers(
+      inheritBlockingLedgers(
+        blockedBy(
+          productivityMetric({
+            salesAmount,
+            workerSalesTotal,
+            workerTotal,
+            workerDayCount: workerSummaries.length,
+            salesDayWorkerBlockReason,
+          }),
+          // 매출 자체가 막힌 경우는 매출 사유에 이미 날짜가 붙는다.
+          (summary) =>
+            salesAmount.value !== null &&
+            (isSalesDayWorkerBlocked(summary, source) ||
+              (workerSummaries.length === 0 && isWorkerBlank(summary))),
+        ),
+        [salesAmount],
       ),
-      [salesAmount],
+      workerExcludedLedgers,
     ),
     averageWorkerCount,
     averageInventory,
@@ -5151,8 +5170,18 @@ function isSalesDayWorkerBlocked(
   const workerCount = getWorkerCount(summary, source);
 
   return (
-    sales !== null && sales > 0 && (workerCount === null || workerCount <= 0)
+    sales !== null && sales > 0 && workerCount !== null && workerCount <= 0
   );
+}
+
+// 계산된 근무 기반 지표에, 근무인원 미입력이라 뺀 장부를 붙인다.
+function withExcludedLedgers(
+  metric: LedgerReviewMetric,
+  excludedLedgers: ReportLedgerLink[],
+): LedgerReviewMetric {
+  return metric.value === null || excludedLedgers.length === 0
+    ? metric
+    : { ...metric, excludedLedgers };
 }
 
 // 합계·평균을 막은 장부의 날짜를 사유 끝에 붙여, 어느 장부를 열어 고칠지 바로 알게 한다.
@@ -5237,11 +5266,7 @@ function getSalesDayWorkerBlockReason(
       continue;
     }
 
-    if (workerCount === null) {
-      return "매출이 있는 날의 근무인원이 공란입니다.";
-    }
-
-    if (workerCount <= 0) {
+    if (workerCount !== null && workerCount <= 0) {
       return "매출이 있는 날의 근무인원이 0 이하입니다.";
     }
   }
@@ -5251,19 +5276,25 @@ function getSalesDayWorkerBlockReason(
 
 function productivityMetric({
   salesAmount,
+  workerSalesTotal,
   workerTotal,
+  workerDayCount,
   salesDayWorkerBlockReason,
 }: {
   salesAmount: LedgerReviewMetric;
+  // 근무인원이 입력된 날의 매출 합계. 미입력일의 매출은 분자에서도 뺀다.
+  workerSalesTotal: number | null;
   workerTotal: number;
+  workerDayCount: number;
   salesDayWorkerBlockReason: string | null;
 }) {
   if (
     salesAmount.value !== null &&
+    workerSalesTotal !== null &&
     workerTotal > 0 &&
     salesDayWorkerBlockReason === null
   ) {
-    return available(salesAmount.value / workerTotal);
+    return available(workerSalesTotal / workerTotal);
   }
 
   if (salesAmount.value === null) {
@@ -5277,27 +5308,32 @@ function productivityMetric({
     return unavailable("계산 불가", salesDayWorkerBlockReason);
   }
 
+  if (workerDayCount === 0) {
+    return unavailable("계산 불가", "근무인원을 입력한 장부가 없습니다.");
+  }
+
   return unavailable("계산 불가", "근무인원 합계가 0 이하입니다.");
 }
 
 function averageWorkerCountMetric({
   ledgerCount,
+  workerDayCount,
   workerTotal,
-  trendWorkerTotal,
 }: {
   ledgerCount: number;
+  // 근무인원이 입력된 장부 수. 미입력 장부는 분모에서 뺀다.
+  workerDayCount: number;
   workerTotal: number;
-  trendWorkerTotal: number | null;
 }) {
-  if (ledgerCount > 0 && trendWorkerTotal !== null) {
-    return available(workerTotal / ledgerCount);
+  if (workerDayCount > 0) {
+    return available(workerTotal / workerDayCount);
   }
 
   if (ledgerCount === 0) {
     return unavailable("계산 불가", "평균 근무인원 계산 대상 장부가 없습니다.");
   }
 
-  return unavailable("계산 불가", "근무인원이 공란인 장부가 있습니다.");
+  return unavailable("계산 불가", "근무인원을 입력한 장부가 없습니다.");
 }
 
 function inventoryToSalesRatioMetric(
@@ -5675,6 +5711,7 @@ export function buildDailyMeetingReportMetricEvidence({
   hasUnappliedCorrections,
   ledgersLabel,
   ledgers,
+  excludedLedgers,
 }: DailyMeetingReportMetricEvidenceInput): DailyMeetingReportMetricEvidence {
   const isCorrected = correctionCount > 0;
   const status = getMetricStatus({
@@ -5702,6 +5739,9 @@ export function buildDailyMeetingReportMetricEvidence({
         ? `/app/ledgers/${ledgerId}#correction-timeline`
         : null,
     ...(ledgers && ledgers.length > 0 ? { ledgersLabel, ledgers } : {}),
+    ...(excludedLedgers && excludedLedgers.length > 0
+      ? { excludedLedgers }
+      : {}),
   };
 }
 
