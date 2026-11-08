@@ -670,6 +670,100 @@ test("selected store settlement shows only that store's days and pay", () => {
   assert.equal(all.workerSettlements[0].desiredCashAmount, 320_000);
 });
 
+// 상태 필터는 누구를 보여줄지만 고른다. 선택 지점의 근무일과 급여는
+// 그 지점의 다른 상태 장부까지 포함한다.
+test("selected store pay ignores the status filter", () => {
+  const employee = {
+    position: "매니저",
+    bankAccount: "국민 123",
+    desiredInsuranceAmount: 30_000,
+  };
+  const settlementLedgers = [
+    {
+      id: "guro-closed",
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-guro", name: "구로참수산" },
+      ledgerLaborItems: [
+        {
+          id: "guro-closed-item",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 100_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+    {
+      id: "guro-review",
+      closingDate: new Date("2026-07-02T00:00:00.000Z"),
+      status: "IN_REVIEW",
+      workerCount: 1,
+      store: { id: "store-guro", name: "구로참수산" },
+      ledgerLaborItems: [
+        {
+          id: "guro-review-item",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 80_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+    {
+      id: "anyang-closed",
+      closingDate: new Date("2026-07-03T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-anyang", name: "안양참수산" },
+      ledgerLaborItems: [
+        {
+          id: "anyang-closed-item",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 150_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+  ];
+  const report = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    isSingleMonth: true,
+    selectedStoreId: "store-guro",
+    selectedStatus: "HEADQUARTERS_CLOSED",
+    stores: [
+      { id: "store-guro", name: "구로참수산" },
+      { id: "store-anyang", name: "안양참수산" },
+    ],
+    targetStoreIds: ["store-guro"],
+    ledgers: settlementLedgers.filter(
+      (ledger) =>
+        ledger.store.id === "store-guro" &&
+        ledger.status === "HEADQUARTERS_CLOSED",
+    ),
+    settlementLedgers,
+  });
+
+  assert.equal(report.workerSettlements.length, 1);
+  assert.deepEqual(report.workerSettlements[0].storeNames, ["구로참수산"]);
+  assert.equal(report.workerSettlements[0].workdayCount, 2);
+  assert.equal(report.workerSettlements[0].laborAmount, 180_000);
+  assert.equal(report.workerSettlements[0].desiredCashAmount, 300_000);
+  assert.equal(report.details.length, 1);
+  assert.equal(report.details[0].amount, 100_000);
+});
+
 test("headquarters labor store filter fails closed for unauthorized store ids", () => {
   assert.deepEqual(
     resolveHeadquartersLaborStoreFilter({

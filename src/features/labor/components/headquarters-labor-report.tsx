@@ -168,11 +168,17 @@ export function HeadquartersLaborReportView({
                   <TableHead className="text-right">희망 4대보험</TableHead>
                   <TableHead
                     className="text-right"
-                    title="인건비 합계 − 희망 4대보험"
+                    title={
+                      report.selectedStoreId
+                        ? "월 전체 인건비 − 희망 4대보험"
+                        : "인건비 합계 − 희망 4대보험"
+                    }
                   >
                     희망 현금
                     <span className="text-muted-foreground block text-xs font-normal">
-                      인건비 합계 − 희망 4대보험
+                      {report.selectedStoreId
+                        ? "월 전체 인건비 − 희망 4대보험"
+                        : "인건비 합계 − 희망 4대보험"}
                     </span>
                   </TableHead>
                   <TableHead>계좌번호</TableHead>

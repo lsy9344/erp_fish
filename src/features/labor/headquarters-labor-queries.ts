@@ -293,12 +293,13 @@ export function buildHeadquartersLaborReport({
       specialMemo: item.specialMemo,
     })),
   );
-  // 직원 목록은 화면 필터로 정한다. 지점을 고르면 근무일·인건비·지점명은
-  // 그 지점 장부만 합산한다. 희망 현금은 월 고정 보험료를 빼므로 필터 전
-  // 월 전체 원장으로 따로 계산한다.
-  const storeSettlements = buildWorkerSettlements(targetLedgers, false);
+  // 상태·이름 필터는 누구를 보여줄지만 정한다. 지점을 고르면 근무일·인건비·
+  // 지점명은 그 지점 장부 전체다. 희망 현금은 월 고정 보험료를 빼므로
+  // 필터 전 월 전체 원장으로 따로 계산한다.
   const visibleWorkerKeys = new Set(
-    storeSettlements.map((settlement) => settlement.key),
+    buildWorkerSettlements(targetLedgers, false).map(
+      (settlement) => settlement.key,
+    ),
   );
   const monthSettlements = buildWorkerSettlements(
     settlementLedgers,
@@ -307,23 +308,35 @@ export function buildHeadquartersLaborReport({
   const monthSettlementByKey = new Map(
     monthSettlements.map((settlement) => [settlement.key, settlement]),
   );
+  const selectedStoreSettlements =
+    selectedStoreId === null
+      ? []
+      : buildWorkerSettlements(
+          settlementLedgers.filter(
+            (ledger) => ledger.store.id === selectedStoreId,
+          ),
+          false,
+        );
   const workerSettlements =
     selectedStoreId === null
       ? monthSettlements.filter((settlement) =>
           visibleWorkerKeys.has(settlement.key),
         )
-      : storeSettlements.map((settlement) => {
-          const monthSettlement = monthSettlementByKey.get(settlement.key);
+      : selectedStoreSettlements
+          .filter((settlement) => visibleWorkerKeys.has(settlement.key))
+          .map((settlement) => {
+            const monthSettlement = monthSettlementByKey.get(settlement.key);
 
-          return monthSettlement
-            ? {
-                ...settlement,
-                desiredInsuranceAmount: monthSettlement.desiredInsuranceAmount,
-                desiredCashAmount: monthSettlement.desiredCashAmount,
-                cashUnavailableReason: monthSettlement.cashUnavailableReason,
-              }
-            : settlement;
-        });
+            return monthSettlement
+              ? {
+                  ...settlement,
+                  desiredInsuranceAmount:
+                    monthSettlement.desiredInsuranceAmount,
+                  desiredCashAmount: monthSettlement.desiredCashAmount,
+                  cashUnavailableReason: monthSettlement.cashUnavailableReason,
+                }
+              : settlement;
+          });
   const summaryByStore = new Map<
     string,
     {
