@@ -293,17 +293,37 @@ export function buildHeadquartersLaborReport({
       specialMemo: item.specialMemo,
     })),
   );
-  // 화면에 보이는 직원 목록은 필터 결과로 정하되, 금액은 필터 전 월 전체 원장에서
-  // 다시 합산한다. 그래서 지점·상태·이름 필터가 보험료 계산을 왜곡하지 않는다.
+  // 직원 목록은 화면 필터로 정한다. 지점을 고르면 근무일·인건비·지점명은
+  // 그 지점 장부만 합산한다. 희망 현금은 월 고정 보험료를 빼므로 필터 전
+  // 월 전체 원장으로 따로 계산한다.
+  const storeSettlements = buildWorkerSettlements(targetLedgers, false);
   const visibleWorkerKeys = new Set(
-    buildWorkerSettlements(targetLedgers, false).map(
-      (settlement) => settlement.key,
-    ),
+    storeSettlements.map((settlement) => settlement.key),
   );
-  const workerSettlements = buildWorkerSettlements(
+  const monthSettlements = buildWorkerSettlements(
     settlementLedgers,
     isSingleMonth,
-  ).filter((settlement) => visibleWorkerKeys.has(settlement.key));
+  );
+  const monthSettlementByKey = new Map(
+    monthSettlements.map((settlement) => [settlement.key, settlement]),
+  );
+  const workerSettlements =
+    selectedStoreId === null
+      ? monthSettlements.filter((settlement) =>
+          visibleWorkerKeys.has(settlement.key),
+        )
+      : storeSettlements.map((settlement) => {
+          const monthSettlement = monthSettlementByKey.get(settlement.key);
+
+          return monthSettlement
+            ? {
+                ...settlement,
+                desiredInsuranceAmount: monthSettlement.desiredInsuranceAmount,
+                desiredCashAmount: monthSettlement.desiredCashAmount,
+                cashUnavailableReason: monthSettlement.cashUnavailableReason,
+              }
+            : settlement;
+        });
   const summaryByStore = new Map<
     string,
     {

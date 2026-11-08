@@ -552,6 +552,124 @@ test("worker settlements separate unlinked names by store and keep filtered cash
   assert.equal(filtered.workerSettlements[0].cashUnavailableReason, null);
 });
 
+// 지점을 고르면 근무일수·인건비·지점명은 그 지점 장부만 합산한다.
+// 희망 현금은 월 고정 보험료를 빼므로 전 지점 월 합계를 유지한다.
+test("selected store settlement shows only that store's days and pay", () => {
+  const employee = {
+    position: "매니저",
+    bankAccount: "국민 123",
+    desiredInsuranceAmount: 30_000,
+  };
+  const ledgers = [
+    {
+      id: "ledger-guro-1",
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-guro", name: "구로참수산" },
+      ledgerLaborItems: [
+        {
+          id: "guro-1",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 100_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+    {
+      id: "ledger-guro-2",
+      closingDate: new Date("2026-07-02T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-guro", name: "구로참수산" },
+      ledgerLaborItems: [
+        {
+          id: "guro-2",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 100_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+    {
+      id: "ledger-anyang-1",
+      closingDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "HEADQUARTERS_CLOSED",
+      workerCount: 1,
+      store: { id: "store-anyang", name: "안양참수산" },
+      ledgerLaborItems: [
+        {
+          id: "anyang-1",
+          employeeId: "emp-yoon",
+          workerName: "김윤호",
+          amount: 150_000,
+          lateMemo: null,
+          earlyLeaveMemo: null,
+          specialMemo: null,
+          employee,
+        },
+      ],
+    },
+  ];
+  const stores = [
+    { id: "store-guro", name: "구로참수산" },
+    { id: "store-anyang", name: "안양참수산" },
+  ];
+
+  function reportFor(storeId) {
+    return buildHeadquartersLaborReport({
+      monthInput: "2026-07",
+      isSingleMonth: true,
+      selectedStoreId: storeId,
+      selectedStatus: "ALL",
+      stores,
+      targetStoreIds: [storeId],
+      ledgers: ledgers.filter((ledger) => ledger.store.id === storeId),
+      settlementLedgers: ledgers,
+    });
+  }
+
+  const guro = reportFor("store-guro").workerSettlements;
+  assert.equal(guro.length, 1);
+  assert.deepEqual(guro[0].storeNames, ["구로참수산"]);
+  assert.equal(guro[0].workdayCount, 2);
+  assert.equal(guro[0].laborAmount, 200_000);
+  assert.equal(guro[0].desiredInsuranceAmount, 30_000);
+  assert.equal(guro[0].desiredCashAmount, 320_000);
+
+  const anyang = reportFor("store-anyang").workerSettlements;
+  assert.equal(anyang.length, 1);
+  assert.deepEqual(anyang[0].storeNames, ["안양참수산"]);
+  assert.equal(anyang[0].workdayCount, 1);
+  assert.equal(anyang[0].laborAmount, 150_000);
+  assert.equal(anyang[0].desiredCashAmount, 320_000);
+
+  const all = buildHeadquartersLaborReport({
+    monthInput: "2026-07",
+    isSingleMonth: true,
+    selectedStoreId: null,
+    selectedStatus: "ALL",
+    stores,
+    targetStoreIds: stores.map((store) => store.id),
+    ledgers,
+  });
+  assert.deepEqual(all.workerSettlements[0].storeNames, [
+    "구로참수산",
+    "안양참수산",
+  ]);
+  assert.equal(all.workerSettlements[0].workdayCount, 2);
+  assert.equal(all.workerSettlements[0].laborAmount, 350_000);
+  assert.equal(all.workerSettlements[0].desiredCashAmount, 320_000);
+});
+
 test("headquarters labor store filter fails closed for unauthorized store ids", () => {
   assert.deepEqual(
     resolveHeadquartersLaborStoreFilter({

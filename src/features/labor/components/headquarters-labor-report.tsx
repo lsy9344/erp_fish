@@ -149,6 +149,9 @@ export function HeadquartersLaborReportView({
             <h2 id="labor-worker-settlement" className="text-lg font-semibold">
               근무자별 월 정산
             </h2>
+            {report.selectedStoreId ? (
+              <Badge variant="secondary">선택 지점 근무일·인건비</Badge>
+            ) : null}
             {report.isSingleMonth ? null : (
               <Badge variant="secondary">기간 합계 기준</Badge>
             )}
