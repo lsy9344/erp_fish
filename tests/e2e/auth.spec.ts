@@ -93,11 +93,16 @@ test("본사 계정으로 로그인하면 본사 업무 셸과 사이드바가 �
   await page.getByLabel("비밀번호").fill("correct-password");
   await page.getByRole("button", { name: "로그인" }).click();
 
-  await expect(page).toHaveURL(/\/app\/dashboard/);
-  await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
+  // 본사 계정은 로그인 직후 리포트(아침 회의 리포트)부터 연다.
+  await expect(page).toHaveURL(/\/app\/reports\/daily/);
+  await expect(
+    page.getByRole("heading", { name: "아침 회의 리포트" }),
+  ).toBeVisible();
 
   for (const item of ["홈", "리포트", "기준정보"]) {
-    await expect(page.getByRole("link", { name: item })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: item, exact: true }),
+    ).toBeVisible();
   }
   await expect(page.getByRole("link", { name: "설정" })).toHaveCount(0);
 });

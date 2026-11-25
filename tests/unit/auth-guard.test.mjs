@@ -129,6 +129,11 @@ test("server authorization helper enforces store access from database assignment
   );
 
   assert.match(authz, /getAppHomePath/);
+  // 본사 계정은 로그인 직후 리포트(아침 회의 리포트)로 연다.
+  assert.match(
+    authz,
+    /UserRole\.HEADQUARTERS\)\s*{\s*return\s+"\/app\/reports\/daily";/,
+  );
   assert.match(authz, /getStoreManagerWorkspace/);
   assert.match(authz, /requireStoreAccess/);
   assert.match(authz, /db\.user\.findUnique/);

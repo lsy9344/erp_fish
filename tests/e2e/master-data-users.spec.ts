@@ -179,7 +179,7 @@ test("본사는 사용자/권한 목록과 역할/상태 필터를 볼 수 있�
   page,
 }) => {
   await login(page, "hq@example.com");
-  await expect(page).toHaveURL(/\/app\/dashboard/);
+  await expect(page).toHaveURL(/\/app\/reports\/daily/);
 
   await page.goto("/app/master-data/users");
 

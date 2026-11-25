@@ -6,6 +6,7 @@
 - Last refreshed: 2026-08-27
 - Primary product surfaces:
   - 본사 관리자 홈 `/app/dashboard`
+  - 본사 로그인 첫 화면 `/app/reports/daily` (사이드바 `리포트`, 2026-11-25부터 홈 대신)
   - 본사 장부 상세 `/app/ledgers/[ledgerId]`
   - 변경 이력 `/app/master-data/history`
 - Evidence reviewed:

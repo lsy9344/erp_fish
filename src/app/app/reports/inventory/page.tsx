@@ -24,6 +24,7 @@ type InventoryPositionReportPageProps = {
     storeId?: string | string[];
     category?: string | string[];
     product?: string | string[];
+    spec?: string | string[];
   }>;
 };
 
@@ -50,11 +51,13 @@ export default async function InventoryPositionReportPage({
   const storeId = firstParam(params.storeId);
   const category = firstParam(params.category);
   const product = firstParam(params.product);
+  const spec = firstParam(params.spec);
   const report = await getHqInventoryPositionReport({
     date,
     storeId,
     category,
     product,
+    spec,
   });
   const selectedStoreLabel = report.filters.storeName ?? "전체 활성 지점";
   const summaryItems = [
@@ -103,6 +106,10 @@ export default async function InventoryPositionReportPage({
 
   if (report.filters.productQuery) {
     exportParams.set("product", report.filters.productQuery);
+  }
+
+  if (report.filters.specQuery) {
+    exportParams.set("spec", report.filters.specQuery);
   }
 
   const exportHref = `/api/reports/export?${exportParams.toString()}`;
@@ -193,6 +200,19 @@ export default async function InventoryPositionReportPage({
                 placeholder="품목명 검색"
                 defaultValue={report.filters.productQuery ?? ""}
                 className="h-9 w-40"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-muted-foreground text-xs" htmlFor="spec">
+                규격
+              </label>
+              <Input
+                id="spec"
+                name="spec"
+                type="text"
+                placeholder="규격 검색"
+                defaultValue={report.filters.specQuery ?? ""}
+                className="h-9 w-28"
               />
             </div>
             <Button type="submit" variant="outline" size="sm">

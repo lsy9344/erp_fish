@@ -267,6 +267,7 @@ type ParsedExportRequest =
       storeId: string | null;
       category: string | null;
       product: string | null;
+      spec: string | null;
     }
   | {
       report: "labor";
@@ -388,6 +389,7 @@ function parseExportRequest(
         storeId: normalizeOptionalParam(params.get("storeId")),
         category: normalizeOptionalParam(params.get("category")),
         product: normalizeOptionalParam(params.get("product")),
+        spec: normalizeOptionalParam(params.get("spec")),
       },
       format,
     };
@@ -526,6 +528,7 @@ async function loadReportExportData(
           storeId: request.storeId,
           category: request.category,
           product: request.product,
+          spec: request.spec,
         }),
       );
   }

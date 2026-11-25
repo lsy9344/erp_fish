@@ -62,6 +62,7 @@ export type InventoryPositionFilters = {
   storeName: string | null;
   category: string | null;
   productQuery: string | null;
+  specQuery: string | null;
 };
 
 export type InventoryPositionSummary = {

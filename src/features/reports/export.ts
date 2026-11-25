@@ -363,6 +363,7 @@ export function buildInventoryPositionReportExport(
       storeId: report.filters.storeId,
       category: report.filters.category,
       product: report.filters.productQuery,
+      spec: report.filters.specQuery,
     },
     columns: [...REPORT_EXPORT_COLUMN_ALLOWLISTS.inventory],
     scopedStoreIds: [...new Set(report.rows.map((row) => row.storeId))],

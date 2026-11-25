@@ -949,6 +949,58 @@ test("직전 본사 마감 장부의 당일재고를 이후 영업일 전일재�
   await expect(ledgerDialog).toContainText("11개");
 });
 
+test("상단 재고 검색으로 다른 탭의 품목 위치로 바로 이동한다", async ({
+  page,
+}) => {
+  await login(page);
+  const actorId = await getHeadquartersUserId();
+  const liveProduct = await seedProduct("스토리검색 생물 도미", "생물");
+  const frozenProduct = await seedProduct("스토리검색 냉동 갈치");
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  for (const item of [liveProduct, frozenProduct]) {
+    await prisma.ledgerInventoryItem.create({
+      data: {
+        dailyLedgerId: ledger.id,
+        productId: item.id,
+        productName: item.name,
+        productCategory: item.category,
+        productSpec: item.spec,
+        unitPrice: item.defaultUnitPrice,
+        previousQuantity: 3,
+        purchasedQuantity: 0,
+        currentQuantity: 3,
+        quantity: 3,
+        inventoryAmount: 36_000,
+        createdById: actorId,
+        updatedById: actorId,
+      },
+    });
+  }
+  await markLossStepReviewed(ledger.id, actorId);
+
+  await page.goto(`/app/store-entry/inventory?storeId=${STORY_STORE_ID}`);
+  await page.getByRole("tab", { name: "냉동" }).click();
+  await expect(page.getByText(liveProduct.name)).toHaveCount(0);
+
+  await page.getByLabel("재고 품목 검색").fill("검색 생물 도미");
+  const results = page.getByRole("list", { name: "재고 검색 결과" });
+  await expect(results.getByRole("button")).toHaveCount(1);
+  await results
+    .getByRole("button", { name: new RegExp(liveProduct.name) })
+    .click();
+
+  await expect(page.getByRole("tab", { name: "생물" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const liveRow = page
+    .locator("tr")
+    .filter({ has: page.getByText(liveProduct.name, { exact: true }) });
+  await expect(liveRow).toHaveAttribute("data-focused", "true");
+  await expect(liveRow).toBeInViewport();
+  await expect(page.getByLabel("재고 품목 검색")).toHaveValue("");
+});
+
 // 상단 "전날 재고 보기" 모달은 전일 판매량과 남은 재고의 마지막 입고일을 보여주되,
 // 금액·단가·원가·마진은 보여주지 않는다. 전날 장부 수정 링크도 없다.
 test("지점장은 전날 재고를 분류하고 판매량·마지막 입고일만 안전하게 본다", async ({

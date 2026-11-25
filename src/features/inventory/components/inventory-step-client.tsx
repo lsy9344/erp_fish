@@ -7,7 +7,12 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { CheckCircle2Icon, SnowflakeIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  SearchIcon,
+  SnowflakeIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -85,6 +90,7 @@ import {
   type InventoryErrorFocusTarget,
 } from "~/features/inventory/inventory-save-errors";
 import { getNextInventoryQuantityTarget } from "~/features/inventory/inventory-enter-navigation";
+import { findInventorySearchMatches } from "~/features/inventory/inventory-search";
 import {
   buildInventoryEntryBlock,
   type InventoryEntryBlock,
@@ -549,6 +555,12 @@ export function InventoryStepClient({
   // 지금 편집 중인 행. 카드가 모두 비슷해 포커스가 어디로 갔는지 헷갈리던
   // 문제를 해결하려고 활성 행에 강한 강조(ring/배경)를 준다.
   const [focusedProductId, setFocusedProductId] = useState<string | null>(null);
+  const [inventorySearch, setInventorySearch] = useState("");
+  // 검색 결과를 고르면 해당 탭·페이지로 옮긴 뒤 렌더가 끝난 행으로 스크롤한다.
+  // 같은 품목을 다시 골라도 이동하도록 객체를 새로 만들어 effect를 재실행한다.
+  const [jumpRequest, setJumpRequest] = useState<{
+    productId: string;
+  } | null>(null);
   const [conversionSourceItem, setConversionSourceItem] =
     useState<InventoryLineState | null>(null);
   const [conversionQuantityInput, setConversionQuantityInput] = useState("");
@@ -661,6 +673,45 @@ export function InventoryStepClient({
   ) {
     setPageByCategory((current) => ({ ...current, [category]: page }));
   }
+
+  function jumpToInventoryItem(productId: string) {
+    const item = items.find((candidate) => candidate.productId === productId);
+
+    if (!item) {
+      return;
+    }
+
+    // 전체 탭이면 그대로 두고, 아니면 품목 분류 탭으로 옮긴다.
+    const category =
+      activeCategory === "전체"
+        ? "전체"
+        : normalizeCategory(item.productCategory);
+    const categoryIndex = getCategoryItems(category).findIndex(
+      (candidate) => candidate.productId === productId,
+    );
+    setActiveCategory(category);
+    setCategoryPage(category, Math.floor(categoryIndex / ROW_PAGE_SIZE) + 1);
+    setInventorySearch("");
+    setJumpRequest({ productId });
+  }
+
+  useEffect(() => {
+    if (!jumpRequest) {
+      return;
+    }
+
+    // 탭을 바꾸면 Radix 탭 내용이 다음 렌더에 붙으므로 한 프레임 뒤에 찾는다.
+    const frame = window.requestAnimationFrame(() => {
+      const input = currentQuantityRefs.current[jumpRequest.productId];
+      input?.closest("tr")?.scrollIntoView({ block: "center" });
+
+      if (input && !input.disabled) {
+        input.focus({ preventScroll: true });
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [jumpRequest]);
 
   function focusInventoryError(target?: InventoryErrorFocusTarget) {
     if (!target) {
@@ -2358,6 +2409,81 @@ export function InventoryStepClient({
     );
   }
 
+  function renderInventorySearch() {
+    const matches = findInventorySearchMatches(items, inventorySearch);
+
+    return (
+      <div
+        className="relative"
+        // 검색 밖을 누르면 결과창을 닫아 아래 행 클릭을 가리지 않는다.
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setInventorySearch("");
+          }
+        }}
+      >
+        <label htmlFor="inventory-search" className="sr-only">
+          재고 품목 검색
+        </label>
+        <SearchIcon
+          aria-hidden
+          className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+        />
+        <Input
+          id="inventory-search"
+          type="search"
+          autoComplete="off"
+          placeholder="품목명·규격으로 재고 찾기"
+          value={inventorySearch}
+          onChange={(event) => setInventorySearch(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (matches[0]) jumpToInventoryItem(matches[0].productId);
+            } else if (event.key === "Escape") {
+              setInventorySearch("");
+            }
+          }}
+          className="h-11 pl-9"
+        />
+        {inventorySearch.trim() ? (
+          <ul
+            aria-label="재고 검색 결과"
+            className="bg-popover text-popover-foreground absolute inset-x-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border shadow-md"
+          >
+            {matches.length === 0 ? (
+              <li className="text-muted-foreground px-3 py-2 text-sm">
+                일치하는 품목이 없습니다.
+              </li>
+            ) : (
+              matches.map((item) => (
+                <li key={item.productId}>
+                  <button
+                    type="button"
+                    // 입력칸 포커스를 유지해 blur로 결과창이 먼저 닫히지 않게 한다.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => jumpToInventoryItem(item.productId)}
+                    className="hover:bg-muted flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm"
+                  >
+                    <span className="font-medium">{item.productName}</span>
+                    {item.productSpec ? (
+                      <span className="text-muted-foreground text-xs">
+                        {item.productSpec}
+                      </span>
+                    ) : null}
+                    <Badge variant="secondary" className="ml-auto">
+                      {item.productCategory}
+                    </Badge>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderRows(category: string) {
     const visibleItems = getCategoryItems(category);
     const normalizedCategory = normalizeCategory(category);
@@ -3210,6 +3336,8 @@ export function InventoryStepClient({
           authorDisplayName={data.authorDisplayName}
           status={data.status}
         />
+
+        {renderInventorySearch()}
 
         {/* 재고 단계 첫 화면에서 바로 열고, 입력 중에도 따라온다. */}
         <PreviousStockButton

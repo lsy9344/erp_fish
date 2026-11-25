@@ -26,8 +26,7 @@ test("지정 지점 본사 프로파일은 지점장 입력 화면을 직접 열
   page,
 }) => {
   await login(page, "hq-assigned@example.com");
-  await expect(page).toHaveURL(/\/app\/dashboard/);
-  await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/reports\/daily/);
 
   await page.goto("/app/store-entry?storeId=store-seocho");
 
@@ -54,6 +53,7 @@ test("지정 지점 본사 프로파일은 대시보드와 리포트에서 배�
   // 화면 준비 시간을 포함할 수 있게 이 시나리오만 긴 제한을 사용한다.
   test.slow();
   await login(page, "hq-assigned@example.com");
+  await page.goto("/app/dashboard");
 
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
   await expect(page.getByRole("link", { name: "홈" })).toBeVisible();
@@ -141,6 +141,8 @@ test("DB에서 사용자가 비활성화되면 같은 세션 다음 요청에서
   });
 
   await login(page, "hq-assigned@example.com");
+  // 본사 로그인 첫 화면은 리포트다. 관제판 검사는 홈으로 이동해서 한다.
+  await page.goto("/app/dashboard");
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
 
   await prisma.user.update({
@@ -178,6 +180,8 @@ test("DB에서 본사 프로파일 action이 제거되면 같은 세션 다음 �
   });
 
   await login(page, "hq-assigned@example.com");
+  // 본사 로그인 첫 화면은 리포트다. 관제판 검사는 홈으로 이동해서 한다.
+  await page.goto("/app/dashboard");
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
 
   await prisma.permissionProfileAction.delete({
@@ -229,6 +233,8 @@ test("DB에서 본사 지점 배정이 제거되면 같은 세션 다음 조회�
   });
 
   await login(page, "hq-assigned@example.com");
+  // 본사 로그인 첫 화면은 리포트다. 관제판 검사는 홈으로 이동해서 한다.
+  await page.goto("/app/dashboard");
   await expect(page.getByRole("heading", { name: "관제판" })).toBeVisible();
   await expect(page.getByTestId("hq-dashboard-row-store-seocho")).toBeVisible();
 

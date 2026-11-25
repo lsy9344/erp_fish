@@ -82,6 +82,24 @@ test("본사는 전 지점 재고 현황을 지점 필터로 좁혀 본다", asy
   ).toHaveCount(0);
 });
 
+test("본사는 전 지점 재고 현황을 품목 규격으로 검색한다", async ({ page }) => {
+  await login(page, "hq@example.com");
+  await page.goto(`/app/reports/inventory?date=${getTodayKstInput()}`);
+
+  const closedRow = page.locator(
+    `[data-testid="hq-report-inventory-row-${STORE_IDS.closed}-${PRODUCT_IDS.fish}"]`,
+  );
+  await page.getByLabel("규격").fill("1KG");
+  await page.getByRole("button", { name: "조회" }).click();
+  await expect(page).toHaveURL(/spec=1KG/);
+  await expect(closedRow).toContainText("1kg");
+
+  await page.getByLabel("규격").fill("없는규격");
+  await page.getByRole("button", { name: "조회" }).click();
+  await expect(page).toHaveURL(/spec=(?!1KG)/);
+  await expect(closedRow).toHaveCount(0);
+});
+
 test("본사는 좁은 화면에서도 전 지점 재고 현황 핵심 값을 본다", async ({
   page,
 }) => {

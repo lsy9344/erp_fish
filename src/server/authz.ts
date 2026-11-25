@@ -362,7 +362,7 @@ export async function getAppHomePath() {
   }
 
   if (currentUser.role === UserRole.HEADQUARTERS) {
-    return "/app/dashboard";
+    return "/app/reports/daily";
   }
 
   if (currentUser.role === UserRole.STORE_MANAGER) {

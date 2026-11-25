@@ -127,6 +127,21 @@ test("inventory report hides only items with no stock in or left", async () => {
     });
     assert.deepEqual(filtered.rows, []);
     assert.equal(filtered.summary.productCount, 0);
+
+    const bySpec = await getHqInventoryPositionReport({
+      date: "2026-09-29",
+      storeId: "store-1",
+      spec: "1KG",
+    });
+    assert.equal(bySpec.filters.specQuery, "1KG");
+    assert.equal(bySpec.rows.length, visibleProducts.length);
+
+    const noSpec = await getHqInventoryPositionReport({
+      date: "2026-09-29",
+      storeId: "store-1",
+      spec: "2kg",
+    });
+    assert.deepEqual(noSpec.rows, []);
   } finally {
     hooks.deregister();
   }

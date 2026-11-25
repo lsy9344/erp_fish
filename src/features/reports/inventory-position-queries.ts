@@ -289,11 +289,13 @@ export async function getHqInventoryPositionReport({
   storeId,
   category,
   product,
+  spec,
 }: {
   date?: unknown;
   storeId?: unknown;
   category?: unknown;
   product?: unknown;
+  spec?: unknown;
 } = {}): Promise<InventoryPositionReportData> {
   const { getHeadquartersStoreScope, requireReportAccess } =
     await import("../../server/authz.ts");
@@ -325,6 +327,8 @@ export async function getHqInventoryPositionReport({
     typeof product === "string" && product.trim().length > 0
       ? product.trim()
       : null;
+  const normalizedSpecQuery =
+    typeof spec === "string" && spec.trim().length > 0 ? spec.trim() : null;
   const storeIds = selectedStores.map((store) => store.id);
   const rawLedgers =
     storeIds.length === 0
@@ -418,7 +422,11 @@ export async function getHqInventoryPositionReport({
 
     if (!ledger) {
       // 누락 장부는 생성하지 않고 미입력 행으로만 노출한다.
-      if (!normalizedCategory && !normalizedProductQuery) {
+      if (
+        !normalizedCategory &&
+        !normalizedProductQuery &&
+        !normalizedSpecQuery
+      ) {
         rows.push(
           buildMissingStoreRow({ storeId: store.id, storeName: store.name }),
         );
@@ -463,6 +471,15 @@ export async function getHqInventoryPositionReport({
         continue;
       }
 
+      if (
+        normalizedSpecQuery &&
+        !item.productSpec
+          .toLocaleLowerCase("ko-KR")
+          .includes(normalizedSpecQuery.toLocaleLowerCase("ko-KR"))
+      ) {
+        continue;
+      }
+
       rows.push(
         toInventoryPositionRow({
           storeId: store.id,
@@ -490,6 +507,7 @@ export async function getHqInventoryPositionReport({
       storeName: matchedStore?.name ?? null,
       category: normalizedCategory,
       productQuery: normalizedProductQuery,
+      specQuery: normalizedSpecQuery,
     },
     stores: stores.map((store) => ({ id: store.id, name: store.name })),
     categories,
