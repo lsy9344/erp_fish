@@ -3238,7 +3238,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   assert.match(componentSource, /scrollIntoView/);
   assert.match(componentSource, /inputMode="decimal"/);
   assert.match(componentSource, /parseStockQuantityDraft/);
-  assert.match(componentSource, /toStockQuantitySaveInput/);
+  assert.match(componentSource, /toHqCurrentQuantitySaveInput/);
   assert.match(componentSource, /className="h-11 w-24 tabular-nums"/);
   assert.match(componentSource, /tabular-nums/);
   assert.match(inventoryUiSource, /전일재고 이력/);

@@ -764,6 +764,12 @@ export async function saveLedgerInventoryItems(
       return actionError(error.code, error.message);
     }
 
+    // 2026-11-25 지점 첫 재고 저장 실패가 로그 없이 일반 문구로만 끝나 원인 추적이
+    // 불가능했다. 예상 밖 예외는 장부·품목 수와 함께 남긴다.
+    console.error(
+      `[inventory.save] failed ledger=${parsed.data.ledgerId} items=${parsed.data.items.length}`,
+      error,
+    );
     return mapStoreActionError();
   }
 }

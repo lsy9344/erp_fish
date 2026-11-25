@@ -3,6 +3,7 @@ import {
   isManualFirstInventoryEntry,
 } from "./inventory-persist-policy.ts";
 import { formatQuantity } from "../../lib/format.ts";
+import { toStockQuantitySaveInput } from "../../lib/decimal.ts";
 
 export const missingAdjustmentReasonMessage =
   "재고 차이를 고친 이유를 먼저 저장해 주세요.";
@@ -29,6 +30,39 @@ export const missingRequiredCurrentQuantityMessage =
 
 export const missingLossReviewMessage =
   "2단계 손실/폐기 단계를 먼저 저장해 주세요.";
+
+/**
+ * 아직 저장되지 않은 seed 행(id===productId) 중 매입·손실이 있어 당일재고를 직접
+ * 입력해야 하는 행. 클라이언트 입력칸 비우기와 서버 필수입력 가드가 같은 판정을 쓴다.
+ */
+export function requiresCurrentQuantityEntry(item: {
+  id: string;
+  productId: string;
+  purchasedQuantity: number;
+  lossQuantity: number;
+}) {
+  return (
+    item.id === item.productId &&
+    (item.purchasedQuantity > 0 || item.lossQuantity > 0)
+  );
+}
+
+/**
+ * 본사 화면 당일재고 제출값. 저장된 둘째 자리 값을 그대로 두면 null(변경 없음)로 보낸다.
+ * 단 필수입력 seed 행의 currentQuantity는 저장값이 아니라 전일재고 기본값이므로 비교하지
+ * 않는다 — 비교하면 "판매 후 재고 = 전일재고"인 정상 입력이 null(미입력)로 막힌다.
+ */
+export function toHqCurrentQuantitySaveInput(
+  value: string,
+  item: Parameters<typeof requiresCurrentQuantityEntry>[0] & {
+    currentQuantity: number | null;
+  },
+) {
+  return toStockQuantitySaveInput(
+    value,
+    requiresCurrentQuantityEntry(item) ? null : item.currentQuantity,
+  );
+}
 
 export type InventoryRequiredEntryGuardItem = {
   id: string;
@@ -82,11 +116,8 @@ export function getRequiredCurrentQuantityErrors(
 
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]!;
-    const requiresEntry =
-      item.id === item.productId &&
-      (item.purchasedQuantity > 0 || item.lossQuantity > 0);
 
-    if (requiresEntry && item.currentQuantity === null) {
+    if (requiresCurrentQuantityEntry(item) && item.currentQuantity === null) {
       errors[`items.${index}.currentQuantity`] = [
         "당일재고를 입력해 주세요. 매입·손실이 있는 품목은 남은 재고를 직접 확인해야 합니다.",
       ];
@@ -121,11 +152,10 @@ export function getInventorySaveRequiredEntryErrors(
   );
 
   for (const item of beforeItems) {
-    const requiresEntry =
-      item.id === item.productId &&
-      (item.purchasedQuantity > 0 || item.lossQuantity > 0);
-
-    if (requiresEntry && !inputByProductId.has(item.productId)) {
+    if (
+      requiresCurrentQuantityEntry(item) &&
+      !inputByProductId.has(item.productId)
+    ) {
       return {
         items: [missingRequiredCurrentQuantityMessage],
       };

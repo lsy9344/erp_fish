@@ -80,6 +80,8 @@ import { toFrozenConversionProductName } from "~/features/inventory/conversion-p
 import {
   describeAdjustmentReason,
   missingAdjustmentReasonMessage,
+  requiresCurrentQuantityEntry,
+  toHqCurrentQuantitySaveInput,
 } from "~/features/inventory/adjustment-save-guard";
 import {
   getInventoryQuantityRelation,
@@ -114,7 +116,6 @@ import {
   parseStockQuantityDraft,
   parseStoreInventoryQuantityDraft,
   toStoreInventoryQuantitySaveInput,
-  toStockQuantitySaveInput,
 } from "~/lib/decimal";
 import { formatQuantityValue } from "~/lib/format";
 import { hasAtMostTwoDecimals } from "~/lib/validation";
@@ -324,15 +325,6 @@ function hasSensitiveAdjustmentAmounts(
 // 사용자가 직접 확인/입력해야 한다. 아직 저장된 적 없는 seed 행(id===productId)은
 // 전일재고가 디폴트로 들어오는데, 매입 품목은 그 값이 0이라 화면에 "0"으로 보여
 // "전량 판매"로 오해되기 쉽다. 이런 행은 입력란을 빈칸으로 시작해 직접 입력을 요구한다.
-function requiresCurrentQuantityEntry(
-  item: InventoryDisplayData["items"][number],
-) {
-  return (
-    item.id === item.productId &&
-    (item.purchasedQuantity > 0 || item.lossQuantity > 0)
-  );
-}
-
 function toLineState(data: InventoryDisplayData): InventoryLineState[] {
   return data.items.map((item) => ({
     ...item,
@@ -1067,10 +1059,10 @@ export function InventoryStepClient({
     setAdjustmentErrors({});
 
     const submittedItems = items.map((item) => {
-      const quantityInput = toStockQuantitySaveInput(
+      const quantityInput = toHqCurrentQuantitySaveInput(
         currentQuantityRefs.current[item.productId]?.value ??
           item.currentQuantityInput,
-        item.currentQuantity,
+        item,
       );
       const storeQuantityInput = toStoreInventoryQuantitySaveInput(
         currentQuantityRefs.current[item.productId]?.value ??
@@ -1198,9 +1190,14 @@ export function InventoryStepClient({
       );
       toast.success("재고 정보를 저장했습니다.");
       return true;
-    } catch {
-      setFormError("저장에 실패했습니다. 다시 시도해 주세요.");
-      toast.error("저장에 실패했습니다. 다시 시도해 주세요.");
+    } catch (error: unknown) {
+      // 서버 액션 응답 자체를 못 받은 경우(네트워크 끊김·함수 시간 초과)다. 서버가
+      // 돌려준 저장 실패와 구분해야 현장 보고만으로 원인을 좁힐 수 있다.
+      console.error("[inventory.save] request failed", error);
+      const message =
+        "서버 응답을 받지 못해 저장되지 않았습니다. 네트워크를 확인한 뒤 다시 저장해 주세요.";
+      setFormError(message);
+      toast.error(message);
       return false;
     } finally {
       setIsSaving(false);
