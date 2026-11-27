@@ -2098,6 +2098,16 @@ test("getInventoryQuantityRelation normalizes every inventory flow before compar
   assert.equal(relation({ currentQuantity: 8.01 }), "OVERSTOCK");
   assert.equal(
     relation({
+      previousQuantity: 1.23,
+      purchasedQuantity: 2,
+      conversionOutQuantity: 1.23,
+      currentQuantity: 3,
+    }),
+    "OVERSTOCK",
+    "frozen conversion out lowers the system quantity",
+  );
+  assert.equal(
+    relation({
       previousQuantity: 0.1,
       purchasedQuantity: 0.2,
       currentQuantity: 0.3,
@@ -3118,6 +3128,14 @@ test("inventory adjustment query action and audit contracts are wired", () => {
     /getInventoryQuantityRelation\(/,
     "HQ adjustment creation should use the shared overstock relation",
   );
+  // 활냉 전환 후(전일 1.23 + 매입 2 − 전환 출고 1.23 = 기준 2) 실사 3은 초과인데,
+  // 전환 수량을 빼먹으면 서버 기준이 3.23이 되어 "판매"로 보고 조정을 거부했다.
+  assert.match(
+    hqActionSource,
+    /getInventoryQuantityRelation\(\{[^}]*conversionInQuantity:\s*line\.conversionInQuantity,[^}]*conversionOutQuantity:\s*line\.conversionOutQuantity,[^}]*currentQuantity:\s*parsed\.data\.actualQuantity/s,
+    "HQ adjustment gate must include frozen conversion quantities",
+  );
+  assert.match(hqActionSource, /notOverstockAdjustmentMessage\(beforeQuantity\)/);
   assert.doesNotMatch(
     hqActionSource,
     /quantity:\s*adjustment\.afterQuantity/,
@@ -3353,7 +3371,7 @@ test("inventory UI is wired to the canonical inventory route", () => {
   );
   assert.match(
     componentSource,
-    /const adjustmentActionLabel = adjusted \? "수정" : "저장"/,
+    /const adjustmentActionLabel = adjusted \? "조정 수정" : "조정 저장"/,
   );
   assert.match(
     componentSource,

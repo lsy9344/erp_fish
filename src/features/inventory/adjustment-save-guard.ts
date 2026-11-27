@@ -25,6 +25,11 @@ export function describeAdjustmentReason(
   return `기준재고 ${formatQuantity(systemQuantity)}인데 당일재고가 ${formatQuantity(currentQuantity)}입니다(${lossNote}기준보다 ${formatQuantity(difference)} 많음). 차이가 생긴 사유를 남겨 주세요.`;
 }
 
+/** 기준재고 이하 수량은 판매로 처리되므로 단독 조정이 아니라 재고 저장으로 기록한다. */
+export function notOverstockAdjustmentMessage(systemQuantity: number) {
+  return `기준재고 ${formatQuantity(systemQuantity)} 이하는 판매로 처리됩니다. 조정 저장이 아니라 화면 아래 저장 버튼으로 저장해 주세요.`;
+}
+
 export const missingRequiredCurrentQuantityMessage =
   "당일재고를 입력하지 않은 매입·손실 품목이 있습니다. 남은 재고를 입력해 주세요.";
 

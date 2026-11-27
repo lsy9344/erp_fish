@@ -80,6 +80,7 @@ import { toFrozenConversionProductName } from "~/features/inventory/conversion-p
 import {
   describeAdjustmentReason,
   missingAdjustmentReasonMessage,
+  notOverstockAdjustmentMessage,
   requiresCurrentQuantityEntry,
   toHqCurrentQuantitySaveInput,
 } from "~/features/inventory/adjustment-save-guard";
@@ -1555,6 +1556,38 @@ export function InventoryStepClient({
       return next;
     });
 
+    // 기준재고 이하(판매)는 단독 조정 대상이 아니다. 서버 왕복 없이 일반 저장으로 안내한다.
+    const adjustmentSystemQuantity = getSystemQuantity(item);
+    const adjustmentActualQuantity = parseQuantityInput(
+      currentQuantityRefs.current[item.productId]?.value ??
+        item.currentQuantityInput,
+      item.currentQuantity,
+      true,
+    );
+
+    if (
+      adjustmentSystemQuantity !== null &&
+      getInventoryQuantityRelation({
+        ...item,
+        currentQuantity: adjustmentActualQuantity,
+      }) === "NORMAL"
+    ) {
+      const message = notOverstockAdjustmentMessage(adjustmentSystemQuantity);
+      const globalIndex = items.findIndex(
+        (candidate) => candidate.productId === item.productId,
+      );
+
+      if (globalIndex >= 0) {
+        setFieldErrors({
+          [`items.${globalIndex}.currentQuantity`]: [message],
+        });
+      }
+
+      setFormError(message);
+      toast.error(message);
+      return;
+    }
+
     if (!reason) {
       if (hqEditReasonRequired) {
         setFieldErrors({
@@ -2548,7 +2581,7 @@ export function InventoryStepClient({
       const isSavingThisAdjustment =
         savingAdjustmentProductId === item.productId;
       const sourceBadges = getSourceBadges(item);
-      const adjustmentActionLabel = adjusted ? "수정" : "저장";
+      const adjustmentActionLabel = adjusted ? "조정 수정" : "조정 저장";
       const adjustmentButtonLabel = `${item.productName} 고친 이유 저장`;
       const adjustmentAmountPolicyUnconfirmed =
         item.adjustment?.amountStatus === "POLICY_UNCONFIRMED";

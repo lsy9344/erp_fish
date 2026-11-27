@@ -35,6 +35,7 @@ import {
   getInventorySaveRequiredEntryErrors,
   missingAdjustmentReasonMessage,
   missingRequiredCurrentQuantityMessage,
+  notOverstockAdjustmentMessage,
 } from "./adjustment-save-guard";
 import { reconcileLedgerInventoryAdjustments } from "./adjustment-reconciliation";
 import { toInventoryAuditSnapshot } from "./audit-snapshot";
@@ -794,16 +795,17 @@ export async function saveHqLedgerInventoryAdjustment(
             previousQuantity: line.previousQuantity,
             purchasedQuantity: line.purchasedQuantity,
             lossQuantity: line.lossQuantity,
+            // 활냉 전환 수량을 빼면 기준재고가 커져 정당한 초과 실사를 거부한다.
+            conversionInQuantity: line.conversionInQuantity,
+            conversionOutQuantity: line.conversionOutQuantity,
             currentQuantity: parsed.data.actualQuantity,
           }) !== "OVERSTOCK"
         ) {
           return actionError<InventoryStepData>(
             "VALIDATION_ERROR",
-            "실제 재고 차이가 있을 때만 조정을 저장할 수 있습니다.",
+            notOverstockAdjustmentMessage(beforeQuantity),
             {
-              actualQuantity: [
-                "실제 재고 차이가 있을 때만 조정을 저장할 수 있습니다.",
-              ],
+              actualQuantity: [notOverstockAdjustmentMessage(beforeQuantity)],
             },
           );
         }
