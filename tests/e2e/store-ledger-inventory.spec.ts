@@ -1402,6 +1402,93 @@ test("당일매입만 있는 생물도 당일재고 저장 전에 냉동 전환�
   expect(Number(sourceItem?.conversionOutQuantity)).toBe(3);
 });
 
+test("본사에서 첫 재고 저장 전에 냉동 전환해도 다른 전일 이월 재고가 보인다", async ({
+  page,
+}) => {
+  const actorId = await getHeadquartersUserId();
+  const shrimp = await seedProduct(
+    "스토리2-5 냉동 전환 생새우",
+    "생물",
+    10_000,
+  );
+  const carryover = await seedProduct(
+    "스토리2-5 전일 이월 오징어",
+    "냉동",
+    8_000,
+  );
+  const previousLedger = await upsertLedger(
+    getPreviousKstMidnight(),
+    actorId,
+    "HEADQUARTERS_CLOSED",
+  );
+  await prisma.ledgerInventoryItem.createMany({
+    data: [shrimp, carryover].map((product) => ({
+      dailyLedgerId: previousLedger.id,
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      productSpec: product.spec,
+      unitPrice: product.defaultUnitPrice,
+      previousQuantity: 7,
+      currentQuantity: 7,
+      quantity: 7,
+      inventoryAmount: 7 * product.defaultUnitPrice,
+      createdById: actorId,
+      updatedById: actorId,
+    })),
+  });
+  const ledger = await upsertLedger(getTodayKstMidnight(), actorId);
+  await markLossStepReviewed(ledger.id, actorId);
+
+  await loginAsHq(page);
+  await page.goto(`/app/ledgers/${ledger.id}`);
+  const inventoryTab = page.getByRole("tab", { name: "재고" });
+  await inventoryTab.click();
+  const inventoryPanel = page.locator('[data-ledger-detail-panel="inventory"]');
+  const quantityInput = (productName: string) =>
+    inventoryPanel.getByLabel(`${productName} 당일재고`, { exact: true });
+  await expect(quantityInput(carryover.name)).toHaveValue("7");
+
+  await inventoryPanel
+    .getByLabel("본사 수정 사유")
+    .fill("생새우 일부 냉동 전환");
+  await inventoryPanel
+    .locator("tr")
+    .filter({ has: page.getByText(shrimp.name, { exact: true }) })
+    .getByRole("button", { name: /일부 냉동 전환/ })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "일부 냉동 전환" });
+  await dialog.getByLabel("냉동 전환 수량").fill("2");
+  await dialog.getByRole("button", { name: "냉동으로 옮기기" }).click();
+  await expect(page.getByText(/2개를 냉동 재고로 옮겼습니다/)).toBeVisible();
+
+  const frozenName = `활냉)${shrimp.name}`;
+  await expect(quantityInput(carryover.name)).toHaveValue("7");
+  await expect(quantityInput(shrimp.name)).toHaveValue("5");
+  await expect(quantityInput(frozenName)).toHaveValue("2");
+
+  await page.reload();
+  await inventoryTab.click();
+  await expect(quantityInput(carryover.name)).toHaveValue("7");
+
+  for (const [productName, remainingAmount] of [
+    [shrimp.name, "50,000원"],
+    [frozenName, "20,000원"],
+  ] as const) {
+    await inventoryPanel
+      .getByRole("button", { name: `${productName} FIFO 매입 이력 보기` })
+      .click();
+    const fifoHistory = page.getByRole("dialog", {
+      name: "FIFO 판매 lot 이력",
+    });
+    await expect(
+      fifoHistory.getByRole("cell", { name: remainingAmount, exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(fifoHistory).toBeHidden();
+  }
+});
+
 test("재고 행에 가격이 다른 입고분을 날짜와 단가별로 표시한다", async ({
   page,
 }) => {

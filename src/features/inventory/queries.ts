@@ -29,6 +29,7 @@ import { db } from "~/server/db";
 import { ledgerSelect, getStoreLedgerInTx } from "~/features/ledger/queries";
 import { getStoreEntryStepCompletion } from "~/features/ledger/step-completion";
 import { getInventoryPlanGateForLedgerInTx } from "~/features/ledger/inventory-plan-gate";
+import { isLedgerEditable } from "~/features/ledger/status-policy";
 import {
   requireHeadquartersLedgerScope,
   requireReportAccess,
@@ -722,6 +723,7 @@ async function mergeExistingInventoryLines(
   existingItems: InventoryItemPayload[],
   purchases: Map<string, PurchaseAggregate>,
   losses: Map<string, LossAggregate>,
+  carryoverBases: ProductInventoryBase[],
 ) {
   const existingProductIds = new Set(
     existingItems.map((item) => item.productId),
@@ -890,10 +892,8 @@ async function mergeExistingInventoryLines(
       ),
     ),
   );
-  // 저장 행 뒤에 모든 활성 품목을 다시 붙이면 근거 없는 품목이 "이월 공백 0"으로
-  // 보인다. 당일 매입/손실로 생긴 품목만 보강하고, 나머지 활성 품목은
-  // manualProductOptions로 내려 "품목 추가"로만 표에 넣는다.
-  for (const base of mergeActivityBases([], purchases, losses)) {
+  // 이월·매입·손실 근거가 있는 미저장 품목만 보강한다.
+  for (const base of mergeActivityBases(carryoverBases, purchases, losses)) {
     if (!existingProductIds.has(base.productId)) {
       lines.push(
         withPurchaseAggregate(
@@ -1735,6 +1735,18 @@ async function getInventoryStepDataForLedgerInTx(
   });
 
   if (existingItems.length > 0) {
+    // 첫 재고 저장 전 냉동 전환은 전환 품목만 기록하고 이월 상세는 저장하지 않는다.
+    const hasConversionBeforeInventorySave =
+      isLedgerEditable(ledger.status) &&
+      existingItems.every((item) => item.carryoverDetail === null) &&
+      existingItems.some(
+        (item) =>
+          decimalToNumber(item.conversionInQuantity) > 0 ||
+          decimalToNumber(item.conversionOutQuantity) > 0,
+      );
+    const carryover = hasConversionBeforeInventorySave
+      ? await getCarryoverBases(tx, ledger.storeId, ledger.closingDate)
+      : null;
     const source =
       existingItems[0]?.carryoverSource ?? InventoryCarryoverSource.MANUAL;
     const items = await mergeExistingInventoryLines(
@@ -1743,6 +1755,7 @@ async function getInventoryStepDataForLedgerInTx(
       existingItems,
       purchases,
       losses,
+      carryover?.bases ?? [],
     );
     const itemsWithHistory = await attachCarryoverHistories(
       tx,
@@ -1796,11 +1809,19 @@ async function getInventoryStepDataForLedgerInTx(
       stepCompletion,
       items: priced.items,
       manualProductOptions: priced.manualProductOptions,
-      carryover: {
-        status: toCarryoverLoadStatus(carryoverStatus),
-        source,
-        message: toCarryoverMessage(carryoverStatus),
-      },
+      carryover:
+        carryover?.status === "loaded" &&
+        carryoverStatus !== InventoryCarryoverStatus.CARRYOVER_RECHECK_REQUIRED
+          ? {
+              status: carryover.status,
+              source: carryover.source,
+              message: carryover.message,
+            }
+          : {
+              status: toCarryoverLoadStatus(carryoverStatus),
+              source,
+              message: toCarryoverMessage(carryoverStatus),
+            },
     };
   }
 
