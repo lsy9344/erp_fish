@@ -1476,7 +1476,10 @@ test("본사에서 첫 재고 저장 전에 냉동 전환해도 다른 전일 �
     [frozenName, "20,000원"],
   ] as const) {
     await inventoryPanel
-      .getByRole("button", { name: `${productName} FIFO 매입 이력 보기` })
+      .getByRole("button", {
+        name: `${productName} FIFO 매입 이력 보기`,
+        exact: true,
+      })
       .click();
     const fifoHistory = page.getByRole("dialog", {
       name: "FIFO 판매 lot 이력",
