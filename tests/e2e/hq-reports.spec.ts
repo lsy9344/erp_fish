@@ -13,7 +13,7 @@ test("본사는 리포트에 들어와 통합 리포트를 열고 차트와 같�
   page,
 }) => {
   await login(page, "hq@example.com");
-  const reportsLink = page.getByRole("link", { name: "리포트" });
+  const reportsLink = page.getByRole("link", { name: "리포트", exact: true });
   await expect(reportsLink).toHaveAttribute("href", "/app/reports/daily");
 
   // 리포트 진입점은 매일 쓰는 아침 회의 리포트로 연다.
